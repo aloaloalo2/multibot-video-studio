@@ -93,6 +93,10 @@ The current engine renders timeline slices to temporary segments, concatenates t
 
 Native frame joins also support 15 cinematic dissolves defined in `frontend/graphic-transitions.json`. The editor and renderer use the same animated light and dissolve settings without adding camera motion. Their translucent overlays are rendered above scene media and below permanent branding, with the original audio left intact.
 
+On macOS, exports up to 1080p and 60 fps use hardware HEVC when an actual encoder probe succeeds. Variable-quality encoding adapts to the content; audio remains AAC. Each rendered segment is converted to a consistent limited color range before encoding so that joining video and photo segments cannot reinterpret their colors. Unsupported systems, larger sizes, or an unsuccessful hardware probe use the existing H.264 software encoder. Set `MULTIBOT_EXPORT_ENCODER=software` to select the software path for diagnostics.
+
+An opaque, static canvas-sized shape at the bottom of a scene becomes the scene background, avoiding an extra full-frame overlay. Animated, translucent, masked and transitioning shapes remain independent layers. Set `MULTIBOT_FAST_BACKGROUND=0` to disable this optimization for comparisons.
+
 ```bash
 python3 -m unittest discover -s engine/tests -v
 ```

@@ -26,5 +26,12 @@ def video(config,duration,fps,work):
         process.stdin.close();error=process.stderr.read();code=process.wait(timeout=30)
         if code:raise RuntimeError(error.decode(errors='replace')[:500])
     except BaseException:
-        process.kill();process.wait();raise
+        if process.poll() is None:process.kill()
+        process.wait();path.unlink(missing_ok=True)
+        raise
+    finally:
+        if process.stdin and not process.stdin.closed:
+            try:process.stdin.close()
+            except BrokenPipeError:pass
+        if process.stderr:process.stderr.close()
     return path

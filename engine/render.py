@@ -46,6 +46,36 @@ FONT_CANDIDATES = (
 )
 
 
+@lru_cache(maxsize=16)
+def hardware_hevc_available(width: int, height: int, fps: int) -> bool:
+    """Probe the actual output size before choosing the Mac hardware encoder."""
+    if sys.platform != "darwin" or not FFMPEG or width * height > 1920 * 1080 or fps > 60:
+        return False
+    command = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error",
+               "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps}",
+               "-frames:v", "1", "-an", "-c:v", "hevc_videotoolbox", "-q:v", "65",
+               "-pix_fmt", "yuv420p", "-movflags", "frag_keyframe+empty_moov",
+               "-f", "mp4", "pipe:1"]
+    try:
+        result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=20)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def hardware_export(width: int, height: int, fps: int) -> bool:
+    # This switch also provides a deterministic software path for diagnostics.
+    return (os.environ.get("MULTIBOT_EXPORT_ENCODER", "auto") != "software"
+            and hardware_hevc_available(width, height, fps))
+
+
+def video_encoder_options(hardware: bool) -> list[str]:
+    if hardware:
+        return ["-c:v", "hevc_videotoolbox", "-q:v", "65", "-tag:v", "hvc1",
+                "-color_range", "tv", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p"]
+
+
 def emit(stage: str, **fields: Any) -> None:
     print(json.dumps({"stage": stage, **fields}, ensure_ascii=False), flush=True)
 
@@ -249,6 +279,16 @@ def easing_expr(progress: str, mode: str = "linear") -> str:
     raise ValueError("Unsupported motion easing")
 
 
+def easing_value(progress: float, mode: str = "linear") -> float:
+    """Evaluate the bounded easing curve used by easing_expr."""
+    p = max(0.0, min(1.0, progress))
+    if mode == 'linear': return p
+    if mode == 'ease_in': return p ** 3
+    if mode == 'ease_out': return 1 - (1 - p) ** 3
+    if mode == 'ease_in_out': return p * p * (3 - 2 * p)
+    raise ValueError('Unsupported motion easing')
+
+
 def time_expr(points: list[dict], prop: str, default: float, maximum: int, clock: str = "t", normalize_float: bool = True, easing: str = "linear") -> str:
     pairs = []
     for point in points:
@@ -400,22 +440,42 @@ def text_bitmap(layer: dict, path: Path, frame_width: int, frame_height: int) ->
             lines = [content]
         line_height = int(size * float(layer.get('line_height',1.28)))
         line_width = max(measure.textlength(line, font=font) for line in lines)
-        required_height = max(1, line_height * len(lines) + 4)
-        if required_height <= min(frame_height, max_height) and line_width <= max_width - 4:
+        required_height = max(1, line_height * len(lines))
+        if required_height + 4 <= min(frame_height, max_height) and line_width <= max_width - 4:
             break
     else:
         raise ValueError("Text does not fit inside its frame box")
-    bitmap_width = max_width if layer.get('text_align') in {'left','right'} else min(frame_width, max(1, int(line_width + 4)))
-    bitmap_height = required_height
+    # Layout in a logical line box, as the browser does. Pillow's default
+    # top anchor includes the font's ascender offset: drawing at y=2 into a
+    # line-height-sized image cropped Literata's descenders. Ink may also
+    # extend beyond a glyph's advance width or above the font's ascent.
+    # Symmetric padding preserves the logical centre of words and letters.
+    logical_width = max_width if layer.get('text_align') in {'left','right'} else max(1, math.ceil(line_width))
+    ascent, descent = font.getmetrics()
+    baseline = (line_height - ascent - descent) / 2 + ascent
+    positions = []
+    ink_bounds = []
+    for line_number, line in enumerate(lines):
+        advance = measure.textlength(line, font=font)
+        align = layer.get('text_align', 'center')
+        x = logical_width - advance if align == 'right' else 0 if align == 'left' else (logical_width - advance) / 2
+        y = baseline + line_number * line_height
+        positions.append((x, y))
+        ink_bounds.append(measure.textbbox((x, y), line, font=font, anchor='ls'))
+    pad_x = max(2, math.ceil(-min(b[0] for b in ink_bounds)) + 2,
+                math.ceil(max(b[2] for b in ink_bounds) - logical_width) + 2)
+    pad_y = max(2, math.ceil(-min(b[1] for b in ink_bounds)) + 2,
+                math.ceil(max(b[3] for b in ink_bounds) - required_height) + 2)
+    bitmap_width = logical_width + 2 * pad_x
+    bitmap_height = required_height + 2 * pad_y
     bitmap = Image.new("RGBA", (bitmap_width, bitmap_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(bitmap)
     try:
         rgb = ImageColor.getrgb(str(layer.get("color", "white")))
     except ValueError as exc:
         raise ValueError("Text layer has invalid color") from exc
-    for line_number, line in enumerate(lines):
-        x=bitmap_width-measure.textlength(line,font=font)-2 if layer.get('text_align')=='right' else 2
-        draw.text((x, 2 + line_number * line_height), line, font=font, fill=(*rgb, 255))
+    for line, (x, y) in zip(lines, positions):
+        draw.text((x + pad_x, y + pad_y), line, font=font, fill=(*rgb, 255), anchor='ls')
     if layer.get('raster_blur'):
         radius=float(layer['raster_blur']);pad=math.ceil(radius*3)
         bitmap=ImageOps.expand(bitmap,border=pad,fill=(0,0,0,0)).filter(ImageFilter.GaussianBlur(radius))
@@ -433,13 +493,21 @@ def video_input(cmd: list[str], path: Path, kind: str, trim_start: float = 0, ca
         cmd += ["-i", str(path)]
 
 
+def render_parallelism(width: int, height: int, fps: int) -> tuple[int, int]:
+    """Bound concurrent FFmpeg work while keeping 1080p exports busy."""
+    if width * height <= 1920 * 1080 and fps <= 30 and (os.cpu_count() or 1) >= 8:
+        return 3, 2
+    return 2, 4
+
+
 def render_scene(scene: dict, project_file: Path, output: Path, work: Path, width: int, height: int, fps: int, index: int) -> None:
     kind = normalized_kind(scene)
     duration = number(scene.get("duration", scene.get("length")), f"scene {index} duration", 0.04)
     trim_start = number(scene.get("trim_start", scene.get("source_start", scene.get("offset", 0))), f"scene {index} trim_start")
     cache_stills = os.environ.get('MULTIBOT_STILL_CACHE','1')!='0'
     base_cached = False
-    cmd = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-filter_complex_threads", "4", "-y"]
+    _, filter_threads = render_parallelism(width, height, fps)
+    cmd = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-filter_complex_threads", str(filter_threads), "-y"]
     if kind in {"image", "video"}:
         source = resolve_source(source_value(scene), project_file, f"scene {index}")
         info = probe(source)
@@ -605,15 +673,30 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
         animated_opacity = any('opacity' in point for point in keyframes)
         speeds=sampled_motion_speeds(layer,end,fps,width,height) if lag else []
         safe_motion_gate=not lag or all(abs(speed-180)>1 for speed in speeds)
-        fast_alpha = (input_kind=='image' and (animated_opacity or lag) and safe_motion_gate and not (fade_in or fade_out or layer.get('join_in') or layer.get('join_out'))
-                      and os.environ.get('MULTIBOT_FAST_ALPHA','1')!='0')
+        transition_alpha=bool(fade_in or fade_out or layer.get('join_in') or layer.get('join_out'))
+        fast_alpha = (input_kind=='image' and (animated_opacity or lag or transition_alpha) and safe_motion_gate
+                      and os.environ.get('MULTIBOT_FAST_ALPHA','1')!='0'
+                      and (not transition_alpha or os.environ.get('MULTIBOT_FAST_TRANSITION_ALPHA','1')!='0'))
         if fast_alpha:
             # Alpha is uniform for a given frame. Change the mixer once per
             # frame instead of repeating the same keyframe math per pixel.
             target=f'colorchannelmixer@alpha_{layer_index}'
             def frame_alpha(frame):
-                value=scalar_value(keyframes,'opacity',opacity,frame/fps+elapsed,easing)
+                t=frame/fps
+                value=scalar_value(keyframes,'opacity',opacity,t+elapsed,easing)
                 if lag:value*=float(layer['trail_strength']) if speeds[frame]>=180 else 0
+                for side in ('in','out'):
+                    join=layer.get('join_'+side)
+                    if not join:continue
+                    mode=join['type'];incoming=side=='in'
+                    position=t+float(layer.get('global_offset',0));seam=float(join['seam']);length=float(join['duration'])
+                    if mode in transition_graphics.PRESETS and transition_graphics.PRESETS[mode].get('kind')!='cinematic':
+                        value*=float(position>=seam+length*.5) if incoming else float(position<seam+length*.5)
+                    elif mode in transition_graphics.PRESETS or mode=='crossfade' or mode.startswith('zoom_'):
+                        p=easing_value((position-seam)/length,'ease_in_out')
+                        value*=p if incoming else 1-p
+                if fade_in:value*=easing_value((t+elapsed)/fade_in,easing)
+                if fade_out:value*=easing_value((clip_length-t-elapsed)/fade_out,easing)
                 return value
             initial=frame_alpha(0)
             last=initial;commands=[]
@@ -641,7 +724,15 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
         next_label = f"v{layer_index + 1}"
         filters.append(f"[{current}][{overlay_label}]overlay=x='{x_expr}':y='{y_expr}':eval=frame:enable='between(t\\,{start:.6f}\\,{end:.6f})'[{next_label}]")
         current = next_label
-    cmd += ["-filter_complex", ";".join(filters), "-map", f"[{current}]", "-an", "-t", f"{duration:.6f}", "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)]
+    hardware = hardware_export(width, height, fps)
+    if hardware:
+        # A single color range is essential when scene files are joined: the
+        # container retains the first scene's HEVC parameters for all scenes.
+        filters.append(f"[{current}]scale=in_range=auto:out_range=tv[stable_output]")
+        current = "stable_output"
+    cmd += (["-filter_complex", ";".join(filters), "-map", f"[{current}]", "-an",
+             "-t", f"{duration:.6f}", "-r", str(fps)]
+            + video_encoder_options(hardware) + ["-movflags", "+faststart", str(output)])
     run_ffmpeg(cmd, "scene", index=index)
 
 
@@ -787,7 +878,13 @@ def compose(project: dict, project_file: Path, segments: list[Path], output: Pat
         filters.append("".join(f"[{label}]" for label in audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={expected_duration:.6f}[mix]")
     else:
         filters.append(f"[{audio_labels[0]}]atrim=duration={expected_duration:.6f}[mix]")
-    cmd += ["-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", "[mix]", "-t", f"{expected_duration:.6f}", "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+    hardware = hardware_export(width, height, fps)
+    if hardware:
+        filters.append(f"[{current}]scale=in_range=auto:out_range=tv[stable_output]")
+        current = "stable_output"
+    cmd += (["-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", "[mix]",
+             "-t", f"{expected_duration:.6f}", "-r", str(fps)]
+            + video_encoder_options(hardware) + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)])
     run_ffmpeg(cmd, "compose", duration=expected_duration)
 
 
@@ -935,6 +1032,16 @@ def timeline_plan(project: dict, project_file: Path, width: int, height: int, fp
     total = math.ceil(total * fps - 1e-8) / fps
     if total <= 0:
         raise ValueError("Timeline has no duration")
+    # Spoken audio keeps its real timestamps. Its fractional final sample can
+    # require one more output frame than the rounded visual boundary. Keep the
+    # final composition visible through that frame instead of rendering an
+    # empty background. Interior edit boundaries and longer gaps stay intact.
+    visual_end=max((clip['end'] for clip in visual),default=0)
+    if visual and 1e-8<total-visual_end<=1/fps+1e-8:
+        for clip in visual:
+            if abs(clip['end']-visual_end)<1e-8:
+                clip['end']=total
+                clip['duration']=total-clip['start']
     background = str(project.get("background", "#101114"))
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
         raise ValueError("Invalid timeline background color")
@@ -1051,6 +1158,17 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
         effect=visual_effects.PRESETS.get(clip.get('visual_effect'),{})
         if effect.get('blur'):layer['blur']=float(layer.get('blur',0))+effect['blur']
         if effect.get('shadow'):layer['shadow']=effect['shadow']
+        # A static, opaque shape covering the whole canvas is already the
+        # scene background. Avoid scaling and compositing it for every frame.
+        if (os.environ.get('MULTIBOT_FAST_BACKGROUND','1')!='0' and shape and not scene['layers']
+            and layer['x']==0 and layer['y']==0 and layer['width']==width and layer['height']==height
+            and layer['scale']==1 and layer['opacity']==1 and not layer['keyframes']
+            and not layer.get('join_in') and not layer.get('join_out')
+            and not any(layer.get(k) for k in ('fade_in','fade_out','slide_in','slide_out','blur','shadow','motion_blur','visual_effect'))
+            and layer.get('mask','none') in (None,'none')
+            and re.fullmatch(r'#[0-9a-fA-F]{6}',str(clip.get('color','')))):
+            scene['color']=clip['color']
+            continue
         if kind == "text":
             layer.update({"text": clip.get("text", ""), "color": clip.get("color", "white"),
                           "font_size": clip.get("font_size", 54)})
@@ -1198,6 +1316,21 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
     emit("validated", **summary)
     if validate_only:
         return summary
+    if universal:
+        import gpu_export
+        if gpu_export.available(project, width, height, fps):
+            try:
+                emit('gpu_start')
+                return gpu_export.render_gpu(sys.modules[__name__], project_file, output, project,
+                                             width, height, fps, total)
+            except Exception as error:
+                # The established renderer remains available if GPU setup,
+                # media decoding or verification fails. Cancellation raises
+                # KeyboardInterrupt and is never converted into a retry.
+                emit('gpu_fallback', message=str(error))
+    # Probe before launching concurrent scene workers so every segment uses
+    # the same codec and the same parameter set.
+    hardware_export(width, height, fps)
     output = output.expanduser().resolve()
     if output.suffix.lower() != ".mp4":
         raise ValueError("Output file must end in .mp4")
@@ -1215,13 +1348,14 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
             scenes_to_render = slices
         else:
             scenes_to_render = project["scenes"]
-        # Two independent segments can render concurrently. Prepare shared
+        # Independent segments can render concurrently. Prepare shared
         # transition assets on the main thread and isolate each worker's
         # raster cache, avoiding concurrent writes to the same temporary file.
         completed = {}
         next_index = 0
         completed_duration = 0.0
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix='studio-render') as pool:
+        workers, _ = render_parallelism(width, height, fps)
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='studio-render') as pool:
             pending = {}
             def submit_next():
                 nonlocal next_index
@@ -1239,7 +1373,7 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
                 future = pool.submit(render_scene, scene, project_file, segment, scene_work, width, height, fps, index)
                 pending[future] = (index, item, segment)
                 return True
-            while len(pending) < 2 and submit_next():
+            while len(pending) < workers and submit_next():
                 pass
             while pending:
                 done, _ = wait(pending, return_when=FIRST_COMPLETED)
@@ -1255,7 +1389,7 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
                         emit("scene_done", scene=index, total=len(scenes_to_render), rendered_duration=completed_duration, total_duration=total)
                     else:
                         emit("scene_done", scene=index, total=len(scenes_to_render), completed=len(completed))
-                while len(pending) < 2 and submit_next():
+                while len(pending) < workers and submit_next():
                     pass
         segments = [completed[index] for index in range(1, len(scenes_to_render)+1)]
         temporary_output = output.parent / f".{output.stem}.render-{os.getpid()}-{secrets.token_hex(4)}.mp4"

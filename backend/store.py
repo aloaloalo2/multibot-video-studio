@@ -438,7 +438,7 @@ def load_project_plan(pid: str) -> dict | None:
         raise StudioError("Файл плану недоступний", 404)
     if not path.is_file():
         raise StudioError("Файл плану не знайдено", 404)
-    return validate_plan(read_json(path))
+    return planner.upgrade_legacy_number_format(validate_plan(read_json(path)))
 
 
 def project_from_plan(cid: str, name: str, episode_path: str, plan: dict) -> dict:

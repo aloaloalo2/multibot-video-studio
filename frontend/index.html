@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MultiBot Video Studio</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261026">
-  <link rel="stylesheet" href="/style.css?v=20261027-modal-stacking-1">
+  <link rel="stylesheet" href="/style.css?v=20261027-preview-zoom-1">
   <link rel="stylesheet" href="/timeline.css?v=20261027-fonts-ruler-1">
-  <script defer src="/app.js?v=20261027-fonts-ruler-cloud-1"></script>
-  <script defer src="/universal.js?v=20261027-fonts-ruler-1"></script>
-  <script defer src="/groups.js?v=20261027-fonts-ruler-1"></script>
+  <script defer src="/app.js?v=20261027-preview-zoom-1"></script>
+  <script defer src="/universal.js?v=20261027-fast-open-1"></script>
+  <script defer src="/groups.js?v=20261027-fast-open-1"></script>
   <script defer src="/waveforms.js?v=20261026-scene-groups-1"></script>
   <script defer src="/graphics.js?v=20261027-fonts-ruler-2"></script>
   <script defer src="/gradient.js?v=20261026-gradient-1"></script>
@@ -45,6 +45,8 @@
       <nav id="project-views" class="project-views" aria-label="Розділи випуску" hidden><button id="view-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6m-6 4h6"/></svg>План ролика</button><button id="view-editor" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16M4 10h10M4 16h16M9 2v20"/><rect x="12" y="8" width="8" height="4" rx="1"/></svg>Монтаж</button></nav>
       <section id="project-plan" class="project-plan" aria-label="Карта ролика" hidden></section>
 
+      <section id="project-loading" class="channel-overview" hidden><p role="status" aria-live="polite">Завантаження проєкту...</p><button id="loading-go-home" class="secondary" type="button">На головну</button></section>
+
       <section id="channel-overview" class="channel-overview" aria-labelledby="overview-title">
         <div class="overview-top"><div><div class="overview-eyebrow">Випуски каналу</div><h1 id="overview-title">Оберіть канал</h1><p>Відкрий готовий проєкт або створи новий випуск.</p></div><div class="overview-actions"><button id="overview-channel-settings" class="secondary" type="button" disabled>⚙ Налаштування каналу</button><button id="overview-create" class="primary" type="button" disabled>＋ Новий випуск</button></div></div>
         <div id="overview-projects" class="overview-projects"></div>
@@ -62,8 +64,8 @@
         </section>
 
         <section class="panel preview-panel" aria-labelledby="preview-title">
-          <div class="panel-title"><h2 id="preview-title">Попередній перегляд</h2><span id="project-resolution">1920 × 1080</span></div>
-          <div id="preview-surface" class="preview-surface"><video id="preview-video" playsinline preload="metadata" hidden></video><img id="preview-image" alt="Поточний кадр" hidden><div id="preview-composition" hidden></div><div id="preview-placeholder">Оберіть кадр на таймлайні</div><div id="preview-overlay"></div></div>
+          <div class="panel-title"><h2 id="preview-title">Попередній перегляд</h2><div class="preview-tools"><span id="project-resolution">1920 × 1080</span><div class="preview-zoom" role="group" aria-label="Масштаб попереднього перегляду"><button id="preview-zoom-out" type="button" aria-label="Зменшити перегляд" title="Зменшити перегляд" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5M7 10h6"/></svg></button><button id="preview-zoom-reset" type="button" aria-label="Повернути масштаб перегляду 100%" title="Повернути масштаб 100%" disabled>100%</button><button id="preview-zoom-in" type="button" aria-label="Збільшити перегляд" title="Збільшити перегляд"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5M7 10h6M10 7v6"/></svg></button></div></div></div>
+          <div id="preview-surface" class="preview-surface"><div id="preview-content"><video id="preview-video" playsinline preload="metadata" hidden></video><img id="preview-image" alt="Поточний кадр" hidden><div id="preview-composition" hidden></div><div id="preview-placeholder">Оберіть кадр на таймлайні</div><div id="preview-overlay"></div></div></div>
           <div class="transport"><button id="play-pause" type="button" aria-label="Відтворити" disabled>▶</button><span id="time-current">00:00</span><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Позиція у відео" disabled><span id="time-total">00:00</span><button id="monitor-audio" type="button" aria-label="Увімкнути звук" aria-pressed="false"></button><label class="monitor-volume-control"><span class="sr-only">Гучність перегляду</span><input id="monitor-volume" type="range" min="0" max="100" value="0"><output id="monitor-volume-value">0%</output></label></div><div id="preview-audio-container" hidden></div>
         </section>
 

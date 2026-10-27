@@ -139,19 +139,20 @@ def assign_formats(times: list[tuple[float, float]], config: dict, hints: dict[i
     return result
 
 
-def speech_text(text):
-    return number_text.comparison_tokens(text)
+def speech_text(text, locale=None):
+    return number_text.comparison_tokens(text, locale)
 
 
 def validate_sentence_timings(script, timings, duration):
     if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("Для таймінгів потрібна виміряна тривалість аудіо")
     sentences = split_sentences(script)
+    locale = number_text.detect_locale(script)
     if not isinstance(timings, list) or len(timings) != len(sentences):
         raise ValueError("Потрібні таймінги кожної фрази сценарію з готової озвучки")
     result, previous = [], 0.0
     for number, (text, item) in enumerate(zip(sentences, timings), 1):
-        if not isinstance(item, dict) or speech_text(item.get("text", "")) != speech_text(text):
+        if not isinstance(item, dict) or speech_text(item.get("text", ""), locale) != speech_text(text, locale):
             raise ValueError(f"Текст фрази {number} не відповідає сценарію. Звірте розшифровку озвучки")
         start, end = item.get("start"), item.get("end")
         if any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end)) or start < previous or end <= start or end > duration + .001:
@@ -182,17 +183,18 @@ def validate_synced_plan(plan, duration):
     if not script or hashlib.sha256(script.encode("utf-8")).hexdigest() != plan.get("script_sha256"):
         raise ValueError("Сценарій змінився. Оновіть прив’язку до озвучки")
     spoken_script = plan.get("spoken_script", script)
+    locale = number_text.detect_locale(spoken_script)
     if plan.get("spoken_script_sha256") and hashlib.sha256(spoken_script.encode("utf-8")).hexdigest() != plan["spoken_script_sha256"]:
         raise ValueError("Озвучений оригінал сценарію змінився")
     if plan.get("number_format") == "digits_after_whisper" and number_text.to_digits(spoken_script) != script:
         raise ValueError("Числовий текст не відповідає озвученому сценарію")
     timings = validate_sentence_timings(spoken_script, timing.get("sentences"), duration)
     if plan.get("number_format") == "digits_after_whisper":
-        timings = [{**item, "text": number_text.to_digits(item["text"])} for item in timings]
+        timings = [{**item, "text": number_text.to_digits(item["text"], locale)} for item in timings]
     groups = [frame.get("sentences", []) for frame in plan["frames"]]
     expected_sentences = split_sentences(spoken_script)
     if plan.get("number_format") == "digits_after_whisper":
-        expected_sentences = [number_text.to_digits(text) for text in expected_sentences]
+        expected_sentences = [number_text.to_digits(text, locale) for text in expected_sentences]
     if [text for group in groups for text in group] != expected_sentences:
         raise ValueError("Кадри не покривають усі фрази сценарію")
     expected = aligned_times(groups, timings, duration)
@@ -203,22 +205,70 @@ def validate_synced_plan(plan, duration):
         offset += len(group)
 
 
+def upgrade_legacy_number_format(plan):
+    """Read older number formatting using the unchanged spoken source.
+
+    Only migrate a plan that exactly matches the previous formatter and whose
+    stored script, sentence timings and frame contents still agree. This does
+    not alter the saved plan, frame boundaries, formats or the montage.
+    """
+    if plan.get('number_format') != 'digits_after_whisper' or plan.get('timing', {}).get('status') != 'audio_synced':
+        return plan
+    spoken = plan.get('spoken_script', '')
+    script = plan.get('script', '')
+    if not spoken or not script or number_text.to_digits(spoken) == script:
+        return plan
+    if hashlib.sha256(spoken.encode('utf-8')).hexdigest() != plan.get('spoken_script_sha256') or hashlib.sha256(script.encode('utf-8')).hexdigest() != plan.get('script_sha256'):
+        return plan
+    import legacy_number_text
+    if legacy_number_text.to_digits(spoken) != script:
+        return plan
+    old_sentences = split_sentences(script)
+    spoken_sentences = split_sentences(spoken)
+    timing = plan.get('timing', {}).get('sentences', [])
+    frames = plan.get('frames', [])
+    if (len(old_sentences) != len(spoken_sentences) or len(timing) != len(old_sentences)
+        or [entry.get('text') for entry in timing] != old_sentences
+        or [text for frame in frames for text in frame.get('sentences', [])] != old_sentences
+        or [entry for frame in frames for entry in frame.get('sentence_timings', [])] != timing):
+        return plan
+    updated = copy.deepcopy(plan)
+    locale = number_text.detect_locale(spoken)
+    formatted = [number_text.to_digits(sentence, locale) for sentence in spoken_sentences]
+    updated['script'] = number_text.to_digits(spoken)
+    updated['script_sha256'] = hashlib.sha256(updated['script'].encode('utf-8')).hexdigest()
+    for item, text in zip(updated['timing']['sentences'], formatted):
+        item['text'] = text
+    offset = 0
+    for frame in updated['frames']:
+        count = len(frame['sentences'])
+        frame['sentences'] = formatted[offset:offset+count]
+        frame['sentence_timings'] = copy.deepcopy(updated['timing']['sentences'][offset:offset+count])
+        offset += count
+    try:
+        validate_synced_plan(updated, updated['timing']['audio']['duration'])
+    except (ValueError, TypeError, KeyError):
+        return plan
+    return updated
+
+
 def digitize_synced_plan(plan):
     """Format actual post-ASR text while retaining the immutable spoken source."""
     if plan.get("timing", {}).get("status") != "audio_synced":
         return plan
     plan = copy.deepcopy(plan)
     source = plan["script"]
+    locale = number_text.detect_locale(source)
     plan["spoken_script"] = source
     plan["spoken_script_sha256"] = hashlib.sha256(source.encode("utf-8")).hexdigest()
     plan["number_format"] = "digits_after_whisper"
     plan["script"] = number_text.to_digits(source)
     plan["script_sha256"] = hashlib.sha256(plan["script"].encode("utf-8")).hexdigest()
     for item in plan["timing"]["sentences"]:
-        item["text"] = number_text.to_digits(item["text"])
+        item["text"] = number_text.to_digits(item["text"], locale)
     for frame in plan["frames"]:
-        frame["sentences"] = [number_text.to_digits(text) for text in frame["sentences"]]
-        frame["sentence_timings"] = [{**item, "text": number_text.to_digits(item["text"])} for item in frame["sentence_timings"]]
+        frame["sentences"] = [number_text.to_digits(text, locale) for text in frame["sentences"]]
+        frame["sentence_timings"] = [{**item, "text": number_text.to_digits(item["text"], locale)} for item in frame["sentence_timings"]]
     return plan
 
 

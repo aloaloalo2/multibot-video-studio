@@ -163,13 +163,13 @@ function renderUniversalPreview(){
     node.querySelectorAll('video').forEach(video=>video.pause());node._trails?.forEach(trail=>trail.node.remove());node.remove();state.previewNodes.delete(id);
   }
   for(const clip of prepared){
-      const sourceSignature=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type]);
+      const asset=assetById(clip.asset_id),url=asset?.preview_url || asset?.media_url || asset?.url;
+      const sourceSignature=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,url,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type]);
       let existing=state.previewNodes.get(clip.id);
       if(existing&&existing._sourceSignature!==sourceSignature){existing.querySelectorAll('video').forEach(video=>video.pause());existing._trails?.forEach(trail=>trail.node.remove());existing.remove();state.previewNodes.delete(clip.id);existing=null;}
       if(!existing){
       const wrapper=document.createElement('div');wrapper.className='composition-clip';wrapper.dataset.clipId=clip.id;
       wrapper._sourceSignature=sourceSignature;
-      const asset=assetById(clip.asset_id),url=asset?.preview_url || asset?.media_url || asset?.url;
       let element;
       const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
       if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}

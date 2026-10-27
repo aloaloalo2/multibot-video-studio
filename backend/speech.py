@@ -16,24 +16,25 @@ _MODEL = None
 MODEL_LOCK = threading.Lock()
 
 
-def tokens(text):
-    return number_text.comparison_tokens(text)
+def tokens(text, locale=None):
+    return number_text.comparison_tokens(text, locale)
 
 
 def compare_script(script, words, duration):
     """Use only real ASR word boundaries; missing boundaries are never interpolated."""
     sentences = planner.split_sentences(script)
+    locale = number_text.detect_locale(script)
     reference, ranges = [], []
     for sentence in sentences:
         start = len(reference)
-        reference.extend(tokens(sentence))
+        reference.extend(tokens(sentence, locale))
         ranges.append((start, len(reference)))
     heard_text = " ".join(word["text"] for word in words)
     starts, ends, offset = [], [], 0
     for word in words:
         starts.append(offset); offset += len(word["text"]); ends.append(offset); offset += 1
     heard, source_indexes, source_end_indexes = [], [], []
-    for token, start, end in number_text.word_spans(heard_text):
+    for token, start, end in number_text.word_spans(heard_text, locale):
         heard.append(token)
         source_indexes.append(max(0, bisect.bisect_right(starts, start) - 1))
         source_end_indexes.append(min(len(words) - 1, bisect.bisect_left(ends, end)))
@@ -68,12 +69,12 @@ def compare_script(script, words, duration):
             confidence = sum(probabilities) / len(probabilities) if probabilities else 0
             if probabilities and min(probabilities) < .5:
                 issues.append("low_recognition_confidence")
-            recognized = number_text.to_digits(" ".join(word["text"] for word in words[source_indexes[min(matched)]:source_end_indexes[max(matched)] + 1])) if matched else ""
+            recognized = number_text.to_digits(" ".join(word["text"] for word in words[source_indexes[min(matched)]:source_end_indexes[max(matched)] + 1]), locale) if matched else ""
         else:
             confidence, recognized = 0, ""
         if finish is not None and math.isfinite(finish):
             previous_end = max(previous_end, finish)
-        phrases.append({"number": index + 1, "text": number_text.to_digits(sentence), "spoken_text": sentence, "recognized": recognized,
+        phrases.append({"number": index + 1, "text": number_text.to_digits(sentence, locale), "spoken_text": sentence, "recognized": recognized,
                         "start": begin, "end": finish, "matched_words": len(matched), "words": end - start,
                         "recognition_confidence": round(confidence, 4), "issues": issues})
     ready = bool(phrases) and not differences and all(not phrase["issues"] for phrase in phrases)

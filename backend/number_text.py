@@ -50,6 +50,8 @@ for value, words in [(1000,"тысяча тысячи тысяч тысячу т
                      (1000000000,"миллиард миллиарда миллиардов billion billions milliarde milliarden мільярд мільярда мільярдів")]: add(value,words,SCALE)
 
 ORDINAL = {}
+RU_ORDINAL = {}
+UK_ORDINAL = {}
 for value, word in enumerate("first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth sixteenth seventeenth eighteenth nineteenth twentieth".split(),1):
     suffix = "th" if 10 <= value % 100 <= 20 else {1:"st",2:"nd",3:"rd"}.get(value%10,"th")
     ORDINAL[word] = (value,suffix)
@@ -57,9 +59,9 @@ for value, word in [(30,"thirtieth"),(40,"fortieth"),(50,"fiftieth"),(60,"sixtie
 RU_ROOTS={"перв":1,"втор":2,"трет":3,"четверт":4,"пят":5,"шест":6,"седьм":7,"восьм":8,"девят":9,"десят":10,"одиннадцат":11,"двенадцат":12,"тринадцат":13,"четырнадцат":14,"пятнадцат":15,"шестнадцат":16,"семнадцат":17,"восемнадцат":18,"девятнадцат":19,"двадцат":20,"тридцат":30,"сороков":40,"пятидесят":50,"шестидесят":60,"семидесят":70,"восьмидесят":80,"девяност":90,"сот":100,"тысячн":1000}
 ENDINGS={"ый":"й","ий":"й","ой":"й","ая":"я","ое":"е","ые":"е","ую":"ю","ого":"го","ому":"му","ым":"м","ом":"м","ых":"х","ыми":"ми","ей":"й","ья":"я","ье":"е","ью":"ю","ьего":"го","ьему":"му","ьим":"м","ьем":"м","ьих":"х","ьими":"ми"}
 for root,value in RU_ROOTS.items():
-    for ending,suffix in ENDINGS.items(): ORDINAL[root+ending]=(value,"-"+suffix)
+    for ending,suffix in ENDINGS.items(): RU_ORDINAL[root+ending]=(value,"-"+suffix)
 for value,root in [(1,"перш"),(2,"друг"),(3,"трет"),(4,"четверт"),(5,"п'ят"),(6,"шост"),(7,"сьом"),(8,"восьм"),(9,"дев'ят"),(10,"десят")]:
-    for ending,suffix in {"ий":"й","ій":"й","а":"а","я":"я","е":"е","є":"є","у":"у","ю":"ю","ого":"го","ому":"му","им":"м","ім":"м","ої":"ї","ій":"й","их":"х"}.items(): ORDINAL[root+ending]=(value,"-"+suffix)
+    for ending,suffix in {"ий":"й","ій":"й","а":"а","я":"я","е":"е","є":"є","у":"у","ю":"ю","ого":"го","ому":"му","им":"м","ім":"м","ої":"ї","ій":"й","их":"х"}.items(): UK_ORDINAL[root+ending]=(value,"-"+suffix)
 DENOM = {}
 for value,words in [(2,"половина половины половину половиной половини half halves hälfte halb halbe halben"),
     (3,"треть трети третьих третью третей третина третини третіх third thirds drittel"),
@@ -86,7 +88,9 @@ def german_value(word):
     return None
 
 
-def ordinal(word):
+def ordinal(word,locale=None):
+    if locale == "ru":return RU_ORDINAL.get(word)
+    if locale == "uk":return UK_ORDINAL.get(word)
     if word in ORDINAL:return ORDINAL[word]
     if word.startswith("erst"):return (1,".") if word[4:] in ("","e","en","er","es","em") else None
     if word.startswith("zweit"):return (2,".") if word[5:] in ("","e","en","er","es","em") else None
@@ -120,9 +124,11 @@ def replacements(text,locale=None):
     while i<len(matches):
         start=i;word=fold(matches[i].group());j=i;group=0;total=0;last=None;seen=False;suffix=None
         # Explicit half-unit compounds retain their physical meaning.
-        halves={"полминуты":"минуты","полчаса":"часа","полграмма":"грамма","полкилограмма":"килограмма","поллитра":"литра","полстакана":"стакана"}
+        halves={"полминуты":"минуты","полчаса":"часа","полгода":"года","полугода":"года","полграмма":"грамма","полкилограмма":"килограмма","поллитра":"литра","полстакана":"стакана"}
         if word in halves:
             result.append((matches[i].start(),matches[i].end(),written(Fraction(1,2),locale)+" "+halves[word]));i+=1;continue
+        if locale == "ru" and word == "сотни" and i and fold(matches[i-1].group()) in {"до","около","почти"}:
+            result.append((matches[i].start(),matches[i].end(),"100"));i+=1;continue
         if word in {"полтора","полторы","полутора","півтора","півтори"}:
             result.append((matches[i].start(),matches[i].end(),written(Fraction(3,2),locale)));i+=1;continue
         multiple={"вдвое":2,"втрое":3,"вчетверо":4,"впятеро":5,"удвічі":2,"вдвічі":2,"утричі":3,"втричі":3}
@@ -136,6 +142,13 @@ def replacements(text,locale=None):
                 j+=1;continue
             value=CARDINAL.get(current)
             scale=SCALE.get(current)
+            # Russian «семью» can mean a family rather than the number seven.
+            # Only treat this ambiguous form as a number in an instrumental
+            # phrase introduced by a matching preposition.
+            if locale == "ru" and current == "семью":
+                previous=fold(matches[j-1].group()) if j else ""
+                if previous not in {"с","со","между","перед","над","за"}:
+                    break
             if value is None and scale is None:value=german_value(current)
             # Articles are not numbers outside a numeric quantity or compound.
             if j==start and current in {"ein","eine","einen","einem","einer","eines"} and locale=="de":
@@ -173,11 +186,12 @@ def replacements(text,locale=None):
             if denominator:
                 number=Fraction(number,denominator);j+=1
             else:
-                ending=ordinal(fold(matches[j].group()))
-                if ending and number>=20 and ending[0]<10:
+                ending=ordinal(fold(matches[j].group()),locale)
+                if ending and ((number>=20 and number%10==0 and ending[0]<10)
+                               or (number>=100 and number%100==0 and ending[0]<100)):
                     number+=ending[0];suffix=ending[1];j+=1
         if not seen:
-            value=ordinal(word)
+            value=ordinal(word,locale)
             if value:
                 number,suffix=value;seen=True;j=start+1
             elif word in {"half","половина","половину","треть","четверть","чверть"}:
@@ -197,9 +211,9 @@ def to_digits(text,locale=None):
     return text
 
 
-def word_spans(text):
+def word_spans(text,locale=None):
     """Normalized number tokens with spans in the original string, for ASR timing."""
-    changes=replacements(text);segments=[];cursor=0
+    changes=replacements(text,locale);segments=[];cursor=0
     for start,end,value in changes:
         if start>cursor:segments.append((text[cursor:start],cursor,None))
         segments.append((value,start,end));cursor=end
@@ -214,5 +228,5 @@ def word_spans(text):
     return result
 
 
-def comparison_tokens(text):
-    return [token for token,_,_ in word_spans(str(text))]
+def comparison_tokens(text,locale=None):
+    return [token for token,_,_ in word_spans(str(text),locale)]

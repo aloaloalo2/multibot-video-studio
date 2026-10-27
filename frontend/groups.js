@@ -16,7 +16,14 @@ function enableLayerReorder(heading,layer){
   heading.addEventListener('dragleave',event=>{if(!heading.contains(event.relatedTarget))heading.classList.remove('layer-drop-above','layer-drop-below');});
   heading.addEventListener('drop',async event=>{const id=event.dataTransfer.getData('application/x-videostudio-layer');if(!id)return;event.preventDefault();event.stopPropagation();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.remove('layer-drop-above','layer-drop-below');if(id===layer.id)return;const order=layers().map(l=>l.id).filter(x=>x!==id),target=order.indexOf(layer.id);if(target<0)return;const index=Math.min(order.length,target+(above?1:0));try{await action('move_layer',{layer_id:id,to_index:index},'Порядок шарів збережено.');}catch(error){status(error.message,true);}});
 }
-function groupMembers(group){const ids=new Set(group.clip_ids);return universalClips().filter(c=>ids.has(c.id));}
+let groupedRenderIndex=null;
+function groupMembers(group){
+  const ids=new Set(group.clip_ids);
+  if(!groupedRenderIndex)return universalClips().filter(c=>ids.has(c.id));
+  const matches=[];
+  for(const id of ids)for(const item of groupedRenderIndex.get(id) || [])matches.push(item);
+  return matches.sort((a,b)=>a.order-b.order).map(item=>item.clip);
+}
 function closeStackMenu(){document.querySelector('.stack-context-menu')?.remove();}
 function stackOpen(entry){clearTransitionSelection();if(entry.ref==='scenes'){state.selectedStack='scenes';state.selected=null;state.selectedGroup=null;renderInspector();return;}if(entry.clip){state.selectedGroup=null;selectUniversalClip(entry.clip.id);return;}const group=entry.groups.find(g=>{const b=groupBounds(g);return state.playhead>=b.start&&state.playhead<b.end;}) || entry.groups[0];if(group)expandFrameGroup(group);}
 function addStackTools(heading,entry){
@@ -99,6 +106,13 @@ function groupLane(title,groups,ref){
 }
 
 function renderGroupedTimeline(){
+  const previousIndex=groupedRenderIndex;
+  groupedRenderIndex=new Map();
+  universalClips().forEach((clip,order)=>{const entries=groupedRenderIndex.get(clip.id) || [];entries.push({clip,order});groupedRenderIndex.set(clip.id,entries);});
+  try{return renderGroupedTimelineWithIndex();}finally{groupedRenderIndex=previousIndex;}
+}
+
+function renderGroupedTimelineWithIndex(){
   const ruler=$('time-ruler'),tracks=$('timeline-tracks');ruler.replaceChildren();tracks.replaceChildren();ruler.className='time-ruler universal-ruler';
   const label=document.createElement('div');label.className='track-label';ruler.append(label);
   const marks=document.createElement('div');marks.className='time-ruler-marks';marks.style.width=timelineWidth()+'px';

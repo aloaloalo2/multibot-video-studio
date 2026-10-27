@@ -98,6 +98,17 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-meta time{white-space:nowrap;font-variant-numeric:tabular-nums}
 .project-card .project-status{font-size:11px;color:#35c838;background:#21352a;padding:4px 7px;border-radius:6px;align-self:flex-start}
 .project-card .project-status.draft{color:#f0b429;background:#372f1e}
+.export-spinner{display:inline-block;width:1em;height:1em;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:studio-export-spin .8s linear infinite}
+@keyframes studio-export-spin{to{transform:rotate(360deg)}}
+.export-busy{display:inline-flex;align-items:center;justify-content:center;gap:9px}
+.project-card.exporting{border-color:#f0b429}
+.project-export-state{width:100%;margin:6px 0 18px;color:#f0b429;font-size:12px}
+.project-export-state[hidden]{display:none}
+.project-export-label{display:flex;align-items:center;gap:7px}
+.project-export-label strong{margin-left:auto;font-variant-numeric:tabular-nums}
+.project-export-progress{display:block;height:4px;border-radius:4px;background:#39342a;margin-top:9px;overflow:hidden}
+.project-export-progress>span{display:block;height:100%;background:#f0b429;transition:width .25s}
+@media(prefers-reduced-motion:reduce){.export-spinner{animation:none}}
 .overview-empty{padding:35px;border:1px dashed #444449;border-radius:12px;color:#a9abb2;grid-column:1/-1;text-align:center}
 .overview-empty strong{display:block;font-size:16px;color:#f1f1f2;margin-bottom:5px}
 .project-views{display:flex;gap:8px;border-bottom:1px solid #303034;padding:10px 17px;flex:none}
@@ -234,7 +245,21 @@ button.danger:hover:not(:disabled){background:#523034}
 .transition-library .transition-chip{min-height:55px;flex:none;text-align:left;font-size:13px;padding:12px}
 .transition-chip:hover,.transition-chip:focus-visible{border-color:#f0b429}
 .preview-panel{min-height:0}
+.preview-panel>.panel-title{flex-wrap:wrap}
+.preview-panel>.panel-title h2{flex:1;min-width:0}
+.preview-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto}
+.preview-zoom{display:inline-flex;align-items:center;border:1px solid #3f4046;border-radius:7px;overflow:hidden;background:#24252a;flex:none}
+.preview-zoom button{display:grid;place-items:center;min-width:29px;height:27px;padding:3px 6px;border:0;border-radius:0;background:transparent;color:#e1e3e8}
+.preview-zoom button+button{border-left:1px solid #3f4046}
+.preview-zoom button:hover:enabled{background:#3a3528;color:#ffcf59}
+.preview-zoom button:focus-visible{outline:2px solid #f0b429;outline-offset:-2px}
+.preview-zoom button:disabled{color:#73767f;cursor:default;opacity:.55}
+.preview-zoom svg{width:17px;height:17px}
+#preview-zoom-reset{min-width:46px;font-size:11px;font-variant-numeric:tabular-nums}
 .preview-surface{margin:12px;position:relative;isolation:isolate;background:#0a0b0c;border-radius:7px;aspect-ratio:var(--preview-ratio,16/9);width:calc(100% - 24px);flex:none;display:grid;place-items:center;overflow:hidden}
+#preview-content{position:absolute;inset:0;display:grid;place-items:center;transform-origin:center}
+.preview-surface.is-zoomed{cursor:grab;touch-action:none;user-select:none}
+.preview-surface.is-panning{cursor:grabbing}
 .preview-surface img,.preview-surface video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 #preview-placeholder{color:#82858c;text-align:center;padding:15px}
 #preview-overlay{position:absolute;left:7%;right:7%;bottom:7%;color:white;text-shadow:0 2px 8px #000;background:#0008;border-radius:4px;padding:4px 7px;display:none;max-width:max-content}

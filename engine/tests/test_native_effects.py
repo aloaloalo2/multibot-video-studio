@@ -5,6 +5,7 @@ from unittest.mock import patch
 from pathlib import Path
 from PIL import Image
 import numpy as np
+os.environ.setdefault('MULTIBOT_GPU_EXPORT','0')
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 import gradient_background
@@ -12,6 +13,45 @@ import transition_graphics
 import render as native_render
 
 class NativeEffects(unittest.TestCase):
+ def test_render_parallelism_is_bounded_for_large_projects_and_small_machines(self):
+  with patch.object(native_render.os, 'cpu_count', return_value=10):
+   self.assertEqual(native_render.render_parallelism(1920,1080,25),(3,2))
+   self.assertEqual(native_render.render_parallelism(3840,2160,25),(2,4))
+   self.assertEqual(native_render.render_parallelism(1920,1080,60),(2,4))
+  with patch.object(native_render.os, 'cpu_count', return_value=4):
+   self.assertEqual(native_render.render_parallelism(1920,1080,25),(2,4))
+ def test_static_background_optimization_preserves_each_frame(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);source=root/'overlay.png';Image.new('RGBA',(160,90),(200,110,40,160)).save(source)
+   backgrounds=[dict(type='animation',content_type='shape',color='#18191c',start=0,duration=1.524,x=.5,y=.5,width=1.,height=1.),
+                dict(type='animation',content_type='shape',color='#405976',start=1.524,duration=.476,x=.5,y=.5,width=1.,height=1.)]
+   overlay=dict(type='image',source=str(source),start=0,duration=2.,x=.5,y=.5,width=.75,height=.75,
+                keyframes=[dict(time=0,x=.45,scale=.8),dict(time=2,x=.55,scale=1.1)])
+   project=dict(width=320,height=180,fps=25,duration=2,timeline_layers=[dict(clips=backgrounds),dict(clips=[overlay])])
+   manifest=root/'project.json';manifest.write_text(json.dumps(project));frames=[]
+   for fast in ('0','1'):
+    out=root/(fast+'.mp4');env={**os.environ,'MULTIBOT_FAST_BACKGROUND':fast}
+    result=subprocess.run([sys.executable,str(ROOT/'render.py'),'--project',str(manifest),'--output',str(out)],env=env,capture_output=True,text=True,timeout=60)
+    self.assertEqual(result.returncode,0,result.stdout[-2000:]+result.stderr[-2000:])
+    raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(out),'-map','0:v','-fps_mode','passthrough','-f','rawvideo','-pix_fmt','rgb24','pipe:1'])
+    frames.append(np.frombuffer(raw,dtype=np.uint8).astype(np.int16))
+   self.assertEqual(len(frames[0]),320*180*3*50)
+   self.assertEqual(len(frames[1]),len(frames[0]))
+   diff=np.abs(frames[0]-frames[1]);self.assertLess(float(diff.mean()),2);self.assertLess(float(np.quantile(diff,.99)),8)
+
+ def test_background_optimization_keeps_transparent_or_moving_shapes(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);project_file=root/'project.json'
+   base=dict(type='animation',content_type='shape',color='#18191c',start=0,duration=1,x=.5,y=.5,width=1.,height=1.)
+   variants=[{'opacity':.5},{'width':.9},{'mask':'rounded'},
+             {'keyframes':[{'time':0,'x':.5},{'time':1,'x':.6}]}]
+   for variant in variants:
+    project=dict(width=320,height=180,fps=25,duration=1,timeline_layers=[dict(clips=[{**base,**variant}])])
+    project_file.write_text(json.dumps(project));visual,_,_=native_render.timeline_plan(project,project_file,320,180,25)
+    scene=native_render.timeline_scene(0,1,visual,root,320,180,'#101114')
+    self.assertEqual(scene['color'],'#101114',variant)
+    self.assertEqual(len(scene['layers']),1,variant)
+
  def test_export_rejects_video_that_ends_before_audio(self):
   good={'streams':[{'codec_type':'video','duration':'2.0','nb_frames':'50'},{'codec_type':'audio','duration':'2.0'}]}
   native_render.verify_output_streams(good,2,25)
@@ -54,6 +94,43 @@ class NativeEffects(unittest.TestCase):
     result=subprocess.run([sys.executable,str(ROOT/'render.py'),'--project',str(manifest),'--output',str(out)],env=env,capture_output=True,text=True,timeout=60)
     self.assertEqual(result.returncode,0,result.stdout[-2000:]+result.stderr[-2000:])
     raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(out),'-map','0:v','-f','rawvideo','-pix_fmt','rgb24','pipe:1'])
+    frames.append(np.frombuffer(raw,dtype=np.uint8).astype(np.int16))
+   self.assertEqual(len(frames[0]),320*180*3*30)
+   diff=np.abs(frames[0]-frames[1]);self.assertLess(float(diff.mean()),1.0);self.assertLess(float(np.quantile(diff,.99)),10)
+ def test_fast_transition_and_fade_alpha_matches_reference_on_every_frame(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);source=root/'transparent.png';Image.new('RGBA',(128,72),(240,70,30,170)).save(source)
+   for variant in ('crossfade','zoom_in','cinematic_warm','graphic','fade'):
+    scene=dict(type='color',color='#18375a',duration=1.2,layers=[dict(type='image',source=str(source),x=32,y=18,width=256,height=144,position_units='pixels',duration=1.2,global_offset=0,clip_duration=1.2,keyframe_offset=0,opacity=.8,easing='ease_in_out',keyframes=[dict(time=0,opacity=.3),dict(time=1.2,opacity=.9)])])
+    layer=scene['layers'][0]
+    if variant=='fade':layer.update(fade_in=.3,fade_out=.4)
+    else:
+     style=variant
+     if style=='cinematic_warm':
+      style=next(k for k,v in transition_graphics.PRESETS.items() if v.get('kind')=='cinematic')
+     elif style=='graphic':
+      style=next(k for k,v in transition_graphics.PRESETS.items() if v.get('kind')!='cinematic')
+     layer['join_in']=dict(type=style,seam=.08,duration=.4)
+     layer['join_out']=dict(type=style,seam=.72,duration=.4)
+    frames=[]
+    for fast in ('0','1'):
+     out=root/(variant+fast+'.mp4');work=root/(variant+fast);work.mkdir()
+     with patch.dict(os.environ,{'MULTIBOT_FAST_ALPHA':fast}):
+      native_render.render_scene(scene,root/'project.json',out,work,320,180,25,1)
+     raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(out),'-map','0:v','-fps_mode','passthrough','-f','rawvideo','-pix_fmt','rgb24','pipe:1'])
+     frames.append(np.frombuffer(raw,dtype=np.uint8).astype(np.int16))
+    self.assertEqual(len(frames[0]),320*180*3*30,variant)
+    diff=np.abs(frames[0]-frames[1]);self.assertLess(float(diff.mean()),1.0,variant);self.assertLess(float(np.quantile(diff,.99)),10,variant)
+ def test_fast_video_alpha_matches_reference_after_trim(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);source=root/'source.mp4'
+   subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=s=160x90:r=25:d=2','-c:v','libx264','-pix_fmt','yuv420p',str(source)],check=True)
+   layer=dict(type='video',source=str(source),trim_start=.4,x=0,y=0,width=320,height=180,position_units='pixels',duration=1.2,global_offset=0,clip_duration=1.2,keyframe_offset=0,opacity=.8,easing='ease_in_out',keyframes=[dict(time=0,opacity=.3),dict(time=1.2,opacity=.9)],join_in=dict(type='zoom_in',seam=.08,duration=.4),fade_out=.3)
+   scene=dict(type='color',color='#18375a',duration=1.2,layers=[layer]);frames=[]
+   for fast in ('0','1'):
+    out=root/(fast+'.mp4');work=root/fast;work.mkdir()
+    with patch.dict(os.environ,{'MULTIBOT_FAST_ALPHA':fast}):native_render.render_scene(scene,root/'project.json',out,work,320,180,25,1)
+    raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(out),'-map','0:v','-fps_mode','passthrough','-f','rawvideo','-pix_fmt','rgb24','pipe:1'])
     frames.append(np.frombuffer(raw,dtype=np.uint8).astype(np.int16))
    self.assertEqual(len(frames[0]),320*180*3*30)
    diff=np.abs(frames[0]-frames[1]);self.assertLess(float(diff.mean()),1.0);self.assertLess(float(np.quantile(diff,.99)),10)

@@ -13,6 +13,58 @@ class ExportControlTest(unittest.TestCase):
     tearDownClass = classmethod(support.BackendTest.tearDownClass.__func__)
     request = support.BackendTest.request
 
+    @unittest.skipUnless(__import__('sys').platform=='darwin' and __import__('os').uname().machine=='arm64'
+                         and __import__('shutil').which('swiftc'), 'Apple Silicon GPU required')
+    def test_gpu_export_runs_through_the_studio_job(self):
+        import os
+        project = store.create_project(store.channel_id(self.channel), 'GPU studio export')
+        manifest = {'width':320,'height':180,'fps':25,'duration':1,'layer_mode':'item',
+                    'timeline_layers':[{'clips':[{'type':'animation','content_type':'shape','color':'#a65b24',
+                                                  'start':0,'duration':1,'x':.5,'y':.5,'width':1.,'height':1.}]}]}
+        ready = {'stage':'audio_synced','plan_ready':True,'export_ready':True,'reason':''}
+        with patch.dict(os.environ,{'MULTIBOT_GPU_EXPORT':'1'}), \
+             patch.object(store,'plan_readiness',return_value=ready), \
+             patch.object(app,'normalize_for_engine',return_value=manifest):
+            job=app.start_export(project,True)
+            deadline=time.monotonic()+40
+            while time.monotonic()<deadline:
+                job=app.load_job(job['id'])
+                if job['status'] in {'complete','failed','cancelled'}:break
+                time.sleep(.05)
+            self.assertEqual(job['status'],'complete',job)
+            self.assertEqual(job.get('render_mode'),'gpu')
+            self.assertFalse(job.get('gpu_fallback'))
+            self.assertEqual(job['progress'],100)
+            self.assertGreater(Path(job['output_path']).stat().st_size,1024)
+
+    def test_gpu_fallback_resets_progress_and_keeps_project_locked(self):
+        project = store.create_project(store.channel_id(self.channel), 'GPU fallback')
+        script = Path(self.tmp.name) / 'gpu_fallback_engine.py'
+        script.write_text('import json,time\n'
+                          'print(json.dumps({"stage":"gpu_start"}),flush=True)\n'
+                          'print(json.dumps({"stage":"scene_done","rendered_duration":.8,"total_duration":1}),flush=True)\n'
+                          'print(json.dumps({"stage":"gpu_fallback","message":"test"}),flush=True)\n'
+                          'time.sleep(30)\n')
+        ready = {'stage':'audio_synced', 'plan_ready':True, 'export_ready':True, 'reason':''}
+        with patch.object(app,'ENGINE_SCRIPT',script), patch.object(store,'plan_readiness',return_value=ready), \
+             patch.object(app,'normalize_for_engine',return_value={'timeline_layers':[]}):
+            job = app.start_export(project,True)
+            deadline=time.monotonic()+5
+            while time.monotonic()<deadline:
+                job=app.load_job(job['id'])
+                if job.get('gpu_fallback'):break
+                time.sleep(.02)
+            self.assertTrue(job.get('gpu_fallback'))
+            self.assertEqual(job.get('gpu_fallback_reason'),'test')
+            self.assertEqual(job['render_mode'],'standard')
+            self.assertEqual(job['progress'],0)
+            self.assertIsNone(job['remaining_seconds'])
+            self.assertEqual(self.request('/api/projects/'+project['id']+'/actions','POST',{'type':'undo'})[0],423)
+            app.cancel_export(job['id'])
+            deadline=time.monotonic()+5
+            while time.monotonic()<deadline and app.load_job(job['id'])['status']!='cancelled':time.sleep(.02)
+            self.assertEqual(app.load_job(job['id'])['status'],'cancelled')
+
     def test_export_reports_cloud_material_progress(self):
         project = store.create_project(store.channel_id(self.channel), 'Cloud preparation')
         script = Path(self.tmp.name) / 'cloud_engine.py'
@@ -87,6 +139,7 @@ class ExportControlTest(unittest.TestCase):
             self.assertEqual(code, 202)
             self.assertEqual(duplicate['job']['id'], jid)
             self.assertEqual(self.request('/api/projects/'+pid+'/export/active')[1]['job']['id'], jid)
+            self.assertIn(jid,[item['id'] for item in self.request('/api/exports/active')[1]['jobs']])
             self.assertEqual(self.request('/api/projects/'+pid+'/actions', 'POST', {'type':'undo'})[0], 423)
             childfile = store.project_dir(pid) / 'renders' / (jid+'.childpid')
             deadline = time.monotonic() + 5
@@ -104,6 +157,7 @@ class ExportControlTest(unittest.TestCase):
             self.assertEqual(job['status'], 'cancelled')
             self.assertIsNone(job['output_path'])
             self.assertIsNone(self.request('/api/projects/'+pid+'/export/active')[1]['job'])
+            self.assertNotIn(jid,[item['id'] for item in self.request('/api/exports/active')[1]['jobs']])
             self.assertNotEqual(self.request('/api/projects/'+pid+'/actions', 'POST', {'type':'undo'})[0], 423)
             self.assertFalse((store.project_dir(pid)/'renders'/(jid+'.mp4')).exists())
             # A terminated child can briefly remain as a zombie until reaped by its parent.

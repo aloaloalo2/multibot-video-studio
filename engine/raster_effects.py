@@ -14,9 +14,15 @@ def decorate(path,width,height,style,work):
     fitted=source.resize((width,height),Image.Resampling.LANCZOS) if style.get('stretch') else ImageOps.fit(source,(width,height),method=Image.Resampling.LANCZOS) if mask=='circle' else ImageOps.contain(source,(width,height),method=Image.Resampling.LANCZOS)
     content=Image.new('RGBA',(width,height));content.alpha_composite(fitted,((width-fitted.width)//2,(height-fitted.height)//2))
     if mask!='none':
-        alpha=Image.new('L',(width,height));draw=ImageDraw.Draw(alpha)
-        if mask=='circle':draw.ellipse((0,0,width-1,height-1),fill=255)
-        else:draw.rounded_rectangle((0,0,width-1,height-1),radius=float(style.get('corner_radius',8)),fill=255)
+        # CSS clips the circular edge with fractional coverage. A mask drawn
+        # directly at 80x80 had binary, visibly jagged steps in exported badges.
+        # Supersample small masks while bounding memory for large canvases.
+        sampling=max(1,min(4,4096//max(width,height)))
+        alpha=Image.new('L',(width*sampling,height*sampling));draw=ImageDraw.Draw(alpha)
+        bounds=(0,0,alpha.width-1,alpha.height-1)
+        if mask=='circle':draw.ellipse(bounds,fill=255)
+        else:draw.rounded_rectangle(bounds,radius=float(style.get('corner_radius',8))*sampling,fill=255)
+        if sampling>1:alpha=alpha.resize((width,height),Image.Resampling.LANCZOS)
         content.putalpha(ImageChops.multiply(content.getchannel('A'),alpha))
     out=Image.new('RGBA',(width+2*pad,height+2*pad))
     if shadow:

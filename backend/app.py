@@ -360,6 +360,17 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                 elif event.get('stage') == 'validated':
                     progress=0
                     stage='rendering'
+                elif event.get('stage') == 'gpu_start':
+                    progress=0
+                    stage='rendering'
+                    job['render_mode']='gpu'
+                elif event.get('stage') == 'gpu_fallback':
+                    progress=0
+                    stage='rendering'
+                    job['render_mode']='standard'
+                    job['gpu_fallback']=True
+                    job['gpu_fallback_reason']=str(event.get('message') or '')[:2000]
+                    started_at=time.monotonic()
                 elif event.get("stage") == "scene_done":
                     rendered = float(event.get('rendered_duration', 0))
                     total_duration = float(event.get('total_duration', 0))
@@ -378,7 +389,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     continue
                 with JOBS_LOCK:
                     if not entry['cancel']:
-                        job['progress'] = max(job['progress'],progress)
+                        job['progress'] = progress if event.get('stage') == 'gpu_fallback' else max(job['progress'],progress)
                         job['stage'] = stage
                         elapsed = max(0.0, time.monotonic() - started_at)
                         if stage == 'verifying':
@@ -563,6 +574,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"providers": credentials.providers()})
         if path == "/api/projects":
             return self.json_response({"projects": store.list_projects((query.get("channel") or [None])[0])})
+        if path == "/api/exports/active":
+            with JOBS_LOCK:
+                jobs=[dict(entry['job']) for entry in ACTIVE_EXPORTS.values()
+                      if entry['job'].get('status') in {'queued','running','cancelling'}]
+            return self.json_response({'jobs':jobs})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
         if match:
             return self.json_response({'job': active_export(match.group(1))})
@@ -748,6 +764,12 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
 
 
+class StudioHTTPServer(ThreadingHTTPServer):
+    # A project can open several API requests and media thumbnails at once.
+    # The standard-library default of five queued connections drops bursts.
+    request_queue_size = 128
+
+
 def main():
     parser = argparse.ArgumentParser(description="MultiBot Video Studio local server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -755,7 +777,7 @@ def main():
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server = StudioHTTPServer((args.host, args.port), Handler)
     threading.Thread(target=update_loop, daemon=True).start()
     print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:

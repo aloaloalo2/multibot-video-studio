@@ -18,6 +18,8 @@ After backend edits, restart each active Studio server before verifying new fron
 
 The backend checks the result and moves the complete MP4 into the selected episode folder or its configured export subfolder. Exports never replace an existing file.
 
+On Apple Silicon, universal timelines up to 1080p and 30 fps use the GPU renderer when Swift is available. It emits progress, mixes audio using the existing renderer, and fully decodes the completed MP4 before publishing it. Variable-frame-rate, rotated, interlaced, HDR, blurred-video and other unsupported slices use the established renderer. GPU failure falls back to the established export and resets progress. Set `MULTIBOT_GPU_EXPORT=0` to select the established path for diagnostics. Cancellation terminates the process group and removes temporary output.
+
 ## API
 
 All mutations use `Content-Type: application/json`, local `Host`, and same-origin browser requests. Errors return `{ "error": "..." }` with a non-2xx status.
