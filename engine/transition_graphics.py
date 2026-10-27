@@ -1,5 +1,5 @@
 """Opaque graphic covers with a concealed cut, using editable preset definitions."""
-import hashlib,json,math,os,subprocess
+import hashlib,json,math,subprocess
 from functools import lru_cache
 from pathlib import Path
 from PIL import Image,ImageDraw
@@ -102,16 +102,11 @@ def frame(style,p,width,height):
     return image
 
 def video(style,duration,fps,width,height,work):
-    # Cinematic presets are soft light gradients. Generate them at half size
-    # for HD and larger frames; the compositor scales the overlay back up.
-    reduced=PRESETS[style].get('kind')=='cinematic' and width>960 and os.environ.get('MULTIBOT_FULL_RES_TRANSITIONS','0')!='1'
-    render_width=(width+1)//2 if reduced else width
-    render_height=(height+1)//2 if reduced else height
-    key=hashlib.sha256(json.dumps([style,PRESETS[style],duration,fps,width,height,render_width,render_height]).encode()).hexdigest()[:20];path=Path(work)/('transition-'+key+'.mkv')
+    key=hashlib.sha256(json.dumps([style,PRESETS[style],duration,fps,width,height]).encode()).hexdigest()[:20];path=Path(work)/('transition-'+key+'.mkv')
     if path.exists():return path
-    process=subprocess.Popen(['ffmpeg','-v','error','-nostdin','-y','-f','rawvideo','-pixel_format','rgba','-video_size',f'{render_width}x{render_height}','-framerate',str(fps),'-i','pipe:0','-an','-c:v','ffv1','-pix_fmt','bgra',str(path)],stdin=subprocess.PIPE,stderr=subprocess.PIPE)
+    process=subprocess.Popen(['ffmpeg','-v','error','-nostdin','-y','-f','rawvideo','-pixel_format','rgba','-video_size',f'{width}x{height}','-framerate',str(fps),'-i','pipe:0','-an','-c:v','ffv1','-pix_fmt','bgra',str(path)],stdin=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
-        for n in range(math.ceil(duration*fps)):process.stdin.write(frame(style,n/fps/duration,render_width,render_height).tobytes())
+        for n in range(math.ceil(duration*fps)):process.stdin.write(frame(style,n/fps/duration,width,height).tobytes())
         process.stdin.close();error=process.stderr.read();code=process.wait(timeout=30)
         if code:raise RuntimeError(error.decode(errors='replace')[:500])
     except BaseException:

@@ -12,20 +12,12 @@ import transition_graphics
 import render as native_render
 
 class NativeEffects(unittest.TestCase):
- def test_reduced_cinematic_gradient_preserves_composited_appearance(self):
-  bg=Image.new('RGBA',(1920,1080),(100,120,140,255))
-  for style in ('cin_amber_dissolve','cin_film_burn','cin_dusk'):
-   with self.subTest(style=style):
-    full=transition_graphics.frame(style,.5,1920,1080)
-    small=transition_graphics.frame(style,.5,960,540).resize((1920,1080),Image.Resampling.BILINEAR)
-    a=np.asarray(Image.alpha_composite(bg,full)).astype(np.int16)
-    b=np.asarray(Image.alpha_composite(bg,small)).astype(np.int16)
-    self.assertLess(float(np.abs(a-b).mean()),.5)
-    self.assertLessEqual(int(np.abs(a-b).max()),4)
-  with tempfile.TemporaryDirectory() as tmp:
-   movie=transition_graphics.video('cin_film_burn',.08,25,1920,1080,tmp)
-   info=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','json',str(movie)]))
-   self.assertEqual((info['streams'][0]['width'],info['streams'][0]['height']),(960,540))
+ def test_export_rejects_video_that_ends_before_audio(self):
+  good={'streams':[{'codec_type':'video','duration':'2.0','nb_frames':'50'},{'codec_type':'audio','duration':'2.0'}]}
+  native_render.verify_output_streams(good,2,25)
+  broken={'streams':[{'codec_type':'video','duration':'1.5','nb_frames':'38'},{'codec_type':'audio','duration':'2.0'}]}
+  with self.assertRaisesRegex(RuntimeError,'video duration'):
+   native_render.verify_output_streams(broken,2,25)
  def test_animated_png_is_not_cached_as_a_still(self):
   with tempfile.TemporaryDirectory() as tmp:
    source=Path(tmp)/'animated.png';a=Image.new('RGB',(16,16),'red');b=Image.new('RGB',(16,16),'blue');a.save(source,save_all=True,append_images=[b],duration=100,loop=0)

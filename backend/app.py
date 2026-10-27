@@ -28,6 +28,7 @@ import analysis_jobs
 import waveforms
 import joins
 import thumbnails
+import updater
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,45 @@ ENGINE_SCRIPT = APP_ROOT / "engine" / "render.py"
 JOBS_ROOT = store.DATA_ROOT / "jobs"
 JOBS_LOCK = threading.RLock()
 ACTIVE_EXPORTS = {}
+UPDATE_MUTEX = threading.RLock()
+UPDATE_MANAGER = updater.Updater(APP_ROOT)
+UPDATE_BOOT = uuid.uuid4().hex
+UPDATE_RESTARTING = False
+
+
+def restart_after_update():
+    global UPDATE_RESTARTING
+    try:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    except OSError:
+        traceback.print_exc()
+        UPDATE_MANAGER.state = {'status': 'restart_failed'}
+        UPDATE_RESTARTING = False
+
+
+def begin_update():
+    global UPDATE_RESTARTING
+    with UPDATE_MUTEX:
+        if UPDATE_RESTARTING:
+            raise store.StudioError('Студія вже оновлюється.', 409)
+        with JOBS_LOCK:
+            if ACTIVE_EXPORTS or analysis_jobs.ACTIVE_JOBS:
+                raise store.StudioError('Дочекайтеся завершення експорту або обробки озвучки.', 409)
+        try:
+            UPDATE_MANAGER.apply()
+        except updater.UpdateError as error:
+            raise store.StudioError(str(error), 409) from error
+        UPDATE_RESTARTING = True
+        timer = threading.Timer(1.0, restart_after_update)
+        timer.daemon = True
+        timer.start()
+        return True
+
+
+def update_loop():
+    while True:
+        UPDATE_MANAGER.refresh()
+        time.sleep(120)
 
 
 def active_export(project_id):
@@ -470,14 +510,17 @@ class Handler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             if method == "GET":
                 return self.route_get(path, query)
-            project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
-            if project_match and not path.endswith('/export') and active_export(project_match.group(1)):
-                raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
-            upload = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/upload", path)
-            if method == "POST" and upload:
-                return self.route_upload(upload.group(1))
-            body = self.read_json_body() if method in {"POST", "PATCH"} else None
-            return self.route_mutation(method, path, body or {})
+            with UPDATE_MUTEX:
+                if UPDATE_RESTARTING:
+                    raise store.StudioError('Студія перезапускається після оновлення.', 503)
+                project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
+                if project_match and not path.endswith('/export') and active_export(project_match.group(1)):
+                    raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
+                upload = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/upload", path)
+                if method == "POST" and upload:
+                    return self.route_upload(upload.group(1))
+                body = self.read_json_body() if method in {"POST", "PATCH"} else None
+                return self.route_mutation(method, path, body or {})
         except store.StudioError as exc:
             return self.json_response({"error": str(exc)}, exc.status)
         except (KeyError, TypeError, ValueError) as exc:
@@ -508,6 +551,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        if path == '/api/update':
+            return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING})
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required"})
         if path == "/api/channels":
@@ -566,6 +611,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        if method == 'POST' and path == '/api/update/apply':
+            begin_update()
+            return self.json_response({'status': 'restarting'}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/analyze", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))
@@ -708,6 +756,7 @@ def main():
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    threading.Thread(target=update_loop, daemon=True).start()
     print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

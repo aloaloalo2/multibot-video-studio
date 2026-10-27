@@ -1,11 +1,13 @@
 #!/bin/zsh
 set -e
-cd '/Users/a11/Documents/YOUTUBE/MultiBot Video Studio'
+cd "${0:A:h}"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 studio_url='http://127.0.0.1:8770/'
 if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
   /usr/bin/open "$studio_url"
   exit 0
 fi
+/usr/bin/python3 backend/updater.py --at-start
 /usr/bin/python3 backend/app.py --host 127.0.0.1 --port 8770 &
 studio_pid=$!
 for attempt in {1..60}; do

@@ -1042,7 +1042,8 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
         constant_opacity = opacity_points and abs(opacity_at_start-opacity_at_end)<1e-9 and all(
             abs(float(point['opacity'])-opacity_at_start)<1e-9
             for point in opacity_points if elapsed<float(point['time'])<elapsed+end-start)
-        if constant_opacity:
+        always_constant = opacity_points and all(abs(float(point['opacity'])-float(layer['opacity']))<1e-9 for point in opacity_points)
+        if always_constant or (constant_opacity and os.environ.get('MULTIBOT_FAST_ALPHA','1')!='0'):
             layer['opacity']=opacity_at_start
             layer['keyframes']=[{k:v for k,v in point.items() if k!='opacity'} for point in layer['keyframes']]
         for key in ('mask','corner_radius','shadow','font_family','font_weight','text_align','line_height','blur','motion_blur','visual_effect'):
@@ -1154,6 +1155,25 @@ def validate_project(project: dict, project_file: Path) -> tuple[int, int, int, 
     return width, height, fps, total
 
 
+def verify_output_streams(info: dict, expected_duration: float, fps: int) -> None:
+    streams=info.get('streams',[])
+    video=next((s for s in streams if s.get('codec_type')=='video'),None)
+    audio=next((s for s in streams if s.get('codec_type')=='audio'),None)
+    if not video or not audio:
+        raise RuntimeError('Rendered file lacks a video or audio stream')
+    tolerance=max(.08,2/fps)
+    for label,stream in (('video',video),('audio',audio)):
+        try:stream_duration=float(stream.get('duration'))
+        except (TypeError,ValueError):continue
+        if abs(stream_duration-expected_duration)>tolerance:
+            raise RuntimeError(f'Rendered {label} duration differs: expected {expected_duration:.3f}, got {stream_duration:.3f}')
+    try:frames=int(video.get('nb_frames'))
+    except (TypeError,ValueError):frames=None
+    expected_frames=frame_index(expected_duration,fps)
+    if frames is not None and abs(frames-expected_frames)>1:
+        raise RuntimeError(f'Rendered video frame count differs: expected {expected_frames}, got {frames}')
+
+
 def render(project_file: Path, output: Path, validate_only: bool = False) -> dict:
     project_file = project_file.expanduser().resolve()
     if not project_file.is_file():
@@ -1245,9 +1265,7 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
             else:
                 compose(project, project_file, segments, temporary_output, total)
             info = probe(temporary_output)
-            streams = info.get("streams", [])
-            if not any(s.get("codec_type") == "video" for s in streams) or not any(s.get("codec_type") == "audio" for s in streams):
-                raise RuntimeError("Rendered file lacks a video or audio stream")
+            verify_output_streams(info,total,fps)
             actual = media_duration(temporary_output)
             if abs(actual - total) > max(0.5, 2 / fps):
                 raise RuntimeError(f"Rendered duration differs: expected {total:.3f}, got {actual:.3f}")
