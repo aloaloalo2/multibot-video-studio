@@ -1,0 +1,727 @@
+{
+  "ribbon_tricolor": {
+    "name": "Білий · синій · червоний",
+    "kind": "sweep",
+    "colors": [
+      "#F5F2E9",
+      "#285477",
+      "#C54D43"
+    ],
+    "axis": "x",
+    "count": 1
+  },
+  "ribbon_ink_sand": {
+    "name": "Чорнило й папір",
+    "kind": "sweep",
+    "colors": [
+      "#1F2B37",
+      "#D0B38B",
+      "#F1EBDD"
+    ],
+    "axis": "y",
+    "count": 1,
+    "reverse": true
+  },
+  "bands_top": {
+    "name": "Кольорові шторки",
+    "kind": "bands",
+    "colors": [
+      "#EFEAE0",
+      "#3B6B74",
+      "#CF7956"
+    ],
+    "axis": "x",
+    "count": 5,
+    "stagger": 0.22
+  },
+  "bands_bottom": {
+    "name": "Панелі знизу",
+    "kind": "bands",
+    "colors": [
+      "#253A50",
+      "#D0AC6B",
+      "#F6F0E5"
+    ],
+    "axis": "x",
+    "count": 4,
+    "reverse": true,
+    "stagger": 0.28
+  },
+  "vertical_cascade": {
+    "name": "Вертикальний каскад",
+    "kind": "bands",
+    "colors": [
+      "#D8E5E4",
+      "#346475",
+      "#D57055"
+    ],
+    "axis": "x",
+    "count": 8,
+    "stagger": 0.38
+  },
+  "horizontal_cascade": {
+    "name": "Горизонтальний каскад",
+    "kind": "bands",
+    "colors": [
+      "#EDE2CC",
+      "#8EAA99",
+      "#365B57"
+    ],
+    "axis": "y",
+    "count": 6,
+    "stagger": 0.36
+  },
+  "alternate_columns": {
+    "name": "Зустрічні колони",
+    "kind": "bands",
+    "colors": [
+      "#EDE9DF",
+      "#D06152",
+      "#29455E"
+    ],
+    "axis": "x",
+    "count": 6,
+    "alternate": true,
+    "stagger": 0.16
+  },
+  "alternate_rows": {
+    "name": "Зустрічні смуги",
+    "kind": "bands",
+    "colors": [
+      "#E3D7C3",
+      "#6C8272",
+      "#273F43"
+    ],
+    "axis": "y",
+    "count": 7,
+    "alternate": true,
+    "stagger": 0.24
+  },
+  "center_gate": {
+    "name": "Ворота з центру",
+    "kind": "gate",
+    "colors": [
+      "#F6EFE1",
+      "#BD694F",
+      "#2C4A65"
+    ],
+    "axis": "x"
+  },
+  "split_curtain": {
+    "name": "Подвійна завіса",
+    "kind": "gate",
+    "colors": [
+      "#EBD5B2",
+      "#38526C",
+      "#D8E2DC"
+    ],
+    "axis": "y",
+    "reverse": true
+  },
+  "mosaic_cascade": {
+    "name": "Каскад карток",
+    "kind": "tiles",
+    "colors": [
+      "#F1E8D9",
+      "#4B7B82",
+      "#D08A63"
+    ],
+    "cols": 4,
+    "rows": 3,
+    "stagger": 0.34
+  },
+  "checkerboard": {
+    "name": "Шахова мозаїка",
+    "kind": "tiles",
+    "colors": [
+      "#EEE6D5",
+      "#C85749",
+      "#2E4A65"
+    ],
+    "cols": 6,
+    "rows": 4,
+    "checker": true,
+    "stagger": 0.35
+  },
+  "paper_tear": {
+    "name": "Рваний паперовий край",
+    "kind": "paper",
+    "colors": [
+      "#2C3D4C",
+      "#B59B77",
+      "#F2EBDA"
+    ],
+    "axis": "x"
+  },
+  "liquid_wave": {
+    "name": "Рідкі кольорові хвилі",
+    "kind": "wave",
+    "colors": [
+      "#F0E9D7",
+      "#4A8184",
+      "#D27A5C"
+    ],
+    "axis": "x"
+  },
+  "ripple_rings": {
+    "name": "Кольорові кільця",
+    "kind": "rings",
+    "colors": [
+      "#EAE5D8",
+      "#BA604F",
+      "#2C526E"
+    ]
+  },
+  "nested_frames": {
+    "name": "Вкладені рамки",
+    "kind": "frames",
+    "colors": [
+      "#F3EBDD",
+      "#A98857",
+      "#344C64"
+    ]
+  },
+  "dot_matrix": {
+    "name": "Крапкова матриця",
+    "kind": "dots",
+    "colors": [
+      "#E9DECC",
+      "#4C6E75",
+      "#CE725D"
+    ],
+    "cols": 8,
+    "rows": 5,
+    "stagger": 0.3
+  },
+  "paper_stack": {
+    "name": "Стос кольорового паперу",
+    "kind": "cards",
+    "colors": [
+      "#F6EDDA",
+      "#AD6451",
+      "#4B6873"
+    ],
+    "count": 4,
+    "stagger": 0.24
+  },
+  "barcode": {
+    "name": "Тонкі кольорові лінії",
+    "kind": "bands",
+    "colors": [
+      "#F1EADF",
+      "#527D8B",
+      "#C45D50"
+    ],
+    "axis": "x",
+    "count": 22,
+    "alternate": true,
+    "stagger": 0.28
+  },
+  "four_windows": {
+    "name": "Чотири вікна",
+    "kind": "tiles",
+    "colors": [
+      "#F4ECDE",
+      "#375D6F",
+      "#D8865C"
+    ],
+    "cols": 2,
+    "rows": 2,
+    "checker": true,
+    "stagger": 0.3
+  },
+  "cin_amber_dissolve": {
+    "name": "Кіно · Бурштинове розчинення",
+    "kind": "cinematic",
+    "colors": [
+      "#ff8a2b",
+      "#ffd398"
+    ],
+    "lobes": [
+      {
+        "x": 0.45,
+        "y": 0.52,
+        "dx": 0.25,
+        "dy": 0,
+        "rx": 0.85,
+        "ry": 0.95,
+        "color": "#ff8a2b",
+        "opacity": 0.56
+      },
+      {
+        "x": 0.45,
+        "y": 0.48,
+        "dx": 0.2,
+        "dy": 0,
+        "rx": 0.38,
+        "ry": 0.53,
+        "color": "#ffd398",
+        "opacity": 0.38
+      }
+    ]
+  },
+  "cin_gold_hour": {
+    "name": "Кіно · Золота година",
+    "kind": "cinematic",
+    "colors": [
+      "#ff9f3e",
+      "#fff1be"
+    ],
+    "lobes": [
+      {
+        "x": 0.12,
+        "y": 0.24,
+        "dx": 0.55,
+        "dy": 0.18,
+        "rx": 0.55,
+        "ry": 0.95,
+        "color": "#ff9f3e",
+        "opacity": 0.62
+      },
+      {
+        "x": 0.1,
+        "y": 0.2,
+        "dx": 0.55,
+        "dy": 0.18,
+        "rx": 0.22,
+        "ry": 0.4,
+        "color": "#fff1be",
+        "opacity": 0.45
+      }
+    ]
+  },
+  "cin_film_burn": {
+    "name": "Кіно · Засвітка плівки",
+    "kind": "cinematic",
+    "colors": [
+      "#ed4d12",
+      "#ffd069",
+      "#a83228"
+    ],
+    "lobes": [
+      {
+        "x": 0.86,
+        "y": 0.48,
+        "dx": -0.58,
+        "dy": 0.1,
+        "rx": 0.35,
+        "ry": 1.45,
+        "color": "#ed4d12",
+        "opacity": 0.78
+      },
+      {
+        "x": 0.91,
+        "y": 0.5,
+        "dx": -0.58,
+        "dy": 0.1,
+        "rx": 0.18,
+        "ry": 1.0,
+        "color": "#ffd069",
+        "opacity": 0.62
+      },
+      {
+        "x": 0.14,
+        "y": 0.72,
+        "dx": 0.1,
+        "dy": -0.2,
+        "rx": 0.45,
+        "ry": 0.6,
+        "color": "#a83228",
+        "opacity": 0.25
+      }
+    ]
+  },
+  "cin_sunset_haze": {
+    "name": "Кіно · Західний серпанок",
+    "kind": "cinematic",
+    "colors": [
+      "#ff7845",
+      "#ffc276"
+    ],
+    "lobes": [
+      {
+        "x": 0.55,
+        "y": 0.82,
+        "dx": -0.15,
+        "dy": -0.25,
+        "rx": 1.1,
+        "ry": 0.7,
+        "color": "#ff7845",
+        "opacity": 0.47
+      },
+      {
+        "x": 0.7,
+        "y": 0.72,
+        "dx": -0.15,
+        "dy": -0.25,
+        "rx": 0.6,
+        "ry": 0.5,
+        "color": "#ffc276",
+        "opacity": 0.37
+      }
+    ]
+  },
+  "cin_horizontal_flare": {
+    "name": "Кіно · Золотий відблиск",
+    "kind": "cinematic",
+    "colors": [
+      "#ffb246",
+      "#fff2cd"
+    ],
+    "lobes": [
+      {
+        "x": 0.28,
+        "y": 0.46,
+        "dx": 0.48,
+        "dy": 0.02,
+        "rx": 0.72,
+        "ry": 0.13,
+        "color": "#ffb246",
+        "opacity": 0.62
+      },
+      {
+        "x": 0.34,
+        "y": 0.46,
+        "dx": 0.48,
+        "dy": 0.02,
+        "rx": 0.21,
+        "ry": 0.33,
+        "color": "#fff2cd",
+        "opacity": 0.52
+      }
+    ]
+  },
+  "cin_rose_bloom": {
+    "name": "Кіно · Рожеве сяйво",
+    "kind": "cinematic",
+    "colors": [
+      "#ff9ca5",
+      "#ffe6dc"
+    ],
+    "lobes": [
+      {
+        "x": 0.75,
+        "y": 0.25,
+        "dx": -0.4,
+        "dy": 0.3,
+        "rx": 0.8,
+        "ry": 0.9,
+        "color": "#ff9ca5",
+        "opacity": 0.47
+      },
+      {
+        "x": 0.75,
+        "y": 0.25,
+        "dx": -0.4,
+        "dy": 0.3,
+        "rx": 0.28,
+        "ry": 0.4,
+        "color": "#ffe6dc",
+        "opacity": 0.42
+      }
+    ]
+  },
+  "cin_violet_aura": {
+    "name": "Кіно · Фіолетова аура",
+    "kind": "cinematic",
+    "colors": [
+      "#995bd6",
+      "#f0b9ff"
+    ],
+    "lobes": [
+      {
+        "x": 0.2,
+        "y": 0.68,
+        "dx": 0.6,
+        "dy": -0.25,
+        "rx": 0.65,
+        "ry": 0.9,
+        "color": "#995bd6",
+        "opacity": 0.48
+      },
+      {
+        "x": 0.22,
+        "y": 0.64,
+        "dx": 0.6,
+        "dy": -0.25,
+        "rx": 0.28,
+        "ry": 0.46,
+        "color": "#f0b9ff",
+        "opacity": 0.36
+      }
+    ]
+  },
+  "cin_arctic_mist": {
+    "name": "Кіно · Крижаний серпанок",
+    "kind": "cinematic",
+    "colors": [
+      "#a2dce7",
+      "#f2ffff"
+    ],
+    "lobes": [
+      {
+        "x": 0.5,
+        "y": 0.17,
+        "dx": 0,
+        "dy": 0.5,
+        "rx": 1.05,
+        "ry": 0.52,
+        "color": "#a2dce7",
+        "opacity": 0.43
+      },
+      {
+        "x": 0.48,
+        "y": 0.18,
+        "dx": 0,
+        "dy": 0.5,
+        "rx": 0.46,
+        "ry": 0.26,
+        "color": "#f2ffff",
+        "opacity": 0.38
+      }
+    ]
+  },
+  "cin_teal_prism": {
+    "name": "Кіно · Бірюзова призма",
+    "kind": "cinematic",
+    "colors": [
+      "#28a8a8",
+      "#b7fff0",
+      "#315f9a"
+    ],
+    "lobes": [
+      {
+        "x": 0.17,
+        "y": 0.54,
+        "dx": 0.65,
+        "dy": 0,
+        "rx": 0.3,
+        "ry": 1.2,
+        "color": "#28a8a8",
+        "opacity": 0.54
+      },
+      {
+        "x": 0.24,
+        "y": 0.54,
+        "dx": 0.65,
+        "dy": 0,
+        "rx": 0.14,
+        "ry": 0.84,
+        "color": "#b7fff0",
+        "opacity": 0.38
+      },
+      {
+        "x": 0.68,
+        "y": 0.45,
+        "dx": -0.25,
+        "dy": 0,
+        "rx": 0.38,
+        "ry": 0.6,
+        "color": "#315f9a",
+        "opacity": 0.25
+      }
+    ]
+  },
+  "cin_blue_moon": {
+    "name": "Кіно · Місячне світло",
+    "kind": "cinematic",
+    "colors": [
+      "#507cc4",
+      "#d7ecff"
+    ],
+    "lobes": [
+      {
+        "x": 0.76,
+        "y": 0.2,
+        "dx": -0.28,
+        "dy": 0.35,
+        "rx": 0.75,
+        "ry": 1.0,
+        "color": "#507cc4",
+        "opacity": 0.46
+      },
+      {
+        "x": 0.8,
+        "y": 0.22,
+        "dx": -0.28,
+        "dy": 0.35,
+        "rx": 0.25,
+        "ry": 0.45,
+        "color": "#d7ecff",
+        "opacity": 0.38
+      }
+    ]
+  },
+  "cin_pearl_mist": {
+    "name": "Кіно · Перламутровий туман",
+    "kind": "cinematic",
+    "colors": [
+      "#e0d8d2",
+      "#fff9ec"
+    ],
+    "lobes": [
+      {
+        "x": 0.5,
+        "y": 0.5,
+        "dx": 0,
+        "dy": 0,
+        "rx": 1.0,
+        "ry": 1.1,
+        "color": "#e0d8d2",
+        "opacity": 0.4
+      },
+      {
+        "x": 0.35,
+        "y": 0.42,
+        "dx": 0.2,
+        "dy": 0.08,
+        "rx": 0.5,
+        "ry": 0.6,
+        "color": "#fff9ec",
+        "opacity": 0.38
+      }
+    ]
+  },
+  "cin_champagne": {
+    "name": "Кіно · Шампанське",
+    "kind": "cinematic",
+    "colors": [
+      "#e4b879",
+      "#fff2d3"
+    ],
+    "lobes": [
+      {
+        "x": 0.8,
+        "y": 0.32,
+        "dx": -0.6,
+        "dy": 0.2,
+        "rx": 0.48,
+        "ry": 0.8,
+        "color": "#e4b879",
+        "opacity": 0.55
+      },
+      {
+        "x": 0.83,
+        "y": 0.31,
+        "dx": -0.6,
+        "dy": 0.2,
+        "rx": 0.2,
+        "ry": 0.37,
+        "color": "#fff2d3",
+        "opacity": 0.42
+      }
+    ]
+  },
+  "cin_copper_sweep": {
+    "name": "Кіно · Мідний промінь",
+    "kind": "cinematic",
+    "colors": [
+      "#d4642f",
+      "#ffcc86"
+    ],
+    "lobes": [
+      {
+        "x": 0.04,
+        "y": 0.18,
+        "dx": 0.86,
+        "dy": 0.5,
+        "rx": 0.38,
+        "ry": 0.86,
+        "color": "#d4642f",
+        "opacity": 0.65
+      },
+      {
+        "x": 0.08,
+        "y": 0.2,
+        "dx": 0.86,
+        "dy": 0.5,
+        "rx": 0.17,
+        "ry": 0.48,
+        "color": "#ffcc86",
+        "opacity": 0.43
+      }
+    ]
+  },
+  "cin_embers": {
+    "name": "Кіно · Жар і попіл",
+    "kind": "cinematic",
+    "colors": [
+      "#d94b28",
+      "#ffbf65",
+      "#544154"
+    ],
+    "lobes": [
+      {
+        "x": 0.22,
+        "y": 0.75,
+        "dx": 0.48,
+        "dy": -0.35,
+        "rx": 0.58,
+        "ry": 0.8,
+        "color": "#d94b28",
+        "opacity": 0.56
+      },
+      {
+        "x": 0.24,
+        "y": 0.78,
+        "dx": 0.48,
+        "dy": -0.35,
+        "rx": 0.24,
+        "ry": 0.4,
+        "color": "#ffbf65",
+        "opacity": 0.49
+      },
+      {
+        "x": 0.82,
+        "y": 0.22,
+        "dx": -0.15,
+        "dy": 0.2,
+        "rx": 0.55,
+        "ry": 0.8,
+        "color": "#544154",
+        "opacity": 0.27
+      }
+    ]
+  },
+  "cin_dusk": {
+    "name": "Кіно · Сутінки",
+    "kind": "cinematic",
+    "colors": [
+      "#aa6986",
+      "#5976a4",
+      "#f0d7cc"
+    ],
+    "lobes": [
+      {
+        "x": 0.4,
+        "y": 0.7,
+        "dx": 0.2,
+        "dy": -0.3,
+        "rx": 0.9,
+        "ry": 0.85,
+        "color": "#aa6986",
+        "opacity": 0.4
+      },
+      {
+        "x": 0.7,
+        "y": 0.3,
+        "dx": -0.25,
+        "dy": 0.2,
+        "rx": 0.55,
+        "ry": 0.8,
+        "color": "#5976a4",
+        "opacity": 0.36
+      },
+      {
+        "x": 0.5,
+        "y": 0.5,
+        "dx": 0,
+        "dy": 0,
+        "rx": 0.3,
+        "ry": 0.42,
+        "color": "#f0d7cc",
+        "opacity": 0.22
+      }
+    ]
+  }
+}

@@ -1,0 +1,282 @@
+[
+  {
+    "family": "Manrope",
+    "category": "Універсальні",
+    "regular": "manrope-regular.ttf",
+    "bold": "manrope-bold.ttf",
+    "license": "licenses/manrope.txt"
+  },
+  {
+    "family": "Inter",
+    "category": "Універсальні",
+    "regular": "inter-regular.ttf",
+    "bold": "inter-bold.ttf",
+    "license": "licenses/inter.txt"
+  },
+  {
+    "family": "Roboto",
+    "category": "Універсальні",
+    "regular": "roboto-regular.ttf",
+    "bold": "roboto-bold.ttf",
+    "license": "licenses/roboto.txt"
+  },
+  {
+    "family": "Open Sans",
+    "category": "Універсальні",
+    "regular": "opensans-regular.ttf",
+    "bold": "opensans-bold.ttf",
+    "license": "licenses/opensans.txt"
+  },
+  {
+    "family": "Montserrat",
+    "category": "Універсальні",
+    "regular": "montserrat-regular.ttf",
+    "bold": "montserrat-bold.ttf",
+    "license": "licenses/montserrat.txt"
+  },
+  {
+    "family": "Noto Sans",
+    "category": "Універсальні",
+    "regular": "notosans-regular.ttf",
+    "bold": "notosans-bold.ttf",
+    "license": "licenses/notosans.txt"
+  },
+  {
+    "family": "Source Sans 3",
+    "category": "Універсальні",
+    "regular": "sourcesans3-regular.ttf",
+    "bold": "sourcesans3-bold.ttf",
+    "license": "licenses/sourcesans3.txt"
+  },
+  {
+    "family": "Rubik",
+    "category": "Універсальні",
+    "regular": "rubik-regular.ttf",
+    "bold": "rubik-bold.ttf",
+    "license": "licenses/rubik.txt"
+  },
+  {
+    "family": "Nunito Sans",
+    "category": "Універсальні",
+    "regular": "nunitosans-regular.ttf",
+    "bold": "nunitosans-bold.ttf",
+    "license": "licenses/nunitosans.txt"
+  },
+  {
+    "family": "PT Sans",
+    "category": "Універсальні",
+    "regular": "ptsans-regular.ttf",
+    "bold": "ptsans-bold.ttf",
+    "license": "licenses/ptsans.txt"
+  },
+  {
+    "family": "Alegreya Sans",
+    "category": "Універсальні",
+    "regular": "alegreyasans-regular.ttf",
+    "bold": "alegreyasans-bold.ttf",
+    "license": "licenses/alegreyasans.txt"
+  },
+  {
+    "family": "Fira Sans",
+    "category": "Універсальні",
+    "regular": "firasans-regular.ttf",
+    "bold": "firasans-bold.ttf",
+    "license": "licenses/firasans.txt"
+  },
+  {
+    "family": "IBM Plex Sans",
+    "category": "Універсальні",
+    "regular": "ibmplexsans-regular.ttf",
+    "bold": "ibmplexsans-bold.ttf",
+    "license": "licenses/ibmplexsans.txt"
+  },
+  {
+    "family": "Mulish",
+    "category": "Універсальні",
+    "regular": "mulish-regular.ttf",
+    "bold": "mulish-bold.ttf",
+    "license": "licenses/mulish.txt"
+  },
+  {
+    "family": "Raleway",
+    "category": "Універсальні",
+    "regular": "raleway-regular.ttf",
+    "bold": "raleway-bold.ttf",
+    "license": "licenses/raleway.txt"
+  },
+  {
+    "family": "Oswald",
+    "category": "Універсальні",
+    "regular": "oswald-regular.ttf",
+    "bold": "oswald-bold.ttf",
+    "license": "licenses/oswald.txt"
+  },
+  {
+    "family": "Exo 2",
+    "category": "Універсальні",
+    "regular": "exo2-regular.ttf",
+    "bold": "exo2-bold.ttf",
+    "license": "licenses/exo2.txt"
+  },
+  {
+    "family": "Commissioner",
+    "category": "Універсальні",
+    "regular": "commissioner-regular.ttf",
+    "bold": "commissioner-bold.ttf",
+    "license": "licenses/commissioner.txt"
+  },
+  {
+    "family": "Onest",
+    "category": "Універсальні",
+    "regular": "onest-regular.ttf",
+    "bold": "onest-bold.ttf",
+    "license": "licenses/onest.txt"
+  },
+  {
+    "family": "Geologica",
+    "category": "Виразні",
+    "regular": "geologica-regular.ttf",
+    "bold": "geologica-bold.ttf",
+    "license": "licenses/geologica.txt"
+  },
+  {
+    "family": "Unbounded",
+    "category": "Виразні",
+    "regular": "unbounded-regular.ttf",
+    "bold": "unbounded-bold.ttf",
+    "license": "licenses/unbounded.txt"
+  },
+  {
+    "family": "Roboto Condensed",
+    "category": "Виразні",
+    "regular": "robotocondensed-regular.ttf",
+    "bold": "robotocondensed-bold.ttf",
+    "license": "licenses/robotocondensed.txt"
+  },
+  {
+    "family": "Fira Sans Condensed",
+    "category": "Виразні",
+    "regular": "firasanscondensed-regular.ttf",
+    "bold": "firasanscondensed-bold.ttf",
+    "license": "licenses/firasanscondensed.txt"
+  },
+  {
+    "family": "Comfortaa",
+    "category": "Виразні",
+    "regular": "comfortaa-regular.ttf",
+    "bold": "comfortaa-bold.ttf",
+    "license": "licenses/comfortaa.txt"
+  },
+  {
+    "family": "Play",
+    "category": "Виразні",
+    "regular": "play-regular.ttf",
+    "bold": "play-bold.ttf",
+    "license": "licenses/play.txt"
+  },
+  {
+    "family": "Cuprum",
+    "category": "Виразні",
+    "regular": "cuprum-regular.ttf",
+    "bold": "cuprum-bold.ttf",
+    "license": "licenses/cuprum.txt"
+  },
+  {
+    "family": "Noto Sans Display",
+    "category": "Виразні",
+    "regular": "notosansdisplay-regular.ttf",
+    "bold": "notosansdisplay-bold.ttf",
+    "license": "licenses/notosansdisplay.txt"
+  },
+  {
+    "family": "Noto Serif Display",
+    "category": "Із засічками",
+    "regular": "notoserifdisplay-regular.ttf",
+    "bold": "notoserifdisplay-bold.ttf",
+    "license": "licenses/notoserifdisplay.txt"
+  },
+  {
+    "family": "Noto Serif",
+    "category": "Із засічками",
+    "regular": "notoserif-regular.ttf",
+    "bold": "notoserif-bold.ttf",
+    "license": "licenses/notoserif.txt"
+  },
+  {
+    "family": "PT Serif",
+    "category": "Із засічками",
+    "regular": "ptserif-regular.ttf",
+    "bold": "ptserif-bold.ttf",
+    "license": "licenses/ptserif.txt"
+  },
+  {
+    "family": "Merriweather",
+    "category": "Із засічками",
+    "regular": "merriweather-regular.ttf",
+    "bold": "merriweather-bold.ttf",
+    "license": "licenses/merriweather.txt"
+  },
+  {
+    "family": "Spectral",
+    "category": "Із засічками",
+    "regular": "spectral-regular.ttf",
+    "bold": "spectral-bold.ttf",
+    "license": "licenses/spectral.txt"
+  },
+  {
+    "family": "Playfair Display",
+    "category": "Із засічками",
+    "regular": "playfairdisplay-regular.ttf",
+    "bold": "playfairdisplay-bold.ttf",
+    "license": "licenses/playfairdisplay.txt"
+  },
+  {
+    "family": "Cormorant Garamond",
+    "category": "Із засічками",
+    "regular": "cormorantgaramond-regular.ttf",
+    "bold": "cormorantgaramond-bold.ttf",
+    "license": "licenses/cormorantgaramond.txt"
+  },
+  {
+    "family": "EB Garamond",
+    "category": "Із засічками",
+    "regular": "ebgaramond-regular.ttf",
+    "bold": "ebgaramond-bold.ttf",
+    "license": "licenses/ebgaramond.txt"
+  },
+  {
+    "family": "Vollkorn",
+    "category": "Із засічками",
+    "regular": "vollkorn-regular.ttf",
+    "bold": "vollkorn-bold.ttf",
+    "license": "licenses/vollkorn.txt"
+  },
+  {
+    "family": "Bitter",
+    "category": "Із засічками",
+    "regular": "bitter-regular.ttf",
+    "bold": "bitter-bold.ttf",
+    "license": "licenses/bitter.txt"
+  },
+  {
+    "family": "Alegreya",
+    "category": "Із засічками",
+    "regular": "alegreya-regular.ttf",
+    "bold": "alegreya-bold.ttf",
+    "license": "licenses/alegreya.txt"
+  },
+  {
+    "family": "Caveat",
+    "category": "Рукописні",
+    "regular": "caveat-regular.ttf",
+    "bold": "caveat-bold.ttf",
+    "license": "licenses/caveat.txt"
+  },
+  {
+    "family": "Roboto Mono",
+    "category": "Моноширинні",
+    "regular": "robotomono-regular.ttf",
+    "bold": "robotomono-bold.ttf",
+    "license": "licenses/robotomono.txt"
+  }
+]

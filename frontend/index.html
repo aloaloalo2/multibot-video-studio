@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiBot Video Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261026">
+  <link rel="stylesheet" href="/style.css?v=20261027-modal-stacking-1">
+  <link rel="stylesheet" href="/timeline.css?v=20261027-fonts-ruler-1">
+  <script defer src="/app.js?v=20261027-fonts-ruler-cloud-1"></script>
+  <script defer src="/universal.js?v=20261027-fonts-ruler-1"></script>
+  <script defer src="/groups.js?v=20261027-fonts-ruler-1"></script>
+  <script defer src="/waveforms.js?v=20261026-scene-groups-1"></script>
+  <script defer src="/graphics.js?v=20261027-fonts-ruler-2"></script>
+  <script defer src="/gradient.js?v=20261026-gradient-1"></script>
+  <script defer src="/graphic-transitions.js?v=20261027-text-protection-1"></script>
+  <script defer src="/effects.js?v=20261026-stability-7"></script>
+  <script defer src="/transitions.js?v=20261027-text-protection-1"></script>
+  <script defer src="/plan.js?v=20261026-speech-2"></script>
+  <script defer src="/analysis.js?v=20261026-speech-2"></script>
+  <script defer src="/services.js?v=20261026n"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside id="channel-sidebar" class="sidebar" aria-label="Канали">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">▱</div><div><strong>Video Studio</strong><span>MULTI BOT</span></div></div>
+      <div class="sidebar-heading channel-heading">Канали <button id="add-channel" type="button" aria-label="Додати канал" title="Додати канал">＋</button></div>
+      <div id="channel-list" class="channel-list" role="list"></div>
+      <input id="local-media-file" type="file" accept="video/*,audio/*,image/*,.mkv" hidden>
+      <button id="add-project" type="button" aria-label="Додати випуск" hidden></button>
+      <div id="project-list" hidden></div>
+      <div class="sidebar-bottom"><button id="global-settings" type="button">⚙ Налаштування</button></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div id="editor-brand" class="brand editor-brand" hidden><div class="brand-mark" aria-hidden="true">▱</div><div><strong>Video Studio</strong><span>MULTI BOT</span></div></div>
+        <button id="back-to-projects" class="subtle" type="button" hidden>← На головну</button>
+        <div class="project-heading"><div id="project-title" class="project-title"><strong>Оберіть канал</strong></div><span id="save-state" class="save-state"></span></div>
+        <div class="top-actions"><button id="undo" class="subtle editor-only" type="button" disabled>↶ Скасувати</button><button id="redo" class="subtle editor-only" type="button" disabled>↷ Повторити</button><button id="export-open" class="primary editor-only" type="button" disabled>Експорт MP4</button></div>
+      </header>
+
+      <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+      <nav id="project-views" class="project-views" aria-label="Розділи випуску" hidden><button id="view-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6m-6 4h6"/></svg>План ролика</button><button id="view-editor" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16M4 10h10M4 16h16M9 2v20"/><rect x="12" y="8" width="8" height="4" rx="1"/></svg>Монтаж</button></nav>
+      <section id="project-plan" class="project-plan" aria-label="Карта ролика" hidden></section>
+
+      <section id="channel-overview" class="channel-overview" aria-labelledby="overview-title">
+        <div class="overview-top"><div><div class="overview-eyebrow">Випуски каналу</div><h1 id="overview-title">Оберіть канал</h1><p>Відкрий готовий проєкт або створи новий випуск.</p></div><div class="overview-actions"><button id="overview-channel-settings" class="secondary" type="button" disabled>⚙ Налаштування каналу</button><button id="overview-create" class="primary" type="button" disabled>＋ Новий випуск</button></div></div>
+        <div id="overview-projects" class="overview-projects"></div>
+      </section>
+
+      <div id="editor-workspace" class="workspace" hidden>
+        <section class="panel library-panel" aria-labelledby="library-title">
+          <div class="panel-title"><h2 id="library-title">Медіатека</h2><button id="add-file" class="icon-button" type="button" aria-label="Додати файл">＋</button></div>
+          <label class="sr-only" for="asset-search">Шукати матеріал</label><input id="asset-search" class="search" type="search" placeholder="Знайти кадр">
+          <div class="library-tabs" role="tablist" aria-label="Джерело матеріалів"><button id="tab-all" type="button" class="active" data-tab="all" aria-selected="true">Усі</button><button id="tab-video" type="button" data-tab="video" aria-selected="false">Відео</button><button id="tab-photo" type="button" data-tab="photo" aria-selected="false">Фото</button><button id="tab-pixabay" type="button" data-tab="pixabay" aria-selected="false">Pixabay</button><button id="tab-transitions" type="button" data-tab="transitions" aria-selected="false">Переходи</button><button id="tab-effects" type="button" data-tab="effects" aria-selected="false">Ефекти</button></div>
+          <div id="pixabay-kind-control" class="pixabay-kind" hidden><label for="pixabay-kind">Шукати</label><select id="pixabay-kind"><option value="video">Відео</option><option value="image">Фото</option></select></div>
+          <div id="asset-list" class="asset-list" aria-live="polite"></div>
+          <div id="effect-library" class="effect-library" aria-label="Ефекти" hidden></div>
+          <div id="transition-library" class="transition-library" aria-label="Переходи" hidden><button class="transition-chip" data-transition="cut" type="button" draggable="true">Склейка</button><button class="transition-chip" data-transition="crossfade" type="button" draggable="true">Плавний</button><button class="transition-chip" data-transition="swipe" type="button" draggable="true">Зсув</button></div>
+        </section>
+
+        <section class="panel preview-panel" aria-labelledby="preview-title">
+          <div class="panel-title"><h2 id="preview-title">Попередній перегляд</h2><span id="project-resolution">1920 × 1080</span></div>
+          <div id="preview-surface" class="preview-surface"><video id="preview-video" playsinline preload="metadata" hidden></video><img id="preview-image" alt="Поточний кадр" hidden><div id="preview-composition" hidden></div><div id="preview-placeholder">Оберіть кадр на таймлайні</div><div id="preview-overlay"></div></div>
+          <div class="transport"><button id="play-pause" type="button" aria-label="Відтворити" disabled>▶</button><span id="time-current">00:00</span><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Позиція у відео" disabled><span id="time-total">00:00</span><button id="monitor-audio" type="button" aria-label="Увімкнути звук" aria-pressed="false"></button><label class="monitor-volume-control"><span class="sr-only">Гучність перегляду</span><input id="monitor-volume" type="range" min="0" max="100" value="0"><output id="monitor-volume-value">0%</output></label></div><div id="preview-audio-container" hidden></div>
+        </section>
+
+        <section class="panel inspector-panel" aria-labelledby="inspector-title">
+          <div class="panel-title"><h2 id="inspector-title">Властивості</h2></div>
+          <div id="inspector-empty" class="inspector-empty">Виберіть кадр або аудіофрагмент.</div>
+          <div id="universal-inspector" hidden></div>
+          <div id="inspector-fields" hidden>
+            <strong id="selected-name" class="selected-name"></strong>
+            <div id="selected-kind" class="selected-kind"></div>
+            <div class="field-row"><label for="scene-start">Обрізати з початку, с</label><input id="scene-start" type="number" min="0" step="0.1"></div>
+            <div class="field-row"><label for="scene-duration">Тривалість, с</label><input id="scene-duration" type="number" min="0.1" step="0.1"></div>
+            <button id="apply-trim" class="secondary full" type="button">Застосувати час</button>
+            <div class="field-row"><label for="transition-type">Перехід після кадру</label><select id="transition-type"><option value="cut">Звичайна склейка</option><option value="crossfade">Плавне змішування</option></select></div>
+            <div class="field-row"><label for="transition-duration">Тривалість переходу, с</label><input id="transition-duration" type="number" min="0" max="3" step="0.1" value="0.3"></div>
+            <button id="apply-transition" class="secondary full" type="button">Застосувати перехід</button>
+            <div class="field-row"><label for="clip-volume">Гучність <span id="clip-volume-value">100%</span></label><input id="clip-volume" type="range" min="0" max="150" value="100"></div>
+            <button id="apply-volume" class="secondary full" type="button">Застосувати гучність</button>
+            <div class="inspector-actions"><button id="move-left" type="button" aria-label="Посунути кадр ліворуч">←</button><button id="split-scene" type="button">Розділити</button><button id="move-right" type="button" aria-label="Посунути кадр праворуч">→</button></div>
+            <button id="delete-selected" class="danger full" type="button">Прибрати фрагмент</button>
+          </div>
+        </section>
+      </div>
+
+      <section id="editor-timeline" class="timeline-panel" aria-labelledby="timeline-title" hidden>
+        <div class="timeline-toolbar"><h2 id="timeline-title">Таймлайн</h2><button id="add-layer" type="button" disabled hidden>＋ Шар</button><button id="add-scene" type="button" disabled>＋ Кадр</button><button id="add-transition" type="button" disabled>＋ Перехід</button><button id="add-text" type="button" disabled>＋ Текст</button><button id="add-animation" type="button" disabled hidden>＋ Анімація</button><span class="timeline-spacer"></span><button id="zoom-out" type="button" aria-label="Зменшити масштаб">－</button><button id="zoom-value" type="button" aria-label="Показати весь ролик" title="Показати весь ролик (100%)">100%</button><button id="zoom-in" type="button" aria-label="Збільшити масштаб">＋</button></div>
+        <div class="timeline-scroll"><div id="timeline-content" class="timeline-content"><div id="time-ruler" class="time-ruler"></div><div id="timeline-tracks" class="timeline-tracks"></div><div id="timeline-playhead" class="timeline-playhead"><button id="playhead-handle" type="button" role="slider" aria-label="Курсор часу на таймлайні" aria-valuemin="0" aria-valuemax="60" aria-valuenow="0"></button></div></div></div>
+      </section>
+      <div id="status-line" class="sr-only" role="status" aria-live="polite">Підключення до локальної студії...</div>
+    </main>
+  </div>
+
+  <div id="modal-backdrop" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title"></h2><button id="modal-close" class="icon-button" type="button" aria-label="Закрити">×</button></div><div id="modal-body" class="modal-body"></div><div id="modal-actions" class="modal-actions"></div></div>
+  </div>
+</body>
+</html>
