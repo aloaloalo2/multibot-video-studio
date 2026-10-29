@@ -108,8 +108,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .save-state{color:#35c838;font-size:11px;white-space:nowrap}
 .save-state.error{color:#e87d83}
 .top-actions{display:flex;align-items:center;gap:5px;flex:none}
-#undo:disabled,#redo:disabled{background:#1c1c20;color:#55565d;opacity:.4;cursor:default}
-#undo:not(:disabled),#redo:not(:disabled){background:#3a321e;color:#ffcf59;box-shadow:inset 0 0 0 1px #6c582b}
+/* Undo and redo sit right after the project name; the name and the save state stay stacked on the left. */
+.editor-open .project-heading{display:grid;grid-template-columns:minmax(0,max-content) auto;grid-template-rows:auto auto;column-gap:14px;row-gap:3px;align-items:center;justify-content:start}
+.editor-open .project-heading>.project-title{grid-column:1;grid-row:1;min-width:0}
+.editor-open .project-heading>.save-state{grid-column:1;grid-row:2}
+.history-actions{display:flex;gap:6px;grid-column:2;grid-row:1/3}
+.history-actions:not(:has(button:not([hidden]))){display:none}
+.history-button{width:34px;height:34px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;flex:none;background:#26272b;color:#f2f2f3;transition:background-color .12s,color .12s}
+.history-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.history-button:disabled{background:#1c1c20;color:#55565d;cursor:default}
+@media(hover:hover){.history-button:not(:disabled):hover{background:#36373c}}
 button.subtle,.timeline-toolbar button,.inspector-actions button{border:0;background:#2b2b30;color:#dadbe0;padding:8px 10px;border-radius:7px}
 button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled),.inspector-actions button:hover:not(:disabled){background:#3a3a40}
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:8px;padding:9px 13px}
