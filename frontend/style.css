@@ -760,3 +760,11 @@ button.danger:hover:not(:disabled){background:#523034}
 .logo-slider span{display:flex;align-items:center;gap:9px}
 .logo-slider input{flex:1;accent-color:#f0b429}
 .logo-slider output{min-width:38px;text-align:right;color:#f1f1f2;font-variant-numeric:tabular-nums}
+/* Floating panels: the sidebar and the header are rounded cards on the page, like the project cards. */
+.app-shell{padding:12px;gap:12px;background:#0b0b0c}
+.sidebar{background:#151516;border:1px solid #2c2c31;border-radius:20.5px;padding:0 11px 14px;overflow:hidden}
+.sidebar>.brand{border-bottom:0;height:62px}
+.sidebar-bottom{border-top-color:#26262a}
+.topbar{background:#151516;border:1px solid #2c2c31;border-radius:20.5px;height:62px;margin-bottom:12px}
+.editor-open .topbar{min-height:62px}
+@media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{border-bottom:1px solid #2c2c31;margin-bottom:8px}.topbar{margin-bottom:8px}}
