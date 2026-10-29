@@ -172,6 +172,11 @@ def validate_settings(value: dict) -> dict:
                 raise StudioError("Потрібне ціле число: " + key)
     if "opening_clip_types" in value and (not isinstance(value["opening_clip_types"], list) or any(item not in allowed for item in value["opening_clip_types"])):
         raise StudioError("Невірні типи вступних кліпів")
+    import channel_branding
+    try:
+        channel_branding.validate(value)
+    except channel_branding.BrandingError as error:
+        raise StudioError(str(error)) from None
     return value
 
 

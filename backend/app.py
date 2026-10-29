@@ -24,6 +24,7 @@ from pathlib import Path
 
 import store
 import covers
+import channel_branding
 import agent_estimate
 import agent_runtime
 import agent_storage
@@ -646,6 +647,13 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
+        if match:
+            store.get_channel_folder(match.group(1))
+            logo = channel_branding.logo_path(match.group(1))
+            if not logo.is_file():
+                raise store.StudioError("Логотип не додано", 404)
+            return self.serve_media(logo, cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/cover", path)
         if match:
             try:
@@ -727,6 +735,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
+        if match and method in {"POST", "DELETE"}:
+            try:
+                if method == "POST":
+                    return self.json_response({"logo": channel_branding.save_logo(match.group(1), body.get("data"))}, 201)
+                channel_branding.remove_logo(match.group(1))
+                return self.json_response({"logo": None})
+            except channel_branding.BrandingError as error:
+                raise store.StudioError(str(error)) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})", path)
         if match and method == "PATCH":
             return self.json_response({"channel": store.update_channel_settings(match.group(1), body.get("settings", {}))})

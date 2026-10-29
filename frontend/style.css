@@ -707,3 +707,34 @@ button.danger:hover:not(:disabled){background:#523034}
 .brand-logo .wordmark-key{text-shadow:0 0 8px #6bf2ae80}
 /* Status tags are labels, not buttons, so they carry no glow. */
 .project-card .project-status:not(.draft):not(.plan-draft),.plan-stage-tag.audio-synced{color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73}
+
+/* Channel kind and logo, at the top of the channel settings. */
+.modal-backdrop[data-channel-kind="animated"] .regular-only{display:none}
+.channel-kind-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.channel-kind-card{position:relative;display:block;cursor:pointer}
+.channel-kind-card input{position:absolute;opacity:0;pointer-events:none}
+.channel-kind-card>span{display:flex;flex-direction:column;gap:4px;padding:13px 15px;border:1px solid #3c3c43;border-radius:12.5px;background:#202024;transition:border-color .15s,background-color .15s}
+.channel-kind-card strong{font-size:14px;color:#f1f1f2}
+.channel-kind-card small{font-size:12px;color:#9a9ca4}
+.channel-kind-card input:checked+span{border-color:#f0b429;background:#2c2618;box-shadow:inset 0 0 0 1px #f0b429}
+.channel-kind-card input:focus-visible+span{outline:2px solid #f0b429;outline-offset:2px}
+@media(hover:hover){.channel-kind-card:hover>span{border-color:#5a5a62}}
+.logo-editor{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(220px,1fr);gap:16px;align-items:start}
+@media(max-width:700px){.logo-editor{grid-template-columns:1fr}}
+.logo-preview{position:relative;aspect-ratio:16/9;border-radius:12.5px;overflow:hidden;background:#141417 radial-gradient(120% 95% at 88% 0%,#2b2b33,#18181b 60%) center/cover no-repeat;border:1px solid #35353a}
+.logo-preview img{position:absolute;height:auto;max-width:none}
+.logo-preview span{position:absolute;inset:0;display:grid;place-items:center;color:#7d7f87;font-size:12px}
+.logo-controls{display:flex;flex-direction:column;gap:11px}
+.logo-file-row{display:flex;gap:8px;flex-wrap:wrap}
+.logo-file-button{display:inline-flex;align-items:center;cursor:pointer;border-radius:10px;padding:9px 13px;border:1px solid #4a4a52;background:#2a2a30;color:#f1f1f2;font-size:13px}
+.logo-controls .logo-toggle{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px;color:#d6d7dc}
+.logo-controls .logo-toggle input{width:auto;margin:0;accent-color:#f0b429}
+.logo-position-grid{display:grid;grid-template-columns:repeat(3,34px);gap:6px}
+.logo-position,.logo-position-gap{width:34px;height:22px;border-radius:6px}
+.logo-position{border:1px solid #4a4a52;background:#232328;padding:0;cursor:pointer;transition:background-color .12s,border-color .12s}
+.logo-position[aria-pressed="true"]{background:#f0b429;border-color:#f0b429}
+@media(hover:hover){.logo-position:not([aria-pressed="true"]):hover{background:#34343a}.logo-file-button:hover{background:#34343a}}
+.logo-slider{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#aeb0b7}
+.logo-slider span{display:flex;align-items:center;gap:9px}
+.logo-slider input{flex:1;accent-color:#f0b429}
+.logo-slider output{min-width:38px;text-align:right;color:#f1f1f2;font-variant-numeric:tabular-nums}
