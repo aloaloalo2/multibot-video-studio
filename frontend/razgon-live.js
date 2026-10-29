@@ -18,7 +18,7 @@
   frame.id = 'razgon-live-frame'; frame.title = 'Razgon наживо'; frame.hidden = true;
   $('preview-content').append(frame);
   const style = document.createElement('style');
-  style.textContent = '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:7px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
+  style.textContent = '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
   document.head.append(style);
 
   const info = () => state.project && live[state.project.id];
