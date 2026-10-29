@@ -28,7 +28,7 @@ function brandingSections(channel){
       <div class="animated-only"><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div>
         <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}</option>`).join('')}</select></label>
-          <label class="logo-toggle" title="Асети з бібліотеки ролика на кадрах з ролика"><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Асети з бібліотеки</label>
+          <label class="logo-toggle" title="Ролики каналу використовують картинки-предмети: з бібліотеки й згенеровані. Без асетів усе малюється фігурами."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Асети</label>
           <button id="style-film-toggle" class="secondary" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div>
       <div class="logo-controls"><div class="logo-file-row"><label class="secondary logo-file-button">Завантажити логотип<input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><button id="logo-remove" class="secondary" type="button">Прибрати</button>
@@ -77,10 +77,10 @@ function bindBranding(channel){
     }
     backdrop();
   };
-  const textStyle=()=>({title_font:$('style-title-font').value});
+  const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
   const loadStyles=async()=>{
     if(kind()!=='animated')return;
-    const mine=++request;stage.textContent=styles?`Перемальовуємо зі шрифтом ${$('style-title-font').value}...`:'Малюємо стилі, перший раз це кілька секунд...';
+    const mine=++request;stage.textContent=styles?'Перемальовуємо стилі...':'Малюємо стилі, перший раз це кілька секунд...';
     try{
       const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{animation:textStyle()});
       if(mine!==request||!strip.isConnected)return;
@@ -107,7 +107,7 @@ function bindBranding(channel){
     if(!film.hidden)loadFilm();
   });
   $('style-title-font').addEventListener('change',()=>{loadStyles();if(!film.hidden)loadFilm();});
-  $('style-assets').addEventListener('change',()=>{if(!film.hidden)loadFilm();});
+  $('style-assets').addEventListener('change',()=>{loadStyles();if(!film.hidden)loadFilm();});
   for(const button of document.querySelectorAll('.logo-position'))button.addEventListener('click',()=>{logo.position=button.dataset.position;document.querySelectorAll('.logo-position').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));draw();});
   for(const id of ['logo-size','logo-margin','logo-opacity','logo-enabled'])$(id).addEventListener('input',draw);
   $('logo-file').addEventListener('change',async event=>{
@@ -128,5 +128,5 @@ function bindBranding(channel){
   applyKind();draw();load();
   return ()=>({channel_kind:kind(),
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Number($('logo-margin').value),opacity:Number($('logo-opacity').value),version},
-    ...(kind()==='animated'?{animation:{...(chosen?{style:chosen}:{}),assets:$('style-assets').checked,...textStyle()}}:{})});
+    ...(kind()==='animated'?{animation:{...(chosen?{style:chosen}:{}),...textStyle()}}:{})});
 }

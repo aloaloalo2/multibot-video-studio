@@ -98,7 +98,8 @@ def prune(cache: Path, keep: int = 5) -> None:
 
 
 def showcase(cid: str, animation: dict | None = None) -> dict:
-    """The style card (Razgon's showcase scene: the character, a house, a sign) in every gallery style."""
+    """The style card (Razgon's showcase scene: the character, a house, a sign) in every gallery style; with the
+    channel's assets on, library props stand in the yard as pictures, with them off the scene draws plain shapes."""
     channel = store.get_channel_folder(cid)
     choices = films(channel)
     root = choices[0][0] if choices else None
@@ -107,8 +108,8 @@ def showcase(cid: str, animation: dict | None = None) -> dict:
     scene = root / "showcase"
     known = {style["id"]: style for style in presets(root)}
     ids = [sid for sid in GALLERY if sid in known]
-    text = razgon_text(animation)
-    identity = ["showcase", text, ids, newest_mtime(scene / "scenes", scene / "story", root / "engine")]
+    text, assets = razgon_text(animation), (animation or {}).get("assets", True) is not False
+    identity = ["showcase", text, assets, ids, newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")]
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
     cache = store.DATA_ROOT / "channels" / cid / "style-cards" / key
     if not all((cache / f"{sid}-0.jpg").exists() for sid in ids):
@@ -117,9 +118,12 @@ def showcase(cid: str, animation: dict | None = None) -> dict:
             if folder.exists():
                 shutil.rmtree(folder)
             (folder / "build").mkdir(parents=True)
-            for name in ("story", "scenes", "assets", "timeline"):
+            for name in ("story", "scenes", "timeline") + (("assets",) if assets else ()):
                 if (scene / name).exists():
                     os.symlink(scene / name, folder / name)
+            if not assets:
+                (folder / "assets").mkdir()
+                (folder / "assets" / "index.json").write_text("[]")
             config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
             config.update(text)
             (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
@@ -127,7 +131,7 @@ def showcase(cid: str, animation: dict | None = None) -> dict:
             cache.mkdir(parents=True, exist_ok=True)
             for sid in ids:
                 shutil.copyfile(still(out, sid, 2.0), cache / f"{sid}-0.jpg")
-            prune(cache)
+            prune(cache, keep=12)
     current = json.loads((choices[0][1] / "config.json").read_text(encoding="utf-8")).get("style")
     return {"key": key, "film_style": current,
             "styles": [{**known[sid], "card": f"/api/channels/{cid}/style-cards/{key}/{sid}-0.jpg"} for sid in ids]}
