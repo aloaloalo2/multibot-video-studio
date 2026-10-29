@@ -554,7 +554,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .weight-legend-item>span:nth-child(2){flex:1}
 .weights-summary .weight-legend-item strong{font-size:12px;flex:none}
 #normalize-weights{margin-top:12px}
-.modal-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;border-top:1px solid #3e3e44;padding-top:16px;flex:none}
+.modal-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;padding-top:6px;flex:none}
 .modal-actions button{border:0;border-radius:9px;padding:9px 12px;background:#34343a;color:#f1f1f2}
 .modal-actions button.primary{background:#f0b429;color:#181510}
 .modal-actions button.danger{display:inline-flex;align-items:center;gap:7px;margin:0;border:1px solid #92464b;background:#452a2e;color:#ffb7bc}
