@@ -122,6 +122,34 @@ class BackendTest(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, json.loads(error.read())
 
+    def test_history_keeps_one_file_per_step_and_migrates_legacy_file(self):
+        pid = store.create_project(store.channel_id(self.channel), "History steps")["id"]
+        clip = lambda n: {"layer_id": "layer-1", "kind": "text", "text": "Step %d" % n, "start": n, "duration": 1}
+        store.apply_action(pid, "add_clip", clip(0))
+        legacy = store.load_project(pid)
+        for n in range(1, store.HISTORY_LIMIT + 5):
+            store.apply_action(pid, "add_clip", clip(n))
+        self.assertEqual(len(store.history_entries(pid, "past")), store.HISTORY_LIMIT)
+        self.assertEqual(store.history_state(pid), {"can_undo": True, "can_redo": False})
+        texts = lambda: [c["text"] for t in store.load_project(pid)["tracks"] for c in t["clips"]]
+        before = texts()
+        store.apply_action(pid, "undo", {})
+        self.assertEqual(texts(), before[:-1])
+        self.assertEqual(store.history_state(pid), {"can_undo": True, "can_redo": True})
+        store.apply_action(pid, "redo", {})
+        self.assertEqual(texts(), before)
+        store.apply_action(pid, "undo", {})
+        store.apply_action(pid, "add_clip", clip(90))
+        self.assertFalse(store.history_state(pid)["can_redo"])
+        # A project saved by an older Studio keeps its undo steps in one history.json.
+        for side in ("past", "future"):
+            store.clear_history(pid, side)
+        (store.project_dir(pid) / "history.json").write_text(json.dumps({"past": [legacy], "future": []}), encoding="utf-8")
+        self.assertEqual(store.history_state(pid), {"can_undo": True, "can_redo": False})
+        self.assertFalse((store.project_dir(pid) / "history.json").exists())
+        store.apply_action(pid, "undo", {})
+        self.assertEqual(texts(), ["Step 0"])
+
     def test_atomic_batch_is_one_undo_and_invalid_batch_preserves_project(self):
         project = store.create_project(store.channel_id(self.channel), "Batch montage")
         pid = project["id"]

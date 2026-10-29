@@ -369,7 +369,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
             if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
                 item = upgrade_legacy_project(item)
                 cover_asset_id = project_cover_asset(item)
-                result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
+                result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
         except (ValueError, KeyError):
             continue
@@ -403,7 +403,6 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": global_defaults["default_width"], "height": global_defaults["default_height"], "fps": global_defaults["default_fps"], "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         atomic_json(folder / "project.json", project)
-        atomic_json(folder / "history.json", {"past": [], "future": []})
     return project
 
 
@@ -448,17 +447,41 @@ def attach_plan(pid: str, plan: dict) -> dict:
         return project
 
 
-def load_project_plan(pid: str) -> dict | None:
-    project = load_project(pid)
+_PLAN_CACHE = {}
+_SYNCED_PLAN_CACHE = {}
+
+
+def project_plan_file(project: dict) -> Path | None:
     source = project.get("plan_source")
     if not source:
         return None
     path = Path(source).resolve()
-    if path.suffix.lower() != ".json" or not (under(path, project_dir(pid)) or under(path, Path(project["episode_path"]))):
+    if path.suffix.lower() != ".json" or not (under(path, project_dir(project["id"])) or under(path, Path(project["episode_path"]))):
         raise StudioError("Файл плану недоступний", 404)
     if not path.is_file():
         raise StudioError("Файл плану не знайдено", 404)
-    return planner.upgrade_legacy_number_format(validate_plan(read_json(path)))
+    return path
+
+
+def plan_file_key(path: Path) -> tuple:
+    stat = path.stat()
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def cached_plan(path: Path, private: bool = True) -> tuple[dict, tuple]:
+    """Parse and upgrade a plan once per file version. Pass private=False only to read without changing it."""
+    key = plan_file_key(path)
+    if _PLAN_CACHE.get(key[0], (None,))[0] != key:
+        _PLAN_CACHE[key[0]] = (key, planner.upgrade_legacy_number_format(validate_plan(read_json(path))))
+        for stale in [item for item in _SYNCED_PLAN_CACHE if item[0][0] == key[0] and item[0] != key]:
+            del _SYNCED_PLAN_CACHE[stale]
+    plan = _PLAN_CACHE[key[0]][1]
+    return (copy.deepcopy(plan) if private else plan), key
+
+
+def load_project_plan(pid: str) -> dict | None:
+    path = project_plan_file(load_project(pid))
+    return cached_plan(path)[0] if path else None
 
 
 def project_from_plan(cid: str, name: str, episode_path: str, plan: dict) -> dict:
@@ -518,12 +541,15 @@ def narration_data(episode, narration, project_id=None):
     return {"asset_id": asset["id"], "name": asset["name"], "duration": duration, "sha256": digest}
 
 
-def plan_readiness(project, plan=None):
+def plan_readiness(project, plan=None, stage_only=False):
     """Derive readiness from the audio bytes and complete phrase timings, never a label."""
     result = {"stage": "draft", "plan_ready": False, "export_ready": False,
               "reason": "Це чернетка. Додайте таймінги фраз із готової озвучки"}
     try:
-        plan = plan if plan is not None else load_project_plan(project["id"])
+        key = None
+        if plan is None:
+            path = project_plan_file(project)
+            plan, key = cached_plan(path, private=False) if path else (None, None)
         if not plan:
             result["reason"] = "Створіть план і додайте таймінги готової озвучки"
             return result
@@ -531,8 +557,21 @@ def plan_readiness(project, plan=None):
             return result
         audio = plan["timing"].get("audio", {})
         duration = audio.get("duration")
-        planner.validate_synced_plan(plan, duration)
+        # Full validation re-derives every number and timing; a plan file that has not changed gives the same answer.
+        if key is None:
+            planner.validate_synced_plan(plan, duration)
+        else:
+            if (key, duration) not in _SYNCED_PLAN_CACHE:
+                try:
+                    planner.validate_synced_plan(plan, duration)
+                    _SYNCED_PLAN_CACHE[(key, duration)] = None
+                except ValueError as error:
+                    _SYNCED_PLAN_CACHE[(key, duration)] = str(error)
+            if _SYNCED_PLAN_CACHE[(key, duration)] is not None:
+                raise ValueError(_SYNCED_PLAN_CACHE[(key, duration)])
         result.update(stage="audio_synced", plan_ready=True, reason="Додайте повну озвучку на таймлайн для експорту")
+        if stage_only:
+            return result
         clips = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])]
         full_voice = False
         for clip in clips:
@@ -1264,26 +1303,88 @@ def scene_by_id(project: dict, sid: str) -> dict:
     raise StudioError("Кадр не знайдено", 404)
 
 
+HISTORY_LIMIT = 30
+
+
+def history_folder(pid: str) -> Path:
+    return project_dir(pid) / "history"
+
+
+def migrate_history(pid: str) -> None:
+    """Move the old single history.json into one snapshot file per step."""
+    legacy = project_dir(pid) / "history.json"
+    if not legacy.is_file():
+        return
+    with LOCK:
+        if not legacy.is_file():
+            return
+        data = read_json(legacy, {"past": [], "future": []})
+        for side in ("past", "future"):
+            for snapshot in data.get(side, [])[-HISTORY_LIMIT:]:
+                push_history(pid, side, snapshot)
+        legacy.unlink()
+
+
+def history_entries(pid: str, side: str) -> list[Path]:
+    folder = history_folder(pid) / side
+    if not folder.is_dir():
+        return []
+    return sorted((path for path in folder.iterdir() if path.suffix == ".json" and path.stem.isdigit()), key=lambda path: int(path.stem))
+
+
+def push_history(pid: str, side: str, snapshot: dict) -> None:
+    entries = history_entries(pid, side)
+    index = int(entries[-1].stem) + 1 if entries else 0
+    folder = history_folder(pid) / side
+    folder.mkdir(parents=True, exist_ok=True)
+    tmp = folder / f".{index}.tmp-{uuid.uuid4().hex}"
+    try:
+        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        os.replace(str(tmp), str(folder / f"{index}.json"))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    for path in entries[:max(0, len(entries) + 1 - HISTORY_LIMIT)]:
+        path.unlink()
+
+
+def pop_history(pid: str, side: str) -> dict | None:
+    entries = history_entries(pid, side)
+    if not entries:
+        return None
+    snapshot = read_json(entries[-1])
+    entries[-1].unlink()
+    return snapshot
+
+
+def clear_history(pid: str, side: str) -> None:
+    for path in history_entries(pid, side):
+        path.unlink()
+
+
+def history_state(pid: str) -> dict:
+    migrate_history(pid)
+    return {"can_undo": bool(history_entries(pid, "past")), "can_redo": bool(history_entries(pid, "future"))}
+
+
 def apply_action(pid: str, action: str, payload: dict, expected_revision: int | None = None) -> dict:
     with LOCK:
         project = load_project(pid)
         if expected_revision is not None and expected_revision != project.get("revision", 0):
             raise StudioError("Проєкт змінився. Оновіть сторінку перед правкою", 409)
-        history_path = project_dir(pid) / "history.json"
-        history = read_json(history_path, {"past": [], "future": []})
+        migrate_history(pid)
         if action in {"undo", "redo"}:
             source, target = ("past", "future") if action == "undo" else ("future", "past")
-            if not history[source]:
+            previous = pop_history(pid, source)
+            if previous is None:
                 raise StudioError("Немає дії для повернення")
-            previous = history[source].pop()
             previous = upgrade_legacy_project(previous)
-            history[target].append(project)
+            push_history(pid, target, project)
             for key in ("plan_source", "plan_updated_at", "plan_original_source"):
                 if key in project:
                     previous[key] = project[key]
             previous["revision"] = project.get("revision", 0) + 1
             save_project(previous)
-            atomic_json(history_path, history)
             return previous
         previous = copy.deepcopy(project)
         if not isinstance(payload, dict):
@@ -1455,8 +1556,7 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
         else:
             raise StudioError("Дію ще не підтримано: " + str(action))
         project["revision"] = project.get("revision", 0) + 1
-        history["past"] = (history.get("past", []) + [previous])[-30:]
-        history["future"] = []
+        push_history(pid, "past", previous)
+        clear_history(pid, "future")
         save_project(project)
-        atomic_json(history_path, history)
         return project

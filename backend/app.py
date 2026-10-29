@@ -500,9 +500,7 @@ class Handler(BaseHTTPRequestHandler):
     def json_response(self, value, status=200):
         if isinstance(value, dict) and isinstance(value.get("project"), dict):
             project = dict(value["project"])
-            history = store.read_json(store.project_dir(project["id"]) / "history.json", {"past": [], "future": []})
-            project["can_undo"] = bool(history.get("past"))
-            project["can_redo"] = bool(history.get("future"))
+            project.update(store.history_state(project["id"]))
             project["production"] = store.plan_readiness(project)
             value = {**value, "project": project}
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -823,6 +821,13 @@ class StudioHTTPServer(ThreadingHTTPServer):
     request_queue_size = 128
 
 
+def warm_project_cache():
+    try:
+        store.list_projects()
+    except Exception as error:  # a broken project must not stop the server; the list request reports it
+        print(f"Project cache warm-up failed: {error}", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="MultiBot Video Studio local server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -832,6 +837,8 @@ def main():
         parser.error("Only local loopback is supported")
     server = StudioHTTPServer((args.host, args.port), Handler)
     threading.Thread(target=update_loop, daemon=True).start()
+    # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
+    threading.Thread(target=warm_project_cache, daemon=True).start()
     print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

@@ -287,7 +287,7 @@ function projectCreationDate(timestamp){
   const values=Object.fromEntries(formatter.formatToParts(date).map(part=>[part.type,part.value]));
   const now=Object.fromEntries(formatter.formatToParts(new Date()).map(part=>[part.type,part.value]));
   const today=values.day===now.day && values.month===now.month && values.year===now.year;
-  return {label:today?'Створено сьогодні':'Створено',text:today?`(${values.hour}:${values.minute})`:`${values.day} ${values.month} ${values.year} (${values.hour}:${values.minute})`,datetime:date.toISOString()};
+  return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
 }
 
 function renderOverview() {
@@ -303,14 +303,14 @@ function renderOverview() {
     const statusText=project.has_plan?(project.plan_stage==='audio_synced'?'План за озвучкою':'Чернетка плану'):project.status==='draft' ? 'Чернетка' : project.status || (project.scene_count?'У роботі':'Новий');
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span>${esc(created?.label || 'Створено')}</span>${created?`<time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'<span>Дата невідома</span>'}</div>`;
+    open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</div><div class="project-meta"></div>`;
     open.addEventListener('click',()=>selectProject(project.id,{view:project.has_plan&&!count?'plan':'editor'}).catch(error=>status(error.message,true)));
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
-      const duration=document.createElement('div');duration.className='project-duration';
+      const duration=document.createElement('span');duration.className='project-duration';
       const value=Number(project.duration),hours=Math.floor(value/3600);
       const formatted=hours?`${hours}:${String(Math.floor(value/60)%60).padStart(2,'0')}:${String(Math.floor(value)%60).padStart(2,'0')}`:clock(value);
-      duration.textContent=`Тривалість ролика: ${formatted}`;
-      open.insertBefore(duration,open.querySelector('.project-meta'));
+      duration.textContent=formatted;duration.title='Тривалість ролика';
+      open.querySelector('.project-meta').append(duration);
     }
     if(project.cover_asset_id){
       const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
