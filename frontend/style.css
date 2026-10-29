@@ -784,5 +784,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-film .style-loading{grid-column:1/-1}
 /* The header's text starts on the same line as the page content below it (.channel-overview padding minus the border). */
 .app-shell:not(.editor-open) .topbar{padding-left:calc(clamp(16px,4vw,50px) - 1px);padding-right:calc(clamp(16px,4vw,50px) - 1px)}
-.channel-settings-button{margin-left:2px}
-.channel-settings-button svg{width:18px;height:18px}
+.channel-settings-button{width:26px;height:26px;margin-left:-2px;background:#222226;color:#9a9ca4}
+.channel-settings-button svg{width:15px;height:15px;stroke-width:1.8}
+@media(hover:hover){.channel-settings-button:not(:disabled):hover{background:#303035;color:#f2f2f3}}
