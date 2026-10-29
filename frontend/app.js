@@ -303,7 +303,7 @@ function renderOverview() {
     const statusText=project.has_plan?(project.plan_stage==='audio_synced'?'План за озвучкою':'Чернетка плану'):project.status==='draft' ? 'Чернетка' : project.status || (project.scene_count?'У роботі':'Новий');
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</div><div class="project-meta"></div>`;
+    open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
     open.addEventListener('click',()=>selectProject(project.id,{view:project.has_plan&&!count?'plan':'editor'}).catch(error=>status(error.message,true)));
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
       const duration=document.createElement('span');duration.className='project-duration';
@@ -406,7 +406,11 @@ function syncStudioAudio(){
     if(state.playing)requestMediaPlayback(element);else if(!element.paused)element.pause();
   }
 }
-function duration() {return isUniversal()?Math.max(seconds(state.project?.duration),...universalClips().map(c=>seconds(c.start)+seconds(c.duration)),0):Math.max(seconds(state.project?.duration), ...scenes().map(s=>seconds(s.start)+seconds(s.duration)), 0);}
+// Each edit replaces state.project, so values derived from the whole project are kept per project object.
+const projectMemo=new WeakMap();
+function memoForProject(key,compute){if(!state.project)return compute();let memo=projectMemo.get(state.project);if(!memo)projectMemo.set(state.project,memo=new Map());if(!memo.has(key))memo.set(key,compute());return memo.get(key);}
+function duration() {return memoForProject('duration',measureDuration);}
+function measureDuration() {return isUniversal()?Math.max(seconds(state.project?.duration),...universalClips().map(c=>seconds(c.start)+seconds(c.duration)),0):Math.max(seconds(state.project?.duration), ...scenes().map(s=>seconds(s.start)+seconds(s.duration)), 0);}
 function selectedScene() {return scenes().find(s=>s.id===state.selected);}
 function stopPlayback(){state.playing=false;$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());$('play-pause').textContent='▶';$('play-pause').setAttribute('aria-label','Відтворити');}
 
@@ -730,7 +734,7 @@ function renderTimeline() {
   $('zoom-value').textContent=Math.round(state.zoom*100)+'%';
   $('zoom-in').disabled=state.zoom>=timelineZoomLevels.at(-1);
   $('zoom-out').disabled=state.zoom<=timelineZoomLevels[0];
-  updateTimelinePlayhead();
+  invalidatePlayheadGeometry();updateTimelinePlayhead();
   scroller.scrollTop=oldTop;
   }finally{timelineRenderCache=previousCache;}
 }
@@ -757,20 +761,26 @@ new ResizeObserver(()=>{
   if(!width || Math.abs(width-timelineWidth())>.5)renderTimeline();
 }).observe(document.querySelector('.timeline-scroll'));
 
+// Reading element boxes after the preview has changed styles forces a full layout, so playback
+// reuses the timeline geometry until the timeline is redrawn, scrolled or resized.
+let playheadGeometry=null;
+function invalidatePlayheadGeometry(){playheadGeometry=null;}
 function updateTimelinePlayhead(){
   const marks=document.querySelector('.time-ruler-marks'),line=$('timeline-playhead');
   line.hidden=!state.project || !marks;
-  if(!marks)return;
-  const container=$('timeline-content').getBoundingClientRect(),rect=marks.getBoundingClientRect();
-  const local=Math.max(0,Math.min(timelineSpan(),state.playhead-timelineOrigin()));
-  const screenX=rect.left+local/timelineSpan()*rect.width,scroller=document.querySelector('.timeline-scroll'),viewport=scroller.getBoundingClientRect(),label=timelineLayout().label;
-  const visible=screenX>=viewport.left+label-.5&&screenX<=viewport.left+scroller.clientWidth+.5;
-  line.hidden=!visible;line.style.left=(screenX-container.left)+'px';
-  $('playhead-handle').hidden=!visible;
-  $('playhead-handle').style.left=(local/timelineSpan()*100)+'%';
-  $('playhead-handle').setAttribute('aria-valuemax',timelineSpan());$('playhead-handle').setAttribute('aria-valuenow',local.toFixed(2));$('playhead-handle').setAttribute('aria-valuetext',clock(local));
+  if(!marks){playheadGeometry=null;return;}
+  if(!playheadGeometry || playheadGeometry.marks!==marks){
+    const container=$('timeline-content').getBoundingClientRect(),rect=marks.getBoundingClientRect(),scroller=document.querySelector('.timeline-scroll'),viewport=scroller.getBoundingClientRect();
+    playheadGeometry={marks,left:rect.left-container.left,width:rect.width,visibleFrom:viewport.left+timelineLayout().label-.5-container.left,visibleTo:viewport.left+scroller.clientWidth+.5-container.left};
+  }
+  const geometry=playheadGeometry,span=timelineSpan(),local=Math.max(0,Math.min(span,state.playhead-timelineOrigin()));
+  const x=geometry.left+local/span*geometry.width,visible=x>=geometry.visibleFrom&&x<=geometry.visibleTo,handle=$('playhead-handle');
+  line.hidden=!visible;line.style.left=x+'px';
+  handle.hidden=!visible;handle.style.left=(local/span*100)+'%';
+  handle.setAttribute('aria-valuemax',span);handle.setAttribute('aria-valuenow',local.toFixed(2));handle.setAttribute('aria-valuetext',clock(local));
 }
-document.querySelector('.timeline-scroll').addEventListener('scroll',updateTimelinePlayhead,{passive:true});
+document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{invalidatePlayheadGeometry();updateTimelinePlayhead();},{passive:true});
+new ResizeObserver(invalidatePlayheadGeometry).observe(document.querySelector('.timeline-scroll'));
 
 function scrubTimeline(event){
   const marks=document.querySelector('.time-ruler-marks');if(!marks)return;

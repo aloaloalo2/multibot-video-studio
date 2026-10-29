@@ -139,3 +139,25 @@
 .project-font-sample{padding:14px 10px;font-size:30px;background:#1e1f22;color:#ebe6db;border-radius:4px;}
 .graphic-font-sample{grid-column:1/-1;font-size:20px;padding:10px;line-height:1.35;}
 @media(max-width:760px){.timeline-scroll{--timeline-label-width:155px;}.timeline-toolbar h2{font-size:10px;}.timeline-panel{height:260px;}}
+/* Pointer feedback for controls that had no hover state. Touch screens skip it so a tap does not leave a control lit. */
+.channel-select,#add-channel,.project-views button,.library-tabs button,.icon-button,.transport button,.frame-group-clip,.track-clip,.transition-join,.transport input[type=range],.speech-issues summary,.speech-existing summary,.timeline-add-menu summary,.plan-zoom button,.transition-filters button,.transition-favorite,.agent-reasoning select,.pixabay-kind select{transition:background-color .12s,color .12s,filter .12s,box-shadow .12s,opacity .12s;}
+.transport input[type=range]{cursor:pointer;}
+@media(hover:hover){
+.channel-select:hover,#add-channel:hover{background:#242428;color:#f1f1f2;}
+.project-views button:not(.active):hover,.editor-open .project-views button:not(.active):hover{background:#2c2c33;color:#f1f1f2;}
+.library-tabs button:not(.active):hover{background:#26262b;color:#e6e6ea;}
+.icon-button:not(:disabled):hover{background:#3b3b42;color:#fff;}
+.transport button:not(:disabled):hover{background:#44444c;}
+.transport #monitor-audio.sound-on:hover{background:#4a3f22;}
+.transport input[type=range]:hover{filter:brightness(1.18);}
+.frame-group-clip:not(.selected):hover,.track-clip:hover{filter:brightness(1.22);box-shadow:inset 0 0 0 1px rgba(255,209,91,.55);}
+.transition-join.has-transition:hover,.dragging-transition .transition-join:hover{opacity:1;background:#e2c37a;}
+#playhead-handle:hover::before{background:#ffd15b;}
+.speech-issues summary:hover,.speech-existing summary:hover{color:#fff;}
+.timeline-add-menu summary:hover{background:#34343a;border-color:#5c5c63;color:#fff;}
+.plan-zoom button:not(:disabled):hover{background:#3d3d45;border-color:#7a7b84;}
+.transition-filters button:not(.active):not([aria-pressed=true]):hover{background:#303037;color:#f1f1f2;}
+.transition-favorite:hover{color:#efbe56;}
+.agent-reasoning select:not(:disabled):hover,.pixabay-kind select:hover,.modal-body select:hover{border-color:#6a6a73;}
+#agent-allow-images:hover{filter:brightness(1.2);}
+}

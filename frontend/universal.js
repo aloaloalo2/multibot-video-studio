@@ -149,12 +149,17 @@ function animatedValues(clip,local){
 function renderUniversalPreview(){
   const composition=$('preview-composition'),placeholder=$('preview-placeholder');
   $('preview-video').pause();$('preview-video').hidden=true;$('preview-image').hidden=true;$('preview-overlay').style.display='none';
-  const visible=[],prepared=[],order=new Map();
-  for(const layer of layers())for(const clip of layer.clips || []){
-    if(clip.kind==='audio')continue;
-    order.set(clip.id,order.size);
-    if(state.playhead>=clipRenderStart(clip)&&state.playhead<clipRenderEnd(clip))visible.push(clip);
-    if(state.playhead>=clipRenderStart(clip)-1.5&&state.playhead<clipRenderEnd(clip))prepared.push(clip);
+  const visible=[],prepared=[],{order,spans}=memoForProject('visualSpans',()=>{
+    const order=new Map(),spans=[];
+    for(const layer of layers())for(const clip of layer.clips || []){
+      if(clip.kind==='audio')continue;
+      order.set(clip.id,order.size);spans.push({clip,start:clipRenderStart(clip),end:clipRenderEnd(clip)});
+    }
+    return {order,spans};
+  });
+  for(const {clip,start,end} of spans){
+    if(state.playhead>=start&&state.playhead<end)visible.push(clip);
+    if(state.playhead>=start-1.5&&state.playhead<end)prepared.push(clip);
   }
   const needed=new Set(prepared.map(clip=>clip.id)),shown=new Set(visible.map(clip=>clip.id));
   const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));
