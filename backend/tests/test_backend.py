@@ -190,6 +190,21 @@ class BackendTest(unittest.TestCase):
         store.apply_action(pid, "undo", {})
         self.assertIn(asset["id"], {item["id"] for item in store.load_project(pid)["assets"]})
 
+    def test_library_lists_an_imported_episode_file_once(self):
+        project = store.create_project(store.channel_id(self.channel), "Voice listed once")
+        episode = Path(project["episode_path"]); episode.mkdir(parents=True, exist_ok=True)
+        voice = episode / "voice.wav"
+        voice.write_bytes(b"RIFF" + b"\0" * 64)
+        copy = store.import_asset_file(project, voice)
+        listed = [asset for asset in store.discover_assets(store.load_project(project["id"])) if asset["name"] == "voice.wav"]
+        self.assertEqual([asset["id"] for asset in listed], [copy["id"]])
+        # The original stays listed when the timeline uses it rather than the copy.
+        original = store.asset_record(voice, project["id"], "episode")
+        latest = store.load_project(project["id"])
+        latest["tracks"][0]["clips"].append({"id": "c1", "kind": "audio", "asset_id": original["id"], "start": 0, "duration": 1})
+        store.save_project(latest)
+        self.assertIn(original["id"], {asset["id"] for asset in store.discover_assets(store.load_project(project["id"]))})
+
     def test_atomic_batch_is_one_undo_and_invalid_batch_preserves_project(self):
         project = store.create_project(store.channel_id(self.channel), "Batch montage")
         pid = project["id"]

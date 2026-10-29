@@ -770,6 +770,14 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
     episode = Path(project["episode_path"])
     own_media = project_dir(project["id"]) / "media"
     existing = {asset["id"]: asset for asset in project.get("assets", []) if isinstance(asset, dict) and "id" in asset}
+    # A file imported from the episode folder exists twice, as the Studio copy and as the original; the library shows
+    # the copy only, unless the timeline uses the original itself. An import may add -xxxxxxxx to the name on a clash.
+    used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
+    copies = set()
+    for asset in existing.values():
+        path = Path(asset.get("path", ""))
+        if under(path, own_media) and path.is_file():
+            copies.add((re.sub(r"-[0-9a-f]{8}$", "", path.stem), path.suffix.lower(), path.stat().st_size))
     roots = [episode, own_media]
     for root in roots:
         if not root.is_dir():
@@ -786,6 +794,8 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
                 path = Path(current) / name
                 if path.is_file() and media_kind(path) and under(path, root):
                     asset = asset_record(path, project["id"], "project" if root == own_media else "episode")
+                    if root == episode and asset["id"] not in used and (path.stem, path.suffix.lower(), path.stat().st_size) in copies:
+                        continue
                     existing.setdefault(asset["id"], asset)
     for asset in existing.values():
         if asset.get('kind') in {'image','video'}:
