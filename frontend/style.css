@@ -608,7 +608,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(min-width:761px){
   .sidebar>.brand{padding-left:19px;padding-right:19px}
   .editor-open .topbar{height:64px;min-height:64px;padding:9px 19px;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr);row-gap:0}
-  .editor-open .top-actions{grid-column:3;grid-row:1;min-width:0;max-width:36vw;overflow-x:auto;flex-wrap:nowrap}
+  .editor-open .top-actions{grid-column:3;grid-row:1;min-width:0;flex-wrap:nowrap}
   .editor-open .top-actions>button{flex:none}
   .editor-open .editor-brand{grid-column:1;grid-row:1;padding:0 15px 0 0;justify-self:start}
   .editor-open .project-heading{grid-column:2;grid-row:1}
