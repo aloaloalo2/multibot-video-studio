@@ -309,11 +309,13 @@ function renderOverview() {
       open.querySelector('.project-meta').append(duration);
     }
     if(project.cover_asset_id){
+      // The Studio picks a telling frame of the montage for the cover and fades it in once loaded.
       const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
-      cover.src=`/api/projects/${encodeURIComponent(project.id)}/assets/${encodeURIComponent(project.cover_asset_id)}/thumbnail`;
-      cover.addEventListener('error',()=>{card.classList.remove('has-cover');cover.remove();},{once:true});
+      cover.src=`/api/projects/${encodeURIComponent(project.id)}/cover?v=${encodeURIComponent(project.updated_at || project.revision || 0)}`;
+      cover.addEventListener('load',()=>card.classList.add('cover-ready'),{once:true});
+      cover.addEventListener('error',()=>{card.classList.remove('has-cover');card.classList.add('no-cover');cover.remove();},{once:true});
       card.classList.add('has-cover');card.append(cover);
-    }
+    }else card.classList.add('no-cover');
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
     card.append(open,projectActions(project));
     container.append(card);

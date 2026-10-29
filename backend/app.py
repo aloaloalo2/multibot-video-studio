@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import store
+import covers
 import agent_estimate
 import agent_runtime
 import agent_storage
@@ -645,6 +646,15 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/cover", path)
+        if match:
+            try:
+                cover = covers.get(store.load_project(match.group(1)))
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                cover = None
+            if not cover:
+                raise store.StudioError("Обкладинки ще немає", 404)
+            return self.serve_media(cover, cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/([0-9a-f]{20})/thumbnail", path)
         if match:
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
