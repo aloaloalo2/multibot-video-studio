@@ -80,7 +80,7 @@ function bindBranding(channel){
   const textStyle=()=>({title_font:$('style-title-font').value});
   const loadStyles=async()=>{
     if(kind()!=='animated')return;
-    const mine=++request;stage.textContent=styles?'':'Малюємо стилі, перший раз це кілька секунд...';
+    const mine=++request;stage.textContent=styles?`Перемальовуємо зі шрифтом ${$('style-title-font').value}...`:'Малюємо стилі, перший раз це кілька секунд...';
     try{
       const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{animation:textStyle()});
       if(mine!==request||!strip.isConnected)return;
