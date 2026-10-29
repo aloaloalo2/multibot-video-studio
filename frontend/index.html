@@ -13,9 +13,9 @@
     html.opened-as-file .file-launch-notice a{display:inline-block;margin:8px 12px 0 0;color:#f3bd38}
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261029-rounded-system-logo-8">
-  <link rel="stylesheet" href="/style.css?v=20261029-rounder-cards-1">
+  <link rel="stylesheet" href="/style.css?v=20261029-logo-home-1">
   <link rel="stylesheet" href="/timeline.css?v=20261029-rounder-1">
-  <script defer src="/app.js?v=20261029-gaps-1"></script>
+  <script defer src="/app.js?v=20261029-logo-home-1"></script>
   <script defer src="/universal.js?v=20261029-live-layers-1"></script>
   <script defer src="/groups.js?v=20261029-fast-groups-1"></script>
   <script defer src="/waveforms.js?v=20261026-scene-groups-1"></script>
@@ -24,7 +24,7 @@
   <script defer src="/graphic-transitions.js?v=20261027-text-protection-1"></script>
   <script defer src="/effects.js?v=20261026-stability-7"></script>
   <script defer src="/transitions.js?v=20261027-text-protection-1"></script>
-  <script defer src="/plan.js?v=20261029-start-production"></script>
+  <script defer src="/plan.js?v=20261029-voice-start-2"></script>
   <script defer src="/analysis.js?v=20261026-speech-2"></script>
   <script defer src="/services.js?v=20261026n"></script>
   <script defer src="/agent.js?v=20261028-agent-selection-1"></script>
@@ -40,7 +40,7 @@
   </div>
   <div class="app-shell">
     <aside id="channel-sidebar" class="sidebar" aria-label="Канали">
-      <div class="brand"><div class="brand-logo" role="img" aria-label="VideoKey Studio"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
+      <div class="brand"><div class="brand-logo" role="button" tabindex="0" aria-label="VideoKey Studio, на головну" title="На головну"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
       <div class="sidebar-heading channel-heading">Канали <button id="add-channel" type="button" aria-label="Додати канал" title="Додати канал">＋</button></div>
       <div id="channel-list" class="channel-list" role="list"></div>
       <input id="local-media-file" type="file" accept="video/*,audio/*,image/*,.mkv" hidden>
@@ -51,8 +51,7 @@
 
     <main class="main">
       <header class="topbar">
-        <div id="editor-brand" class="brand editor-brand" hidden><div class="brand-logo" role="img" aria-label="VideoKey Studio"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
-        <button id="back-to-projects" class="subtle" type="button" hidden>← На головну</button>
+        <div id="editor-brand" class="brand editor-brand" hidden><div class="brand-logo" role="button" tabindex="0" aria-label="VideoKey Studio, на головну" title="На головну"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
         <div class="project-heading"><div id="project-title" class="project-title"><strong>Оберіть канал</strong></div><span id="save-state" class="save-state"></span><div class="history-actions"><button id="undo" class="history-button editor-only" type="button" title="Скасувати" aria-label="Скасувати" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button><button id="redo" class="history-button editor-only" type="button" title="Повторити" aria-label="Повторити" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button></div></div>
         <div class="top-actions"><button id="studio-update" class="secondary" type="button" hidden>Оновити студію</button><button id="export-open" class="primary editor-only" type="button" disabled>Експорт MP4</button></div>
       </header>

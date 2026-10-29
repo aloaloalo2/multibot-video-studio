@@ -239,7 +239,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   state.restoringProject=false;
   state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
-  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=state.plan && !state.project.production?.plan_ready && view==='editor'?'plan':view;
+  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='editor' && !editorUnlocked()?'plan':view;
   if(updateUrl)syncRoute();
   buildAudioNodes();
   renderProjects(); renderProject(); status('');if(state.job)pollJob();
@@ -304,7 +304,7 @@ function renderOverview() {
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
     open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
-    open.addEventListener('click',()=>selectProject(project.id,{view:project.has_plan&&!count?'plan':'editor'}).catch(error=>status(error.message,true)));
+    open.addEventListener('click',()=>selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true)));
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
       const duration=document.createElement('span');duration.className='project-duration';
       const value=Number(project.duration),hours=Math.floor(value/3600);
@@ -442,7 +442,6 @@ function renderProject() {
   }
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent=state.project?'● Локально збережено':'';
-  $('back-to-projects').hidden=!state.project;
   $('channel-overview').hidden=!!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
@@ -455,8 +454,8 @@ function renderProject() {
   renderPlan();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
-  $('view-editor').disabled=!!state.project && !!state.plan && !state.project.production?.plan_ready;
-  $('view-editor').title=$('view-editor').disabled?'Спочатку додайте таймінги готової озвучки':'';
+  $('view-editor').disabled=!!state.project && !editorUnlocked();
+  $('view-editor').title=$('view-editor').disabled?'Монтаж відкриється, коли план буде за озвучкою':'';
   $('export-open').disabled=!state.project;$('export-open').title=state.project?.production?.reason || ''; $('undo').disabled=!state.project?.can_undo; $('redo').disabled=!state.project?.can_redo;
   $('add-transition').disabled=!state.project || (isUniversal()?!universalClips().length:!scenes().length);$('add-text').disabled=!state.project || (!isUniversal()&&!scenes().length);
   $('play-pause').disabled=!state.project; $('seek').disabled=!state.project;
@@ -1022,10 +1021,10 @@ async function pollJob(){
 }
 
 $('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Створіть новий канал у папці YOUTUBE або додайте наявну папку каналу.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label>',[{label:'Скасувати',run:closeModal},{label:'Обрати папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
-$('back-to-projects').addEventListener('click',showProjectList);
+for(const logo of document.querySelectorAll('.brand-logo')){logo.addEventListener('click',showProjectList);logo.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}
 $('overview-create').addEventListener('click',()=>$('add-project').click());
 $('overview-channel-settings').addEventListener('click',()=>{if(state.channel)openChannelSettings(state.channel);});
-$('add-project').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label><p>Проєкт зберігатиметься у папці каналу.</p>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id);}catch(error){status(error.message,true);}}}]);});
+$('add-project').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id,{view:'plan'});}catch(error){status(error.message,true);}}}]);});
 $('global-settings').addEventListener('click',openStudioSettings);
 $('asset-search').addEventListener('input',event=>{state.search=event.target.value;renderAssets();if(state.libraryTab==='pixabay')debouncedPixabay();});
 let searchTimer;
