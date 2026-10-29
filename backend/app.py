@@ -25,6 +25,7 @@ from pathlib import Path
 import store
 import covers
 import channel_branding
+import style_lab
 import agent_estimate
 import agent_runtime
 import agent_storage
@@ -647,6 +648,27 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
+        if match:
+            store.get_channel_folder(match.group(1))
+            try:
+                return self.serve_media(style_lab.preview_file(*match.groups()), cache=True)
+            except style_lab.StyleLabError as error:
+                raise store.StudioError(str(error), 404) from None
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo-overlay\.png", path)
+        if match:
+            folder = store.get_channel_folder(match.group(1))
+            try:
+                frame = (int((query.get("w") or ["1920"])[0]), int((query.get("h") or ["1080"])[0]))
+            except ValueError:
+                raise store.StudioError("Невірний розмір кадру") from None
+            if not (16 <= frame[0] <= 7680 and 16 <= frame[1] <= 7680):
+                raise store.StudioError("Невірний розмір кадру")
+            settings = store.read_json(folder / store.PLAN_CONFIG, {})
+            target = store.DATA_ROOT / "channels" / match.group(1) / f"logo-overlay-{frame[0]}x{frame[1]}.png"
+            if not channel_branding.overlay_png(match.group(1), settings.get("logo"), frame, target):
+                raise store.StudioError("Логотип не додано або вимкнено", 404)
+            return self.serve_media(target)
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
         if match:
             store.get_channel_folder(match.group(1))
@@ -735,6 +757,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews", path)
+        if match and method == "POST":
+            try:
+                return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation")))
+            except style_lab.StyleLabError as error:
+                raise store.StudioError(str(error), 409) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
         if match and method in {"POST", "DELETE"}:
             try:

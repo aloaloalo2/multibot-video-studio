@@ -27,6 +27,11 @@ def validate(settings: dict) -> None:
     """Check the channel kind and logo placement inside saved channel settings."""
     if "channel_kind" in settings and settings["channel_kind"] not in KINDS:
         raise BrandingError("Невідомий тип каналу")
+    import style_lab
+    try:
+        style_lab.validate(settings.get("animation"))
+    except style_lab.StyleLabError as error:
+        raise BrandingError(str(error)) from None
     logo = settings.get("logo")
     if logo is None:
         return

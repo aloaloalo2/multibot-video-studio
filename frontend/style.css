@@ -710,6 +710,28 @@ button.danger:hover:not(:disabled){background:#523034}
 
 /* Channel kind and logo, at the top of the channel settings. */
 .modal-backdrop[data-channel-kind="animated"] .regular-only{display:none}
+.modal-backdrop:not([data-channel-kind="animated"]) .animated-only{display:none}
+.style-toolbar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 18px;margin:4px 0 12px}
+.style-toolbar label{font-size:12px;color:#aeb0b7}
+.style-toolbar select{margin-top:4px;background:#2a2a30;border:1px solid #4a4a52;border-radius:9px;color:#f1f1f2;padding:6px 9px}
+.style-accent span{display:flex;align-items:center;gap:7px;margin-top:4px}
+.style-accent input[type=color]{width:38px;height:28px;padding:0;border:1px solid #4a4a52;border-radius:7.5px;background:none}
+.style-accent input[type=checkbox],.style-toolbar .logo-toggle input{width:auto;margin:0;accent-color:#f0b429}
+.style-toolbar .logo-toggle{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px;color:#d6d7dc}
+.style-gallery{display:flex;flex-direction:column;gap:10px}
+.style-loading{color:#9a9ca4;font-size:13px;padding:18px 0}
+.style-card{display:flex;flex-direction:column;gap:8px;width:100%;text-align:left;padding:11px;border:1px solid #3c3c43;border-radius:14px;background:#1d1d21;color:#f1f1f2;cursor:pointer;transition:border-color .15s,background-color .15s}
+.style-card[aria-pressed="true"]{border-color:#f0b429;background:#28241a;box-shadow:inset 0 0 0 1px #f0b429}
+@media(hover:hover){.style-card:not([aria-pressed="true"]):hover{border-color:#5a5a62;background:#232328}}
+.style-card-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.style-card-head strong{font-size:14px}
+.style-original{font-size:12px;color:#8a8c94}
+.style-badge{font-size:11px;color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73;padding:2px 7px;border-radius:9.5px}
+.style-card small{font-size:12px;color:#9a9ca4;line-height:1.4}
+.style-frames{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.style-frame{position:relative;aspect-ratio:16/9;border-radius:7.5px;overflow:hidden;background:#0c0c0f}
+.style-frame img:first-child{width:100%;height:100%;object-fit:cover;display:block}
+.style-frame .logo-mark{position:absolute;height:auto;max-width:none}
 .channel-kind-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .channel-kind-card{position:relative;display:block;cursor:pointer}
 .channel-kind-card input{position:absolute;opacity:0;pointer-events:none}
