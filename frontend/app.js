@@ -572,7 +572,13 @@ function renderAssets() {
   $('transition-library').hidden=!transitions;$('asset-list').hidden=transitions;$('asset-search').hidden=state.libraryTab!=='pixabay';$('asset-search').placeholder='Пошук у Pixabay';
   if(transitions)return;
   if(effects){$('asset-list').hidden=true;return;}
-  const list=$('asset-list'); list.replaceChildren();
+  const list=$('asset-list');
+  // Most edits only move clips; rebuilding hundreds of cards then costs time and reloads thumbnails.
+  const used=[...new Set((state.project?.tracks || []).flatMap(track=>(track.clips || []).map(clip=>clip.asset_id)))].sort().join();
+  const key=[state.project?.id,state.libraryTab,state.libraryTab==='pixabay'?state.search:'',state.assetsLoading,used];
+  if(list._assets===state.assets&&list._pixabay===state.pixabay&&list._key?.every((value,index)=>value===key[index]))return;
+  list._assets=state.assets;list._pixabay=state.pixabay;list._key=key;
+  list.replaceChildren();
   const assets=visibleAssets();
   if (!assets.length) {const empty=document.createElement('div');empty.className='empty-state';empty.textContent=state.libraryTab==='pixabay' ? 'Введіть запит, щоб знайти матеріали Pixabay.' : (state.project?(state.assetsLoading?'Завантаження медіатеки...':state.libraryTab==='all'?'Додайте медіафайл через кнопку «+».':'Матеріалів цього типу ще немає.'):'Оберіть випуск.');list.append(empty);return;}
   for (const asset of assets) {
@@ -718,8 +724,11 @@ function clipHtml(clip,kind,isScene=false,trackId='') {
   return `<button type="button" draggable="${isScene}" class="${cls}" data-clip-id="${esc(clip.id)}" data-track-id="${esc(trackId)}" data-scene="${isScene}" style="left:${left}%;width:${width}%" title="${esc(label)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+span)}">${esc(label)}</button>`;
 }
 
+// The ruler width is set from the zoom, so the previous value is remembered instead of measured:
+// measuring here would force a layout of everything the edit has just changed.
+let timelineMarksWidth=null;
 function renderTimeline() {
-  const scroller=document.querySelector('.timeline-scroll'),oldWidth=document.querySelector('.time-ruler-marks')?.getBoundingClientRect().width;
+  const scroller=document.querySelector('.timeline-scroll'),oldWidth=document.querySelector('.time-ruler-marks')?timelineMarksWidth:null;
   const oldScroll=scroller.scrollLeft,oldTop=scroller.scrollTop,layout=timelineLayout(),canvasWidth=layout.fit*state.zoom,width=canvasWidth*.98;
   const previousCache=timelineRenderCache;
   timelineRenderCache={layout,span:timelineSpan(),origin:timelineOrigin()};
@@ -730,6 +739,8 @@ function renderTimeline() {
   $('time-ruler').replaceChildren();$('timeline-tracks').replaceChildren();
   if(state.project)renderUniversalTimeline();
   const marks=document.querySelector('.time-ruler-marks');if(handle&&marks)marks.append(handle);
+  timelineMarksWidth=marks?Number.parseFloat(marks.style.width)||null:null;
+  if(state.project)renderTimelineGaps();
   scroller.scrollLeft=state.zoom<=1?0:oldWidth?oldScroll/oldWidth*width:0;
   $('zoom-value').textContent=Math.round(state.zoom*100)+'%';
   $('zoom-in').disabled=state.zoom>=timelineZoomLevels.at(-1);
@@ -971,7 +982,9 @@ async function openExport() {
     modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());
     pollJob();return;
   }
-  modal('Експорт ролика',`<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
+  const gaps=visualGaps(),shownGaps=gaps.slice(0,6);
+  const gapWarning=gaps.length?`<div class="export-gaps" role="note"><p><strong>Без кадру: ${gaps.length} ${gaps.length===1?'місце':gaps.length<5?'місця':'місць'}.</strong> У готовому відео там буде порожній екран.</p><div class="export-gap-list">${shownGaps.map((gap,index)=>`<button type="button" data-gap="${index}">${clock(gap.start)}–${clock(gap.end)}</button>`).join('')}${gaps.length>shownGaps.length?`<span>і ще ${gaps.length-shownGaps.length}</span>`:''}</div></div>`:'';
+  modal('Експорт ролика',`${gapWarning}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');
     if(button.disabled)return;
     button.disabled=true;button.textContent='Підготовка...';
@@ -979,6 +992,11 @@ async function openExport() {
     const projectId=state.project.id, renderState=$('render-state');
     try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
   }}]);
+  for(const button of document.querySelectorAll('.export-gap-list button'))button.addEventListener('click',()=>{const gap=shownGaps[Number(button.dataset.gap)];closeModal();stopPlayback();state.playhead=gap.start;renderPreview();revealTimelineTime(gap.start);});
+}
+function revealTimelineTime(time){
+  const marks=document.querySelector('.time-ruler-marks'),scroller=document.querySelector('.timeline-scroll');if(!marks)return;
+  const x=(time-timelineOrigin())/timelineSpan()*marks.offsetWidth;scroller.scrollLeft=Math.max(0,x-scroller.clientWidth/3);
 }
 async function pollJob(){
   if(!state.job)return;

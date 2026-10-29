@@ -17,7 +17,13 @@ function enableLayerReorder(heading,layer){
   heading.addEventListener('drop',async event=>{const id=event.dataTransfer.getData('application/x-videostudio-layer');if(!id)return;event.preventDefault();event.stopPropagation();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.remove('layer-drop-above','layer-drop-below');if(id===layer.id)return;const order=layers().map(l=>l.id).filter(x=>x!==id),target=order.indexOf(layer.id);if(target<0)return;const index=Math.min(order.length,target+(above?1:0));try{await action('move_layer',{layer_id:id,to_index:index},'Порядок шарів збережено.');}catch(error){status(error.message,true);}});
 }
 let groupedRenderIndex=null;
+// A grouped timeline asks for each group's members and bounds many times per draw; both are fixed for one project version.
 function groupMembers(group){
+  const cache=memoForProject('groupMembers',()=>new WeakMap());
+  if(!cache.has(group))cache.set(group,findGroupMembers(group));
+  return cache.get(group).slice();
+}
+function findGroupMembers(group){
   const ids=new Set(group.clip_ids);
   if(!groupedRenderIndex)return universalClips().filter(c=>ids.has(c.id));
   const matches=[];
@@ -41,7 +47,11 @@ function addStackTools(heading,entry){
 }
 document.addEventListener('click',event=>{if(!event.target.closest('.stack-context-menu,.stack-menu-button'))closeStackMenu();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeStackMenu();});
-function groupBounds(group){const clips=groupMembers(group);return {start:Math.min(...clips.map(c=>Number(c.start))),end:Math.max(...clips.map(c=>Number(c.start)+Number(c.duration)))};}
+function groupBounds(group){
+  const cache=memoForProject('groupBounds',()=>new WeakMap());
+  if(!cache.has(group)){const clips=groupMembers(group);cache.set(group,{start:Math.min(...clips.map(c=>Number(c.start))),end:Math.max(...clips.map(c=>Number(c.start)+Number(c.duration)))});}
+  return {...cache.get(group)};
+}
 
 function renderGroupingControls(){
   renderCompositionTabs();prepareTimelineMenu();

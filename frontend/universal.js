@@ -146,6 +146,33 @@ function animatedValues(clip,local){
   return transitionValues(clip,local,values);
 }
 
+// Stretches of the video where no scene frame is placed; the export shows an empty screen there.
+// Scene groups define the montage when they exist, so a channel badge running the whole length does not hide a hole.
+function visualGaps(){
+  return memoForProject('visualGaps',()=>{
+    if(!isUniversal())return [];
+    const fps=Number(state.project.fps || 25),frame=time=>Math.floor(Number(time)*fps+.5+1e-8);
+    const groups=sceneGroups().filter(group=>group.role!=='overlay');
+    const sceneIds=groups.length?new Set(groups.flatMap(group=>group.clip_ids)):null;
+    const spans=universalClips().filter(clip=>clip.kind!=='audio'&&(!sceneIds||sceneIds.has(clip.id))).map(clip=>[frame(clip.start),frame(Number(clip.start)+Number(clip.duration))]).sort((a,b)=>a[0]-b[0]);
+    const total=frame(duration()),gaps=[];let covered=0;
+    if(!spans.length)return [];
+    for(const [start,end] of spans){if(start>covered)gaps.push({start:covered/fps,end:start/fps});covered=Math.max(covered,end);}
+    if(covered<total)gaps.push({start:covered/fps,end:total/fps});
+    return gaps;
+  });
+}
+function renderTimelineGaps(){
+  const marks=document.querySelector('.time-ruler-marks');if(!marks)return;
+  const origin=timelineOrigin(),span=timelineSpan();
+  for(const gap of visualGaps()){
+    const start=Math.max(gap.start,origin),end=Math.min(gap.end,origin+span);if(end<=start)continue;
+    const mark=document.createElement('div');mark.className='timeline-gap';
+    mark.style.left=((start-origin)/span*100)+'%';mark.style.width=((end-start)/span*100)+'%';
+    mark.title=`Немає кадру: ${clock(gap.start)}–${clock(gap.end)}`;marks.prepend(mark);
+  }
+}
+
 function renderUniversalPreview(){
   const composition=$('preview-composition'),placeholder=$('preview-placeholder');
   $('preview-video').pause();$('preview-video').hidden=true;$('preview-image').hidden=true;$('preview-overlay').style.display='none';
