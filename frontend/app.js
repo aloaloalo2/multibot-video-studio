@@ -215,11 +215,7 @@ function deleteProject(project){
     try{
       await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');
       if(state.project?.id===project.id)showProjectList();
-      await refreshProjects();status(`Проєкт «${project.name}» видалено зі списку.`);
-      modal('Проєкт видалено',`<p>«${esc(project.name)}» прибрано зі списку. За потреби його можна відразу відновити.</p>`,[{label:'Відновити проєкт',run:async()=>{
-        const restore=$('modal-actions').querySelector('button');restore.disabled=true;
-        try{await api(`/api/projects/${encodeURIComponent(project.id)}/restore`,'POST',{});await refreshProjects();closeModal();status(`Проєкт «${project.name}» відновлено.`);}catch(error){restore.disabled=false;status(error.message,true);}
-      }},{label:'Готово',primary:true,run:closeModal}]);
+      closeModal();await refreshProjects();status(`Проєкт «${project.name}» видалено зі списку.`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
 }
