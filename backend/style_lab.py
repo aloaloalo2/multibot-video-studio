@@ -60,6 +60,9 @@ def validate(animation) -> None:
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
 
 
+GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "chalk")
+
+
 def razgon_text(animation: dict | None) -> dict:
     """config.json keys that carry the channel text style into Razgon."""
     animation = animation or {}
@@ -69,6 +72,65 @@ def razgon_text(animation: dict | None) -> dict:
     if animation.get("accent"):
         extra["ui"] = {"accent": animation["accent"]}
     return extra
+
+
+def render_stills(root: Path, folder: Path, ids: list[str], times: list[float]) -> Path:
+    result = subprocess.run(["node", "render.mjs", "--project", str(folder), "--styles", ",".join(ids), "--at", ",".join(map(str, times)), "--format", "jpeg"],
+                            cwd=root, capture_output=True, text=True, timeout=600)
+    out = folder / "build" / "styles"
+    if result.returncode or not out.is_dir():
+        raise StyleLabError("Razgon не зміг намалювати кадри стилю: " + (result.stderr or result.stdout)[-300:])
+    return out
+
+
+def still(out: Path, sid: str, at: float) -> Path:
+    source = out / f"{sid}_{at}s_{at:.2f}.jpeg"
+    if not source.exists():
+        source = next(out.glob(f"{sid}_*_{at:.2f}.jpeg"), None)
+    if source is None:
+        raise StyleLabError(f"Немає кадру стилю {sid} на {at} с")
+    return source
+
+
+def prune(cache: Path, keep: int = 5) -> None:
+    for old in sorted((d for d in cache.parent.iterdir() if d.is_dir() and d != cache), key=lambda d: d.stat().st_mtime)[:-keep]:
+        shutil.rmtree(old)
+
+
+def showcase(cid: str, animation: dict | None = None) -> dict:
+    """The style card (Razgon's showcase scene: the character, a house, a sign) in every gallery style."""
+    channel = store.get_channel_folder(cid)
+    choices = films(channel)
+    root = choices[0][0] if choices else None
+    if root is None or not (root / "showcase" / "scenes").is_dir():
+        raise StyleLabError("Немає сцени-візитки Razgon")
+    scene = root / "showcase"
+    known = {style["id"]: style for style in presets(root)}
+    ids = [sid for sid in GALLERY if sid in known]
+    text = razgon_text(animation)
+    identity = ["showcase", text, ids, newest_mtime(scene / "scenes", scene / "story", root / "engine")]
+    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
+    cache = store.DATA_ROOT / "channels" / cid / "style-cards" / key
+    if not all((cache / f"{sid}-0.jpg").exists() for sid in ids):
+        with LOCK:
+            folder = store.DATA_ROOT / "channels" / cid / "style-lab" / "showcase"
+            if folder.exists():
+                shutil.rmtree(folder)
+            (folder / "build").mkdir(parents=True)
+            for name in ("story", "scenes", "assets", "timeline"):
+                if (scene / name).exists():
+                    os.symlink(scene / name, folder / name)
+            config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
+            config.update(text)
+            (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
+            out = render_stills(root, folder, ids, [2.0])
+            cache.mkdir(parents=True, exist_ok=True)
+            for sid in ids:
+                shutil.copyfile(still(out, sid, 2.0), cache / f"{sid}-0.jpg")
+            prune(cache)
+    current = json.loads((choices[0][1] / "config.json").read_text(encoding="utf-8")).get("style")
+    return {"key": key, "film_style": current,
+            "styles": [{**known[sid], "card": f"/api/channels/{cid}/style-cards/{key}/{sid}-0.jpg"} for sid in ids]}
 
 
 HERO = re.compile(r"\bclose\b|\bclose-up\b|\bbig face\b")
@@ -126,7 +188,7 @@ def lab(cid: str, root: Path, project: Path, assets: bool, text: dict) -> Path:
     return folder
 
 
-def previews(cid: str, assets: bool = True, animation: dict | None = None) -> dict:
+def previews(cid: str, assets: bool = True, animation: dict | None = None, only: str | None = None) -> dict:
     """Frames of the channel's newest film in every built-in style; cached until the film, engine or choice changes."""
     channel = store.get_channel_folder(cid)
     choices = films(channel)
@@ -134,7 +196,11 @@ def previews(cid: str, assets: bool = True, animation: dict | None = None) -> di
         raise StyleLabError("У каналу ще немає роликів Razgon, з яких можна показати стиль")
     root, project = choices[0]
     styles, times, text = presets(root), sample_times(project), razgon_text(animation)
-    identity = [str(project), assets, text, times, newest_mtime(project / "scenes", project / "story", root / "engine"),
+    if only:
+        styles = [style for style in styles if style["id"] == only]
+        if not styles:
+            raise StyleLabError("Невідомий стиль")
+    identity = [str(project), assets, text, times, only, newest_mtime(project / "scenes", project / "story", root / "engine"),
                 (project / "assets" / "index.json").stat().st_mtime_ns if (project / "assets" / "index.json").exists() else 0]
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
     cache = store.DATA_ROOT / "channels" / cid / "style-previews" / key
@@ -142,32 +208,22 @@ def previews(cid: str, assets: bool = True, animation: dict | None = None) -> di
     if not all((cache / f"{sid}-{i}.jpg").exists() for sid in ids for i in range(len(times))):
         with LOCK:
             folder = lab(cid, root, project, assets, text)
-            result = subprocess.run(["node", "render.mjs", "--project", str(folder), "--styles", ",".join(ids), "--at", ",".join(map(str, times)),
-                                     "--format", "jpeg"], cwd=root, capture_output=True, text=True, timeout=600)
-            out = folder / "build" / "styles"
-            if result.returncode or not out.is_dir():
-                raise StyleLabError("Razgon не зміг намалювати кадри стилю: " + (result.stderr or result.stdout)[-300:])
+            out = render_stills(root, folder, ids, times)
             cache.mkdir(parents=True, exist_ok=True)
-            # Keep a few recent variants (with and without assets, text choices) so switching back is instant.
-            for old in sorted((d for d in cache.parent.iterdir() if d.is_dir() and d != cache), key=lambda d: d.stat().st_mtime)[:-5]:
-                shutil.rmtree(old)
+            # Keep a few recent variants (styles, with and without assets, text choices) so switching back is instant.
+            prune(cache, keep=12)
             for sid in ids:
                 for i, at in enumerate(times):
-                    source = out / f"{sid}_{at}s_{at:.2f}.jpeg"
-                    if not source.exists():
-                        source = next(out.glob(f"{sid}_*_{at:.2f}.jpeg"), None)
-                    if source is None:
-                        raise StyleLabError(f"Немає кадру стилю {sid} на {at} с")
-                    shutil.copyfile(source, cache / f"{sid}-{i}.jpg")
+                    shutil.copyfile(still(out, sid, at), cache / f"{sid}-{i}.jpg")
     current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
     return {"film": project.name, "film_style": current, "times": times, "key": key,
             "styles": [{**style, "frames": [f"/api/channels/{cid}/style-previews/{key}/{style['id']}-{i}.jpg" for i in range(len(times))]} for style in styles]}
 
 
-def preview_file(cid: str, key: str, name: str) -> Path:
-    if not re.fullmatch(r"[0-9a-f]{20}", key) or not re.fullmatch(r"[a-z0-9_-]+-\d\.jpg", name):
+def preview_file(cid: str, key: str, name: str, kind: str = "style-previews") -> Path:
+    if kind not in {"style-previews", "style-cards"} or not re.fullmatch(r"[0-9a-f]{20}", key) or not re.fullmatch(r"[a-z0-9_-]+-\d\.jpg", name):
         raise StyleLabError("Невірний кадр")
-    path = store.DATA_ROOT / "channels" / cid / "style-previews" / key / name
+    path = store.DATA_ROOT / "channels" / cid / kind / key / name
     if not path.is_file():
         raise StyleLabError("Кадр стилю не знайдено")
     return path

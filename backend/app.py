@@ -648,11 +648,11 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/(style-previews|style-cards)/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
         if match:
             store.get_channel_folder(match.group(1))
             try:
-                return self.serve_media(style_lab.preview_file(*match.groups()), cache=True)
+                return self.serve_media(style_lab.preview_file(match.group(1), match.group(3), match.group(4), match.group(2)), cache=True)
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 404) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo-overlay\.png", path)
@@ -757,10 +757,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
+        if match and method == "POST":
+            try:
+                return self.json_response(style_lab.showcase(match.group(1), body.get("animation")))
+            except style_lab.StyleLabError as error:
+                raise store.StudioError(str(error), 409) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews", path)
         if match and method == "POST":
             try:
-                return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation")))
+                return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation"), body.get("style")))
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 409) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
