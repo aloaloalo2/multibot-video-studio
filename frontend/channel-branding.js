@@ -27,7 +27,7 @@ function brandingSections(channel){
     <section class="settings-section channel-look"><h3><span class="animated-only">Стиль і логотип</span><span class="regular-only">Логотип каналу</span></h3>
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="logo-preview-empty" class="regular-only">Логотип ще не додано</span><span id="style-stage-state" class="style-stage-state animated-only" role="status" aria-live="polite"></span></div>
       <div class="animated-only"><p id="style-caption" class="style-caption"></p>
-        <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div>
+        <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}</option>`).join('')}</select></label>
           <label class="logo-toggle" title="Ролики каналу використовують картинки-предмети: з бібліотеки й згенеровані. Без асетів усе малюється фігурами."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Асети</label>
           <button id="style-film-toggle" class="secondary" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
@@ -73,18 +73,52 @@ function bindBranding(channel){
   const renderStrip=()=>{
     strip.replaceChildren();
     for(const style of styles){
+      const cell=document.createElement('div');cell.className='style-cell';
       const thumb=document.createElement('button');thumb.type='button';thumb.className='style-thumb';thumb.dataset.style=style.id;thumb.setAttribute('role','radio');thumb.setAttribute('aria-checked',String(style.id===chosen));
       thumb.innerHTML=`<img src="${esc(card(style.id))}" alt=""><span>${esc(named(style)[0])}</span>`;
       thumb.addEventListener('click',()=>choose(style.id));
-      strip.append(thumb);
+      cell.append(thumb);
+      if(style.own){
+        const remove=document.createElement('button');remove.type='button';remove.className='style-remove';remove.title=`Видалити стиль «${style.name}»`;remove.setAttribute('aria-label',remove.title);remove.textContent='×';
+        remove.addEventListener('click',()=>removeStyle(style));
+        cell.append(remove);
+      }
+      strip.append(cell);
     }
+    // The last tile copies a look from any picture: DeepSeek reads it and the channel gets its own style.
+    const add=document.createElement('button');add.type='button';add.className='style-thumb style-add';add.disabled=busy;
+    add.innerHTML='<span class="style-add-box" aria-hidden="true">+</span><span>Скопіювати стиль</span>';add.title='Завантажте кадр чи ілюстрацію, і DeepSeek зробить з неї стиль каналу';
+    add.addEventListener('click',()=>$('style-copy-file').click());
+    strip.append(add);
     backdrop();
   };
+  let busy=false;
+  const removeStyle=async style=>{
+    if(!confirm(`Видалити стиль «${style.name}»? Ролики, які вже в ньому, не зміняться.`))return;
+    try{
+      await api(`/api/channels/${encodeURIComponent(channel.id)}/custom-styles/${encodeURIComponent(style.id)}`,'DELETE');
+      styles=styles.filter(item=>item.id!==style.id);
+      if(chosen===style.id)chosen=styles.some(item=>item.id===filmStyle)?filmStyle:styles[0]?.id;
+      renderStrip();
+    }catch(error){stage.textContent=error.message;}
+  };
+  $('style-copy-file').addEventListener('change',async event=>{
+    const file=event.target.files[0];event.target.value='';if(!file||busy)return;
+    if(file.size>15*1024*1024){stage.textContent='Картинка завелика, оберіть до 15 МБ.';return;}
+    busy=true;renderStrip();stage.textContent='DeepSeek вивчає картинку, це до півхвилини...';
+    try{
+      const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не вдалося прочитати файл.'));reader.readAsDataURL(file);});
+      const {style}=await api(`/api/channels/${encodeURIComponent(channel.id)}/custom-styles`,'POST',{image});
+      chosen=style.id;busy=false;
+      stage.textContent=`Стиль «${style.name}» готовий. Малюємо його картки для всіх шрифтів...`;
+      await loadStyles(false);
+    }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
+  });
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
-  const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
-  const loadStyles=async()=>{
+  const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
+  const loadStyles=async(announce=true)=>{
     if(kind()!=='animated')return;
-    const mine=++request;stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
+    const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
       const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{});
       if(mine!==request||!strip.isConnected)return;

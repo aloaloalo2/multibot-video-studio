@@ -26,6 +26,7 @@ import store
 import covers
 import channel_branding
 import style_lab
+import style_copy
 import agent_estimate
 import agent_runtime
 import agent_storage
@@ -655,6 +656,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_media(style_lab.preview_file(*match.groups()), cache=True)
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 404) from None
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles", path)
+        if match:
+            return self.json_response({"styles": style_copy.load(match.group(1))})
         match = re.fullmatch(r"/api/style-cards/([0-9a-f]{20})/([a-z0-9_-]+-0\.jpg)", path)
         if match:
             try:
@@ -763,6 +767,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles", path)
+        if match and method == "POST":
+            try:
+                style = style_copy.create(match.group(1), body.get("image"), body.get("note") or "")
+            except style_copy.StyleCopyError as error:
+                raise store.StudioError(str(error), 409) from None
+            return self.json_response({"style": style}, 201)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles/(custom-[0-9a-f]{10})", path)
+        if match and method == "DELETE":
+            try:
+                style_copy.remove(*match.groups())
+            except style_copy.StyleCopyError as error:
+                raise store.StudioError(str(error), 404) from None
+            return self.json_response({"ok": True})
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
         if match and method == "POST":
             try:

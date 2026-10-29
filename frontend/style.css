@@ -789,3 +789,11 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(hover:hover){.channel-settings-button:not(:disabled):hover{background:#303035;color:#f2f2f3}}
 .channel-name-section label h3{margin-bottom:9px}
 .channel-name-section input{width:100%;font-size:15px;font-weight:600}
+.style-cell{position:relative;min-width:0}
+.style-cell .style-thumb{width:100%}
+.style-remove{position:absolute;top:4px;right:4px;width:20px;height:20px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:#000a;color:#f1f1f2;font-size:14px;line-height:1;opacity:0;transition:opacity .15s}
+.style-cell:hover .style-remove,.style-remove:focus-visible{opacity:1}
+@media(hover:none){.style-remove{opacity:1}}
+.style-add-box{display:grid;place-items:center;width:100%;aspect-ratio:16/9;border:2px dashed #4a4a52;border-radius:9.5px;color:#9a9ca4;font-size:22px;transition:border-color .15s,color .15s}
+@media(hover:hover){.style-add:not(:disabled):hover .style-add-box{border-color:#f0b429;color:#f0b429}}
+.style-add:disabled{opacity:.5;cursor:default}

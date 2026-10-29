@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import store
+import style_copy
 
 LOCK = threading.Lock()
 SAMPLES = (0.2, 0.5, 0.8)
@@ -105,10 +106,11 @@ def card_dir(key: str) -> Path:
     return store.DATA_ROOT / CARDS / key
 
 
-def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool) -> str:
-    """Render the style card in every gallery style for one title font and assets choice, unless it is cached."""
+def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, definition: dict | None = None) -> str:
+    """Render the style card in every gallery style for one title font and assets choice, unless it is cached. A
+    channel's own style (one id with its definition) travels in the config, as it does in a film."""
     scene = root / "showcase"
-    key = hashlib.sha256(json.dumps(["showcase", font, assets, ids, stamp], sort_keys=True).encode()).hexdigest()[:20]
+    key = hashlib.sha256(json.dumps(["showcase", font, assets, ids, stamp, definition], sort_keys=True).encode()).hexdigest()[:20]
     cache = card_dir(key)
     if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
         return key
@@ -124,6 +126,8 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool) ->
         (folder / "assets" / "index.json").write_text("[]")
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
     config["fonts"] = {"title": font}
+    if definition:
+        config.update(style=ids[0], styleDef=definition)
     (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
     try:
         out = render_stills(root, folder, ids, [2.0])
@@ -135,7 +139,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool) ->
     return key
 
 
-def cards(root: Path) -> dict:
+def cards(root: Path, own: list[dict] | None = None) -> dict:
     """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
     logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
     switching a font or the assets in the settings only swaps pictures."""
@@ -145,17 +149,29 @@ def cards(root: Path) -> dict:
     known = {style["id"]: style for style in presets(root)}
     ids = [sid for sid in GALLERY if sid in known]
     stamp = newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")
+    own = own or []
     combos = [(font, assets) for font in TITLE_FONTS for assets in (True, False)]
+    jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own for combo in combos]
+    run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None)
     with LOCK:
         with ThreadPoolExecutor(max_workers=3) as pool:
-            keys = dict(zip(combos, pool.map(lambda combo: card_set(root, ids, stamp, *combo), combos)))
-        # Cards of an older engine or scene are never asked for again.
-        for old in (store.DATA_ROOT / CARDS).iterdir():
-            if old.is_dir() and old.name not in keys.values():
+            keys = dict(zip([(job[0]["id"] if job[0] else None, *job[1]) for job in jobs], pool.map(run, jobs)))
+    result = {font: {("1" if assets else "0"): {sid: f"/api/{CARDS}/{keys[None, font, assets]}/{sid}-0.jpg" for sid in ids}
+                     for assets in (True, False)} for font in TITLE_FONTS}
+    for style in own:
+        for font in TITLE_FONTS:
+            for assets in (True, False):
+                result[font]["1" if assets else "0"][style["id"]] = f"/api/{CARDS}/{keys[style['id'], font, assets]}/{style['id']}-0.jpg"
+    return {"styles": [known[sid] for sid in ids] + [{"id": s["id"], "name": s["name"], "desc": s["desc"], "own": True} for s in own],
+            "cards": result, "keys": set(keys.values())}
+
+
+def prune_cards(keep: set[str]) -> None:
+    """Cards of an older engine or scene, or of a deleted style, are never asked for again."""
+    with LOCK:
+        for old in (store.DATA_ROOT / CARDS).iterdir() if (store.DATA_ROOT / CARDS).is_dir() else ():
+            if old.is_dir() and old.name not in keep:
                 shutil.rmtree(old)
-    return {"styles": [known[sid] for sid in ids],
-            "cards": {font: {("1" if assets else "0"): {sid: f"/api/{CARDS}/{keys[font, assets]}/{sid}-0.jpg" for sid in ids}
-                             for assets in (True, False)} for font in TITLE_FONTS}}
 
 
 def razgon_root() -> Path | None:
@@ -175,8 +191,9 @@ def warm() -> None:
     root = razgon_root()
     if root is not None:
         try:
-            cards(root)
-        except (StyleLabError, OSError, subprocess.SubprocessError):
+            own = [style for channel in store.list_channels() for style in style_copy.load(channel["id"])]
+            prune_cards(cards(root, own).pop("keys"))
+        except (StyleLabError, OSError, subprocess.SubprocessError, store.StudioError):
             pass
 
 
@@ -187,7 +204,9 @@ def showcase(cid: str) -> dict:
         raise StyleLabError("Немає сцени-візитки Razgon")
     root, project = choices[0]
     current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
-    return {"film_style": current, **cards(root)}
+    result = cards(root, style_copy.load(cid))
+    result.pop("keys")
+    return {"film_style": current, **result}
 
 
 def card_file(key: str, name: str) -> Path:
@@ -262,7 +281,12 @@ def previews(cid: str, assets: bool = True, animation: dict | None = None, only:
         raise StyleLabError("У каналу ще немає роликів Razgon, з яких можна показати стиль")
     root, project = choices[0]
     styles, times, text = presets(root), sample_times(project), razgon_text(animation)
-    if only:
+    own = style_copy.find(cid, only) if only else None
+    if own:
+        # a channel's own style draws the film the way a new film would: its definition in the config
+        styles = [{"id": own["id"], "name": own["name"], "desc": own["desc"]}]
+        text = {**text, "style": own["id"], "styleDef": own["def"]}
+    elif only:
         styles = [style for style in styles if style["id"] == only]
         if not styles:
             raise StyleLabError("Невідомий стиль")
