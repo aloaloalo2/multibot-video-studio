@@ -432,6 +432,7 @@ function renderProject() {
   document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
+  $('overview-channel-settings').hidden=!!state.project || !state.channel;
   const title=$('project-title');title.replaceChildren();
   const channelName=document.createElement('strong');channelName.title=state.channel?.name || '';channelName.innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';title.append(channelName);
   if(state.project){

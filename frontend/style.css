@@ -784,3 +784,5 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-film .style-loading{grid-column:1/-1}
 /* The header's text starts on the same line as the page content below it (.channel-overview padding minus the border). */
 .app-shell:not(.editor-open) .topbar{padding-left:calc(clamp(16px,4vw,50px) - 1px);padding-right:calc(clamp(16px,4vw,50px) - 1px)}
+.channel-settings-button{margin-left:2px}
+.channel-settings-button svg{width:17px;height:17px}
