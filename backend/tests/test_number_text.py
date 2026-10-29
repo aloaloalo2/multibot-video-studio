@@ -12,6 +12,17 @@ import legacy_number_text
 
 
 class NumberTextTest(unittest.TestCase):
+    def test_hyphenated_enumeration_matches_digitized_speech(self):
+        script = "Во-первых, вы видите цвет. Во-вторых, уточните форму. В-третьих, оцените самочувствие."
+        phrases = planner.split_sentences(script)
+        timings = [{"text": phrase, "start": index * 2, "end": index * 2 + 1}
+                   for index, phrase in enumerate(phrases)]
+        plan = planner.build_plan(script, {"weights": {"text": 100}}, "Валентин", duration=6, alignment=timings)
+        plan = planner.digitize_synced_plan(plan)
+        planner.validate_synced_plan(plan, 6)
+        self.assertEqual(number_text.comparison_tokens("Во-первых", "ru"), number_text.comparison_tokens("Во-1-х", "ru"))
+        self.assertEqual(number_text.comparison_tokens("минус -5", "ru"), ["минус", "-5"])
+
     def test_current_channel_quantities_and_exact_fractions(self):
         cases={
             "Восемь граммов.":"8 граммов.",
@@ -45,9 +56,60 @@ class NumberTextTest(unittest.TestCase):
         for source,expected in cases.items():
             with self.subTest(source=source):self.assertEqual(number_text.to_digits(source),expected)
 
+    def test_conjunction_after_a_number_is_kept_unless_the_number_continues(self):
+        self.assertEqual(number_text.to_digits("Start at one hundred and keep subtracting seven.", "en"), "Start at 100 and keep subtracting 7.")
+        self.assertEqual(number_text.to_digits("one hundred and five", "en"), "105")
+
+    def test_english_pronoun_one_stays_a_word(self):
+        for value in ["Randy would be the one who stayed awake.", "It's a lie, and a convincing one.", "one of them"]:
+            self.assertEqual(number_text.to_digits(value, "en"), value)
+        self.assertEqual(number_text.to_digits("One missed night.", "en"), "1 missed night.")
+
+    def test_english_second_as_time_and_scale_after_digits_stay_words(self):
+        for value in ["A 10-second gap means 2 miles.", "Every second you spend hesitating is a second lost.",
+                      "40 to 50 bolts hit every single second.", "around 300 million volts"]:
+            self.assertEqual(number_text.to_digits(value, "en"), value)
+            self.assertEqual(number_text.comparison_tokens(number_text.to_digits(value, "en"), "en"),
+                             number_text.comparison_tokens(value, "en"))
+        self.assertEqual(number_text.to_digits("The second reason is time.", "en"), "The 2nd reason is time.")
+        self.assertEqual(number_text.to_digits("Done. Second, keep it short.", "en"), "Done. 2nd, keep it short.")
+        self.assertEqual(number_text.to_digits("three hundred million volts", "en"), "300000000 volts")
+
+    def test_english_pronouns_adverbs_and_vague_scales_stay_words(self):
+        for value in ["It looks like an explosion, and in a way, it was one.", "Your body is offering one.",
+                      "The first rule is the hardest one to accept.".replace("The first", "Rule"),
+                      "They need you first.", "The usual instincts of first aid.", "A few thousand bolts came down.",
+                      "Your skin has shed millions of dead cells."]:
+            self.assertEqual(number_text.to_digits(value, "en"), value)
+        self.assertEqual(number_text.to_digits("The first rule is the hardest one.", "en"), "The 1st rule is the hardest one.")
+        self.assertEqual(number_text.to_digits("Roy took his seventh strike.", "en"), "Roy took his 7th strike.")
+        self.assertEqual(number_text.to_digits("First, sleep at least seven hours.", "en"), "1st, sleep at least 7 hours.")
+
+    def test_english_verb_die_keeps_english_locale(self):
+        self.assertEqual(number_text.detect_locale("Without help, they can die from the lack of air. You are standing on the shore."), "en")
+        self.assertEqual(number_text.detect_locale("Die Werkstatt ist offen."), "de")
+
     def test_existing_digits_and_non_numeric_words_remain(self):
         for value in ["8 граммов, 0,1 мг, 2/3 грамма", "однажды он посмотрел", "someone noticed", "ein guter Mechaniker"]:
             self.assertEqual(number_text.to_digits(value),value)
+
+    def test_russian_instrumental_and_mixed_fraction_keep_research_values(self):
+        cases = {
+            "с двумястами двадцатью восемью взрослыми": "с 228 взрослыми",
+            "с двадцатью восемью участниками": "с 28 участниками",
+            "за сорок девять и две десятых часа": "за 49,2 часа",
+            "Одни из них удерживают воду": "Одни из них удерживают воду",
+            "одно из самых изученных средств": "одно из самых изученных средств",
+            "одна из частых причин": "одна из частых причин",
+            "Ни один из этих шагов": "Ни один из этих шагов",
+            "связывает одно с другим": "связывает одно с другим",
+            "одно исследование": "1 исследование",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(number_text.to_digits(source, "ru"), expected)
+        self.assertEqual(number_text.comparison_tokens("сорок девять и две десятых", "ru"),
+                         number_text.comparison_tokens("49,2", "ru"))
 
     def test_russian_years_and_ambiguous_words_preserve_meaning(self):
         cases = {
@@ -70,6 +132,24 @@ class NumberTextTest(unittest.TestCase):
         self.assertEqual(planner.speech_text("две четверти"),planner.speech_text("0,5"))
         self.assertNotEqual(planner.speech_text("две трети"),planner.speech_text("2-3"))
         self.assertNotEqual(planner.speech_text("восемь"),planner.speech_text("9"))
+
+    def test_written_numeric_range_survives_synced_plan(self):
+        script = "Для начала хватает пяти-восьми повторений."
+        self.assertEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5-8"))
+        self.assertNotEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5/8"))
+        self.assertNotEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5 8"))
+        span = number_text.word_spans("пяти-восьми")[0]
+        self.assertEqual(span, ("5-8", 0, len("пяти-восьми")))
+        words = [{"text": value, "start": i * .5, "end": i * .5 + .4, "probability": .99}
+                 for i, value in enumerate(["Для", "начала", "хватает", "пяти-восьми", "повторений."])]
+        result = speech.compare_script(script, words, 3)
+        self.assertEqual(result["status"], "matched")
+        plan = planner.build_plan(script, {"weights": {"text": 100}}, "Channel", 3,
+                                  alignment=result["timings"]["sentences"])
+        plan["timing"]["audio"] = {"duration": 3}
+        plan = planner.digitize_synced_plan(plan)
+        self.assertIn("5-8", plan["script"])
+        planner.validate_synced_plan(plan, 3)
 
     def test_word_spans_preserve_multiword_number_audio_boundaries(self):
         words=[{"text":text,"start":i*.2,"end":i*.2+.15,"probability":.99}

@@ -12,6 +12,7 @@ import number_text
 SETTING_DEFAULTS = {
     "short_sentence_words": 5, "max_sentences_per_scene": 4,
     "words_per_minute": 145, "first_clip_seconds": 0,
+    "first_clip_format": "auto", "first_clip_count": 1,
     "motion_easing": "ease_in_out",
 }
 
@@ -32,9 +33,11 @@ LABELS = {
     "generated_photo": "Створене фото",
     "stock_photo": "Стокове фото",
     "animation": "Анімація / схема",
+    "razgon_2d": "2D-анімація Razgon",
     "text": "Текстова сцена",
     "host": "Ведучий",
 }
+UNLIMITED_RUN_FORMATS = {"razgon_2d"}
 def split_sentences(text: str) -> list[str]:
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
@@ -96,17 +99,28 @@ def estimate_times(groups: list[list[str]], words_per_minute: float, duration: f
 
 def assign_formats(times: list[tuple[float, float]], config: dict, hints: dict[int, str] | None = None, groups: list[list[str]] | None = None) -> list[str]:
     formats: list[str | None] = [None] * len(times)
-    opening = [0] if times else []
-    video_format = "generated_video" if float(config.get("first_clip_seconds", 0)) > 0 or config["weights"].get("generated_video", 0) > 0 else "stock_video" if config["weights"].get("stock_video", 0) > 0 else "generated_video"
-    types = [video_format]
-    if not types or any(item not in LABELS for item in types):
-        raise ValueError("opening_clip_types містить невідомий формат")
-    for j, index in enumerate(opening):
-        formats[index] = types[min(j, len(types) - 1)]
+    selected = config.get("first_clip_format", "auto")
+    if selected not in {"auto", "video", *LABELS}:
+        raise ValueError("Невідомий формат початку")
+    opening = list(range(min(len(times), int(config.get("first_clip_count", 1))))) if selected != "auto" else []
+    if selected == "video":
+        video_weights = config["weights"]
+        selected = max(("stock_video", "generated_video"), key=lambda key: (float(video_weights.get(key, 0)), key == "stock_video"))
+    for index in opening:
+        formats[index] = selected
+    # An automatic opening prefers an enabled video format, without introducing
+    # a format that the channel has disabled. An explicit first hint wins.
+    if times and selected == "auto" and not (hints and 1 in hints):
+        enabled_videos = [key for key in ("stock_video", "generated_video") if float(config["weights"].get(key, 0)) > 0]
+        if enabled_videos:
+            formats[0] = max(enabled_videos, key=lambda key: (float(config["weights"][key]), key == "stock_video"))
     weights = {key: float(value) for key, value in config["weights"].items() if value > 0}
     if not weights:
         raise ValueError("Для автоматичного плану потрібен хоча б один формат")
     total_weight = sum(weights.values())
+    # Razgon 2D clips are whole animated scenes with their own internal shots
+    # and cuts, so the five-in-a-row alternation rule does not apply to them.
+    run_limit = lambda key: math.inf if key in UNLIMITED_RUN_FORMATS else 5
     used = defaultdict(float)
     scene_hints = {}
     if hints and groups:
@@ -123,11 +137,11 @@ def assign_formats(times: list[tuple[float, float]], config: dict, hints: dict[i
         scheduled += duration
         fixed = formats[i] or scene_hints.get(i)
         if fixed:
-            if fixed == previous and run >= 5:
+            if i not in opening and fixed == previous and run >= run_limit(fixed):
                 raise ValueError("Змістова розмітка задає понад п’ять однакових форматів поспіль. Змініть формат одного з кадрів")
             pick = fixed
         else:
-            eligible = [key for key in weights if key != previous or run < 5]
+            eligible = [key for key in weights if key != previous or run < run_limit(key)]
             if not eligible:
                 raise ValueError("Для чергування кадрів додайте частку ще одного формату. Дозволено до п’яти однакових поспіль")
             pick = max(eligible, key=lambda key: (scheduled * weights[key] / total_weight - used[key], key))
@@ -162,10 +176,40 @@ def validate_sentence_timings(script, timings, duration):
     return result
 
 
-def aligned_times(groups, timings, duration):
+def reserve_aligned_opening(groups, timings, duration, seconds):
+    """Reserve an exact opening without changing any spoken interval.
+
+    A sentence crossing the opening boundary remains owned by the first frame.
+    The next frame starts at the boundary and carries that continuation along
+    with its next sentence, avoiding a very short standalone fragment.
+    """
+    if not 0 < seconds < duration:
+        return groups, False
+    before = sum(1 for item in timings if item["start"] < seconds)
+    flattened = [sentence for group in groups for sentence in group]
+    intro, remaining, consumed = flattened[:before], [], 0
+    for group in groups:
+        take = min(len(group), max(0, before - consumed))
+        if group[take:]:
+            remaining.append(group[take:])
+        consumed += len(group)
+    return [intro] + (remaining if remaining else [[]]), True
+
+
+def aligned_times(groups, timings, duration, opening_seconds=None):
     boundaries, offset = [0.0], 0
-    for group in groups[:-1]:
+    if opening_seconds is not None:
+        if len(groups) < 2 or not 0 < opening_seconds < duration:
+            raise ValueError("Невірна межа початкового кліпу")
+        boundaries.append(opening_seconds)
+        offset = len(groups[0])
+        rest = groups[1:-1]
+    else:
+        rest = groups[:-1]
+    for group in rest:
         offset += len(group)
+        if offset >= len(timings):
+            raise ValueError("Невірні межі продовження фрази")
         boundaries.append(timings[offset]["start"])
     boundaries.append(duration)
     if any(end <= start for start, end in zip(boundaries, boundaries[1:])):
@@ -177,8 +221,8 @@ def validate_synced_plan(plan, duration):
     timing = plan.get("timing", {})
     if timing.get("status") != "audio_synced":
         raise ValueError("Це чернетка плану. Додайте готову озвучку та таймінги фраз")
-    if not plan.get("frames") or plan["frames"][0].get("format") not in {"stock_video", "generated_video"}:
-        raise ValueError("Перший кадр має бути відео. Перегенеруйте план")
+    if not plan.get("frames"):
+        raise ValueError("План не містить кадрів")
     script = plan.get("script", "")
     if not script or hashlib.sha256(script.encode("utf-8")).hexdigest() != plan.get("script_sha256"):
         raise ValueError("Сценарій змінився. Оновіть прив’язку до озвучки")
@@ -197,7 +241,18 @@ def validate_synced_plan(plan, duration):
         expected_sentences = [number_text.to_digits(text, locale) for text in expected_sentences]
     if [text for group in groups for text in group] != expected_sentences:
         raise ValueError("Кадри не покривають усі фрази сценарію")
-    expected = aligned_times(groups, timings, duration)
+    opening = plan.get("opening_clip_split")
+    opening_seconds = float(plan.get("settings_snapshot", {}).get("first_clip_seconds", 0)) if opening else None
+    if opening:
+        if len(groups[0]) != sum(t["start"] < opening_seconds for t in timings):
+            raise ValueError("Початковий кліп не відповідає налаштуванню або озвучці")
+        allowed_empty = [i for i, group in enumerate(groups) if not group]
+        if any(i not in (0, 1) for i in allowed_empty):
+            raise ValueError("Порожній кадр не відповідає початку озвучки")
+        crossing = next((item for item in timings if item["start"] < opening_seconds < item["end"]), None)
+        if crossing and (len(plan["frames"]) < 2 or plan["frames"][1].get("continuation") != crossing):
+            raise ValueError("Продовження фрази після вступу не відповідає озвучці")
+    expected = aligned_times(groups, timings, duration, opening_seconds)
     offset = 0
     for frame, group, (start, end) in zip(plan["frames"], groups, expected):
         if abs(float(frame["start"]) - start) > .0011 or abs(float(frame["end"]) - end) > .0011 or frame.get("sentence_timings") != timings[offset:offset + len(group)]:
@@ -269,6 +324,8 @@ def digitize_synced_plan(plan):
     for frame in plan["frames"]:
         frame["sentences"] = [number_text.to_digits(text, locale) for text in frame["sentences"]]
         frame["sentence_timings"] = [{**item, "text": number_text.to_digits(item["text"], locale)} for item in frame["sentence_timings"]]
+        if frame.get("continuation"):
+            frame["continuation"]["text"] = number_text.to_digits(frame["continuation"]["text"], locale)
     return plan
 
 
@@ -290,20 +347,64 @@ def build_plan(script: str, settings: dict, channel_name: str, duration=None, hi
             normalized_hints[number] = value
     groups = group_sentences(sentences, int(config["short_sentence_words"]), int(config["max_sentences_per_scene"]))
     timings = validate_sentence_timings(script, alignment, duration) if alignment is not None else None
-    times = aligned_times(groups, timings, duration) if timings else estimate_times(groups, float(config["words_per_minute"]), duration, float(config["first_clip_seconds"]))
+    opening_split = False
+    estimated_split = False
+    if timings:
+        groups, opening_split = reserve_aligned_opening(groups, timings, duration, float(config["first_clip_seconds"]))
+    elif len(groups) == 1 and float(config["first_clip_seconds"]) > 0:
+        estimated_duration = duration if duration is not None else max(1, sum(word_count(s) for s in groups[0])) * 60 / float(config["words_per_minute"])
+        if estimated_duration > float(config["first_clip_seconds"]):
+            groups = [groups[0], []]
+            estimated_split = True
+    times = aligned_times(groups, timings, duration, float(config["first_clip_seconds"]) if opening_split else None) if timings else estimate_times(groups, float(config["words_per_minute"]), estimated_duration if estimated_split else duration, float(config["first_clip_seconds"]))
     formats = assign_formats(times, config, normalized_hints, groups)
+    if opening_split and len(formats) > 1 and formats[1] == "text" and config["first_clip_format"] == "auto":
+        boundary = float(config["first_clip_seconds"])
+        next_sentence = len(groups[0])
+        continuing = next_sentence >= len(timings) or timings[next_sentence]["start"] > boundary + .001
+        if continuing:
+            sentence_numbers = range(next_sentence + 1, next_sentence + 1 + len(groups[1]))
+            if any(normalized_hints.get(number) == "text" for number in sentence_numbers):
+                raise ValueError("Текстова підказка конфліктує з продовженням вступної фрази. Оберіть для цього кадру візуальний формат")
+            choices = sorted((key for key, weight in config["weights"].items() if key != "text" and weight > 0),
+                             key=lambda key: (-float(config["weights"][key]), key))
+            for candidate in choices + ["animation", "generated_photo"]:
+                trial = formats[:]
+                trial[1] = candidate
+                run = 0
+                previous = None
+                for item in trial:
+                    run = run + 1 if item == previous else 1
+                    previous = item
+                    if run > 5:
+                        break
+                else:
+                    formats = trial
+                    break
+            else:
+                raise ValueError("Не вдалося підібрати візуальний кадр для продовження вступної фрази")
     frames = [{"number": i, "start": round(start, 3), "end": round(end, 3), "sentences": group, "format": fmt}
               for i, (group, (start, end), fmt) in enumerate(zip(groups, times, formats), 1)]
+    if estimated_split:
+        frames[1]["continuation"] = {"text": groups[0][-1], "approximate": True}
     if timings:
         offset = 0
         for frame, group in zip(frames, groups):
             frame["sentence_timings"] = timings[offset:offset + len(group)]
             offset += len(group)
+        if opening_split:
+            boundary = float(config["first_clip_seconds"])
+            crossing = next((item for item in timings if item["start"] < boundary < item["end"]), None)
+            if not frames[1]["sentences"]:
+                frames[1]["opening_tail"] = True
+            if crossing:
+                frames[1]["continuation"] = copy.deepcopy(crossing)
     amounts = defaultdict(float)
     for frame in frames:
         amounts[frame["format"]] += frame["end"] - frame["start"]
     return {
         "generator": "multibot-video-studio", "planner_version": 2,
+        "opening_clip_split": opening_split,
         "timing": {"status": "audio_synced" if timings else "draft", "basis": "audio_alignment" if timings else "duration_estimate" if duration is not None else "script_estimate", "sentences": timings or []},
         "settings_snapshot": config, "settings_signature": settings_signature(config),
         "script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),

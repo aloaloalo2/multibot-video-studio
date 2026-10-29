@@ -23,8 +23,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import store
+import agent_estimate
+import agent_runtime
+import agent_storage
 import credentials
 import analysis_jobs
+import razgon_live
 import waveforms
 import joins
 import thumbnails
@@ -430,8 +434,13 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         with JOBS_LOCK:
             if entry['cancel']:
                 job.update(status='cancelled', error=None, output_path=None)
-            save_job(job)
-            ACTIVE_EXPORTS.pop(job['id'], None)
+            try:
+                save_job(job)
+            finally:
+                ACTIVE_EXPORTS.pop(job['id'], None)
+                guard = entry.pop('project_guard', None)
+                if guard:
+                    guard.close()
 
 
 def start_export(project: dict, confirmation: bool) -> dict:
@@ -464,9 +473,21 @@ def start_export(project: dict, confirmation: bool) -> dict:
         if existing:
             manifest_path.unlink(missing_ok=True)
             return existing
-        save_job(job)
-        ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False}
-        threading.Thread(target=_render_worker, args=(job, manifest_path, staging, destination), daemon=True).start()
+        guard = agent_runtime.acquire_project_guard(project['id'], 'export')
+        if guard is None:
+            manifest_path.unlink(missing_ok=True)
+            raise store.StudioError("Дочекайтеся завершення роботи агента або експорту.", 409)
+        try:
+            if store.load_project(project['id']).get('revision', 0) != project.get('revision', 0):
+                raise store.StudioError("Проєкт змінився перед експортом. Спробуйте ще раз.", 409)
+            save_job(job)
+            ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False, 'project_guard': guard}
+            threading.Thread(target=_render_worker, args=(job, manifest_path, staging, destination), daemon=True).start()
+        except Exception:
+            ACTIVE_EXPORTS.pop(jid, None)
+            guard.close()
+            manifest_path.unlink(missing_ok=True)
+            raise
     return job
 
 
@@ -527,6 +548,8 @@ class Handler(BaseHTTPRequestHandler):
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
                 if project_match and not path.endswith('/export') and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
+                if project_match and not path.endswith('/agent/cancel') and agent_runtime.active(project_match.group(1)):
+                    raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
                 upload = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/upload", path)
                 if method == "POST" and upload:
                     return self.route_upload(upload.group(1))
@@ -585,6 +608,20 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/analysis", path)
         if match:
             return self.json_response(analysis_jobs.latest(match.group(1), load_job))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
+        if match:
+            return self.json_response(razgon_live.status(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent", path)
+        if match:
+            project_id = match.group(1)
+            conversation = agent_storage.get_conversation(project_id)
+            return self.json_response({"messages": conversation["messages"], "costs": agent_storage.cost_summary(conversation["costs"]), "job": agent_runtime.snapshot(project_id), "settings": agent_storage.get_settings(project_id)})
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
+        if match:
+            return self.json_response({"memory": agent_storage.get_memory(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/cost-estimate", path)
+        if match:
+            return self.json_response({"estimate": agent_estimate.estimate(match.group(1))})
         if path == "/api/pixabay/search":
             q = (query.get("q") or [""])[0].strip()
             kind = (query.get("kind") or ["video"])[0]
@@ -622,7 +659,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"job": load_job(match.group(1))})
         if path.startswith("/api/"):
             raise store.StudioError("Сторінку не знайдено", 404)
-        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/plan)?)?/?", path):
+        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent))?)?/?", path):
             return self.serve_static("/")
         return self.serve_static(path)
 
@@ -630,6 +667,9 @@ class Handler(BaseHTTPRequestHandler):
         if method == 'POST' and path == '/api/update/apply':
             begin_update()
             return self.json_response({'status': 'restarting'}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
+        if match and method == "POST":
+            return self.json_response(razgon_live.start(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/analyze", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))
@@ -650,6 +690,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(result)
         if method == "POST" and path == "/api/service-keys":
             return self.json_response({"provider": credentials.save_provider(body.get("provider_id"), body.get("name"), body.get("key"))})
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
+        if match and method == "POST":
+            return self.json_response({"memory": agent_storage.set_memory(match.group(1), body.get("memory"))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/settings", path)
+        if match and method == "POST":
+            return self.json_response({"settings": agent_storage.set_settings(match.group(1), body.get("reasoning_effort"))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/start", path)
+        if match and method == "POST":
+            callbacks = {"search": search_pixabay, "import": from_pixabay, "export_active": active_export}
+            return self.json_response({"job": agent_runtime.start(match.group(1), body.get("message"), callbacks, body.get("allow_images") is True)}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/cancel", path)
+        if match and method == "POST":
+            return self.json_response({"job": agent_runtime.cancel(match.group(1))}, 202)
         if method == "PATCH" and path == "/api/settings":
             return self.json_response({"settings": store.update_global_settings(body.get("settings", {}))})
         if method == "POST" and path == "/api/channels/pick":

@@ -1,5 +1,5 @@
 """Small, source-preserving library previews cached by file identity."""
-import hashlib,os,subprocess,threading,uuid
+import hashlib,io,os,subprocess,threading,uuid
 from pathlib import Path
 from PIL import Image,ImageOps
 LOCK=threading.Semaphore(2)
@@ -15,8 +15,11 @@ def get(path,kind,cache):
     with Image.open(path) as source:
      source=ImageOps.exif_transpose(source);source.thumbnail((256,160),Image.Resampling.LANCZOS);image=Image.new('RGB',source.size,'#25252a');image.paste(source,mask=source.getchannel('A') if source.mode=='RGBA' else None);image.save(temp,format='WEBP',quality=78,method=3)
    elif kind=='video':
-    result=subprocess.run(['ffmpeg','-v','error','-nostdin','-ss','.25','-i',str(path),'-frames:v','1','-vf','scale=256:160:force_original_aspect_ratio=decrease','-c:v','libwebp','-quality','75','-y',str(temp)],capture_output=True,timeout=20)
-    if result.returncode or not temp.exists():raise ValueError('Thumbnail unavailable')
+    # FFmpeg only extracts the frame: builds without libwebp are common, and
+    # newer FFmpeg rejects a seek time without a leading zero.
+    result=subprocess.run(['ffmpeg','-v','error','-nostdin','-ss','0.25','-i',str(path),'-frames:v','1','-vf','scale=256:160:force_original_aspect_ratio=decrease','-f','image2pipe','-c:v','png','-'],capture_output=True,timeout=20)
+    if result.returncode or not result.stdout:raise ValueError('Thumbnail unavailable')
+    with Image.open(io.BytesIO(result.stdout)) as frame:frame.convert('RGB').save(temp,format='WEBP',quality=78,method=3)
    else:raise ValueError('No visual preview')
    os.replace(temp,dest);return dest
   finally:

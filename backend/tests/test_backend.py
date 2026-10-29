@@ -23,6 +23,59 @@ import speech  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_project_cover_uses_scene_media_and_ignores_unused_assets(self):
+        project = {"assets": [{"id": "brand", "kind": "image"}, {"id": "scene", "kind": "video"}, {"id": "unused", "kind": "image"}],
+                   "tracks": [{"clips": [{"id": "logo", "asset_id": "brand", "kind": "image", "start": 0}, {"id": "frame", "asset_id": "scene", "kind": "video", "start": 2}]}],
+                   "scene_groups": [{"role": "overlay", "clip_ids": ["logo"]}, {"role": "scene", "clip_ids": ["frame"]}]}
+        self.assertEqual(store.project_cover_asset(project), "scene")
+        self.assertIsNone(store.project_cover_asset({"assets": project["assets"], "tracks": []}))
+
+    def test_agent_chat_and_channel_memory_through_http(self):
+        import agent_runtime
+        cid = store.channel_id(self.channel)
+        project = store.create_project(cid, "Agent integration test")
+        pid = project["id"]
+        class FakeVault:
+            def configured(self, service): return True
+        tool_call = {"role": "assistant", "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "add_clip", "arguments": json.dumps({"layer_id": "layer-1", "kind": "text", "text": "Test", "start": 0, "duration": 2, "expected_revision": 0})}}]}
+        replies = [tool_call, {"role": "assistant", "content": "Кадр додано."}]
+        ready = {"stage": "audio_synced", "plan_ready": True, "export_ready": False, "reason": ""}
+        status, result = self.request('/api/channels/' + cid + '/agent-memory', 'POST', {"memory": "Без різких переходів"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result['memory'], 'Без різких переходів')
+        status, result = self.request('/api/projects/' + pid + '/agent/settings', 'POST', {"reasoning_effort": "high"})
+        self.assertEqual((status, result['settings']['reasoning_effort']), (200, 'high'))
+        status, _ = self.request('/api/projects/' + pid + '/agent/settings', 'POST', {"reasoning_effort": "invalid"})
+        self.assertEqual(status, 400)
+        with patch.object(agent_runtime.agent_openrouter.credentials, 'vault', return_value=FakeVault()), patch.object(agent_runtime.agent_openrouter, 'chat', side_effect=replies) as model, patch.object(store, 'plan_readiness', return_value=ready):
+            status, result = self.request('/api/projects/' + pid + '/agent/start', 'POST', {"message": "Додай тестовий текст"})
+            self.assertEqual(status, 202)
+            for _ in range(100):
+                status, result = self.request('/api/projects/' + pid + '/agent')
+                if result['job'] and result['job']['status'] in {'complete', 'failed'}: break
+                time.sleep(.01)
+        self.assertEqual(result['job']['status'], 'complete')
+        self.assertEqual(result['settings']['reasoning_effort'], 'high')
+        self.assertEqual([call.kwargs['reasoning_effort'] for call in model.call_args_list], ['high', 'high'])
+        self.assertEqual(result['messages'][-1]['content'], 'Кадр додано.')
+        self.assertEqual(store.load_project(pid)['tracks'][0]['clips'][0]['text'], 'Test')
+
+    def test_projects_are_ordered_by_creation_time_not_name_or_update(self):
+        cid = store.channel_id(self.channel)
+        older = store.create_project(cid, "A older sorting test")
+        newer = store.create_project(cid, "Z newer sorting test")
+        for project, created in ((older, 1700000000000), (newer, 1700000060000)):
+            project["created_at"] = created
+            store.save_project(project)
+        # Editing the older project must not make it appear newer.
+        older["name"] = "Edited older sorting test"
+        store.save_project(older)
+        for path in ("/api/projects?channel=" + cid, "/api/projects"):
+            status, response = self.request(path)
+            self.assertEqual(status, 200)
+            selected = [p["id"] for p in response["projects"] if p["id"] in {older["id"], newer["id"]}]
+            self.assertEqual(selected, [newer["id"], older["id"]])
+
     def test_library_thumbnail_is_small_and_preserves_original(self):
         from PIL import Image
         import hashlib,io
@@ -212,7 +265,7 @@ class BackendTest(unittest.TestCase):
         status, result = self.request(endpoint, "POST", {"script": script, "weights": {"text": 100}})
         self.assertEqual(status, 200)
         self.assertEqual(result["plan"]["settings_scope"], "project")
-        self.assertIn(result["plan"]["frames"][0]["format"], {"stock_video", "generated_video"})
+        self.assertEqual(result["plan"]["frames"][0]["format"], "text")
         self.assertTrue(all(frame["format"] == "text" for frame in result["plan"]["frames"][1:]))
         self.assertEqual((self.channel / "video-plan.json").read_bytes(), original)
         self.assertTrue(store.plan_settings_match(project["id"], result["plan"]))
@@ -303,7 +356,7 @@ class BackendTest(unittest.TestCase):
         pid = result["project"]["id"]
         self.assertTrue(result["settings_match"])
         self.assertEqual(result["plan"]["generator"], "multibot-video-studio")
-        self.assertIn(result["plan"]["frames"][0]["format"], {"stock_video", "generated_video"})
+        self.assertEqual(result["plan"]["frames"][0]["format"], "text")
         self.assertTrue(all(frame["format"] == "text" for frame in result["plan"]["frames"][1:]))
         self.assertEqual(result["plan"]["settings_snapshot"]["weights"], {"text": 100})
         self.assertEqual(store.read_json(Path(result["plan"]["report"]["json"])), store.load_project_plan(pid))
@@ -314,7 +367,7 @@ class BackendTest(unittest.TestCase):
         status, updated = self.request("/api/projects/" + pid + "/plan/generate", "POST", {"script": script.read_text()})
         self.assertEqual(status, 200)
         self.assertEqual(updated["project"]["id"], pid)
-        self.assertIn(updated["plan"]["frames"][0]["format"], {"stock_video", "generated_video"})
+        self.assertEqual(updated["plan"]["frames"][0]["format"], "animation")
         self.assertTrue(all(frame["format"] == "animation" for frame in updated["plan"]["frames"][1:]))
         self.assertEqual(store.load_project(pid)["tracks"], montage)
         self.assertTrue(list((store.project_dir(pid) / "plan-history").glob("*.json")))
@@ -418,7 +471,7 @@ class BackendTest(unittest.TestCase):
         with patch.object(credentials, "_keychain", fake):
             status, result = self.request("/api/service-keys")
             self.assertEqual(status, 200)
-            self.assertEqual({item["id"] for item in result["providers"]}, {"pixabay", "pexels", "unsplash"})
+            self.assertEqual({item["id"] for item in result["providers"]}, {"pixabay", "pexels", "unsplash", "openrouter"})
             status, result = self.request("/api/service-keys", "POST", {"provider_id": "pixabay", "key": example})
             self.assertEqual(status, 200)
             self.assertEqual(fake.entries["pixabay-youtube-api"], example)

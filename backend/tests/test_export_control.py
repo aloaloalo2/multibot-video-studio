@@ -13,6 +13,18 @@ class ExportControlTest(unittest.TestCase):
     tearDownClass = classmethod(support.BackendTest.tearDownClass.__func__)
     request = support.BackendTest.request
 
+    def test_export_is_blocked_while_agent_owns_project(self):
+        project = store.create_project(store.channel_id(self.channel), 'Agent export lock')
+        guard = app.agent_runtime.acquire_project_guard(project['id'], 'agent')
+        self.assertIsNotNone(guard)
+        ready = {'stage': 'audio_synced', 'plan_ready': True, 'export_ready': True, 'reason': ''}
+        try:
+            with patch.object(store, 'plan_readiness', return_value=ready), patch.object(app, 'normalize_for_engine', return_value={'timeline_layers': []}):
+                with self.assertRaises(store.StudioError):
+                    app.start_export(project, True)
+        finally:
+            guard.close()
+
     @unittest.skipUnless(__import__('sys').platform=='darwin' and __import__('os').uname().machine=='arm64'
                          and __import__('shutil').which('swiftc'), 'Apple Silicon GPU required')
     def test_gpu_export_runs_through_the_studio_job(self):

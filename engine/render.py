@@ -502,7 +502,14 @@ def render_parallelism(width: int, height: int, fps: int) -> tuple[int, int]:
 
 def render_scene(scene: dict, project_file: Path, output: Path, work: Path, width: int, height: int, fps: int, index: int) -> None:
     kind = normalized_kind(scene)
-    duration = number(scene.get("duration", scene.get("length")), f"scene {index} duration", 0.04)
+    duration = number(scene.get("duration", scene.get("length")), f"scene {index} duration")
+    minimum_duration = 1 / fps
+    if duration < minimum_duration:
+        # Subtracting frame-aligned absolute times can produce 0.03999999999996
+        # for a valid 25 fps frame. Preserve real short-duration errors.
+        if minimum_duration - duration > 1e-8:
+            raise ValueError(f"scene {index} duration must be at least {minimum_duration}")
+        duration = minimum_duration
     trim_start = number(scene.get("trim_start", scene.get("source_start", scene.get("offset", 0))), f"scene {index} trim_start")
     cache_stills = os.environ.get('MULTIBOT_STILL_CACHE','1')!='0'
     base_cached = False

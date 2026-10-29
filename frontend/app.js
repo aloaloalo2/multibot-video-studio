@@ -44,7 +44,7 @@ const seconds = value => Number.isFinite(Number(value)) ? Math.max(0, Number(val
 const clock = value => { const n = Math.floor(seconds(value)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
 const projectIcon='<svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4m10-8h4m-4 8h4m-11-5 4 3-4 3z"/></svg>';
 
-function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/plan)?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]?'plan':'editor'}:null;}
+function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':'editor'}:null;}
 let restoreGeneration=0,restoreTimer=null;
 function cancelLocationRestore(){restoreGeneration++;if(restoreTimer!==null){clearTimeout(restoreTimer);restoreTimer=null;}state.restoringProject=false;$('project-loading').hidden=true;}
 async function restoreCurrentLocation(){
@@ -61,7 +61,7 @@ async function restoreCurrentLocation(){
   }
 }
 function syncRoute(replace=false){
-  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':''):''}`:'/';
+  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':''):''}`:'/';
   if(location.pathname!==path || location.search || location.hash)history[replace?'replaceState':'pushState'](null,'',path);
 }
 
@@ -239,7 +239,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   state.restoringProject=false;
   state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
-  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=state.plan && !state.project.production?.plan_ready?'plan':view;
+  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=state.plan && !state.project.production?.plan_ready && view==='editor'?'plan':view;
   if(updateUrl)syncRoute();
   buildAudioNodes();
   renderProjects(); renderProject(); status('');if(state.job)pollJob();
@@ -305,6 +305,19 @@ function renderOverview() {
     const count=project.scene_count ?? project.scenes?.length ?? 0;
     open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span>${esc(created?.label || 'Створено')}</span>${created?`<time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'<span>Дата невідома</span>'}</div>`;
     open.addEventListener('click',()=>selectProject(project.id,{view:project.has_plan&&!count?'plan':'editor'}).catch(error=>status(error.message,true)));
+    if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
+      const duration=document.createElement('div');duration.className='project-duration';
+      const value=Number(project.duration),hours=Math.floor(value/3600);
+      const formatted=hours?`${hours}:${String(Math.floor(value/60)%60).padStart(2,'0')}:${String(Math.floor(value)%60).padStart(2,'0')}`:clock(value);
+      duration.textContent=`Тривалість ролика: ${formatted}`;
+      open.insertBefore(duration,open.querySelector('.project-meta'));
+    }
+    if(project.cover_asset_id){
+      const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
+      cover.src=`/api/projects/${encodeURIComponent(project.id)}/assets/${encodeURIComponent(project.cover_asset_id)}/thumbnail`;
+      cover.addEventListener('error',()=>{card.classList.remove('has-cover');cover.remove();},{once:true});
+      card.classList.add('has-cover');card.append(cover);
+    }
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
     card.append(open,projectActions(project));
     container.append(card);
@@ -409,11 +422,12 @@ function saveMonitorSettings(){
 }
 
 function renderProject() {
-  if(state.plan && state.project && !state.project.production?.plan_ready)state.view='plan';
+  if(state.plan && state.project && !state.project.production?.plan_ready && state.view==='editor')state.view='plan';
   updateMonitorControls();
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);
+  document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
   const title=$('project-title');title.replaceChildren();
@@ -422,7 +436,7 @@ function renderProject() {
     const slash=document.createElement('span');slash.className='project-title-slash';slash.textContent='/';
     const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати проєкт «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати проєкт «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(slash,name);
   }
-  document.title=`${state.project?.name || state.channel?.name || 'MultiBot'} | Video Studio`;
+  document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent=state.project?'● Локально збережено':'';
   $('back-to-projects').hidden=!state.project;
   $('channel-overview').hidden=!!state.project || state.restoringProject;
@@ -430,10 +444,12 @@ function renderProject() {
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
   $('editor-timeline').hidden=!state.project || state.view!=='editor';
   $('project-plan').hidden=!state.project || state.view!=='plan';
+  $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
   $('export-open').hidden=!state.project;
   renderPlan();
+  if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
   $('view-editor').disabled=!!state.project && !!state.plan && !state.project.production?.plan_ready;
   $('view-editor').title=$('view-editor').disabled?'Спочатку додайте таймінги готової озвучки':'';
@@ -819,24 +835,28 @@ function motionPicker(value){
 
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
-  const keys=['stock_video','generated_video','stock_photo','generated_photo','animation','host','text'];
-  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','host':'Ведучий','text':'Текстові тези'};
-  const colors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff8845','#56e3c2'];
+  const keys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
+  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
+  const colors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
   const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
   const body=`<p class="settings-purpose">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
     <section class="settings-section"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
     <section class="settings-section"><h3>Візуальні формати</h3><p>Пропорції форматів під час автоматичного планування. Зміни одного поля не змінюють інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
     <section class="settings-section"><h3>Рух анімації</h3>${motionPicker(original.motion_easing)}<p>Використовується для нових анімацій і ключових кадрів у випусках цього каналу.</p></section>
-    <section class="settings-section"><h3>Початок ролика</h3><label>Перший кліп, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Перший кліп: 0 означає тривалість за загальним планом.</p></section>
-    <section class="settings-section"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>`;
+    <section class="settings-section"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>
+    <section class="settings-section"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>
+    <section class="settings-section"><h3>Пам’ять агента для каналу</h3><p>Правила монтажу, які агент використовує в проєктах цього каналу.</p><textarea id="channel-agent-memory" rows="5" maxlength="30000" disabled></textarea><button id="channel-agent-memory-save" class="secondary" type="button" disabled>Зберегти пам’ять</button><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),motion_easing:$('settings-easing').value,first_clip_seconds:Number($('settings-first').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value)};
+    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),motion_easing:$('settings-easing').value,first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value)};
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;closeModal();renderChannels();status(`Налаштування каналу «${channel.name}» збережено.`);
     }catch(error){status(error.message,true);}
   }}]);
   $('modal-backdrop').classList.add('settings-modal-open');
+  const memoryField=$('channel-agent-memory'),memorySave=$('channel-agent-memory-save'),memoryFeedback=$('channel-agent-memory-feedback');
+  api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`).then(data=>{if($('channel-agent-memory')!==memoryField)return;memoryField.value=data.memory || '';memoryField.disabled=false;memorySave.disabled=false;memoryFeedback.textContent='';}).catch(error=>{if($('channel-agent-memory')===memoryField)memoryFeedback.textContent=error.message;});
+  memorySave.addEventListener('click',async()=>{memorySave.disabled=true;try{await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory:memoryField.value});memoryFeedback.textContent='Пам’ять збережено.';}catch(error){memoryFeedback.textContent=error.message;}finally{if($('channel-agent-memory')===memoryField)memorySave.disabled=false;}});
   $('settings-easing').value=original.motion_easing || 'ease_in_out';
   const motionButtons=[...document.querySelectorAll('.easing-card')];
   motionButtons.forEach((button,index)=>{

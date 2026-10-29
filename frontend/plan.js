@@ -1,6 +1,7 @@
 async function setProjectView(view){
   if(!state.project)return;
   if(view==='editor' && state.plan && !state.project.production?.plan_ready){status('Монтаж стане доступним після додавання таймінгів готової озвучки.',true);return;}
+  if(view==='editor' && state.view==='agent'){await selectProject(state.project.id,{view:'editor'});return;}
   if(view==='plan'){
     const id=state.project.id;
     try{
@@ -17,7 +18,7 @@ function openPlanBuilder(){
   const project=state.project,previous=state.plan;
   const formats=Object.keys(planFormatVisuals),values={...(project.plan_weights || state.channel.settings.weights)};
   modal(previous?'Перегенерувати план':'Створити план ролика',
-    `<p>Перший кадр завжди має формат відео. Студія збереже попередню версію карти. Після зміни сценарію потрібно оновити таймінги фраз.</p><label>TXT-файл сценарію<input id="plan-script-file" type="file" accept=".txt,text/plain"></label><label>Сценарій<textarea id="plan-script-input" rows="12" placeholder="Вставте готовий сценарій"></textarea></label><label>Орієнтовна тривалість, с<input id="plan-audio-duration" type="number" min="0.1" step="0.001" placeholder="Можна залишити порожнім"></label><label class="check"><input id="plan-own-weights" type="checkbox" ${project.plan_weights?'checked':''}>Власні пропорції для цього проєкту</label><section id="plan-weights-panel" ${project.plan_weights?'':'hidden'}><div class="weights-grid">${formats.map(format=>`<label>${planFormatNames[format]}, %<input data-plan-weight="${format}" type="number" min="0" max="100" step="1" value="${values[format] || 0}"></label>`).join('')}</div><p id="plan-weight-total"></p><button id="plan-normalize-weights" class="secondary" type="button">Привести до 100%</button><p>Налаштування каналу збережуться.</p></section>`,
+    `<p>Початкові кадри формуються за налаштуваннями каналу. Студія збереже попередню версію карти. Після зміни сценарію потрібно оновити таймінги фраз.</p><label>TXT-файл сценарію<input id="plan-script-file" type="file" accept=".txt,text/plain"></label><label>Сценарій<textarea id="plan-script-input" rows="12" placeholder="Вставте готовий сценарій"></textarea></label><label>Орієнтовна тривалість, с<input id="plan-audio-duration" type="number" min="0.1" step="0.001" placeholder="Можна залишити порожнім"></label><label class="check"><input id="plan-own-weights" type="checkbox" ${project.plan_weights?'checked':''}>Власні пропорції для цього проєкту</label><section id="plan-weights-panel" ${project.plan_weights?'':'hidden'}><div class="weights-grid">${formats.map(format=>`<label>${planFormatNames[format]}, %<input data-plan-weight="${format}" type="number" min="0" max="100" step="1" value="${values[format] || 0}"></label>`).join('')}</div><p id="plan-weight-total"></p><button id="plan-normalize-weights" class="secondary" type="button">Привести до 100%</button><p>Налаштування каналу збережуться.</p></section>`,
     [{label:'Скасувати',run:closeModal},{label:previous?'Перегенерувати план':'Створити чернетку',primary:true,run:async()=>{
       const button=$('modal-actions').querySelector('.primary');button.disabled=true;
       try{
@@ -47,7 +48,12 @@ async function openNarrationBinding(){
   return openMediaTimingImport();
 }
 
-const planFormatNames={stock_video:'Стокове відео',generated_video:'Створене відео',stock_photo:'Стокове фото',generated_photo:'Створене фото',animation:'Анімація',text:'Текстові тези',host:'Ведучий'};
+const planFormatNames={stock_video:'Стокове відео',generated_video:'Створене відео',stock_photo:'Стокове фото',generated_photo:'Створене фото',animation:'Анімація',razgon_2d:'2D-анімація Razgon',text:'Текстові тези',host:'Ведучий'};
+function planFrameSpeech(frame){
+  const text=(frame.sentences || []).join(' ');
+  if(frame.continuation?.text)return `Продовження фрази: ${frame.continuation.text}${text?' '+text:''}`;
+  return text || (frame.opening_tail?'Пауза між фразами':'');
+}
 const planZoomByProject={};
 function planClock(value){const milliseconds=Math.round(Number(value)*1000);return clock(milliseconds/1000)+(milliseconds%1000?','+String(milliseconds%1000).padStart(3,'0'):'');}
 
@@ -57,6 +63,7 @@ const planFormatVisuals={
   generated_photo:{color:'#ff7b24',symbol:'◆'},
   stock_photo:{color:'#2be181',symbol:'●'},
   animation:{color:'#b46cff',symbol:'✦'},
+  razgon_2d:{color:'#ff4fd8',symbol:'✎'},
   text:{color:'#ff4da1',symbol:'Т'},
   host:{color:'#ff4242',symbol:'●'}
 };
@@ -96,7 +103,7 @@ function renderPlanTimeline(panel,frames,shares,names,total,formatButtons){
     for(const row of rows){row.classList.toggle('is-dimmed',!!format && row.dataset.format!==format && row.dataset.format!=='all');row.classList.toggle('is-highlighted',row.dataset.format===format);}
     for(const button of formatButtons){button.classList.toggle('is-dimmed',!!format && button.dataset.format!==format);button.classList.toggle('is-highlighted',button.dataset.format===format);button.setAttribute('aria-pressed',String(button.dataset.format===pinned));}
     if(frame){
-      const speech=(frame.sentences || []).join(' ');
+      const speech=planFrameSpeech(frame);
       detail.textContent=`Кадр ${frame.number ?? frames.indexOf(frame)+1} · ${clock(frame.start)} - ${clock(frame.end)} · ${names[frame.format] || frame.format}${speech?' · '+speech.slice(0,110):''}`;
     }else if(format){const count=counts[format] || 0;detail.textContent=`${names[format] || format}: ${count} ${planFrameWord(count)} у плані.`;}
     else detail.textContent='Наведи на смужку, щоб побачити номер і час кадру.';
@@ -144,11 +151,34 @@ function renderPlanTimeline(panel,frames,shares,names,total,formatButtons){
   }
 }
 
+const planEstimateCache=new WeakMap();
+function renderPlanCostEstimate(panel,plan,projectId){
+  const section=document.createElement('section');section.className='plan-cost-estimate';section.setAttribute('aria-label','Попередня оцінка витрат');
+  const heading=document.createElement('h2');heading.textContent='Орієнтовна вартість';
+  const content=document.createElement('div');content.setAttribute('aria-live','polite');content.textContent='Завантажуємо тарифи...';section.append(heading,content);panel.append(section);
+  let request=planEstimateCache.get(plan);
+  if(!request){request=api(`/api/projects/${encodeURIComponent(projectId)}/plan/cost-estimate`).then(result=>({estimate:result.estimate})).catch(error=>({error:error.message}));planEstimateCache.set(plan,request);}
+  request.then(result=>{
+    if(!section.isConnected)return;
+    content.replaceChildren();
+    if(result.error){const message=document.createElement('p');message.textContent=`Оцінка недоступна: ${result.error}`;content.append(message);const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.textContent='Спробувати ще раз';retry.addEventListener('click',()=>{planEstimateCache.delete(plan);if(state.plan===plan)renderPlan();});content.append(retry);return;}
+    const e=result.estimate,price=value=>'$'+Number(value).toFixed(3),range=(a,b)=>Math.abs(a-b)<.000001?price(a):`${price(a)} - ${price(b)}`;
+    const total=document.createElement('p');total.className='plan-cost-total';total.textContent=`Розрахунковий приклад: ${range(e.subtotal_min_usd,e.subtotal_max_usd)}`;
+    const details=document.createElement('p');details.textContent=`DeepSeek: ${range(e.agent_min_usd,e.agent_max_usd)}; зображення: ${price(e.images_usd)} (${e.image_count} шт. × ${price(e.image_price_usd)}).`;
+    const assumptions=document.createElement('p');assumptions.className='plan-cost-note';assumptions.textContent=`Припущення: один запит DeepSeek на кожен кадр, ${e.input_tokens_per_frame} вхідних і ${e.output_tokens_per_frame} вихідних токенів; одне зображення FLUX.3 Image Klein 1K на кожен кадр формату «Створене фото». Фактична кількість запитів, моделі та ціни можуть відрізнятися.`;
+    const limitations=document.createElement('p');limitations.className='plan-cost-note';limitations.textContent=`Це приклад для FLUX.3; наразі агент створює картинки через GPT Image 1 Mini, тому фактична ціна буде іншою. У суму не входять повторні спроби, додаткові PNG, стоки, озвучка та створене відео${e.generated_video_count?` (${e.generated_video_count} ${planFrameWord(e.generated_video_count)} у плані)`:''}. Повна вартість ролика поки невідома.`;
+    const actual=document.createElement('p');actual.className='plan-cost-note';actual.textContent=e.actual.request_count?`Витрати агента, зафіксовані в студії: ${price(e.actual.known_total_usd)}${e.actual.unknown_count?`; без суми для ${e.actual.unknown_count} запитів`:''}.`:'Витрат агента в студії ще не зафіксовано.';
+    content.append(total,details,assumptions,limitations,actual);
+  });
+}
+
 function renderPlan(){
   $('view-plan').classList.toggle('active',state.view==='plan');
   $('view-editor').classList.toggle('active',state.view==='editor');
+  $('view-agent').classList.toggle('active',state.view==='agent');
   $('view-plan').setAttribute('aria-pressed',String(state.view==='plan'));
   $('view-editor').setAttribute('aria-pressed',String(state.view==='editor'));
+  $('view-agent').setAttribute('aria-pressed',String(state.view==='agent'));
   const panel=$('project-plan');panel.replaceChildren();
   if(!state.project || state.view!=='plan')return;
   const heading=document.createElement('div');heading.className='plan-heading';
@@ -170,6 +200,7 @@ function renderPlan(){
   [...shares].sort((a,b)=>(b.exact-b.units)-(a.exact-a.units)).slice(0,remainder).forEach(item=>item.units++);
   const summary=document.createElement('div');summary.className='plan-summary';summary.innerHTML=`<span><strong>${frames.length}</strong> ${planFrameWord(frames.length)}</span><span><strong>${synced?planClock(total):clock(total)}</strong> ${synced?'тривалість озвучки':'орієнтовна тривалість'}</span>`;
   const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);summary.append(bind);panel.append(summary);
+  renderPlanCostEstimate(panel,state.plan,state.project.id);
   if(typeof renderSpeechReport==='function')renderSpeechReport(panel);
   const formats=document.createElement('div');formats.className='plan-formats';
   const formatButtons=[];
@@ -187,7 +218,7 @@ function renderPlan(){
   if(state.plan.settings_snapshot){
     const settings=document.createElement('p');settings.className='plan-note';
     const snapshot=state.plan.settings_snapshot;
-    settings.textContent=(state.plan.settings_scope==='project'?'Пропорції цього проєкту: ':'Налаштування каналу для цієї карти: ')+Object.entries(snapshot.weights).filter(([,value])=>value>0).map(([key,value])=>`${names[key] || key} ${value}%`).join(' · ')+`. Перший кліп: ${snapshot.first_clip_seconds>0?snapshot.first_clip_seconds+' с':'за загальним планом'}. Фактичні частки показані вище.`;
+    settings.textContent=(state.plan.settings_scope==='project'?'Пропорції цього проєкту: ':'Налаштування каналу для цієї карти: ')+Object.entries(snapshot.weights).filter(([,value])=>value>0).map(([key,value])=>`${names[key] || key} ${value}%`).join(' · ')+`. Початок: ${snapshot.first_clip_format && snapshot.first_clip_format!=='auto' ? (names[snapshot.first_clip_format] || (snapshot.first_clip_format==='video'?'відео':snapshot.first_clip_format)) + ', ' + (snapshot.first_clip_count || 1) + ' кадрів' : (snapshot.first_clip_format==='auto' ? 'автоматично' : 'за попередніми налаштуваннями')}. Перший кадр: ${snapshot.first_clip_seconds>0?snapshot.first_clip_seconds+' с':'тривалість за загальним планом'}. Фактичні частки показані вище.`;
     panel.append(settings);
   }
   const note=document.createElement('p');note.className='plan-note';note.textContent='План збережений у цьому проєкті. Типи кадрів, зокрема текстові тези, перевіряються за змістом перед монтажем. Погодження та зміни обговорюються в ChatGPT.';panel.append(note);
@@ -200,9 +231,10 @@ function renderPlan(){
   const table=document.createElement('table');table.className='plan-table';table.innerHTML='<thead><tr><th scope="col">Кадр і час</th><th scope="col">Формат</th><th scope="col">Репліка й задум кадру</th></tr></thead>';
   const body=document.createElement('tbody');
   frames.forEach((frame,index)=>{
-    const row=document.createElement('tr');const speech=(frame.sentences || []).join(' ');
+    const row=document.createElement('tr');const speech=planFrameSpeech(frame);
     const visual=frame.visual || frame.description || frame.notes || '';
-    const phrases=synced?(frame.sentence_timings || []).map(phrase=>`<li><time>${planClock(phrase.start)} - ${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
+    const phraseItems=frame.continuation?[frame.continuation,...(frame.sentence_timings || [])]:(frame.sentence_timings || []);
+    const phrases=synced?phraseItems.map(phrase=>`<li><time>${planClock(phrase.start)} - ${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
     row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}</strong><span>${planClock(frame.start)} - ${planClock(frame.end)}</span><small>${Number((Number(frame.end)-Number(frame.start)).toFixed(3))} с</small></td><td>${esc(names[frame.format] || frame.format)}</td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
   });
   table.append(body);panel.append(table);
@@ -210,3 +242,4 @@ function renderPlan(){
 
 $('view-plan').addEventListener('click',()=>setProjectView('plan'));
 $('view-editor').addEventListener('click',()=>setProjectView('editor'));
+$('view-agent').addEventListener('click',()=>setProjectView('agent'));

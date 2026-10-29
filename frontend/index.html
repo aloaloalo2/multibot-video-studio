@@ -3,28 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MultiBot Video Studio</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261026">
-  <link rel="stylesheet" href="/style.css?v=20261027-preview-zoom-1">
+  <title>VideoKey Studio</title>
+  <script>if(location.protocol==='file:')document.documentElement.classList.add('opened-as-file');</script>
+  <style>
+    .file-launch-notice{display:none}
+    html.opened-as-file body{margin:0;background:#111114;color:#f2f2f4;font:16px/1.5 system-ui,sans-serif}
+    html.opened-as-file .app-shell,html.opened-as-file #modal-backdrop{display:none}
+    html.opened-as-file .file-launch-notice{display:block;max-width:580px;margin:12vh auto;padding:28px}
+    html.opened-as-file .file-launch-notice a{display:inline-block;margin:8px 12px 0 0;color:#f3bd38}
+  </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261029-rounded-system-logo-8">
+  <link rel="stylesheet" href="/style.css?v=20261029-rounded-system-logo-8">
   <link rel="stylesheet" href="/timeline.css?v=20261027-fonts-ruler-1">
-  <script defer src="/app.js?v=20261027-preview-zoom-1"></script>
-  <script defer src="/universal.js?v=20261027-fast-open-1"></script>
-  <script defer src="/groups.js?v=20261027-fast-open-1"></script>
+  <script defer src="/app.js?v=20261029-videokey-logo-1"></script>
+  <script defer src="/universal.js?v=20261028-marquee-selection-1"></script>
+  <script defer src="/groups.js?v=20261028-clear-selection-1"></script>
   <script defer src="/waveforms.js?v=20261026-scene-groups-1"></script>
   <script defer src="/graphics.js?v=20261027-fonts-ruler-2"></script>
   <script defer src="/gradient.js?v=20261026-gradient-1"></script>
   <script defer src="/graphic-transitions.js?v=20261027-text-protection-1"></script>
   <script defer src="/effects.js?v=20261026-stability-7"></script>
   <script defer src="/transitions.js?v=20261027-text-protection-1"></script>
-  <script defer src="/plan.js?v=20261026-speech-2"></script>
+  <script defer src="/plan.js?v=20261028-agent-1"></script>
   <script defer src="/analysis.js?v=20261026-speech-2"></script>
   <script defer src="/services.js?v=20261026n"></script>
+  <script defer src="/agent.js?v=20261028-agent-selection-1"></script>
   <script defer src="/updates.js?v=20261027-update-2"></script>
+  <script defer src="/razgon-live.js?v=20261029-live-3"></script>
 </head>
 <body>
+  <div class="file-launch-notice" role="alert">
+    <h1>Відкрийте VideoKey Studio</h1>
+    <p>Цю сторінку відкрито як файл. Щоб студія працювала, запустіть «Запустить студию.command» і відкрийте її через локальний сервер.</p>
+    <a href="http://127.0.0.1:8770/">Відкрити студію</a>
+    <a href="http://127.0.0.1:8771/">Відкрити студію на порту 8771</a>
+  </div>
   <div class="app-shell">
     <aside id="channel-sidebar" class="sidebar" aria-label="Канали">
-      <div class="brand"><div class="brand-mark" aria-hidden="true">▱</div><div><strong>Video Studio</strong><span>MULTI BOT</span></div></div>
+      <div class="brand"><div class="brand-logo" role="img" aria-label="VideoKey Studio"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
       <div class="sidebar-heading channel-heading">Канали <button id="add-channel" type="button" aria-label="Додати канал" title="Додати канал">＋</button></div>
       <div id="channel-list" class="channel-list" role="list"></div>
       <input id="local-media-file" type="file" accept="video/*,audio/*,image/*,.mkv" hidden>
@@ -35,20 +51,21 @@
 
     <main class="main">
       <header class="topbar">
-        <div id="editor-brand" class="brand editor-brand" hidden><div class="brand-mark" aria-hidden="true">▱</div><div><strong>Video Studio</strong><span>MULTI BOT</span></div></div>
+        <div id="editor-brand" class="brand editor-brand" hidden><div class="brand-logo" role="img" aria-label="VideoKey Studio"><svg class="wordmark-icon" viewBox="0 3.545 24 16.91" aria-hidden="true"><path d="M12 3.545C8.2 3.545 5.2 3.55 3.9675 4.01C1.7825 4.47 .805 5.5625 .4025 7.69C.0575 9.5875 0 10.4 0 12C0 13.6 .0575 14.4125 .4025 16.31C.805 18.4375 1.7825 19.53 3.9675 19.99C5.2 20.45 8.2 20.455 12 20.455C15.8 20.455 18.8 20.45 20.0325 19.99C22.2175 19.53 23.195 18.4375 23.5975 16.31C23.9425 14.4125 24 13.6 24 12C24 10.4 23.9425 9.5875 23.5975 7.69C23.195 5.5625 22.2175 4.47 20.0325 4.01C18.8 3.55 15.8 3.545 12 3.545Z" fill="#6bf2ae"/><g transform="translate(6 6) scale(.5)" fill="none" stroke="#10251a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.3" cy="12" r="2.6"/><path d="M9.9 12h8.2m-3.5 0v2.6m3.5-2.6v1.9"/></g></svg><div class="wordmark-name">Video<span class="wordmark-key">Key</span></div><div class="wordmark-studio">STUDIO</div></div></div>
         <button id="back-to-projects" class="subtle" type="button" hidden>← На головну</button>
         <div class="project-heading"><div id="project-title" class="project-title"><strong>Оберіть канал</strong></div><span id="save-state" class="save-state"></span></div>
         <div class="top-actions"><button id="studio-update" class="secondary" type="button" hidden>Оновити студію</button><button id="undo" class="subtle editor-only" type="button" disabled>↶ Скасувати</button><button id="redo" class="subtle editor-only" type="button" disabled>↷ Повторити</button><button id="export-open" class="primary editor-only" type="button" disabled>Експорт MP4</button></div>
       </header>
 
       <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
-      <nav id="project-views" class="project-views" aria-label="Розділи випуску" hidden><button id="view-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6m-6 4h6"/></svg>План ролика</button><button id="view-editor" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16M4 10h10M4 16h16M9 2v20"/><rect x="12" y="8" width="8" height="4" rx="1"/></svg>Монтаж</button></nav>
+      <nav id="project-views" class="project-views" aria-label="Розділи випуску" hidden><button id="view-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6m-6 4h6"/></svg>План ролика</button><button id="view-editor" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16M4 10h10M4 16h16M9 2v20"/><rect x="12" y="8" width="8" height="4" rx="1"/></svg>Монтаж</button><button id="view-agent" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4zM8 10h8"/></svg>Агент</button></nav>
       <section id="project-plan" class="project-plan" aria-label="Карта ролика" hidden></section>
+      <section id="project-agent" class="project-agent" aria-label="Агент проєкту" hidden></section>
 
       <section id="project-loading" class="channel-overview" hidden><p role="status" aria-live="polite">Завантаження проєкту...</p><button id="loading-go-home" class="secondary" type="button">На головну</button></section>
 
       <section id="channel-overview" class="channel-overview" aria-labelledby="overview-title">
-        <div class="overview-top"><div><div class="overview-eyebrow">Випуски каналу</div><h1 id="overview-title">Оберіть канал</h1><p>Відкрий готовий проєкт або створи новий випуск.</p></div><div class="overview-actions"><button id="overview-channel-settings" class="secondary" type="button" disabled>⚙ Налаштування каналу</button><button id="overview-create" class="primary" type="button" disabled>＋ Новий випуск</button></div></div>
+        <div class="overview-top"><div><div class="overview-eyebrow">Випуски каналу</div><div class="overview-heading"><h1 id="overview-title">Оберіть канал</h1><button id="overview-channel-settings" class="channel-settings-icon" type="button" title="Налаштування каналу" aria-label="Налаштування каналу" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3.6 17.4a2.1 2.1 0 0 0 3 3l4.7-4.7a5 5 0 0 0 6.4-6.4l-3.2 3.2-3-3z"/></svg></button></div><p>Відкрий готовий проєкт або створи новий випуск.</p></div><div class="overview-actions"><button id="overview-create" class="primary" type="button" disabled>＋ Новий випуск</button></div></div>
         <div id="overview-projects" class="overview-projects"></div>
       </section>
 

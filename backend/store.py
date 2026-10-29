@@ -145,13 +145,17 @@ def validate_settings(value: dict) -> dict:
     weights = value.get("weights")
     if not isinstance(weights, dict) or not weights:
         raise StudioError("Задайте частки форматів")
-    allowed = {"stock_video", "generated_video", "stock_photo", "generated_photo", "animation", "text", "host"}
+    allowed = {"stock_video", "generated_video", "stock_photo", "generated_photo", "animation", "razgon_2d", "text", "host"}
     if set(weights) - allowed:
         raise StudioError("Невідомий формат у частках")
     if any(type(item) not in (int, float) or not math.isfinite(item) or item < 0 for item in weights.values()):
         raise StudioError("Частки не можуть бути від'ємними")
     if abs(sum(weights.values()) - 100) > 0.001:
         raise StudioError("Сума часток має дорівнювати 100%")
+    if not isinstance(value.get("first_clip_format", "auto"), str) or value.get("first_clip_format", "auto") not in allowed | {"auto", "video"}:
+        raise StudioError("Невідомий формат початку")
+    if type(value.get("first_clip_count", 1)) is not int or not 1 <= value.get("first_clip_count", 1) <= 30:
+        raise StudioError("Кількість початкових кадрів має бути від 1 до 30")
     for key, lo, hi in (("first_clip_seconds", 0, 60), ("words_per_minute", 1, 1000)):
         if key in value and (type(value[key]) not in (int, float) or not math.isfinite(value[key]) or not lo <= value[key] <= hi):
             raise StudioError("Невірне значення: " + key)
@@ -336,6 +340,20 @@ def restore_project(pid: str) -> dict:
         return upgrade_legacy_project(project)
 
 
+def project_cover_asset(project: dict) -> str | None:
+    """Choose montage media without probing files or starting a render."""
+    assets = {asset["id"]: asset for asset in project.get("assets", [])}
+    scene_ids = {ident for group in project.get("scene_groups", []) if group.get("role", "scene") == "scene" for ident in group.get("clip_ids", [])}
+    candidates = [clip for layer in project.get("tracks", []) for clip in layer.get("clips", [])
+                  if clip.get("kind") in {"video", "image"} and assets.get(clip.get("asset_id"), {}).get("kind") in {"video", "image"}]
+    scene_media = [clip for clip in candidates if clip["id"] in scene_ids]
+    if scene_media:
+        candidates = scene_media
+    if not candidates:
+        return None
+    return min(candidates, key=lambda clip: float(clip.get("start", 0)))["asset_id"]
+
+
 def list_projects(cid: str | None = None) -> list[dict]:
     if cid is not None:
         get_channel_folder(cid, include_disabled=True)
@@ -350,10 +368,12 @@ def list_projects(cid: str | None = None) -> list[dict]:
             item = read_json(path)
             if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
                 item = upgrade_legacy_project(item)
+                cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
+                result[-1]["cover_asset_id"] = cover_asset_id
         except (ValueError, KeyError):
             continue
-    return sorted(result, key=lambda item: item["name"].casefold())
+    return sorted(result, key=lambda item: (-item["created_at"], item["name"].casefold(), item["id"]))
 
 
 def validated_name(name: str) -> str:
@@ -404,7 +424,7 @@ def validate_plan(plan: dict) -> dict:
         start, end = float(frame["start"]), float(frame["end"])
         if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
             raise StudioError("У плані є кадр без тривалості")
-        if frame.get("format") not in {"stock_video", "generated_video", "stock_photo", "generated_photo", "animation", "text", "host"}:
+        if frame.get("format") not in {"stock_video", "generated_video", "stock_photo", "generated_photo", "animation", "razgon_2d", "text", "host"}:
             raise StudioError("У плані є невідомий формат")
         if not isinstance(frame.get("sentences", []), list):
             raise StudioError("У плані є некоректні речення")

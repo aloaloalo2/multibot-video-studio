@@ -16,7 +16,7 @@ Transition favorites are local editor preferences. A cut is the default absence 
 
 Use cached small thumbnails and lazy image loading in the library. Do not load source-sized review sheets or every original video just to draw library cards.
 
-Plan creation and regeneration by the agent must use the local script or HTTP API directly. Verify plans through code/API/JSON and return plan_url for the user to review. Do not drive the website for these operations. Browser verification remains appropriate for explicitly requested UI changes.
+Prefer the Studio's local script or HTTP API for plan creation, regeneration, and other supported production operations to save time and tokens. Verify plans through code/API/JSON and return plan_url for the user to review. The agent's browser remains available when useful, including for visual verification and operations the API does not support.
 
 The scene planner belongs to this Studio. Keep the planning implementation in `backend/planner.py` and execute it through `store.generate_project_plan`. Read the channel's saved settings at execution time. A project's older settings snapshot and client-supplied settings cannot replace them.
 
@@ -24,7 +24,7 @@ The parent `tools/video_plan.py` is a compatibility HTTP client. Keep it free of
 
 Store each generated plan's settings snapshot, settings signature, generator identity and script hash. Show a stale-plan notice when saved channel settings have changed. Preserve the project identity, existing montage and previous plan when regenerating.
 
-Ignore retired `opening_seconds`, `opening_clip_count` and `opening_clip_types` in new plans. `first_clip_seconds=0` follows the normal weighted plan. A positive value reserves the first generated video and fixes its duration. Show actual format shares by duration separately from target settings. Hints are explicit exceptions.
+Ignore retired `opening_seconds`, `opening_clip_count` and `opening_clip_types` in new plans. Opening formats follow `first_clip_format` and `first_clip_count`; automatic mode prefers an enabled video format first and otherwise uses the normal weighted plan. `first_clip_seconds=0` uses normal timing; a positive value sets the first frame duration without choosing its format. Show actual format shares by duration separately from target settings. Hints are explicit exceptions.
 
 For planning changes run `python3 -m unittest discover -s backend/tests -v` and the compatibility client tests in `../tools/tests/test_video_plan.py`. Cover current saved settings, zero first clip with legacy keys, stale detection, preserved montage and offline failure. Verify UI changes in the embedded Codex browser.
 

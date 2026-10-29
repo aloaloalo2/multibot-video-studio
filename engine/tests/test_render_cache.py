@@ -9,10 +9,36 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from render_cache import RenderCache,key_for,visual_key
+import render_cache
 import render
 
 
 class RenderCacheTest(unittest.TestCase):
+    def test_source_retries_metadata_change_without_caching_unstable_hash(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source';source.write_bytes(b'stable bytes')
+            digest=render_cache.digest_file;calls=[]
+            def first_read_changes_metadata(path):
+                value=digest(path);calls.append(value)
+                if len(calls)==1:
+                    stat=path.stat();os.utime(path,ns=(stat.st_atime_ns,stat.st_mtime_ns+1000000))
+                return value
+            with patch.object(render_cache,'digest_file',side_effect=first_read_changes_metadata):
+                cache=RenderCache(root/'cache');result=cache.source(source)
+            self.assertEqual(len(calls),2)
+            self.assertEqual(result['sha256'],digest(source))
+            self.assertEqual(result,RenderCache(root/'cache').source(source))
+
+    def test_source_still_rejects_continuously_changing_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source';source.write_bytes(b'first')
+            digest=render_cache.digest_file
+            def changing_read(path):
+                value=digest(path);path.write_bytes(path.read_bytes()+b'x');return value
+            with patch.object(render_cache,'digest_file',side_effect=changing_read):
+                with self.assertRaisesRegex(RuntimeError,'Media changed during export: source'):
+                    RenderCache(root/'cache').source(source)
+
     def test_cache_write_failure_preserves_export_and_disables_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);source=root/'video';source.write_bytes(b'valid export')

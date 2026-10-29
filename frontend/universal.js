@@ -30,7 +30,7 @@ function renderUniversalTimeline(){
     const row=document.createElement('div');row.className='track-row universal-row'+(state.activeLayer===layer.id?' active-layer':'');
     const heading=document.createElement('div');heading.className='layer-heading';
     enableLayerReorder(heading,layer);
-    const name=document.createElement('button');name.type='button';name.className='layer-name';name.textContent=layer.name || 'Шар';name.title='Вибрати шар';name.addEventListener('click',()=>{clearTransitionSelection();state.activeLayer=layer.id;state.selectedStack=null;state.selected=null;renderTimeline();renderInspector();status(`Вибрано «${layer.name}».`);});
+    const name=document.createElement('button');name.type='button';name.className='layer-name';name.textContent=layer.name || 'Шар';name.title='Вибрати шар';name.addEventListener('click',()=>{clearTransitionSelection();state.activeLayer=layer.id;state.selectedStack=null;state.selected=null;selectTimelineIds((layer.clips || []).map(clip=>clip.id));status(`Вибрано «${layer.name}».`);});
     const controls=document.createElement('div');controls.className='layer-controls';
     for(const [symbol,title,run] of [['✎','Перейменувати шар',()=>renameUniversalLayer(layer)],['×','Прибрати шар',()=>removeUniversalLayer(layer)]]){
       const button=document.createElement('button');button.type='button';if(symbol==='×')setTrashButton(button,`${title} ${layer.name}`,true);else button.textContent=symbol;button.title=title;button.setAttribute('aria-label',`${title} ${layer.name}`);button.disabled=(symbol==='↑'&&index===layers().length-1)||(symbol==='↓'&&index===0)||(symbol==='×'&&layers().length===1);button.addEventListener('click',run);controls.append(button);
@@ -56,7 +56,7 @@ function renderUniversalTimeline(){
     const visual=[...(layer.clips || [])].filter(c=>c.kind!=='audio').sort((a,b)=>Number(a.start)-Number(b.start));
     for(let i=1;i<visual.length;i++)if(Math.abs(Number(visual[i-1].start)+Number(visual[i-1].duration)-Number(visual[i].start))<=1/Number(state.project.fps||25)+.001)transitionJoinMarker(lane,'clip:'+visual[i-1].id,'clip:'+visual[i].id,Number(visual[i].start));
     lane.style.height=(Math.max(1,occupiedUntil.length)*27+2)+'px';
-    lane.addEventListener('click',event=>{if(event.target!==lane)return;clearTransitionSelection();state.activeLayer=layer.id;state.selected=null;state.playhead=layerTime(event,lane);renderTimeline();renderInspector();renderPreview();});
+    lane.addEventListener('click',event=>{if(event.target!==lane)return;clearTransitionSelection();state.activeLayer=layer.id;state.selected=null;state.playhead=layerTime(event,lane);selectTimelineIds((layer.clips || []).map(clip=>clip.id),event.metaKey||event.ctrlKey||event.shiftKey);renderPreview();});
     lane.addEventListener('dragover',event=>{if(['application/x-videostudio-asset','application/x-videostudio-clip'].some(type=>event.dataTransfer.types.includes(type))){event.preventDefault();lane.classList.add('drop-lane');}});
     lane.addEventListener('dragleave',event=>{if(!lane.contains(event.relatedTarget))lane.classList.remove('drop-lane');});
     lane.addEventListener('drop',event=>dropOnUniversalLane(event,lane));
@@ -173,7 +173,7 @@ function renderUniversalPreview(){
       let element;
       const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
       if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
-      else if(mediaKind==='image'&&url){element=document.createElement('img');element.src=url;element.alt='';}
+      else if(mediaKind==='image'&&url){element=document.createElement('img');element.decoding='async';element.src=url;element.alt='';element.decode().catch(()=>{});}
       else if(mediaKind==='video'&&url){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});element.src=url;}
       else if(mediaKind==='text'){element=document.createElement('div');element.className='composition-text';element.textContent=clip.text || clip.title || '';element.style.color=clip.color || '#ffffff';}
       else {element=document.createElement('div');element.className='composition-shape';element.style.background=clip.color || '#f0b429';}
@@ -204,7 +204,7 @@ function renderUniversalPreview(){
     applyGraphicStyle(wrapper,clip,composition.clientWidth);
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
-    const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(video.currentTime-target)>.2)video.currentTime=Math.min(Math.max(0,target),video.duration);video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
+    const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
   $('time-current').textContent=clock(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();
