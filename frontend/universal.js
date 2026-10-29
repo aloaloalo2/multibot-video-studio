@@ -176,14 +176,17 @@ function renderTimelineGaps(){
 function renderUniversalPreview(){
   const composition=$('preview-composition'),placeholder=$('preview-placeholder');
   $('preview-video').pause();$('preview-video').hidden=true;$('preview-image').hidden=true;$('preview-overlay').style.display='none';
-  const visible=[],prepared=[],{order,spans}=memoForProject('visualSpans',()=>{
+  // Kept per layers() function as well: the Razgon live view swaps it to draw only the overlay layers.
+  const byLayers=memoForProject('visualSpans',()=>new WeakMap());
+  if(!byLayers.has(layers))byLayers.set(layers,(()=>{
     const order=new Map(),spans=[];
     for(const layer of layers())for(const clip of layer.clips || []){
       if(clip.kind==='audio')continue;
       order.set(clip.id,order.size);spans.push({clip,start:clipRenderStart(clip),end:clipRenderEnd(clip)});
     }
     return {order,spans};
-  });
+  })());
+  const visible=[],prepared=[],{order,spans}=byLayers.get(layers);
   for(const {clip,start,end} of spans){
     if(state.playhead>=start&&state.playhead<end)visible.push(clip);
     if(state.playhead>=start-1.5&&state.playhead<end)prepared.push(clip);
