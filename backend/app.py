@@ -555,6 +555,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.route_mutation(method, path, body or {})
         except store.StudioError as exc:
             return self.json_response({"error": str(exc)}, exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            # A video element drops a range request it no longer needs while seeking; there is nobody left to answer.
+            self.close_connection = True
+            return None
         except (KeyError, TypeError, ValueError) as exc:
             return self.json_response({"error": "Невірні параметри запиту"}, 400)
         except Exception:
@@ -665,6 +669,11 @@ class Handler(BaseHTTPRequestHandler):
         if method == 'POST' and path == '/api/update/apply':
             begin_update()
             return self.json_response({'status': 'restarting'}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/tidy", path)
+        if match and method == "POST":
+            store.load_project(match.group(1))
+            threading.Thread(target=tidy_project, args=(match.group(1),), daemon=True).start()
+            return self.json_response({"started": True}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
         if match and method == "POST":
             return self.json_response(razgon_live.start(match.group(1)))
@@ -823,9 +832,23 @@ class StudioHTTPServer(ThreadingHTTPServer):
 
 def warm_project_cache():
     try:
-        store.list_projects()
+        projects = store.list_projects()
     except Exception as error:  # a broken project must not stop the server; the list request reports it
         print(f"Project cache warm-up failed: {error}", flush=True)
+        return
+    for item in projects:
+        tidy_project(item["id"])
+
+
+def tidy_project(pid: str) -> None:
+    """Free disk space taken by Razgon renders nothing uses any more, in the Studio and in the Razgon project."""
+    try:
+        result = store.prune_razgon_renders(pid)
+        if result["removed"]:
+            print(f"Removed {result['removed']} replaced Razgon clips ({result['bytes'] / 1e9:.2f} GB) from {pid}", flush=True)
+        razgon_live.clean_build(store.load_project(pid))
+    except Exception as error:
+        print(f"Cleanup of {pid} failed: {error}", flush=True)
 
 
 def main():

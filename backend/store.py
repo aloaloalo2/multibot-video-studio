@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import unicodedata
@@ -807,6 +808,21 @@ def resolve_asset(project: dict, aid: str) -> dict:
     raise StudioError("Матеріал не знайдено", 404)
 
 
+def clone_or_copy(source: Path, target: Path) -> None:
+    """On APFS a clone shares the blocks of the source until either file changes, so an imported render takes no
+    extra space and a later re-render of the source cannot alter the Studio's copy. Other disks get a plain copy."""
+    if sys.platform == "darwin":
+        try:
+            import ctypes
+            libc = ctypes.CDLL("/usr/lib/libSystem.dylib", use_errno=True)
+            if libc.clonefile(os.fsencode(source), os.fsencode(target), 0) == 0:
+                return
+        except (OSError, AttributeError):
+            pass
+    with source.open("rb") as stream, target.open("wb") as copy:
+        shutil.copyfileobj(stream, copy, length=1024 * 1024)
+
+
 def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
     source = source.expanduser().resolve()
     if not source.is_file() or not media_kind(source):
@@ -821,8 +837,7 @@ def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
         dest = media_dir / (source.stem[:70] + "-" + uuid.uuid4().hex[:8] + source.suffix.lower())
     tmp = media_dir / (".import-" + uuid.uuid4().hex)
     try:
-        with source.open("rb") as stream, tmp.open("wb") as target:
-            shutil.copyfileobj(stream, target, length=1024 * 1024)
+        clone_or_copy(source, tmp)
         os.replace(str(tmp), str(dest))
     finally:
         if tmp.exists():
@@ -1362,6 +1377,60 @@ def clear_history(pid: str, side: str) -> None:
         path.unlink()
 
 
+RAZGON_UNDO_STEPS = 5
+RAZGON_RENDER = re.compile(r"(frame_\d{3}|music_sfx)(-[0-9a-f]{8})?\.(mp4|wav)")
+
+
+def prune_razgon_renders(pid: str) -> dict:
+    """Delete clip renders the Razgon bridge imported and later replaced.
+
+    Only files the bridge names (frame_NNN.mp4, music_sfx.wav) in this project's media folder are candidates, and only
+    for an episode linked to Razgon. A file stays while the timeline, a redo step or one of the last RAZGON_UNDO_STEPS
+    undo steps uses it; older undo steps that hold replaced renders are dropped."""
+    project = load_project(pid)
+    if not (Path(project.get("episode_path", "")) / "razgon.json").is_file():
+        return {"removed": 0, "bytes": 0}
+    media = (project_dir(pid) / "media").resolve()
+    with LOCK:
+        migrate_history(pid)
+        project = load_project(pid)
+        def clip_assets(snapshot):
+            return {clip.get("asset_id") for track in snapshot.get("tracks", []) for clip in track.get("clips", [])}
+        def replaced(asset_ids):
+            return {aid for aid in asset_ids if aid in renders}
+        renders = {asset["id"] for asset in project.get("assets", [])
+                   if Path(asset.get("path", "")).parent.resolve() == media and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)}
+        used = clip_assets(project)
+        past = history_entries(pid, "past")
+        past_assets = [clip_assets(read_json(entry, {})) for entry in past]
+        # Renders can be made again from the scenes, so undo older than the last few steps does not keep them on disk:
+        # those oldest steps go first, which keeps the remaining undo chain continuous.
+        recent = set().union(used, *past_assets[-RAZGON_UNDO_STEPS:])
+        older = past[:-RAZGON_UNDO_STEPS] if len(past) > RAZGON_UNDO_STEPS else []
+        if any(replaced(assets) - recent for assets in past_assets[:len(older)]):
+            for entry in older:
+                entry.unlink()
+            past_assets = past_assets[len(older):]
+        used |= set().union(*past_assets) if past_assets else set()
+        for entry in history_entries(pid, "future"):
+            used |= clip_assets(read_json(entry, {}))
+        keep, removed, freed = [], 0, 0
+        for asset in project.get("assets", []):
+            path = Path(asset.get("path", ""))
+            if asset.get("id") in used or path.parent.resolve() != media or not RAZGON_RENDER.fullmatch(path.name):
+                keep.append(asset)
+                continue
+            if path.is_file():
+                freed += path.stat().st_size
+                path.unlink()
+            removed += 1
+        if removed:
+            # The media list is not part of an edit, so the revision stays and an open editor is not interrupted.
+            project["assets"] = keep
+            save_project(project)
+    return {"removed": removed, "bytes": freed}
+
+
 def history_state(pid: str) -> dict:
     migrate_history(pid)
     return {"can_undo": bool(history_entries(pid, "past")), "can_redo": bool(history_entries(pid, "future"))}
@@ -1380,6 +1449,10 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
                 raise StudioError("Немає дії для повернення")
             previous = upgrade_legacy_project(previous)
             push_history(pid, target, project)
+            # Undo restores the montage, not the media library: files imported or cleaned up since that step stay as they are now.
+            current = {asset["id"]: asset for asset in project.get("assets", [])}
+            restored = [asset for asset in previous.get("assets", []) if asset.get("id") not in current and Path(asset.get("path", "")).is_file()]
+            previous["assets"] = list(current.values()) + restored
             for key in ("plan_source", "plan_updated_at", "plan_original_source"):
                 if key in project:
                     previous[key] = project[key]

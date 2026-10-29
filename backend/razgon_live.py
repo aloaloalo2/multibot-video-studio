@@ -10,6 +10,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -67,3 +68,12 @@ def start(pid: str) -> dict:
         if _health(info["port"]):
             return {"available": True, "running": True, "url": url}
     raise store.StudioError("Живий перегляд не запустився. Перевірте build/live.log у проєкті Razgon", 500)
+
+
+def clean_build(project: dict) -> None:
+    """Remove the linked Razgon project's render leftovers with its own tool; it skips renders that are still running."""
+    info = link(project)
+    tool = info and info["root"] / "tools" / "clean_build.py"
+    if tool and tool.is_file():
+        subprocess.run([sys.executable, str(tool), "--project", str(info["project"]), "--apply"], cwd=info["root"],
+                       capture_output=True, timeout=600)

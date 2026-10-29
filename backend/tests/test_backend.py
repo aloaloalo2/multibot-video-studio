@@ -150,6 +150,46 @@ class BackendTest(unittest.TestCase):
         store.apply_action(pid, "undo", {})
         self.assertEqual(texts(), ["Step 0"])
 
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is needed for video fixtures")
+    def test_replaced_razgon_clips_are_pruned_once_no_step_uses_them(self):
+        project = store.create_project(store.channel_id(self.channel), "Razgon cleanup")
+        pid, episode = project["id"], Path(project["episode_path"])
+        episode.mkdir(parents=True, exist_ok=True); (episode / "razgon.json").write_text("{}", encoding="utf-8")
+        renders = Path(self.tmp.name) / "razgon-build"; renders.mkdir(exist_ok=True)
+        def clip_file(name):
+            path = renders / name
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=64x36:d=1", "-r", "25", str(path)], check=True)
+            return path
+        own = store.import_asset_file(project, clip_file("my_broll.mp4"))
+        first = store.import_asset_file(project, clip_file("frame_001.mp4"))
+        self.assertEqual(Path(first["path"]).read_bytes(), (renders / "frame_001.mp4").read_bytes())
+        store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "video", "asset_id": first["id"], "start": 0, "duration": 1})
+        clip_id = next(c["id"] for t in store.load_project(pid)["tracks"] for c in t["clips"])
+        second = store.import_asset_file(store.load_project(pid), clip_file("frame_001.mp4"))
+        store.apply_action(pid, "replace_clip_asset", {"clip_id": clip_id, "asset_id": second["id"]})
+        # The earlier render is still one undo away, so it stays.
+        self.assertEqual(store.prune_razgon_renders(pid)["removed"], 0)
+        for n in range(store.RAZGON_UNDO_STEPS):
+            store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "text", "text": "Edit %d" % n, "start": 1, "duration": 1})
+        result = store.prune_razgon_renders(pid)
+        self.assertEqual(len(store.history_entries(pid, "past")), store.RAZGON_UNDO_STEPS)
+        self.assertEqual(result["removed"], 1)
+        ids = {asset["id"] for asset in store.load_project(pid)["assets"]}
+        self.assertNotIn(first["id"], ids)
+        self.assertFalse(Path(first["path"]).exists())
+        self.assertTrue({own["id"], second["id"]} <= ids)
+        self.assertTrue(Path(own["path"]).exists())
+
+    def test_undo_keeps_media_imported_after_the_step(self):
+        project = store.create_project(store.channel_id(self.channel), "Undo keeps library")
+        pid = project["id"]
+        store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "text", "text": "One", "start": 0, "duration": 1})
+        source = Path(self.tmp.name) / "late-import.wav"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.5", str(source)], check=True) if shutil.which("ffmpeg") else source.write_bytes(b"RIFF")
+        asset = store.import_asset_file(store.load_project(pid), source)
+        store.apply_action(pid, "undo", {})
+        self.assertIn(asset["id"], {item["id"] for item in store.load_project(pid)["assets"]})
+
     def test_atomic_batch_is_one_undo_and_invalid_batch_preserves_project(self):
         project = store.create_project(store.channel_id(self.channel), "Batch montage")
         pid = project["id"]
