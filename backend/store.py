@@ -137,6 +137,9 @@ def get_channel_folder(cid: str, include_disabled=False) -> Path:
 def validate_settings(value: dict) -> dict:
     if not isinstance(value, dict):
         raise StudioError("Налаштування мають бути об'єктом")
+    name = value.get("display_name")
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 80):
+        raise StudioError("Назва каналу має містити від 1 до 80 символів")
     if value.get("motion_easing", "ease_in_out") not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
         raise StudioError("Невідомий тип руху")
     if 'typography' in value:
@@ -181,7 +184,11 @@ def validate_settings(value: dict) -> dict:
 
 
 def channel_record(folder: Path) -> dict:
-    return {"id": channel_id(folder), "name": unicodedata.normalize("NFC", folder.name), "path": str(folder), "settings": read_json(folder / PLAN_CONFIG, {})}
+    # The name shown in the Studio can differ from the folder: the folder path is the channel's id, so it never moves.
+    settings = read_json(folder / PLAN_CONFIG, {})
+    name = (settings.get("display_name") or "").strip() or folder.name
+    return {"id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
+            "path": str(folder), "settings": settings}
 
 
 def list_channels() -> list[dict]:

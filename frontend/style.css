@@ -787,3 +787,5 @@ button.danger:hover:not(:disabled){background:#523034}
 .channel-settings-button{width:26px;height:26px;margin-left:-2px;background:#222226;color:#9a9ca4}
 .channel-settings-button svg{width:15px;height:15px;stroke-width:1.8}
 @media(hover:hover){.channel-settings-button:not(:disabled):hover{background:#303035;color:#f2f2f3}}
+.channel-name-section label h3{margin-bottom:9px}
+.channel-name-section input{width:100%;font-size:15px;font-weight:600}

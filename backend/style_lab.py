@@ -8,6 +8,7 @@ The channel logo is not burnt in: the settings page lays it over each frame with
 from __future__ import annotations
 
 import hashlib, json, os, re, shutil, subprocess, threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import store
@@ -97,44 +98,105 @@ def prune(cache: Path, keep: int = 5) -> None:
         shutil.rmtree(old)
 
 
-def showcase(cid: str, animation: dict | None = None) -> dict:
-    """The style card (Razgon's showcase scene: the character, a house, a sign) in every gallery style; with the
-    channel's assets on, library props stand in the yard as pictures, with them off the scene draws plain shapes."""
-    channel = store.get_channel_folder(cid)
-    choices = films(channel)
-    root = choices[0][0] if choices else None
-    if root is None or not (root / "showcase" / "scenes").is_dir():
-        raise StyleLabError("Немає сцени-візитки Razgon")
+CARDS = "style-cards"
+
+
+def card_dir(key: str) -> Path:
+    return store.DATA_ROOT / CARDS / key
+
+
+def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool) -> str:
+    """Render the style card in every gallery style for one title font and assets choice, unless it is cached."""
     scene = root / "showcase"
+    key = hashlib.sha256(json.dumps(["showcase", font, assets, ids, stamp], sort_keys=True).encode()).hexdigest()[:20]
+    cache = card_dir(key)
+    if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
+        return key
+    folder = store.DATA_ROOT / "style-cards-lab" / key
+    if folder.exists():
+        shutil.rmtree(folder)
+    (folder / "build").mkdir(parents=True)
+    for name in ("story", "scenes", "timeline") + (("assets",) if assets else ()):
+        if (scene / name).exists():
+            os.symlink(scene / name, folder / name)
+    if not assets:
+        (folder / "assets").mkdir()
+        (folder / "assets" / "index.json").write_text("[]")
+    config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
+    config["fonts"] = {"title": font}
+    (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
+    try:
+        out = render_stills(root, folder, ids, [2.0])
+        cache.mkdir(parents=True, exist_ok=True)
+        for sid in ids:
+            shutil.copyfile(still(out, sid, 2.0), cache / f"{sid}-0.jpg")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return key
+
+
+def cards(root: Path) -> dict:
+    """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
+    logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
+    switching a font or the assets in the settings only swaps pictures."""
+    scene = root / "showcase"
+    if not (scene / "scenes").is_dir():
+        raise StyleLabError("Немає сцени-візитки Razgon")
     known = {style["id"]: style for style in presets(root)}
     ids = [sid for sid in GALLERY if sid in known]
-    text, assets = razgon_text(animation), (animation or {}).get("assets", True) is not False
-    identity = ["showcase", text, assets, ids, newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")]
-    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
-    cache = store.DATA_ROOT / "channels" / cid / "style-cards" / key
-    if not all((cache / f"{sid}-0.jpg").exists() for sid in ids):
-        with LOCK:
-            folder = store.DATA_ROOT / "channels" / cid / "style-lab" / "showcase"
-            if folder.exists():
-                shutil.rmtree(folder)
-            (folder / "build").mkdir(parents=True)
-            for name in ("story", "scenes", "timeline") + (("assets",) if assets else ()):
-                if (scene / name).exists():
-                    os.symlink(scene / name, folder / name)
-            if not assets:
-                (folder / "assets").mkdir()
-                (folder / "assets" / "index.json").write_text("[]")
-            config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
-            config.update(text)
-            (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
-            out = render_stills(root, folder, ids, [2.0])
-            cache.mkdir(parents=True, exist_ok=True)
-            for sid in ids:
-                shutil.copyfile(still(out, sid, 2.0), cache / f"{sid}-0.jpg")
-            prune(cache, keep=12)
-    current = json.loads((choices[0][1] / "config.json").read_text(encoding="utf-8")).get("style")
-    return {"key": key, "film_style": current,
-            "styles": [{**known[sid], "card": f"/api/channels/{cid}/style-cards/{key}/{sid}-0.jpg"} for sid in ids]}
+    stamp = newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")
+    combos = [(font, assets) for font in TITLE_FONTS for assets in (True, False)]
+    with LOCK:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            keys = dict(zip(combos, pool.map(lambda combo: card_set(root, ids, stamp, *combo), combos)))
+        # Cards of an older engine or scene are never asked for again.
+        for old in (store.DATA_ROOT / CARDS).iterdir():
+            if old.is_dir() and old.name not in keys.values():
+                shutil.rmtree(old)
+    return {"styles": [known[sid] for sid in ids],
+            "cards": {font: {("1" if assets else "0"): {sid: f"/api/{CARDS}/{keys[font, assets]}/{sid}-0.jpg" for sid in ids}
+                             for assets in (True, False)} for font in TITLE_FONTS}}
+
+
+def razgon_root() -> Path | None:
+    """The Razgon studio of any channel that has an animated film."""
+    for channel in store.list_channels():
+        try:
+            choices = films(store.get_channel_folder(channel["id"]))
+        except store.StudioError:
+            continue
+        if choices:
+            return choices[0][0]
+    return None
+
+
+def warm() -> None:
+    """Draw any missing style cards in the background when the Studio starts, so settings open with them ready."""
+    root = razgon_root()
+    if root is not None:
+        try:
+            cards(root)
+        except (StyleLabError, OSError, subprocess.SubprocessError):
+            pass
+
+
+def showcase(cid: str) -> dict:
+    """The style cards for a channel's settings, with the style its newest film uses now."""
+    choices = films(store.get_channel_folder(cid))
+    if not choices:
+        raise StyleLabError("Немає сцени-візитки Razgon")
+    root, project = choices[0]
+    current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
+    return {"film_style": current, **cards(root)}
+
+
+def card_file(key: str, name: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{20}", key) or not re.fullmatch(r"[a-z0-9_-]+-0\.jpg", name):
+        raise StyleLabError("Невірний кадр")
+    path = card_dir(key) / name
+    if not path.is_file():
+        raise StyleLabError("Кадр стилю не знайдено")
+    return path
 
 
 HERO = re.compile(r"\bclose\b|\bclose-up\b|\bbig face\b")
@@ -224,10 +286,10 @@ def previews(cid: str, assets: bool = True, animation: dict | None = None, only:
             "styles": [{**style, "frames": [f"/api/channels/{cid}/style-previews/{key}/{style['id']}-{i}.jpg" for i in range(len(times))]} for style in styles]}
 
 
-def preview_file(cid: str, key: str, name: str, kind: str = "style-previews") -> Path:
-    if kind not in {"style-previews", "style-cards"} or not re.fullmatch(r"[0-9a-f]{20}", key) or not re.fullmatch(r"[a-z0-9_-]+-\d\.jpg", name):
+def preview_file(cid: str, key: str, name: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{20}", key) or not re.fullmatch(r"[a-z0-9_-]+-\d\.jpg", name):
         raise StyleLabError("Невірний кадр")
-    path = store.DATA_ROOT / "channels" / cid / kind / key / name
+    path = store.DATA_ROOT / "channels" / cid / "style-previews" / key / name
     if not path.is_file():
         raise StyleLabError("Кадр стилю не знайдено")
     return path

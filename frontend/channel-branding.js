@@ -22,7 +22,8 @@ function brandingSections(channel){
   const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" value="${value}" ${kind===value?'checked':''}><span><strong>${title}</strong><small>${text}</small></span></label>`;
   const cells=brandingPositions.map(item=>item?`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`:'<span class="logo-position-gap" aria-hidden="true"></span>').join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
-  return `<section class="settings-section channel-kind-section"><h3>Тип каналу</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип каналу">${kindCard('regular','Звичайний','Фото, стокове й створене відео, текст')}${kindCard('animated','Анімаційний','Мультфільм Razgon зі своїм стилем')}</div></section>
+  return `<section class="settings-section channel-name-section"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></section>
+    <section class="settings-section channel-kind-section"><h3>Тип каналу</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип каналу">${kindCard('regular','Звичайний','Фото, стокове й створене відео, текст')}${kindCard('animated','Анімаційний','Мультфільм Razgon зі своїм стилем')}</div></section>
     <section class="settings-section channel-look"><h3><span class="animated-only">Стиль і логотип</span><span class="regular-only">Логотип каналу</span></h3>
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="logo-preview-empty" class="regular-only">Логотип ще не додано</span><span id="style-stage-state" class="style-stage-state animated-only" role="status" aria-live="polite"></span></div>
       <div class="animated-only"><p id="style-caption" class="style-caption"></p>
@@ -41,7 +42,7 @@ function brandingSections(channel){
 function bindBranding(channel){
   const settings=channel.settings || {},logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
   const frame=$('logo-preview'),image=$('logo-preview-image'),empty=$('logo-preview-empty'),feedback=$('logo-feedback'),strip=$('style-strip'),film=$('style-film'),stage=$('style-stage-state');
-  let version=settings.logo?.version || 0,present=false,styles=null,chosen=animation.style || null,filmStyle=null,request=0,filmRequest=0;
+  let version=settings.logo?.version || 0,present=false,styles=null,cards=null,chosen=animation.style || null,filmStyle=null,request=0,filmRequest=0;
   const kind=()=>document.querySelector('input[name="channel-kind"]:checked')?.value || 'regular';
   const logoUrl=()=>`/api/channels/${encodeURIComponent(channel.id)}/logo?v=${version}`;
   const named=style=>styleNames[style.id] || [style.name,style.desc];
@@ -60,10 +61,12 @@ function bindBranding(channel){
     for(const id of ['logo-size','logo-margin','logo-opacity'])$(id).nextElementSibling.textContent=$(id).value+'%';
   };
   const load=()=>{image.onload=()=>{present=true;draw();};image.onerror=()=>{present=false;draw();};image.src=logoUrl();};
+  // Every card (style x title font x assets) is drawn ahead of time, so switching a font or the assets only swaps pictures.
+  const card=id=>cards?.[$('style-title-font').value]?.[$('style-assets').checked?'1':'0']?.[id] || '';
   // A regular channel shows the logo on a neutral frame; an animated one on the style card of its chosen style.
   const backdrop=()=>{
     const style=kind()==='animated'&&styles?.find(item=>item.id===chosen);
-    frame.style.backgroundImage=style?`url("${style.card}")`:'';
+    frame.style.backgroundImage=style?`url("${card(style.id)}")`:'';
     if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<span>${esc(text)}</span>`;}
   };
   const choose=id=>{chosen=id;strip.querySelectorAll('.style-thumb').forEach(item=>item.setAttribute('aria-checked',String(item.dataset.style===id)));backdrop();if(!film.hidden)loadFilm();};
@@ -71,20 +74,21 @@ function bindBranding(channel){
     strip.replaceChildren();
     for(const style of styles){
       const thumb=document.createElement('button');thumb.type='button';thumb.className='style-thumb';thumb.dataset.style=style.id;thumb.setAttribute('role','radio');thumb.setAttribute('aria-checked',String(style.id===chosen));
-      thumb.innerHTML=`<img src="${esc(style.card)}" alt=""><span>${esc(named(style)[0])}</span>`;
+      thumb.innerHTML=`<img src="${esc(card(style.id))}" alt=""><span>${esc(named(style)[0])}</span>`;
       thumb.addEventListener('click',()=>choose(style.id));
       strip.append(thumb);
     }
     backdrop();
   };
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
+  const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
   const loadStyles=async()=>{
     if(kind()!=='animated')return;
-    const mine=++request;stage.textContent=styles?'Перемальовуємо стилі...':'Малюємо стилі, перший раз це кілька секунд...';
+    const mine=++request;stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
-      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{animation:textStyle()});
+      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{});
       if(mine!==request||!strip.isConnected)return;
-      styles=data.styles;filmStyle=data.film_style;
+      styles=data.styles;cards=data.cards;filmStyle=data.film_style;
       if(!styles.some(style=>style.id===chosen))chosen=styles.some(style=>style.id===filmStyle)?filmStyle:styles[0]?.id;
       stage.textContent='';renderStrip();
     }catch(error){if(mine===request&&strip.isConnected)stage.textContent=error.message;}
@@ -106,8 +110,8 @@ function bindBranding(channel){
     event.currentTarget.textContent=film.hidden?'Показати на кадрах ролика':'Сховати кадри ролика';
     if(!film.hidden)loadFilm();
   });
-  $('style-title-font').addEventListener('change',()=>{loadStyles();if(!film.hidden)loadFilm();});
-  $('style-assets').addEventListener('change',()=>{loadStyles();if(!film.hidden)loadFilm();});
+  $('style-title-font').addEventListener('change',()=>{swap();if(!film.hidden)loadFilm();});
+  $('style-assets').addEventListener('change',()=>{swap();if(!film.hidden)loadFilm();});
   for(const button of document.querySelectorAll('.logo-position'))button.addEventListener('click',()=>{logo.position=button.dataset.position;document.querySelectorAll('.logo-position').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));draw();});
   for(const id of ['logo-size','logo-margin','logo-opacity','logo-enabled'])$(id).addEventListener('input',draw);
   $('logo-file').addEventListener('change',async event=>{
@@ -126,7 +130,9 @@ function bindBranding(channel){
   const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(kind()==='animated'&&!styles)loadStyles();};
   for(const radio of document.querySelectorAll('input[name="channel-kind"]'))radio.addEventListener('change',applyKind);
   applyKind();draw();load();
-  return ()=>({channel_kind:kind(),
+  // The folder keeps its name (its path is the channel's id); a different name is stored in the settings.
+  const displayName=()=>{const name=$('channel-name').value.trim();if(!name)throw new Error('Вкажіть назву каналу.');return name===(channel.folder_name || channel.name)?null:name;};
+  return ()=>({display_name:displayName(),channel_kind:kind(),
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Number($('logo-margin').value),opacity:Number($('logo-opacity').value),version},
     ...(kind()==='animated'?{animation:{...(chosen?{style:chosen}:{}),...textStyle()}}:{})});
 }

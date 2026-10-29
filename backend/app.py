@@ -648,11 +648,17 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/(style-previews|style-cards)/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
         if match:
             store.get_channel_folder(match.group(1))
             try:
-                return self.serve_media(style_lab.preview_file(match.group(1), match.group(3), match.group(4), match.group(2)), cache=True)
+                return self.serve_media(style_lab.preview_file(*match.groups()), cache=True)
+            except style_lab.StyleLabError as error:
+                raise store.StudioError(str(error), 404) from None
+        match = re.fullmatch(r"/api/style-cards/([0-9a-f]{20})/([a-z0-9_-]+-0\.jpg)", path)
+        if match:
+            try:
+                return self.serve_media(style_lab.card_file(*match.groups()), cache=True)
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 404) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo-overlay\.png", path)
@@ -760,7 +766,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
         if match and method == "POST":
             try:
-                return self.json_response(style_lab.showcase(match.group(1), body.get("animation")))
+                return self.json_response(style_lab.showcase(match.group(1)))
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 409) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews", path)
@@ -923,6 +929,7 @@ def main():
     threading.Thread(target=update_loop, daemon=True).start()
     # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
     threading.Thread(target=warm_project_cache, daemon=True).start()
+    threading.Thread(target=style_lab.warm, daemon=True).start()
     print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

@@ -54,6 +54,22 @@ class BrandingTest(unittest.TestCase):
             with self.assertRaises(channel_branding.BrandingError):
                 channel_branding.save_logo("a" * 16, base64.b64encode(b"not an image").decode())
 
+    def test_display_name_keeps_the_folder_and_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "What If"; folder.mkdir()
+            plain = store.channel_record(folder)
+            self.assertEqual((plain["name"], plain["folder_name"]), ("What If", "What If"))
+            (folder / store.PLAN_CONFIG).write_text('{"display_name": "  Що як  "}')
+            named = store.channel_record(folder)
+            self.assertEqual((named["name"], named["folder_name"], named["id"]), ("Що як", "What If", plain["id"]))
+            (folder / store.PLAN_CONFIG).write_text('{"display_name": null}')
+            self.assertEqual(store.channel_record(folder)["name"], "What If")
+        base = {"weights": {"stock_photo": 100}}
+        store.validate_settings({**base, "display_name": None})
+        for bad in ("", "   ", 5, "x" * 81):
+            with self.assertRaisesRegex(store.StudioError, "Назва каналу"):
+                store.validate_settings({**base, "display_name": bad})
+
 
 if __name__ == "__main__":
     unittest.main()
