@@ -123,6 +123,10 @@ button.subtle,.timeline-toolbar button,.inspector-actions button{border:0;backgr
 button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled),.inspector-actions button:hover:not(:disabled){background:#3a3a40}
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:10px;padding:9px 13px}
 button.primary:hover:not(:disabled){background:#f5c24b}
+/* The two main actions glow like the logo key, in their own gold. */
+#export-open,#overview-create{transition:background-color .15s,box-shadow .2s}
+#export-open:not(:disabled),#overview-create:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 button.secondary{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:9px;padding:8px 10px}
 button.secondary:hover:not(:disabled){background:#3a3a40}
 button.danger{border:1px solid #634045;background:#3b292c;color:#efb2b8;border-radius:9px;padding:8px 10px;margin-top:10px}
@@ -695,5 +699,5 @@ button.danger:hover:not(:disabled){background:#523034}
 .brand-logo:focus-visible{outline:2px solid #6bf2ae;outline-offset:4px}
 .brand-logo:hover .wordmark-icon{filter:drop-shadow(0 0 10px #6bf2aecc)}
 .brand-logo .wordmark-key{text-shadow:0 0 8px #6bf2ae80}
-.project-card .project-status:not(.draft):not(.plan-draft),.plan-stage-tag.audio-synced{color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73;box-shadow:0 0 10px #3fe39a33,inset 0 0 8px #3fe39a1f;text-shadow:0 0 6px #3fe39a99;transition:box-shadow .18s,border-color .18s}
-.project-card:hover .project-status:not(.draft):not(.plan-draft),.plan-stage-tag.audio-synced:hover{border-color:#6bf2aecc;box-shadow:0 0 16px #3fe39a66,inset 0 0 10px #3fe39a33}
+/* Status tags are labels, not buttons, so they carry no glow. */
+.project-card .project-status:not(.draft):not(.plan-draft),.plan-stage-tag.audio-synced{color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73}
