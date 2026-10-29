@@ -5,7 +5,7 @@
 // (backend/channel_branding.py): size and margin are percent of the frame width.
 const brandingPositions=[['top-left','Угорі ліворуч'],['top-center','Угорі по центру'],['top-right','Угорі праворуч'],['middle-left','Посередині ліворуч'],null,['middle-right','Посередині праворуч'],['bottom-left','Унизу ліворуч'],['bottom-center','Унизу по центру'],['bottom-right','Унизу праворуч']];
 const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opacity:100};
-const titleFonts=['Fredoka','Nunito','Playfair Display'];
+const titleFonts=['Fredoka','Baloo 2','Lilita One','Bangers','Bebas Neue','Montserrat','Permanent Marker','Nunito','Playfair Display'];
 // Ukrainian names for the template Razgon styles; a style the Studio does not know keeps its own name and description.
 const styleNames={neon:['Неоновий нуар','Глибокий чорний, рожево-бірюзовий контур, світні вивіски, сильне сяйво.'],
   dusk:['Кіно-сутінки','Лілові тіні, бурштинове світло, кремовий контур, широкоекранні смуги.'],

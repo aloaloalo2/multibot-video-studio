@@ -14,7 +14,7 @@ import store
 
 LOCK = threading.Lock()
 SAMPLES = (0.2, 0.5, 0.8)
-TITLE_FONTS = ("Fredoka", "Nunito", "Playfair Display")
+TITLE_FONTS = ("Fredoka", "Baloo 2", "Lilita One", "Bangers", "Bebas Neue", "Montserrat", "Permanent Marker", "Nunito", "Playfair Display")
 STYLE_ID = re.compile(r"[a-z0-9_-]{1,40}")
 HEX = re.compile(r"#[0-9a-fA-F]{6}")
 
