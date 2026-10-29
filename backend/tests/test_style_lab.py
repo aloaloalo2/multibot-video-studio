@@ -28,7 +28,11 @@ def film(base: Path, slug="film") -> Path:
     project = base / "razgon" / "projects" / slug
     for name in ("story", "timeline", "scenes", "input", "assets"):
         (project / name).mkdir(parents=True)
-    (project / "story" / "shots.json").write_text(json.dumps({"duration": 100, "shots": [{"start": 0, "end": 50}, {"start": 50, "end": 100}]}))
+    (project / "story" / "shots.json").write_text(json.dumps({"duration": 100, "shots": [
+        {"start": 0, "end": 20, "set": "lab", "scene": "a blueprint diagram of the heart"},
+        {"start": 20, "end": 40, "set": "home", "scene": "close on YOU yawning in bed"},
+        {"start": 40, "end": 60, "set": "home", "scene": "YOU walks to the kitchen"},
+        {"start": 60, "end": 100, "set": "street", "scene": "YOU crosses the street at dusk"}]}))
     (project / "config.json").write_text(json.dumps({"style": "neon", "overlay": "input/plashka.png", "fps": 25}))
     (project / "assets" / "index.json").write_text('["rocket"]')
     return project
@@ -53,7 +57,9 @@ class StyleLabTest(unittest.TestCase):
             (base / "razgon" / "render.mjs").write_text("")
             project = film(base)
             self.assertEqual([s["id"] for s in style_lab.presets(base / "razgon")], ["dusk", "neon"])
-            self.assertEqual(style_lab.sample_times(project), [22.5, 72.5, 72.5])
+            # The close-up first, then one shot per other set; the third moment falls back to the nearest shot not yet
+            # used, never the diagram.
+            self.assertEqual(style_lab.sample_times(project), [29.0, 78.0, 49.0])
             channel = base / "channel"; (channel / "01 Episode").mkdir(parents=True)
             (channel / "01 Episode" / "razgon.json").write_text(json.dumps({"razgon_root": str(base / "razgon"), "project": str(project)}))
             self.assertEqual(style_lab.films(channel), [(base / "razgon", project)])

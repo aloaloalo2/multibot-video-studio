@@ -71,16 +71,34 @@ def razgon_text(animation: dict | None) -> dict:
     return extra
 
 
+HERO = re.compile(r"\bclose\b|\bclose-up\b|\bbig face\b")
+DIAGRAM = re.compile(r"blueprint|diagram|chart|graph|\bmap\b|cross-section|x-ray|\bcell\b|molecule")
+
+
+def shot_score(shot: dict) -> int:
+    """Shots that show the character close and in a real place show a style best; schemes and charts show it least."""
+    text = (shot.get("scene") or "").lower()
+    return 3 * bool(HERO.search(text)) + 2 * bool(re.search(r"\byou\b", text)) - 4 * bool(DIAGRAM.search(text))
+
+
 def sample_times(project: Path) -> list[float]:
+    """Three moments: the best character shots, each from a different set; evenly spaced moments when shots say nothing."""
     story = json.loads((project / "story" / "shots.json").read_text(encoding="utf-8"))
     shots = story.get("shots") or []
+    picked, sets = [], set()
+    for shot in sorted(shots, key=shot_score, reverse=True):
+        if shot_score(shot) <= 0 or shot.get("set") in sets:
+            continue
+        picked.append(shot); sets.add(shot.get("set"))
+        if len(picked) == len(SAMPLES):
+            break
     duration = float(story.get("duration") or (shots[-1]["end"] if shots else 0))
-    times = []
-    for share in SAMPLES:
+    for share in SAMPLES[len(picked):]:
         at = duration * share
-        shot = next((s for s in shots if s["start"] <= at < s["end"]), None)
-        times.append(round(shot["start"] + (shot["end"] - shot["start"]) * 0.45 if shot else at, 2))
-    return times
+        rest = [s for s in shots if s not in picked and shot_score(s) >= 0]
+        shot = min(rest, key=lambda s: abs((s["start"] + s["end"]) / 2 - at), default=None)
+        picked.append(shot or {"start": at, "end": at})
+    return [round(s["start"] + (s["end"] - s["start"]) * 0.45, 2) for s in picked]
 
 
 def newest_mtime(*folders: Path) -> int:
