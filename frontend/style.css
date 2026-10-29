@@ -139,7 +139,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .overview-top h1 .channel-icon{width:28px;height:28px;color:#f0b429}
 .overview-top p{color:#96989f;margin:0;line-height:1.5}
 .overview-projects{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:16px}
-.project-card{position:relative;border:1px solid #35353a;background:#181819;border-radius:16.5px;aspect-ratio:16/9;min-height:0;overflow:hidden;display:flex;flex-direction:column;color:#f1f1f2;transition:border-color .15s,background .15s}
+.project-card{position:relative;border:1px solid #35353a;background:#181819;border-radius:20.5px;aspect-ratio:16/9;min-height:0;overflow:hidden;display:flex;flex-direction:column;color:#f1f1f2;transition:border-color .15s,background .15s}
 .project-card:hover,.project-card:focus-within{border-color:#f0b429;background:#202024}
 .project-open{display:flex;flex-direction:column;flex:1;width:100%;padding:16px;border:0;border-radius:inherit;background:none;color:inherit;text-align:left}
 .project-card>.project-actions{position:absolute;right:12px;top:12px}
@@ -156,9 +156,10 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card.has-cover h2,.project-card.has-cover .project-created{text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .project-card .project-open{position:relative;z-index:1}
 .project-card>.project-actions{z-index:2}
-.project-duration{font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:6.5px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.project-card .project-action{border-radius:9.5px}
+.project-duration{font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:8px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .project-card.has-cover .project-created{color:#e4e4e8}
-.project-card .project-status{font-size:11px;color:#35c838;background:#21352a;padding:4px 7px;border-radius:7.5px;align-self:flex-start}
+.project-card .project-status{font-size:11px;color:#35c838;background:#21352a;padding:4px 7px;border-radius:9.5px;align-self:flex-start}
 .project-card .project-status.draft{color:#f0b429;background:#372f1e}
 .export-spinner{display:inline-block;width:1em;height:1em;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:studio-export-spin .8s linear infinite}
 @keyframes studio-export-spin{to{transform:rotate(360deg)}}
