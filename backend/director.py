@@ -194,6 +194,18 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
 
 
+def limit_stop(answer: dict) -> str | None:
+    """When the run stopped because the Claude subscription limit ran out: a readable note with the reset time."""
+    text = str(answer.get("result") or "")
+    if answer.get("api_error") != "usage_limit_reached" and not re.search(r"hit your \w+ limit", text):
+        return None
+    reset = re.search(r"resets (\d{1,2})(?::(\d{2}))?\s*([ap]m)", text, re.I)
+    if not reset:
+        return "Закінчився ліміт підписки Claude."
+    hour = int(reset.group(1)) % 12 + (12 if reset.group(3).lower() == "pm" else 0)
+    return f"Закінчився ліміт підписки Claude, він оновиться о {hour:02d}:{reset.group(2) or '00'}."
+
+
 def kill(process: subprocess.Popen) -> None:
     try:
         os.killpg(process.pid, signal.SIGTERM)
@@ -221,7 +233,7 @@ def cancelled(pid: str, kind: str) -> bool:
 def run(pid: str, cli: Path) -> None:
     data = state(pid) or {}
     project = store.load_project(pid)
-    data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None)
+    data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None, limit=False)
     save(pid, data)
     try:
         code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT)
@@ -230,7 +242,9 @@ def run(pid: str, cli: Path) -> None:
         # the run counts only if it wrote a fresh director plan into the Studio
         directed = (plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale")
                     and plan_file is not None and plan_file.stat().st_mtime >= data["started_at"])
-        if code or answer.get("is_error") or not directed:
+        if limit_stop(answer):
+            data.update(status="failed", limit=True, error=limit_stop(answer))
+        elif code or answer.get("is_error") or not directed:
             data.update(status="failed", error=(answer.get("result") or "Режисура не записала план кадрів у студію")[-600:])
         else:
             data.update(status="done", summary=(answer.get("result") or "").strip()[-2000:], frames=len(plan.get("frames") or []))

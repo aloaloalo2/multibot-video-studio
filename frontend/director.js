@@ -186,7 +186,9 @@ function fillDirector(step,info,actions,id,percent){
     renderTeam(info,'director',id,true);
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
-    step.dataset.state='failed';text.textContent='Режисура не вдалася';say(run.error || 'Невідома помилка');restart('Спробувати ще раз',true);
+    // the subscription limit only pauses the director: once it resets, the same button goes on
+    step.dataset.state=run.limit?'active':'failed';text.textContent=run.limit?'Пауза: закінчився ліміт':'Режисура не вдалася';
+    say(run.limit?`${run.error} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || 'Невідома помилка'));restart(run.limit?'Продовжити режисуру':'Спробувати ще раз',true);
   }else if(run.status==='done' || directed){
     step.dataset.state='done';
     const frames=run.frames || (directed?state.plan.frames.length:0);
@@ -213,10 +215,18 @@ function fillVideo(step,pane){
     :working?'Рахуємо, поки агент малює':'Ще нічого не витрачено';
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
   clearTimeout(productionTimer);
+  // A run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up.
+  const paused=request?.status==='failed'&&(request.limit||/hit your \w+ limit/i.test(request.error || ''));
+  let resume=null;
   if(working){
     step.dataset.state='active';text.textContent=`Малює кадри 1–${request.frames}`;
     renderTeam(info,'production',state.project.id,true);
     productionTimer=setTimeout(()=>pollProduction(state.project.id),8000);
+  }else if(paused){
+    step.dataset.state='active';text.textContent='Пауза: закінчився ліміт';
+    if(info)info.textContent=`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри», і агент продовжить з того місця, де зупинився.`;
+    resume=stepButton(`Продовжити кадри ${Math.min(madeFrames()+1,request.frames)}–${request.frames}`,()=>resumeFrames(state.project.id,resume),true);
+    resume.classList.add('glow-action');
   }else if(request?.status==='failed'){
     step.dataset.state='failed';text.textContent=`Кадри 1–${request.frames} не вдалися`;if(info)info.textContent=`${request.error || 'Невідома помилка'} Виберіть кадри й натисніть ще раз.`;
   }else if(request?.status==='done'){
@@ -232,11 +242,12 @@ function fillVideo(step,pane){
   // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
   // and the picker's «Скасувати» are not needed.
   document.querySelector('.plan-heading .plan-start-button')?.remove();
-  actions?.replaceChildren();
+  actions?.replaceChildren(...(resume?[resume]:[]));
   const picker=pane?.querySelector('.plan-start');
   if(picker){
     // One request at a time: while the agent draws, the confirm button turns into the progress of the run.
-    picker.classList.toggle('busy',working);
+    // while paused, the one way on is «Продовжити кадри»: the strip only shows what is made
+    picker.classList.toggle('busy',working||paused);picker.classList.toggle('paused',paused);
     const confirm=picker.querySelector('.plan-start-actions .primary');
     if(confirm&&working){confirm.disabled=true;confirm.classList.add('loading');
       const last=humanFeed(teamFeeds['production'+state.project.id] || []).slice(-1)[0];
@@ -249,6 +260,15 @@ function fillVideo(step,pane){
   }
   // The plan remembers an open picker, so on a return to the plan it is already open: the strip is built either way.
   if(picker&&!picker.hidden)framePicker(picker);
+}
+
+async function resumeFrames(id,button){
+  button.disabled=true;
+  try{
+    const {project}=await api(`/api/projects/${encodeURIComponent(id)}/production-resume`,'POST',{});
+    if(state.project?.id!==id)return;
+    state.project=project;renderPlan();
+  }catch(error){button.disabled=false;status(error.message,true);}
 }
 
 // In the video tab the frames are picked on a strip of the film itself: every frame is as wide as it is long, a drag

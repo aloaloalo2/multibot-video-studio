@@ -51,6 +51,23 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(mirror["status"], "done")
         self.assertNotIn(self.project["id"], production.ACTIVE)
 
+    def test_a_run_stopped_by_the_subscription_limit_is_a_pause_that_resumes_its_session(self):
+        answer = {"is_error": True, "api_error": "usage_limit_reached", "session_id": "s1", "total_cost_usd": 3.0,
+                  "result": "You've hit your session limit · resets 12:50pm (Europe/Kiev)"}
+        with patch.object(production.director, "claude", return_value=(1, answer)):
+            production.ACTIVE.add(self.project["id"])
+            production.run(self.project["id"], Path("claude"))
+        request = self.project["production_request"]
+        self.assertEqual((request["status"], request["limit"], request["session_id"]), ("failed", True, "s1"))
+        self.assertEqual(request["error"], "Закінчився ліміт підписки Claude, він оновиться о 12:50.")
+        with patch.object(production, "start") as start:
+            production.resume(self.project["id"])
+        start.assert_called_once_with(self.project["id"], production.RESUME)    # notes: the run picks its session up
+        self.assertEqual(self.project["production_request"]["status"], "requested")
+        self.project["production_request"].update(status="failed", limit=False, error="Кадри не з'явилися")
+        with self.assertRaises(store.StudioError):
+            production.resume(self.project["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

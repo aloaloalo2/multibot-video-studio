@@ -788,6 +788,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
             return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
+        if match and method == "POST":
+            return self.json_response({"project": production.resume(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/restart", path)
         if match and method == "POST":
             if active_export(match.group(1)):

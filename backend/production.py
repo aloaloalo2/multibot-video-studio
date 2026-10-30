@@ -105,7 +105,7 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
     request = project["production_request"]
     log = store.project_dir(pid) / f"production-{request['id']}.log"
     started = time.time()
-    set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None)
+    set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False)
     fields = {}
     try:
         # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
@@ -115,7 +115,10 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
                       summary=(answer.get("result") or "").strip()[-2000:], **director.spent(answer, started))
-        if code or answer.get("is_error") or not drawn(store.load_project(pid), request["frames"]):
+        if director.limit_stop(answer):
+            # a pause, not a failure: what is made stays, and «Продовжити» picks the same session up once the limit resets
+            fields.update(status="failed", limit=True, error=director.limit_stop(answer))
+        elif code or answer.get("is_error") or not drawn(store.load_project(pid), request["frames"]):
             fields.update(status="failed", error=(answer.get("result") or "Кадри не з'явилися на таймлайні студії")[-600:])
         else:
             fields.update(status="done")
@@ -146,6 +149,19 @@ def fix(pid: str, notes: str) -> dict:
     set_request(pid, status="requested", notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
     start(pid, notes)
     return store.load_project(pid)
+
+
+RESUME = ("Ліміт підписки оновився. Продовж роботу над цими кадрами з того місця, де зупинився: не переробляй уже готове, "
+          "доведи решту кадрів до кінця з тією ж перевіркою якості й поклади їх у студію.")
+
+
+def resume(pid: str) -> dict:
+    """Go on with frames a run left when the subscription limit ran out, in that run's own session."""
+    request = store.load_project(pid).get("production_request") or {}
+    # a run stopped before the limit was marked keeps only the CLI's English note
+    if request.get("status") != "failed" or not (request.get("limit") or director.limit_stop({"result": request.get("error")})):
+        raise store.StudioError("Агент не стоїть на паузі через ліміт")
+    return fix(pid, RESUME)
 
 
 def start(pid: str, notes: str = "") -> None:

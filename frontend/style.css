@@ -943,3 +943,4 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-pane>.frame-plan+.episode-pane-info:not(:empty){margin-top:14px}
 .episode-pane>.frame-plan~.plan-table-fold{margin-top:14px}
 .episode-restart{color:#c9cad0}.episode-restart:hover{background:#452a2e;color:#ffb7bc}
+.plan-start.paused .plan-start-actions{display:none}
