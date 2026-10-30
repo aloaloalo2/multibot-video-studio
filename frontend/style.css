@@ -808,12 +808,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .episode-step[data-state="failed"]{border-color:#f0b42966}.episode-step[data-state="failed"] .episode-step-icon{background:#372f1e;color:#f0b429}
 @keyframes director-pulse{50%{opacity:.45}}
 .thumb-modal-open .modal{width:min(620px,100%)}
-.thumb-note{margin:0 0 12px;font-size:13px;color:#aeb0b7;line-height:1.45}
 .thumb-current{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;margin-bottom:12px}
-.thumb-script{margin:-2px 0 12px;font-size:12px;color:#9a9ca4}
-.thumb-script summary{cursor:pointer;width:max-content;color:#aeb0b7}
-.thumb-script summary:hover{color:#f1f1f2}
-.thumb-script-text{margin-top:8px;max-height:220px;overflow:auto;padding:10px 12px;border:1px solid #35353a;border-radius:12.5px;background:#1b1b1e;white-space:pre-wrap;line-height:1.5;color:#c9cbd2;user-select:text}
 .thumb-state:empty{display:none}
 .thumb-state{margin:10px 0 0;font-size:13px;color:#aeb0b7}
 .thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
@@ -826,7 +821,7 @@ button.danger:hover:not(:disabled){background:#523034}
    large blocks 20.5px, blocks inside them 16.5px, buttons and fields 12.5px; small tags and timeline clips keep theirs. */
 .modal,.panel,.timeline-panel,.banner,.overview-empty,.plan-summary,.plan-timeline,.plan-cost-estimate,.speech-report,.plan-stage,.plan-script,.plan-table,
 .plan-start,.voice-drop,.director-card,.agent-message,.agent-composer,.agent-cost{border-radius:20.5px}
-.settings-section,.channel-kind-card>span,.logo-preview,.thumb-current,.thumb-script-text,.plan-settings-warning,.service-key-panel,.weights-summary,
+.settings-section,.channel-kind-card>span,.logo-preview,.thumb-current,.plan-settings-warning,.service-key-panel,.weights-summary,
 .easing-card,.universal-properties section,.asset,.asset-video-result,.preview-surface,.export-gaps,.agent-empty>span{border-radius:16.5px}
 button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.channel-item,.channel-select,.project-item,
 .project-views button,.settings-import-row button,.logo-file-button,.timeline-toolbar button,.inspector-actions button,.search,.preview-zoom,
@@ -920,7 +915,9 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-flow .episode-step-number{font-size:13px}
 .episode-panes{min-width:0}
 .episode-panes>.episode-pane{margin-top:0}
-.glow-action{box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+.glow-action{transition:background-color .15s,box-shadow .2s}
+.glow-action:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+.glow-action:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 @media(max-width:900px){.episode-flow{grid-template-columns:1fr}.episode-rail{position:static}.episode-flow .episode-step.selected::before{display:none}}
 .episode-flow .episode-step-number{display:grid;place-items:center;min-width:22px;height:22px;border-radius:50%;background:#26272b;color:#aeb0b7;font-weight:700}
 .episode-flow .episode-step[data-state="done"] .episode-step-number{background:#0e241a;color:#6bf2ae}
@@ -961,3 +958,4 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-flow .episode-step:not(.selected):hover{border-color:#55555c;background:#1d1d21}
 .episode-step.running .episode-step-run{background:linear-gradient(90deg,transparent,#6bf2ae,transparent);background-size:45% 100%;background-repeat:no-repeat}
 .project-action.is-off{opacity:.38;cursor:not-allowed}.project-action.is-off:hover{background:#242428;color:#bec0c8}
+.thumb-wishes span{display:block;margin-bottom:8px}.thumb-wishes em{font-style:normal;font-weight:400;font-size:12px;color:#8a8c94;margin-left:6px}
