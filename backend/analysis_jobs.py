@@ -9,6 +9,7 @@ import time
 import uuid
 
 import speech
+import director
 import store
 import number_text
 
@@ -136,6 +137,8 @@ def worker(job, script, save_job):
                     report["applied"] = True
             store.atomic_json(work / "result.json", report)
             job.update(status="complete", progress=100, stage="complete", analysis_status=report["status"], applied=report["applied"])
+        if report["applied"]:
+            director.after_voice(project["id"])
     except (store.StudioError, RuntimeError) as error:
         job.update(status="failed", stage="failed", error=str(error))
     except Exception:

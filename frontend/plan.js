@@ -202,6 +202,7 @@ function renderPlan(){
   const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);summary.append(bind);panel.append(summary);
   renderPlanCostEstimate(panel,state.plan,state.project.id);
   if(typeof renderSpeechReport==='function')renderSpeechReport(panel);
+  if(typeof renderDirectorStatus==='function')renderDirectorStatus(panel);
   const formats=document.createElement('div');formats.className='plan-formats';
   const formatButtons=[];
   for(const {format,units} of shares){
