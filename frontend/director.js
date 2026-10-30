@@ -32,6 +32,9 @@ async function loadDirector(id){
   return directorRuns[id];
 }
 
+// The step shows money and time only; the token counts stay in the tooltip for whoever watches the limits.
+function spentLine(run){return `Витрачено $${Number(run.cost_usd).toFixed(2)}${run.minutes?` · ${run.minutes} хв`:''}`;}
+function spentTokens(run){return run.tokens_in?` ${tokenCount(run.tokens_in)} на вхід, ${tokenCount(run.tokens_out)} на вихід.`:'';}
 function tokenCount(value){return value>=1e6?`${(value/1e6).toFixed(1).replace('.',',')} млн токенів`:`${Math.round(value/1000)} тис. токенів`;}
 
 function directorTime(seconds){return new Date(seconds*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});}
@@ -68,17 +71,21 @@ function renderDirectorStatus(panel){
 
 function arrangeStepPanes(panel,steps){
   if(!steps.isConnected)return;
-  const panes=stepNames.map(name=>{
+  const titles={voice:'Озвучка',director:'Режисура',video:'Створення відео',final:'Готовий ролик'};
+  const panes=stepNames.map((name,index)=>{
     const pane=document.createElement('div');pane.className='episode-pane';pane.dataset.pane=name;pane.setAttribute('role','tabpanel');
-    const actions=document.createElement('div');actions.className='episode-pane-actions';const info=document.createElement('div');info.className='episode-pane-info';
-    pane.append(actions,info);return pane;});
+    // each pane opens with its step's title and its buttons on one row, so a button always says what it belongs to
+    const head=document.createElement('div');head.className='episode-pane-head';head.innerHTML=`<h2><span>${index+1}</span>${titles[name]}</h2>`;
+    const actions=document.createElement('div');actions.className='episode-pane-actions';head.append(actions);
+    const info=document.createElement('div');info.className='episode-pane-info';
+    pane.append(head,info);return pane;});
   const take=(pane,selector)=>{for(const node of panel.querySelectorAll(`:scope > ${selector}`))pane.append(node);};
   const [voice,director,video,final]=panes;
   // Voice: the summary of frames and voice length, the recognition report in full and the script. Its own buttons go to
   // the pane's button row; the report button is not needed next to the report itself.
   panel.querySelector(':scope > .plan-heading .plan-stage-tag')?.remove();   // the tabs show the stage now
   const summary=panel.querySelector(':scope > .plan-summary');
-  if(summary){summary.querySelector('.speech-report-button')?.remove();summary.querySelector('.plan-bind-audio')?.remove();voice.append(summary);}
+  if(summary){for(const extra of summary.querySelectorAll('.speech-report-button,.plan-bind-audio,.plan-request-tag'))extra.remove();voice.append(summary);}
   const report=state.analysis?.job?.project_id===state.project?.id?state.analysis.report:null;
   const reportSlot=document.createElement('div');voice.append(reportSlot);
   if(report)appendSpeechReport(reportSlot,report);
@@ -139,11 +146,10 @@ function fillDirector(step,pane,id){
   const run=directorRuns[id] || {status:'loading'},synced=!!state.project?.production?.plan_ready,directed=directorDone(),text=step.querySelector('p');
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
   actions?.replaceChildren();info?.replaceChildren();
-  if(!step.querySelector('.director-model')){const who=document.createElement('span');who.className='director-model';who.textContent='Opus 5.5 · високий';step.querySelector('.episode-step-head').append(who);}
   const restart=label=>actions?.append(stepButton(label,()=>startDirector(id)));
   // What the run actually used. Claude Code runs on the subscription; the dollar figure is what it would cost through the API.
   const cost=step.querySelector('.episode-step-cost');
-  if(run.cost_usd){cost.textContent=`Витрачено $${Number(run.cost_usd).toFixed(2)} за цінами API${run.tokens_in?` · ${tokenCount(run.tokens_in)} на вхід, ${tokenCount(run.tokens_out)} на вихід`:''}${run.minutes?` · ${run.minutes} хв`:''}`;cost.title='Режисура йде за підпискою Claude, тож окремо не оплачується; сума показує, скільки це коштувало б через API';}
+  if(run.cost_usd){cost.textContent=spentLine(run);cost.title=`Режисура йде за підпискою Claude, тож окремо не оплачується; сума показує, скільки це коштувало б через API.${spentTokens(run)}`;}
   else cost.textContent=run.status==='running'||run.status==='queued'?'Рахуємо, поки йде режисура':'Ще нічого не витрачено';
   const say=message=>{if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=message;info.append(line);}};
   clearTimeout(directorTimer);
@@ -158,7 +164,7 @@ function fillDirector(step,pane,id){
   }else if(run.status==='done' || directed){
     step.dataset.state='done';
     const frames=run.frames || (directed?state.plan.frames.length:0);
-    text.textContent=frames?`${frames} кадрів`:'Готово';
+    text.textContent=frames?`${frames} ${planFrameWord(frames)}`:'Готово';
     if(run.status==='done'){
       say(`Готово о ${directorTime(run.finished_at)}.`);
       if(run.summary&&info){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт режисера';const body=document.createElement('div');body.className='plan-script-text';body.textContent=run.summary;details.append(summary,body);info.append(details);}
@@ -179,7 +185,8 @@ function fillVideo(step,pane){
   if(info)info.textContent='';
   const cost=step.querySelector('.episode-step-cost'),working=['requested','in_progress'].includes(request?.status);
   step.classList.toggle('running',working&&directorDone());
-  cost.textContent=request?.cost_usd?`Витрачено $${Number(request.cost_usd).toFixed(2)} за цінами API${request.tokens_in?` · ${tokenCount(request.tokens_in)} на вхід, ${tokenCount(request.tokens_out)} на вихід`:''}${request.minutes?` · ${request.minutes} хв`:''}`
+  cost.title=request?.cost_usd?`Кадри малюються за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(request)}`:'';
+  cost.textContent=request?.cost_usd?spentLine(request)
     :working?'Рахуємо, поки агент малює':'Ще нічого не витрачено';
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
   clearTimeout(productionTimer);
@@ -280,7 +287,10 @@ function fillFinal(step,pane){
 function markStage(steps){
   const items=[...steps.querySelectorAll('.episode-step')],current=items.findIndex(item=>item.dataset.state!=='done');
   items.forEach((item,index)=>{item.classList.toggle('current',index===current);item.classList.toggle('upcoming',current>=0&&index>current);
-    item.querySelector('.episode-step-number').textContent=String(index+1);});   // the order stays readable; the green icon says done
+    // a done step trades its number for a green tick, so what is finished reads at a glance
+    const done=item.dataset.state==='done',badge=item.querySelector('.episode-step-number');
+    badge.innerHTML=done?'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':String(index+1);
+    badge.setAttribute('aria-label',done?`Етап ${index+1} готовий`:`Етап ${index+1}`);});
   const line=steps.previousElementSibling;
   if(line?.classList.contains('episode-stage'))line.innerHTML=current<0?'<strong>Усі етапи пройдено</strong>':`Етап <strong>${current+1} з ${items.length}</strong> · ${esc(items[current].querySelector('strong').textContent)}`;
   showStepPane(steps);
@@ -330,6 +340,7 @@ function renderTeam(info,kind,id,live){
   const draw=()=>{
     const steps=humanFeed(teamFeeds[kind+id] || []);
     // only the latest actions, newest first: who did what is enough to see the work move
+    if(!steps.length&&!live){box.remove();return;}
     box.innerHTML=(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
   };
   draw();
@@ -345,7 +356,7 @@ async function pollProduction(id){
 }
 
 async function startDirector(id){
-  if(!confirm('Запустити режисуру Claude Opus 5.5? Агент розіб’є озвучку на шоти й перезапише план кадрів цього випуску.'))return;
+  if(!confirm('Переробити режисуру? Режисер заново розіб’є озвучку на шоти й перезапише план кадрів цього випуску.'))return;
   try{
     directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`,'POST',{})).director;
     stepChoice.set(id,1);refreshSteps(document.querySelector('.episode-steps'));

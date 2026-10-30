@@ -806,7 +806,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
 .episode-step[data-state="active"]{border-color:#6bf2ae66}.episode-step[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae;animation:director-pulse 1.4s ease-in-out infinite}
 .episode-step[data-state="failed"]{border-color:#f0b42966}.episode-step[data-state="failed"] .episode-step-icon{background:#372f1e;color:#f0b429}
-.director-model{font-size:11px;color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73;padding:2px 8px;border-radius:9.5px}
 @keyframes director-pulse{50%{opacity:.45}}
 .thumb-modal-open .modal{width:min(620px,100%)}
 .thumb-note{margin:0 0 12px;font-size:13px;color:#aeb0b7;line-height:1.45}
@@ -921,3 +920,15 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-flow .episode-step.selected{border-color:#6bf2ae88;background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
 .episode-flow .episode-step.selected::before{background:#202024;border-color:#6bf2ae88}
 .episode-flow .episode-step.selected.current{border-color:#f0b429;box-shadow:inset 0 0 0 1px #f0b429,0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
+.episode-pane-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;min-height:38px}
+.episode-pane-head h2{display:flex;align-items:center;gap:10px;margin:0;font-size:18px;color:#f1f1f2}
+.episode-pane-head h2 span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#26272b;color:#aeb0b7;font-size:13px}
+.episode-pane-head .episode-pane-actions{margin:0}
+.episode-pane-head .episode-pane-actions:empty{display:none}
+.episode-flow .episode-step-cost{white-space:normal;line-height:1.35;align-items:flex-start}
+.episode-flow .episode-step-cost::before{margin-top:1px}
+.episode-step[data-state="done"]:not(.current) .episode-step-head::after{content:'Готово';font-size:11px;font-weight:600;color:#6bf2ae;background:#0e241a;border:1px solid #3fe39a59;padding:1px 8px;border-radius:9.5px;margin-left:auto}
+.episode-step.current .episode-step-head::after{margin-left:auto}
+.episode-flow .episode-step[data-state="done"]:not(.current){border-color:#3fe39a33}
+.episode-flow .episode-step[data-state="done"] .episode-step-number svg{display:block}
+.episode-flow .episode-step-head{align-self:stretch;width:100%;box-sizing:border-box}
