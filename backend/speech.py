@@ -9,6 +9,7 @@ import re
 import bisect
 
 import planner
+import speech_order
 import number_text
 
 MODEL_NAME = "small"
@@ -108,3 +109,12 @@ def transcribe(path, duration, progress, language=None):
         raise RuntimeError("У файлі не вдалося розпізнати мовлення")
     return words, {"engine": "faster-whisper", "model": MODEL_NAME, "language": info.language,
                    "language_probability": round(float(info.language_probability), 4), "local": True}
+
+
+# A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
+# comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
+_compare_in_order = compare_script
+
+
+def compare_script(script, words, duration):
+    return speech_order.mark(script, words, _compare_in_order(script, words, duration))

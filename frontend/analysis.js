@@ -1,5 +1,5 @@
 const speechStageNames={queued:'У черзі',preparing:'Підготовка звуку',loading_model:'Завантаження локальної моделі',recognizing:'Розпізнавання мовлення',comparing:'Зіставлення зі сценарієм',complete:'Обробку завершено',failed:'Обробку зупинено'};
-const speechIssueNames={text_difference:'Розбіжність тексту',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання'};
+const speechIssueNames={text_difference:'Розбіжність тексту',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання',out_of_order:'Прозвучала не на своєму місці',repeated_speech:'Прозвучала кілька разів'};
 
 function appendSpeechReport(target,report){
   const box=document.createElement('section');box.className='speech-report';
@@ -18,9 +18,21 @@ function appendSpeechReport(target,report){
     const list=document.createElement('div');
     for(const phrase of issues){const item=document.createElement('article');item.innerHTML=`<strong>Фраза ${phrase.number}</strong><p>${esc(phrase.issues.map(issue=>speechIssueNames[issue] || issue).join(' · '))}</p><p><b>Сценарій:</b> ${esc(phrase.text)}</p><p><b>Розпізнано:</b> ${esc(phrase.recognized || 'Не знайдено відповідного фрагмента')}</p>`;list.append(item);}details.append(list);box.append(details);
   }
-  if(report.differences?.length){
+  // A voice said out of order or with a piece twice is the author's to fix (backend/speech_order.py): it shows open,
+  // above the folded details, and the studio cuts or moves nothing in it.
+  const order=(report.differences || []).filter(difference=>difference.note);
+  if(order.length){
+    const moved=order.some(difference=>difference.kind==='moved'),repeated=order.some(difference=>difference.kind==='repeated');
+    const warn=document.createElement('div');warn.className='speech-order';
+    const title=document.createElement('strong');title.textContent=moved&&repeated?'Озвучка йде не по порядку сценарію і має повтори':moved?'Озвучка йде не по порядку сценарію':'В озвучці є повтори';warn.append(title);
+    for(const difference of order){const line=document.createElement('p');line.textContent=difference.note;warn.append(line);}
+    const hint=document.createElement('small');hint.textContent='Виправте озвучку й додайте її знову. Студія нічого в ній не ріже й не переставляє.';warn.append(hint);
+    box.append(warn);
+  }
+  const words=(report.differences || []).filter(difference=>!difference.note);
+  if(words.length){
     const details=document.createElement('details');details.className='speech-issues';const summary=document.createElement('summary');summary.textContent='Пропущені, додані та змінені слова';details.append(summary);
-    for(const difference of report.differences){const item=document.createElement('p');item.textContent=`Фрази ${difference.sentences.join(', ')}. Сценарій: ${difference.expected || 'немає'}. Розпізнано: ${difference.recognized || 'немає'}.`;details.append(item);}box.append(details);
+    for(const difference of words){const item=document.createElement('p');item.textContent=`Фрази ${difference.sentences.join(', ')}. Сценарій: ${difference.expected || 'немає'}. Розпізнано: ${difference.recognized || 'немає'}.`;details.append(item);}box.append(details);
   }
   const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
 }
