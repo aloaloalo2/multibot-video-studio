@@ -927,8 +927,20 @@ def recompute_timeline(project: dict) -> None:
     project["duration"] = round(t, 3)
 
 
+def keep_overlays_on_top(project: dict) -> None:
+    """The channel's logo and plate (layers whose clips all belong to scene groups with the role «overlay») stay the top
+    layers, so a layer added after them never lands over them: the higher a layer, the higher its row and its place in
+    the picture (user, 30 October 2026)."""
+    overlay = {cid for group in project.get("scene_groups") or [] if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
+    tracks = project.get("tracks", [])
+    top = [layer.get("id") for layer in tracks if layer.get("clips") and all(clip.get("id") in overlay for clip in layer["clips"])]
+    if top and [layer.get("id") for layer in tracks[-len(top):]] != top:
+        project["tracks"] = [layer for layer in tracks if layer.get("id") not in top] + [layer for layer in tracks if layer.get("id") in top]
+
+
 def recompute_universal_duration(project: dict) -> None:
     project["duration"] = round(max((float(clip.get("start", 0)) + float(clip.get("duration", 0)) for layer in project.get("tracks", []) for clip in layer.get("clips", [])), default=0), 3)
+    keep_overlays_on_top(project)
     for index, layer in enumerate(project.get("tracks", [])):
         layer["z_index"] = index
 
