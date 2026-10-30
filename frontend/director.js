@@ -288,7 +288,7 @@ function framePicker(picker){
     handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
   // Frames made from the start cannot be asked for again here: the strip starts at the first frame not made yet.
   let floor=0;while(made.has(floor))floor++;
-  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size}${floor<frames.length?'<span class="chosen"></span>Вибрані для створення':''}`;row.after(legend);}
+  const legend=document.createElement('p');legend.className='frame-strip-legend';row.after(legend);paintStrip(strip);
   const least=Math.min(frames.length,floor+1);
   const confirm=picker.querySelector('.plan-start-actions .primary');
   const label=()=>{
@@ -320,8 +320,37 @@ function madeFrames(){return madeSet(state.plan?.frames || []).size;}
 function filmStrip(frames,made){
   const strip=document.createElement('div');strip.className='frame-strip';
   const cells=frames.map((frame,index)=>{const cell=document.createElement('span');cell.className='frame-strip-cell';
-    cell.style.flexGrow=String(Math.max(.2,Number(frame.end)-Number(frame.start)));cell.classList.toggle('made',made.has(index));strip.append(cell);return cell;});
+    cell.style.flexGrow=String(Math.max(.2,Number(frame.end)-Number(frame.start)));cell.classList.toggle('made',made.has(index));cell.dataset.frame=String(frame.number || index+1);strip.append(cell);return cell;});
   return {strip,cells};
+}
+
+// Frames the agent has drawn as scenes but not rendered into the Studio yet (backend/frame_progress.py): on the strips
+// they show striped green, on the timeline their code blocks stop reading as empty.
+const drawnFrames={};
+function framesDrawn(){
+  const id=state.project?.id;if(!id || !directorAnimated())return null;
+  if(!(id in drawnFrames)){drawnFrames[id]=null;loadDrawn(id);}
+  return drawnFrames[id];
+}
+async function loadDrawn(id){
+  let numbers;
+  try{numbers=(await api(`/api/projects/${encodeURIComponent(id)}/frames-drawn`)).drawn || [];}catch{return;}
+  const before=[...(drawnFrames[id] || [])].join();drawnFrames[id]=new Set(numbers);
+  if(state.project?.id!==id || before===numbers.join())return;
+  // the plan's strips repaint in place; the editor draws its timeline again
+  for(const strip of document.querySelectorAll('.frame-strip'))paintStrip(strip);
+  if(state.view==='editor'&&typeof renderTimeline==='function')renderTimeline();
+}
+function paintStrip(strip){
+  const drawn=framesDrawn(),cells=[...strip.querySelectorAll('.frame-strip-cell')];
+  for(const cell of cells)cell.classList.toggle('drawn',!cell.classList.contains('made')&&!!drawn?.has(Number(cell.dataset.frame)));
+  const box=strip.closest('.frame-plan,.plan-start'),legend=box?.querySelector('.frame-strip-legend');if(!legend)return;
+  const made=cells.filter(cell=>cell.classList.contains('made')).length,draft=cells.filter(cell=>cell.classList.contains('drawn')).length;
+  const picking=box.classList.contains('plan-start')&&made<cells.length;
+  legend.innerHTML=[made?`<span><b class="made"></b>Готові: ${made} з ${cells.length}</span>`:'',
+    draft?`<span><b class="drawn"></b>Намальовані, чекають перевірки: ${draft}</span>`:'',
+    picking?'<span class="is-chosen"><b class="chosen"></b>Вибрані для створення</span>':''].join('');
+  legend.hidden=!legend.innerHTML;
 }
 
 // Step 1's result is the frame plan itself, on the strip of step 2: pointing at a frame reads its time and words below.
@@ -332,14 +361,14 @@ function framePlan(){
   const card=document.createElement('section');card.className='frame-plan';
   card.innerHTML=`<div class="plan-start-head"><h2>План кадрів</h2><div class="plan-start-readout"><strong>${frames.length}</strong><span>${planFrameWord(frames.length)}</span><span>${clock(Number(frames[frames.length-1].end) || 0)} озвучки</span></div></div>`;
   const row=document.createElement('div');row.className='frame-strip-row';row.append(strip);card.append(row);
-  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size} з ${frames.length}`;card.append(legend);}
+  const legend=document.createElement('p');legend.className='frame-strip-legend';card.append(legend);paintStrip(strip);
   const read=document.createElement('p');read.className='frame-plan-read';card.append(read);
   const hint='Наведіть на кадр, щоб побачити його час і текст.';read.textContent=hint;
   let shown=-1;
   const show=index=>{if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;
     if(index<0){read.textContent=hint;return;}
     const frame=frames[index];cells[index].classList.add('pointed');
-    read.innerHTML=`<b>Кадр ${index+1}${made.has(index)?' · готовий':''}</b> · ${clock(frame.start)}–${clock(frame.end)} · ${esc((frame.sentences || []).join(' '))}`;};
+    read.innerHTML=`<b>Кадр ${index+1}${made.has(index)?' · готовий':cells[index].classList.contains('drawn')?' · намальований, чекає перевірки':''}</b> · ${clock(frame.start)}–${clock(frame.end)} · ${esc((frame.sentences || []).join(' '))}`;};
   strip.addEventListener('pointermove',event=>show(cells.indexOf(event.target.closest?.('.frame-strip-cell'))));
   strip.addEventListener('pointerleave',()=>show(-1));
   return card;
@@ -414,7 +443,7 @@ function renderTeam(info,kind,id,live){
 async function pollProduction(id){
   if(state.project?.id!==id)return;
   try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
-    const before=state.project.production_request?.status;state.project=project;
+    const before=state.project.production_request?.status;state.project=project;loadDrawn(id);
     if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}catch{}
   refreshSteps(document.querySelector('.episode-steps'));
 }

@@ -95,7 +95,10 @@ function expandFrameGroup(group){
   renderInspector();renderPreview();
 }
 
-function emptyFrameClip(clip){return clip.kind==='animation'&&clip.content_type==='shape'&&!clip.asset_id&&/^Razgon · кадр/.test(clip.title || '');}
+function frameBlock(clip){return clip.kind==='animation'&&clip.content_type==='shape'&&!clip.asset_id&&/^Razgon · кадр/.test(clip.title || '');}
+// a frame block whose scene the agent has already drawn, not rendered into the Studio yet (director.js framesDrawn)
+function draftFrameClip(clip){return frameBlock(clip)&&!!(typeof framesDrawn==='function'&&framesDrawn()?.has(Number(/кадр (\d+)/.exec(clip.title)?.[1])));}
+function emptyFrameClip(clip){return frameBlock(clip)&&!draftFrameClip(clip);}
 
 function groupLane(title,groups,ref){
   const row=document.createElement('div');row.className='track-row universal-row grouped-row';
@@ -111,6 +114,9 @@ function groupLane(title,groups,ref){
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
     // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty
     if(members.every(emptyFrameClip))button.classList.add('group-empty');
+    // a rendered Razgon frame is done: green like on the plan's strip; a drawn one striped; an empty one dark
+    else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')))button.classList.add('group-made');
+    else if(members.some(draftFrameClip))button.classList.add('group-draft');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
     const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
     button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');
@@ -149,7 +155,7 @@ function renderGroupedTimelineWithIndex(){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
     const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
-    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
+    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
   }
 }
 

@@ -29,6 +29,7 @@ import style_lab
 import style_copy
 import director
 import episode_restart
+import frame_progress
 import production
 import thumbnail_gen
 import agent_estimate
@@ -674,6 +675,9 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             store.load_project(match.group(1))
             return self.json_response({"director": director.state(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frames-drawn", path)
+        if match:
+            return self.json_response({"drawn": frame_progress.drawn(match.group(1))})
         match = re.fullmatch(r"/api/style-cards/([0-9a-f]{20})/([a-z0-9_-]+-0\.jpg)", path)
         if match:
             try:

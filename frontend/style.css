@@ -899,8 +899,17 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-cell.made{background:#3fbf86}
 .frame-strip-cell.made.chosen{background:#6bf2ae;box-shadow:inset 0 0 0 2px #f0b429}
 .frame-strip-legend{display:flex;align-items:center;gap:6px;margin:-10px 0 16px;font-size:11.5px;color:#9a9ca4}
-.frame-strip-legend span{width:10px;height:10px;border-radius:3px;margin-left:8px}.frame-strip-legend span:first-child{margin-left:0}
-.frame-strip-legend .made{background:#3fbf86}.frame-strip-legend .chosen{background:#f0b429}
+.frame-strip-legend{flex-wrap:wrap;gap:4px 14px}.frame-strip-legend[hidden]{display:none}
+.frame-strip-legend>span{display:inline-flex;align-items:center;gap:6px}
+.frame-strip-legend b{display:inline-block;width:10px;height:10px;border-radius:3px}
+.frame-strip-legend b.made{background:#3fbf86}.frame-strip-legend b.chosen{background:#f0b429}
+.frame-strip-legend b.drawn,.frame-strip-cell.drawn{background:repeating-linear-gradient(135deg,#2f8a62 0 3px,#1f4a39 3px 6px)}
+.frame-strip-cell.drawn.chosen{background:repeating-linear-gradient(135deg,#ffd166 0 3px,#a8791c 3px 6px)}
+.frame-plan .frame-strip-cell.drawn.pointed{background:#9dffd0}
+/* while the agent works or waits, the strip only shows what is made and drawn, not the choice */
+.plan-start.busy .frame-strip-cell.chosen{background:#3a3a41}
+.plan-start.busy .frame-strip-cell.chosen.drawn{background:repeating-linear-gradient(135deg,#2f8a62 0 3px,#1f4a39 3px 6px)}
+.plan-start.busy .frame-strip-legend .is-chosen{display:none}
 /* The making of an animated film as a path down the left: numbered steps joined by a line, the chosen step's data on the right. */
 .episode-flow{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:20px;align-items:start;margin-top:6px}
 .episode-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:10px}
@@ -944,3 +953,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-pane>.frame-plan~.plan-table-fold{margin-top:14px}
 .episode-restart{color:#c9cad0}.episode-restart:hover{background:#452a2e;color:#ffb7bc}
 .plan-start.paused .plan-start-actions{display:none}
+/* One highlight only: the open step glows green with its arrow; the current stage is the «Зараз» chip and the yellow number */
+.episode-flow .episode-step.current{border-color:#3a3a41;box-shadow:none}
+.episode-flow .episode-step.selected,.episode-flow .episode-step.selected.current{border-color:#6bf2ae88;background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
+.episode-flow .episode-step.selected.current::before{border-color:#6bf2ae88}
+.episode-flow .episode-step:not(.selected){cursor:pointer}
+.episode-flow .episode-step:not(.selected):hover{border-color:#55555c;background:#1d1d21}
+.episode-step.running .episode-step-run{background:linear-gradient(90deg,transparent,#6bf2ae,transparent);background-size:45% 100%;background-repeat:no-repeat}
