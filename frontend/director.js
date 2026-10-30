@@ -248,8 +248,8 @@ function fillVideo(step,pane){
     picker.classList.toggle('busy',working||paused);picker.classList.toggle('paused',paused);
     const confirm=picker.querySelector('.plan-start-actions .primary');
     if(confirm&&working){confirm.disabled=true;confirm.classList.add('loading');
-      const last=humanFeed(teamFeeds['production'+state.project.id] || []).slice(-1)[0];
-      confirm.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо ${request.frames} ${planFrameWord(request.frames)}…</span>${last?`<small>${esc(last.text)}</small>`:''}`;}
+      // only what is being made: the steps of the work read in the feed below, not in the button (user, 30 October 2026)
+      confirm.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо ${request.frames} ${planFrameWord(request.frames)}…</span>`;}
     else if(confirm?.classList.contains('loading')){confirm.classList.remove('loading');confirm.disabled=false;confirm.textContent=`Створити ${request?.frames || ''} ${planFrameWord(request?.frames || 1)}`.replace('  ',' ');}
   }
   if(picker?.hidden&&picker.open){

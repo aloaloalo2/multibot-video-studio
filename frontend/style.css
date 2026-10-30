@@ -884,7 +884,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step-cost:empty{display:none}
 .plan-start.busy .frame-strip,.plan-start.busy .frame-strip-max{opacity:.55;pointer-events:none}
 .plan-start-actions .primary.loading{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;opacity:1;cursor:progress;max-width:min(100%,520px)}
-.plan-start-actions .primary.loading small{font-weight:500;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plan-start-actions .primary.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,#fff6 50%,transparent 80%);transform:translateX(-100%);animation:button-sweep 1.6s ease-in-out infinite}
 .plan-start-actions .primary.loading svg{width:15px;height:15px;flex:none}
 @keyframes button-sweep{to{transform:translateX(100%)}}
