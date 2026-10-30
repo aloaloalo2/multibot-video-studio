@@ -1,8 +1,8 @@
 // thumbnail.js — the magic button on a project card: a YouTube thumbnail drawn by Codex (backend/thumbnail_gen.py) from
-// the project's title and script, which can be edited here first, and the author's wishes. The run goes on after the
+// the project's title (editable here), its script (shown folded, read only) and the author's wishes. The run goes on after the
 // window closes; the card picks up the new picture as its cover when it is ready.
 const thumbnailIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.6 3.6-1.2-1.2a1.2 1.2 0 0 0-1.7 0L2.4 18.6a1.2 1.2 0 0 0 0 1.7l1.2 1.2a1.2 1.2 0 0 0 1.7 0L21.6 5.4a1.2 1.2 0 0 0 0-1.8M14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9"/></svg>';
-const thumbnailRuns=new Map();
+const thumbnailRuns=new Map(),thumbnailScripts=new Map();
 
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
 
@@ -11,10 +11,11 @@ async function openThumbnail(project){
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(data.job)thumbnailRuns.set(project.id,data.job);
   const current=data.preview?`<img class="thumb-current" src="/api/projects/${encodeURIComponent(project.id)}/cover?v=${Date.now()}" alt="Поточне прев’ю">`:'';
-  modal('Прев’ю ролика',`<p class="thumb-note">Прев’ю створюється на основі сценарію та заголовка проєкту. Їх можна відредагувати тут, а в побажаннях описати, що хочете побачити. Малює ChatGPT через Codex, один варіант за раз.</p>${current}
+  thumbnailScripts.set(project.id,data.script);
+  modal('Прев’ю ролика',`<p class="thumb-note">Прев’ю створюється на основі сценарію та заголовка проєкту. Заголовок можна відредагувати тут, а в побажаннях описати, що хочете побачити. Малює ChatGPT через Codex, один варіант за раз.</p>${current}
     <label>Заголовок<input id="thumb-title" type="text" maxlength="200" value="${esc(data.title)}"></label>
+    <details class="thumb-script"><summary>Сценарій${data.script?'':' (ще немає)'}</summary><div class="thumb-script-text">${esc(data.script) || 'Сценарію в проєкті ще немає: прев’ю намалюється за заголовком і побажаннями.'}</div></details>
     <label>Побажання<textarea id="thumb-wishes" rows="3" maxlength="2000" placeholder="Наприклад: крупно обличчя героя в шоці, за ним Земля, велике слово DAY 340"></textarea></label>
-    <label>Сценарій<textarea id="thumb-script" rows="7">${esc(data.script)}</textarea></label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     [{label:'Згенерувати',primary:true,run:()=>generateThumbnail(project)}]);
   $('modal-backdrop').classList.add('thumb-modal-open');
@@ -31,7 +32,7 @@ function showThumbnailState(id){
 }
 
 async function generateThumbnail(project){
-  const body={title:$('thumb-title').value,script:$('thumb-script').value,wishes:$('thumb-wishes').value};
+  const body={title:$('thumb-title').value,script:thumbnailScripts.get(project.id) || '',wishes:$('thumb-wishes').value};
   if(!body.title.trim()){status('Вкажіть заголовок.',true);return;}
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);

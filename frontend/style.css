@@ -148,7 +148,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card:hover,.project-card:focus-within{background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
 .project-open{display:flex;flex-direction:column;flex:1;width:100%;padding:16px;border:0;border-radius:inherit;background:none;color:inherit;text-align:left}
 .project-card>.project-actions{position:absolute;right:12px;top:12px}
-.project-card .project-status{margin-right:66px}
 .project-card h2{margin:6px 0 6px;font-size:17px;font-weight:600;line-height:1.3}
 .project-card h2>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .project-card .project-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
@@ -169,8 +168,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card .project-action{border-radius:9.5px}
 .project-duration{font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:8px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .project-card.has-cover .project-created{color:#e4e4e8}
-.project-card .project-status{font-size:11px;color:#35c838;background:#21352a;padding:4px 7px;border-radius:9.5px;align-self:flex-start}
-.project-card .project-status.draft{color:#f0b429;background:#372f1e}
 .export-spinner{display:inline-block;width:1em;height:1em;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:studio-export-spin .8s linear infinite}
 @keyframes studio-export-spin{to{transform:rotate(360deg)}}
 .export-busy{display:inline-flex;align-items:center;justify-content:center;gap:9px}
@@ -603,7 +600,6 @@ button.danger:hover:not(:disabled){background:#523034}
   .sidebar>.brand{height:56px}
 }
 
-.project-status.plan-draft{background:#411f27;color:#ff9aa8}
 
 .timeline-selection-box{position:fixed;pointer-events:none;border:1px solid #f4bf36;background:rgba(244,191,54,.18);z-index:10000}
 #timeline-tracks{user-select:none}
@@ -706,7 +702,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .brand-logo:hover .wordmark-icon{filter:drop-shadow(0 0 10px #6bf2aecc)}
 .brand-logo .wordmark-key{text-shadow:0 0 8px #6bf2ae80}
 /* Status tags are labels, not buttons, so they carry no glow. */
-.project-card .project-status:not(.draft):not(.plan-draft),.plan-stage-tag.audio-synced{color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73}
+.plan-stage-tag.audio-synced{color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73}
 
 /* Channel kind and logo, at the top of the channel settings. */
 .modal-backdrop[data-channel-kind="animated"] .regular-only{display:none}
@@ -810,9 +806,13 @@ button.danger:hover:not(:disabled){background:#523034}
 .thumb-modal-open .modal{width:min(620px,100%)}
 .thumb-note{margin:0 0 12px;font-size:13px;color:#aeb0b7;line-height:1.45}
 .thumb-current{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;margin-bottom:12px}
-#thumb-script{font-size:12px;line-height:1.45}
+.thumb-script{margin:-2px 0 12px;font-size:12px;color:#9a9ca4}
+.thumb-script summary{cursor:pointer;width:max-content;color:#aeb0b7}
+.thumb-script summary:hover{color:#f1f1f2}
+.thumb-script-text{margin-top:8px;max-height:220px;overflow:auto;padding:10px 12px;border:1px solid #35353a;border-radius:12.5px;background:#1b1b1e;white-space:pre-wrap;line-height:1.5;color:#c9cbd2;user-select:text}
 .thumb-state:empty{display:none}
 .thumb-state{margin:10px 0 0;font-size:13px;color:#aeb0b7}
 .thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
 .project-card.thumb-running::after{content:'Малюємо прев’ю...';position:absolute;left:14px;bottom:44px;z-index:3;font-size:12px;color:#8dffc6;background:#0e241acc;border:1px solid #3fe39a73;padding:3px 9px;border-radius:9.5px;pointer-events:none}
 .project-action.thumbnail svg{stroke:#f0b429}
+.project-card h2{margin-top:0;margin-right:104px}
