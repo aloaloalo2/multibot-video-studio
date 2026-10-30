@@ -917,3 +917,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-flow .episode-step-number{display:grid;place-items:center;min-width:22px;height:22px;border-radius:50%;background:#26272b;color:#aeb0b7;font-weight:700}
 .episode-flow .episode-step[data-state="done"] .episode-step-number{background:#0e241a;color:#6bf2ae}
 .episode-flow .episode-step.current .episode-step-number{background:#f0b429;color:#1a1408}
+/* the chosen step glows like a project card under the pointer */
+.episode-flow .episode-step.selected{border-color:#6bf2ae88;background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
+.episode-flow .episode-step.selected::before{background:#202024;border-color:#6bf2ae88}
+.episode-flow .episode-step.selected.current{border-color:#f0b429;box-shadow:inset 0 0 0 1px #f0b429,0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
