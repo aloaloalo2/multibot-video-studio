@@ -30,6 +30,7 @@ import style_copy
 import director
 import episode_restart
 import frame_progress
+import space
 import production
 import thumbnail_gen
 import agent_estimate
@@ -678,6 +679,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frames-drawn", path)
         if match:
             return self.json_response({"drawn": frame_progress.drawn(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
+        if match:
+            return self.json_response({**space.usage(match.group(1)), "exporting": bool(active_export(match.group(1)))})
         match = re.fullmatch(r"/api/style-cards/([0-9a-f]{20})/([a-z0-9_-]+-0\.jpg)", path)
         if match:
             try:
@@ -795,6 +799,11 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
             return self.json_response({"project": production.resume(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
+        if match and method == "POST":
+            if active_export(match.group(1)):
+                raise store.StudioError("Зачекайте, доки закінчиться експорт, і звільніть місце потім", 409)
+            return self.json_response(space.free(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/restart", path)
         if match and method == "POST":
             if active_export(match.group(1)):

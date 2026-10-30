@@ -185,7 +185,8 @@ function projectActions(project){
   const actions=document.createElement('div');actions.className='project-actions';
   const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(project.episode_path)icons.thumbnail=thumbnailIcon;
-  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
+  icons.space=spaceIcon;
+  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['space','Звільнити місце',()=>openSpace(project)],['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
     // the thumbnail takes its look from the video's own frames: grey until a couple are made (thumbnail.js)
     if(type==='thumbnail'&&!thumbnailReady(project))thumbnailWaits(button);

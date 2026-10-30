@@ -981,3 +981,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .thumb-view-actions .thumb-state{margin:0;flex:1;min-width:220px}
 .thumb-view-gate{margin:-6px 0 0;font-size:13px;color:#9a9ca4}
 .thumb-view textarea{min-height:90px;box-sizing:border-box}
+/* «Звільнити місце»: what goes, each with its size, then what stays */
+.space-list{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:10px}
+.space-list li{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:baseline;padding:12px 14px;border:1px solid #35353a;border-radius:12.5px;background:#1d1d21}
+.space-list b{font-size:16px;color:#f1f1f2;font-variant-numeric:tabular-nums;white-space:nowrap}
+.space-list span{font-size:13px;line-height:1.45;color:#b9bbc3}
+.space-note{margin:0;font-size:13px;line-height:1.5;color:#9a9ca4}
+.space-busy{margin:10px 0 0;font-size:13px;color:#ffb36b}
