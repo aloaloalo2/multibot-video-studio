@@ -144,7 +144,6 @@ function fillDirector(step,pane,id){
   if(run.status==='loading'){step.dataset.state=directed?'done':'waiting';text.textContent='Перевіряємо...';}
   else if(run.status==='queued' || run.status==='running'){
     step.dataset.state='active';text.textContent=`Іде${run.started_at?` з ${directorTime(run.started_at)}`:''}`;
-    say('Режисер ділить озвучку на шоти й пише план кадрів. Сцени він не малює. Сторінку можна закрити: план оновиться сам.');
     renderTeam(info,'director',id,true);
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
@@ -179,7 +178,6 @@ function fillVideo(step,pane){
   clearTimeout(productionTimer);
   if(working){
     step.dataset.state='active';text.textContent=`Малює кадри 1–${request.frames}`;
-    if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=`Claude Opus 5.5 малює сцени кадрів 1–${request.frames}${request.started_at?` з ${directorTime(request.started_at)}`:''}. Готові кадри ляжуть на таймлайн у «Монтажі». Сторінку можна закрити.`;info.append(line);}
     renderTeam(info,'production',state.project.id,true);
     productionTimer=setTimeout(()=>pollProduction(state.project.id),8000);
   }else if(request?.status==='failed'){
@@ -296,8 +294,8 @@ async function pollDirector(id){
 }
 
 // While the agent draws, the project is read again now and then: the request carries its state and spend.
-// The team behind a run: who works on it and what each did last, then the latest actions in order. Opus directs; the
-// others are the tools it drives, and helpers are agents it sends off in parallel.
+// The latest actions of a run, newest first, each with who did it: Opus directs, Codex draws props, Razgon renders,
+// helpers are agents Opus sends off in parallel.
 const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює предмети'],razgon:['Рендер','Razgon, збирає кадри'],helper:['Помічник','паралельне завдання']};
 // The author never sees file names or the agent's English notes: reading and preparing read as one plain line, files
 // written read as what they are for (scenes, the director's shot table, a brief for the artist), and real steps keep
@@ -320,11 +318,9 @@ function renderTeam(info,kind,id,live){
   if(!info)return;
   const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
   const draw=()=>{
-    const steps=humanFeed(teamFeeds[kind+id] || []),last=steps[steps.length-1];
-    const who=['opus','codex','razgon',...(steps.some(step=>step.who==='helper')?['helper']:[])];
-    box.innerHTML=`<div class="team-members">${who.map(role=>{const mine=steps.filter(step=>step.who===role),active=live&&last?.who===role;
-      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${active?'Зараз: ':''}${mine.length?esc(mine[mine.length-1].text):'Зараз не працює'}</small></div>`;}).join('')}</div>`
-      +(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
+    const steps=humanFeed(teamFeeds[kind+id] || []);
+    // only the latest actions, newest first: who did what is enough to see the work move
+    box.innerHTML=(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
   };
   draw();
   api(`/api/projects/${encodeURIComponent(id)}/activity/${kind}`).then(({activity})=>{teamFeeds[kind+id]=activity;if(box.isConnected)draw();}).catch(()=>{});

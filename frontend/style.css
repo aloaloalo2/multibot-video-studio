@@ -886,14 +886,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 @keyframes button-sweep{to{transform:translateX(100%)}}
 .episode-pane-info{font-size:13px;color:#aeb0b7;line-height:1.45}
 .team{margin:6px 0 14px;display:flex;flex-direction:column;gap:12px}
-.team-members{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
-.team-member{position:relative;padding:11px 13px 11px 30px;border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;display:flex;flex-direction:column;gap:2px;min-width:0}
-.team-member::before{content:'';position:absolute;left:13px;top:16px;width:8px;height:8px;border-radius:50%;background:#55565d}
-.team-member strong{font-size:13px;color:#f1f1f2}.team-member span{font-size:11px;color:#8a8c94}
-.team-member small{font-size:12px;color:#c9cbd2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.team-member.idle{opacity:.55}
-.team-member.active{border-color:#6bf2ae88;box-shadow:0 0 18px #6bf2ae22}
-.team-member.active::before{background:#6bf2ae;box-shadow:0 0 8px #6bf2ae;animation:director-pulse 1.2s ease-in-out infinite}
 .team-feed{list-style:none;margin:0;padding:10px 14px;border:1px solid #2c2c31;border-radius:16.5px;background:#151516;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:#c9cbd2}
 .team-feed li{display:flex;gap:10px;align-items:baseline;min-width:0}
 .team-feed li:first-child{color:#f1f1f2}
