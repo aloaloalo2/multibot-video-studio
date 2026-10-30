@@ -1,18 +1,16 @@
-// director.js — the steps of an animated episode on its plan, as tabs: 1 the voice and its direction, 2 making the video,
-// 3 the finished film. Once the voice is recognised the Studio hands the episode to Claude Opus 5.5 (high effort), which
+// director.js — the steps of an animated episode on its plan, as tabs: 1 the voice and its direction, 2 making the video. Once the voice is recognised the Studio hands the episode to Claude Opus 5.5 (high effort), which
 // directs it and writes the frame plan back (backend/director.py); the author does nothing in between, so both read as
 // one step whose result is the frame plan. Each tab opens its own pane with its buttons and data: the frame plan with
-// the recognition report, script and director's report; how many frames to make with the run and its spend; the export.
-// The current stage opens first.
+// the recognition report, script and director's report; how many frames to make with the run and its spend. The film is
+// exported by the header's «Експорт MP4», which shows once the frames are pictures. The current stage opens first.
 const directorRuns={};
 const stepChoice=new Map();
 let directorTimer=null,productionTimer=null;
 
 const stepIcons={voice:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
-  video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>',
-  final:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m10 8 5 2.5-5 2.5zM8 21h8M12 17v4"/></svg>'};
-const stepNames=['voice','video','final'];
-const stepTitles={voice:'Озвучка й режисура',video:'Створення відео',final:'Готовий ролик'};
+  video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>'};
+const stepNames=['voice','video'];
+const stepTitles={voice:'Озвучка й режисура',video:'Створення відео'};
 
 function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
 
@@ -81,14 +79,15 @@ function arrangeStepPanes(panel,steps){
     pane.append(head,info);return pane;});
   const take=(pane,selector)=>{for(const node of panel.querySelectorAll(`:scope > ${selector}`))pane.append(node);};
   const [voice,video]=panes;
-  // Voice and direction: the summary of frames and voice length, the run's state, the frame plan it wrote, then the
-  // recognition report and the script. Its own buttons go to the pane's button row; the report button is not needed
+  // Voice and direction: the frame plan on the film strip, the run's state, the frame table, then the recognition
+  // report and the script. Its own buttons go to the pane's button row; the report button is not needed
   // next to the report itself.
   panel.querySelector(':scope > .plan-heading .plan-stage-tag')?.remove();   // the tabs show the stage now
-  const summary=panel.querySelector(':scope > .plan-summary');
-  if(summary){for(const extra of summary.querySelectorAll('.speech-report-button,.plan-bind-audio,.plan-request-tag'))extra.remove();voice.querySelector('.episode-pane-info').before(summary);}
+  // The frame plan on the film strip replaces the summary row and the voice timeline: the strip carries the same facts.
+  for(const node of panel.querySelectorAll(':scope > .plan-summary, :scope > .plan-timeline'))node.remove();
+  const plan=framePlan();if(plan)voice.querySelector('.episode-pane-info').before(plan);
   const report=state.analysis?.job?.project_id===state.project?.id?state.analysis.report:null;
-  for(const selector of ['.plan-settings-warning','.plan-timeline','.plan-table-fold','.plan-table'])take(voice,selector);
+  for(const selector of ['.plan-settings-warning','.plan-table-fold','.plan-table'])take(voice,selector);
   const reportSlot=document.createElement('div');voice.append(reportSlot);
   if(report)appendSpeechReport(reportSlot,report);
   else if(state.project){
@@ -116,10 +115,9 @@ function paneOf(steps,name){return steps?.closest('.episode-flow')?.querySelecto
 // Fills every tab's status line and every pane's buttons from the current state; runs again whenever the director run changes.
 function refreshSteps(steps){
   if(!steps?.isConnected)return;
-  const id=steps.dataset.project,[voice,video,final]=steps.querySelectorAll('.episode-step');
+  const id=steps.dataset.project,[voice,video]=steps.querySelectorAll('.episode-step');
   fillVoice(voice,paneOf(steps,'voice'),id);
   fillVideo(video,paneOf(steps,'video'));
-  fillFinal(final,paneOf(steps,'final'));
   markStage(steps);
 }
 
@@ -134,7 +132,7 @@ function fillVoice(step,pane,id){
   if(state.project?.production?.plan_ready){
     // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
     const replace=stepButton('Замінити озвучку',openNarrationBinding);
-    replace.title='Нова озвучка або таймінги: студія розпізнає її заново, а режисер переробить план, якщо змінився текст';
+    replace.title='Нова озвучка або новий текст: студія розпізнає озвучку заново, а режисер сам переробить план кадрів, якщо змінився текст';
     actions?.append(replace);fillDirector(step,info,actions,id,percent);return;
   }
   clearTimeout(directorTimer);
@@ -171,7 +169,7 @@ function fillDirector(step,info,actions,id,percent){
     const frames=run.frames || (directed?state.plan.frames.length:0);
     text.textContent=frames?`${frames} ${planFrameWord(frames)}${percent?`, збіг слів ${percent}`:''}`:'Готово';
     if(run.status==='done'&&run.summary&&info){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent=`Звіт режисера · ${directorTime(run.finished_at)}`;const body=document.createElement('div');body.className='plan-script-text';body.textContent=run.summary;details.append(summary,body);info.append(details);}
-    restart('Переробити режисуру');
+    // nothing to redo by hand: a new voice or a new text sends the episode back to the director by itself
   }else{
     step.dataset.state='active';text.textContent='Озвучку розпізнано';
     say('Режисер ще не розклав озвучку на кадри. Запустіть режисуру, і план кадрів з’явиться тут.');
@@ -179,6 +177,7 @@ function fillDirector(step,info,actions,id,percent){
   }
 }
 
+const allMade='Усі кадри вже на таймлайні. Готовий ролик збирає кнопка «Експорт MP4» угорі: кадри, плашку й логотип каналу, музику й озвучку.';
 // Step 2 follows the production request: the author picks the first frames, the agent draws their scenes.
 function fillVideo(step,pane){
   const text=step.querySelector('p'),request=state.project?.production_request;
@@ -200,12 +199,12 @@ function fillVideo(step,pane){
   }else if(request?.status==='done'){
     const all=request.frames>=request.total_frames;step.dataset.state=all?'done':'active';
     text.textContent=all?'Усі кадри готові':`Кадри 1–${request.frames} готові`;
-    if(info){info.textContent=all?'':'Готові кадри вже на таймлайні в «Монтажі». Перегляньте їх і, якщо подобаються, виберіть наступні.';
+    if(info){info.textContent=all?allMade:'Готові кадри вже на таймлайні в «Монтажі». Перегляньте їх і, якщо подобаються, виберіть наступні.';
       if(request.summary){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт агента';const body=document.createElement('div');body.className='plan-script-text';body.textContent=request.summary;details.append(summary,body);info.append(details);}
       renderTeam(info,'production',state.project.id,false);}
   }else if(madeFrames()>=(state.plan?.frames?.length || Infinity)){
     // frames made outside a Studio request (an older episode, or by hand) count as well
-    step.dataset.state='done';text.textContent='Усі кадри готові';
+    step.dataset.state='done';text.textContent='Усі кадри готові';if(info)info.textContent=allMade;
   }else{step.dataset.state='active';text.textContent='Виберіть кадри';}
   // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
   // and the picker's «Скасувати» are not needed.
@@ -236,17 +235,12 @@ function framePicker(picker){
   const slider=picker.querySelector('.plan-start-range'),frames=state.plan?.frames || [];
   if(!slider||!frames.length||picker.querySelector('.frame-strip'))return;
   const total=Number(frames[frames.length-1].end) || 1,row=document.createElement('div');row.className='frame-strip-row';
-  const strip=document.createElement('div');strip.className='frame-strip';strip.setAttribute('role','slider');strip.tabIndex=0;
+  const made=madeSet(frames),{strip,cells:segments}=filmStrip(frames,made);strip.setAttribute('role','slider');strip.tabIndex=0;
   strip.setAttribute('aria-label','Скільки перших кадрів створити');strip.setAttribute('aria-valuemin','1');strip.setAttribute('aria-valuemax',String(frames.length));
-  const segments=frames.map((frame,index)=>{const cell=document.createElement('span');cell.className='frame-strip-cell';
-    cell.style.flexGrow=String(Math.max(.2,Number(frame.end)-Number(frame.start)));cell.title=`Кадр ${index+1} · ${clock(frame.start)}–${clock(frame.end)}`;strip.append(cell);return cell;});
+  segments.forEach((cell,index)=>{cell.title=`Кадр ${index+1} · ${clock(frames[index].start)}–${clock(frames[index].end)}${made.has(index)?' · готовий':''}`;});
   const handle=document.createElement('span');handle.className='frame-strip-handle';strip.append(handle);
   const max=document.createElement('button');max.type='button';max.className='secondary frame-strip-max';max.textContent='Макс';max.title=`Усі ${frames.length} кадрів`;
   row.append(strip,max);slider.after(row);
-  // Frames already drawn are pictures on the timeline: they show green, so the strip says what is done.
-  const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
-  const made=new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)?index:-1).filter(index=>index>=0));
-  segments.forEach((cell,index)=>{if(made.has(index)){cell.classList.add('made');cell.title+=' · готовий';}});
   const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count&&!made.has(index)));
     handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
   // Frames made from the start cannot be asked for again here: the strip starts at the first frame not made yet.
@@ -271,23 +265,41 @@ function framePicker(picker){
   if(floor>=frames.length){strip.classList.add('complete');max.disabled=true;}
 }
 
-// Frames of the director's plan that are already pictures on the timeline.
-function madeFrames(){
+// Frames of the director's plan that are already pictures on the timeline, by their index.
+function madeSet(frames){
   const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
-  return (state.plan?.frames || []).filter(frame=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)).length;
+  return new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)?index:-1).filter(index=>index>=0));
+}
+function madeFrames(){return madeSet(state.plan?.frames || []).size;}
+
+// The film as a strip: every frame as wide as it sounds, frames already drawn in green. Step 1 shows on it the plan the
+// director wrote, step 2 picks on the same strip the frames to make.
+function filmStrip(frames,made){
+  const strip=document.createElement('div');strip.className='frame-strip';
+  const cells=frames.map((frame,index)=>{const cell=document.createElement('span');cell.className='frame-strip-cell';
+    cell.style.flexGrow=String(Math.max(.2,Number(frame.end)-Number(frame.start)));cell.classList.toggle('made',made.has(index));strip.append(cell);return cell;});
+  return {strip,cells};
 }
 
-// Step 3: the film itself. Once every frame is drawn it is exported in one go: frames, plate and logo, music, voice.
-function fillFinal(step,pane){
-  const text=step.querySelector('p'),total=state.plan?.frames?.length || 0,made=madeFrames(),all=directorDone()&&total&&made>=total;
-  step.querySelector('.episode-step-cost').textContent='Рендер на цьому Mac · $0';
-  step.dataset.state=all?'active':'waiting';text.textContent=all?'Можна експортувати':total?`Готово кадрів: ${made} з ${total}`:'Після створення відео';
-  const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
-  if(!actions)return;
-  actions.replaceChildren();
-  if(all){const exporter=stepButton('Експорт MP4',()=>$('export-open').click(),true);exporter.classList.add('glow-action');actions.append(exporter);}
-  info.textContent=all?'Студія збере ролик з усіх кадрів, плашки й логотипа каналу, музики й озвучки з гучністю −14 LUFS і покладе MP4 у папку випуску.'
-    :total?`Коли всі ${total} ${planFrameWord(total)} будуть намальовані, тут з’явиться експорт готового ролика.`:'Коли всі кадри будуть намальовані, тут з’явиться експорт готового ролика.';
+// Step 1's result is the frame plan itself, on the strip of step 2: pointing at a frame reads its time and words below.
+function framePlan(){
+  const frames=state.plan?.frames || [];
+  if(!frames.length||state.plan?.frame_source!=='razgon-direction')return null;
+  const made=madeSet(frames),{strip,cells}=filmStrip(frames,made);strip.classList.add('static');
+  const card=document.createElement('section');card.className='frame-plan';
+  card.innerHTML=`<div class="plan-start-head"><h2>План кадрів</h2><div class="plan-start-readout"><strong>${frames.length}</strong><span>${planFrameWord(frames.length)}</span><span>${clock(Number(frames[frames.length-1].end) || 0)} озвучки</span></div></div>`;
+  const row=document.createElement('div');row.className='frame-strip-row';row.append(strip);card.append(row);
+  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size} з ${frames.length}`;card.append(legend);}
+  const read=document.createElement('p');read.className='frame-plan-read';card.append(read);
+  const hint='Наведіть на кадр, щоб побачити його час і текст.';read.textContent=hint;
+  let shown=-1;
+  const show=index=>{if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;
+    if(index<0){read.textContent=hint;return;}
+    const frame=frames[index];cells[index].classList.add('pointed');
+    read.innerHTML=`<b>Кадр ${index+1}${made.has(index)?' · готовий':''}</b> · ${clock(frame.start)}–${clock(frame.end)} · ${esc((frame.sentences || []).join(' '))}`;};
+  strip.addEventListener('pointermove',event=>show(cells.indexOf(event.target.closest?.('.frame-strip-cell'))));
+  strip.addEventListener('pointerleave',()=>show(-1));
+  return card;
 }
 
 // The first step that is not done is where the episode stands: it is marked «Зараз», done ones turn green, later ones
