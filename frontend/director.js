@@ -161,9 +161,15 @@ function fillVideo(step,pane){
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
   if(request){step.dataset.state=['done','complete'].includes(request.status)?'done':'active';text.textContent=`Кадри 1–${request.frames}, ${request.status==='requested'?'чекає агента':request.status}`;}
   else{step.dataset.state='active';text.textContent='Виберіть кадри';}
-  // The plan's own start button moves here from the heading and opens the frame picker in this pane.
-  const begin=document.querySelector('.plan-heading .plan-start-button');
-  if(begin&&actions)actions.replaceChildren(begin);
+  // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
+  // and the picker's «Скасувати» are not needed.
+  document.querySelector('.plan-heading .plan-start-button')?.remove();
+  actions?.replaceChildren();
+  const picker=pane?.querySelector('.plan-start');
+  if(picker?.hidden&&picker.open){
+    const scroll=picker.scrollIntoView;picker.scrollIntoView=()=>{};   // opening it here must not scroll the page
+    picker.open();picker.scrollIntoView=scroll;
+  }
 }
 
 // The first step that is not done is where the episode stands: it is marked «Зараз», the done ones get a tick, the

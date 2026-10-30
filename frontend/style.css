@@ -124,9 +124,9 @@ button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled)
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:10px;padding:9px 13px}
 button.primary:hover:not(:disabled){background:#f5c24b}
 /* The two main actions glow like the logo key, in their own gold. */
-#export-open,#overview-create{transition:background-color .15s,box-shadow .2s}
-#export-open:not(:disabled),#overview-create:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
-#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+#export-open,#overview-create,.plan-start-actions .primary{transition:background-color .15s,box-shadow .2s}
+#export-open:not(:disabled),#overview-create:not(:disabled),.plan-start-actions .primary:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover,.plan-start-actions .primary:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 button.secondary{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:9px;padding:8px 10px}
 button.secondary:hover:not(:disabled){background:#3a3a40}
 button.danger{border:1px solid #634045;background:#3b292c;color:#efb2b8;border-radius:9px;padding:8px 10px;margin-top:10px}
@@ -863,3 +863,5 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-pane-info:empty{display:none}.episode-pane-info>.plan-note{margin:0 0 10px}
 .episode-pane>.plan-summary{margin-top:0}
 .episode-step p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.episode-pane .plan-start-actions .secondary{display:none}
+.episode-pane .plan-start{margin-top:0}
