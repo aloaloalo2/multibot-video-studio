@@ -1411,58 +1411,46 @@ def clear_history(pid: str, side: str) -> None:
         path.unlink()
 
 
-RAZGON_UNDO_STEPS = 5
 RAZGON_RENDER = re.compile(r"(frame_\d{3}|music_sfx)(-[0-9a-f]{8})?\.(mp4|wav)")
 
 
 def prune_razgon_renders(pid: str) -> dict:
     """Delete clip renders the Razgon bridge imported and later replaced.
 
-    Only files the bridge names (frame_NNN.mp4, music_sfx.wav) in this project's media folder are candidates, and only
-    for an episode linked to Razgon. A file stays while the timeline, a redo step or one of the last RAZGON_UNDO_STEPS
-    undo steps uses it; older undo steps that hold replaced renders are dropped."""
-    project = load_project(pid)
-    if not (Path(project.get("episode_path", "")) / "razgon.json").is_file():
-        return {"removed": 0, "bytes": 0}
+    Only files the bridge names (frame_NNN.mp4, music_sfx.wav) in this project's media folder are candidates. A frame is
+    changed in its code and never brought back (user, 30 October 2026: «старі кадри не треба зберігати... міняємо напряму
+    код, без можливості повернути назад»), so a render stays only while the timeline shows it. The undo steps that still
+    show a replaced one go with it, oldest first, so the steps left form one unbroken chain; redo steps holding one are
+    cleared."""
     media = (project_dir(pid) / "media").resolve()
     with LOCK:
-        migrate_history(pid)
         project = load_project(pid)
-        def clip_assets(snapshot):
-            return {clip.get("asset_id") for track in snapshot.get("tracks", []) for clip in track.get("clips", [])}
-        def replaced(asset_ids):
-            return {aid for aid in asset_ids if aid in renders}
-        renders = {asset["id"] for asset in project.get("assets", [])
-                   if Path(asset.get("path", "")).parent.resolve() == media and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)}
-        used = clip_assets(project)
+        used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
+        old = [asset for asset in project.get("assets", []) if asset.get("id") not in used
+               and Path(asset.get("path", "")).parent.resolve() == media and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)]
+        if not old:
+            return {"removed": 0, "bytes": 0}
+        migrate_history(pid)
+        ids = {asset["id"] for asset in old}
+        def holds(entry):
+            snapshot = read_json(entry, {}) or {}
+            return bool(ids & {clip.get("asset_id") for track in snapshot.get("tracks", []) for clip in track.get("clips", [])})
         past = history_entries(pid, "past")
-        past_assets = [clip_assets(read_json(entry, {})) for entry in past]
-        # Renders can be made again from the scenes, so undo older than the last few steps does not keep them on disk:
-        # those oldest steps go first, which keeps the remaining undo chain continuous.
-        recent = set().union(used, *past_assets[-RAZGON_UNDO_STEPS:])
-        older = past[:-RAZGON_UNDO_STEPS] if len(past) > RAZGON_UNDO_STEPS else []
-        if any(replaced(assets) - recent for assets in past_assets[:len(older)]):
-            for entry in older:
-                entry.unlink()
-            past_assets = past_assets[len(older):]
-        used |= set().union(*past_assets) if past_assets else set()
-        for entry in history_entries(pid, "future"):
-            used |= clip_assets(read_json(entry, {}))
-        keep, removed, freed = [], 0, 0
-        for asset in project.get("assets", []):
-            path = Path(asset.get("path", ""))
-            if asset.get("id") in used or path.parent.resolve() != media or not RAZGON_RENDER.fullmatch(path.name):
-                keep.append(asset)
-                continue
+        holding = [index for index, entry in enumerate(past) if holds(entry)]
+        for entry in past[:holding[-1] + 1] if holding else []:
+            entry.unlink()
+        if any(holds(entry) for entry in history_entries(pid, "future")):
+            clear_history(pid, "future")
+        freed = 0
+        for asset in old:
+            path = Path(asset["path"])
             if path.is_file():
                 freed += path.stat().st_size
                 path.unlink()
-            removed += 1
-        if removed:
-            # The media list is not part of an edit, so the revision stays and an open editor is not interrupted.
-            project["assets"] = keep
-            save_project(project)
-    return {"removed": removed, "bytes": freed}
+        # The media list is not part of an edit, so the revision stays and an open editor is not interrupted.
+        project["assets"] = [asset for asset in project.get("assets", []) if asset.get("id") not in ids]
+        save_project(project)
+    return {"removed": len(old), "bytes": freed}
 
 
 def history_state(pid: str) -> dict:

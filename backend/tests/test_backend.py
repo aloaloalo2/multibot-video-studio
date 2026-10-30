@@ -151,7 +151,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(texts(), ["Step 0"])
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is needed for video fixtures")
-    def test_replaced_razgon_clips_are_pruned_once_no_step_uses_them(self):
+    def test_a_replaced_razgon_clip_goes_at_once_with_the_undo_steps_that_show_it(self):
         project = store.create_project(store.channel_id(self.channel), "Razgon cleanup")
         pid, episode = project["id"], Path(project["episode_path"])
         episode.mkdir(parents=True, exist_ok=True); (episode / "razgon.json").write_text("{}", encoding="utf-8")
@@ -167,12 +167,11 @@ class BackendTest(unittest.TestCase):
         clip_id = next(c["id"] for t in store.load_project(pid)["tracks"] for c in t["clips"])
         second = store.import_asset_file(store.load_project(pid), clip_file("frame_001.mp4"))
         store.apply_action(pid, "replace_clip_asset", {"clip_id": clip_id, "asset_id": second["id"]})
-        # The earlier render is still one undo away, so it stays.
-        self.assertEqual(store.prune_razgon_renders(pid)["removed"], 0)
-        for n in range(store.RAZGON_UNDO_STEPS):
-            store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "text", "text": "Edit %d" % n, "start": 1, "duration": 1})
+        store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "text", "text": "Edit after", "start": 1, "duration": 1})
+        # Frames are changed in code and never brought back: the earlier render goes now, with the undo steps that show
+        # it; the step after the swap stays.
         result = store.prune_razgon_renders(pid)
-        self.assertEqual(len(store.history_entries(pid, "past")), store.RAZGON_UNDO_STEPS)
+        self.assertEqual(len(store.history_entries(pid, "past")), 1)
         self.assertEqual(result["removed"], 1)
         ids = {asset["id"] for asset in store.load_project(pid)["assets"]}
         self.assertNotIn(first["id"], ids)

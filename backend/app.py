@@ -885,6 +885,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/actions", path)
         if match and method == "POST":
             project = store.apply_action(match.group(1), body["type"], body.get("payload", {}), body.get("expected_revision"))
+            # a frame render that a newer one replaced is not kept (store.prune_razgon_renders)
+            if store.prune_razgon_renders(match.group(1))["removed"]:
+                project = store.load_project(match.group(1))
             return self.json_response({"project": project})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/pick", path)
         if match and method == "POST":

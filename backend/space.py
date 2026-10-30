@@ -4,7 +4,9 @@ Two kinds are safe to remove. The Razgon project's build folder is the render wo
 clip, the film without sound, uncompressed music and mix, seam strips and review stills. All of it is made again from the
 scenes, and the studio plays from its own copies, never from there. The studio's own copies of frames that a later render
 replaced stay only for «Скасувати»: they go together with the undo steps that still show them. The frames on the
-timeline, the voice, the scenes and the finished film in the episode folder are not touched.
+timeline, the voice, the scenes and the finished film in the episode folder are not touched. Since 30 October 2026 the
+studio drops replaced renders as soon as they are replaced (store.prune_razgon_renders), so the second kind is only
+what older episodes still carry.
 """
 from __future__ import annotations
 
@@ -62,10 +64,6 @@ def usage(pid: str) -> dict:
     return {"build": build, "old_renders": renders, "old_count": len(old), "total": build + renders, "busy": busy(pid)}
 
 
-def clip_assets(snapshot: dict) -> set:
-    return {clip.get("asset_id") for track in snapshot.get("tracks", []) for clip in track.get("clips", [])}
-
-
 def free(pid: str) -> dict:
     reason = busy(pid)
     if reason:
@@ -78,24 +76,6 @@ def free(pid: str) -> dict:
             shutil.rmtree(item, ignore_errors=True)
         else:
             item.unlink(missing_ok=True)
-    with store.LOCK:
-        store.migrate_history(pid)
-        project = store.load_project(pid)
-        old = old_renders(pid, project)
-        if old:
-            ids = {asset["id"] for asset in old}
-            # undo steps that still show those frames go with them: the oldest steps up to the last one that holds any,
-            # so the steps left form one unbroken chain
-            past = store.history_entries(pid, "past")
-            holding = [index for index, entry in enumerate(past) if ids & clip_assets(store.read_json(entry, {}) or {})]
-            for entry in past[:holding[-1] + 1] if holding else []:
-                entry.unlink()
-            if any(ids & clip_assets(store.read_json(entry, {}) or {}) for entry in store.history_entries(pid, "future")):
-                store.clear_history(pid, "future")
-            for asset in old:
-                freed += Path(asset["path"]).stat().st_size
-                Path(asset["path"]).unlink()
-            # the media list is not part of an edit, so the revision stays and an open editor is not interrupted
-            project["assets"] = [asset for asset in project.get("assets", []) if asset.get("id") not in ids]
-            store.save_project(project)
+    # replaced frame renders follow the studio's one rule for them, with the undo steps that still show them
+    freed += store.prune_razgon_renders(pid)["bytes"]
     return {"freed": freed}

@@ -988,3 +988,5 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .space-list span{font-size:13px;line-height:1.45;color:#b9bbc3}
 .space-note{margin:0;font-size:13px;line-height:1.5;color:#9a9ca4}
 .space-busy{margin:10px 0 0;font-size:13px;color:#ffb36b}
+/* «Назад» and «Вперед» are hidden for now (user, 30 October 2026): frames are changed in their code, not taken back */
+#undo,#redo{display:none!important}
