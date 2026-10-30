@@ -417,10 +417,40 @@ def validated_episode_path(channel: Path, raw: str | None, name: str) -> Path:
     return path
 
 
+def episode_title(folder: Path) -> str | None:
+    """The first A/B title in the episode's «Метаданные.txt»: the video's name on YouTube, if it is written yet."""
+    meta = folder / "Метаданные.txt"
+    if not meta.is_file():
+        return None
+    lines = meta.read_text(encoding="utf-8", errors="replace").splitlines()
+    for i, line in enumerate(lines):
+        if re.match(r"\s*(ТАЙТЛ|ЗАГОЛОВ|HEADLINE|TITLE)", line, re.I):
+            return next((item.strip() for item in lines[i + 1:] if item.strip() and not item.startswith("=")), None)
+    return None
+
+
+def follow_title(project: dict) -> bool:
+    """A project is called by its video's first title (user, 30 October 2026: «заголовок має відповідати ... тайтлу»).
+    A name the author chose stays: only one that is still the episode folder's name follows the title."""
+    folder = Path(project.get("episode_path") or "")
+    title = episode_title(folder) if project.get("episode_path") and folder.is_dir() else None
+    if not title or project.get("name") == title or unicodedata.normalize("NFC", project.get("name") or "") != unicodedata.normalize("NFC", folder.name):
+        return False
+    try:
+        project["name"] = validated_name(title)
+    except StudioError:
+        return False
+    return True
+
+
 def create_project(cid: str, name: str, episode_path: str | None = None) -> dict:
     channel = get_channel_folder(cid)
     name = validated_name(name)
     episode = validated_episode_path(channel, episode_path, name)
+    try:
+        name = validated_name(episode_title(episode) or name)      # the video's title names the project when it is written
+    except StudioError:
+        pass
     pid = uuid.uuid4().hex[:24]
     folder = PROJECTS_ROOT / pid
     with LOCK:

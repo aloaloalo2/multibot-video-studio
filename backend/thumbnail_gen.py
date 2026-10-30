@@ -67,14 +67,7 @@ def preview(project: dict) -> Path | None:
 
 def first_title(folder: Path) -> str | None:
     """The first A/B title in the episode's «Метаданные.txt», if there is one."""
-    meta = folder / "Метаданные.txt"
-    if not meta.is_file():
-        return None
-    lines = meta.read_text(encoding="utf-8", errors="replace").splitlines()
-    for i, line in enumerate(lines):
-        if re.match(r"\s*(ТАЙТЛ|ЗАГОЛОВ|HEADLINE|TITLE)", line, re.I):
-            return next((item.strip() for item in lines[i + 1:] if item.strip() and not item.startswith("=")), None)
-    return None
+    return store.episode_title(folder)
 
 
 def defaults(pid: str) -> dict:
