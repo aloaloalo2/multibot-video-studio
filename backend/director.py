@@ -145,10 +145,11 @@ def activity_path(pid: str, kind: str) -> Path:
     return store.project_dir(pid) / f"{kind}-activity.json"
 
 
-def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None) -> tuple[int, dict]:
+def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
+           effort: str = EFFORT) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
-    command = [str(cli), "--model", MODEL, "--effort", EFFORT, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+    command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
     process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     expired = threading.Event()

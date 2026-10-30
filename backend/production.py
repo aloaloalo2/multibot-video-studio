@@ -1,6 +1,6 @@
 """Making the first N frames of an animated episode, started by «Створити N кадрів».
 
-The production request (store.request_production) hands the frames to Claude Opus 5.5 (high effort) through Claude
+The production request (store.request_production) hands the frames to Claude Opus 5.5 (extra-high effort) through Claude
 Code on the user's subscription, in the YOUTUBE folder, as the channel rules' step 7 asks: scenes of the shots behind
 those frames, props from the library or drawn by Codex (tools/codex_image.py), checks on contact sheets, then
 razgon_bridge.py push puts the rendered frames on the Studio timeline. No final film and nothing published. The run
@@ -16,6 +16,9 @@ import logo_layer
 import store
 
 TIMEOUT = 6 * 3600
+# The film itself is drawn at extra-high effort (user, 30 October 2026: «я хочу, щоб ролик складав надвисокий Опус 5.5»);
+# the director keeps high.
+EFFORT = "xhigh"
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 
@@ -102,12 +105,12 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
     request = project["production_request"]
     log = store.project_dir(pid) / f"production-{request['id']}.log"
     started = time.time()
-    set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=director.EFFORT, error=None)
+    set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None)
     fields = {}
     try:
         # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
         code, answer = director.claude(cli, brief(project, request, notes), log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=request.get("session_id") if notes.strip() else None)
+                                       resume=request.get("session_id") if notes.strip() else None, effort=EFFORT)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
