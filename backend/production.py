@@ -69,6 +69,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 («Навыки для переноса/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). python3 tools/episode.py "{rel}" показує, де випуск.
 
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
+Кадри, що вже лежать на таймлайні студії готовим відео, не переробляй, якщо автор не просить правок саме до них.
 1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "What If/razgon-2d-studio/tools/library.py" search <слова> і use.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім

@@ -235,14 +235,22 @@ function framePicker(picker){
   if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size}<span class="chosen"></span>Вибрані для створення`;row.after(legend);}
   const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count));
     handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
-  const set=count=>{slider.value=String(Math.max(1,Math.min(frames.length,count)));slider.dispatchEvent(new Event('input'));paint();};
+  // Frames made from the start cannot be asked for again here (their fixes go through «Надіслати правки»): the strip
+  // starts at the first frame not made yet.
+  let floor=0;while(made.has(floor))floor++;
+  const least=Math.min(frames.length,floor+1);
+  const confirm=picker.querySelector('.plan-start-actions .primary');
+  const label=()=>{if(floor&&confirm&&!confirm.classList.contains('loading')){const count=Number(slider.value);confirm.textContent=count===floor+1?`Створити кадр ${count}`:`Створити кадри ${floor+1}–${count}`;}};
+  const set=count=>{slider.value=String(Math.max(least,Math.min(frames.length,count)));slider.dispatchEvent(new Event('input'));paint();label();};
   const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
     const index=frames.findIndex(frame=>Number(frame.end)>=time);return index<0?frames.length:index+1;};
   strip.addEventListener('pointerdown',event=>{strip.setPointerCapture(event.pointerId);set(at(event));});
   strip.addEventListener('pointermove',event=>{if(strip.hasPointerCapture(event.pointerId))set(at(event));});
   strip.addEventListener('keydown',event=>{const step={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[event.key];if(step){event.preventDefault();set(Number(slider.value)+step);}});
   max.addEventListener('click',()=>set(frames.length));
-  paint();
+  // while the agent draws, the picker only shows the state: it must not rewrite the button that shows the progress
+  if(Number(slider.value)<least&&!picker.classList.contains('busy'))set(least);else{paint();label();}
+  if(floor>=frames.length){strip.classList.add('complete');max.disabled=true;}
 }
 
 // After a run the author can send remarks on its frames: the agent goes on in the same session and fixes exactly them.
