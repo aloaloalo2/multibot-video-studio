@@ -902,7 +902,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-legend span{width:10px;height:10px;border-radius:3px;margin-left:8px}.frame-strip-legend span:first-child{margin-left:0}
 .frame-strip-legend .made{background:#3fbf86}.frame-strip-legend .chosen{background:#f0b429}
 /* The making of an animated film as a path down the left: numbered steps joined by a line, the chosen step's data on the right. */
-.episode-flow{display:grid;grid-template-columns:minmax(230px,280px) minmax(0,1fr);gap:20px;align-items:start;margin-top:6px}
+.episode-flow{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:20px;align-items:start;margin-top:6px}
 .episode-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:10px}
 .episode-rail .episode-stage{margin:0 0 2px}
 .episode-flow .episode-steps{grid-template-columns:1fr;gap:14px;margin:0}
@@ -930,5 +930,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step[data-state="done"]:not(.current) .episode-step-head::after{content:'Готово';font-size:11px;font-weight:600;color:#6bf2ae;background:#0e241a;border:1px solid #3fe39a59;padding:1px 8px;border-radius:9.5px;margin-left:auto}
 .episode-step.current .episode-step-head::after{margin-left:auto}
 .episode-flow .episode-step[data-state="done"]:not(.current){border-color:#3fe39a33}
-.episode-flow .episode-step[data-state="done"] .episode-step-number svg{display:block}
+.episode-flow .episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
+.episode-flow .episode-step[data-state="done"] .episode-step-icon svg{stroke-width:3}
 .episode-flow .episode-step-head{align-self:stretch;width:100%;box-sizing:border-box}

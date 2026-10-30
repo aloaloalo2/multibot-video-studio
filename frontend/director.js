@@ -1,17 +1,18 @@
-// director.js — the steps of an animated episode on its plan, as tabs: 1 the voice, 2 the director, 3 making the video.
-// Once the voice is recognised the Studio hands the episode to Claude Opus 5.5 (high effort), which directs it and writes
-// the frame plan back (backend/director.py). The tabs say where the episode stands; each opens its own pane with its
-// buttons and data: the voice summary, recognition report and script; the director's report with the timeline and frame
-// table; how many frames to make with the request and cost. The current stage opens first.
+// director.js — the steps of an animated episode on its plan, as tabs: 1 the voice and its direction, 2 making the video,
+// 3 the finished film. Once the voice is recognised the Studio hands the episode to Claude Opus 5.5 (high effort), which
+// directs it and writes the frame plan back (backend/director.py); the author does nothing in between, so both read as
+// one step whose result is the frame plan. Each tab opens its own pane with its buttons and data: the frame plan with
+// the recognition report, script and director's report; how many frames to make with the run and its spend; the export.
+// The current stage opens first.
 const directorRuns={};
 const stepChoice=new Map();
 let directorTimer=null,productionTimer=null;
 
 const stepIcons={voice:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
-  director:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 10l-.6-3.3a1 1 0 0 1 .8-1.2L17 3.2a1 1 0 0 1 1.2.8L18.7 7M8 4.8l2.4 3.6M13.2 3.9l2.4 3.6"/></svg>',
   video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>',
   final:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m10 8 5 2.5-5 2.5zM8 21h8M12 17v4"/></svg>'};
-const stepNames=['voice','director','video','final'];
+const stepNames=['voice','video','final'];
+const stepTitles={voice:'Озвучка й режисура',video:'Створення відео',final:'Готовий ролик'};
 
 function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
 
@@ -50,8 +51,8 @@ function episodeStep(number,icon,title){
 function renderDirectorStatus(panel){
   if(!state.project || !directorAnimated())return;
   const id=state.project.id,steps=document.createElement('div');steps.className='episode-steps';steps.dataset.project=id;steps.setAttribute('role','tablist');steps.setAttribute('aria-orientation','vertical');
-  const items=[episodeStep(1,'voice','Озвучка'),episodeStep(2,'director','Режисура'),episodeStep(3,'video','Створення відео'),episodeStep(4,'final','Готовий ролик')];
-  items[1].setAttribute('aria-live','polite');
+  const items=stepNames.map((name,index)=>episodeStep(index+1,name,stepTitles[name]));
+  items[0].setAttribute('aria-live','polite');
   items.forEach((step,index)=>{
     const pick=()=>{stepChoice.set(id,index);showStepPane(steps);};
     step.addEventListener('click',pick);
@@ -71,22 +72,23 @@ function renderDirectorStatus(panel){
 
 function arrangeStepPanes(panel,steps){
   if(!steps.isConnected)return;
-  const titles={voice:'Озвучка',director:'Режисура',video:'Створення відео',final:'Готовий ролик'};
   const panes=stepNames.map((name,index)=>{
     const pane=document.createElement('div');pane.className='episode-pane';pane.dataset.pane=name;pane.setAttribute('role','tabpanel');
     // each pane opens with its step's title and its buttons on one row, so a button always says what it belongs to
-    const head=document.createElement('div');head.className='episode-pane-head';head.innerHTML=`<h2><span>${index+1}</span>${titles[name]}</h2>`;
+    const head=document.createElement('div');head.className='episode-pane-head';head.innerHTML=`<h2><span>${index+1}</span>${stepTitles[name]}</h2>`;
     const actions=document.createElement('div');actions.className='episode-pane-actions';head.append(actions);
     const info=document.createElement('div');info.className='episode-pane-info';
     pane.append(head,info);return pane;});
   const take=(pane,selector)=>{for(const node of panel.querySelectorAll(`:scope > ${selector}`))pane.append(node);};
-  const [voice,director,video,final]=panes;
-  // Voice: the summary of frames and voice length, the recognition report in full and the script. Its own buttons go to
-  // the pane's button row; the report button is not needed next to the report itself.
+  const [voice,video]=panes;
+  // Voice and direction: the summary of frames and voice length, the run's state, the frame plan it wrote, then the
+  // recognition report and the script. Its own buttons go to the pane's button row; the report button is not needed
+  // next to the report itself.
   panel.querySelector(':scope > .plan-heading .plan-stage-tag')?.remove();   // the tabs show the stage now
   const summary=panel.querySelector(':scope > .plan-summary');
-  if(summary){for(const extra of summary.querySelectorAll('.speech-report-button,.plan-bind-audio,.plan-request-tag'))extra.remove();voice.append(summary);}
+  if(summary){for(const extra of summary.querySelectorAll('.speech-report-button,.plan-bind-audio,.plan-request-tag'))extra.remove();voice.querySelector('.episode-pane-info').before(summary);}
   const report=state.analysis?.job?.project_id===state.project?.id?state.analysis.report:null;
+  for(const selector of ['.plan-settings-warning','.plan-timeline','.plan-table-fold','.plan-table'])take(voice,selector);
   const reportSlot=document.createElement('div');voice.append(reportSlot);
   if(report)appendSpeechReport(reportSlot,report);
   else if(state.project){
@@ -98,8 +100,6 @@ function arrangeStepPanes(panel,steps){
     }).catch(()=>{});
   }
   take(voice,'.plan-script');
-  // Director: the frames it wrote.
-  for(const selector of ['.plan-settings-warning','.plan-timeline','.plan-table-fold','.plan-table'])take(director,selector);
   // An animated film is all one format and its plan is not agreed in a chat: those service lines only add doubt here.
   for(const node of panel.querySelectorAll(':scope > .plan-formats, :scope > .plan-note'))node.remove();
   // Video: how many frames to make. The plan's cost estimate counts stock, generated photos and DeepSeek requests,
@@ -116,69 +116,70 @@ function paneOf(steps,name){return steps?.closest('.episode-flow')?.querySelecto
 // Fills every tab's status line and every pane's buttons from the current state; runs again whenever the director run changes.
 function refreshSteps(steps){
   if(!steps?.isConnected)return;
-  const id=steps.dataset.project,[voice,director,video,final]=steps.querySelectorAll('.episode-step');
-  fillVoice(voice,paneOf(steps,'voice'));
-  fillDirector(director,paneOf(steps,'director'),id);
+  const id=steps.dataset.project,[voice,video,final]=steps.querySelectorAll('.episode-step');
+  fillVoice(voice,paneOf(steps,'voice'),id);
   fillVideo(video,paneOf(steps,'video'));
   fillFinal(final,paneOf(steps,'final'));
   markStage(steps);
 }
 
-function fillVoice(step,pane){
+// Step 1 is the voice and its direction together: until the voice is recognised it says how the recognition goes,
+// after that the director's run speaks for the step.
+function fillVoice(step,pane,id){
   const analysis=state.analysis?.job?.project_id===state.project?.id?state.analysis:null,report=analysis?.report,job=analysis?.job,text=step.querySelector('p');
   const percent=report?`${Number(report.word_match_percent).toFixed(1)}%`:'';
-  if(state.project?.production?.plan_ready){step.dataset.state='done';text.textContent=percent?`Розпізнано, ${percent} слів збіглося`:'Розпізнано';}
-  else if(job && ['queued','running'].includes(job.status)){step.dataset.state='active';text.textContent=`${(typeof speechStageNames!=='undefined'&&speechStageNames[job.stage]) || 'Обробка'}: ${job.progress}%`;}
+  const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
+  actions?.replaceChildren();info?.replaceChildren();
+  const cost=step.querySelector('.episode-step-cost');cost.title='';
+  if(state.project?.production?.plan_ready){
+    // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
+    const replace=stepButton('Замінити озвучку',openNarrationBinding);
+    replace.title='Нова озвучка або таймінги: студія розпізнає її заново, а режисер переробить план, якщо змінився текст';
+    actions?.append(replace);fillDirector(step,info,actions,id,percent);return;
+  }
+  clearTimeout(directorTimer);
+  const working=!!job&&['queued','running'].includes(job.status);step.classList.toggle('running',working);
+  if(working){step.dataset.state='active';text.textContent=`${(typeof speechStageNames!=='undefined'&&speechStageNames[job.stage]) || 'Обробка'}: ${job.progress}%`;}
   else if(report){step.dataset.state='failed';text.textContent=`Потрібна перевірка, ${percent}`;}
   else if(job?.status==='failed'){step.dataset.state='failed';text.textContent='Не вдалося розпізнати';}
   else{step.dataset.state='waiting';text.textContent='Додайте аудіо озвучки';}
-  step.querySelector('.episode-step-cost').textContent=step.dataset.state==='waiting'?'Ще нічого не витрачено':'Витрачено $0 · Whisper на цьому Mac';
-  if(!pane)return;
-  // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
-  const replace=step.dataset.state==='done';
-  const button=stepButton(replace?'Замінити озвучку':'Додати озвучку / таймінги',openNarrationBinding,step.dataset.state==='waiting');
-  if(replace)button.title='Нова озвучка або таймінги: студія розпізнає її заново, а режисер переробить план, якщо змінився текст';
-  pane.querySelector('.episode-pane-actions').replaceChildren(button);
-  pane.querySelector('.episode-pane-info').textContent=job?.status==='failed'?job.error:!report&&step.dataset.state!=='active'?'Звіт розпізнавання з’явиться тут, коли студія розпізнає озвучку.':'';
+  cost.textContent=step.dataset.state==='waiting'?'Ще нічого не витрачено':'Розпізнавання на цьому Mac · $0';
+  actions?.append(stepButton('Додати озвучку / таймінги',openNarrationBinding,step.dataset.state==='waiting'));
+  if(info)info.textContent=job?.status==='failed'?job.error:!report&&!working?'Додайте аудіо озвучки: студія розпізнає його на цьому Mac, а режисер сам розкладе озвучку на кадри.':'';
 }
 
-function fillDirector(step,pane,id){
-  const run=directorRuns[id] || {status:'loading'},synced=!!state.project?.production?.plan_ready,directed=directorDone(),text=step.querySelector('p');
-  const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
-  actions?.replaceChildren();info?.replaceChildren();
-  const restart=label=>actions?.append(stepButton(label,()=>startDirector(id)));
-  // What the run actually used. Claude Code runs on the subscription; the dollar figure is what it would cost through the API.
+function fillDirector(step,info,actions,id,percent){
+  const run=directorRuns[id] || {status:'loading'},directed=directorDone(),text=step.querySelector('p');
+  const restart=(label,primary=false)=>actions?.append(stepButton(label,()=>startDirector(id),primary));
+  // What the step actually used: recognition is free on this Mac; Claude Code runs on the subscription, and the dollar
+  // figure is what the direction would cost through the API.
   const cost=step.querySelector('.episode-step-cost');
-  if(run.cost_usd){cost.textContent=spentLine(run);cost.title=`Режисура йде за підпискою Claude, тож окремо не оплачується; сума показує, скільки це коштувало б через API.${spentTokens(run)}`;}
-  else cost.textContent=run.status==='running'||run.status==='queued'?'Рахуємо, поки йде режисура':'Ще нічого не витрачено';
+  if(run.cost_usd){cost.textContent=spentLine(run);cost.title=`Розпізнавання йде на цьому Mac безкоштовно. Режисура йде за підпискою Claude, тож окремо не оплачується; сума показує, скільки це коштувало б через API.${spentTokens(run)}`;}
+  else cost.textContent=run.status==='running'||run.status==='queued'?'Рахуємо, поки йде режисура':'Розпізнавання на цьому Mac · $0';
   const say=message=>{if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=message;info.append(line);}};
   clearTimeout(directorTimer);
   step.classList.toggle('running',run.status==='queued' || run.status==='running');
-  if(run.status==='loading'){step.dataset.state=directed?'done':'waiting';text.textContent='Перевіряємо...';}
+  if(run.status==='loading'){step.dataset.state=directed?'done':'active';text.textContent='Перевіряємо...';}
   else if(run.status==='queued' || run.status==='running'){
-    step.dataset.state='active';text.textContent=`Іде${run.started_at?` з ${directorTime(run.started_at)}`:''}`;
+    step.dataset.state='active';text.textContent='Режисер розкладає озвучку на кадри';
     renderTeam(info,'director',id,true);
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
-    step.dataset.state='failed';text.textContent='Не вдалася';say(run.error || 'Невідома помилка');restart('Спробувати ще раз');
+    step.dataset.state='failed';text.textContent='Режисура не вдалася';say(run.error || 'Невідома помилка');restart('Спробувати ще раз',true);
   }else if(run.status==='done' || directed){
     step.dataset.state='done';
     const frames=run.frames || (directed?state.plan.frames.length:0);
-    text.textContent=frames?`${frames} ${planFrameWord(frames)}`:'Готово';
-    if(run.status==='done'){
-      say(`Готово о ${directorTime(run.finished_at)}.`);
-      if(run.summary&&info){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт режисера';const body=document.createElement('div');body.className='plan-script-text';body.textContent=run.summary;details.append(summary,body);info.append(details);}
-      renderTeam(info,'director',id,false);
-    }
+    text.textContent=frames?`${frames} ${planFrameWord(frames)}${percent?`, збіг слів ${percent}`:''}`:'Готово';
+    if(run.status==='done'&&run.summary&&info){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent=`Звіт режисера · ${directorTime(run.finished_at)}`;const body=document.createElement('div');body.className='plan-script-text';body.textContent=run.summary;details.append(summary,body);info.append(details);}
     restart('Переробити режисуру');
   }else{
-    step.dataset.state=synced?'active':'waiting';text.textContent=synced?'Можна запускати':'Після озвучки';
-    say(synced?'Озвучку розпізнано. Режисер розіб’є її на шоти й запише план кадрів.':'Режисура почнеться сама, щойно студія розпізнає озвучку.');
-    if(actions){const b=stepButton('Запустити режисуру',()=>startDirector(id),synced);b.disabled=!synced;actions.append(b);}
+    step.dataset.state='active';text.textContent='Озвучку розпізнано';
+    say('Режисер ще не розклав озвучку на кадри. Запустіть режисуру, і план кадрів з’явиться тут.');
+    restart('Запустити режисуру',true);
   }
 }
 
-// Step 3 follows the production request: the author picks the first frames, the agent draws their scenes.
+// Step 2 follows the production request: the author picks the first frames, the agent draws their scenes.
 function fillVideo(step,pane){
   const text=step.querySelector('p'),request=state.project?.production_request;
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
@@ -202,6 +203,9 @@ function fillVideo(step,pane){
     if(info){info.textContent=all?'':'Готові кадри вже на таймлайні в «Монтажі». Перегляньте їх і, якщо подобаються, виберіть наступні.';
       if(request.summary){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт агента';const body=document.createElement('div');body.className='plan-script-text';body.textContent=request.summary;details.append(summary,body);info.append(details);}
       renderTeam(info,'production',state.project.id,false);}
+  }else if(madeFrames()>=(state.plan?.frames?.length || Infinity)){
+    // frames made outside a Studio request (an older episode, or by hand) count as well
+    step.dataset.state='done';text.textContent='Усі кадри готові';
   }else{step.dataset.state='active';text.textContent='Виберіть кадри';}
   // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
   // and the picker's «Скасувати» are not needed.
@@ -243,14 +247,18 @@ function framePicker(picker){
   const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
   const made=new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)?index:-1).filter(index=>index>=0));
   segments.forEach((cell,index)=>{if(made.has(index)){cell.classList.add('made');cell.title+=' · готовий';}});
-  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size}<span class="chosen"></span>Вибрані для створення`;row.after(legend);}
-  const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count));
+  const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count&&!made.has(index)));
     handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
   // Frames made from the start cannot be asked for again here: the strip starts at the first frame not made yet.
   let floor=0;while(made.has(floor))floor++;
+  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size}${floor<frames.length?'<span class="chosen"></span>Вибрані для створення':''}`;row.after(legend);}
   const least=Math.min(frames.length,floor+1);
   const confirm=picker.querySelector('.plan-start-actions .primary');
-  const label=()=>{if(floor&&confirm&&!confirm.classList.contains('loading')){const count=Number(slider.value);confirm.textContent=count===floor+1?`Створити кадр ${count}`:`Створити кадри ${floor+1}–${count}`;}};
+  const label=()=>{
+    if(!confirm||confirm.classList.contains('loading'))return;
+    // every frame is a picture already: nothing is left to ask for
+    if(floor>=frames.length){confirm.disabled=true;confirm.textContent='Усі кадри створені';return;}
+    if(floor){const count=Number(slider.value);confirm.textContent=count===floor+1?`Створити кадр ${count}`:`Створити кадри ${floor+1}–${count}`;}};
   const set=count=>{slider.value=String(Math.max(least,Math.min(frames.length,count)));slider.dispatchEvent(new Event('input'));paint();label();};
   const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
     const index=frames.findIndex(frame=>Number(frame.end)>=time);return index<0?frames.length:index+1;};
@@ -269,7 +277,7 @@ function madeFrames(){
   return (state.plan?.frames || []).filter(frame=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)).length;
 }
 
-// Step 4: the film itself. Once every frame is drawn it is exported in one go: frames, plate and logo, music, voice.
+// Step 3: the film itself. Once every frame is drawn it is exported in one go: frames, plate and logo, music, voice.
 function fillFinal(step,pane){
   const text=step.querySelector('p'),total=state.plan?.frames?.length || 0,made=madeFrames(),all=directorDone()&&total&&made>=total;
   step.querySelector('.episode-step-cost').textContent='Рендер на цьому Mac · $0';
@@ -287,10 +295,11 @@ function fillFinal(step,pane){
 function markStage(steps){
   const items=[...steps.querySelectorAll('.episode-step')],current=items.findIndex(item=>item.dataset.state!=='done');
   items.forEach((item,index)=>{item.classList.toggle('current',index===current);item.classList.toggle('upcoming',current>=0&&index>current);
-    // a done step trades its number for a green tick, so what is finished reads at a glance
+    // a done step shows a green tick in place of its icon and number, so what is finished reads at a glance
     const done=item.dataset.state==='done',badge=item.querySelector('.episode-step-number');
-    badge.innerHTML=done?'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':String(index+1);
-    badge.setAttribute('aria-label',done?`Етап ${index+1} готовий`:`Етап ${index+1}`);});
+    item.querySelector('.episode-step-icon').innerHTML=done?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>':stepIcons[stepNames[index]];
+    badge.textContent=String(index+1);badge.hidden=done;
+    item.setAttribute('aria-label',`Етап ${index+1}${done?', готовий':''}`);});
   const line=steps.previousElementSibling;
   if(line?.classList.contains('episode-stage'))line.innerHTML=current<0?'<strong>Усі етапи пройдено</strong>':`Етап <strong>${current+1} з ${items.length}</strong> · ${esc(items[current].querySelector('strong').textContent)}`;
   showStepPane(steps);
@@ -356,9 +365,9 @@ async function pollProduction(id){
 }
 
 async function startDirector(id){
-  if(!confirm('Переробити режисуру? Режисер заново розіб’є озвучку на шоти й перезапише план кадрів цього випуску.'))return;
+  if(directorDone()&&!confirm('Переробити режисуру? Режисер заново розіб’є озвучку на шоти й перезапише план кадрів цього випуску.'))return;
   try{
     directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`,'POST',{})).director;
-    stepChoice.set(id,1);refreshSteps(document.querySelector('.episode-steps'));
+    stepChoice.set(id,0);refreshSteps(document.querySelector('.episode-steps'));
   }catch(error){status(error.message,true);}
 }
