@@ -995,3 +995,15 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .speech-order strong{display:block;margin-bottom:6px;color:#ffd27a}
 .speech-order p{margin:3px 0;font-size:13px}
 .speech-order small{display:block;margin-top:8px;color:#c9b48a}
+/* the «Прев’ю» tab kept compact (user, 30 October 2026: «не таку велику, скромніше, компактніше»): the picture at a modest
+   size on the left, the wishes and the button beside it; one column on a narrow window */
+.thumb-view{max-width:860px;margin:0;grid-template-columns:minmax(0,440px) minmax(220px,1fr);gap:12px 20px;align-items:start}
+.thumb-view h1{grid-column:1/-1;font-size:20px}
+.thumb-view-frame{grid-column:1;grid-row:2/span 3;border-radius:16.5px}
+.thumb-view .thumb-wishes{grid-column:2;grid-row:2}
+.thumb-view-actions{grid-column:2;grid-row:3;flex-direction:column;align-items:flex-start;gap:8px}
+.thumb-view-actions .thumb-view-generate{order:-1}
+.thumb-view-actions .thumb-state{min-width:0}
+.thumb-view-gate{grid-column:2;grid-row:4;margin:0}
+.thumb-view textarea{min-height:96px}
+@media(max-width:760px){.thumb-view{grid-template-columns:1fr}.thumb-view-frame,.thumb-view .thumb-wishes,.thumb-view-actions,.thumb-view-gate{grid-column:1;grid-row:auto}}

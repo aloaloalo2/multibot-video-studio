@@ -38,7 +38,7 @@ function showThumbnailState(id){
   // the window's button and the tab's: busy while a run goes on, and the tab's also until a couple of frames are made
   for(const button of document.querySelectorAll('#modal-actions .primary, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
   box.dataset.status=run?.status || '';
-  box.textContent=!run?'':run.status==='running'?({prompt:'Claude вибирає момент і пише промпт, зазвичай до хвилини.',drawing:'Codex малює прев’ю за промптом Claude, зазвичай 1–3 хвилини.'}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?`Готово: ${run.file}. Воно вже стоїть обкладинкою проєкту й лежить у папці випуску як «Превью.png».`:`Не вдалося: ${run.error}`;
+  box.textContent=!run?'':run.status==='running'?({prompt:'Claude вибирає момент і пише промпт, зазвичай до хвилини.',drawing:'Codex малює прев’ю за промптом Claude, зазвичай 1–3 хвилини.'}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою проєкту.':`Не вдалося: ${run.error}`;
 }
 
 async function generateThumbnail(project){
@@ -101,6 +101,7 @@ async function pollThumbnail(id){
 // The «Прев’ю» tab of an episode, after «План ролика» and «Монтаж»: the current thumbnail large, the optional wishes and
 // «Згенерувати». The address /preview is used once the server knows it; before a restart the tab keeps the project's own.
 let thumbRoute='';
+const thumbnailPictures=new Map();
 function thumbnailFramesMade(project){
   return (project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || '')).length;
 }
@@ -111,7 +112,8 @@ function renderThumbView(){
   section.hidden=!open;
   if(!open){if(section.childElementCount)section.replaceChildren();delete section.dataset.project;return;}
   if(section.dataset.project!==project.id)buildThumbView(section,project);
-  const ready=thumbnailFramesMade(project)>=thumbnailFrames,button=section.querySelector('.thumb-view-generate');
+  // the server counts made frames as it gates the run: pictures on the timeline and frames drawn as code alike
+  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=thumbnailFrames,button=section.querySelector('.thumb-view-generate');
   button.dataset.gated=ready?'':'1';button.disabled=!ready || thumbnailBusy(project.id);
   section.querySelector('.thumb-view-gate').hidden=ready;
 }
@@ -128,9 +130,11 @@ async function buildThumbView(section,project){
   try{data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(section.dataset.project!==id)return;
   thumbnailSources.set(id,{title:data.title,script:data.script});
+  if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
   if(data.job)thumbnailRuns.set(id,data.job);
   if(data.preview)section.querySelector('.thumb-view-frame').innerHTML=`<img class="thumb-current" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролику">`;
   section.querySelector('.thumb-view-generate').textContent=data.preview?'Згенерувати нове':'Згенерувати';
+  renderThumbView();                      // the gate again, now with the server's count of made frames
   showThumbnailState(id);markThumbnailCard(id);if(thumbnailBusy(id))pollThumbnail(id);
 }
 $('view-thumb')?.addEventListener('click',()=>setProjectView('thumb'));
