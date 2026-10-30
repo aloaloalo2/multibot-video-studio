@@ -9,7 +9,7 @@ full answer in director.log, and the plan page shows it.
 """
 from __future__ import annotations
 
-import json, shutil, subprocess, threading, time
+import json, re, shutil, subprocess, threading, time
 from pathlib import Path
 
 import store
@@ -19,8 +19,9 @@ EFFORT = "high"
 TIMEOUT = 3 * 3600
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
-# Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder.
-ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep"] + [f"Bash({cmd}:*)" for cmd in
+# Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder; Opus may send
+# helpers off in parallel.
+ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task"] + [f"Bash({cmd}:*)" for cmd in
            ("python3", "node", "ls", "cat", "head", "tail", "wc", "grep", "find", "mkdir", "cp", "mv", "diff", "jq")]
 
 
@@ -81,34 +82,106 @@ def brief(project: dict) -> str:
 3. python3 tools/razgon_bridge.py check --razgon <проєкт>, потім python3 tools/razgon_bridge.py plan --razgon <проєкт>: план кадрів іде в студію.
 
 Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
+Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
 Наприкінці коротко напиши українською: скільки шотів і кадрів студії вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
+
+
+def spent(answer: dict) -> dict:
+    """What a run actually used, from Claude Code's answer: tokens in (cached ones included) and out, and minutes."""
+    usage = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
+    number = lambda key: int(usage.get(key) or 0)
+    return {"tokens_in": number("input_tokens") + number("cache_creation_input_tokens") + number("cache_read_input_tokens"),
+            "tokens_out": number("output_tokens"), "minutes": round(float(answer.get("duration_ms") or 0) / 60000, 1)}
+
+
+# What the agent is doing, in the author's words: each command or file it touches becomes one line of the activity
+# feed on the plan, so the author sees the work move.
+# Each line also names who does it: Opus directs and writes, Codex draws props, Razgon renders, the Studio keeps the plan
+# and timeline, and helpers are the agents Opus sends off in parallel.
+COMMANDS = [("razgon_bridge.py prepare", "studio", "Готує проєкт Razgon зі студії"), ("gen_shots.py", "opus", "Розбиває озвучку на шоти"),
+            ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "studio", "Перевіряє, що шоти покривають озвучку"),
+            ("razgon_bridge.py plan", "studio", "Записує план кадрів у студію"), ("razgon_bridge.py push", "razgon", "Рендерить кадри й кладе їх на таймлайн"),
+            ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
+            ("library.py", "studio", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
+            ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "studio", "Дивиться, на якому кроці випуск"),
+            ("frame_review", "opus", "Переглядає кадри")]
+
+
+def describe(tool: str, args: dict) -> tuple[str, str] | None:
+    """(who, what) for one action of the agent, or None for the ones not worth a line."""
+    name = Path(str(args.get("file_path") or args.get("path") or "")).name
+    if tool == "Bash":
+        command = str(args.get("command") or "")
+        found = next(((who, text) for key, who, text in COMMANDS if key in command), None)
+        return found or (("opus", f"Команда: {args['description']}") if args.get("description") else None)
+    if tool in {"Task", "Agent"}:
+        return "helper", str(args.get("description") or "Окреме завдання")
+    if tool in {"Write", "Edit", "MultiEdit"} and name:
+        return "opus", f"Пише сцену {name}" if "/scenes/" in str(args.get("file_path")) else f"Пише {name}"
+    if tool == "Read" and name and not re.search(r"tool-results|/tmp/|/private/var/|/T/", str(args.get("file_path") or "")):
+        return "opus", f"Читає {name}"
+    return None
+
+
+def activity_path(pid: str, kind: str) -> Path:
+    return store.project_dir(pid) / f"{kind}-activity.json"
+
+
+def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int) -> tuple[int, dict]:
+    """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
+    Returns the exit code and the final result event (cost, usage, the agent's last message)."""
+    command = [str(cli), "--model", MODEL, "--effort", EFFORT, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+               "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"]
+    process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    expired = threading.Event()
+    watchdog = threading.Timer(timeout, lambda: (expired.set(), process.kill()))
+    watchdog.start()
+    answer, steps = {}, []
+    store.atomic_json(activity, [])
+    try:
+        process.stdin.write(prompt)
+        process.stdin.close()
+        with log.open("w", encoding="utf-8") as out:
+            for line in process.stdout:
+                out.write(line)
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("type") == "result":
+                    answer = event
+                if event.get("type") != "assistant":
+                    continue
+                for part in (event.get("message") or {}).get("content") or []:
+                    action = describe(part.get("name"), part.get("input") or {}) if part.get("type") == "tool_use" else None
+                    if action and (not steps or steps[-1]["text"] != action[1]):
+                        steps = (steps + [{"t": time.time(), "who": action[0], "text": action[1]}])[-40:]
+                        store.atomic_json(activity, steps)
+        process.wait()
+    finally:
+        watchdog.cancel()
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(command, timeout)
+    return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
 
 
 def run(pid: str, cli: Path) -> None:
     data = state(pid) or {}
     project = store.load_project(pid)
-    log = store.project_dir(pid) / "director.log"
     data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None)
     save(pid, data)
-    command = [str(cli), "--model", MODEL, "--effort", EFFORT, "--strict-mcp-config", "--permission-mode", "acceptEdits",
-               "--allowedTools", *ALLOWED, "--output-format", "json", "-p"]
     try:
-        result = subprocess.run(command, input=brief(project), cwd=store.YOUTUBE_ROOT, text=True, capture_output=True, timeout=TIMEOUT)
-        log.write_text(result.stdout + ("\n--- stderr ---\n" + result.stderr if result.stderr else ""), encoding="utf-8")
-        try:
-            answer = json.loads(result.stdout)
-        except ValueError:
-            answer = {"is_error": True, "result": (result.stderr or result.stdout)[-500:]}
+        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT)
         plan = store.load_project_plan(pid) or {}
         plan_file = store.project_plan_file(store.load_project(pid))
         # the run counts only if it wrote a fresh director plan into the Studio
         directed = (plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale")
                     and plan_file is not None and plan_file.stat().st_mtime >= data["started_at"])
-        if result.returncode or answer.get("is_error") or not directed:
+        if code or answer.get("is_error") or not directed:
             data.update(status="failed", error=(answer.get("result") or "Режисура не записала план кадрів у студію")[-600:])
         else:
             data.update(status="done", summary=(answer.get("result") or "").strip()[-2000:], frames=len(plan.get("frames") or []))
-        data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"))
+        data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"), **spent(answer))
     except subprocess.TimeoutExpired:
         data.update(status="failed", error="Режисура не вклалася в 3 години")
     except (OSError, store.StudioError) as error:

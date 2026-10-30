@@ -61,7 +61,7 @@ class DirectorTest(unittest.TestCase):
         plan_file = Path(self.tmp.name) / "plan.json"
         answer = json.dumps({"is_error": False, "result": "12 шотів, 30 кадрів", "total_cost_usd": 1.5, "num_turns": 40})
         with patch.object(store, "project_plan_file", return_value=plan_file), \
-                patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, answer, "")):
+                patch.object(director, "claude", return_value=(0, json.loads(answer))):
             plan_file.write_text("{}")
             os.utime(plan_file, (1, 1))                     # an old plan: the run wrote nothing
             self.plan = {"frame_source": "razgon-direction", "frames": [1] * 30}

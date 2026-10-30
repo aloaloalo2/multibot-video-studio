@@ -5,7 +5,7 @@
 // table; how many frames to make with the request and cost. The current stage opens first.
 const directorRuns={};
 const stepChoice=new Map();
-let directorTimer=null;
+let directorTimer=null,productionTimer=null;
 
 const stepIcons={voice:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
   director:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 10l-.6-3.3a1 1 0 0 1 .8-1.2L17 3.2a1 1 0 0 1 1.2.8L18.7 7M8 4.8l2.4 3.6M13.2 3.9l2.4 3.6"/></svg>',
@@ -29,6 +29,8 @@ async function loadDirector(id){
   catch{directorRuns[id]={status:'none'};}
   return directorRuns[id];
 }
+
+function tokenCount(value){return value>=1e6?`${(value/1e6).toFixed(1).replace('.',',')} млн токенів`:`${Math.round(value/1000)} тис. токенів`;}
 
 function directorTime(seconds){return new Date(seconds*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});}
 
@@ -115,7 +117,7 @@ function fillVoice(step,pane){
   else if(report){step.dataset.state='failed';text.textContent=`Потрібна перевірка, ${percent}`;}
   else if(job?.status==='failed'){step.dataset.state='failed';text.textContent='Не вдалося розпізнати';}
   else{step.dataset.state='waiting';text.textContent='Додайте аудіо озвучки';}
-  step.querySelector('.episode-step-cost').textContent='Безкоштовно · Whisper на цьому Mac';
+  step.querySelector('.episode-step-cost').textContent=step.dataset.state==='waiting'?'Ще нічого не витрачено':'Витрачено $0 · Whisper на цьому Mac';
   if(!pane)return;
   // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
   const replace=step.dataset.state==='done';
@@ -131,15 +133,18 @@ function fillDirector(step,pane,id){
   actions?.replaceChildren();info?.replaceChildren();
   if(!step.querySelector('.director-model')){const who=document.createElement('span');who.className='director-model';who.textContent='Opus 5.5 · високий';step.querySelector('.episode-step-head').append(who);}
   const restart=label=>actions?.append(stepButton(label,()=>startDirector(id)));
-  // Claude Code runs on the subscription; the dollar figure is what the same run would cost through the API.
-  step.querySelector('.episode-step-cost').textContent=run.cost_usd?`Підписка Claude · еквівалент $${Number(run.cost_usd).toFixed(2)}`:'Підписка Claude, окремо не оплачується';
+  // What the run actually used. Claude Code runs on the subscription; the dollar figure is what it would cost through the API.
+  const cost=step.querySelector('.episode-step-cost');
+  if(run.cost_usd){cost.textContent=`Витрачено $${Number(run.cost_usd).toFixed(2)} за цінами API${run.tokens_in?` · ${tokenCount(run.tokens_in)} на вхід, ${tokenCount(run.tokens_out)} на вихід`:''}${run.minutes?` · ${run.minutes} хв`:''}`;cost.title='Режисура йде за підпискою Claude, тож окремо не оплачується; сума показує, скільки це коштувало б через API';}
+  else cost.textContent=run.status==='running'||run.status==='queued'?'Рахуємо, поки йде режисура':'Ще нічого не витрачено';
   const say=message=>{if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=message;info.append(line);}};
   clearTimeout(directorTimer);
   if(run.status==='loading'){step.dataset.state=directed?'done':'waiting';text.textContent='Перевіряємо...';}
   else if(run.status==='queued' || run.status==='running'){
     step.dataset.state='active';text.textContent=`Іде${run.started_at?` з ${directorTime(run.started_at)}`:''}`;
     say('Режисер ділить озвучку на шоти й пише план кадрів. Сцени він не малює. Сторінку можна закрити: план оновиться сам.');
-    directorTimer=setTimeout(()=>pollDirector(id),10000);
+    renderTeam(info,'director',id,true);
+    directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
     step.dataset.state='failed';text.textContent='Не вдалася';say(run.error || 'Невідома помилка');restart('Спробувати ще раз');
   }else if(run.status==='done' || directed){
@@ -147,8 +152,9 @@ function fillDirector(step,pane,id){
     const frames=run.frames || (directed?state.plan.frames.length:0);
     text.textContent=frames?`${frames} кадрів`:'Готово';
     if(run.status==='done'){
-      say(`Готово о ${directorTime(run.finished_at)}${run.cost_usd?` · за підпискою, еквівалент $${Number(run.cost_usd).toFixed(2)}`:''}.`);
+      say(`Готово о ${directorTime(run.finished_at)}.`);
       if(run.summary&&info){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт режисера';const body=document.createElement('div');body.className='plan-script-text';body.textContent=run.summary;details.append(summary,body);info.append(details);}
+      renderTeam(info,'director',id,false);
     }
     restart('Переробити режисуру');
   }else{
@@ -163,15 +169,31 @@ function fillVideo(step,pane){
   const text=step.querySelector('p'),request=state.project?.production_request;
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
   if(info)info.textContent='';
-  step.querySelector('.episode-step-cost').textContent='Підписки Claude і Codex, окремо не оплачується';
+  const cost=step.querySelector('.episode-step-cost'),working=['requested','in_progress'].includes(request?.status);
+  cost.textContent=request?.cost_usd?`Витрачено $${Number(request.cost_usd).toFixed(2)} за цінами API${request.tokens_in?` · ${tokenCount(request.tokens_in)} на вхід, ${tokenCount(request.tokens_out)} на вихід`:''}${request.minutes?` · ${request.minutes} хв`:''}`
+    :working?'Рахуємо, поки агент малює':'Ще нічого не витрачено';
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
-  if(request){step.dataset.state=['done','complete'].includes(request.status)?'done':'active';text.textContent=`Кадри 1–${request.frames}, ${request.status==='requested'?'чекає агента':request.status}`;}
-  else{step.dataset.state='active';text.textContent='Виберіть кадри';}
+  clearTimeout(productionTimer);
+  if(working){
+    step.dataset.state='active';text.textContent=`Малює кадри 1–${request.frames}`;
+    if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=`Claude Opus 5.5 малює сцени кадрів 1–${request.frames}${request.started_at?` з ${directorTime(request.started_at)}`:''}. Готові кадри ляжуть на таймлайн у «Монтажі». Сторінку можна закрити.`;info.append(line);}
+    renderTeam(info,'production',state.project.id,true);
+    productionTimer=setTimeout(()=>pollProduction(state.project.id),8000);
+  }else if(request?.status==='failed'){
+    step.dataset.state='failed';text.textContent=`Кадри 1–${request.frames} не вдалися`;if(info)info.textContent=`${request.error || 'Невідома помилка'} Виберіть кадри й натисніть ще раз.`;
+  }else if(request?.status==='done'){
+    const all=request.frames>=request.total_frames;step.dataset.state=all?'done':'active';
+    text.textContent=all?'Усі кадри готові':`Кадри 1–${request.frames} готові`;
+    if(info){info.textContent=all?'':'Готові кадри вже на таймлайні в «Монтажі». Перегляньте їх і, якщо подобаються, виберіть наступні.';
+      if(request.summary){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт агента';const body=document.createElement('div');body.className='plan-script-text';body.textContent=request.summary;details.append(summary,body);info.append(details);}
+      renderTeam(info,'production',state.project.id,false);}
+  }else{step.dataset.state='active';text.textContent='Виберіть кадри';}
   // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
   // and the picker's «Скасувати» are not needed.
   document.querySelector('.plan-heading .plan-start-button')?.remove();
   actions?.replaceChildren();
   const picker=pane?.querySelector('.plan-start');
+  if(picker)picker.classList.toggle('busy',working);   // one request at a time
   if(picker?.hidden&&picker.open){
     const scroll=picker.scrollIntoView;picker.scrollIntoView=()=>{};   // opening it here must not scroll the page
     picker.open();picker.scrollIntoView=scroll;
@@ -230,6 +252,33 @@ async function pollDirector(id){
   if(state.project?.id!==id)return;
   // The frames arrive with the finished run: reload the plan so the new frames show at once.
   if(before!==run.status && run.status==='done' && state.view==='plan'){await setProjectView('plan');return;}
+  refreshSteps(document.querySelector('.episode-steps'));
+}
+
+// While the agent draws, the project is read again now and then: the request carries its state and spend.
+// The team behind a run: who works on it and what each did last, then the latest actions in order. Opus directs; the
+// others are the tools it drives, and helpers are agents it sends off in parallel.
+const teamRoles={opus:['Opus 5.5','режисер, керує всім'],codex:['Codex','малює предмети'],razgon:['Razgon','рендерить кадри'],studio:['Студія','план і таймлайн'],helper:['Помічник','паралельне завдання']};
+const teamFeeds={};
+function renderTeam(info,kind,id,live){
+  if(!info)return;
+  const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
+  const draw=()=>{
+    const steps=teamFeeds[kind+id] || [],last=steps[steps.length-1];
+    const who=['opus','codex','razgon','studio',...(steps.some(step=>step.who==='helper')?['helper']:[])];
+    box.innerHTML=`<div class="team-members">${who.map(role=>{const mine=steps.filter(step=>step.who===role),active=live&&last?.who===role;
+      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${mine.length?esc(mine[mine.length-1].text):'Поки не потрібен'}</small></div>`;}).join('')}</div>`
+      +(steps.length?`<ol class="team-feed">${steps.slice(-8).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Агент тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
+  };
+  draw();
+  api(`/api/projects/${encodeURIComponent(id)}/activity/${kind}`).then(({activity})=>{teamFeeds[kind+id]=activity;if(box.isConnected)draw();}).catch(()=>{});
+}
+
+async function pollProduction(id){
+  if(state.project?.id!==id)return;
+  try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
+    const before=state.project.production_request?.status;state.project=project;
+    if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}catch{}
   refreshSteps(document.querySelector('.episode-steps'));
 }
 

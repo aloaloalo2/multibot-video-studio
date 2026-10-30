@@ -28,6 +28,7 @@ import channel_branding
 import style_lab
 import style_copy
 import director
+import production
 import thumbnail_gen
 import agent_estimate
 import agent_runtime
@@ -664,6 +665,10 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
             return self.json_response(thumbnail_gen.defaults(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
+        if match:
+            store.load_project(match.group(1))
+            return self.json_response({"activity": store.read_json(director.activity_path(*match.groups()), [])})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match:
             store.load_project(match.group(1))
@@ -963,6 +968,7 @@ def main():
     # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
+    threading.Thread(target=production.reset_interrupted, daemon=True).start()
     print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

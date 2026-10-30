@@ -429,6 +429,9 @@ function renderProject() {
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);
+  // An animated film has its own agents on the plan (director, frames), so the Studio agent tab is not offered there.
+  const animatedChannel=state.channel?.settings?.channel_kind==='animated';
+  if(animatedChannel && state.view==='agent')state.view='plan';
   document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
@@ -448,6 +451,7 @@ function renderProject() {
   $('project-plan').hidden=!state.project || state.view!=='plan';
   $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
+  $('view-agent').hidden=animatedChannel;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
   // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
   // they are drawn, and a voice alone is not a video either.
