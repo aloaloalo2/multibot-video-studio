@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,9 +26,12 @@ class ThumbnailTest(unittest.TestCase):
         Image.new("RGB", (32, 18)).save(base / "What If" / "Еталон стилю" / "Референс кадру 1.png")
         (base / "What If" / "Еталон стилю" / "Еталон промпт прев'ю.txt").write_text('YouTube thumbnail for "DAY 365".', encoding="utf-8")
         self.project = {"id": "f" * 24, "name": "05 Test", "episode_path": str(self.episode)}
+        self.studio = base / "studio"                     # the studio's own project folder
+        self.studio.mkdir()
         for item in (patch.object(store, "load_project", return_value=self.project),
                      patch.object(store, "load_project_plan", return_value={"spoken_script": "Your eyes dry out."}),
                      patch.object(thumbnail_gen, "job_path", return_value=base / "job.json"),
+                     patch.object(store, "project_dir", return_value=self.studio),
                      patch.object(thumbnail_gen.director, "executable", return_value=Path("claude"))):
             item.start()
             self.addCleanup(item.stop)
@@ -70,13 +74,31 @@ class ThumbnailTest(unittest.TestCase):
             thumbnail_gen.run(self.project["id"], "T", "S", "")
         (claude, _), (codex, sent) = self.calls
         self.assertIn("--allowedTools", claude)
+        self.assertIn(str(self.studio / "preview"), claude)                             # Claude may read the stills there
         self.assertTrue(sent["input"].startswith("A neon close-up of the frozen hero."))   # Codex draws Claude's prompt
-        self.assertTrue((self.episode / "Превью" / "Промпт прев'ю v1.txt").read_text(encoding="utf-8").startswith("A neon close-up"))
         self.assertEqual(thumbnail_gen.state(self.project["id"])["status"], "done")
-        work = self.episode / "Превью"
+        kept = self.studio / "preview"                                                  # the studio's own copy
+        self.assertEqual(Image.open(kept / "Превью.png").getpixel((0, 0)), (0, 0, 255))
+        self.assertEqual(Image.open(kept / "Превью до v1.png").getpixel((0, 0)), (255, 0, 0))
+        self.assertTrue((kept / "Лог генерації v1.txt").is_file())
+        # the episode folder gets its copy and the prompt, as the channel rules ask
         self.assertEqual(Image.open(self.episode / "Превью.png").getpixel((0, 0)), (0, 0, 255))
-        self.assertEqual(Image.open(work / "Превью до v1.png").getpixel((0, 0)), (255, 0, 0))
-        self.assertTrue((work / "Лог генерації v1.txt").is_file())
+        self.assertTrue((self.episode / "Превью" / "Промпт прев'ю v1.txt").read_text(encoding="utf-8").startswith("A neon close-up"))
+
+    def test_the_thumbnail_outlives_the_episode_folder(self):
+        Image.new("RGB", (16, 9), (0, 200, 0)).save(self.episode / "Превью.jpg")
+        kept = thumbnail_gen.preview(self.project)                                     # copied in on first sight
+        self.assertEqual(kept, self.studio / "preview" / "Превью.png")
+        shutil.rmtree(self.episode)
+        self.assertEqual(thumbnail_gen.preview(self.project), kept)
+        self.assertEqual(Image.open(kept).getpixel((0, 0))[1], 200)
+        self.assertEqual(thumbnail_gen.defaults(self.project["id"])["title"], "05 Test")
+        self.made_frames(2)
+        thumbnail_gen.ACTIVE.clear()
+        with self.tools():
+            thumbnail_gen.run(self.project["id"], "T", "S", "")                           # a new one is made without it
+        self.assertEqual(thumbnail_gen.state(self.project["id"])["status"], "done")
+        self.assertFalse(self.episode.exists())
 
     def test_a_run_without_a_picture_fails_and_changes_nothing(self):
         thumbnail_gen.ACTIVE.add(self.project["id"])
@@ -86,6 +108,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("quota", result["error"])
         self.assertFalse((self.episode / "Превью.png").exists())
+        self.assertFalse((self.studio / "preview" / "Превью.png").exists())
 
     def test_the_claude_limit_stops_the_run_before_codex(self):
         thumbnail_gen.ACTIVE.add(self.project["id"])
@@ -114,7 +137,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual([path.name for path in stills], ["Кадр ролику 1.png", "Кадр ролику 2.png", "Кадр ролику 3.png"])
         self.assertEqual([Image.open(path).getpixel((0, 0))[0] for path in stills], [20, 60, 100])   # first, middle, last
 
-    def test_start_needs_a_title_two_made_frames_and_an_episode_folder(self):
+    def test_start_needs_a_title_and_two_made_frames(self):
         with self.assertRaises(store.StudioError):
             thumbnail_gen.start(self.project["id"], " ", "S")
         self.made_frames(1)
@@ -122,9 +145,6 @@ class ThumbnailTest(unittest.TestCase):
             thumbnail_gen.start(self.project["id"], "T", "S")
         self.assertEqual(caught.exception.status, 409)
         self.made_frames(2)
-        self.project["episode_path"] = str(self.episode / "missing")
-        with self.assertRaises(store.StudioError):
-            thumbnail_gen.start(self.project["id"], "T", "S")
 
 
 if __name__ == "__main__":

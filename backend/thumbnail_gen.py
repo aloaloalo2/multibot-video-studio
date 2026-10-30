@@ -3,10 +3,13 @@
 The settings of a run are the project's title and script, which the author may edit first, and free wishes. Claude Code
 (on the claude.ai subscription, Read only) picks the one moment from the script and writes the prompt the way the
 channel's approved ones are written («Еталон стилю/Еталон промпт прев'ю*.txt», with the approved thumbnails and the
-style frames to look at), as the thumbnails of the first episodes were made. Codex then draws exactly that prompt in the
-episode's «Превью» folder with the style frames attached and saves one picture next to the prompt («Превью vN.png»,
-«Промпт прев'ю vN.txt»). The new picture becomes «Превью.png» in the episode folder and the project card's cover; an
-earlier «Превью.png» that has no copy in «Превью» is kept there first.
+style frames to look at), as the thumbnails of the first episodes were made. Codex then draws exactly that prompt with
+the style frames attached and saves one picture next to the prompt («Превью vN.png», «Промпт прев'ю vN.txt»).
+
+The studio keeps the thumbnails in the project's own folder (data/projects/<id>/preview), so they outlive the episode
+folder: the new picture becomes «Превью.png» there and the project card's cover, and an earlier one that has no version
+copy is kept as «Превью до vN.png». While the episode folder exists it gets a copy as well: «Превью.png» next to the
+video and the picture with its prompt in «Превью», as the channel rules ask.
 """
 from __future__ import annotations
 
@@ -33,19 +36,33 @@ ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 
 
-def episode(project: dict) -> Path:
-    path = Path(project.get("episode_path") or "")
-    if not project.get("episode_path") or not path.is_dir():
-        raise store.StudioError("У проєкту немає папки випуску")
-    return path
+def keep_dir(pid: str) -> Path:
+    """The studio's own folder for the project's thumbnails: versions, prompts, logs and the current «Превью.png».
+    It lives with the project, so the thumbnail outlives the episode folder (user, 30 October 2026)."""
+    return store.project_dir(pid) / "preview"
+
+
+def episode_preview(project: dict) -> Path | None:
+    folder = Path(project.get("episode_path") or "")
+    if not project.get("episode_path") or not folder.is_dir():
+        return None
+    return next((path for path in (folder / PREVIEW, folder / "Превью.jpg", folder / "Превью.jpeg") if path.is_file()), None)
 
 
 def preview(project: dict) -> Path | None:
+    """The project's thumbnail as the studio keeps it. One that so far lies only in the episode folder, or was replaced
+    there by hand, is copied in on first sight."""
+    source = episode_preview(project)
     try:
-        path = episode(project) / PREVIEW
-    except store.StudioError:
-        return None
-    return path if path.is_file() else None
+        kept = keep_dir(project["id"]) / PREVIEW
+    except store.StudioError:            # a project the studio does not hold has only the episode's own
+        return source
+    if source and (not kept.is_file() or source.stat().st_mtime > kept.stat().st_mtime
+                   and not (source.suffix == ".png" and filecmp.cmp(source, kept, shallow=False))):
+        kept.parent.mkdir(exist_ok=True)
+        with Image.open(source) as image:
+            image.convert("RGB").save(kept)
+    return kept if kept.is_file() else None
 
 
 def first_title(folder: Path) -> str | None:
@@ -62,12 +79,12 @@ def first_title(folder: Path) -> str | None:
 
 def defaults(pid: str) -> dict:
     project = store.load_project(pid)
-    folder = episode(project)
+    folder = Path(project.get("episode_path") or "")
     plan = store.load_project_plan(pid) or {}
     script = plan.get("spoken_script") or plan.get("script") or ""
-    if not script and (folder / "Сценарий.txt").is_file():
+    if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
-    return {"title": first_title(folder) or project["name"], "script": script.strip(), "job": state(pid),
+    return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": len(pictures(project)), "min_frames": MIN_FRAMES}
 
 
@@ -168,14 +185,14 @@ Use the built-in image generation tool with exactly this prompt and make exactly
 directory as "{name}" and reply only with the saved path."""
 
 
-def write_prompt(text: str, cwd: Path) -> tuple[str, dict]:
+def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
     """Claude Code writes the picture's prompt; returns it with the run's answer (cost, session)."""
     try:
         cli = director.executable()
     except RuntimeError as error:
         raise RuntimeError(str(error)) from None
     command = [str(cli), "--model", director.MODEL, "--effort", PROMPT_EFFORT, "--strict-mcp-config", "--allowedTools", "Read",
-               "--output-format", "json", "-p"]
+               "--add-dir", str(work), "--output-format", "json", "-p"]
     result = subprocess.run(command, input=text, cwd=cwd, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
     try:
         answer = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
@@ -193,15 +210,16 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
     data = state(pid) or {}
     try:
         project = store.load_project(pid)
-        folder = episode(project)
-        work = folder / FOLDER
+        # the episode folder may be gone: its parent is still the channel with its approved samples and style frames
+        folder = Path(project["episode_path"])
+        work = keep_dir(pid)
         work.mkdir(exist_ok=True)
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
         name = f"Превью v{number}.png"
         # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
         refs = frame_stills(project, work) or references(folder)
         # 1. Claude picks the moment and writes the prompt; it is kept next to the picture even if the drawing fails
-        written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent)
+        written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent, work)
         (work / f"Промпт прев'ю v{number}.txt").write_text(written + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
@@ -218,10 +236,17 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
                 image.verify()
         except (OSError, UnidentifiedImageError):
             raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
-        root = folder / PREVIEW
-        if root.is_file() and not any(filecmp.cmp(root, other, shallow=False) for other in work.glob("Превью*.png")):
-            shutil.copy2(root, work / f"Превью до v{number}.png")
-        shutil.copyfile(made, root)
+        kept = work / PREVIEW
+        preview(project)                        # a thumbnail put into the episode folder by hand is kept first
+        if kept.is_file() and not any(filecmp.cmp(kept, other, shallow=False) for other in work.glob("Превью *.png")):
+            shutil.copy2(kept, work / f"Превью до v{number}.png")
+        shutil.copyfile(made, kept)
+        # the channel rules keep the thumbnail next to the video too, with its prompt in «Превью», while that folder exists
+        if folder.is_dir():
+            (folder / FOLDER).mkdir(exist_ok=True)
+            for item in (made, work / f"Промпт прев'ю v{number}.txt"):
+                shutil.copyfile(item, folder / FOLDER / item.name)
+            shutil.copyfile(made, folder / PREVIEW)
         data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
         late = "Claude не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
@@ -236,7 +261,6 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
 
 def start(pid: str, title: str, script: str, wishes: str = "") -> dict:
     project = store.load_project(pid)
-    episode(project)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")

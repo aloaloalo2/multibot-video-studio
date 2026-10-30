@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageOps, ImageStat
 
 import store
+import thumbnail_gen
 
 SIZE = (960, 540)
 CANDIDATES = 6
@@ -68,9 +69,9 @@ def score(image: Image.Image) -> float:
 
 
 def thumbnail(project: dict) -> Path | None:
-    """The episode's own YouTube thumbnail («Превью.png»), fitted to the card, when the episode has one."""
-    source = Path(project.get("episode_path") or "") / "Превью.png"
-    if not project.get("episode_path") or not source.is_file():
+    """The project's YouTube thumbnail, which the studio keeps in its own folder (thumbnail_gen.preview), fitted to the card."""
+    source = thumbnail_gen.preview(project)
+    if not source:
         return None
     stat = source.stat()
     cache = store.project_dir(project["id"]) / "thumbnails"
