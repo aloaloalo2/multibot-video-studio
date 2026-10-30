@@ -38,7 +38,7 @@ function stepButton(label,run,primary=false){const b=document.createElement('but
 
 function episodeStep(number,icon,title){
   const step=document.createElement('section');step.className='episode-step';step.tabIndex=0;step.setAttribute('role','tab');
-  step.innerHTML=`<div class="episode-step-head"><span class="episode-step-icon">${stepIcons[icon]}</span><span class="episode-step-number">${number}</span><strong>${title}</strong></div><p></p><small class="episode-step-cost"></small>`;
+  step.innerHTML=`<span class="episode-step-run" aria-hidden="true"></span><div class="episode-step-head"><span class="episode-step-icon">${stepIcons[icon]}</span><span class="episode-step-number">${number}</span><strong>${title}</strong></div><p></p><small class="episode-step-cost"></small>`;
   return step;
 }
 
@@ -139,6 +139,7 @@ function fillDirector(step,pane,id){
   else cost.textContent=run.status==='running'||run.status==='queued'?'Рахуємо, поки йде режисура':'Ще нічого не витрачено';
   const say=message=>{if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=message;info.append(line);}};
   clearTimeout(directorTimer);
+  step.classList.toggle('running',run.status==='queued' || run.status==='running');
   if(run.status==='loading'){step.dataset.state=directed?'done':'waiting';text.textContent='Перевіряємо...';}
   else if(run.status==='queued' || run.status==='running'){
     step.dataset.state='active';text.textContent=`Іде${run.started_at?` з ${directorTime(run.started_at)}`:''}`;
@@ -170,6 +171,7 @@ function fillVideo(step,pane){
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
   if(info)info.textContent='';
   const cost=step.querySelector('.episode-step-cost'),working=['requested','in_progress'].includes(request?.status);
+  step.classList.toggle('running',working&&directorDone());
   cost.textContent=request?.cost_usd?`Витрачено $${Number(request.cost_usd).toFixed(2)} за цінами API${request.tokens_in?` · ${tokenCount(request.tokens_in)} на вхід, ${tokenCount(request.tokens_out)} на вихід`:''}${request.minutes?` · ${request.minutes} хв`:''}`
     :working?'Рахуємо, поки агент малює':'Ще нічого не витрачено';
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
@@ -193,7 +195,15 @@ function fillVideo(step,pane){
   document.querySelector('.plan-heading .plan-start-button')?.remove();
   actions?.replaceChildren();
   const picker=pane?.querySelector('.plan-start');
-  if(picker)picker.classList.toggle('busy',working);   // one request at a time
+  if(picker){
+    // One request at a time: while the agent draws, the confirm button turns into the progress of the run.
+    picker.classList.toggle('busy',working);
+    const confirm=picker.querySelector('.plan-start-actions .primary');
+    if(confirm&&working){confirm.disabled=true;confirm.classList.add('loading');
+      const last=humanFeed(teamFeeds['production'+state.project.id] || []).slice(-1)[0];
+      confirm.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо ${request.frames} ${planFrameWord(request.frames)}…</span>${last?`<small>${esc(last.text)}</small>`:''}`;}
+    else if(confirm?.classList.contains('loading')){confirm.classList.remove('loading');confirm.disabled=false;confirm.textContent=`Створити ${request?.frames || ''} ${planFrameWord(request?.frames || 1)}`.replace('  ',' ');}
+  }
   if(picker?.hidden&&picker.open){
     const scroll=picker.scrollIntoView;picker.scrollIntoView=()=>{};   // opening it here must not scroll the page
     picker.open();picker.scrollIntoView=scroll;
@@ -258,17 +268,21 @@ async function pollDirector(id){
 // While the agent draws, the project is read again now and then: the request carries its state and spend.
 // The team behind a run: who works on it and what each did last, then the latest actions in order. Opus directs; the
 // others are the tools it drives, and helpers are agents it sends off in parallel.
-const teamRoles={opus:['Opus 5.5','режисер, керує всім'],codex:['Codex','малює предмети'],razgon:['Razgon','рендерить кадри'],studio:['Студія','план і таймлайн'],helper:['Помічник','паралельне завдання']};
+const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює предмети'],razgon:['Рендер','Razgon, збирає кадри'],studio:['Студія','план і таймлайн'],helper:['Помічник','паралельне завдання']};
+// The agent's own notes are technical («Команда: Read make-2d-video skill», a temporary file): for the author they all
+// mean one thing, the director studying and preparing, and only real steps keep their own words.
+function humanStep(text){return /^(Читає |Команда: )/.test(text)?'Вивчає матеріали й готує роботу':text;}
+function humanFeed(steps){const out=[];for(const step of steps){const text=humanStep(step.text);if(out[out.length-1]?.text===text&&out[out.length-1].who===step.who)continue;out.push({...step,text});}return out;}
 const teamFeeds={};
 function renderTeam(info,kind,id,live){
   if(!info)return;
   const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
   const draw=()=>{
-    const steps=teamFeeds[kind+id] || [],last=steps[steps.length-1];
+    const steps=humanFeed(teamFeeds[kind+id] || []),last=steps[steps.length-1];
     const who=['opus','codex','razgon','studio',...(steps.some(step=>step.who==='helper')?['helper']:[])];
     box.innerHTML=`<div class="team-members">${who.map(role=>{const mine=steps.filter(step=>step.who===role),active=live&&last?.who===role;
-      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${mine.length?esc(mine[mine.length-1].text):'Поки не потрібен'}</small></div>`;}).join('')}</div>`
-      +(steps.length?`<ol class="team-feed">${steps.slice(-8).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Агент тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
+      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${active?'Зараз: ':''}${mine.length?esc(mine[mine.length-1].text):'Поки не потрібен'}</small></div>`;}).join('')}</div>`
+      +(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
   };
   draw();
   api(`/api/projects/${encodeURIComponent(id)}/activity/${kind}`).then(({activity})=>{teamFeeds[kind+id]=activity;if(box.isConnected)draw();}).catch(()=>{});

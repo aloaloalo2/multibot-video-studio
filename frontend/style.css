@@ -878,7 +878,12 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step-cost{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:8px;width:100%;border-top:1px solid #2c2c31;font-size:11.5px;color:#8a8c94;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .episode-step-cost::before{content:'$';display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:50%;background:#26272b;color:#aeb0b7;font-size:10px;font-weight:700}
 .episode-step-cost:empty{display:none}
-.plan-start.busy{opacity:.55;pointer-events:none}
+.plan-start.busy .frame-strip,.plan-start.busy .frame-strip-max{opacity:.55;pointer-events:none}
+.plan-start-actions .primary.loading{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;opacity:1;cursor:progress;max-width:min(100%,520px)}
+.plan-start-actions .primary.loading small{font-weight:500;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-start-actions .primary.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,#fff6 50%,transparent 80%);transform:translateX(-100%);animation:button-sweep 1.6s ease-in-out infinite}
+.plan-start-actions .primary.loading svg{width:15px;height:15px;flex:none}
+@keyframes button-sweep{to{transform:translateX(100%)}}
 .episode-pane-info{font-size:13px;color:#aeb0b7;line-height:1.45}
 .team{margin:6px 0 14px;display:flex;flex-direction:column;gap:12px}
 .team-members{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
@@ -894,3 +899,8 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .team-feed li:first-child{color:#f1f1f2}
 .team-feed time{flex:none;color:#77798199;font-variant-numeric:tabular-nums}
 .team-feed b{flex:none;min-width:62px;font-weight:600;color:#8dffc6}
+/* a running step: a light runs along its top edge, so the work is seen moving */
+.episode-step-run{display:none;position:absolute;left:18px;right:18px;top:-1px;height:3px;border-radius:2px;overflow:hidden;pointer-events:none}
+.episode-step.running .episode-step-run{display:block;background:linear-gradient(90deg,transparent,#6bf2ae,#f0b429,transparent);background-size:45% 100%;background-repeat:no-repeat;animation:step-run 1.8s linear infinite}
+@keyframes step-run{from{background-position:-50% 0}to{background-position:150% 0}}
+.episode-step.running .episode-step-icon{animation:director-pulse 1.2s ease-in-out infinite}
