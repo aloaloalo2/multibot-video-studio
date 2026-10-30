@@ -449,7 +449,8 @@ function renderProject() {
   $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
-  $('export-open').hidden=!state.project;
+  // Export appears once the video exists: there is something on the timeline to render.
+  $('export-open').hidden=!state.project || !(state.project.tracks || []).some(track=>(track.clips || []).length);
   renderPlan();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
