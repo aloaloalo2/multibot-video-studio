@@ -208,8 +208,9 @@ function fillVideo(step,pane){
   if(picker?.hidden&&picker.open){
     const scroll=picker.scrollIntoView;picker.scrollIntoView=()=>{};   // opening it here must not scroll the page
     picker.open();picker.scrollIntoView=scroll;
-    framePicker(picker);
   }
+  // The plan remembers an open picker, so on a return to the plan it is already open: the strip is built either way.
+  if(picker&&!picker.hidden)framePicker(picker);
 }
 
 // In the video tab the frames are picked on a strip of the film itself: every frame is as wide as it is long, a drag
