@@ -18,6 +18,7 @@ function selectUniversalClip(id){const chosen=universalClips().find(clip=>clip.i
 
 function renderUniversalTimeline(){
   renderGroupingControls();
+  if(state.channel?.settings?.channel_kind==='animated')state.compactTimeline=true;   // only frames, never layers
   if(state.compactTimeline && sceneGroups().length && !state.expandedGroup){renderGroupedTimeline();return;}
   const ruler=$('time-ruler'),tracks=$('timeline-tracks');ruler.replaceChildren();tracks.replaceChildren();
   const total=timelineSpan(),width=timelineWidth();ruler.className='time-ruler universal-ruler';

@@ -65,7 +65,9 @@ function renderGroupingControls(){
   const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Видалити виділене',true);remove.disabled=state.busy || !(state.selected || state.selectedGroup || state.multiSelection?.length);remove.addEventListener('click',deleteTimelineSelection);
   box.append(all,remove);
 
-  if(!state.expandedGroup)for(const [compact,label] of [[false,'Шари'],[true,'Групи']]){const mode=document.createElement('button');mode.type='button';mode.id=compact?'timeline-mode-frames':'timeline-mode-layers';mode.textContent=label;mode.setAttribute('aria-pressed',String(state.compactTimeline===compact));mode.className='timeline-mode'+(state.compactTimeline===compact?' active':'');mode.addEventListener('click',()=>{state.compactTimeline=compact;state.expandedGroup=null;state.multiSelection=[];renderTimeline();});box.append(mode);}
+  // an animated film has only frames on its timeline: it always shows them, with no switch to layers
+  const animatedFilm=state.channel?.settings?.channel_kind==='animated';
+  if(!state.expandedGroup && !animatedFilm)for(const [compact,label] of [[false,'Шари'],[true,'Групи']]){const mode=document.createElement('button');mode.type='button';mode.id=compact?'timeline-mode-frames':'timeline-mode-layers';mode.textContent=label;mode.setAttribute('aria-pressed',String(state.compactTimeline===compact));mode.className='timeline-mode'+(state.compactTimeline===compact?' active':'');mode.addEventListener('click',()=>{state.compactTimeline=compact;state.expandedGroup=null;state.multiSelection=[];renderTimeline();});box.append(mode);}
   if(!state.expandedGroup && (state.multiSelection?.length || 0)>=2 && state.multiSelection.length<=200 && !sceneGroups().some(group=>group.clip_ids.some(id=>state.multiSelection.includes(id)))){const group=document.createElement('button');group.type='button';group.id='group-selection';group.textContent='Згрупувати ('+state.multiSelection.length+')';group.addEventListener('click',()=>createSelectedGroup());box.append(group);}
 }
 
