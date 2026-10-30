@@ -449,8 +449,10 @@ function renderProject() {
   $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
-  // Export appears once the video exists: there is something on the timeline to render.
-  $('export-open').hidden=!state.project || !(state.project.tracks || []).some(track=>(track.clips || []).length);
+  // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
+  // they are drawn, and a voice alone is not a video either.
+  const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=state.channel?.settings?.channel_kind==='animated';
+  $('export-open').hidden=!clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   renderPlan();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();

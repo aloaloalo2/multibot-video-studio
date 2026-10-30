@@ -803,7 +803,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .episode-step-number{font-size:12px;font-weight:700;color:#8a8c94}
 .episode-step p{margin:0;font-size:13px;color:#aeb0b7;line-height:1.45}
 .episode-step details{font-size:13px;color:#aeb0b7}.episode-step details p{white-space:pre-wrap;margin-top:6px}
-.episode-step-actions{display:flex;gap:8px;flex-wrap:wrap}.episode-step-actions:empty{display:none}
 .episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
 .episode-step[data-state="active"]{border-color:#6bf2ae66}.episode-step[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae;animation:director-pulse 1.4s ease-in-out infinite}
 .episode-step[data-state="failed"]{border-color:#f0b42966}.episode-step[data-state="failed"] .episode-step-icon{background:#372f1e;color:#f0b429}
@@ -839,3 +838,28 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .plan-table-fold{border:1px solid #414149;border-radius:20.5px;background:#202024;margin:14px 0;overflow:hidden}
 .plan-table-fold>summary{cursor:pointer;padding:13px 15px;font-weight:600;color:#e4e5e9}
 .plan-table-fold>.plan-table{margin:0;border:0;border-radius:0}
+.episode-stage{margin:18px 0 -4px;font-size:13px;color:#aeb0b7}.episode-stage strong{color:#f1f1f2}
+.episode-steps{counter-reset:none;position:relative}
+.episode-step{position:relative;transition:opacity .2s,border-color .2s}
+.episode-step.upcoming{opacity:.5}
+.episode-step.current{border-color:#f0b429;box-shadow:inset 0 0 0 1px #f0b429,0 0 22px #f0b42922}
+.episode-step.current .episode-step-icon{background:#372f1e;color:#f0b429}
+.episode-step.current[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
+.episode-step.current .episode-step-head::after{content:'Зараз';font-size:11px;font-weight:600;color:#1a1408;background:#f0b429;padding:2px 8px;border-radius:9.5px}
+.episode-step[data-state="done"] .episode-step-number{color:#6bf2ae}
+/* a connector between neighbouring steps, so they read as one path */
+@media(min-width:901px){.episode-step:not(:last-child)::after{content:'';position:absolute;top:30px;right:-13px;width:14px;height:2px;background:#3a3a40}
+  .episode-step[data-state="done"]:not(:last-child)::after{background:#6bf2ae}}
+.episode-step{cursor:pointer}
+.episode-step:focus-visible{outline:2px solid #6bf2ae;outline-offset:3px}
+@media(hover:hover){.episode-step:not(.selected):hover{border-color:#5a5a62;opacity:1}}
+.episode-step.selected{background:#25252a}
+/* the selected step points at its pane below */
+.episode-step.selected::before{content:'';position:absolute;left:50%;bottom:-8px;width:14px;height:14px;transform:translateX(-50%) rotate(45deg);background:#25252a;border-right:1px solid #35353a;border-bottom:1px solid #35353a}
+.episode-step.selected.current::before{border-color:#f0b429}
+.episode-pane{margin-top:4px}
+.episode-pane>.speech-report{margin-top:0}
+.episode-pane-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.episode-pane-actions:empty{display:none}
+.episode-pane-info:empty{display:none}.episode-pane-info>.plan-note{margin:0 0 10px}
+.episode-pane>.plan-summary{margin-top:0}
+.episode-step p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
