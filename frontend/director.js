@@ -133,7 +133,7 @@ function fillVoice(step,pane,id){
     // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
     const replace=stepButton('Замінити озвучку',openNarrationBinding);
     replace.title='Нова озвучка або новий текст: студія розпізнає озвучку заново, а режисер сам переробить план кадрів, якщо змінився текст';
-    actions?.append(replace);fillDirector(step,info,actions,id,percent);return;
+    actions?.append(replace);fillDirector(step,info,actions,id,percent);actions?.append(restartButton(id));return;
   }
   clearTimeout(directorTimer);
   const working=!!job&&['queued','running'].includes(job.status);step.classList.toggle('running',working);
@@ -143,7 +143,30 @@ function fillVoice(step,pane,id){
   else{step.dataset.state='waiting';text.textContent='Додайте аудіо озвучки';}
   cost.textContent=step.dataset.state==='waiting'?'Ще нічого не витрачено':'Розпізнавання на цьому Mac · $0';
   actions?.append(stepButton('Додати озвучку / таймінги',openNarrationBinding,step.dataset.state==='waiting'));
+  if(report||job)actions?.append(restartButton(id));
   if(info)info.textContent=job?.status==='failed'?job.error:!report&&!working?'Додайте аудіо озвучки: студія розпізнає його на цьому Mac, а режисер сам розкладе озвучку на кадри.':'';
+}
+
+// «Почати заново»: the episode goes back to an empty one that waits for its script and voice. The agents stop, and what
+// the Studio held moves into a backup next to the project (backend/episode_restart.py); drawn files stay in the episode.
+function restartButton(id){
+  const button=document.createElement('button');button.type='button';button.className='history-button episode-restart';
+  setTrashButton(button,'Почати випуск заново',true);button.title='Почати випуск заново';
+  button.addEventListener('click',()=>confirmRestart(id));return button;
+}
+
+function confirmRestart(id){
+  modal('Почати випуск заново?','<p>Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну. Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії проєкту, а намальовані файли лишаться в папці випуску.</p>',
+    [{label:'Скасувати',run:closeModal},{label:'Почати заново',icon:'trash',danger:true,run:async()=>{
+      const button=$('modal-actions').querySelector('.danger');button.disabled=true;
+      try{
+        await api(`/api/projects/${encodeURIComponent(id)}/restart`,'POST',{});
+        clearTimeout(directorTimer);clearTimeout(productionTimer);
+        delete directorRuns[id];stepChoice.delete(id);delete voiceScriptDraft[id];
+        for(const kind of ['director','production'])delete teamFeeds[kind+id];
+        state.analysis=null;closeModal();await selectProject(id,{view:'plan'});status('Випуск почато заново. Додайте сценарій та озвучку.');
+      }catch(error){button.disabled=false;status(error.message,true);}
+    }}]);
 }
 
 function fillDirector(step,info,actions,id,percent){

@@ -28,6 +28,7 @@ import channel_branding
 import style_lab
 import style_copy
 import director
+import episode_restart
 import production
 import thumbnail_gen
 import agent_estimate
@@ -787,6 +788,11 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
             return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/restart", path)
+        if match and method == "POST":
+            if active_export(match.group(1)):
+                raise store.StudioError("Зачекайте, доки закінчиться експорт, і почніть заново", 409)
+            return self.json_response({"project": episode_restart.restart(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match and method == "POST":
             return self.json_response({"director": director.start(match.group(1), "manual")})

@@ -128,7 +128,8 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
     except (OSError, store.StudioError) as error:
         fields.update(status="failed", error=str(error))
     finally:
-        set_request(pid, finished_at=time.time(), **fields)
+        if not director.cancelled(pid, "production"):
+            set_request(pid, finished_at=time.time(), **fields)
         with LOCK:
             ACTIVE.discard(pid)
 

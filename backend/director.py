@@ -9,7 +9,7 @@ full answer in director.log, and the plan page shows it.
 """
 from __future__ import annotations
 
-import json, re, shutil, subprocess, threading, time
+import json, os, re, shutil, signal, subprocess, threading, time
 from pathlib import Path
 
 import store
@@ -19,6 +19,10 @@ EFFORT = "high"
 TIMEOUT = 3 * 3600
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
+# The Claude Code process behind each live activity feed, so a run can be stopped with every tool it started; a feed
+# whose run was stopped on purpose (episode_restart) ends without writing its state back.
+RUNNING: dict[str, subprocess.Popen] = {}
+CANCELLED: set[str] = set()
 # Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder; Opus may send
 # helpers off in parallel.
 ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task"] + [f"Bash({cmd}:*)" for cmd in
@@ -151,9 +155,14 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
-    process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # its own process group: stopping the run stops the renders and helpers it started as well
+    process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    RUNNING[str(activity)] = process
+    if str(activity) in CANCELLED:
+        kill(process)
     expired = threading.Event()
-    watchdog = threading.Timer(timeout, lambda: (expired.set(), process.kill()))
+    watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
     watchdog.start()
     answer, steps = {}, []
     store.atomic_json(activity, [])
@@ -179,9 +188,34 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
         process.wait()
     finally:
         watchdog.cancel()
+        RUNNING.pop(str(activity), None)
     if expired.is_set():
         raise subprocess.TimeoutExpired(command, timeout)
     return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
+
+
+def kill(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+
+
+def stop(pid: str, kind: str) -> None:
+    """Stop the live run whose feed is `kind` («director» or «production») on this project; its state is not written back."""
+    feed = str(activity_path(pid, kind))
+    CANCELLED.add(feed)
+    process = RUNNING.get(feed)
+    if process:
+        kill(process)
+
+
+def cancelled(pid: str, kind: str) -> bool:
+    """True once for a run stopped on purpose, at its end."""
+    feed = str(activity_path(pid, kind))
+    found = feed in CANCELLED
+    CANCELLED.discard(feed)
+    return found
 
 
 def run(pid: str, cli: Path) -> None:
@@ -206,8 +240,9 @@ def run(pid: str, cli: Path) -> None:
     except (OSError, store.StudioError) as error:
         data.update(status="failed", error=str(error))
     finally:
-        data["finished_at"] = time.time()
-        save(pid, data)
+        if not cancelled(pid, "director"):
+            data["finished_at"] = time.time()
+            save(pid, data)
         with LOCK:
             ACTIVE.discard(pid)
 
