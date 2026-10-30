@@ -130,10 +130,8 @@ function fillVoice(step,pane,id){
   actions?.replaceChildren();info?.replaceChildren();
   const cost=step.querySelector('.episode-step-cost');cost.title='';
   if(state.project?.production?.plan_ready){
-    // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
-    const replace=stepButton('Замінити озвучку',openNarrationBinding);
-    replace.title='Нова озвучка або новий текст: студія розпізнає озвучку заново, а режисер сам переробить план кадрів, якщо змінився текст';
-    actions?.append(replace);fillDirector(step,info,actions,id,percent);actions?.append(restartButton(id));return;
+    // Once the voice is in, the only way to another voice is to start the episode over (user, 30 October 2026)
+    fillDirector(step,info,actions,id,percent);actions?.append(restartButton(id));return;
   }
   clearTimeout(directorTimer);
   const working=!!job&&['queued','running'].includes(job.status);step.classList.toggle('running',working);
