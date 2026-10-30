@@ -269,9 +269,20 @@ async function pollDirector(id){
 // The team behind a run: who works on it and what each did last, then the latest actions in order. Opus directs; the
 // others are the tools it drives, and helpers are agents it sends off in parallel.
 const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює предмети'],razgon:['Рендер','Razgon, збирає кадри'],helper:['Помічник','паралельне завдання']};
-// The agent's own notes are technical («Команда: Read make-2d-video skill», a temporary file): for the author they all
-// mean one thing, the director studying and preparing, and only real steps keep their own words.
-function humanStep(text){return /^(Читає |Команда: )/.test(text)?'Вивчає матеріали й готує роботу':text;}
+// The author never sees file names or the agent's English notes: reading and preparing read as one plain line, files
+// written read as what they are for (scenes, the director's shot table, a brief for the artist), and real steps keep
+// their own words.
+function humanStep(text){
+  const own=/^Команда: (.*)/.exec(text);
+  if(own)return /[а-яіїєґ]/i.test(own[1])?own[1]:'Вивчає матеріали й готує роботу';   // the agent's own note, when it is in Ukrainian
+  if(/^Читає /.test(text))return 'Вивчає матеріали й готує роботу';
+  if(/^Пише сцену /.test(text))return 'Пише сцени';
+  if(/^Пише prompt/.test(text))return 'Описує предмети для художника';
+  if(/^Пише (gen_shots|shots)/.test(text))return 'Пише режисуру шотів';
+  if(/^Пише bible/.test(text))return 'Записує задум ролика';
+  if(/^Пише /.test(text))return 'Готує допоміжні файли';
+  return text;
+}
 // The Studio only receives what the director writes into it, so every step once credited to it is the director's.
 function humanFeed(steps){const out=[];for(const raw of steps){const step=raw.who==='studio'?{...raw,who:'opus'}:raw;const text=humanStep(step.text);if(out[out.length-1]?.text===text&&out[out.length-1].who===step.who)continue;out.push({...step,text});}return out;}
 const teamFeeds={};

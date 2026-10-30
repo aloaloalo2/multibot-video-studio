@@ -114,13 +114,20 @@ def describe(tool: str, args: dict) -> tuple[str, str] | None:
     if tool == "Bash":
         command = str(args.get("command") or "")
         found = next(((who, text) for key, who, text in COMMANDS if key in command), None)
-        return found or (("opus", f"Команда: {args['description']}") if args.get("description") else None)
+        note = str(args.get("description") or "")
+        # the agent's own note is shown when it writes it in Ukrainian, as the brief asks
+        return found or ("opus", note if re.search("[а-яіїєґ]", note, re.I) else "Вивчає матеріали й готує роботу")
     if tool in {"Task", "Agent"}:
         return "helper", str(args.get("description") or "Окреме завдання")
     if tool in {"Write", "Edit", "MultiEdit"} and name:
-        return "opus", f"Пише сцену {name}" if "/scenes/" in str(args.get("file_path")) else f"Пише {name}"
-    if tool == "Read" and name and not re.search(r"tool-results|/tmp/|/private/var/|/T/", str(args.get("file_path") or "")):
-        return "opus", f"Читає {name}"
+        # what the file is for, never its name
+        target = str(args.get("file_path"))
+        what = ("Пише сцени" if "/scenes/" in target else "Описує предмети для художника" if "prompt" in name
+                else "Пише режисуру шотів" if name in {"gen_shots.py", "shots.json"} else "Записує задум ролика" if name == "bible.md"
+                else "Готує допоміжні файли")
+        return "opus", what
+    if tool == "Read":
+        return "opus", "Вивчає матеріали й готує роботу"
     return None
 
 
