@@ -818,3 +818,15 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card h2{margin-top:0;margin-right:104px}
 .speech-report-button[data-applied="false"]{color:#f0b429;border-color:#f0b42966}
 #speech-report-modal .speech-report{margin:0}
+/* One rounding scale for the whole Studio, as strong as the project cards:
+   large blocks 20.5px, blocks inside them 16.5px, buttons and fields 12.5px; small tags and timeline clips keep theirs. */
+.modal,.panel,.timeline-panel,.banner,.overview-empty,.plan-summary,.plan-timeline,.plan-cost-estimate,.speech-report,.plan-stage,.plan-script,.plan-table,
+.plan-start,.voice-drop,.director-card,.agent-message,.agent-composer,.agent-cost{border-radius:20.5px}
+.settings-section,.channel-kind-card>span,.logo-preview,.thumb-current,.thumb-script-text,.plan-settings-warning,.service-key-panel,.weights-summary,
+.easing-card,.universal-properties section,.asset,.asset-video-result,.preview-surface,.export-gaps,.agent-empty>span{border-radius:16.5px}
+button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.channel-item,.channel-select,.project-item,
+.project-views button,.settings-import-row button,.logo-file-button,.timeline-toolbar button,.inspector-actions button,.search,.preview-zoom,
+.modal-body input,.modal-body select,.modal-body textarea,.settings-section textarea,.voice-script textarea,.style-toolbar select,.agent-reasoning select,
+.field-row input:not([type=range]),.field-row select,.universal-properties input:not([type=range]),.universal-properties select,.universal-properties button,
+.pixabay-kind select,.asset-result-actions button,.library-tabs button,.modal-body .weight-row,.service-key-row,.render-progress{border-radius:12.5px}
+.style-thumb img,.style-add-box,.style-frame,.asset-preview img,.asset-preview video,.asset-video-result video,.plan-attached,.plan-format-chip,.layer-heading{border-radius:11.5px}
