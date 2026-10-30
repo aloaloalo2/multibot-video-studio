@@ -268,20 +268,19 @@ async function pollDirector(id){
 // While the agent draws, the project is read again now and then: the request carries its state and spend.
 // The team behind a run: who works on it and what each did last, then the latest actions in order. Opus directs; the
 // others are the tools it drives, and helpers are agents it sends off in parallel.
-const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює предмети'],razgon:['Рендер','Razgon, збирає кадри'],studio:['Студія','приймає план і кадри'],helper:['Помічник','паралельне завдання']};
+const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює предмети'],razgon:['Рендер','Razgon, збирає кадри'],helper:['Помічник','паралельне завдання']};
 // The agent's own notes are technical («Команда: Read make-2d-video skill», a temporary file): for the author they all
 // mean one thing, the director studying and preparing, and only real steps keep their own words.
 function humanStep(text){return /^(Читає |Команда: )/.test(text)?'Вивчає матеріали й готує роботу':text;}
-// Runs recorded before 30 October named the Studio for the director's own library search and stage check.
-const directorOwn=['Шукає предмети в бібліотеці','Дивиться, на якому кроці випуск','Перевіряє, що шоти покривають озвучку'];
-function humanFeed(steps){const out=[];for(const raw of steps){const step=directorOwn.includes(raw.text)?{...raw,who:'opus'}:raw;const text=humanStep(step.text);if(out[out.length-1]?.text===text&&out[out.length-1].who===step.who)continue;out.push({...step,text});}return out;}
+// The Studio only receives what the director writes into it, so every step once credited to it is the director's.
+function humanFeed(steps){const out=[];for(const raw of steps){const step=raw.who==='studio'?{...raw,who:'opus'}:raw;const text=humanStep(step.text);if(out[out.length-1]?.text===text&&out[out.length-1].who===step.who)continue;out.push({...step,text});}return out;}
 const teamFeeds={};
 function renderTeam(info,kind,id,live){
   if(!info)return;
   const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
   const draw=()=>{
     const steps=humanFeed(teamFeeds[kind+id] || []),last=steps[steps.length-1];
-    const who=['opus','codex','razgon','studio',...(steps.some(step=>step.who==='helper')?['helper']:[])];
+    const who=['opus','codex','razgon',...(steps.some(step=>step.who==='helper')?['helper']:[])];
     box.innerHTML=`<div class="team-members">${who.map(role=>{const mine=steps.filter(step=>step.who===role),active=live&&last?.who===role;
       return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${active?'Зараз: ':''}${mine.length?esc(mine[mine.length-1].text):'Поки не потрібен'}</small></div>`;}).join('')}</div>`
       +(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
