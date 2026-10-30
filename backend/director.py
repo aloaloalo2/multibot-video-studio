@@ -96,14 +96,15 @@ def spent(answer: dict) -> dict:
 
 # What the agent is doing, in the author's words: each command or file it touches becomes one line of the activity
 # feed on the plan, so the author sees the work move.
-# Each line also names who does it: Opus directs and writes, Codex draws props, Razgon renders, the Studio keeps the plan
-# and timeline, and helpers are the agents Opus sends off in parallel.
+# Each line also names who does it: Opus directs, writes and picks props from the library, Codex draws new props,
+# Razgon renders, the Studio only receives the project, the frame plan and the timeline, and helpers are the agents
+# Opus sends off in parallel.
 COMMANDS = [("razgon_bridge.py prepare", "studio", "Готує проєкт Razgon зі студії"), ("gen_shots.py", "opus", "Розбиває озвучку на шоти"),
-            ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "studio", "Перевіряє, що шоти покривають озвучку"),
+            ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
             ("razgon_bridge.py plan", "studio", "Записує план кадрів у студію"), ("razgon_bridge.py push", "razgon", "Рендерить кадри й кладе їх на таймлайн"),
             ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
-            ("library.py", "studio", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
-            ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "studio", "Дивиться, на якому кроці випуск"),
+            ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
+            ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
             ("frame_review", "opus", "Переглядає кадри")]
 
 
