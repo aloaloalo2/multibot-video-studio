@@ -686,7 +686,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .voice-script{display:flex;flex-direction:column;gap:8px;margin-top:18px}
 .voice-script>span{font-size:13px;font-weight:650;color:#e6e7ec}
 .voice-script em{margin-left:6px;font-style:normal;font-weight:500;color:#8d909a;font-size:12px}
-.voice-script textarea{width:100%;resize:vertical;min-height:140px;padding:13px 14px;background:#1d1d21;border:1px solid #3c3c43;border-radius:12px;color:#f2f2f3;font:inherit;line-height:1.5}
+.voice-script textarea,.thumb-view textarea{width:100%;resize:vertical;min-height:140px;padding:13px 14px;background:#1d1d21;border:1px solid #3c3c43;border-radius:12px;color:#f2f2f3;font:inherit;line-height:1.5}
 .voice-script small{color:#8f929c;font-size:12px;line-height:1.45}
 .voice-start-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px}
 .voice-progress{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1;color:#c4c7d0;font-size:12px}
@@ -812,7 +812,17 @@ button.danger:hover:not(:disabled){background:#523034}
 .thumb-state:empty{display:none}
 .thumb-state{margin:10px 0 0;font-size:13px;color:#aeb0b7}
 .thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
-.project-card.thumb-running::after{content:'Малюємо прев’ю...';position:absolute;left:14px;bottom:44px;z-index:3;font-size:12px;color:#8dffc6;background:#0e241acc;border:1px solid #3fe39a73;padding:3px 9px;border-radius:9.5px;pointer-events:none}
+/* a thumbnail in the making: the card dims under a slow light sweep, one pill in the middle, title and buttons stay on top */
+.project-card.thumb-running{border-color:#3fbf8699}
+.thumb-progress{position:absolute;inset:0;z-index:0;display:grid;place-items:center;border-radius:inherit;overflow:hidden;background:rgba(8,10,12,.5);backdrop-filter:blur(3px) saturate(.8);-webkit-backdrop-filter:blur(3px) saturate(.8);pointer-events:none;animation:thumb-fade .35s ease}
+.thumb-progress::before{content:'';position:absolute;top:0;bottom:0;left:-60%;width:60%;background:linear-gradient(100deg,transparent,rgba(107,242,174,.16),transparent);animation:thumb-sweep 2.4s ease-in-out infinite}
+.thumb-progress-pill{position:relative;display:flex;align-items:center;gap:11px;padding:10px 18px 10px 14px;border-radius:999px;background:rgba(12,28,21,.88);border:1px solid #3fe39a59;box-shadow:0 8px 28px rgba(0,0,0,.55),0 0 18px rgba(107,242,174,.18);color:#eafff3}
+.thumb-progress-pill>span{display:flex;flex-direction:column;line-height:1.25}
+.thumb-progress-pill b{font-size:14px;font-weight:650}
+.thumb-progress-pill small{font-size:11.5px;color:#9fd9bb}
+.thumb-progress-pill .export-spinner{width:18px;height:18px;border-color:#6bf2ae40;border-top-color:#6bf2ae}
+@keyframes thumb-sweep{to{left:120%}}
+@keyframes thumb-fade{from{opacity:0}}
 .project-action.thumbnail svg{stroke:#f0b429}
 .project-card h2{margin-top:0;margin-right:104px}
 .speech-report-button[data-applied="false"]{color:#f0b429;border-color:#f0b42966}
@@ -825,7 +835,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .easing-card,.universal-properties section,.asset,.asset-video-result,.preview-surface,.export-gaps,.agent-empty>span{border-radius:16.5px}
 button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.channel-item,.channel-select,.project-item,
 .project-views button,.settings-import-row button,.logo-file-button,.timeline-toolbar button,.inspector-actions button,.search,.preview-zoom,
-.modal-body input,.modal-body select,.modal-body textarea,.settings-section textarea,.voice-script textarea,.style-toolbar select,.agent-reasoning select,
+.modal-body input,.modal-body select,.modal-body textarea,.settings-section textarea,.voice-script textarea,.thumb-view textarea,.style-toolbar select,.agent-reasoning select,
 .field-row input:not([type=range]),.field-row select,.universal-properties input:not([type=range]),.universal-properties select,.universal-properties button,
 .pixabay-kind select,.asset-result-actions button,.library-tabs button,.modal-body .weight-row,.service-key-row,.render-progress{border-radius:12.5px}
 .style-thumb img,.style-add-box,.style-frame,.asset-preview img,.asset-preview video,.asset-video-result video,.plan-attached,.plan-format-chip,.layer-heading{border-radius:11.5px}
@@ -959,3 +969,15 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step.running .episode-step-run{background:linear-gradient(90deg,transparent,#6bf2ae,transparent);background-size:45% 100%;background-repeat:no-repeat}
 .project-action.is-off{opacity:.38;cursor:not-allowed}.project-action.is-off:hover{background:#242428;color:#bec0c8}
 .thumb-wishes span{display:block;margin-bottom:8px}.thumb-wishes em{font-style:normal;font-weight:400;font-size:12px;color:#8a8c94;margin-left:6px}
+/* the «Прев’ю» tab: the thumbnail large, wishes and the button under it */
+.project-thumb{overflow:auto;flex:1;min-height:0;padding:24px clamp(15px,3vw,40px)}
+.project-thumb[hidden]{display:none}
+.thumb-view{max-width:980px;margin:0 auto;display:grid;gap:16px}
+.thumb-view h1{margin:0;font-size:24px}
+.thumb-view-frame{position:relative;aspect-ratio:16/9;border-radius:20.5px;overflow:hidden;border:1px solid #35353a;background:#141416}
+.thumb-view-frame img{display:block;width:100%;height:100%;object-fit:cover}
+.thumb-view-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;color:#7c7e86;font-size:15px}
+.thumb-view-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.thumb-view-actions .thumb-state{margin:0;flex:1;min-width:220px}
+.thumb-view-gate{margin:-6px 0 0;font-size:13px;color:#9a9ca4}
+.thumb-view textarea{min-height:90px;box-sizing:border-box}

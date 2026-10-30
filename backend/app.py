@@ -730,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"job": load_job(match.group(1))})
         if path.startswith("/api/"):
             raise store.StudioError("Сторінку не знайдено", 404)
-        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent))?)?/?", path):
+        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent|preview))?)?/?", path):
             return self.serve_static("/")
         return self.serve_static(path)
 
