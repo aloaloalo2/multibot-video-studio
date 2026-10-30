@@ -960,3 +960,4 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-flow .episode-step:not(.selected){cursor:pointer}
 .episode-flow .episode-step:not(.selected):hover{border-color:#55555c;background:#1d1d21}
 .episode-step.running .episode-step-run{background:linear-gradient(90deg,transparent,#6bf2ae,transparent);background-size:45% 100%;background-repeat:no-repeat}
+.project-action.is-off{opacity:.38;cursor:not-allowed}.project-action.is-off:hover{background:#242428;color:#bec0c8}

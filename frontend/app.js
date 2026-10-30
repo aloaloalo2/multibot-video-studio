@@ -187,6 +187,8 @@ function projectActions(project){
   if(project.episode_path)icons.thumbnail=thumbnailIcon;
   for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
+    // the thumbnail takes its look from the video's own frames: grey until a couple are made (thumbnail.js)
+    if(type==='thumbnail'&&!thumbnailReady(project))thumbnailWaits(button);
   }
   return actions;
 }

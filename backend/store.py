@@ -367,6 +367,12 @@ def project_cover_asset(project: dict) -> str | None:
     return min(candidates, key=lambda clip: float(clip.get("start", 0)))["asset_id"]
 
 
+def picture_count(project: dict) -> int:
+    """Made frames: pictures on the timeline apart from the channel's logo and plate (the thumbnail needs a few)."""
+    return sum(clip.get("kind") in {"video", "image"} and not re.search("Логотип|Плашка", clip.get("title") or "")
+               for track in project.get("tracks", []) for clip in track.get("clips", []))
+
+
 def list_projects(cid: str | None = None) -> list[dict]:
     if cid is not None:
         get_channel_folder(cid, include_disabled=True)
@@ -382,7 +388,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
             if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
                 item = upgrade_legacy_project(item)
                 cover_asset_id = project_cover_asset(item)
-                result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
+                result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
                 preview = Path(item.get("episode_path") or "") / "Превью.png"
                 if item.get("episode_path") and preview.is_file():
