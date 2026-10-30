@@ -904,3 +904,4 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step.running .episode-step-run{display:block;background:linear-gradient(90deg,transparent,#6bf2ae,#f0b429,transparent);background-size:45% 100%;background-repeat:no-repeat;animation:step-run 1.8s linear infinite}
 @keyframes step-run{from{background-position:-50% 0}to{background-position:150% 0}}
 .episode-step.running .episode-step-icon{animation:director-pulse 1.2s ease-in-out infinite}
+.episode-pane>.plan-start+.episode-pane-info{margin-top:14px}

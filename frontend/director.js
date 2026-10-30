@@ -91,7 +91,8 @@ function arrangeStepPanes(panel,steps){
   for(const node of panel.querySelectorAll(':scope > .plan-formats, :scope > .plan-note'))node.remove();
   // Video: how many frames to make. The plan's cost estimate counts stock, generated photos and DeepSeek requests,
   // none of which an animated film uses, so it is left out here.
-  take(video,'.plan-start');
+  // the frame picker comes first in its tab, above the team and the feed
+  const picker=panel.querySelector(':scope > .plan-start');if(picker)video.querySelector('.episode-pane-info').before(picker);
   panel.querySelector(':scope > .plan-cost-estimate')?.remove();
   steps.after(...panes);
   refreshSteps(steps);
@@ -293,7 +294,7 @@ function renderTeam(info,kind,id,live){
     const steps=humanFeed(teamFeeds[kind+id] || []),last=steps[steps.length-1];
     const who=['opus','codex','razgon',...(steps.some(step=>step.who==='helper')?['helper']:[])];
     box.innerHTML=`<div class="team-members">${who.map(role=>{const mine=steps.filter(step=>step.who===role),active=live&&last?.who===role;
-      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${active?'Зараз: ':''}${mine.length?esc(mine[mine.length-1].text):'Поки не потрібен'}</small></div>`;}).join('')}</div>`
+      return `<div class="team-member${active?' active':''}${mine.length?'':' idle'}"><strong>${teamRoles[role][0]}</strong><span>${teamRoles[role][1]}</span><small>${active?'Зараз: ':''}${mine.length?esc(mine[mine.length-1].text):'Зараз не працює'}</small></div>`;}).join('')}</div>`
       +(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Режисер тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
   };
   draw();
