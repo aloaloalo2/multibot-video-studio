@@ -67,7 +67,32 @@ def score(image: Image.Image) -> float:
     return spread
 
 
+def thumbnail(project: dict) -> Path | None:
+    """The episode's own YouTube thumbnail («Превью.png»), fitted to the card, when the episode has one."""
+    source = Path(project.get("episode_path") or "") / "Превью.png"
+    if not project.get("episode_path") or not source.is_file():
+        return None
+    stat = source.stat()
+    cache = store.project_dir(project["id"]) / "thumbnails"
+    dest = cache / f"preview-{stat.st_mtime_ns}-{stat.st_size}.webp"
+    if dest.exists():
+        return dest
+    with LOCK:
+        cache.mkdir(parents=True, exist_ok=True)
+        for old in cache.glob("preview-*.webp"):
+            old.unlink()
+        with Image.open(source) as image:
+            fitted = ImageOps.fit(image.convert("RGB"), SIZE, Image.Resampling.LANCZOS)
+        temp = cache / f"preview-{uuid.uuid4().hex}.tmp.webp"
+        fitted.save(temp, format="WEBP", quality=85, method=4)
+        os.replace(temp, dest)
+    return dest
+
+
 def get(project: dict) -> Path | None:
+    made = thumbnail(project)
+    if made:
+        return made
     picks = candidates(project)
     if not picks:
         return None

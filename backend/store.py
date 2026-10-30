@@ -384,6 +384,9 @@ def list_projects(cid: str | None = None) -> list[dict]:
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
+                preview = Path(item.get("episode_path") or "") / "Превью.png"
+                if item.get("episode_path") and preview.is_file():
+                    result[-1]["preview_mtime"] = preview.stat().st_mtime_ns
         except (ValueError, KeyError):
             continue
     return sorted(result, key=lambda item: (-item["created_at"], item["name"].casefold(), item["id"]))

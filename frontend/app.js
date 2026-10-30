@@ -184,7 +184,8 @@ function renderProjects() {
 function projectActions(project){
   const actions=document.createElement('div');actions.className='project-actions';
   const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
-  for(const [type,title,run] of [['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
+  if(project.episode_path)icons.thumbnail=thumbnailIcon;
+  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
   }
   return actions;
@@ -308,10 +309,10 @@ function renderOverview() {
       duration.textContent=formatted;duration.title='Тривалість ролика';
       open.querySelector('.project-meta').append(duration);
     }
-    if(project.cover_asset_id){
+    if(project.cover_asset_id || project.preview_mtime){
       // The Studio picks a telling frame of the montage for the cover and fades it in once loaded.
       const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
-      cover.src=`/api/projects/${encodeURIComponent(project.id)}/cover?v=${encodeURIComponent(project.updated_at || project.revision || 0)}`;
+      cover.src=`/api/projects/${encodeURIComponent(project.id)}/cover?v=${encodeURIComponent(project.preview_mtime || project.updated_at || project.revision || 0)}`;
       cover.addEventListener('load',()=>card.classList.add('cover-ready'),{once:true});
       cover.addEventListener('error',()=>{card.classList.remove('has-cover');card.classList.add('no-cover');cover.remove();},{once:true});
       card.classList.add('has-cover');card.append(cover);

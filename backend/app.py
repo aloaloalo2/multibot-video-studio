@@ -28,6 +28,7 @@ import channel_branding
 import style_lab
 import style_copy
 import director
+import thumbnail_gen
 import agent_estimate
 import agent_runtime
 import agent_storage
@@ -660,6 +661,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles", path)
         if match:
             return self.json_response({"styles": style_copy.load(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
+        if match:
+            return self.json_response(thumbnail_gen.defaults(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match:
             store.load_project(match.group(1))
@@ -772,6 +776,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
+        if match and method == "POST":
+            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match and method == "POST":
             return self.json_response({"director": director.start(match.group(1), "manual")})

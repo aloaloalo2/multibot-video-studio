@@ -807,3 +807,12 @@ button.danger:hover:not(:disabled){background:#523034}
 .director-card details{font-size:13px;color:#aeb0b7}.director-card details p{white-space:pre-wrap;margin-top:6px}
 .director-card[data-status="running"] .director-head strong::after,.director-card[data-status="queued"] .director-head strong::after{content:'';display:inline-block;width:7px;height:7px;margin-left:8px;border-radius:50%;background:#6bf2ae;animation:director-pulse 1.2s ease-in-out infinite}
 @keyframes director-pulse{50%{opacity:.25}}
+.thumb-modal-open .modal{width:min(620px,100%)}
+.thumb-note{margin:0 0 12px;font-size:13px;color:#aeb0b7;line-height:1.45}
+.thumb-current{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;margin-bottom:12px}
+#thumb-script{font-size:12px;line-height:1.45}
+.thumb-state:empty{display:none}
+.thumb-state{margin:10px 0 0;font-size:13px;color:#aeb0b7}
+.thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
+.project-card.thumb-running::after{content:'Малюємо прев’ю...';position:absolute;left:14px;bottom:44px;z-index:3;font-size:12px;color:#8dffc6;background:#0e241acc;border:1px solid #3fe39a73;padding:3px 9px;border-radius:9.5px;pointer-events:none}
+.project-action.thumbnail svg{stroke:#f0b429}
