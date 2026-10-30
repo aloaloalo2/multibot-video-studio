@@ -865,3 +865,13 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-step p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .episode-pane .plan-start-actions .secondary{display:none}
 .episode-pane .plan-start{margin-top:0}
+.episode-pane .plan-start-range,.episode-pane .plan-start-quick{display:none}
+.frame-strip-row{display:flex;align-items:center;gap:12px;margin:4px 0 18px}
+.frame-strip{position:relative;flex:1;display:flex;gap:2px;height:38px;padding:4px;border-radius:12.5px;background:#141416;border:1px solid #3a3a41;cursor:ew-resize;touch-action:none;user-select:none}
+.frame-strip:focus-visible{outline:2px solid #f0b429;outline-offset:3px}
+.frame-strip-cell{min-width:2px;flex-basis:0;border-radius:4px;background:#3a3a41;transition:background-color .1s}
+.frame-strip-cell.chosen{background:linear-gradient(180deg,#ffd166,#f0b429)}
+@media(hover:hover){.frame-strip-cell:hover{background:#55555c}.frame-strip-cell.chosen:hover{background:#ffe08a}}
+.frame-strip-handle{position:absolute;top:-5px;bottom:-5px;width:4px;margin-left:-2px;border-radius:2px;background:#fff6dc;box-shadow:0 0 10px #f0b429cc;pointer-events:none}
+.frame-strip-max{flex:none}
+.frame-strip-max.active{border-color:#f0b429;color:#ffd166}

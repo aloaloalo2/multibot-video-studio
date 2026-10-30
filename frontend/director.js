@@ -169,7 +169,34 @@ function fillVideo(step,pane){
   if(picker?.hidden&&picker.open){
     const scroll=picker.scrollIntoView;picker.scrollIntoView=()=>{};   // opening it here must not scroll the page
     picker.open();picker.scrollIntoView=scroll;
+    framePicker(picker);
   }
+}
+
+// In the video tab the frames are picked on a strip of the film itself: every frame is as wide as it is long, a drag
+// across it takes the first frames up to the pointer, and «Макс» takes them all. The plan's slider stays the one source
+// of the count, the strip only drives it.
+function framePicker(picker){
+  const slider=picker.querySelector('.plan-start-range'),frames=state.plan?.frames || [];
+  if(!slider||!frames.length||picker.querySelector('.frame-strip'))return;
+  const total=Number(frames[frames.length-1].end) || 1,row=document.createElement('div');row.className='frame-strip-row';
+  const strip=document.createElement('div');strip.className='frame-strip';strip.setAttribute('role','slider');strip.tabIndex=0;
+  strip.setAttribute('aria-label','Скільки перших кадрів створити');strip.setAttribute('aria-valuemin','1');strip.setAttribute('aria-valuemax',String(frames.length));
+  const segments=frames.map((frame,index)=>{const cell=document.createElement('span');cell.className='frame-strip-cell';
+    cell.style.flexGrow=String(Math.max(.2,Number(frame.end)-Number(frame.start)));cell.title=`Кадр ${index+1} · ${clock(frame.start)}–${clock(frame.end)}`;strip.append(cell);return cell;});
+  const handle=document.createElement('span');handle.className='frame-strip-handle';strip.append(handle);
+  const max=document.createElement('button');max.type='button';max.className='secondary frame-strip-max';max.textContent='Макс';max.title=`Усі ${frames.length} кадрів`;
+  row.append(strip,max);slider.after(row);
+  const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count));
+    handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
+  const set=count=>{slider.value=String(Math.max(1,Math.min(frames.length,count)));slider.dispatchEvent(new Event('input'));paint();};
+  const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
+    const index=frames.findIndex(frame=>Number(frame.end)>=time);return index<0?frames.length:index+1;};
+  strip.addEventListener('pointerdown',event=>{strip.setPointerCapture(event.pointerId);set(at(event));});
+  strip.addEventListener('pointermove',event=>{if(strip.hasPointerCapture(event.pointerId))set(at(event));});
+  strip.addEventListener('keydown',event=>{const step={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[event.key];if(step){event.preventDefault();set(Number(slider.value)+step);}});
+  max.addEventListener('click',()=>set(frames.length));
+  paint();
 }
 
 // The first step that is not done is where the episode stands: it is marked «Зараз», the done ones get a tick, the
