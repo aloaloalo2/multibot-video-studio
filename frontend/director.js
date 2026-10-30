@@ -7,6 +7,20 @@ let directorTimer=null;
 
 function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
 
+// An animated episode has no frames until the director writes them: the Studio's own split by sentences is only
+// the timing behind them, so the plan shows the director instead of those frames.
+function directorAwaited(){return directorAnimated() && state.plan?.frame_source!=='razgon-direction';}
+
+function renderDirectorWait(panel){
+  const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
+  const row=document.createElement('div');row.className='plan-summary';
+  const note=document.createElement('span');note.textContent=state.project?.production?.plan_ready?'Озвучку розпізнано. Кадри складе режисер.':'Кадри складе режисер, щойно озвучку буде розпізнано.';
+  const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);
+  row.append(note,bind);panel.append(heading,row);
+  if(typeof renderSpeechReport==='function')renderSpeechReport(panel);
+  renderDirectorStatus(panel);
+}
+
 async function loadDirector(id){
   try{directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`)).director || {status:'none'};}
   catch{directorRuns[id]={status:'none'};}
