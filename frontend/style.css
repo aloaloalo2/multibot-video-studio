@@ -875,3 +875,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-handle{position:absolute;top:-5px;bottom:-5px;width:4px;margin-left:-2px;border-radius:2px;background:#fff6dc;box-shadow:0 0 10px #f0b429cc;pointer-events:none}
 .frame-strip-max{flex:none}
 .frame-strip-max.active{border-color:#f0b429;color:#ffd166}
+.episode-step-cost{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:8px;width:100%;border-top:1px solid #2c2c31;font-size:11.5px;color:#8a8c94;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.episode-step-cost::before{content:'$';display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:50%;background:#26272b;color:#aeb0b7;font-size:10px;font-weight:700}
+.episode-step-cost:empty{display:none}

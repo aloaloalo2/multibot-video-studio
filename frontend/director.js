@@ -36,7 +36,7 @@ function stepButton(label,run,primary=false){const b=document.createElement('but
 
 function episodeStep(number,icon,title){
   const step=document.createElement('section');step.className='episode-step';step.tabIndex=0;step.setAttribute('role','tab');
-  step.innerHTML=`<div class="episode-step-head"><span class="episode-step-icon">${stepIcons[icon]}</span><span class="episode-step-number">${number}</span><strong>${title}</strong></div><p></p>`;
+  step.innerHTML=`<div class="episode-step-head"><span class="episode-step-icon">${stepIcons[icon]}</span><span class="episode-step-number">${number}</span><strong>${title}</strong></div><p></p><small class="episode-step-cost"></small>`;
   return step;
 }
 
@@ -87,8 +87,10 @@ function arrangeStepPanes(panel,steps){
   for(const selector of ['.plan-settings-warning','.plan-timeline','.plan-table-fold','.plan-table'])take(director,selector);
   // An animated film is all one format and its plan is not agreed in a chat: those service lines only add doubt here.
   for(const node of panel.querySelectorAll(':scope > .plan-formats, :scope > .plan-note'))node.remove();
-  // Video: how many frames to make, opened by its button, and what it may cost.
-  take(video,'.plan-start');take(video,'.plan-cost-estimate');
+  // Video: how many frames to make. The plan's cost estimate counts stock, generated photos and DeepSeek requests,
+  // none of which an animated film uses, so it is left out here.
+  take(video,'.plan-start');
+  panel.querySelector(':scope > .plan-cost-estimate')?.remove();
   steps.after(...panes);
   refreshSteps(steps);
 }
@@ -113,6 +115,7 @@ function fillVoice(step,pane){
   else if(report){step.dataset.state='failed';text.textContent=`Потрібна перевірка, ${percent}`;}
   else if(job?.status==='failed'){step.dataset.state='failed';text.textContent='Не вдалося розпізнати';}
   else{step.dataset.state='waiting';text.textContent='Додайте аудіо озвучки';}
+  step.querySelector('.episode-step-cost').textContent='Безкоштовно · Whisper на цьому Mac';
   if(!pane)return;
   // Once the voice is in, the button replaces it: a new recognition follows, and the director redoes the plan if the text changed.
   const replace=step.dataset.state==='done';
@@ -128,6 +131,8 @@ function fillDirector(step,pane,id){
   actions?.replaceChildren();info?.replaceChildren();
   if(!step.querySelector('.director-model')){const who=document.createElement('span');who.className='director-model';who.textContent='Opus 5.5 · високий';step.querySelector('.episode-step-head').append(who);}
   const restart=label=>actions?.append(stepButton(label,()=>startDirector(id)));
+  // Claude Code runs on the subscription; the dollar figure is what the same run would cost through the API.
+  step.querySelector('.episode-step-cost').textContent=run.cost_usd?`Підписка Claude · еквівалент $${Number(run.cost_usd).toFixed(2)}`:'Підписка Claude, окремо не оплачується';
   const say=message=>{if(info){const line=document.createElement('p');line.className='plan-note';line.textContent=message;info.append(line);}};
   clearTimeout(directorTimer);
   if(run.status==='loading'){step.dataset.state=directed?'done':'waiting';text.textContent='Перевіряємо...';}
@@ -158,6 +163,7 @@ function fillVideo(step,pane){
   const text=step.querySelector('p'),request=state.project?.production_request;
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
   if(info)info.textContent='';
+  step.querySelector('.episode-step-cost').textContent='Підписки Claude і Codex, окремо не оплачується';
   if(!directorDone()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури тут можна вибрати, скільки перших кадрів зробити, і агент намалює їхні сцени.';return;}
   if(request){step.dataset.state=['done','complete'].includes(request.status)?'done':'active';text.textContent=`Кадри 1–${request.frames}, ${request.status==='requested'?'чекає агента':request.status}`;}
   else{step.dataset.state='active';text.textContent='Виберіть кадри';}
