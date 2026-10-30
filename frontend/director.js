@@ -9,7 +9,9 @@ let directorTimer=null,productionTimer=null;
 
 const stepIcons={voice:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
   director:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 10l-.6-3.3a1 1 0 0 1 .8-1.2L17 3.2a1 1 0 0 1 1.2.8L18.7 7M8 4.8l2.4 3.6M13.2 3.9l2.4 3.6"/></svg>',
-  video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>'};
+  video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>',
+  final:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m10 8 5 2.5-5 2.5zM8 21h8M12 17v4"/></svg>'};
+const stepNames=['voice','director','video','final'];
 
 function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
 
@@ -44,16 +46,20 @@ function episodeStep(number,icon,title){
 
 function renderDirectorStatus(panel){
   if(!state.project || !directorAnimated())return;
-  const id=state.project.id,steps=document.createElement('div');steps.className='episode-steps';steps.dataset.project=id;steps.setAttribute('role','tablist');
-  const items=[episodeStep(1,'voice','Озвучка'),episodeStep(2,'director','Режисура'),episodeStep(3,'video','Створення відео')];
+  const id=state.project.id,steps=document.createElement('div');steps.className='episode-steps';steps.dataset.project=id;steps.setAttribute('role','tablist');steps.setAttribute('aria-orientation','vertical');
+  const items=[episodeStep(1,'voice','Озвучка'),episodeStep(2,'director','Режисура'),episodeStep(3,'video','Створення відео'),episodeStep(4,'final','Готовий ролик')];
   items[1].setAttribute('aria-live','polite');
   items.forEach((step,index)=>{
     const pick=()=>{stepChoice.set(id,index);showStepPane(steps);};
     step.addEventListener('click',pick);
     step.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();pick();}});
   });
+  // The making of the film reads top to bottom on the left; the chosen step's data fills the right.
   const stage=document.createElement('p');stage.className='episode-stage';
-  steps.append(...items);panel.append(stage,steps);
+  const flow=document.createElement('div');flow.className='episode-flow';
+  const rail=document.createElement('div');rail.className='episode-rail';
+  const panes=document.createElement('div');panes.className='episode-panes';
+  steps.append(...items);rail.append(stage,steps);flow.append(rail,panes);panel.append(flow);
   // The rest of the plan is drawn right after this call: once it is there, its blocks move under the step they belong to.
   queueMicrotask(()=>arrangeStepPanes(panel,steps));
   if(!directorRuns[id])loadDirector(id).then(()=>{if(state.project?.id===id&&steps.isConnected)refreshSteps(steps);});
@@ -62,12 +68,12 @@ function renderDirectorStatus(panel){
 
 function arrangeStepPanes(panel,steps){
   if(!steps.isConnected)return;
-  const panes=['voice','director','video'].map(name=>{
+  const panes=stepNames.map(name=>{
     const pane=document.createElement('div');pane.className='episode-pane';pane.dataset.pane=name;pane.setAttribute('role','tabpanel');
     const actions=document.createElement('div');actions.className='episode-pane-actions';const info=document.createElement('div');info.className='episode-pane-info';
     pane.append(actions,info);return pane;});
   const take=(pane,selector)=>{for(const node of panel.querySelectorAll(`:scope > ${selector}`))pane.append(node);};
-  const [voice,director,video]=panes;
+  const [voice,director,video,final]=panes;
   // Voice: the summary of frames and voice length, the recognition report in full and the script. Its own buttons go to
   // the pane's button row; the report button is not needed next to the report itself.
   panel.querySelector(':scope > .plan-heading .plan-stage-tag')?.remove();   // the tabs show the stage now
@@ -94,19 +100,20 @@ function arrangeStepPanes(panel,steps){
   // the frame picker comes first in its tab, above the team and the feed
   const picker=panel.querySelector(':scope > .plan-start');if(picker)video.querySelector('.episode-pane-info').before(picker);
   panel.querySelector(':scope > .plan-cost-estimate')?.remove();
-  steps.after(...panes);
+  steps.closest('.episode-flow').querySelector('.episode-panes').append(...panes);
   refreshSteps(steps);
 }
 
-function paneOf(steps,name){let pane=steps.nextElementSibling;while(pane?.classList.contains('episode-pane')){if(pane.dataset.pane===name)return pane;pane=pane.nextElementSibling;}return null;}
+function paneOf(steps,name){return steps?.closest('.episode-flow')?.querySelector(`.episode-pane[data-pane="${name}"]`) || null;}
 
 // Fills every tab's status line and every pane's buttons from the current state; runs again whenever the director run changes.
 function refreshSteps(steps){
   if(!steps?.isConnected)return;
-  const id=steps.dataset.project,[voice,director,video]=steps.querySelectorAll('.episode-step');
+  const id=steps.dataset.project,[voice,director,video,final]=steps.querySelectorAll('.episode-step');
   fillVoice(voice,paneOf(steps,'voice'));
   fillDirector(director,paneOf(steps,'director'),id);
   fillVideo(video,paneOf(steps,'video'));
+  fillFinal(final,paneOf(steps,'final'));
   markStage(steps);
 }
 
@@ -249,12 +256,31 @@ function framePicker(picker){
   if(floor>=frames.length){strip.classList.add('complete');max.disabled=true;}
 }
 
-// The first step that is not done is where the episode stands: it is marked «Зараз», the done ones get a tick, the
-// later ones stay dim, and a line above says it in words.
+// Frames of the director's plan that are already pictures on the timeline.
+function madeFrames(){
+  const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
+  return (state.plan?.frames || []).filter(frame=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)).length;
+}
+
+// Step 4: the film itself. Once every frame is drawn it is exported in one go: frames, plate and logo, music, voice.
+function fillFinal(step,pane){
+  const text=step.querySelector('p'),total=state.plan?.frames?.length || 0,made=madeFrames(),all=directorDone()&&total&&made>=total;
+  step.querySelector('.episode-step-cost').textContent='Рендер на цьому Mac · $0';
+  step.dataset.state=all?'active':'waiting';text.textContent=all?'Можна експортувати':total?`Готово кадрів: ${made} з ${total}`:'Після створення відео';
+  const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
+  if(!actions)return;
+  actions.replaceChildren();
+  if(all){const exporter=stepButton('Експорт MP4',()=>$('export-open').click(),true);exporter.classList.add('glow-action');actions.append(exporter);}
+  info.textContent=all?'Студія збере ролик з усіх кадрів, плашки й логотипа каналу, музики й озвучки з гучністю −14 LUFS і покладе MP4 у папку випуску.'
+    :total?`Коли всі ${total} ${planFrameWord(total)} будуть намальовані, тут з’явиться експорт готового ролика.`:'Коли всі кадри будуть намальовані, тут з’явиться експорт готового ролика.';
+}
+
+// The first step that is not done is where the episode stands: it is marked «Зараз», done ones turn green, later ones
+// stay dim, and a line above says it in words.
 function markStage(steps){
   const items=[...steps.querySelectorAll('.episode-step')],current=items.findIndex(item=>item.dataset.state!=='done');
   items.forEach((item,index)=>{item.classList.toggle('current',index===current);item.classList.toggle('upcoming',current>=0&&index>current);
-    item.querySelector('.episode-step-number').textContent=item.dataset.state==='done'?'✓':String(index+1);});
+    item.querySelector('.episode-step-number').textContent=String(index+1);});   // the order stays readable; the green icon says done
   const line=steps.previousElementSibling;
   if(line?.classList.contains('episode-stage'))line.innerHTML=current<0?'<strong>Усі етапи пройдено</strong>':`Етап <strong>${current+1} з ${items.length}</strong> · ${esc(items[current].querySelector('strong').textContent)}`;
   showStepPane(steps);
@@ -265,7 +291,7 @@ function showStepPane(steps){
   const items=[...steps.querySelectorAll('.episode-step')],current=items.findIndex(item=>item.classList.contains('current'));
   const chosen=stepChoice.get(steps.dataset.project) ?? (current<0?items.length-1:current);
   items.forEach((item,index)=>{item.classList.toggle('selected',index===chosen);item.setAttribute('aria-selected',String(index===chosen));});
-  ['voice','director','video'].forEach((name,index)=>{const pane=paneOf(steps,name);if(pane)pane.hidden=index!==chosen;});
+  stepNames.forEach((name,index)=>{const pane=paneOf(steps,name);if(pane)pane.hidden=index!==chosen;});
 }
 
 async function pollDirector(id){
