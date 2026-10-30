@@ -289,7 +289,8 @@ function renderOverview() {
     const card=document.createElement('article');card.className='project-card';card.dataset.projectId=project.id;card.setAttribute('aria-label',`Випуск «${project.name}»`);
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"></div>`;
+    // the title sits at the bottom left, where the date was, and the length at the bottom right (user, 30 October 2026)
+    open.innerHTML=`<div class="project-meta"><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2></div>`;
     open.addEventListener('click',()=>selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true)));
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
       const duration=document.createElement('span');duration.className='project-duration';
