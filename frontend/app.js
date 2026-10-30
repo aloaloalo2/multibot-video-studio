@@ -278,18 +278,6 @@ function showProjectList() {
   }
 }
 
-function projectCreationDate(timestamp){
-  const raw=Number(timestamp);
-  if(!Number.isFinite(raw) || raw<=0)return null;
-  const date=new Date(raw<1e11?raw*1000:raw);
-  if(!Number.isFinite(date.getTime()))return null;
-  const formatter=new Intl.DateTimeFormat('uk-UA',{timeZone:'Europe/Kyiv',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-  const values=Object.fromEntries(formatter.formatToParts(date).map(part=>[part.type,part.value]));
-  const now=Object.fromEntries(formatter.formatToParts(new Date()).map(part=>[part.type,part.value]));
-  const today=values.day===now.day && values.month===now.month && values.year===now.year;
-  return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
-}
-
 function renderOverview() {
   $('overview-title').innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';
   $('overview-create').disabled=!state.channel;
@@ -300,9 +288,8 @@ function renderOverview() {
   for(const project of state.projects){
     const card=document.createElement('article');card.className='project-card';card.dataset.projectId=project.id;card.setAttribute('aria-label',`Випуск «${project.name}»`);
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
-    const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
+    open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"></div>`;
     open.addEventListener('click',()=>selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true)));
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
       const duration=document.createElement('span');duration.className='project-duration';
