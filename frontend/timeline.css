@@ -169,3 +169,6 @@
 .export-gap-list button{padding:4px 8px;font-size:12px;border:1px solid #7a3b3f;border-radius:7.5px;background:#3a2023;color:#ffd6d8;font-variant-numeric:tabular-nums;transition:background-color .12s;}
 .export-gap-list span{color:#c99a9d;font-size:12px;}
 @media(hover:hover){.export-gap-list button:hover{background:#4d2a2e;}}
+/* An animated film's frames that are not drawn yet (only the director's code block): darker and greyer than drawn ones. */
+.frame-group-clip.group-empty,.universal-clip.empty-frame{background:#26262b;color:#6e7078;border-color:#1c1c20}
+.frame-group-clip.group-empty.selected,.universal-clip.empty-frame.selected{background:#34343a;color:#c9cbd2}

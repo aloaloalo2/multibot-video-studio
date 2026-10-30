@@ -93,6 +93,8 @@ function expandFrameGroup(group){
   renderInspector();renderPreview();
 }
 
+function emptyFrameClip(clip){return clip.kind==='animation'&&clip.content_type==='shape'&&!clip.asset_id&&/^Razgon · кадр/.test(clip.title || '');}
+
 function groupLane(title,groups,ref){
   const row=document.createElement('div');row.className='track-row universal-row grouped-row';
   const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=title;
@@ -105,6 +107,8 @@ function groupLane(title,groups,ref){
     let slot=occupied.findIndex(end=>end<=bounds.start+.001);if(slot<0)slot=occupied.length;occupied[slot]=bounds.end;
     const button=document.createElement('button');button.type='button';button.draggable=true;button.className='frame-group-clip'+(state.selectedGroup===group.id?' selected':'');button.dataset.groupId=group.id;
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
+    // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty
+    if(members.every(emptyFrameClip))button.classList.add('group-empty');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
     const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
     button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');
@@ -143,7 +147,7 @@ function renderGroupedTimelineWithIndex(){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
     const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
-    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind;button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
+    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
   }
 }
 
