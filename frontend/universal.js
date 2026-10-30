@@ -2,6 +2,10 @@
 
 function isUniversal(){return Number(state.project?.schema_version)>=2;}
 function layers(){return isUniversal()?(state.project.tracks || []).filter(track=>track.type==='universal'):[];}
+// The timeline reads like any editor: the higher a row, the higher its layer in the picture, and the sound rows, which
+// sit in no layer of the picture, go under all of them (user, 30 October 2026).
+function soundOnlyLayer(layer){return (layer.clips || []).length>0&&layer.clips.every(clip=>clip.kind==='audio');}
+function timelineRowOrder(list){const top=[...list].reverse();return [...top.filter(layer=>!soundOnlyLayer(layer)),...top.filter(soundOnlyLayer)];}
 function universalClips(){return layers().flatMap(layer=>layer.clips || []);}
 function universalSelection(){for(const layer of layers()){const clip=(layer.clips || []).find(item=>item.id===state.selected);if(clip)return {clip,layer};}return null;}
 function activeLayer(){return layers().find(layer=>layer.id===state.activeLayer) || layers()[layers().length-1];}
@@ -25,7 +29,7 @@ function renderUniversalTimeline(){
   const label=document.createElement('div');label.className='track-label';ruler.append(label);
   const marks=document.createElement('div');marks.className='time-ruler-marks';marks.style.width=width+'px';
   renderTimelineRulerMarks(marks,total,width);ruler.append(marks);
-  for(const layer of [...layers()].reverse()){
+  for(const layer of timelineRowOrder(layers())){
     if(state.expandedGroup && !sceneGroups().find(g=>g.id===state.expandedGroup)?.clip_ids.some(id=>(layer.clips || []).some(c=>c.id===id)))continue;
     const index=layers().findIndex(item=>item.id===layer.id);
     const row=document.createElement('div');row.className='track-row universal-row'+(state.activeLayer===layer.id?' active-layer':'');

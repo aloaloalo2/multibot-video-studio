@@ -150,7 +150,9 @@ function renderGroupedTimelineWithIndex(){
   for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:group.title,groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});
-  rows.sort((a,b)=>b.z-a.z);
+  // the higher the row, the higher its layer in the picture; sound rows go under all of them (universal.js timelineRowOrder)
+  const sound=entry=>!entry.groups&&entry.clip.kind==='audio';
+  rows.sort((a,b)=>sound(a)-sound(b) || b.z-a.z);
   for(const entry of rows){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
     const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
