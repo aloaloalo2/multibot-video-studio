@@ -45,7 +45,8 @@ class ProductionTest(unittest.TestCase):
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
         request = self.project["production_request"]
-        self.assertEqual((request["status"], request["cost_usd"], request["minutes"]), ("done", 4.2, 1.0))
+        self.assertEqual((request["status"], request["cost_usd"]), ("done", 4.2))
+        self.assertGreaterEqual(request["minutes"], 0)                                 # wall clock from the start
         mirror = json.loads((Path(self.project["episode_path"]) / "Запит на створення.json").read_text())
         self.assertEqual(mirror["status"], "done")
         self.assertNotIn(self.project["id"], production.ACTIVE)

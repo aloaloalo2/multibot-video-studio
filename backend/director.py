@@ -86,12 +86,20 @@ def brief(project: dict) -> str:
 Наприкінці коротко напиши українською: скільки шотів і кадрів студії вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
 
 
-def spent(answer: dict) -> dict:
-    """What a run actually used, from Claude Code's answer: tokens in (cached ones included) and out, and minutes."""
-    usage = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
-    number = lambda key: int(usage.get(key) or 0)
-    return {"tokens_in": number("input_tokens") + number("cache_creation_input_tokens") + number("cache_read_input_tokens"),
-            "tokens_out": number("output_tokens"), "minutes": round(float(answer.get("duration_ms") or 0) / 60000, 1)}
+def spent(answer: dict, started: float | None = None) -> dict:
+    """What a run actually used: tokens in (cached ones included) and out, and minutes. Claude Code may close with several
+    results (it resumes after background work); their per-model usage is cumulative, so the last one holds the whole run,
+    and the minutes are the wall clock from the start."""
+    models = answer.get("modelUsage") if isinstance(answer.get("modelUsage"), dict) else {}
+    if models:
+        tokens_in = sum(int(u.get("inputTokens") or 0) + int(u.get("cacheReadInputTokens") or 0) + int(u.get("cacheCreationInputTokens") or 0) for u in models.values())
+        tokens_out = sum(int(u.get("outputTokens") or 0) for u in models.values())
+    else:
+        usage = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
+        tokens_in = sum(int(usage.get(key) or 0) for key in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        tokens_out = int(usage.get("output_tokens") or 0)
+    minutes = (time.time() - started) / 60 if started else float(answer.get("duration_ms") or 0) / 60000
+    return {"tokens_in": tokens_in, "tokens_out": tokens_out, "minutes": round(minutes, 1)}
 
 
 # What the agent is doing, in the author's words: each command or file it touches becomes one line of the activity
@@ -135,11 +143,11 @@ def activity_path(pid: str, kind: str) -> Path:
     return store.project_dir(pid) / f"{kind}-activity.json"
 
 
-def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int) -> tuple[int, dict]:
+def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     command = [str(cli), "--model", MODEL, "--effort", EFFORT, "--strict-mcp-config", "--permission-mode", "acceptEdits",
-               "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"]
+               "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
     process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     expired = threading.Event()
     watchdog = threading.Timer(timeout, lambda: (expired.set(), process.kill()))
@@ -189,7 +197,7 @@ def run(pid: str, cli: Path) -> None:
             data.update(status="failed", error=(answer.get("result") or "Режисура не записала план кадрів у студію")[-600:])
         else:
             data.update(status="done", summary=(answer.get("result") or "").strip()[-2000:], frames=len(plan.get("frames") or []))
-        data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"), **spent(answer))
+        data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"), **spent(answer, data["started_at"]))
     except subprocess.TimeoutExpired:
         data.update(status="failed", error="Режисура не вклалася в 3 години")
     except (OSError, store.StudioError) as error:

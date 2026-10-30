@@ -183,13 +183,14 @@ function fillVideo(step,pane){
     renderTeam(info,'production',state.project.id,true);
     productionTimer=setTimeout(()=>pollProduction(state.project.id),8000);
   }else if(request?.status==='failed'){
-    step.dataset.state='failed';text.textContent=`Кадри 1–${request.frames} не вдалися`;if(info)info.textContent=`${request.error || 'Невідома помилка'} Виберіть кадри й натисніть ще раз.`;
+    step.dataset.state='failed';text.textContent=`Кадри 1–${request.frames} не вдалися`;if(info){info.textContent=`${request.error || 'Невідома помилка'} Виберіть кадри й натисніть ще раз.`;fixBox(info,request);}
   }else if(request?.status==='done'){
     const all=request.frames>=request.total_frames;step.dataset.state=all?'done':'active';
     text.textContent=all?'Усі кадри готові':`Кадри 1–${request.frames} готові`;
     if(info){info.textContent=all?'':'Готові кадри вже на таймлайні в «Монтажі». Перегляньте їх і, якщо подобаються, виберіть наступні.';
       if(request.summary){const details=document.createElement('details');details.className='plan-script';const summary=document.createElement('summary');summary.textContent='Звіт агента';const body=document.createElement('div');body.className='plan-script-text';body.textContent=request.summary;details.append(summary,body);info.append(details);}
       renderTeam(info,'production',state.project.id,false);}
+    fixBox(info,request);
   }else{step.dataset.state='active';text.textContent='Виберіть кадри';}
   // The frame picker stands open in this pane: its own «Створити N кадрів» confirms, so the heading's start button
   // and the picker's «Скасувати» are not needed.
@@ -227,6 +228,11 @@ function framePicker(picker){
   const handle=document.createElement('span');handle.className='frame-strip-handle';strip.append(handle);
   const max=document.createElement('button');max.type='button';max.className='secondary frame-strip-max';max.textContent='Макс';max.title=`Усі ${frames.length} кадрів`;
   row.append(strip,max);slider.after(row);
+  // Frames already drawn are pictures on the timeline: they show green, so the strip says what is done.
+  const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
+  const made=new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)?index:-1).filter(index=>index>=0));
+  segments.forEach((cell,index)=>{if(made.has(index)){cell.classList.add('made');cell.title+=' · готовий';}});
+  if(made.size){const legend=document.createElement('p');legend.className='frame-strip-legend';legend.innerHTML=`<span class="made"></span>Готові: ${made.size}<span class="chosen"></span>Вибрані для створення`;row.after(legend);}
   const paint=()=>{const count=Number(slider.value);segments.forEach((cell,index)=>cell.classList.toggle('chosen',index<count));
     handle.style.left=`${Number(frames[count-1].end)/total*100}%`;strip.setAttribute('aria-valuenow',String(count));max.classList.toggle('active',count===frames.length);};
   const set=count=>{slider.value=String(Math.max(1,Math.min(frames.length,count)));slider.dispatchEvent(new Event('input'));paint();};
@@ -237,6 +243,20 @@ function framePicker(picker){
   strip.addEventListener('keydown',event=>{const step={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[event.key];if(step){event.preventDefault();set(Number(slider.value)+step);}});
   max.addEventListener('click',()=>set(frames.length));
   paint();
+}
+
+// After a run the author can send remarks on its frames: the agent goes on in the same session and fixes exactly them.
+function fixBox(info,request){
+  if(!info)return;
+  const box=document.createElement('div');box.className='fix-box';
+  box.innerHTML=`<label for="production-notes"><strong>Що виправити в кадрах 1–${request.frames}?</strong><span>Агент продовжить ту саму роботу й переробить ці кадри.</span></label><textarea id="production-notes" rows="3" maxlength="4000" placeholder="Наприклад: у кадрі 3 ноги героя задовгі й зігнуті не туди; трикутник замість гелікоптера замінити асетом"></textarea>`;
+  const send=stepButton('Надіслати правки',async()=>{
+    const notes=box.querySelector('textarea').value.trim();if(!notes){status('Напишіть, що виправити.',true);return;}
+    send.disabled=true;
+    try{const {project}=await api(`/api/projects/${encodeURIComponent(state.project.id)}/production-fix`,'POST',{notes});state.project=project;status('Правки надіслано агенту.');renderPlan();}
+    catch(error){send.disabled=false;status(error.message,true);}
+  },true);
+  send.classList.add('fix-send');box.append(send);info.prepend(box);
 }
 
 // The first step that is not done is where the episode stands: it is marked «Зараз», the done ones get a tick, the
