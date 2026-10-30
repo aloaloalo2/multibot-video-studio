@@ -1,4 +1,4 @@
-// director.js — the director card on the plan of an animated episode. Once the voice is recognised the Studio hands the
+// director.js — the steps of an animated episode on its plan: the voice, then the director. Once the voice is recognised the Studio hands the
 // episode to Claude Opus 5.5 (high effort), which directs it and writes the frame plan back (backend/director.py). The card
 // shows where that run stands, refreshes itself while it runs, reloads the plan when the frames arrive, and starts a new
 // pass on request.
@@ -11,14 +11,16 @@ function directorAnimated(){return state.channel?.settings?.channel_kind==='anim
 // the timing behind them, so the plan shows the director instead of those frames.
 function directorAwaited(){return directorAnimated() && state.plan?.frame_source!=='razgon-direction';}
 
+// The episode's steps on its plan: 1 — the voice, 2 — the director, 3 — making the video. The wait view (no director frames yet) carries the
+// voice buttons in step 1; a directed plan has them in its summary row already.
+const stepIcons={voice:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
+  video:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>',
+  director:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 10l-.6-3.3a1 1 0 0 1 .8-1.2L17 3.2a1 1 0 0 1 1.2.8L18.7 7M8 4.8l2.4 3.6M13.2 3.9l2.4 3.6"/></svg>'};
+
 function renderDirectorWait(panel){
   const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
-  const row=document.createElement('div');row.className='plan-summary';
-  const note=document.createElement('span');note.textContent=state.project?.production?.plan_ready?'Озвучку розпізнано. Кадри складе режисер.':'Кадри складе режисер, щойно озвучку буде розпізнано.';
-  const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);
-  row.append(note,bind);panel.append(heading,row);
-  if(typeof renderSpeechReport==='function')renderSpeechReport(panel);
-  renderDirectorStatus(panel);
+  panel.append(heading);
+  renderDirectorStatus(panel,true);
 }
 
 async function loadDirector(id){
@@ -29,45 +31,72 @@ async function loadDirector(id){
 
 function directorTime(seconds){return new Date(seconds*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});}
 
-function renderDirectorStatus(panel){
+function episodeStep(number,icon,title){
+  const step=document.createElement('section');step.className='episode-step';
+  step.innerHTML=`<div class="episode-step-head"><span class="episode-step-icon">${stepIcons[icon]}</span><span class="episode-step-number">${number}</span><strong>${title}</strong></div><p></p><div class="episode-step-actions"></div>`;
+  return step;
+}
+
+function fillVoiceStep(step,withButtons){
+  const analysis=state.analysis?.job?.project_id===state.project?.id?state.analysis:null,report=analysis?.report,job=analysis?.job;
+  const text=step.querySelector('p'),actions=step.querySelector('.episode-step-actions');
+  const percent=report?`${Number(report.word_match_percent).toFixed(1)}%`:'';
+  if(state.project?.production?.plan_ready){step.dataset.state='done';text.textContent=percent?`Розпізнано: ${percent} слів збіглося зі сценарієм.`:'Розпізнано, таймінги застосовано.';}
+  else if(job && ['queued','running'].includes(job.status)){step.dataset.state='active';text.textContent=`${(typeof speechStageNames!=='undefined'&&speechStageNames[job.stage]) || 'Обробка файлу'}: ${job.progress}%`;}
+  else if(report){step.dataset.state='failed';text.textContent=`Потрібна перевірка: ${percent} слів збіглося.`;}
+  else if(job?.status==='failed'){step.dataset.state='failed';text.textContent=job.error;}
+  else{step.dataset.state='waiting';text.textContent='Перетягніть аудіо озвучки в студію або додайте його кнопкою.';}
+  if(!withButtons)return;
+  const bind=document.createElement('button');bind.type='button';bind.className='secondary';bind.textContent='Додати озвучку';bind.addEventListener('click',openNarrationBinding);actions.append(bind);
+  if(report){const open=document.createElement('button');open.type='button';open.className='secondary';open.textContent='Звіт розпізнавання';
+    open.addEventListener('click',()=>{modal('Розпізнавання мовлення','<div id="speech-report-modal"></div>',[{label:'Закрити',run:closeModal}]);appendSpeechReport($('speech-report-modal'),report);});actions.append(open);}
+}
+
+function renderDirectorStatus(panel,withVoiceButtons=false){
   if(!state.project || !directorAnimated())return;
-  const id=state.project.id,card=document.createElement('section');card.className='director-card';card.setAttribute('role','status');card.setAttribute('aria-live','polite');
-  panel.append(card);
-  const run=directorRuns[id];
-  if(!run){loadDirector(id).then(()=>{if(state.project?.id===id&&card.isConnected)fillDirector(card,id);});card.textContent='Перевіряємо режисуру...';return;}
+  const id=state.project.id,steps=document.createElement('div');steps.className='episode-steps';
+  const voice=episodeStep(1,'voice','Озвучка'),card=episodeStep(2,'director','Режисура');
+  card.classList.add('director-card');card.setAttribute('role','status');card.setAttribute('aria-live','polite');
+  fillVoiceStep(voice,withVoiceButtons);
+  const video=episodeStep(3,'video','Створення відео');fillVideoStep(video);
+  steps.append(voice,card,video);panel.append(steps);
+  if(!directorRuns[id]){card.querySelector('p').textContent='Перевіряємо режисуру...';loadDirector(id).then(()=>{if(state.project?.id===id&&card.isConnected)fillDirector(card,id);});return;}
   fillDirector(card,id);
+}
+
+// Step 3 follows the production request: the author picks the first frames, the agent draws their scenes.
+function fillVideoStep(step){
+  const text=step.querySelector('p'),actions=step.querySelector('.episode-step-actions'),request=state.project?.production_request;
+  const directed=state.plan?.frame_source==='razgon-direction'&&!state.plan?.director_stale;
+  if(!directed){step.dataset.state='waiting';text.textContent='Після режисури: виберіть кадри, і агент намалює їхні сцени.';return;}
+  if(request){step.dataset.state='active';text.textContent=`Запит агенту: кадри 1–${request.frames}, ${request.status==='requested'?'чекає агента':request.status}.`;return;}
+  step.dataset.state='active';text.textContent='Виберіть, скільки перших кадрів зробити, і агент намалює їхні сцени.';
+  const begin=document.querySelector('.plan-start-button');
+  if(begin){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='Почати створення відео';b.disabled=begin.disabled;b.addEventListener('click',()=>begin.click());actions.append(b);}
 }
 
 function fillDirector(card,id){
   const run=directorRuns[id],synced=!!state.project?.production?.plan_ready,directed=state.plan?.frame_source==='razgon-direction'&&!state.plan?.director_stale;
-  card.replaceChildren();card.dataset.status=run.status;
-  const head=document.createElement('div');head.className='director-head';
-  const title=document.createElement('strong');
-  const who=document.createElement('span');who.className='director-model';who.textContent='Claude Opus 5.5 · високий';
-  head.append(title,who);card.append(head);
-  const text=document.createElement('p');card.append(text);
-  const button=label=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.addEventListener('click',()=>startDirector(id));card.append(b);return b;};
+  const head=card.querySelector('.episode-step-head'),text=card.querySelector('p'),actions=card.querySelector('.episode-step-actions');
+  card.querySelector('details')?.remove();actions.replaceChildren();
+  if(!head.querySelector('.director-model')){const who=document.createElement('span');who.className='director-model';who.textContent='Claude Opus 5.5 · високий';head.append(who);}
+  const button=label=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.addEventListener('click',()=>startDirector(id));actions.append(b);return b;};
   clearTimeout(directorTimer);
+  card.dataset.status=run.status;
   if(run.status==='queued' || run.status==='running'){
-    title.textContent='Режисура йде';
-    text.textContent=`Агент ділить озвучку на шоти й пише план кадрів${run.started_at?`, почав о ${directorTime(run.started_at)}`:''}. Сцени він не малює. Сторінку можна закрити.`;
+    card.dataset.state='active';
+    text.textContent=`Ділить озвучку на шоти й пише план кадрів${run.started_at?`, почав о ${directorTime(run.started_at)}`:''}. Сцени не малює. Сторінку можна закрити.`;
     directorTimer=setTimeout(()=>pollDirector(id),10000);
-  }else if(run.status==='done'){
-    title.textContent='Режисуру зроблено';
-    text.textContent=`${run.frames?`${run.frames} кадрів у плані. `:''}Готово о ${directorTime(run.finished_at)}${run.cost_usd?` · за підпискою, еквівалент $${Number(run.cost_usd).toFixed(2)}`:''}.`;
-    if(run.summary){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Звіт режисера';const body=document.createElement('p');body.textContent=run.summary;details.append(summary,body);card.append(details);}
-    button('Переробити режисуру');
   }else if(run.status==='failed'){
-    title.textContent='Режисура не вдалася';
-    text.textContent=run.error || 'Невідома помилка';
-    button('Спробувати ще раз');
-  }else if(directed){
-    title.textContent='План кадрів за режисурою';
-    text.textContent='Кадри цього плану вже розбив режисер.';
+    card.dataset.state='failed';text.textContent=run.error || 'Невідома помилка';button('Спробувати ще раз');
+  }else if(run.status==='done' || directed){
+    card.dataset.state='done';
+    text.textContent=run.status==='done'?`${run.frames?`${run.frames} кадрів у плані. `:''}Готово о ${directorTime(run.finished_at)}${run.cost_usd?` · за підпискою, еквівалент $${Number(run.cost_usd).toFixed(2)}`:''}.`:'Кадри цього плану розбив режисер.';
+    if(run.summary){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Звіт режисера';const body=document.createElement('p');body.textContent=run.summary;details.append(summary,body);actions.before(details);}
     button('Переробити режисуру');
   }else{
-    title.textContent='Режисура';
-    text.textContent=synced?'Озвучка розпізнана. Режисер розіб’є її на шоти й запише план кадрів.':'Режисура почнеться сама, щойно студія розпізнає озвучку.';
+    card.dataset.state=synced?'active':'waiting';
+    text.textContent=synced?'Озвучку розпізнано. Режисер розіб’є її на шоти й запише план кадрів.':'Почнеться сама, щойно озвучку буде розпізнано.';
     const b=button('Запустити режисуру');b.disabled=!synced;
   }
 }

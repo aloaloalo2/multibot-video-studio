@@ -793,16 +793,22 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-add-box{display:grid;place-items:center;width:100%;aspect-ratio:16/9;border:2px dashed #4a4a52;border-radius:9.5px;color:#9a9ca4;font-size:22px;transition:border-color .15s,color .15s}
 @media(hover:hover){.style-add:not(:disabled):hover .style-add-box{border-color:#f0b429;color:#f0b429}}
 .style-add:disabled{opacity:.5;cursor:default}
-.director-card{margin:14px 0;padding:14px 16px;border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
-.director-card[data-status="running"],.director-card[data-status="queued"]{border-color:#6bf2ae66}
-.director-card[data-status="failed"]{border-color:#ff6f6166}
-.director-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.director-head strong{font-size:14px;color:#f1f1f2}
+.episode-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
+@media(max-width:900px){.episode-steps{grid-template-columns:1fr}}
+.episode-step{padding:14px 16px;border:1px solid #35353a;border-radius:20.5px;background:#1b1b1e;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
+.episode-step-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.episode-step-head strong{font-size:14px;color:#f1f1f2}
+.episode-step-icon{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#26272b;color:#aeb0b7;flex:none}
+.episode-step-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.episode-step-number{font-size:12px;font-weight:700;color:#8a8c94}
+.episode-step p{margin:0;font-size:13px;color:#aeb0b7;line-height:1.45}
+.episode-step details{font-size:13px;color:#aeb0b7}.episode-step details p{white-space:pre-wrap;margin-top:6px}
+.episode-step-actions{display:flex;gap:8px;flex-wrap:wrap}.episode-step-actions:empty{display:none}
+.episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
+.episode-step[data-state="active"]{border-color:#6bf2ae66}.episode-step[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae;animation:director-pulse 1.4s ease-in-out infinite}
+.episode-step[data-state="failed"]{border-color:#f0b42966}.episode-step[data-state="failed"] .episode-step-icon{background:#372f1e;color:#f0b429}
 .director-model{font-size:11px;color:#8dffc6;background:#0e241a;border:1px solid #3fe39a73;padding:2px 8px;border-radius:9.5px}
-.director-card p{margin:0;font-size:13px;color:#aeb0b7;line-height:1.45}
-.director-card details{font-size:13px;color:#aeb0b7}.director-card details p{white-space:pre-wrap;margin-top:6px}
-.director-card[data-status="running"] .director-head strong::after,.director-card[data-status="queued"] .director-head strong::after{content:'';display:inline-block;width:7px;height:7px;margin-left:8px;border-radius:50%;background:#6bf2ae;animation:director-pulse 1.2s ease-in-out infinite}
-@keyframes director-pulse{50%{opacity:.25}}
+@keyframes director-pulse{50%{opacity:.45}}
 .thumb-modal-open .modal{width:min(620px,100%)}
 .thumb-note{margin:0 0 12px;font-size:13px;color:#aeb0b7;line-height:1.45}
 .thumb-current{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;margin-bottom:12px}
@@ -830,3 +836,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .field-row input:not([type=range]),.field-row select,.universal-properties input:not([type=range]),.universal-properties select,.universal-properties button,
 .pixabay-kind select,.asset-result-actions button,.library-tabs button,.modal-body .weight-row,.service-key-row,.render-progress{border-radius:12.5px}
 .style-thumb img,.style-add-box,.style-frame,.asset-preview img,.asset-preview video,.asset-video-result video,.plan-attached,.plan-format-chip,.layer-heading{border-radius:11.5px}
+.plan-table-fold{border:1px solid #414149;border-radius:20.5px;background:#202024;margin:14px 0;overflow:hidden}
+.plan-table-fold>summary{cursor:pointer;padding:13px 15px;font-weight:600;color:#e4e5e9}
+.plan-table-fold>.plan-table{margin:0;border:0;border-radius:0}

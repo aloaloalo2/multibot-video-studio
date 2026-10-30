@@ -238,7 +238,10 @@ function renderPlan(){
     const phrases=synced?phraseItems.map(phrase=>`<li><time>${planClock(phrase.start)} - ${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
     row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}</strong><span>${planClock(frame.start)} - ${planClock(frame.end)}</span><small>${Number((Number(frame.end)-Number(frame.start)).toFixed(3))} с</small></td><td>${esc(names[frame.format] || frame.format)}</td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
   });
-  table.append(body);panel.append(table);
+  table.append(body);
+  // Once the frames follow the voice the table is reference: it opens on demand instead of filling the page.
+  if(synced){const fold=document.createElement('details');fold.className='plan-table-fold';const label=document.createElement('summary');label.textContent=`Таблиця кадрів (${frames.length})`;fold.append(label,table);panel.append(fold);}
+  else panel.append(table);
 }
 
 $('view-plan').addEventListener('click',()=>setProjectView('plan'));
