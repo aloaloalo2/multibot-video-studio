@@ -51,4 +51,4 @@ Scene shape: `{id,start,duration,title,asset_id,type,transition:{type,duration},
 
 Run `node --check app.js`. Serve the frontend through the local backend and verify channel overview, project opening, asset replacement, timeline edits, settings save, and export job state in a browser. The UI intentionally does not execute direct filesystem writes.
 
-Project cards show no creation date (user, 30 October 2026): the cover, the title and the length are enough.
+Project cards show the immutable creation date in Kyiv time. Projects created on the current Kyiv calendar day display “Створено сьогодні” with the time; older projects retain the abbreviated date and time.
