@@ -816,3 +816,5 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card.thumb-running::after{content:'Малюємо прев’ю...';position:absolute;left:14px;bottom:44px;z-index:3;font-size:12px;color:#8dffc6;background:#0e241acc;border:1px solid #3fe39a73;padding:3px 9px;border-radius:9.5px;pointer-events:none}
 .project-action.thumbnail svg{stroke:#f0b429}
 .project-card h2{margin-top:0;margin-right:104px}
+.speech-report-button[data-applied="false"]{color:#f0b429;border-color:#f0b42966}
+#speech-report-modal .speech-report{margin:0}

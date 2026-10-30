@@ -25,9 +25,17 @@ function appendSpeechReport(target,report){
   const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
 }
 
+// The recognition report sits behind one button next to «Додати озвучку»: the plan stays short, the details open on demand.
 function renderSpeechReport(panel){
   if(!state.analysis || state.analysis.job?.project_id!==state.project?.id)return;
-  if(state.analysis.report){appendSpeechReport(panel,state.analysis.report);return;}
+  const report=state.analysis.report;
+  if(report){
+    const button=document.createElement('button');button.type='button';button.className='secondary speech-report-button';button.dataset.applied=String(!!report.applied);
+    button.textContent=`${report.applied?'Розпізнавання мовлення':'Розпізнавання: потрібна перевірка'} · ${Number(report.word_match_percent).toFixed(1)}%`;
+    button.addEventListener('click',()=>{modal('Розпізнавання мовлення','<div id="speech-report-modal"></div>',[{label:'Закрити',run:closeModal}]);appendSpeechReport($('speech-report-modal'),report);});
+    (panel.querySelector('.plan-summary') || panel).append(button);
+    return;
+  }
   const job=state.analysis.job;
   if(job){const note=document.createElement('p');note.className='plan-note';note.textContent=job.status==='failed'?job.error:`${speechStageNames[job.stage] || 'Обробка файлу'}: ${job.progress}%`;panel.append(note);}
 }

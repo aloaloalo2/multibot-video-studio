@@ -9,6 +9,7 @@ import time
 import uuid
 
 import speech
+import speech_repair
 import director
 import store
 import number_text
@@ -115,6 +116,8 @@ def worker(job, script, save_job):
             audio_hash = store.audio_fingerprint(path)
             progress(15, "loading_model")
             words, engine = speech.transcribe(path, duration, progress)
+            # Whisper sometimes swallows a sentence on a long voice: those holes are recognised again on their own.
+            words, engine["repaired_holes"] = speech_repair.repair(path, words, engine.get("language"))
             progress(90, "comparing")
             report = speech.compare_script(script, words, duration)
             report.update(engine=engine, source={"asset_id": source["id"], "name": source["name"], "kind": source["kind"], "sha256": original_hash},
