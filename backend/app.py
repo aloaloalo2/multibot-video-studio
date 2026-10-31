@@ -728,6 +728,11 @@ class Handler(BaseHTTPRequestHandler):
     def json_response(self, value, status=200):
         if isinstance(value, dict) and isinstance(value.get("project"), dict):
             project = dict(value["project"])
+            if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
+                # no «Створюємо кадри» for a run that no longer exists
+                request = production.settle(project["id"])
+                if request and request.get("status") != project["production_request"].get("status"):
+                    project = dict(store.load_project(project["id"]))
             project.update(store.history_state(project["id"]))
             # the preview plays the voice at the export's level (audio_gain)
             project["production"], project["audio_gain"] = derived_state(project)

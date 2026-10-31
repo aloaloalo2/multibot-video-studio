@@ -67,13 +67,15 @@ The voice at 100% is the studio's standard level (`backend/audio_level.py`, user
 ## The plan page and the frame agent, the same for every channel (31 October 2026)
 
 The plan page (`frontend/director.js`, `renderEpisode`) is one column, the same for photo and animated channels, with no
-numbered steps: a short voice line (file, length, «розпізнано, збіг N%» and the bin that starts the episode over), the
+numbered steps: the voice stage as one line (file, length, «розпізнано, збіг N%» and the bin that starts the episode
+over) that opens on a click to «Текст озвучки й розпізнавання», «Таблиця кадрів» and «Звіт режисера» (user, 31 October
+2026: that stage is passed, the next one stands open; a recognition that needs a look opens it by itself), the
 director's state only while it works or needs the author (a stop, a limit pause, a changed text), then «Створення
 ролика»: the film as a strip of its frames (on a photo channel each frame in its format's colour from
 `planFormatVisuals`), the count picked by a drag across the strip (all frames by default), «Макс» and «Почати створення
 ролика». The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
-director and while the script is newer than the direction (`director_stale`). At the bottom, folded: «Текст озвучки й
-розпізнавання», «Таблиця кадрів», «Звіт режисера», «Звіт агента». A photo channel's plan from the planner keeps
+director and while the script is newer than the direction (`director_stale`). «Звіт агента» closes «Створення
+ролика». A photo channel's plan from the planner keeps
 «Перегенерувати план» in the heading.
 
 «Монтаж» opens with the first frame of the film on the timeline: any clip but sound, the clips of `role: overlay`
@@ -86,7 +88,10 @@ in `GET /api/projects` carries `production_request` (`status`, `frames`, `limit`
 again once it is done, paused or failed. The list is read again every 8 s while any card is in work. A frame counts as
 made (`store.made_frames`) when a film clip covers its middle; a Razgon code block counts once its scene is written;
 an animated film counts its frames drawn as code (`frame_progress.drawn`). A request for frames already made is refused
-with 409, a second request while one runs too.
+with 409, a second request while one runs too. A request that says the agent works while no agent of this Studio
+runs (a restart, a run that never started; 31 October 2026 a finished film read «Створюємо кадри» for good) is settled
+by `production.settle` whenever a project or the list is read and at start-up: done when every requested frame is made,
+otherwise stopped (a fresh request gets 30 s to start).
 
 `production.start` runs for every channel. A photo channel's agent (`production.photo_brief`, Claude Opus 5.5 at
 `xhigh`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,

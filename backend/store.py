@@ -436,6 +436,9 @@ def made_frames(project: dict, plan: dict | None) -> list[int]:
 def production_state(project: dict) -> dict | None:
     """The production request as the project list shows it: its state and how many of the asked frames are made."""
     request = project.get("production_request") or {}
+    if request.get("status") in {"requested", "in_progress"}:
+        import production   # a request no agent works on any more is settled first
+        request = production.settle(project["id"], project) or {}
     if not request.get("status"):
         return None
     state = {"status": request["status"], "frames": int(request.get("frames") or 0), "limit": bool(request.get("limit"))}

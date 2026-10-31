@@ -86,6 +86,25 @@ class ProductionTest(unittest.TestCase):
             production.start(self.project["id"])
         thread.assert_called_once()                                                    # no longer only for animated channels
 
+    def test_a_request_no_agent_works_on_is_settled(self):
+        self.project["production_request"].update(status="requested", created_at=0)
+        with patch.object(production.frame_progress, "drawn", return_value=[1, 2]):
+            production.settle(self.project["id"])
+        self.assertEqual(self.project["production_request"]["status"], "failed")   # frame 3 is missing
+        self.project["production_request"].update(status="in_progress")
+        self.project["tracks"] = [{"clips": [{"kind": "animation", "title": f"Razgon · кадр {n:03d}"} for n in (1, 2, 3)]}]
+        with patch.object(production.frame_progress, "drawn", return_value=[1, 2, 3]):
+            production.settle(self.project["id"])
+        self.assertEqual(self.project["production_request"]["status"], "done")       # the film is made: no «Створюємо кадри»
+        self.project["production_request"].update(status="requested", created_at=__import__("time").time())
+        production.settle(self.project["id"])
+        self.assertEqual(self.project["production_request"]["status"], "requested")  # a run that is only starting
+        self.project["production_request"].update(status="in_progress")
+        production.ACTIVE.add(self.project["id"])
+        production.settle(self.project["id"])
+        self.assertEqual(self.project["production_request"]["status"], "in_progress")  # a live run is left alone
+        production.ACTIVE.clear()
+
     def test_a_run_stopped_by_the_subscription_limit_is_a_pause_that_resumes_its_session(self):
         answer = {"is_error": True, "api_error": "usage_limit_reached", "session_id": "s1", "total_cost_usd": 3.0,
                   "result": "You've hit your session limit · resets 12:50pm (Europe/Kiev)"}

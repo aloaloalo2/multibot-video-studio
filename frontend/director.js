@@ -3,8 +3,8 @@
 // animated film into frames (backend/director.py), then «Створення ролика»: the film as a strip of its frames, the
 // count picked by a drag across it (all frames by default), «Макс» and «Почати створення ролика», which hands the
 // frames to the frame agent (backend/production.py) and goes back to the channel's projects, where the card shows the
-// progress. The voice text with its recognition, the frame table and the reports of the director and the agent stay
-// folded at the bottom. The film is exported by the header's «Експорт MP4».
+// progress. The voice line opens to the voice text with its recognition, the frame table and the director's report;
+// the agent's report closes «Створення ролика». The film is exported by the header's «Експорт MP4».
 const directorRuns={};
 let directorTimer=null,productionTimer=null;
 
@@ -54,13 +54,20 @@ function renderEpisode(panel){
   refreshEpisode(episode);
 }
 
-// The blocks of the page in their order; refreshEpisode fills what changes.
+// The blocks of the page in their order; refreshEpisode fills what changes. The voice is a stage already passed: its
+// block is one line that opens on demand to the voice text with its recognition, the frame table and the director's
+// report (user, 31 October 2026: «це все туди засунь… цей етап ми вже пройшли»). The next stage, «Створення ролика»,
+// stands open under it.
+const voiceOpen={};
 function arrangeEpisode(episode){
+  const id=state.project.id;
+  const stage=document.createElement('section');stage.className='episode-voice-block';stage.classList.toggle('open',!!voiceOpen[id]);
   const voice=document.createElement('div');voice.className='episode-voice';voice.setAttribute('aria-live','polite');
+  const body=document.createElement('div');body.className='episode-voice-body';body.id=`episode-voice-body-${id}`;body.hidden=!voiceOpen[id];
+  stage.append(voice,body);
   const director=document.createElement('section');director.className='episode-director';director.hidden=true;
   const make=document.createElement('section');make.className='episode-make';buildMake(make);
-  const folds=document.createElement('div');folds.className='episode-folds';
-  episode.append(voice,director,make,folds);
+  episode.append(stage,director,make);
   // Voice text and recognition: the text the frames follow and the recognition report under it.
   const words=episodeFold('Текст озвучки й розпізнавання');
   const frames=state.plan?.frames || [];
@@ -71,15 +78,28 @@ function arrangeEpisode(episode){
   if(report)appendSpeechReport(reportSlot,report);
   else if(state.project){
     // a plan opened by its link has not loaded the recognition yet: fetch it and fill the fold and the voice line
-    const id=state.project.id;
     api(`/api/projects/${encodeURIComponent(id)}/analysis`).then(result=>{
       if(state.project?.id!==id||!reportSlot.isConnected)return;
       state.analysis=result;if(result.report&&!reportSlot.children.length)appendSpeechReport(reportSlot,result.report);refreshEpisode(episode);
     }).catch(()=>{});
   }
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready));
-  const reports=document.createElement('div');reports.className='episode-reports';
-  folds.append(words,table,reports);
+  const directorReport=document.createElement('div');directorReport.className='episode-director-report';
+  body.append(words,table,directorReport);
+}
+
+// The line of the voice opens and closes its stage; its buttons (add a voice, start over) keep their own clicks.
+function voiceToggle(stage,id){
+  const button=document.createElement('button');button.type='button';button.className='episode-voice-toggle';
+  const body=stage.querySelector('.episode-voice-body'),open=!body.hidden;
+  button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-controls',body.id);
+  button.innerHTML=`<span>${open?'Згорнути':'Текст, розпізнавання й кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  button.addEventListener('click',event=>{event.stopPropagation();setVoiceOpen(stage,id,body.hidden);});
+  return button;
+}
+function setVoiceOpen(stage,id,open){
+  voiceOpen[id]=open;stage.querySelector('.episode-voice-body').hidden=!open;stage.classList.toggle('open',open);
+  refreshEpisode(stage.closest('.episode'));
 }
 
 function episodeAnalysis(){return state.analysis?.job?.project_id===state.project?.id?state.analysis:null;}
@@ -89,7 +109,7 @@ function refreshEpisode(episode=document.querySelector('.episode')){
   fillVoiceLine(episode.querySelector('.episode-voice'));
   fillDirectorLine(episode.querySelector('.episode-director'));
   fillMake(episode.querySelector('.episode-make'));
-  fillReports(episode.querySelector('.episode-reports'));
+  fillReports(episode);
 }
 
 const voiceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>';
@@ -104,12 +124,19 @@ function fillVoiceLine(box){
   let state_,text;
   if(working){state_='working';text=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
   else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=percent?`розпізнано, збіг ${percent}`:'розпізнано';}
-  else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт нижче`;}
+  else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
   else{state_='empty';text='озвучку ще не додано';}
   box.dataset.state=state_;
   box.innerHTML=`<span class="episode-voice-icon">${voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<b>${esc(name)}</b>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
   if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
+  const stage=box.closest('.episode-voice-block');
+  if(stage){
+    box.append(voiceToggle(stage,id));
+    // a click anywhere on the line opens the stage, a recognition that needs a look opens it by itself
+    if(!box.dataset.wired){box.dataset.wired='1';box.addEventListener('click',event=>{if(!event.target.closest('button'))setVoiceOpen(stage,id,stage.querySelector('.episode-voice-body').hidden);});}
+    if(state_==='warn'&&report&&!(id in voiceOpen))setVoiceOpen(stage,id,true);
+  }
   // Once the voice is in, the only way to another voice is to start the episode over (user, 30 October 2026)
   if(synced||report||job)box.append(restartButton(id));
 }
@@ -178,7 +205,8 @@ function buildMake(make){
   const start=document.createElement('button');start.type='button';start.className='primary episode-make-start';start.textContent='Почати створення ролика';
   actions.append(hint,start);
   const feed=document.createElement('div');feed.className='episode-make-feed';
-  make.append(row,legend,read,actions,feed);
+  const report=document.createElement('div');report.className='episode-make-report';
+  make.append(row,legend,read,actions,feed,report);
   if(!frames.length)return;
   const total=Number(frames[frames.length-1].end) || 1,id=state.project.id;
   const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
@@ -293,17 +321,19 @@ async function startMaking(button){
   }catch(error){button.disabled=false;status(error.message,true);}
 }
 
-function fillReports(slot){
-  if(!slot)return;
-  slot.replaceChildren();
+// The director's report belongs to the voice stage, the agent's to «Створення ролика».
+function fillReports(episode){
+  const directorSlot=episode?.querySelector('.episode-director-report'),agentSlot=episode?.querySelector('.episode-make-report');
+  if(!directorSlot||!agentSlot)return;
+  directorSlot.replaceChildren();agentSlot.replaceChildren();
   const id=state.project.id,run=directorRuns[id],request=state.project.production_request;
-  const add=(title,text,cost)=>{const fold=episodeFold(title);const body=document.createElement('div');body.className='plan-script-text';body.textContent=text;fold.append(body);
+  const add=(slot,title,text,cost)=>{const fold=episodeFold(title);const body=document.createElement('div');body.className='plan-script-text';body.textContent=text;fold.append(body);
     if(cost){const line=document.createElement('p');line.className='plan-note episode-fold-cost';line.textContent=cost.text;line.title=cost.title;fold.append(line);}
     slot.append(fold);return fold;};
   if(run?.status==='done'&&run.summary)
-    add('Звіт режисера',run.summary,run.cost_usd?{text:spentLine(run),title:`Режисура йде за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(run)}`}:null);
+    add(directorSlot,'Звіт режисера',run.summary,run.cost_usd?{text:spentLine(run),title:`Режисура йде за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(run)}`}:null);
   if(request?.summary&&!['requested','in_progress'].includes(request.status)){
-    const fold=add('Звіт агента',request.summary,request.cost_usd?{text:spentLine(request),title:`Кадри створюються за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(request)}`}:null);
+    const fold=add(agentSlot,'Звіт агента',request.summary,request.cost_usd?{text:spentLine(request),title:`Кадри створюються за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(request)}`}:null);
     renderTeam(fold,'production',id,false);
   }
 }
