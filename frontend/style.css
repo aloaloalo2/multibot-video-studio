@@ -1023,3 +1023,19 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .voice-player-mute svg{width:16px;height:16px;fill:currentColor}
 .voice-player-mute svg .wave{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 @media(max-width:620px){.voice-player{flex-wrap:wrap;border-radius:16.5px}.voice-player-bar{flex-basis:100%;order:5}}
+/* the strip as a timeline: it zooms inside its window, a tip names the frame under the pointer, the legend lights a format */
+.frame-strip-scroll{position:relative;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:6px 0;margin:-6px 0;scrollbar-width:thin;scrollbar-color:#3a3a41 transparent}
+.frame-strip-scroll::-webkit-scrollbar{height:6px}.frame-strip-scroll::-webkit-scrollbar-thumb{background:#3a3a41;border-radius:3px}
+.frame-strip-scroll>.frame-strip{width:100%;box-sizing:border-box;flex:none}
+.frame-strip-zoom{display:flex;flex:none;border:1px solid #3a3a41;border-radius:999px;overflow:hidden}
+.frame-strip-zoom button{width:30px;height:30px;border:0;background:#232327;color:#d9dae0;font-size:16px;line-height:1;cursor:pointer}
+.frame-strip-zoom button+button{border-left:1px solid #3a3a41}
+.frame-strip-zoom button:hover:not(:disabled){background:#2e2e34;color:#fff}.frame-strip-zoom button:disabled{color:#5a5a62;cursor:default}
+.frame-strip.highlighting .frame-strip-cell{opacity:.16;transition:opacity .12s}
+.frame-strip.highlighting .frame-strip-cell.lit{opacity:1;background:var(--format-color);box-shadow:none}
+.frame-strip-format{cursor:pointer;padding:2px 7px;margin:-2px -7px;border-radius:999px;transition:background-color .12s,color .12s}
+.frame-strip-format:hover,.frame-strip-format.active{background:#2a2a2f;color:#f1f1f2}
+.episode-make{position:relative}
+.frame-strip-tip{position:absolute;z-index:5;transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #45454c;border-radius:9px;background:#1b1b1e;color:#f1f1f2;font-size:12px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px #0009}
+.frame-strip-tip[hidden]{display:none}
+.frame-strip-tip b{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--format-color)}

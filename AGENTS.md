@@ -73,7 +73,10 @@ over) that opens on a click to «Ваш сценарій», «Розпізнан
 director's state only while it works or needs the author (a stop, a limit pause, a changed text), then «Створення
 ролика»: the film as a strip of its frames (on a photo channel each frame in its format's colour from
 `planFormatVisuals`), the count picked by a drag across the strip (all frames by default), «Макс» and «Почати створення
-ролика». The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
+ролика». The strip reads like a timeline: a tip over the frame under the pointer names its format, number and time;
+pointing at a format in the legend lights its frames (a click keeps them lit); a pinch on the trackpad (ctrl + wheel,
+Safari's gesture events) or − and + zoom it up to 40 times around the pointer, two fingers sideways move along it.
+The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
 director and while the script is newer than the direction (`director_stale`). «Звіт агента» closes «Створення
 ролика». A photo channel's plan from the planner keeps
 «Перегенерувати план» in the heading.

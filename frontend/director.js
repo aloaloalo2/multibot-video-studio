@@ -40,7 +40,7 @@ function episodeFold(title){
   const summary=document.createElement('summary');summary.textContent=title;fold.append(summary);return fold;
 }
 
-const makeCount={};
+const makeCount={},stripZoom={};
 function renderEpisode(panel){
   if(!state.project)return;
   const id=state.project.id;
@@ -248,7 +248,13 @@ function buildMake(make){
   strip.setAttribute('aria-label','Скільки кадрів створити');strip.setAttribute('aria-valuemin','1');strip.setAttribute('aria-valuemax',String(frames.length));
   const handle=document.createElement('span');handle.className='frame-strip-handle';strip.append(handle);
   const max=document.createElement('button');max.type='button';max.className='secondary frame-strip-max';max.textContent='Макс';max.title=`Усі ${frames.length} ${planFrameWord(frames.length)}`;
-  row.append(strip,max);
+  // the strip zooms like a timeline: pinch on the trackpad (or − and +), two fingers sideways to move along it
+  const scroll=document.createElement('div');scroll.className='frame-strip-scroll';scroll.append(strip);
+  const zoomBox=document.createElement('div');zoomBox.className='frame-strip-zoom';
+  const zoomOut=document.createElement('button'),zoomIn=document.createElement('button');
+  for(const [button,label,text] of [[zoomOut,'Зменшити смужку','−'],[zoomIn,'Збільшити смужку','+']]){button.type='button';button.textContent=text;button.title=label;button.setAttribute('aria-label',label);}
+  zoomBox.append(zoomOut,zoomIn);
+  row.append(scroll,zoomBox,max);
   const legend=document.createElement('p');legend.className='frame-strip-legend';
   const read=document.createElement('p');read.className='frame-plan-read';
   const actions=document.createElement('div');actions.className='episode-make-actions';
@@ -270,12 +276,49 @@ function buildMake(make){
   strip.addEventListener('keydown',event=>{const step={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[event.key];if(step){event.preventDefault();set((makeCount[id] || frames.length)+step);}});
   max.addEventListener('click',()=>set(frames.length));
   start.addEventListener('click',()=>startMaking(start));
+  // Zoom: the strip grows inside its window around the point under the pointer (or the middle for the buttons).
+  const zoomTo=(value,clientX)=>{
+    const box=scroll.getBoundingClientRect(),x=clientX===undefined?box.width/2:clientX-box.left;
+    const before=strip.offsetWidth || box.width,anchor=(scroll.scrollLeft+x)/before;
+    make.querySelector('.frame-strip-tip')?.setAttribute('hidden','');
+    const next=Math.max(1,Math.min(40,value));stripZoom[id]=next;strip.style.width=`${next*100}%`;
+    scroll.scrollLeft=anchor*strip.offsetWidth-x;scroll.classList.toggle('zoomed',next>1);
+    zoomOut.disabled=next<=1;zoomIn.disabled=next>=40;
+  };
+  scroll.addEventListener('wheel',event=>{if(!event.ctrlKey)return;event.preventDefault();zoomTo((stripZoom[id] || 1)*Math.exp(-event.deltaY*.01),event.clientX);},{passive:false});
+  // Safari reports a pinch as gesture events
+  let pinchFrom=1;
+  scroll.addEventListener('gesturestart',event=>{event.preventDefault();pinchFrom=stripZoom[id] || 1;});
+  scroll.addEventListener('gesturechange',event=>{event.preventDefault();zoomTo(pinchFrom*event.scale,event.clientX);});
+  zoomOut.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)/1.6));
+  zoomIn.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)*1.6));
+  requestAnimationFrame(()=>zoomTo(stripZoom[id] || 1));
+  // Pointing at a format in the legend lights its frames on the strip; a click keeps it lit.
+  const light=format=>{strip.classList.toggle('highlighting',!!format);cells.forEach((cell,index)=>cell.classList.toggle('lit',!!format&&frames[index].format===format));
+    for(const chip of legend.querySelectorAll('[data-format]'))chip.classList.toggle('active',chip.dataset.format===format);};
+  make.lightFormat=()=>light(make.dataset.pinned || '');
+  legend.addEventListener('mouseover',event=>{const chip=event.target.closest('[data-format]');if(chip)light(chip.dataset.format);});
+  legend.addEventListener('mouseleave',()=>light(make.dataset.pinned || ''));
+  legend.addEventListener('click',event=>{const chip=event.target.closest('[data-format]');if(!chip)return;
+    make.dataset.pinned=make.dataset.pinned===chip.dataset.format?'':chip.dataset.format;light(make.dataset.pinned);});
+  // A tip over the frame under the pointer names its format, number and time.
+  const tip=document.createElement('div');tip.className='frame-strip-tip';tip.hidden=true;make.append(tip);
+  scroll.addEventListener('scroll',()=>{tip.hidden=true;});
+  const tell=index=>{
+    if(index<0){tip.hidden=true;return;}
+    const frame=frames[index],cell=cells[index].getBoundingClientRect(),own=make.getBoundingClientRect();
+    const format=directorAnimated()?'':`<b style="--format-color:${planFormatVisuals[frame.format]?.color || '#b8bec9'}"></b>${esc(planFormatNames[frame.format] || frame.format)} · `;
+    tip.innerHTML=`${format}Кадр ${index+1} · ${clock(frame.start)}–${clock(frame.end)}${cells[index].classList.contains('made')?' · готовий':''}`;
+    tip.hidden=false;
+    const left=Math.max(own.left+8,Math.min(own.right-8,cell.left+cell.width/2))-own.left;
+    tip.style.left=`${left}px`;tip.style.top=`${cell.top-own.top-8}px`;
+  };
   // pointing at a frame reads its time, format and words below the strip
   let shown=-1;
   // while the strip can not be dragged (all made, the agent works, no voice yet) it only tells how to read a frame
   const hintText=()=>make.classList.contains('locked')?'Наведіть на кадр, щоб побачити його час і текст.':'Потягніть по смужці, щоб вибрати, скільки кадрів створити. Наведіть на кадр, щоб побачити його текст.';
   function show(index){
-    if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;
+    if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;tell(index);
     if(index<0){read.textContent=hintText();return;}
     const frame=frames[index];cells[index].classList.add('pointed');
     const format=directorAnimated()?'':` · ${planFormatNames[frame.format] || frame.format}`;
@@ -353,10 +396,11 @@ function fillLegend(legend,frames,made){
   const parts=[];
   if(!directorAnimated()){
     const formats=[...new Set(frames.map(frame=>frame.format))];
-    for(const format of formats)parts.push(`<span><b style="--format-color:${planFormatVisuals[format]?.color || '#b8bec9'}"></b>${esc(planFormatNames[format] || format)}</span>`);
+    for(const format of formats)parts.push(`<span class="frame-strip-format" data-format="${esc(format)}" title="Показати ці кадри на смужці"><b style="--format-color:${planFormatVisuals[format]?.color || '#b8bec9'}"></b>${esc(planFormatNames[format] || format)}</span>`);
   }
   if(made)parts.push(`<span><b class="made"></b>Готові: ${made} з ${frames.length}</span>`);
   legend.innerHTML=parts.join('');legend.hidden=!parts.length;
+  legend.closest('.episode-make')?.lightFormat?.();
 }
 
 // «Почати створення ролика»: the request goes to the agent and the author goes back to the channel's projects, where
