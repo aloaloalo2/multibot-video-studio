@@ -37,10 +37,22 @@ class DirectorTest(unittest.TestCase):
                      'tools/razgon_bridge.py" plan', "Не малюй сцени"):
             self.assertIn(part, text)
 
-    def test_only_animated_channels_and_only_when_direction_is_due(self):
+    def test_photo_channels_get_their_frames_from_the_director_too(self):
+        self.kind = "regular"
+        text = director.brief(PROJECT)
+        for part in (PROJECT["id"], 'tools/studio.py" sentences', 'tools/studio.py" frames', "--dry-run", "director-frames.json", "Не шукай стоки"):
+            self.assertIn(part, text)
+        self.assertNotIn("razgon_bridge", text)
+
+    def test_direction_starts_after_the_voice_only_when_it_is_due(self):
         with patch.object(director, "start") as start:
             self.kind = "regular"
-            director.after_voice(PROJECT["id"])
+            director.after_voice(PROJECT["id"])          # a photo channel goes to the director as well
+            start.assert_called_once_with(PROJECT["id"], "voice")
+            start.reset_mock()
+            montage = {**PROJECT, "tracks": [{"clips": [{"id": "p", "kind": "image"}]}], "scene_groups": []}
+            with patch.object(store, "load_project", return_value=montage):
+                director.after_voice(PROJECT["id"])      # cut on an older plan already: that montage stays as it is
             start.assert_not_called()
             self.kind = "animated"
             self.plan = {"frame_source": "razgon-direction"}
@@ -49,9 +61,6 @@ class DirectorTest(unittest.TestCase):
             self.plan = {"frame_source": "razgon-direction", "director_stale": True}
             director.after_voice(PROJECT["id"])
             start.assert_called_once_with(PROJECT["id"], "voice")
-        self.kind = "regular"
-        with self.assertRaises(store.StudioError):
-            director.start(PROJECT["id"])
 
     def test_stopping_a_run_stops_a_render_in_a_process_group_of_its_own(self):
         # the way Claude Code runs a command: the render sits in its own group under the run

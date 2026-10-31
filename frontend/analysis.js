@@ -41,15 +41,8 @@ function appendSpeechReport(target,report){
 function renderSpeechReport(panel){
   if(!state.analysis || state.analysis.job?.project_id!==state.project?.id)return;
   const report=state.analysis.report;
-  // An animated plan shows the full report in its «Озвучка» tab, so it needs no button for it.
-  if(report && typeof directorAnimated==='function' && directorAnimated())return;
-  if(report){
-    const button=document.createElement('button');button.type='button';button.className='secondary speech-report-button';button.dataset.applied=String(!!report.applied);
-    button.textContent=`${report.applied?'Розпізнавання мовлення':'Розпізнавання: потрібна перевірка'} · ${Number(report.word_match_percent).toFixed(1)}%`;
-    button.addEventListener('click',()=>{modal('Розпізнавання мовлення','<div id="speech-report-modal"></div>',[{label:'Закрити',run:closeModal}]);appendSpeechReport($('speech-report-modal'),report);});
-    (panel.querySelector('.plan-summary') || panel).append(button);
-    return;
-  }
+  // Every plan shows the full report in its «Озвучка й режисура» step, so it needs no button for it.
+  if(report)return;
   const job=state.analysis.job;
   if(job){const note=document.createElement('p');note.className='plan-note';note.textContent=job.status==='failed'?job.error:`${speechStageNames[job.stage] || 'Обробка файлу'}: ${job.progress}%`;panel.append(note);}
 }

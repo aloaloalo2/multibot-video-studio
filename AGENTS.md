@@ -36,6 +36,24 @@ After real phrase timings or a successful local Whisper comparison, format writt
 
 Before planning or editing a video with this Studio, read [docs/AI_VIDEO_WORKFLOW.md](docs/AI_VIDEO_WORKFLOW.md) and the applicable channel instructions. Use the Studio's saved channel settings and verify the plan and project through its local API.
 
+## Every channel: voice first, the director's frames, a light plan page (31 October 2026)
+
+The user: «без озвучки план не може бути згенерований. І план завжди робить клод-код, тобто режисер… на основі тих
+пропорцій, які були вказані в каналі». `generate_project_plan` without audio or timings answers `awaiting_voice` on every
+channel (`store.await_voice`). Once the voice is recognised, `director.after_voice` starts Claude Opus 5.5 (high) on every
+channel; a photo episode already cut on an older plan keeps it (`director.montage_started`). For a photo or video channel
+the director only plans the frames (`director.frames_brief`): `tools/studio.py sentences P` gives the numbered sentences
+with times and the channel's format shares, the director groups whole sentences by meaning, gives each frame a format
+and an idea, and `tools/studio.py frames P FILE [--dry-run]` hands them in. `backend/director_plan.py` checks every
+sentence once and in order, at most `max_sentences_per_scene` a frame, only the channel's formats, its opening format,
+at most five frames of one format in a row (Razgon scenes excepted) and each format's share within ±5 points of the
+channel's, and saves the frames as a director plan (`frame_source` stays `razgon-direction`, the marker of a director's
+frames; `visual` holds the idea and survives re-recognition). The plan page of every channel is the two steps of
+`frontend/director.js`: «Озвучка й режисура» with the formats and the voice timeline (photo channels) or the film strip
+(animated), and «Створення відео». On a photo channel the montage is cut in Claude Code outside the Studio, so its step 2
+only counts the frames that a picture, video or text covers. No cost estimate, frame counts, stage tag or notes. Tests:
+`backend/tests/test_director_plan.py`, `test_director.py`.
+
 ## Animated films: voice first, director frames, start production
 
 A new episode opens on the plan with a voice drop zone and an optional voice text; without text the transcript becomes the script (`analysis_jobs.start(..., script=None)`). An animated channel never gets a plan split from the script alone: `generate_project_plan` without audio or timings calls `store.await_voice`, which keeps the script on the project as `voice_script` (shown in the voice text field and used by the recognition), moves a script-only draft to `plan-history`, refuses to replace a voice or director plan, and answers `awaiting_voice` (test: `test_animated_channel_waits_for_voice_instead_of_splitting_the_script`). The editor stays disabled until the plan follows the voice. A plan with `frame_source: razgon-direction` keeps its director's sentence groups through every rebuild (`planner.keep_director_frames`); changed sentences mark it `director_stale`. Such plans show «Почати створення відео» instead of plan regeneration; the request (`POST /api/projects/<id>/production-request`) is stored on the project and mirrored to `Запит на створення.json`. Speech comparison keeps script words with ASR time in `aligned_words`. Text fields have no focus ring. Restart or start the server only with `python3 tools/studio_restart.py` from this folder: it refuses while exports, speech, director, production, thumbnail or agent jobs run, and starts the server in its own session so it does not die with the agent's shell (on 30 October 2026 a server started with `nohup … &` from an agent session went down with that session).

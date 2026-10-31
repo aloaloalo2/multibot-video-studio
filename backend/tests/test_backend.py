@@ -21,6 +21,7 @@ import store  # noqa: E402
 import credentials  # noqa: E402
 import speech  # noqa: E402
 import planner  # noqa: E402
+import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
@@ -97,6 +98,10 @@ class BackendTest(unittest.TestCase):
         store.DISABLED_PATH = store.DATA_ROOT / "disabled_channels.json"
         store.GLOBAL_SETTINGS_PATH = store.DATA_ROOT / "settings.json"
         app.JOBS_ROOT = store.DATA_ROOT / "jobs"
+        # the director runs Claude Code: here its starts are only recorded
+        cls.director_starts = []
+        cls.director_patch = patch.object(director, "start", side_effect=lambda pid, reason="voice": cls.director_starts.append((pid, reason)) or {"status": "queued"})
+        cls.director_patch.start()
         cls.channel = store.YOUTUBE_ROOT / "Test Channel"
         cls.channel.mkdir(parents=True)
         (cls.channel / "video-plan.json").write_text(json.dumps({"short_sentence_words": 5, "opening_clip_count": 6, "opening_seconds": 90, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 70, "animation": 20}}))
@@ -110,6 +115,7 @@ class BackendTest(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=3)
+        cls.director_patch.stop()
         store.YOUTUBE_ROOT, store.DATA_ROOT, store.PROJECTS_ROOT, store.DISABLED_PATH, store.GLOBAL_SETTINGS_PATH, app.JOBS_ROOT = cls.originals
         cls.tmp.cleanup()
 
@@ -273,7 +279,10 @@ class BackendTest(unittest.TestCase):
         project = store.create_project(cid, "Speech analysis")
         pid = project["id"]
         script = "First complete sentence. Second complete sentence."
-        store.generate_project_plan(cid, project["name"], project["episode_path"], project_id=pid, script=script)
+        waiting = store.generate_project_plan(cid, project["name"], project["episode_path"], project_id=pid, script=script)
+        self.assertTrue(waiting["awaiting_voice"])            # no plan from the script alone: it waits for the voice
+        self.assertIsNone(store.load_project_plan(pid))
+        Path(project["episode_path"]).mkdir(parents=True, exist_ok=True)
         source = Path(project["episode_path"]) / "narration.wav"
         with wave.open(str(source), "wb") as audio:
             audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(8000); audio.writeframes(b"\0\0" * 16000)
@@ -289,6 +298,7 @@ class BackendTest(unittest.TestCase):
                 time.sleep(.02)
         self.assertEqual(analysis["job"]["status"], "complete", analysis["job"].get("error"))
         self.assertTrue(analysis["report"]["applied"])
+        self.assertIn((pid, "voice"), self.director_starts)   # the director makes the frames on every channel
         self.assertEqual(analysis["report"]["word_match_percent"], 100)
         self.assertTrue(store.plan_readiness(store.load_project(pid))["plan_ready"])
         self.assertFalse(store.plan_readiness(store.load_project(pid))["export_ready"])
@@ -456,11 +466,11 @@ class BackendTest(unittest.TestCase):
         clip = project["tracks"][0]["clips"][0]
         project = store.apply_action(pid, "set_clip_volume", {"clip_id": clip["id"], "volume": 0})
         self.assertFalse(store.plan_readiness(project)["export_ready"])
-        # Replacing the script resets the workflow to draft without touching montage.
-        status, result = self.request(endpoint, "POST", {"script": "A changed complete sentence about a simple subject."})
-        self.assertEqual(status, 200)
-        self.assertFalse(result["project"]["production"]["plan_ready"])
-        self.assertEqual(len(result["project"]["tracks"][0]["clips"]), 1)
+        # A plan that follows the voice takes no new script without a voice: another text means another voice.
+        status, _ = self.request(endpoint, "POST", {"script": "A changed complete sentence about a simple subject."})
+        self.assertEqual(status, 409)
+        self.assertTrue(store.plan_readiness(store.load_project(pid))["plan_ready"])
+        self.assertEqual(len(store.load_project(pid)["tracks"][0]["clips"]), 1)
         script_file = Path(project["episode_path"]) / "script.txt"
         script_file.write_text(script)
         timing_file = Path(project["episode_path"]) / "phrases.json"
@@ -477,16 +487,18 @@ class BackendTest(unittest.TestCase):
         project = store.create_project(cid, "Project proportions")
         endpoint = "/api/projects/" + project["id"] + "/plan/generate"
         script = "First complete sentence about a simple subject."
-        status, result = self.request(endpoint, "POST", {"script": script, "weights": {"text": 100}})
+        # a plan comes only with the voice: these requests carry its timings
+        timed = {"script": script, "timings": {"duration": 2, "sentences": [{"text": script, "start": .1, "end": 1.8}]}}
+        status, result = self.request(endpoint, "POST", {**timed, "weights": {"text": 100}})
         self.assertEqual(status, 200)
         self.assertEqual(result["plan"]["settings_scope"], "project")
         self.assertEqual(result["plan"]["frames"][0]["format"], "text")
         self.assertTrue(all(frame["format"] == "text" for frame in result["plan"]["frames"][1:]))
         self.assertEqual((self.channel / "video-plan.json").read_bytes(), original)
         self.assertTrue(store.plan_settings_match(project["id"], result["plan"]))
-        status, result = self.request(endpoint, "POST", {"script": script})
+        status, result = self.request(endpoint, "POST", timed)
         self.assertEqual(result["project"]["plan_weights"], {"text": 100})
-        status, result = self.request(endpoint, "POST", {"script": script, "use_channel_weights": True})
+        status, result = self.request(endpoint, "POST", {**timed, "use_channel_weights": True})
         self.assertEqual(status, 200)
         self.assertNotIn("plan_weights", result["project"])
         self.assertEqual(result["plan"]["settings_snapshot"]["weights"], store.read_json(self.channel / "video-plan.json")["weights"])
@@ -565,7 +577,11 @@ class BackendTest(unittest.TestCase):
         settings = {"weights": {"text": 100}, "first_clip_seconds": 0, "max_sentences_per_scene": 3}
         status, _ = self.request("/api/channels/" + cid, "PATCH", {"settings": settings})
         self.assertEqual(status, 200)
-        payload = {"channel_id": cid, "name": episode.name, "episode_path": str(episode), "script_path": str(script)}
+        # a plan comes only with the voice: the requests carry its timings
+        sentences = store.planner.split_sentences(script.read_text())
+        voice = {"duration": 2, "sentences": [{"text": text, "start": start, "end": end} for text, start, end in zip(sentences, [.1, 1.1], [1.0, 1.9])]}
+        (episode / "timings.json").write_text(json.dumps(voice))
+        payload = {"channel_id": cid, "name": episode.name, "episode_path": str(episode), "script_path": str(script), "timings": voice}
         status, result = self.request("/api/projects/generate-plan", "POST", payload)
         self.assertEqual(status, 200)
         pid = result["project"]["id"]
@@ -579,7 +595,7 @@ class BackendTest(unittest.TestCase):
         self.request("/api/channels/" + cid, "PATCH", {"settings": {"weights": {"animation": 100}}})
         status, stale = self.request("/api/projects/" + pid + "/plan")
         self.assertFalse(stale["settings_match"])
-        status, updated = self.request("/api/projects/" + pid + "/plan/generate", "POST", {"script": script.read_text()})
+        status, updated = self.request("/api/projects/" + pid + "/plan/generate", "POST", {"script": script.read_text(), "timings": voice})
         self.assertEqual(status, 200)
         self.assertEqual(updated["project"]["id"], pid)
         self.assertEqual(updated["plan"]["frames"][0]["format"], "animation")
@@ -591,7 +607,8 @@ class BackendTest(unittest.TestCase):
         status, _ = self.request("/api/projects/generate-plan", "POST", {**payload, "script_path": str(self.channel / "outside.txt")})
         self.assertEqual(status, 400)
         tool = BACKEND.parent / "tools" / "video_plan.py"
-        run = subprocess.run([sys.executable, str(tool), "--channel", str(self.channel), "--script", str(script), "--studio-url", self.base_url], capture_output=True, text=True)
+        run = subprocess.run([sys.executable, str(tool), "--channel", str(self.channel), "--script", str(script), "--timings", str(episode / "timings.json"),
+                              "--studio-url", self.base_url], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout)["project_id"], pid)
         self.assertEqual(store.load_project_plan(pid)["settings_snapshot"]["weights"], {"animation": 100})
@@ -727,7 +744,6 @@ class BackendTest(unittest.TestCase):
         status, disk = self.request(endpoint + "/disk")
         self.assertEqual(status, 200)
         self.assertGreater(disk["bytes"], 0)
-        import director
         director.ACTIVE.add(project["id"])          # the director at work: the bin waits
         try:
             status, _ = self.request(endpoint, "DELETE")

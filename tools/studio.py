@@ -11,6 +11,8 @@
     python3 tools/studio.py replace P (--clip ID | --frame N) FILE
     python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
+    python3 tools/studio.py sentences P                     # the director: numbered sentences of the voice, the channel's formats
+    python3 tools/studio.py frames P FILE.json [--dry-run]  # the director: check and save the frame plan
 
 P is a project id or words that find one project ("Горбунов 23"). Points and sizes are pixels of the project frame as
 it looks at the frame's middle moment (as `still P fN` shows it), or with --space photo fractions of the picture.
@@ -56,6 +58,11 @@ def call(method: str, path: str, body=None, raw: bool = False, timeout: float = 
 
 def fold(text: str) -> str:
     return unicodedata.normalize("NFC", str(text)).casefold().replace("ё", "е")
+
+
+def clock(seconds: float) -> str:
+    seconds = max(0.0, float(seconds))
+    return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
 
 
 def find_project(ref: str) -> dict:
@@ -167,6 +174,12 @@ def main(argv=None) -> int:
     transitions.add_argument("--seed", type=int, default=23)
     transitions.add_argument("--replace", action="store_true", help="розставити заново, не зберігаючи наявні")
     transitions.add_argument("--dry-run", action="store_true")
+    sentences = commands.add_parser("sentences", help="речення озвучки з часом і формати каналу, для режисера")
+    sentences.add_argument("project")
+    frames = commands.add_parser("frames", help="перевірити й записати план кадрів режисера")
+    frames.add_argument("project")
+    frames.add_argument("file")
+    frames.add_argument("--dry-run", action="store_true")
     ops = commands.add_parser("ops", help="операції з JSON-файлу або stdin")
     ops.add_argument("project")
     ops.add_argument("file")
@@ -195,6 +208,29 @@ def main(argv=None) -> int:
                                                                            ("format", None if args.json else "text")) if value})
             text = call("GET", f"/api/projects/{pid}/summary?{query}", raw=True)
             print(text if not args.json else json.dumps(json.loads(text), ensure_ascii=False, indent=1), end="" if not args.json else "\n")
+            return 0
+        if args.command == "sentences":
+            data = call("GET", f"/api/projects/{pid}/director-sentences")
+            print(f"Озвучка {clock(data['duration'])}, речень {len(data['sentences'])}. У кадрі до {data['max_sentences']} речень.")
+            print(f"Формати каналу, частка тривалості фільму (допуск ±{data['tolerance']:g}):")
+            for key, share in data["shares"].items():
+                print(f"  {key:<16} {share:>5.1f}%  {data['labels'][key]}: {data['hints'][key]}")
+            if data.get("opening"):
+                print(f"Перші {data['opening']['count']} кадр(и): {data['opening']['format']}")
+            for item in data["sentences"]:
+                print(f"{item['number']:>4} [{clock(item['start'])}–{clock(item['end'])}] {item['text']}")
+            return 0
+        if args.command == "frames":
+            body = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            frames = body.get("frames") if isinstance(body, dict) else body
+            data = call("POST", f"/api/projects/{pid}/director-frames", {"frames": frames, "dry_run": args.dry_run})
+            for problem in data.get("problems", []):
+                print("! " + problem)
+            if data.get("shares"):
+                print("Частки: " + ", ".join(f"{key} {data['shares'][key]:.1f}% (канал {data['targets'][key]:.1f}%)" for key in data["targets"]))
+            if not data["ok"]:
+                return 1
+            print(f"Перевірка пройшла: {data['frames']} кадрів" if args.dry_run else f"План кадрів записано в студію: {data['frames']} кадрів")
             return 0
         if args.command == "still":
             at = moment(project, args.time)

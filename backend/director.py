@@ -1,11 +1,14 @@
-"""Direction of an animated episode by Claude Opus 5.5 (high effort), started as soon as the voice is recognised.
+"""Direction of an episode by Claude Opus 5.5 (high effort), started as soon as the voice is recognised.
 
-For a channel of kind "animated" the Studio hands the episode to Claude Code once Whisper has turned the voice into
-timed words and the plan follows the voice. Claude Code runs on the user's claude.ai subscription, in the YOUTUBE
-folder, and does the director's steps of the channel rules: razgon_bridge.py prepare, the shot table (story/gen_shots.py)
-written by meaning, direction_check.py without FAIL, and razgon_bridge.py plan, which writes the frame plan back into
-the Studio. It draws no scenes and renders nothing. The state of the run lives next to the project (director.json), its
-full answer in director.log, and the plan page shows it.
+The Studio hands the episode to Claude Code once Whisper has turned the voice into timed words and the plan follows the
+voice; no channel gets its frames from the sentence splitter (user, 31 October 2026: «план завжди робить клод-код, тобто
+режисер… на основі тих пропорцій, які були вказані в каналі»). Claude Code runs on the user's claude.ai subscription, in
+the YOUTUBE folder. For an animated channel it does the director's steps of the channel rules: razgon_bridge.py
+prepare, the shot table (story/gen_shots.py) written by meaning, direction_check.py without FAIL, and razgon_bridge.py
+plan, which writes the frame plan back into the Studio. For a photo or video channel it groups the sentences into frames
+by meaning, gives each a format within the channel's shares and hands them in through tools/studio.py frames
+(backend/director_plan.py checks them). It draws no scenes and renders nothing. The state of the run lives next to the
+project (director.json), its full answer in director.log, and the plan page shows it.
 """
 from __future__ import annotations
 
@@ -65,6 +68,40 @@ def animated(project: dict) -> bool:
 
 
 def brief(project: dict) -> str:
+    return razgon_brief(project) if animated(project) else frames_brief(project)
+
+
+def frames_brief(project: dict) -> str:
+    """A photo or video channel: the director only plans the frames; the montage is the next step."""
+    root, studio = store.YOUTUBE_ROOT, store.APP_ROOT.name
+    episode = Path(project["episode_path"])
+    channel = episode.parent
+    rel = episode.relative_to(root) if root in episode.parents else episode
+    answer = store.project_dir(project["id"]) / "director-frames.json"
+    return f"""Ти режисер випуску каналу «{channel.name}» у VideoKey Studio. Озвучку щойно розпізнано, і студія поділила її на речення з часом.
+
+Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}».
+Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+
+Спершу прочитай правила каналу {channel / 'AGENTS.md'}: як ділити озвучку на кадри і для чого який формат.
+
+Твоє завдання: план кадрів за змістом озвучки.
+1. python3 "{studio}/tools/studio.py" sentences {project['id']} показує пронумеровані речення з часом, формати каналу з їхніми частками та обмеження.
+2. Поділи речення на кадри. Сусідні речення про одну думку йдуть в один кадр, а нова думка, дія чи предмет починають новий.
+   Кадр складається з цілих речень підряд, кожне речення стоїть рівно в одному кадрі.
+   Кожному кадру дай формат, який найкраще покаже саме цю репліку, і тримай частки форматів за тривалістю близько до часток каналу.
+   У полі idea одним реченням опиши, що глядач бачить у кадрі.
+3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "..."}}]}}.
+   Перевір їх командою python3 "{studio}/tools/studio.py" frames {project['id']} "{answer}" --dry-run: студія перевіряє речення,
+   кількість речень у кадрі, частки форматів і чергування та пише, що виправити. Коли перевірка проходить, запусти ту саму
+   команду без --dry-run, і план кадрів піде в студію.
+
+Не шукай стоки, не генеруй картинки, не монтуй і нічого не рендери: це наступний крок, і його запускає користувач.
+Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
+Наприкінці коротко напиши українською, скільки кадрів вийшло і які частки форматів."""
+
+
+def razgon_brief(project: dict) -> str:
     root = store.YOUTUBE_ROOT
     episode = Path(project["episode_path"])
     channel = episode.parent
@@ -291,10 +328,8 @@ def run(pid: str, cli: Path) -> None:
 
 
 def start(pid: str, reason: str = "voice") -> dict:
-    """Start the director for an animated project; a second start while one runs returns the running one."""
+    """Start the director for a project; a second start while one runs returns the running one."""
     project = store.load_project(pid)
-    if not animated(project):
-        raise store.StudioError("Режисура Opus потрібна лише анімаційним каналам")
     if not project.get("episode_path"):
         raise store.StudioError("У випуску немає папки")
     with LOCK:
@@ -312,13 +347,23 @@ def start(pid: str, reason: str = "voice") -> dict:
 
 
 def after_voice(pid: str) -> None:
-    """Called when a voice analysis has been applied to the plan: animated channels go on to direction by themselves."""
+    """Called when a voice analysis has been applied to the plan: the episode goes on to direction by itself."""
     try:
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
             return
-        if animated(store.load_project(pid)):
-            start(pid, "voice")
+        project = store.load_project(pid)
+        # a photo episode already cut on an older plan keeps that montage: new frames would no longer match its clips
+        if not animated(project) and plan.get("frame_source") != "razgon-direction" and montage_started(project):
+            return
+        start(pid, "voice")
     except store.StudioError:
         pass
+
+
+def montage_started(project: dict) -> bool:
+    """A picture, video or text of the film is on the timeline already (the channel's plate and logo do not count)."""
+    overlay = {cid for group in project.get("scene_groups") or [] if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
+    return any(clip.get("kind") in {"image", "video", "text", "animation"} and clip.get("id") not in overlay
+               for layer in project.get("tracks") or [] for clip in layer.get("clips") or [])

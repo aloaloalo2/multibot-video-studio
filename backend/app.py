@@ -29,6 +29,7 @@ import channel_branding
 import style_lab
 import style_copy
 import director
+import director_plan
 import episode_restart
 import frame_progress
 import space
@@ -945,6 +946,9 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             store.load_project(match.group(1))
             return self.json_response({"director": director.state(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director-sentences", path)
+        if match:
+            return self.json_response(director_plan.sentences(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frames-drawn", path)
         if match:
             return self.json_response({"drawn": frame_progress.drawn(match.group(1))})
@@ -1086,6 +1090,9 @@ class Handler(BaseHTTPRequestHandler):
             if active_export(match.group(1)):
                 raise store.StudioError("Зачекайте, доки закінчиться експорт, і почніть заново", 409)
             return self.json_response({"project": episode_restart.restart(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director-frames", path)
+        if match and method == "POST":
+            return self.json_response(director_plan.apply(match.group(1), body.get("frames"), bool(body.get("dry_run"))))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match and method == "POST":
             return self.json_response({"director": director.start(match.group(1), "manual")})

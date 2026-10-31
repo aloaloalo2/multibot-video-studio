@@ -868,7 +868,6 @@ button.danger:hover:not(:disabled){background:#523034}
 @keyframes thumb-fade{from{opacity:0}}
 .project-action.thumbnail svg{stroke:#f0b429}
 .project-card h2{margin-top:0;margin-right:0}   /* the card's buttons show only while it is pointed at: the title takes the width */
-.speech-report-button[data-applied="false"]{color:#f0b429;border-color:#f0b42966}
 #speech-report-modal .speech-report{margin:0}
 /* One rounding scale for the whole Studio, as strong as the project cards:
    large blocks 20.5px, blocks inside them 16.5px, buttons and fields 12.5px; small tags and timeline clips keep theirs. */

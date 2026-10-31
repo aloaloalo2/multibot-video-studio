@@ -672,12 +672,8 @@ def plan_readiness(project, plan=None, stage_only=False):
     return result
 
 
-def channel_animated(channel: Path) -> bool:
-    return (read_json(channel / PLAN_CONFIG, {}) or {}).get("channel_kind") == "animated"
-
-
 def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> dict:
-    """An animated episode gets no plan before its voice: the Studio keeps the script and waits.
+    """An episode gets no plan before its voice: the Studio keeps the script and waits.
 
     Its frames come from the director (Claude Opus 5.5) once the voice is recognised, never from the sentence
     splitter. A draft cut from the script alone moves to the plan history; a plan that follows the voice or the
@@ -723,8 +719,9 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if not path.is_file() or path.suffix.lower() != ".txt" or not under(path, episode):
             raise StudioError("Сценарій має бути TXT-файлом у папці випуску")
         script = path.read_text(encoding="utf-8-sig")
-    # An animated channel never gets a plan split from the script alone: it waits for the voice and the director.
-    if narration is None and timings is None and channel_animated(channel):
+    # No channel gets a plan split from the script alone: it waits for the voice, and the director makes the frames
+    # (user, 31 October 2026: «без озвучки план не може бути згенерований. І план завжди робить клод-код»).
+    if narration is None and timings is None:
         return await_voice(cid, validated_name(name), episode, script, project_id)
     with LOCK:
         settings = validate_settings(read_json(channel / PLAN_CONFIG, {}))

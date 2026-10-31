@@ -173,7 +173,7 @@ const voiceScriptDraft={};
 function renderVoiceStart(panel){
   const project=state.project;
   const section=document.createElement('section');section.className='voice-start';
-  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.</p></div>
+  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>${directorAnimated()?'Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.':'Студія локально розпізнає мову, а режисер розіб’є ролик на кадри за пропорціями каналу.'}</p></div>
     <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
       <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
@@ -303,18 +303,16 @@ function renderPlan(){
   const heading=document.createElement('div');heading.className='plan-heading';
   heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
   const actions=document.createElement('div');actions.className='plan-actions';
-  const director=isDirectorPlan(state.plan),startSection=document.createElement('section');
-  if(director){
-    // An animated film: the director owns the frames, so the author starts production instead of rebuilding the plan.
+  // The director makes every plan from the voice (user, 31 October 2026), so there is no plan to rebuild by hand; only an
+  // animated film starts its frame agent from here.
+  const director=isDirectorPlan(state.plan),making=director&&directorAnimated(),startSection=document.createElement('section');
+  if(making){
     const begin=document.createElement('button');begin.type='button';begin.className='primary plan-start-button';begin.textContent='Почати створення відео';
     begin.disabled=!state.project.production?.plan_ready;if(begin.disabled)begin.title='Спершу додайте озвучку';
     begin.addEventListener('click',()=>startSection.open?.());actions.append(begin);
-  }else{
-    const build=document.createElement('button');build.type='button';build.className='primary';build.textContent='Перегенерувати план';build.addEventListener('click',openPlanBuilder);actions.append(build);
   }
   heading.append(actions);panel.append(heading);
   const frames=state.plan?.frames;
-  if(state.planSettingsMatch===false){const warning=document.createElement('p');warning.className='plan-settings-warning';warning.setAttribute('role','status');warning.textContent='Збережені налаштування змінилися після створення цієї карти. Перегенеруйте план, щоб застосувати їх.';panel.append(warning);}
   const synced=state.project.production?.plan_ready;
   const stage=document.createElement('span');stage.className='plan-stage-tag '+(synced?'audio-synced':'draft');stage.textContent=synced?'За озвучкою':'Чернетка';stage.title=synced?'Кадри прив’язані до фраз готової озвучки':state.project.production?.reason || 'Час приблизний';heading.querySelector('.plan-heading-label').append(stage);
   const names=planFormatNames;
@@ -325,7 +323,7 @@ function renderPlan(){
   const remainder=1000-shares.reduce((sum,item)=>sum+item.units,0);
   [...shares].sort((a,b)=>(b.exact-b.units)-(a.exact-a.units)).slice(0,remainder).forEach(item=>item.units++);
   const summary=document.createElement('div');summary.className='plan-summary';summary.innerHTML=`<span><strong>${frames.length}</strong> ${planFrameWord(frames.length)}</span><span><strong>${synced?planClock(total):clock(total)}</strong> ${synced?'тривалість озвучки':'орієнтовна тривалість'}</span>`;
-  const request=director?state.project.production_request:null;
+  const request=making?state.project.production_request:null;
   if(request){const sent=document.createElement('span');sent.className='plan-request-tag';sent.textContent=`Запит агенту: кадри 1–${request.frames} · ${clock(request.end)} · ${request.status==='requested'?'очікує':request.status}`;summary.append(sent);}
   const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);summary.append(bind);panel.append(summary);
   if(state.plan.director_stale){const warning=document.createElement('p');warning.className='plan-settings-warning';warning.setAttribute('role','status');warning.textContent='Сценарій змінився після режисури. Режисер має заново розбити кадри, перш ніж починати створення.';panel.append(warning);}
@@ -345,9 +343,9 @@ function renderPlan(){
   }
   panel.append(formats);
   let timeline=null;
-  if(director&&synced){panel.append(startSection);renderProductionStart(startSection,frames,()=>timeline);}
+  if(making&&synced){panel.append(startSection);renderProductionStart(startSection,frames,()=>timeline);}
   timeline=renderPlanTimeline(panel,frames,shares,names,total,formatButtons);
-  if(director&&synced&&!startSection.hidden)timeline?.selectFrames(Number(planStartOpen[state.project.id]?.count) || 0);
+  if(making&&synced&&!startSection.hidden)timeline?.selectFrames(Number(planStartOpen[state.project.id]?.count) || 0);
   if(state.plan.settings_snapshot){
     const settings=document.createElement('p');settings.className='plan-note';
     const snapshot=state.plan.settings_snapshot;

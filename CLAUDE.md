@@ -51,6 +51,9 @@ one project (`"Горбунов 23"`).
   and actual counts. Existing transitions stay unless `--replace`.
 - `python3 tools/studio.py ops P ops.json` — several operations at once; `--dry-run` on any change shows the actions.
 - `python3 tools/studio.py export P` — the running export and the latest ones (starting one stays the user's button).
+- `python3 tools/studio.py sentences P` and `frames P FILE.json [--dry-run]` — the director's frame plan of a photo channel:
+  the numbered sentences of the voice with the channel's format shares, then the frames checked and saved
+  (`backend/director_plan.py`). Every plan comes after the voice and from the director.
 
 ## Working through the API
 

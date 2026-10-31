@@ -55,7 +55,7 @@ def start(project, asset_id, save_job, load_job, script=None):
     elif plan and isinstance(plan.get("script"), str) and plan["script"].strip():
         script, script_from = plan["script"], "plan"
     elif isinstance(project.get("voice_script"), dict) and str(project["voice_script"].get("text") or "").strip():
-        # An animated episode waits for its voice with the author's script saved on the project.
+        # An episode waits for its voice with the author's script saved on the project.
         script, script_from = project["voice_script"]["text"], "project"
     else:
         script, script_from = None, "audio"

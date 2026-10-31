@@ -14,10 +14,17 @@ const stepTitles={voice:'Озвучка й режисура',video:'Створе
 
 function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
 
-// An animated episode has no frames until the director writes them: the Studio's own split by sentences is only
-// the timing behind them, so the plan shows the steps instead of those frames.
-function directorAwaited(){return directorAnimated() && state.plan?.frame_source!=='razgon-direction';}
+// An episode has no frames until the director writes them: the Studio's own split by sentences is only the timing
+// behind them, so the plan shows the steps instead of those frames. Every channel goes this way (user, 31 October 2026:
+// «план завжди робить клод-код, тобто режисер»); a photo episode already cut on an older plan keeps that plan.
+function directorAwaited(){return state.plan?.frame_source!=='razgon-direction' && (directorAnimated() || !montageStarted());}
 function directorDone(){return state.plan?.frame_source==='razgon-direction' && !state.plan?.director_stale;}
+function framesPlanned(){return directorDone() || (!directorAnimated() && montageStarted());}
+// a picture, video or text of the film is on the timeline (the channel's plate and logo do not count): director.montage_started
+function montageStarted(){
+  const overlay=new Set((state.project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
+  return (state.project?.tracks || []).some(track=>(track.clips || []).some(clip=>['image','video','text','animation'].includes(clip.kind)&&!overlay.has(clip.id)));
+}
 
 function renderDirectorWait(panel){
   const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
@@ -47,7 +54,7 @@ function episodeStep(number,icon,title){
 }
 
 function renderDirectorStatus(panel){
-  if(!state.project || !directorAnimated())return;
+  if(!state.project)return;
   const id=state.project.id,steps=document.createElement('div');steps.className='episode-steps';steps.dataset.project=id;steps.setAttribute('role','tablist');steps.setAttribute('aria-orientation','vertical');
   const items=stepNames.map((name,index)=>episodeStep(index+1,name,stepTitles[name]));
   items[0].setAttribute('aria-live','polite');
@@ -83,9 +90,18 @@ function arrangeStepPanes(panel,steps){
   // report and the script. Its own buttons go to the pane's button row; the report button is not needed
   // next to the report itself.
   panel.querySelector(':scope > .plan-heading .plan-stage-tag')?.remove();   // the tabs show the stage now
-  // The frame plan on the film strip replaces the summary row and the voice timeline: the strip carries the same facts.
-  for(const node of panel.querySelectorAll(':scope > .plan-summary, :scope > .plan-timeline'))node.remove();
-  const plan=framePlan();if(plan)voice.querySelector('.episode-pane-info').before(plan);
+  // The frame counts, the cost estimate and the notes are service data the author does not need here (user, 31 October
+  // 2026: «багато лишніх даних»).
+  for(const node of panel.querySelectorAll(':scope > .plan-summary, :scope > .plan-cost-estimate, :scope > .plan-note'))node.remove();
+  if(directorAnimated()){
+    // An animated film is all one format: the frame plan on the film strip carries the voice timeline's facts.
+    for(const node of panel.querySelectorAll(':scope > .plan-timeline, :scope > .plan-formats'))node.remove();
+    const plan=framePlan();if(plan)voice.querySelector('.episode-pane-info').before(plan);
+  }else{
+    // a photo channel keeps its formats and the timeline by the voice («тут все ок»)
+    const info=voice.querySelector('.episode-pane-info');
+    for(const node of panel.querySelectorAll(':scope > .plan-formats, :scope > .plan-timeline'))info.before(node);
+  }
   const report=state.analysis?.job?.project_id===state.project?.id?state.analysis.report:null;
   for(const selector of ['.plan-settings-warning','.plan-table-fold','.plan-table'])take(voice,selector);
   const reportSlot=document.createElement('div');voice.append(reportSlot);
@@ -99,13 +115,8 @@ function arrangeStepPanes(panel,steps){
     }).catch(()=>{});
   }
   take(voice,'.plan-script');
-  // An animated film is all one format and its plan is not agreed in a chat: those service lines only add doubt here.
-  for(const node of panel.querySelectorAll(':scope > .plan-formats, :scope > .plan-note'))node.remove();
-  // Video: how many frames to make. The plan's cost estimate counts stock, generated photos and DeepSeek requests,
-  // none of which an animated film uses, so it is left out here.
-  // the frame picker comes first in its tab, above the team and the feed
+  // Video: how many frames to make; the frame picker comes first in its tab, above the team and the feed
   const picker=panel.querySelector(':scope > .plan-start');if(picker)video.querySelector('.episode-pane-info').before(picker);
-  panel.querySelector(':scope > .plan-cost-estimate')?.remove();
   steps.closest('.episode-flow').querySelector('.episode-panes').append(...panes);
   refreshSteps(steps);
 }
@@ -168,7 +179,7 @@ function confirmRestart(id){
 }
 
 function fillDirector(step,info,actions,id,percent){
-  const run=directorRuns[id] || {status:'loading'},directed=directorDone(),text=step.querySelector('p');
+  const run=directorRuns[id] || {status:'loading'},directed=framesPlanned(),text=step.querySelector('p');
   const restart=(label,primary=false)=>actions?.append(stepButton(label,()=>startDirector(id),primary));
   // What the step actually used: recognition is free on this Mac; Claude Code runs on the subscription, and the dollar
   // figure is what the direction would cost through the API.
@@ -207,6 +218,7 @@ function fillVideo(step,pane){
   const actions=pane?.querySelector('.episode-pane-actions'),info=pane?.querySelector('.episode-pane-info');
   if(info)info.textContent='';
   const cost=step.querySelector('.episode-step-cost'),working=['requested','in_progress'].includes(request?.status);
+  if(!directorAnimated()){fillMontage(step,text,cost,actions,info);return;}
   step.classList.toggle('running',working&&directorDone());
   cost.title=request?.cost_usd?`Кадри малюються за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(request)}`:'';
   cost.textContent=request?.cost_usd?spentLine(request)
@@ -260,6 +272,18 @@ function fillVideo(step,pane){
   if(picker&&!picker.hidden)framePicker(picker);
 }
 
+// Step 2 of a photo channel: the montage is cut in Claude Code outside the Studio (user, 31 October 2026), so the step
+// only says how many frames already stand on the timeline.
+function fillMontage(step,text,cost,actions,info){
+  const total=state.plan?.frames?.length || 0,made=madeFrames();
+  actions?.replaceChildren();cost.textContent='';cost.title='';step.classList.remove('running');
+  if(!framesPlanned()){step.dataset.state='waiting';text.textContent='Після режисури';if(info)info.textContent='Після режисури кадри ставляться на таймлайн у «Монтажі», і тут видно, скільки їх уже готово.';return;}
+  if(total&&made>=total){step.dataset.state='done';text.textContent='Усі кадри готові';if(info)info.textContent=allMade;return;}
+  step.dataset.state=made?'active':'waiting';
+  text.textContent=made?`На таймлайні ${made} з ${total} ${planFrameWord(total)}`:'Кадрів на таймлайні ще немає';
+  if(info)info.textContent='Кадри ставить на таймлайн монтаж у Claude Code. Тут видно, скільки їх уже готово.';
+}
+
 async function resumeFrames(id,button){
   button.disabled=true;
   try{
@@ -311,9 +335,12 @@ function framePicker(picker){
 // кодом зробив їх, то вони рахуються створені… коли я нажимаю експорт, це вже конвертація в відео»).
 function productionWorking(){return ['requested','in_progress'].includes(state.project?.production_request?.status);}
 function madeSet(frames){
-  const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
+  // a frame is made when a picture, video or text of the film covers its middle (a transition may start the clip earlier)
+  const overlay=new Set((state.project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
+  const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image','text','animation'].includes(clip.kind)&&!overlay.has(clip.id)&&!/Логотип|Плашка/.test(clip.title || ''));
   const drawn=framesDrawn();
-  return new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)||drawn?.has(Number(frame.number || index+1))?index:-1).filter(index=>index>=0));
+  return new Set(frames.map((frame,index)=>{const middle=(Number(frame.start)+Number(frame.end))/2;
+    return pictures.some(clip=>Number(clip.start)<=middle&&middle<Number(clip.start)+Number(clip.duration))||drawn?.has(Number(frame.number || index+1))?index:-1;}).filter(index=>index>=0));
 }
 function madeFrames(){return madeSet(state.plan?.frames || []).size;}
 

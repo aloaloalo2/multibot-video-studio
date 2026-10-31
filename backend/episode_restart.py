@@ -38,9 +38,7 @@ def stop_runs(pid: str) -> None:
 
 
 def restart(pid: str) -> dict:
-    project = store.load_project(pid)
-    if not director.animated(project):
-        raise store.StudioError("Почати заново можна лише випуск анімаційного каналу")
+    store.load_project(pid)
     folder = store.project_dir(pid)
     pointer = store.read_json(folder / "analysis-state.json", {}) or {}
     if pointer.get("job_id") in analysis_jobs.ACTIVE_JOBS:

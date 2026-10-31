@@ -424,7 +424,8 @@ DIRECTOR_FRAME_SOURCE = "razgon-direction"
 def keep_director_frames(plan, previous):
     """A director's frames survive any rebuild of a synced plan: the same groups of sentences, fresh voice times.
 
-    The frames of an animated film come from its direction, never from the sentence planner. When the sentences
+    The frames come from the director (an animated film's Razgon direction, or the frame plan the director writes for a
+    photo channel, backend/director_plan.py), never from the sentence planner. When the sentences
     themselves changed, the old grouping no longer fits: the plan keeps the planner frames and is marked
     `director_stale`, so the next step is a new pass of the director.
     """
@@ -442,7 +443,7 @@ def keep_director_frames(plan, previous):
     times = aligned_times(groups, timings, plan["timing"]["audio"]["duration"], None)
     frames, offset = [], 0
     for number, (old_frame, group, (start, end)) in enumerate(zip(previous["frames"], groups, times), 1):
-        frame = {key: old_frame[key] for key in ("format", "episode", "scene") if key in old_frame}
+        frame = {key: old_frame[key] for key in ("format", "episode", "scene", "visual") if key in old_frame}
         frame.update(number=number, start=round(start, 3), end=round(end, 3), sentences=group,
                      sentence_timings=copy.deepcopy(timings[offset:offset + len(group)]))
         frames.append(frame)
