@@ -49,3 +49,42 @@ The voice at 100% is the studio's standard level (`backend/audio_level.py`, user
 ## Timeline row order
 
 The higher a timeline row, the higher its layer in the picture (user, 30 October 2026): the last entry of `tracks` is the top layer in the preview and the export, and it is the top row. Rows that hold only sound go under all picture rows. `timelineRowOrder` in `frontend/universal.js` and the row sort in `frontend/groups.js` keep this; a layer that must stay on top (plate, logo) goes to the end of `tracks`.
+
+## Agent tools: one entry point, short answers (31 October 2026)
+
+The user asked that any Claude Code agent can run the studio fast and with few tokens. `tools/studio.py` is the entry
+point (commands in CLAUDE.md): `status`, `summary`, `still`, `accent`, `clear-accents`, `replace`, `transitions`, `ops`,
+`export`. Behind it: `GET /api/studio/status` (the busy list `studio_restart.py` now reads in one request),
+`GET /api/projects/<id>/summary` (`backend/agent_view.py`: a line per frame and its problems; `?format=text`),
+`POST /api/projects/<id>/ops` (`backend/montage_ops.py`: high-level operations turned into one batch, one undo step,
+checked against `expected_revision`, `dry_run` to look first), `POST /api/projects/<id>/still` (`engine/still.py`: the
+export's own renderer draws a window of the render manifest, `STUDIO_GPU_WINDOW_START` in `gpu_prepare.py`) and
+`GET /api/projects/<id>/exports`. Accents are glued to the frame's photo: their keyframes repeat the photo's pan and
+zoom at the photo's keyframe moments with the photo's easing (`add_clip` takes `easing`), so a point on the picture stays
+on it; a label in the black field beside a vertical photo stands still. Caption words take the voice's time through
+`backend/word_timing.py` (digit text joined to the spoken words). Accent clips are titled «K012 акцент …».
+`transitions` keeps about 70% designed seams: a cut into a full-frame text frame, no transition other than a
+crossfade twice in a row, a video going out must have the frames the transition needs. A still never draws Razgon
+code frames and says so. Tests: `backend/tests/test_agent_tools.py`, `tools/tests/test_studio.py`.
+
+Every project answer carries `production` and `audio_gain`; `app.derived_state` computes them once per version of what
+they read (revision, the plan file, each audio file) instead of on every request (0.2 s on GORBUNOV-23). The summary is
+cached the same way. `index.html` is served with each script and stylesheet stamped by its content hash
+(`app.versioned_index`): nobody bumps `?v=` by hand any more.
+
+## The preview and the export draw the same picture (31 October 2026)
+
+`engine/tests/test_preview_parity.py` runs the preview's own functions (`frontend/*.js`, through
+`engine/tests/preview_js.py` in node) against the engine, and renders what only a film can show. Closed differences:
+a vertical video in a 16:9 box was drawn at its box's left edge by both renderers (now contained and centred like an
+image, `render.contained` measures videos too); a property whose first keyframe is later than 0 started from that
+keyframe in the export and from the clip's own value in the preview (the engine now inserts the clip's value at 0,
+the preview's `keyframeValue` reads keyframes the engine's way, and a keyframe at 0 no longer loses to the clip's value
+on the first frame); words of a text clip that moves or fades entered with a plain fade in the export and lost the
+clip's opacity keyframes (`render.carried_word_keyframes` samples the clip's motion, opacity and the word's entrance
+from `render.entrance_state`, a copy of `applyWordEntrance`); a clip still moving at its end keeps its speed through an
+outgoing transition in both, one that stopped holds (a single keyframe used to throw the scale far off); transitions
+run on whole video frames in the preview too (`joinFrames`: 0.35 s at 25 fps is 9 frames); a rounded mask without a
+radius is 8 px in both and rounds the contained picture. Equal already and now held by tests: slide, zoom and
+cinematic transitions, transition covers (`graphicShapes` against `transition_graphics.shapes`), contained pictures. The FFmpeg renderer takes some 60 keyframes in one expression (100 failed), so sampled curves stay
+under that and `render.window_keyframes` keeps only the keyframes of the scene's moments.

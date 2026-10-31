@@ -43,7 +43,11 @@ def alive() -> bool:
 
 
 def busy_work() -> list[str]:
-    """Everything the running studio would lose on a restart, one line each."""
+    """Everything the running studio would lose on a restart, one line each: one request to a studio that has
+    /api/studio/status, a walk over every project for an older one."""
+    status = get("/api/studio/status", 30)
+    if isinstance(status, dict) and isinstance(status.get("busy"), list):
+        return status["busy"]
     found = [f"експорт {job['project_id']}: {job.get('progress', 0)}%, {job.get('stage', '')}"
              for job in (get("/api/exports/active") or {}).get("jobs", []) if job.get("status") in BUSY]
     for channel in (get("/api/channels") or {}).get("channels", []):

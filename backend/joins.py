@@ -60,11 +60,16 @@ def transport(project,layers):
             clip=rendered[source['id']];clip['join_out']=effect;old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
             points=clip.get('keyframes',[])
             if points:
+                # a clip still moving at its end keeps the speed of its last keyframe segment through the transition
+                # (frontend/transitions.js); one that stopped earlier, or has a single keyframe, holds its picture
                 extra={'time':clip['duration']}
                 for prop in ('x','y','scale','opacity'):
-                    known=[{'time':0,prop:clip.get(prop,1 if prop in {'scale','opacity'} else .5)}]+[p for p in points if prop in p]
+                    known=sorted((p for p in points if prop in p),key=lambda p:float(p['time']))
+                    if not known or float(known[0]['time'])>1e-9:known=[{'time':0,prop:clip.get(prop,1 if prop in {'scale','opacity'} else .5)}]+known
                     last=known[-1];previous=known[-2] if len(known)>1 else last
-                    value=last[prop]+(last[prop]-previous[prop])/max(.001,last['time']-previous['time'])*join['duration']
+                    span=float(last['time'])-float(previous['time'])
+                    moving=span>1e-9 and float(last['time'])>=old-.05
+                    value=float(last[prop])+((float(last[prop])-float(previous[prop]))/span if moving else 0)*(clip['duration']-float(last['time']))
                     extra[prop]=max(0,min(1,value)) if prop=='opacity' else value
                 clip['keyframes']=[*points,extra]
         if join['type'] in GRAPHIC_PRESETS:

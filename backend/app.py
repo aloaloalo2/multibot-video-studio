@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import mimetypes
 import os
@@ -43,11 +44,14 @@ import razgon_export
 import audio_level
 import waveforms
 import joins
+import agent_view
+import montage_ops
 import thumbnails
 import updater
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(APP_ROOT / "engine"))
 FRONTEND_ROOT = APP_ROOT / "frontend"
 ENGINE_SCRIPT = APP_ROOT / "engine" / "render.py"
 JOBS_ROOT = store.DATA_ROOT / "jobs"
@@ -575,6 +579,145 @@ def start_export(project: dict, confirmation: bool) -> dict:
     return job
 
 
+STILL_SCRIPT = APP_ROOT / "engine" / "still.py"
+STILL_LOCK = threading.Lock()
+
+
+def project_jobs(pid: str) -> dict:
+    """{what: status} of the work that runs for one project besides its export."""
+    request = store.load_project(pid).get("production_request")
+    def status(read):
+        try:
+            return (read() or {}).get("status")
+        except (store.StudioError, OSError, ValueError, KeyError):
+            return None
+    return {"розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
+            "режисура": status(lambda: director.state(pid)),
+            "створення кадрів": request.get("status") if isinstance(request, dict) else None,
+            "прев'ю": status(lambda: thumbnail_gen.state(pid)),
+            "агент студії": status(lambda: agent_runtime.snapshot(pid))}
+
+
+def recent_exports(pid: str, limit: int = 5) -> list[dict]:
+    """The project's latest export jobs, newest first (running, finished, failed or cancelled)."""
+    found = []
+    for path in sorted(JOBS_ROOT.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)[:400]:
+        try:
+            job = store.read_json(path)
+        except (OSError, ValueError):
+            continue
+        if isinstance(job, dict) and job.get("project_id") == pid and "output_path" in job:
+            found.append({key: job.get(key) for key in ("id", "status", "progress", "stage", "remaining_seconds", "output_path", "error",
+                                                         "razgon_completed", "razgon_total", "render_mode")})
+            found[-1]["updated_at"] = round(path.stat().st_mtime)
+            if len(found) >= limit:
+                break
+    return found
+
+
+def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = False) -> dict:
+    """A still of the export at `moment` (the first of `frames` frames), drawn by the export's own renderer on a
+    window of the render manifest (engine/still.py), to hold against the preview at the same moment. Razgon code
+    frames are not rendered here: they stay code until «Експорт MP4» (user, 30 October 2026)."""
+    manifest = normalize_for_engine(project)
+    from render_cache import renderer_version
+    key = hashlib.sha256(json.dumps([manifest, round(float(moment), 4), int(frames), bool(cpu), renderer_version(APP_ROOT / "engine")],
+                                    sort_keys=True, default=str).encode()).hexdigest()[:20]
+    folder = store.project_dir(project["id"]) / "stills"
+    folder.mkdir(exist_ok=True)
+    output = folder / f"still-{key}.png"
+    info_path = folder / f"still-{key}.json"
+    notes = [f"«{clip.get('title')}» тут код Razgon: на стоп-кадрі його немає, його малює тільки «Експорт MP4»"
+             for track in project.get("tracks", []) for clip in track.get("clips", [])
+             if str(clip.get("title", "")).startswith("Razgon") and float(clip["start"]) <= moment < float(clip["start"]) + float(clip["duration"])]
+    if info_path.is_file() and all(Path(path).is_file() for path in store.read_json(info_path, {}).get("outputs", [])):
+        return {**store.read_json(info_path), "cached": True, "notes": notes}
+    with STILL_LOCK:
+        manifest_path = folder / f"still-{key}-manifest.json"
+        store.atomic_json(manifest_path, manifest)
+        try:
+            result = subprocess.run(["nice", "-n", "10", sys.executable, str(STILL_SCRIPT), "--project", str(manifest_path), "--time", str(moment),
+                                     "--output", str(output), "--frames", str(int(frames))] + (["--cpu"] if cpu else []),
+                                    capture_output=True, text=True, timeout=900)
+        finally:
+            manifest_path.unlink(missing_ok=True)
+        try:
+            info = json.loads(result.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            info = {"error": (result.stdout + result.stderr)[-1500:]}
+        if result.returncode or info.get("error"):
+            raise store.StudioError("Стоп-кадр не вийшов: " + str(info.get("error") or "")[-600:], 500)
+        info["urls"] = [f"/api/projects/{project['id']}/stills/{Path(path).name}" for path in info["outputs"]]
+        store.atomic_json(info_path, info)
+        # about the last twenty stills of a project: a 1080p PNG takes some 3 MB
+        stills = sorted(folder.glob("still-*"), key=lambda item: item.stat().st_mtime, reverse=True)
+        for old in stills[40:]:
+            old.unlink(missing_ok=True)
+    return {**info, "cached": False, "notes": notes}
+
+
+_DERIVED = {}
+_SUMMARIES = {}
+_DERIVED_LOCK = threading.Lock()
+
+
+def _derived_key(project: dict) -> tuple:
+    """Everything plan_readiness and voice_gains read: the project's timing fields and audio clips, the plan file's
+    version and the version of every audio file on the timeline."""
+    try:
+        plan = store.project_plan_file(project)
+        plan_key = store.plan_file_key(plan) if plan else None
+    except (store.StudioError, OSError):
+        plan_key = "unreadable"
+    paths = {asset.get("id"): asset.get("path") for asset in project.get("assets", [])}
+    audio = []
+    for track in project.get("tracks", []):
+        for clip in track.get("clips", []):
+            if clip.get("kind") != "audio":
+                continue
+            path = paths.get(clip.get("asset_id"))
+            try:
+                stat = os.stat(path) if path else None
+            except OSError:
+                stat = None
+            audio.append((clip.get("asset_id"), path, stat and (stat.st_size, stat.st_mtime_ns), clip.get("start"), clip.get("duration"),
+                          clip.get("trim_start"), clip.get("volume"), bool(track.get("muted"))))
+    return (project.get("revision"), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, tuple(audio))
+
+
+def derived_state(project: dict) -> tuple[dict, dict]:
+    """(production readiness, voice gains) of a project, computed once per version of what they read: every project
+    response carries both, and measuring them again took most of a request on a long episode."""
+    key = _derived_key(project)
+    with _DERIVED_LOCK:
+        hit = _DERIVED.get(project["id"])
+        if hit and hit[0] == key:
+            return copy.deepcopy(hit[1]), dict(hit[2])
+    readiness, gains = store.plan_readiness(project), audio_level.voice_gains(project)
+    with _DERIVED_LOCK:
+        _DERIVED[project["id"]] = (key, readiness, gains)
+    return copy.deepcopy(readiness), dict(gains)
+
+
+_STATIC_VERSIONS = {}
+
+
+def versioned_index(body: bytes) -> bytes:
+    """index.html with each local script and stylesheet stamped by its own content (?v=<hash>): a changed file reaches
+    the browser on the next reload without anyone bumping its version by hand."""
+    def stamp(match):
+        target = (FRONTEND_ROOT / match.group(2)).resolve()
+        try:
+            stat = target.stat()
+        except OSError:
+            return match.group(0)
+        key = (str(target), stat.st_size, stat.st_mtime_ns)
+        if _STATIC_VERSIONS.get(str(target), (None,))[0] != key:
+            _STATIC_VERSIONS[str(target)] = (key, hashlib.sha256(target.read_bytes()).hexdigest()[:12])
+        return f'{match.group(1)}="/{match.group(2)}?v={_STATIC_VERSIONS[str(target)][1]}"'
+    return re.sub(r'(src|href)="/([A-Za-z0-9_./-]+\.(?:js|css|svg))\?v=[^"]*"', stamp, body.decode("utf-8")).encode("utf-8")
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MultiBotVideoStudio/0.1"
 
@@ -585,12 +728,22 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(value, dict) and isinstance(value.get("project"), dict):
             project = dict(value["project"])
             project.update(store.history_state(project["id"]))
-            project["production"] = store.plan_readiness(project)
-            project["audio_gain"] = audio_level.voice_gains(project)   # the preview plays the voice at the export's level
+            # the preview plays the voice at the export's level (audio_gain)
+            project["production"], project["audio_gain"] = derived_state(project)
             value = {**value, "project": project}
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def text_response(self, text, status=200):
+        body = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
@@ -630,9 +783,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise store.StudioError('Студія перезапускається після оновлення.', 503)
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
                 # the live preview only starts a viewer of the Razgon code and changes nothing in the project
-                if project_match and not path.endswith(('/export', '/razgon-live')) and active_export(project_match.group(1)):
+                # a still only reads the project, as the live preview does
+                if project_match and not path.endswith(('/export', '/razgon-live', '/still')) and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
-                if project_match and not path.endswith('/agent/cancel') and agent_runtime.active(project_match.group(1)):
+                if project_match and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
                 upload = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/upload", path)
                 if method == "POST" and upload:
@@ -690,9 +844,48 @@ class Handler(BaseHTTPRequestHandler):
                 jobs=[dict(entry['job']) for entry in ACTIVE_EXPORTS.values()
                       if entry['job'].get('status') in {'queued','running','cancelling'}]
             return self.json_response({'jobs':jobs})
+        if path == "/api/studio/status":
+            with JOBS_LOCK:
+                jobs = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
+            return self.json_response(agent_view.studio_status(jobs, project_jobs))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
         if match:
             return self.json_response({'job': active_export(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/exports", path)
+        if match:
+            store.load_project(match.group(1))
+            return self.json_response({"active": active_export(match.group(1)), "jobs": recent_exports(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/summary", path)
+        if match:
+            project = store.load_project(match.group(1))
+            key = _derived_key(project)
+            with _DERIVED_LOCK:
+                hit = _SUMMARIES.get(project["id"])
+            if hit and hit[0] == key:
+                summary = copy.deepcopy(hit[1])
+            else:
+                readiness, gains = derived_state(project)
+                summary = agent_view.project_summary({**project, "audio_gain": gains}, readiness)
+                with _DERIVED_LOCK:
+                    _SUMMARIES[project["id"]] = (key, copy.deepcopy(summary))
+            wanted = (query.get("frames") or [""])[0]
+            if wanted:
+                low, _, high = wanted.partition("-")
+                low, high = float(low), float(high or low)
+                summary["frames"] = [row for row in summary["frames"] if isinstance(row["n"], int) and low <= row["n"] <= high]
+            if (query.get("issues") or [""])[0] in {"1", "true"}:
+                summary["frames"] = [row for row in summary["frames"] if row["issues"]]
+            if (query.get("format") or [""])[0] == "text":
+                lines = summary["head"] + [row["line"] + "".join("\n       ! " + issue for issue in row["issues"]) for row in summary["frames"]]
+                lines += ["Проблеми: " + ("немає" if not summary["issues"] else str(len(summary["issues"])))] + ["  " + issue for issue in summary["issues"] if not issue.startswith("кадр ")]
+                return self.text_response("\n".join(lines) + "\n")
+            return self.json_response(summary)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/stills/(still-[0-9a-f]{20}(?:-\d{2})?\.png)", path)
+        if match:
+            target = store.project_dir(match.group(1)) / "stills" / match.group(2)
+            if not target.is_file():
+                raise store.StudioError("Стоп-кадр не знайдено", 404)
+            return self.serve_media(target)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/analysis", path)
         if match:
             return self.json_response(analysis_jobs.latest(match.group(1), load_job))
@@ -963,6 +1156,19 @@ class Handler(BaseHTTPRequestHandler):
             selected = Path(body["path"]).expanduser().resolve() if body.get("path") else choose_local_file("Оберіть JSON-план випуску")
             project = store.import_plan(body["channel_id"], str(selected), body.get("name"))
             return self.json_response({"project": project}, 201)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/ops", path)
+        if match and method == "POST":
+            result = montage_ops.run(match.group(1), body.get("ops"), body.get("expected_revision"), body.get("dry_run") is True)
+            if result.get("applied") and store.prune_razgon_renders(match.group(1))["removed"]:
+                result["revision"] = store.load_project(match.group(1)).get("revision", 0)
+            return self.json_response(result)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/still", path)
+        if match and method == "POST":
+            project = store.load_project(match.group(1))
+            moment = float(body["time"])
+            if not 0 <= moment <= float(project.get("duration", 0)) + 1:
+                raise store.StudioError("Момент поза роликом")
+            return self.json_response(export_still(project, moment, max(1, min(30, int(body.get("frames", 1)))), body.get("cpu") is True))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/actions", path)
         if match and method == "POST":
             project = store.apply_action(match.group(1), body["type"], body.get("payload", {}), body.get("expected_revision"))
@@ -995,6 +1201,8 @@ class Handler(BaseHTTPRequestHandler):
         if not store.under(target, FRONTEND_ROOT) or not target.is_file():
             raise store.StudioError("Інтерфейс не знайдено", 404)
         body = target.read_bytes()
+        if target == FRONTEND_ROOT / "index.html":
+            body = versioned_index(body)
         mime = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         self.send_response(200)
         self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") or mime == "application/javascript" else ""))

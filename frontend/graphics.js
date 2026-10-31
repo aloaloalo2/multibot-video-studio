@@ -1,8 +1,15 @@
 function applyGraphicStyle(wrapper,clip,frameWidth){
   const k=frameWidth/Number(state.project.width),image=wrapper.querySelector('img'),shape=wrapper.querySelector('.composition-shape'),text=wrapper.querySelector('.composition-text');
   const effect=clip.visual_effect&&typeof visualEffectPresets!=='undefined'?visualEffectPresets[clip.visual_effect]||{}:{};
-  const target=image || shape,radius=Number(clip.corner_radius || 0)*k;
+  // a rounded mask without its own radius gets 8 px, as in the export (engine/raster_effects.py decorate); it rounds the
+  // picture itself, which the export fits into its box first (engine/render.py contained)
+  const target=image || shape,radius=Number(clip.corner_radius ?? 8)*k;
   if(target){target.style.borderRadius=clip.mask==='circle'?'50%':clip.mask==='rounded'?radius+'px':'0';if(image)target.style.objectFit=clip.mask==='circle'?'cover':'contain';}
+  if(image){
+    const fitted=clip.mask==='rounded'&&image.naturalWidth?containedBox(image.naturalWidth,image.naturalHeight,Number(clip.width ?? 1)*Number(state.project.width),Number(clip.height ?? 1)*Number(state.project.height)):null;
+    image.style.width=fitted?fitted.width*100+'%':'';image.style.height=fitted?fitted.height*100+'%':'';
+    if(clip.mask==='rounded'&&!image.complete)image.addEventListener('load',()=>applyGraphicStyle(wrapper,clip,frameWidth),{once:true});
+  }
   const shadow=effect.shadow || clip.shadow;
   if(shadow){const color=shadow.color || '#000000',r=parseInt(color.slice(1,3),16),g=parseInt(color.slice(3,5),16),b=parseInt(color.slice(5,7),16);wrapper.style.filter=`drop-shadow(${shadow.x*k}px ${shadow.y*k}px ${shadow.blur*k}px rgba(${r},${g},${b},${shadow.opacity}))`;}
   else wrapper.style.filter='none';
@@ -10,6 +17,13 @@ function applyGraphicStyle(wrapper,clip,frameWidth){
   const media=wrapper.querySelector('img,video,canvas') || shape;if(media)media.style.filter=typeof visualEffectFilter==='function'?visualEffectFilter(effect):'none';
   if(text){text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);}
   if(text && !clip.text_words?.length){text.style.lineHeight=String(clip.line_height || 1.28);text.style.textAlign=clip.text_align || 'center';if(clip.text_align && clip.text_align!=='center'){text.style.display='flex';text.style.justifyContent=clip.text_align==='left'?'flex-start':'flex-end';text.style.alignItems='center';text.style.padding='0';}}
+}
+
+// The share of its box a picture takes when it keeps its shape (object-fit: contain): engine/render.py contained.
+function containedBox(naturalWidth,naturalHeight,boxWidth,boxHeight){
+  const aspect=naturalWidth/naturalHeight,box=boxWidth/boxHeight;
+  if(!(aspect>0)||!(box>0)||Math.abs(aspect-box)<1e-3)return {width:1,height:1};
+  return aspect>box?{width:1,height:box/aspect}:{width:aspect/box,height:1};
 }
 
 function renderMotionTrails(wrapper,clip,local,composition){

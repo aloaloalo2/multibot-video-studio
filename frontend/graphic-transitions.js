@@ -66,9 +66,9 @@ function paintTransitionPreview(canvas,type,progress){
   const zoomIn=type==='zoom_in';card('A','#405866',0,0,zoomIn?1+.12*p:1-.12*p,1-p);card('B','#8c604a',0,0,zoomIn?.88+.12*p:1.12-.12*p,p);
 }
 function renderGraphicTransitionOverlay(composition,time){
-  let canvas=composition.querySelector('.graphic-transition-overlay'),join=(state.project.join_transitions||[]).find(j=>graphicTransitionPresets[j.type]&&time>=j.seam&&time<j.seam+j.duration);
+  let canvas=composition.querySelector('.graphic-transition-overlay'),join=(state.project.join_transitions||[]).find(j=>{if(!graphicTransitionPresets[j.type])return false;const span=joinFrames(j);return time>=span.seam&&time<span.seam+span.duration;});
   if(!join){if(canvas)canvas.hidden=true;return;}
   if(!canvas){canvas=document.createElement('canvas');canvas.className='graphic-transition-overlay';canvas.width=960;canvas.height=Math.round(960*state.project.height/state.project.width);const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids)),brand=Array.from(composition.children).find(e=>brandIds.has(e.dataset.clipId));composition.insertBefore(canvas,brand||null);}
   const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));const base=Array.from(composition.querySelectorAll('.composition-clip')).filter(e=>!brandIds.has(e.dataset.clipId)&&e.dataset.transitionForeground!=='true').map(e=>Number(e.style.zIndex)||0);canvas.style.zIndex=String(Math.max(0,...base)+1);
-  canvas.hidden=false;paintGraphicTransition(canvas,join.type,(time-join.seam)/join.duration);
+  const span=joinFrames(join);canvas.hidden=false;paintGraphicTransition(canvas,join.type,(time-span.seam)/span.duration);
 }

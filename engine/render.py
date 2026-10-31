@@ -500,6 +500,22 @@ def render_parallelism(width: int, height: int, fps: int) -> tuple[int, int]:
     return 2, 4
 
 
+def window_keyframes(points: list[dict], start: float, end: float) -> list[dict]:
+    """The keyframes that shape the moments start..end: per property the ones inside and the nearest on each side. A
+    long clip split into several scenes keeps its FFmpeg expressions short (they fail at about 100 keyframes)."""
+    keep = set()
+    for prop in {key for point in points for key in point if key != "time"}:
+        row = sorted((float(point["time"]), index) for index, point in enumerate(points) if prop in point)
+        keep.update((prop, index) for time, index in row if start <= time <= end)
+        keep.update((prop, index) for _, index in [item for item in row if item[0] < start][-1:] + [item for item in row if item[0] > end][:1])
+    result = []
+    for index, point in enumerate(points):
+        kept = {key: value for key, value in point.items() if key == "time" or (key, index) in keep}
+        if len(kept) > 1:
+            result.append(kept)
+    return result
+
+
 def render_scene(scene: dict, project_file: Path, output: Path, work: Path, width: int, height: int, fps: int, index: int) -> None:
     kind = normalized_kind(scene)
     duration = number(scene.get("duration", scene.get("length")), f"scene {index} duration")
@@ -613,7 +629,10 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
         elapsed = number(layer.get("keyframe_offset", 0), "keyframe offset")
         clip_length = number(layer.get("clip_duration", duration), "clip duration", 0.01)
         easing = layer.get("easing", "linear")
-        lag=float(layer.get('motion_lag',0));motion_clock=f'max(0\\,t+{elapsed:.6f}-{lag:.6f})' if lag else f't+{elapsed:.6f}'
+        lag=float(layer.get('motion_lag',0))
+        if all(isinstance(point, dict) and "time" in point for point in keyframes):
+            keyframes = window_keyframes(keyframes, elapsed - lag - 1 / fps, elapsed + duration + 1 / fps)
+        motion_clock=f'max(0\\,t+{elapsed:.6f}-{lag:.6f})' if lag else f't+{elapsed:.6f}'
         x_expr = time_expr(keyframes, "x", x, width, motion_clock, layer.get("position_units") != "pixels", easing)
         y_expr = time_expr(keyframes, "y", y, height, motion_clock, layer.get("position_units") != "pixels", easing)
         opacity = number(layer.get("opacity", 1), "layer opacity")
@@ -1022,6 +1041,12 @@ def timeline_plan(project: dict, project_file: Path, width: int, height: int, fp
                 record["fade_in"] = min(preset_duration / 2, duration)
             elif preset != "none":
                 raise ValueError(f"Unsupported animation preset: {preset}")
+            # A property's first keyframe later than 0 starts from the clip's own value at 0, as the preview draws it
+            # (frontend/universal.js keyframeValue); the engine used to hold the first keyframe's value from the start.
+            for prop, fallback in (("x", .5), ("y", .5), ("scale", 1.0), ("opacity", 1.0)):
+                times = [float(point["time"]) for point in keyframes if prop in point]
+                if times and min(times) > 1e-9:
+                    keyframes.append({"time": 0, prop: float(clip.get(prop, fallback))})
             record["keyframes"] = keyframes
             scalar_expr(keyframes, "scale", number(clip.get("scale", 1), "clip scale", 0.05), 0.05, 8, "t")
             scalar_expr(keyframes, "opacity", number(clip.get("opacity", 1), "clip opacity"), 0, 1, "t")
@@ -1099,8 +1124,104 @@ def timed_text_units(clip,width):
             units.append({**word,'text':char,'x':left+(before+after)/2/box_width,'width':(after-before+12)/box_width,'start':word['start']+spread*j/max(1,len(text)-1)})
     return units
 
+def entrance_state(effect: dict, raw: float) -> tuple[float, float, float, float, float]:
+    """(dx, dy, scale, opacity, blur opacity) of a word `raw` (0..1) into its entrance, offsets in project px: the
+    preview's applyWordEntrance (frontend/graphics.js) step for step. A blur entrance shows a sharp copy at `opacity`
+    over a blurred one at `blur opacity`."""
+    raw = max(0.0, min(1.0, raw))
+    p = easing_value(raw, "ease_out")
+    distance = float(effect.get("distance", 14))
+    kind = str(effect.get("type", ""))
+    mode = kind.replace("letters_", "")
+    dx = -distance * (1 - p) if mode == "left" else distance * (1 - p) if mode == "right" else 0.0
+    dy = distance * (1 - p) if mode in ("up", "blur_up") else -distance * (1 - p) if mode == "down" else 0.0
+    scale, opacity, ghost = 1.0, p, 0.0
+    if kind == "grow":
+        scale = .88 + .12 * p
+    if kind == "shrink":
+        scale = 1.1 - .1 * p
+    if kind == "pop":
+        if raw < .66:
+            scale, opacity = .82 + .22 * easing_value(raw / .66, "ease_out"), easing_value(raw / .66, "ease_out")
+        else:
+            scale = 1.04 - .04 * easing_value((raw - .66) / .34, "ease_out")
+    if "blur" in mode:
+        ghost = .65 * easing_value(raw / .3, "ease_out") if raw < .3 else .65 * (1 - easing_value((raw - .3) / .7, "ease_out"))
+    return dx, dy, scale, opacity, ghost
+
+
+def carried_word_keyframes(word: dict, offset: tuple[float, float], layer: dict, motion: list[dict], effect: dict | None,
+                           width: int, height: int) -> tuple[list[dict], list[dict] | None]:
+    """Keyframes of one timed word of a text clip that moves or fades, in the clip's time, joined linearly.
+
+    In the preview the word is a child of the clip's box: the box's x, y and scale carry it at its place in the clip,
+    its entrance offset and scale ride on top inside the scaled box, and its opacity is the box's times its own. The
+    export used to draw such a word with a plain fade (and lost the clip's opacity keyframes): an «up» or «pop» label
+    on a panning photo entered differently in the film. The curves are sampled at every keyframe and through the
+    entrance, from just before the word shows; between two keyframes of a clip with a curved easing they lie close
+    enough that the straight lines stay within about a pixel of the curve (at most 16 a segment: the FFmpeg renderer
+    takes some 60 keyframes in one expression, 100 failed). Returns the word's keyframes and, for a blur entrance, the
+    keyframes of its blurred copy."""
+    easing = layer.get("easing", "linear")
+    length = float(layer.get("clip_duration", 0)) or max([float(p["time"]) for p in layer["keyframes"]] + [1.0])
+    start = float(word["start"])
+    span = float(effect["duration"]) if effect else 0.0
+    first = max(0.0, start - 1e-3)
+    row = sorted({0.0, length, *(float(p["time"]) for p in layer["keyframes"])})
+    times = {first, length, *(t for t in row if t >= first)}
+    if span > 0:
+        times.update(start + span * k / 8 for k in range(9))
+        if effect.get("type") == "pop":
+            times.add(start + span * .66)
+    if easing != "linear":
+        def at(moment):
+            return (scalar_value(motion, "x", float(layer["x"]), moment, easing) * width, scalar_value(motion, "y", float(layer["y"]), moment, easing) * height,
+                    scalar_value(motion, "scale", float(layer["scale"]), moment, easing) * max(width, height) / 2,
+                    scalar_value(layer["keyframes"], "opacity", float(layer["opacity"]), moment, easing) * 100)
+        for a, b in zip(row, row[1:]):
+            if b <= first:
+                continue
+            change = max(abs(u - v) for u, v in zip(at(a), at(b)))
+            count = min(16, max(1, math.ceil(math.sqrt(1.5 * change))))
+            times.update(t for t in (a + (b - a) * k / count for k in range(1, count)) if t >= first)
+    ox, oy = offset
+    words, ghost = [], [] if effect and "blur" in str(effect.get("type", "")) else None
+    for moment in sorted(t for t in times if 0 <= t <= length + 1e-9):
+        x = scalar_value(motion, "x", float(layer["x"]), moment, easing)
+        y = scalar_value(motion, "y", float(layer["y"]), moment, easing)
+        scale = scalar_value(motion, "scale", float(layer["scale"]), moment, easing)
+        opacity = scalar_value(layer["keyframes"], "opacity", float(layer["opacity"]), moment, easing)
+        if moment < start - 1e-9:
+            dx = dy = 0.0; grow = 1.0; shown = blurred = 0.0
+        elif effect and span > 0:
+            dx, dy, grow, shown, blurred = entrance_state(effect, (moment - start) / span)
+        else:
+            dx = dy = 0.0; grow = 1.0; shown, blurred = 1.0, 0.0
+        point = dict(time=round(moment, 6), x=x + (ox + dx / width) * scale, y=y + (oy + dy / height) * scale, scale=scale * grow)
+        words.append({**point, "opacity": opacity * shown})
+        if ghost is not None:
+            ghost.append({**point, "opacity": opacity * blurred})
+    return words, ghost
+
+
 @lru_cache(maxsize=1024)
 def _image_size(path: str, stamp: int) -> tuple[int, int] | None:
+    """The picture's display size: an image's pixels, or a video's frame turned by its rotation and pixel shape."""
+    if Path(path).suffix.lower() not in IMAGE_EXT:
+        try:
+            stream = next(s for s in probe(Path(path)).get("streams", []) if s.get("codec_type") == "video")
+            width, height = int(stream["width"]), int(stream["height"])
+        except (StopIteration, KeyError, ValueError, TypeError, RuntimeError):
+            return None
+        sar = str(stream.get("sample_aspect_ratio") or "1:1").split(":")
+        if len(sar) == 2 and sar[0].isdigit() and sar[1].isdigit() and int(sar[0]) and int(sar[1]):
+            width = round(width * int(sar[0]) / int(sar[1]))
+        rotation = stream.get("tags", {}).get("rotate") or next((item.get("rotation") for item in stream.get("side_data_list", []) if "rotation" in item), 0)
+        try:
+            turned = round(abs(float(rotation))) % 180 == 90
+        except (TypeError, ValueError):
+            turned = False
+        return (height, width) if turned else (width, height)
     try:
         with Image.open(path) as image:
             return image.size
@@ -1109,9 +1230,10 @@ def _image_size(path: str, stamp: int) -> tuple[int, int] | None:
 
 
 def contained(path: str, box_width: int, box_height: int) -> tuple[int, int]:
-    """The size an image takes inside its box when it keeps its own shape (CSS object-fit: contain, as the preview).
-    A vertical photo in a 16:9 box became left-aligned in exports (the renderers placed the fitted picture at the box's
-    corner) while the preview showed it centred between black side fields (GORBUNOV-23, 31 October 2026)."""
+    """The size an image or a video takes inside its box when it keeps its own shape (CSS object-fit: contain, as the
+    preview). A vertical photo in a 16:9 box became left-aligned in exports (the renderers placed the fitted picture at
+    the box's corner) while the preview showed it centred between black side fields (GORBUNOV-23, 31 October 2026);
+    a vertical video did the same until it was measured here too."""
     try:
         size = _image_size(path, Path(path).stat().st_mtime_ns)
     except OSError:
@@ -1140,7 +1262,8 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
         if normalized:
             clip_width = max(1, round(number(clip.get("width", 1), "clip width", .01) * width))
             clip_height = max(1, round(number(clip.get("height", 1), "clip height", .01) * height))
-            if kind == "image" and not shape and clip.get("source") and clip.get("mask", "none") != "circle":
+            # the preview shows images and videos with object-fit: contain, a circle mask with cover (images only)
+            if (kind == "image" and not shape and clip.get("mask", "none") != "circle" or kind == "video" and not (gradient or graphic)) and clip.get("source"):
                 clip_width, clip_height = contained(str(clip["source"]), clip_width, clip_height)
             center_x = number(clip.get("x", .5), "clip x", -8)
             center_y = number(clip.get("y", .5), "clip y", -8)
@@ -1216,6 +1339,7 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
         if kind == "text" and clip.get("text_words"):
             motion = [point for point in layer["keyframes"] if any(axis in point for axis in ("x", "y", "scale"))]
             moving = len(motion) > 1
+            fading = any("opacity" in point for point in layer["keyframes"])
             for word in timed_text_units(clip,width):
                 reveal = max(0, float(word["start"]) - elapsed)
                 if reveal >= end - start:
@@ -1226,22 +1350,15 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
                     "width": max(1, round(word["width"] * clip_width)), "height": max(1, round(word["height"] * clip_height)),
                     "keyframes": [], "font_size": clip.get("font_size", 54)}
                 effect=clip.get('word_entrance')
-                if moving:
-                    # A text clip that moves (a label pinned to a panning photo) carries its words along: each word keeps
-                    # its place in the clip while the clip's own keyframes move and scale it, in the clip's easing, so
-                    # the words stay on the card that moves with them (the words used to stand still, GORBUNOV-23).
-                    # The word's entrance becomes a fade, the one part that cannot share the clip's motion.
-                    ox, oy = (word["x"] - .5) * float(clip.get("width", 1)), (word["y"] - .5) * float(clip.get("height", 1))
-                    points = {}
-                    for point in motion:
-                        moment = float(point["time"])
-                        x, y = (scalar_value(motion, axis, base, moment, layer["easing"]) for axis, base in (("x", layer_x), ("y", layer_y)))
-                        scale = scalar_value(motion, "scale", float(layer["scale"]), moment, layer["easing"])
-                        points[moment] = dict(time=moment, x=x + ox * scale, y=y + oy * scale, scale=scale)
-                    if effect:
-                        for moment, value in ((float(word["start"]), 0.0), (float(word["start"]) + float(effect["duration"]), 1.0)):
-                            points.setdefault(moment, {"time": moment})["opacity"] = value
-                    word_layer["keyframes"] = sorted(points.values(), key=lambda point: point["time"])
+                if moving or fading:
+                    # A text clip that moves (a label pinned to a panning photo) or fades carries its words along: each
+                    # word keeps its place in the clip while the clip's keyframes move, scale and fade it, and its own
+                    # entrance plays on top, as in the preview (the words used to stand still, GORBUNOV-23).
+                    offset = ((word["x"] - .5) * float(clip.get("width", 1)), (word["y"] - .5) * float(clip.get("height", 1)))
+                    word_layer["keyframes"], ghost = carried_word_keyframes(word, offset, layer, motion, effect, width, height)
+                    word_layer["easing"] = "linear"
+                    if ghost:
+                        scene['layers'].append({**word_layer, 'raster_blur': 6, 'keyframes': ghost})
                     scene['layers'].append(word_layer)
                     continue
                 if effect:

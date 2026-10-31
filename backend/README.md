@@ -54,6 +54,11 @@ All mutations use `Content-Type: application/json`, local `Host`, and same-origi
 | POST | `/api/projects/<id>/assets/from-pixabay` | `{kind,pixabay_id,quality?}` saves one selected result and its source record; `{asset}` |
 | POST | `/api/projects/<id>/export` | `{confirm_export:true}` starts verified render; `{job}` |
 | GET | `/api/jobs/<id>` | `{job:{status,progress,output_path,error}}` |
+| GET | `/api/studio/status` | `{busy:[lines],exports}`: running exports and every project's recognition, director, frame production, thumbnail and studio-agent job in one request |
+| GET | `/api/projects/<id>/summary` | The project frame by frame: `{head,fps,revision,frames:[{n,start,end,format,group_id,line,issues}],issues}`; `?frames=10-20`, `?issues=1`, `?format=text` (plain lines) |
+| POST | `/api/projects/<id>/ops` | `{ops:[...],expected_revision?,dry_run?}` montage operations (`accent`, `clear_accents`, `replace`, `transitions`, see `montage_ops.py`) as one batch and one undo step; `{revision,report,applied}` |
+| POST | `/api/projects/<id>/still` | `{time,frames?,cpu?}` draws the export at that moment with its own renderer (`engine/still.py`); `{output,outputs,urls,renderer,time,notes}`. Allowed during an export |
+| GET | `/api/projects/<id>/exports` | `{active,jobs}`: the running export and the latest five |
 
 Supported v2 actions: `add_layer {name?,to_index?}`, `remove_layer {layer_id}`, `move_layer {layer_id,to_index}`, `update_layer {layer_id,name}`, `add_clip {layer_id,kind,start,duration,asset_id?,title?,text?,content_type?,color?,x?,y?,width?,height?,scale?,opacity?,volume?,preset?,preset_duration?,keyframes?}`, `move_clip {clip_id,to_layer_id?,start}`, `trim_clip {clip_id,trim_start,duration}`, `split_clip {clip_id,at}` (absolute timeline time), `replace_clip_asset {clip_id,asset_id}`, `set_clip_volume {clip_id,volume}`, `set_transition {clip_id,type,duration}`, `delete_clip {clip_id}`, `update_clip {clip_id,patch:{...}}`, `undo`, and `redo`. Keyframes may set time, x, y, scale, and opacity. A clip may contain a video, image, text, animation, or audio asset on any layer.
 

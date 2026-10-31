@@ -115,18 +115,25 @@ function legacyAdjacent(clip){
   return legacyNeighbors.get(clip.id)||{};
 }
 
+// One property's keyframes as the export reads them (engine/render.py scalar_value): a first keyframe later than 0
+// starts from the clip's own value at 0, a keyframe at 0 wins over that value (the preview used to show the clip's
+// own value on the first frame), and the value holds after the last keyframe.
+function keyframePoints(clip,key,base){
+  const known=(clip.keyframes || []).filter(point=>key in point&&Number.isFinite(Number(point[key]))).map(point=>({time:Number(point.time),value:Number(point[key])})).sort((a,b)=>a.time-b.time);
+  if(known.length&&known[0].time>1e-9)known.unshift({time:0,value:base});
+  return known;
+}
+function keyframeValue(clip,key,base,local){
+  const known=keyframePoints(clip,key,base);
+  if(!known.length)return base;
+  if(local<=known[0].time)return known[0].value;
+  for(let i=1;i<known.length;i++)if(local<known[i].time){const a=known[i-1],b=known[i];return a.value+(b.value-a.value)*easedProgress((local-a.time)/(b.time-a.time),clip.easing);}
+  return known.at(-1).value;
+}
 function animatedValues(clip,local){
   const base={x:Number(clip.x ?? .5),y:Number(clip.y ?? .5),scale:Number(clip.scale ?? 1),opacity:Number(clip.opacity ?? 1)};
-  const points=[{time:0,...base},...(clip.keyframes || []).map(point=>({...point,time:Number(point.time)}))].sort((a,b)=>a.time-b.time);
   const values={...base};
-  for(const key of ['x','y','scale','opacity']){
-    const known=points.filter(point=>Number.isFinite(Number(point[key])));
-    const after=known.find(point=>point.time>=local);
-    if(!after){values[key]=Number(known.at(-1)?.[key] ?? base[key]);continue;}
-    const before=[...known].reverse().find(point=>point.time<=local) || known[0];
-    const span=after.time-before.time;
-    values[key]=span>0?Number(before[key])+(Number(after[key])-Number(before[key]))*easedProgress((local-before.time)/span,clip.easing):Number(after[key]);
-  }
+  for(const key of ['x','y','scale','opacity'])values[key]=keyframeValue(clip,key,base[key],local);
   const preset=clip.preset || 'none';const d=Math.max(.1,Number(clip.preset_duration || .6));const length=seconds(clip.duration);
   const incoming=easedProgress(local/d,clip.easing),outgoing=easedProgress((length-local)/d,clip.easing);
   if(preset==='fade_in')values.opacity*=incoming;

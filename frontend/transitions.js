@@ -40,12 +40,17 @@ function transitionInfo(clip){
   return joinCache.get(clip.id) || {};
 }
 function visualFrameTime(time){const fps=Number(state.project?.fps||25);return Math.floor(Number(time)*fps+.5+1e-8)/fps;}
+// A transition on whole video frames, as the export draws it (engine/render.py timeline_plan): 0.35 s at 25 fps
+// lasts 9 frames there, and the preview used to run it 0.01 s faster.
+function joinFrames(join){const fps=Number(state.project?.fps||25),seam=visualFrameTime(join.seam);return {seam,duration:Math.max(1/fps,visualFrameTime(Number(join.seam)+Number(join.duration))-seam)};}
 function clipRenderStart(clip){return visualFrameTime(clip.start);}
 function clipRenderEnd(clip){return visualFrameTime(Number(clip.start)+Number(clip.duration)+(transitionInfo(clip).outgoing?.duration || 0));}
 function transitionValues(clip,local,values){
   const info=transitionInfo(clip),time=Number(clip.start)+local;
-  if(info.outgoing && local>Number(clip.duration))for(const prop of ['x','y','scale','opacity']){const points=[{time:0,[prop]:Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1))},...(clip.keyframes || []).filter(p=>prop in p)];const last=points.at(-1),before=points.at(-2) || last;values[prop]=Number(last[prop])+(Number(last[prop])-Number(before[prop]))/Math.max(.001,Number(last.time)-Number(before.time))*(local-Number(last.time));}
-  for(const [direction,join] of [['in',info.incoming],['out',info.outgoing]]){if(!join || (direction==='in' && clip.kind==='text' && clip.text_role==='full_frame'))continue;const p=easedProgress((time-join.seam)/join.duration,'ease_in_out'),incoming=direction==='in',progress=incoming?1-p:p,type=join.type;
+  // past its end an outgoing clip still moving keeps the speed of its last keyframe segment, one that stopped holds,
+  // as the export (backend/joins.py transport)
+  if(info.outgoing && local>Number(clip.duration))for(const prop of ['x','y','scale','opacity']){const points=keyframePoints(clip,prop,Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1)));if(!points.length)continue;const last=points.at(-1),before=points.at(-2) || last,span=last.time-before.time,moving=span>1e-9&&last.time>=Number(clip.duration)-.05;values[prop]=last.value+(moving?(last.value-before.value)/span:0)*(local-last.time);}
+  for(const [direction,join] of [['in',info.incoming],['out',info.outgoing]]){if(!join || (direction==='in' && clip.kind==='text' && clip.text_role==='full_frame'))continue;const span=joinFrames(join),p=easedProgress((time-span.seam)/span.duration,'ease_in_out'),incoming=direction==='in',progress=incoming?1-p:p,type=join.type;
     if(graphicTransitionPresets[type]){
       const config=graphicTransitionPresets[type];
       if(config.kind==='cinematic'){
