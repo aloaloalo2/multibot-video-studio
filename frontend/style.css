@@ -992,3 +992,17 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .project-card.producing{border-color:#6bf2ae66}
 .project-card.producing .project-created{display:none}
 .project-card.producing .project-open{cursor:progress}
+/* the voice player in the voice stage: play and pause, a seek bar, the time */
+.voice-player{display:flex;align-items:center;gap:12px;padding:0 16px 12px 58px}
+.voice-player audio{display:none}
+.voice-player-play{display:grid;place-items:center;width:34px;height:34px;flex:none;border:0;border-radius:50%;background:#f0b429;color:#1a1408;cursor:pointer;box-shadow:0 0 10px rgba(240,180,41,.35)}
+.voice-player-play:hover{background:#ffd166}
+.voice-player-play svg{width:15px;height:15px;fill:currentColor}
+.voice-player-time{flex:none;min-width:38px;font-size:12px;color:#aeb0b7;font-variant-numeric:tabular-nums}
+.voice-player-bar{--fill:0%;flex:1;min-width:80px;height:18px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.voice-player-bar::-webkit-slider-runnable-track{height:5px;border-radius:999px;background:linear-gradient(to right,#f0b429 0,#ffd166 var(--fill),#3a3a41 var(--fill))}
+.voice-player-bar::-moz-range-track{height:5px;border-radius:999px;background:#3a3a41}
+.voice-player-bar::-moz-range-progress{height:5px;border-radius:999px;background:#f0b429}
+.voice-player-bar::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-4.5px;border-radius:50%;background:#fff6dc;border:2px solid #f0b429}
+.voice-player-bar::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:#fff6dc;border:2px solid #f0b429}
+@media(max-width:620px){.voice-player{padding-left:14px}}

@@ -63,7 +63,8 @@ function arrangeEpisode(episode){
   const stage=document.createElement('section');stage.className='episode-voice-block';stage.classList.toggle('open',!!voiceOpen[id]);
   const voice=document.createElement('div');voice.className='episode-voice';voice.setAttribute('aria-live','polite');
   const body=document.createElement('div');body.className='episode-voice-body';body.id=`episode-voice-body-${id}`;body.hidden=!voiceOpen[id];
-  stage.append(voice,body);
+  const player=voicePlayer(id);
+  stage.append(voice,...(player?[player]:[]),body);
   const director=document.createElement('section');director.className='episode-director';director.hidden=true;
   const make=document.createElement('section');make.className='episode-make';buildMake(make);
   episode.append(stage,director,make);
@@ -89,6 +90,32 @@ function arrangeEpisode(episode){
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';
   body.append(scriptFold,heard,table,directorReport);
+}
+
+// The voice itself, to listen to on the plan: play and pause, a bar to seek and the time (user, 31 October 2026).
+const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',pauseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
+function voicePlayer(id){
+  const asset=state.plan?.timing?.audio?.asset_id;
+  if(!asset)return null;
+  const box=document.createElement('div');box.className='voice-player';
+  const audio=document.createElement('audio');audio.preload='metadata';audio.src=`/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
+  const play=document.createElement('button');play.type='button';play.className='voice-player-play';play.setAttribute('aria-label','Відтворити озвучку');play.innerHTML=playIcon;
+  const now=document.createElement('time');now.className='voice-player-time';now.textContent=clock(0);
+  const bar=document.createElement('input');bar.type='range';bar.min='0';bar.step='0.1';bar.value='0';bar.className='voice-player-bar';bar.setAttribute('aria-label','Перемотати озвучку');
+  const total=document.createElement('time');total.className='voice-player-time';
+  const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:Number(state.plan?.timing?.audio?.duration) || 0;
+  const paint=()=>{const all=length();bar.max=String(all || 1);if(!bar.matches(':active'))bar.value=String(audio.currentTime);
+    now.textContent=clock(audio.currentTime);total.textContent=clock(all);bar.style.setProperty('--fill',`${all?audio.currentTime/all*100:0}%`);};
+  play.addEventListener('click',()=>{if(audio.paused){if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
+  audio.addEventListener('play',()=>{play.innerHTML=pauseIcon;play.setAttribute('aria-label','Пауза');box.classList.add('playing');});
+  audio.addEventListener('pause',()=>{play.innerHTML=playIcon;play.setAttribute('aria-label','Відтворити озвучку');box.classList.remove('playing');});
+  for(const name of ['timeupdate','loadedmetadata','ended'])audio.addEventListener(name,paint);
+  bar.addEventListener('input',()=>{audio.currentTime=Number(bar.value);paint();});
+  // ±5 s with the arrow keys on the bar comes from the range itself; the voice stops when the page changes
+  const stop=()=>{if(!box.isConnected){audio.pause();audio.removeAttribute('src');audio.load();observer.disconnect();}};
+  const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan');if(root)observer.observe(root,{childList:true});});
+  box.append(audio,play,now,bar,total);paint();
+  return box;
 }
 
 // The line of the voice opens and closes its stage; its buttons (add a voice, start over) keep their own clicks.
