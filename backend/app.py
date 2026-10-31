@@ -649,8 +649,9 @@ def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = Fals
             raise store.StudioError("Стоп-кадр не вийшов: " + str(info.get("error") or "")[-600:], 500)
         info["urls"] = [f"/api/projects/{project['id']}/stills/{Path(path).name}" for path in info["outputs"]]
         store.atomic_json(info_path, info)
+        # about the last twenty stills of a project: a 1080p PNG takes some 3 MB
         stills = sorted(folder.glob("still-*"), key=lambda item: item.stat().st_mtime, reverse=True)
-        for old in stills[120:]:
+        for old in stills[40:]:
             old.unlink(missing_ok=True)
     return {**info, "cached": False, "notes": notes}
 
