@@ -920,7 +920,9 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 @media(max-width:760px){.thumb-view{grid-template-columns:1fr}.thumb-view-frame,.thumb-view .thumb-wishes,.thumb-view-actions,.thumb-view-gate{grid-column:1;grid-row:auto}}
 /* The plan page in one column (director.js): the voice line, the director while it works, «Створення ролика» and the
    folds with the voice text, the frame table and the reports. */
-.episode{display:flex;flex-direction:column;gap:14px;max-width:1100px}
+.episode{display:flex;flex-direction:column;gap:14px}
+/* the plan page stands in the middle, in the same column as the voice drop page (.voice-start) */
+.project-plan>.plan-heading,.project-plan>.plan-settings-warning,.project-plan>.episode{max-width:860px;margin-left:auto;margin-right:auto}
 .episode-voice-block{border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;min-width:0;transition:border-color .15s}
 .episode-voice-block.open{border-color:#45454c}
 .episode-voice{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 14px;min-width:0;cursor:pointer;border-radius:16.5px}
