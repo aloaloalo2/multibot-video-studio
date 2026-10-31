@@ -705,7 +705,7 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(status, 400)
             self.assertNotIn("multibot-video-studio-pexels", fake.entries)
 
-    def test_project_rename_delete_and_restore_preserve_materials(self):
+    def test_project_rename_and_delete_from_the_studio_disk(self):
         cid = store.channel_id(self.channel)
         project = store.create_project(cid, "Project management")
         endpoint = "/api/projects/" + project["id"]
@@ -724,22 +724,31 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(result["project"]["episode_path"], str(episode))
         status, _ = self.request(endpoint, "PATCH", {"name": "Stale rename", "expected_revision": revision})
         self.assertEqual(status, 409)
-        status, _ = self.request(endpoint, "DELETE")
+        status, disk = self.request(endpoint + "/disk")
         self.assertEqual(status, 200)
+        self.assertGreater(disk["bytes"], 0)
+        import director
+        director.ACTIVE.add(project["id"])          # the director at work: the bin waits
+        try:
+            status, _ = self.request(endpoint, "DELETE")
+        finally:
+            director.ACTIVE.discard(project["id"])
+        self.assertEqual(status, 409)
+        self.assertTrue((store.PROJECTS_ROOT / project["id"]).is_dir())
+        status, deleted = self.request(endpoint, "DELETE")
+        self.assertEqual(status, 200)
+        self.assertGreater(deleted["freed"], 0)
         status, _ = self.request(endpoint)
         self.assertEqual(status, 404)
         status, listed = self.request("/api/projects?channel=" + cid)
         self.assertEqual(status, 200)
         self.assertNotIn(project["id"], {item["id"] for item in listed["projects"]})
+        # the bin deletes the project from the studio's disk; the episode's own file stays
         self.assertEqual(source.read_bytes(), b"original-media")
-        self.assertEqual(Path(asset["path"]).read_bytes(), b"original-media")
-        status, restored = self.request(endpoint + "/restore", "POST", {})
-        self.assertEqual(status, 200)
-        self.assertEqual(restored["project"]["name"], "Нова назва")
-        status, listed = self.request("/api/projects?channel=" + cid)
-        self.assertIn(project["id"], {item["id"] for item in listed["projects"]})
-        status, _ = self.request(endpoint)
-        self.assertEqual(status, 200)
+        self.assertFalse(Path(asset["path"]).exists())
+        self.assertFalse((store.PROJECTS_ROOT / project["id"]).exists())
+        status, _ = self.request(endpoint + "/restore", "POST", {})
+        self.assertEqual(status, 404)
 
     def test_attached_plan_routes_updates_and_preserves_montage(self):
         cid = store.channel_id(self.channel)

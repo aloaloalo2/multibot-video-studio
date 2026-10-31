@@ -11,3 +11,4 @@ backend/data/
 node_modules/
 tools/.pixabay-cache/
 docs/telegram-bot-instructions.txt
+Pixabay/

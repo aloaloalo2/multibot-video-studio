@@ -334,12 +334,20 @@ def save_project(project: dict) -> None:
     atomic_json(project_path(project["id"]), project)
 
 
-def delete_project(pid: str) -> None:
+def project_bytes(pid: str) -> int:
+    """What deleting the project frees: its files in the studio, without hard links that the episode folder still holds."""
+    return sum(stat.st_size for item in project_dir(pid).rglob("*")
+               if not item.is_symlink() and item.is_file() and (stat := item.stat()).st_nlink == 1)
+
+
+def delete_project(pid: str) -> int:
+    """Delete the project from the studio's disk: its folder with the montage, imported media, renders, history and
+    thumbnail (user, 31 October 2026: «щоб вона видаляла проект з диску саме в студії»). The episode folder in the
+    channel stays as it is. Returns the bytes freed."""
     with LOCK:
-        project = load_project(pid)
-        project["deleted_at"] = time.time()
-        project["revision"] = project.get("revision", 0) + 1
-        save_project(project)
+        freed = project_bytes(pid)
+        shutil.rmtree(project_dir(pid))
+    return freed
 
 
 def restore_project(pid: str) -> dict:

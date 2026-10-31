@@ -228,7 +228,10 @@ function isDirectorPlan(plan){return plan?.frame_source==='razgon-direction';}
 function renderProductionStart(section,frames,getTimeline){
   const project=state.project,total=frames.length,request=project.production_request;
   section.className='plan-start';section.replaceChildren();section.hidden=!planStartOpen[project.id];
-  let count=Math.max(1,Math.min(total,Number(planStartOpen[project.id]?.count) || request?.frames || Math.min(3,total)));
+  // all the frames by default (user, 31 October 2026: «по дефолту всі кадри, типу макс»); a request the agent is making,
+  // or one the subscription limit paused, keeps its own count
+  const held=['requested','in_progress'].includes(request?.status)||(request?.status==='failed'&&(request.limit||/hit your \w+ limit/i.test(request.error || '')));
+  let count=Math.max(1,Math.min(total,Number(planStartOpen[project.id]?.count) || (held&&request?.frames) || total));
   const head=document.createElement('div');head.className='plan-start-head';
   head.innerHTML='<div><h2>Скільки кадрів створити зараз</h2><p>Почніть з кількох кадрів, перегляньте їх і продовжуйте, коли все подобається. Вибрані кадри підсвічені на таймлайні.</p></div>';
   const readout=document.createElement('div');readout.className='plan-start-readout';readout.setAttribute('aria-live','polite');head.append(readout);

@@ -2,7 +2,7 @@
 // that frees it (backend/space.py). The window says what goes and what stays before anything is removed.
 const spaceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h16v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 14l2.4-8.3A1 1 0 0 1 7.4 5h9.2a1 1 0 0 1 1 .7L20 14M7.5 17h.01M12 7v4.5m-2.2-2.2L12 11.5l2.2-2.2"/></svg>';
 
-function spaceSize(bytes){return bytes>=1e9?`${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:`${Math.max(1,Math.round(bytes/1e6))} МБ`;}
+function spaceSize(bytes){return bytes>=1e9?`${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:bytes<5e5?'менше 1 МБ':`${Math.round(bytes/1e6)} МБ`;}
 
 async function openSpace(project){
   modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займають зайві копії кадрів…</p>',[{label:'Скасувати',run:closeModal}]);

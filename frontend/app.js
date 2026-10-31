@@ -214,14 +214,17 @@ function renameProject(project){
 }
 
 function deleteProject(project){
-  modal('Видалити проєкт?',`<p>Проєкт «${esc(project.name)}» зникне зі списку студії. Його матеріали та папка випуску збережуться.</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити проєкт',icon:'trash',danger:true,run:async()=>{
+  // the bin deletes the project from the studio's disk; the episode folder in the channel stays (user, 31 October 2026)
+  modal('Видалити проєкт?',`<p>Проєкт «${esc(project.name)}» буде видалено з диска студії разом із монтажем, матеріалами, рендерами та прев’ю. Повернути його не вийде. Папка випуску в каналі залишиться.</p><p class="space-note" id="delete-size">Рахуємо, скільки місця звільниться…</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити проєкт',icon:'trash',danger:true,run:async()=>{
     const button=$('modal-actions').querySelector('.danger');button.disabled=true;
     try{
-      await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');
+      const result=await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');
       if(state.project?.id===project.id)showProjectList();
-      closeModal();await refreshProjects();status(`Проєкт «${project.name}» видалено зі списку.`);
+      closeModal();await refreshProjects();status(`Проєкт «${project.name}» видалено, звільнено ${spaceSize(result.freed || 0)}.`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
+  api(`/api/projects/${encodeURIComponent(project.id)}/disk`).then(data=>{const note=$('delete-size');if(note)note.textContent=`Звільниться ${spaceSize(data.bytes)}.`;})
+    .catch(()=>$('delete-size')?.remove());
 }
 
 async function selectProject(id,{updateUrl=true,view='editor'}={}) {
@@ -448,9 +451,10 @@ function renderProject() {
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);
-  // An animated film has its own agents on the plan (director, frames), so the Studio agent tab is not offered there.
-  const animatedChannel=state.channel?.settings?.channel_kind==='animated';
-  if(animatedChannel && state.view==='agent')state.view='plan';
+  // The Studio agent tab is put away for now on every channel (user, 31 October 2026: «поки прибери вкладку «Агент»,
+  // поки нам це не потрібно»); an animated film has its own agents on the plan (director, frames) anyway.
+  const agentTab=false;
+  if(!agentTab && state.view==='agent')state.view='plan';
   document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
@@ -470,7 +474,7 @@ function renderProject() {
   $('project-plan').hidden=!state.project || state.view!=='plan';
   $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
-  $('view-agent').hidden=animatedChannel;
+  $('view-agent').hidden=!agentTab;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
   // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
   // they are drawn, and a voice alone is not a video either.

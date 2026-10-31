@@ -199,9 +199,14 @@ function renderUniversalPreview(){
     return {order,spans};
   })());
   const visible=[],prepared=[],{order,spans}=byLayers.get(layers);
+  // The pictures end on a frame boundary and the voice may run a few milliseconds longer; the export holds its last picture
+  // through that tail, so the preview does too instead of an empty screen at the very end (user, 31 October 2026: «не надо,
+  // чтобы такое было… не понимаю, так будет рендериться с этой черной штукой или нет»). A real gap stays visible.
+  const frame=1/(Number(state.project?.fps) || 25),tail=spans.reduce((last,span)=>Math.max(last,span.end),0),end=timelineOrigin()+timelineSpan();
+  const now=tail>0&&state.playhead>=tail&&end-tail<frame-1e-6?tail-frame/2:state.playhead;
   for(const {clip,start,end} of spans){
-    if(state.playhead>=start&&state.playhead<end)visible.push(clip);
-    if(state.playhead>=start-1.5&&state.playhead<end)prepared.push(clip);
+    if(now>=start&&now<end)visible.push(clip);
+    if(now>=start-1.5&&now<end)prepared.push(clip);
   }
   const needed=new Set(prepared.map(clip=>clip.id)),shown=new Set(visible.map(clip=>clip.id));
   const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));
@@ -231,7 +236,7 @@ function renderUniversalPreview(){
       wrapper.append(element);composition.append(wrapper);state.previewNodes.set(clip.id,wrapper);
       }
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;
-      const foreground=clip.kind==='text' && clip.text_role==='full_frame' && incoming && state.playhead>=incoming.seam && state.playhead<incoming.seam+incoming.duration;
+      const foreground=clip.kind==='text' && clip.text_role==='full_frame' && incoming && now>=incoming.seam && now<incoming.seam+incoming.duration;
       node.style.zIndex=String(foreground?foregroundZ:order.get(clip.id)*4);node.hidden=!shown.has(clip.id);
       if(foreground)node.dataset.transitionForeground='true';else delete node.dataset.transitionForeground;
       if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node.querySelector('video');if(video&&!video.paused)video.pause();}
@@ -240,7 +245,7 @@ function renderUniversalPreview(){
   if(!visible.length)placeholder.textContent=duration()?'На цій позиції немає візуального кліпу':'Додайте матеріал на шар';
   for(const clip of visible){
     const wrapper=state.previewNodes.get(clip.id);if(!wrapper)continue;
-    const local=state.playhead-seconds(clip.start),values=animatedValues(clip,local);
+    const local=now-seconds(clip.start),values=animatedValues(clip,local);
     wrapper.style.left=(values.x*100)+'%';wrapper.style.top=(values.y*100)+'%';
     wrapper.style.width=(Number(clip.width ?? 1)*100)+'%';wrapper.style.height=(Number(clip.height ?? 1)*100)+'%';
     wrapper.style.opacity=String(Math.max(0,Math.min(1,values.opacity)));
@@ -255,7 +260,7 @@ function renderUniversalPreview(){
   }
   $('time-current').textContent=clock(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();
-  renderGraphicTransitionOverlay(composition,state.playhead);
+  renderGraphicTransitionOverlay(composition,now);
   syncStudioAudio();
 }
 

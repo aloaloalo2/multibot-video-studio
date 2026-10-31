@@ -25,7 +25,8 @@ CHANNELS = {
 
 def folder_for(channel):
     if channel == "common":
-        return ROOT / "Pixabay"
+        # inside the studio: the YOUTUBE folder keeps only the channels (user, 31 October 2026)
+        return Path(__file__).resolve().parents[1] / "Pixabay"
     names = {
         "alexey": "Алексей Горбунов",
         "valentin": "Валентин Чичваркин",

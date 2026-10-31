@@ -951,6 +951,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
         if match:
             return self.json_response({**space.usage(match.group(1)), "exporting": bool(active_export(match.group(1)))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/disk", path)
+        if match:
+            return self.json_response({"bytes": store.project_bytes(match.group(1))})
         match = re.fullmatch(r"/api/style-cards/([0-9a-f]{20})/([a-z0-9_-]+-0\.jpg)", path)
         if match:
             try:
@@ -1132,8 +1135,12 @@ class Handler(BaseHTTPRequestHandler):
             project = store.apply_action(match.group(1), "rename_project", {"name": body.get("name")}, body.get("expected_revision"))
             return self.json_response({"project": project})
         if match and method == "DELETE":
-            store.delete_project(match.group(1))
-            return self.json_response({"ok": True})
+            pid = match.group(1)
+            running = (space.busy(pid) or ("Зараз іде експорт" if active_export(pid) else None)
+                       or next((f"Зараз триває {what}" for what, status in project_jobs(pid).items() if status in agent_view.BUSY), None))
+            if running:
+                raise store.StudioError(f"{running}. Видалити проєкт можна, коли вона закінчиться", 409)
+            return self.json_response({"ok": True, "freed": store.delete_project(pid)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/restore", path)
         if match and method == "POST":
             return self.json_response({"project": store.restore_project(match.group(1))})
@@ -1197,6 +1204,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def serve_static(self, raw_path):
         rel = raw_path.lstrip("/") or "index.html"
+        if rel == "favicon.ico":   # browsers ask for it on their own; the studio's icon is the SVG
+            rel = "favicon.svg"
         target = (FRONTEND_ROOT / rel).resolve()
         if not store.under(target, FRONTEND_ROOT) or not target.is_file():
             raise store.StudioError("Інтерфейс не знайдено", 404)
