@@ -16,10 +16,10 @@ FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 NODE = shutil.which("node")
 
 
-def function_source(name: str, files=("universal.js", "transitions.js", "graphics.js", "graphic-transitions.js")) -> str:
+def function_source(name: str) -> str:
     """The text of `function name(...){...}` from the frontend, found by matching its braces outside strings."""
-    for file in files:
-        text = (FRONTEND / file).read_text(encoding="utf-8")
+    for path in sorted(FRONTEND.glob("*.js")):
+        text = path.read_text(encoding="utf-8")
         match = re.search(r"(?m)^function " + re.escape(name) + r"\(", text)
         if not match:
             continue

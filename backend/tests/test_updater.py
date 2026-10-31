@@ -1,3 +1,5 @@
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -6,7 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'engine' / 'tests'))
 from updater import Updater, UpdateError, update_at_start
+import preview_js
 import app
 import store
 
@@ -74,6 +78,62 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(self.updater.refresh()['status'], 'unsafe_update')
         with self.assertRaises(UpdateError): self.updater.apply()
         self.assertEqual(self.data.read_text(), 'my project')
+
+    def test_a_blocked_update_names_the_files_in_its_way(self):
+        (self.install/'app.txt').write_text('local changes')
+        self.assertEqual(self.updater.refresh()['status'], 'current')   # nothing new on GitHub: no notice
+        self.publish()
+        for n in range(9):
+            (self.install/f'copy {n}.txt').write_text('stray')
+        state = self.updater.refresh()
+        self.assertEqual(state['status'], 'local_changes')
+        self.assertIn('app.txt', state['files'])
+        public = self.updater.public_state()
+        self.assertEqual((len(public['files']), public['more']), (8, 2))
+        self.assertNotIn('revision', public)
+
+    def test_a_file_the_update_would_replace_is_named(self):
+        (self.author/'new.txt').write_text('remote')
+        self.git(self.author, 'add', 'new.txt')
+        self.git(self.author, 'commit', '-m', 'new file')
+        self.git(self.author, 'push')
+        self.git(self.install, 'fetch')
+        (self.install/'.git'/'info'/'exclude').write_text('new.txt\n')   # an untracked file Git does not list
+        (self.install/'new.txt').write_text('mine')
+        self.assertEqual(self.updater.refresh(), {'status': 'unsafe_update', 'files': ['new.txt']})
+        self.assertEqual((self.install/'new.txt').read_text(), 'mine')
+
+    def test_own_commits_that_github_lacks_are_reported(self):
+        self.publish()
+        (self.install/'app.txt').write_text('my edit')
+        self.git(self.install, 'commit', '-am', 'local edit')
+        self.assertEqual(self.updater.refresh()['status'], 'diverged')
+
+    def test_a_folder_left_on_another_branch_says_so(self):
+        self.git(self.install, 'checkout', '-b', 'agent-work')
+        self.assertEqual(self.updater.refresh()['status'], 'not_configured')   # no upstream, and main has nothing new
+        self.publish()
+        self.assertEqual(self.updater.refresh(), {'status': 'other_branch', 'branch': 'agent-work'})
+        self.git(self.install, 'push', '-u', 'origin', 'agent-work')
+        self.assertEqual(self.updater.refresh(), {'status': 'other_branch', 'branch': 'agent-work'})
+        self.git(self.install, 'merge', '--ff-only', 'origin/main')
+        self.assertEqual(self.updater.refresh()['status'], 'diverged')  # main merged in here, not yet sent to GitHub
+        self.git(self.install, 'push')
+        self.assertEqual(self.updater.refresh()['status'], 'current')   # a branch that holds main is not behind
+
+    @unittest.skipUnless(shutil.which('node'), 'node required')
+    def test_the_page_explains_each_blocked_update(self):
+        states = [{'status': 'local_changes', 'files': ['<b>.txt', 'a.txt'], 'more': 3}, {'status': 'diverged'},
+                  {'status': 'unsafe_update', 'files': ['new.txt']}, {'status': 'other_branch', 'branch': 'agent-work'},
+                  {'status': 'available'}, {'status': 'current'}, {'status': 'offline'}, {'status': 'not_configured'}]
+        esc = "const esc=value=>String(value??'').replace(/[&<>\"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[char]));"
+        html = preview_js.run(['updateReasonHtml'], f"console.log(JSON.stringify({json.dumps(states)}.map(updateReasonHtml)))", esc)
+        self.assertIn('&lt;b&gt;.txt', html[0])
+        self.assertIn('і ще 3', html[0])
+        self.assertIn('об’єднати', html[1])
+        self.assertIn('new.txt', html[2])
+        self.assertIn('«agent-work»', html[3])
+        self.assertEqual(html[4:], ['', '', '', ''])   # no notice when nothing is blocked
 
     def test_update_does_not_interrupt_an_export_or_audio_analysis(self):
         with patch.dict(app.ACTIVE_EXPORTS, {'test': {}}, clear=True), patch.object(app.UPDATE_MANAGER, 'apply') as apply:

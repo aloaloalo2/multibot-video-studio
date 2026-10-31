@@ -144,3 +144,14 @@ run on whole video frames in the preview too (`joinFrames`: 0.35 s at 25 fps is 
 radius is 8 px in both and rounds the contained picture. Equal already and now held by tests: slide, zoom and
 cinematic transitions, transition covers (`graphicShapes` against `transition_graphics.shapes`), contained pictures. The FFmpeg renderer takes some 60 keyframes in one expression (100 failed), so sampled curves stay
 under that and `render.window_keyframes` keeps only the keyframes of the scene's moments.
+
+## Updates say why they stop (31 October 2026)
+
+The studio updates itself from GitHub (`backend/updater.py`: a fetch every 2 minutes, «Оновити студію» when the
+folder's branch on GitHub is ahead, a fast-forward and a restart on the click; «Запустить студию.command» updates before
+it starts). An update that cannot run no longer hides: the button reads «Оновлення зупинене» and its dialog
+(`frontend/updates.js`, `updateReasonHtml`) says why and what to do. `local_changes` names the changed or stray files
+of the folder (ignored ones aside, up to eight and a count), `diverged` means local commits GitHub lacks,
+`unsafe_update` names the untracked file the update would replace, `other_branch` names the branch the folder stands
+on while GitHub's main has commits it lacks (an agent switched the folder and left it). Changed files while nothing new
+waits on GitHub read as `current`: no notice for an author or agent at work. Tests: `backend/tests/test_updater.py`.
