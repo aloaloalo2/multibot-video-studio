@@ -79,7 +79,7 @@ director and while the script is newer than the direction (`director_stale`). «
 «Перегенерувати план» in the heading.
 
 Under the voice line stands the voice itself to listen to (`voicePlayer` in `frontend/director.js`, the plan's
-`timing.audio.asset_id`): play and pause, a seek bar and the time, inside the page; it stops when the page changes.
+`timing.audio.asset_id`): play and pause, a seek bar, the time and the volume (a mute button and a slider, remembered in the browser), inside the page; it stops when the page changes.
 
 «Монтаж» opens with the first frame of the film on the timeline: any clip but sound, the clips of `role: overlay`
 groups and clips titled «Логотип» or «Плашка» (`editorUnlocked`/`filmClips` in `frontend/plan.js`, `store.film_clips`);

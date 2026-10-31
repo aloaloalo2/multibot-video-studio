@@ -94,6 +94,8 @@ function arrangeEpisode(episode){
 }
 
 // The voice itself, to listen to on the plan: play and pause, a bar to seek and the time (user, 31 October 2026).
+const speakerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  muteIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="wave" d="m16 9.5 5 5m0-5-5 5"/></svg>';
 const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',pauseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
 // The recording to play: the plan's own voice file when the project has it. Timings attached by a file path name the
 // voice by an id made before the project had the file (GORBUNOV-23: the player answered 404); then it is the recording
@@ -124,7 +126,16 @@ function voicePlayer(id){
   // ±5 s with the arrow keys on the bar comes from the range itself; the voice stops when the page changes
   const stop=()=>{if(!box.isConnected){audio.pause();audio.removeAttribute('src');audio.load();observer.disconnect();}};
   const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan');if(root)observer.observe(root,{childList:true});});
-  box.append(audio,play,now,bar,total);paint();
+  // the volume: a speaker that mutes and a short slider, remembered for the next voice
+  const speaker=document.createElement('button');speaker.type='button';speaker.className='voice-player-mute';
+  const level=document.createElement('input');level.type='range';level.min='0';level.max='1';level.step='0.05';level.className='voice-player-volume';level.setAttribute('aria-label','Гучність озвучки');
+  let saved=1;try{saved=Number(localStorage.getItem('voicePlayerVolume') ?? 1);}catch{}
+  audio.volume=Number.isFinite(saved)?Math.max(0,Math.min(1,saved)):1;
+  const showVolume=()=>{const value=audio.muted?0:audio.volume;level.value=String(value);level.style.setProperty('--fill',`${value*100}%`);
+    speaker.innerHTML=value===0?muteIcon:speakerIcon;speaker.setAttribute('aria-label',value===0?'Увімкнути звук':'Вимкнути звук');};
+  level.addEventListener('input',()=>{audio.volume=Number(level.value);audio.muted=audio.volume===0;try{localStorage.setItem('voicePlayerVolume',String(audio.volume));}catch{}showVolume();});
+  speaker.addEventListener('click',()=>{if(audio.muted||audio.volume===0){audio.muted=false;if(audio.volume===0)audio.volume=1;}else audio.muted=true;showVolume();});
+  box.append(audio,play,now,bar,total,speaker,level);paint();showVolume();
   return box;
 }
 
