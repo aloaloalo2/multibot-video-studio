@@ -49,13 +49,15 @@ The voice at 100% is the studio's standard level (`backend/audio_level.py`, user
 ## The plan page and the frame agent, the same for every channel (31 October 2026)
 
 The plan page (`frontend/director.js`, `renderEpisode`) is one column, the same for photo and animated channels, with no
-numbered steps: a short voice line (file, length, «розпізнано, збіг N%» and the bin that starts the episode over), the
+numbered steps: the voice stage as one line (file, length, «розпізнано, збіг N%» and the bin that starts the episode
+over) that opens on a click to «Текст озвучки й розпізнавання», «Таблиця кадрів» and «Звіт режисера» (user, 31 October
+2026: that stage is passed, the next one stands open; a recognition that needs a look opens it by itself), the
 director's state only while it works or needs the author (a stop, a limit pause, a changed text), then «Створення
 ролика»: the film as a strip of its frames (on a photo channel each frame in its format's colour from
 `planFormatVisuals`), the count picked by a drag across the strip (all frames by default), «Макс» and «Почати створення
 ролика». The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
-director and while the script is newer than the direction (`director_stale`). At the bottom, folded: «Текст озвучки й
-розпізнавання», «Таблиця кадрів», «Звіт режисера», «Звіт агента». A photo channel's plan from the planner keeps
+director and while the script is newer than the direction (`director_stale`). «Звіт агента» closes «Створення
+ролика». A photo channel's plan from the planner keeps
 «Перегенерувати план» in the heading.
 
 «Монтаж» opens with the first frame of the film on the timeline: any clip but sound, the clips of `role: overlay`

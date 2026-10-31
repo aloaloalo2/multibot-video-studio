@@ -921,7 +921,19 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 /* The plan page in one column (director.js): the voice line, the director while it works, «Створення ролика» and the
    folds with the voice text, the frame table and the reports. */
 .episode{display:flex;flex-direction:column;gap:14px;max-width:1100px}
-.episode-voice{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 14px;border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;min-width:0}
+.episode-voice-block{border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;min-width:0;transition:border-color .15s}
+.episode-voice-block.open{border-color:#45454c}
+.episode-voice{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 14px;min-width:0;cursor:pointer;border-radius:16.5px}
+@media(hover:hover){.episode-voice-block:not(.open):hover{border-color:#4a4a52}}
+.episode-voice-toggle{display:inline-flex;align-items:center;gap:6px;flex:none;padding:6px 10px;border:1px solid #3a3a41;border-radius:999px;background:#232327;color:#c9cbd2;font-size:12px;cursor:pointer}
+.episode-voice-toggle:hover{border-color:#5a5a62;color:#f1f1f2}
+.episode-voice-toggle svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.episode-voice-block.open .episode-voice-toggle svg{transform:rotate(180deg)}
+.episode-voice-body{padding:2px 12px 8px;border-top:1px solid #2c2c31}
+.episode-voice-body[hidden]{display:none}
+.episode-voice-body .episode-fold{margin:8px 0}
+.episode-director-report:empty,.episode-make-report:empty{display:none}
+.episode-make-report{margin-top:12px}.episode-make-report .episode-fold{margin:0}
 .episode-voice-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:50%;background:#0e241a;color:#6bf2ae}
 .episode-voice[data-state="working"] .episode-voice-icon{animation:director-pulse 1.2s ease-in-out infinite}
 .episode-voice[data-state="warn"] .episode-voice-icon{background:#372f1e;color:#f0b429}
@@ -967,13 +979,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip.formats .frame-strip-cell.pointed{background:var(--format-color);box-shadow:inset 0 0 0 2px #fff6dc}
 .frame-strip-legend b[style]{background:var(--format-color)}
 .frame-strip-handle[hidden]{display:none}
-.episode-folds{display:flex;flex-direction:column}
-.episode-folds .episode-fold{margin:6px 0}
 .episode-fold .plan-table{margin:0 14px 14px;width:calc(100% - 28px)}
 .episode-fold>.episode-report,.episode-fold>.team{margin-left:14px;margin-right:14px}
 .episode-fold>.episode-report:empty{display:none}
 .episode-fold-cost{margin:0 16px 14px}
-.episode-reports{display:contents}
 /* the card of an episode whose frames the agent makes: its progress in place of the date, and it does not open */
 .project-making{color:#6bf2ae;font-size:12px;font-weight:600}
 .overview-projects .project-making{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
