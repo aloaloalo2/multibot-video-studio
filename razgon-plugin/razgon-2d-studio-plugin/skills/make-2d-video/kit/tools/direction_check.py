@@ -98,6 +98,15 @@ if named:
 else:
     warn("No shot has a \"set\"; the variety budget can't be checked.")
 
+# --- continuity: a new take in the same place is a jump cut (the camera and the people jump at the junction)
+HARD = {"cut", "smash", "flash"}
+jumps = [f"{shots[i - 1]['id']}→{shots[i]['id']}" for i in range(1, len(shots))
+         if (shots[i].get("in") or {}).get("type", "cut") in HARD and shots[i].get("set") and shots[i].get("set") == shots[i - 1].get("set")]
+if jumps:
+    fail(f"{len(jumps)} hard cuts inside one place ({', '.join(jumps[:8])}{'…' if len(jumps) > 8 else ''}). If the action goes on, it is "
+         "the same take: join it to the take above (one shot, one Studio frame, one camera path). A new take in the same place "
+         "needs a real change of time, subject or mode and a designed transition (dip, push, zoom, iris, match).")
+
 # --- repeated compositions
 desc = collections.Counter(re.sub(r"\W+", " ", (s.get("scene") or "").lower()).strip() for s in shots)
 dup = [(d, n) for d, n in desc.items() if d and n > 2]
