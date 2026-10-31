@@ -272,15 +272,16 @@ function buildMake(make){
   start.addEventListener('click',()=>startMaking(start));
   // pointing at a frame reads its time, format and words below the strip
   let shown=-1;
-  const hintText='Потягніть по смужці, щоб вибрати, скільки кадрів створити. Наведіть на кадр, щоб побачити його текст.';
+  // while the strip can not be dragged (all made, the agent works, no voice yet) it only tells how to read a frame
+  const hintText=()=>make.classList.contains('locked')?'Наведіть на кадр, щоб побачити його час і текст.':'Потягніть по смужці, щоб вибрати, скільки кадрів створити. Наведіть на кадр, щоб побачити його текст.';
   function show(index){
     if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;
-    if(index<0){read.textContent=hintText;return;}
+    if(index<0){read.textContent=hintText();return;}
     const frame=frames[index];cells[index].classList.add('pointed');
     const format=directorAnimated()?'':` · ${planFormatNames[frame.format] || frame.format}`;
     read.innerHTML=`<b>Кадр ${index+1}${cells[index].classList.contains('made')?' · готовий':''}</b> · ${clock(frame.start)}–${clock(frame.end)}${esc(format)} · ${esc(planFrameSpeech(frame))}`;
   }
-  read.textContent=hintText;
+  read.textContent=hintText();make.addEventListener('episode-refresh',()=>{if(shown<0)read.textContent=hintText();});
 }
 
 // The film as a strip: every frame as wide as it sounds. On a photo channel each frame takes its format's colour.
@@ -312,9 +313,9 @@ function fillMake(make){
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
     :directorAwaited()?'Кадри з’являться, коли режисер розкладе озвучку.'
-    :floor>=frames.length?'Усі кадри створені. Готовий ролик збирає «Експорт MP4» угорі.':'';
+    :floor>=frames.length?'Усі кадри створені. Готовий ролик збирає «Експорт MP4» у «Монтажі».':'';
   const locked=working||paused||!!blocked;
-  make.classList.toggle('locked',locked);make.classList.toggle('waiting',directorAwaited());
+  make.classList.toggle('locked',locked);make.dispatchEvent(new Event('episode-refresh'));make.classList.toggle('waiting',directorAwaited());
   const count=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,Number(makeCount[id]) || frames.length));
   const shownCount=working||paused?Number(request.frames):count;
   cells.forEach((cell,index)=>{cell.classList.toggle('made',made.has(index));cell.classList.toggle('chosen',index<shownCount&&!made.has(index)&&!blocked);
