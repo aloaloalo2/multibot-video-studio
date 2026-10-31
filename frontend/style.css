@@ -129,6 +129,8 @@ button.primary:hover:not(:disabled){background:#f5c24b}
 #export-open:not(:disabled):hover,#overview-create:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 button.secondary{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:9px;padding:8px 10px}
 button.secondary:hover:not(:disabled){background:#3a3a40}
+#studio-update.update-blocked{border-color:#6e5520;background:#2a251a;color:#f0c46a}
+#studio-update.update-blocked:hover{background:#352d1d}
 button.danger{border:1px solid #634045;background:#3b292c;color:#efb2b8;border-radius:9px;padding:8px 10px;margin-top:10px}
 button.danger:hover:not(:disabled){background:#523034}
 .full{width:100%}
