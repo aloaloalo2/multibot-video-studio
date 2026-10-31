@@ -68,7 +68,7 @@ The voice at 100% is the studio's standard level (`backend/audio_level.py`, user
 
 The plan page (`frontend/director.js`, `renderEpisode`) is one column, the same for photo and animated channels, with no
 numbered steps: the voice stage as one line (file, length, «розпізнано, збіг N%» and the bin that starts the episode
-over) that opens on a click to «Текст озвучки й розпізнавання», «Таблиця кадрів» and «Звіт режисера» (user, 31 October
+over) that opens on a click to «Ваш сценарій», «Розпізнаний текст» (what the recognition heard, with its report), «Таблиця кадрів» and «Звіт режисера» (user, 31 October
 2026: that stage is passed, the next one stands open; a recognition that needs a look opens it by itself), the
 director's state only while it works or needs the author (a stop, a limit pause, a changed text), then «Створення
 ролика»: the film as a strip of its frames (on a photo channel each frame in its format's colour from
