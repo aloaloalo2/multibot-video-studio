@@ -70,7 +70,10 @@ in `GET /api/projects` carries `production_request` (`status`, `frames`, `limit`
 again once it is done, paused or failed. The list is read again every 8 s while any card is in work. A frame counts as
 made (`store.made_frames`) when a film clip covers its middle; a Razgon code block counts once its scene is written;
 an animated film counts its frames drawn as code (`frame_progress.drawn`). A request for frames already made is refused
-with 409, a second request while one runs too.
+with 409, a second request while one runs too. A request that says the agent works while no agent of this Studio
+runs (a restart, a run that never started; 31 October 2026 a finished film read «Створюємо кадри» for good) is settled
+by `production.settle` whenever a project or the list is read and at start-up: done when every requested frame is made,
+otherwise stopped (a fresh request gets 30 s to start).
 
 `production.start` runs for every channel. A photo channel's agent (`production.photo_brief`, Claude Opus 5.5 at
 `xhigh`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,

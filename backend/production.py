@@ -259,12 +259,33 @@ def start(pid: str, notes: str = "") -> None:
     threading.Thread(target=run, args=(pid, cli, notes), daemon=True).start()
 
 
+# A request just written waits this long for its run to start before it can read as stale.
+START_GRACE = 30
+
+
+def settle(pid: str, project: dict | None = None) -> dict | None:
+    """A request that says the agent works while no agent of this Studio runs (a restart, a run that never started:
+    31 October 2026 a finished film read «Створюємо кадри» for good) is put right: done when every requested frame is
+    made, otherwise stopped, so the button can be pressed again. Returns the request as it stands."""
+    project = project or store.load_project(pid)
+    request = project.get("production_request") or {}
+    if request.get("status") not in {"requested", "in_progress"} or pid in ACTIVE:
+        return request or None
+    if request["status"] == "requested" and time.time() - float(request.get("created_at") or 0) < START_GRACE:
+        return request
+    try:
+        made = drawn(pid, int(request.get("frames") or 0))
+    except (store.StudioError, OSError, ValueError, KeyError):
+        made = False
+    fields = {"status": "done", "error": None} if made else {
+        "status": "failed", "error": "Агент зупинився, не закінчивши кадри. Виберіть кадри й почніть ще раз."}
+    return set_request(pid, finished_at=time.time(), **fields)
+
+
 def reset_interrupted() -> None:
-    """At start-up: a request left in work by a restart reads as failed, so the author can press the button again."""
+    """At start-up: a request left in work by a restart is settled (done if its frames are made, else stopped)."""
     for item in store.list_projects():
         try:
-            request = store.load_project(item["id"]).get("production_request") or {}
+            settle(item["id"])
         except store.StudioError:
             continue
-        if request.get("status") == "in_progress":
-            set_request(item["id"], status="failed", error="Студію перезапустили під час створення кадрів. Натисніть ще раз.")
