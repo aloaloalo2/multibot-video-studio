@@ -17,7 +17,8 @@ answer in Ukrainian. The detailed rules of every subsystem are in @AGENTS.md and
   with a hash of its content (`app.versioned_index`), so a changed file reaches the browser on the next reload.
 - `engine/` — the export renderer (`render.py`; `gpu_prepare.py` + `gpu_render.swift` on Apple Silicon).
 - `tools/` — `studio.py` (the agent's entry point, below), `studio_restart.py`, `razgon_bridge.py` (Razgon 2D ↔ studio),
-  `video_plan.py`, `episode.py`, `pixabay.py`.
+  `video_plan.py`, `episode.py`, `pixabay.py`, `razgon_sync.py` (brings the Razgon working copy up to the kit at every
+  start; a change to Razgon goes into the kit in `razgon-plugin/` to reach other Macs).
 
 ## Running the studio
 

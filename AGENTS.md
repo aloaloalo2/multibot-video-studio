@@ -78,6 +78,9 @@ director and while the script is newer than the direction (`director_stale`). «
 ролика». A photo channel's plan from the planner keeps
 «Перегенерувати план» in the heading.
 
+Under the voice line stands the voice itself to listen to (`voicePlayer` in `frontend/director.js`, the plan's
+`timing.audio.asset_id`): play and pause, a seek bar and the time, inside the page; it stops when the page changes.
+
 «Монтаж» opens with the first frame of the film on the timeline: any clip but sound, the clips of `role: overlay`
 groups and clips titled «Логотип» or «Плашка» (`editorUnlocked`/`filmClips` in `frontend/plan.js`, `store.film_clips`);
 until then its tab says «Монтаж відкриється з першими кадрами ролика».
@@ -101,6 +104,17 @@ stock through `tools/pixabay.py` (search, download into the episode), pictures d
 `place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). People in every frame and every
 prompt are stick figures, apart from the host. The run is done when each requested frame is made. Tests:
 `backend/tests/test_agent_tools.py`, `backend/tests/test_production.py`, `tools/tests/test_studio.py`.
+
+## Razgon follows the Studio's kit (31 October 2026)
+
+The Razgon plugin with its studio kit lives in this repository (`razgon-plugin/…/make-2d-video/kit`), and Claude copies
+the kit into `<YOUTUBE>/…/razgon-2d-studio` on first use. At every start the Studio brings each such copy up to date
+(`tools/razgon_sync.py`, `app.razgon_kit_at_start`), so an update of the Studio from GitHub reaches the animation tools
+too. A manifest in the copy (`.videokey-kit.json`) records what the Studio wrote: missing files are added, files nobody
+changed since are replaced, a file changed by hand is kept and reported, files dropped from the kit are removed only if
+unchanged; `projects/`, `node_modules/`, `build/` and `assets/` are never touched, and a changed `package.json` runs
+`npm install`. A change to Razgon reaches others only through the kit: change the files in the kit (or copy them there
+from the working copy) and push to `main`. Tests: `tools/tests/test_razgon_sync.py`.
 
 ## Timeline row order
 

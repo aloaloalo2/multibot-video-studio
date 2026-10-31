@@ -686,6 +686,17 @@ def _derived_key(project: dict) -> tuple:
     return (project.get("revision"), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, tuple(audio))
 
 
+def razgon_kit_at_start() -> None:
+    """The Razgon 2D studio in the YOUTUBE folder follows the kit this Studio ships (tools/razgon_sync.py): an update of
+    the Studio from GitHub reaches the animation tools too, while hand-changed files, projects and the prop library stay."""
+    try:
+        sys.path.insert(0, str(APP_ROOT / "tools"))
+        import razgon_sync
+        razgon_sync.at_start()
+    except Exception as error:   # never let it stop the Studio
+        sys.stderr.write(f"[video-studio] Razgon kit sync skipped: {error}\n")
+
+
 def derived_state(project: dict) -> tuple[dict, dict]:
     """(production readiness, voice gains) of a project, computed once per version of what they read: every project
     response carries both, and measuring them again took most of a request on a long episode."""
@@ -1307,6 +1318,7 @@ def main():
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
+    threading.Thread(target=razgon_kit_at_start, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
