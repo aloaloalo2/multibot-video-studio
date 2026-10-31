@@ -56,7 +56,7 @@ All mutations use `Content-Type: application/json`, local `Host`, and same-origi
 | GET | `/api/jobs/<id>` | `{job:{status,progress,output_path,error}}` |
 | GET | `/api/studio/status` | `{busy:[lines],exports}`: running exports and every project's recognition, director, frame production, thumbnail and studio-agent job in one request |
 | GET | `/api/projects/<id>/summary` | The project frame by frame: `{head,fps,revision,frames:[{n,start,end,format,group_id,line,issues}],issues}`; `?frames=10-20`, `?issues=1`, `?format=text` (plain lines) |
-| POST | `/api/projects/<id>/ops` | `{ops:[...],expected_revision?,dry_run?}` montage operations (`accent`, `clear_accents`, `replace`, `transitions`, see `montage_ops.py`) as one batch and one undo step; `{revision,report,applied}` |
+| POST | `/api/projects/<id>/ops` | `{ops:[...],expected_revision?,dry_run?}` montage operations (`accent`, `clear_accents`, `replace`, `transitions`, `place`, see `montage_ops.py`) as one batch and one undo step; `{revision,report,applied}` |
 | POST | `/api/projects/<id>/still` | `{time,frames?,cpu?}` draws the export at that moment with its own renderer (`engine/still.py`); `{output,outputs,urls,renderer,time,notes}`. Allowed during an export |
 | GET | `/api/projects/<id>/exports` | `{active,jobs}`: the running export and the latest five |
 

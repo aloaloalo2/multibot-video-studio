@@ -308,7 +308,13 @@ function renderOverview() {
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
     open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
-    open.addEventListener('click',()=>selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true)));
+    // While the agent makes the frames the card shows how far it got and does not open; after it is done, paused or
+    // stopped, it opens as usual.
+    const making=project.production_request,producing=['requested','in_progress'].includes(making?.status);
+    open.addEventListener('click',()=>{
+      if(producing){status('Агент ще створює кадри цього ролика. Випуск відкриється, коли він закінчить.');return;}
+      selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true));
+    });
     if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
       const duration=document.createElement('span');duration.className='project-duration';
       const value=Number(project.duration),hours=Math.floor(value/3600);
@@ -325,6 +331,13 @@ function renderOverview() {
       card.classList.add('has-cover');card.append(cover);
     }else card.classList.add('no-cover');
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
+    if(producing){
+      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
+      const box=document.createElement('div');box.className='project-making';
+      box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
+      open.insertBefore(box,open.querySelector('.project-meta'));
+      card.classList.add('producing');card.setAttribute('aria-busy','true');open.setAttribute('aria-disabled','true');
+    }
     card.append(open,projectActions(project));
     container.append(card);
   }
@@ -368,6 +381,11 @@ async function pollOverviewExports(force=false){
   finally{overviewExportRequest=false;}
 }
 setInterval(pollOverviewExports,3000);
+// While the agent makes frames of an episode of this channel, its card is read again now and then.
+setInterval(()=>{
+  if(state.project || !state.channel || document.hidden)return;
+  if(state.projects.some(project=>['requested','in_progress'].includes(project.production_request?.status)))refreshProjects().catch(()=>{});
+},8000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollOverviewExports();});
 
 function scenes() {return Array.isArray(state.project?.scenes) ? [...state.project.scenes].sort((a,b)=>seconds(a.start)-seconds(b.start)) : [];}
@@ -485,7 +503,7 @@ function renderProject() {
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
   $('view-editor').disabled=!!state.project && !editorUnlocked();
-  $('view-editor').title=$('view-editor').disabled?'Монтаж відкриється, коли план буде за озвучкою':'';
+  $('view-editor').title=$('view-editor').disabled?editorLockedHint:'';
   $('export-open').disabled=!state.project;$('export-open').title=state.project?.production?.reason || ''; $('undo').disabled=!state.project?.can_undo; $('redo').disabled=!state.project?.can_redo;
   $('add-transition').disabled=!state.project || (isUniversal()?!universalClips().length:!scenes().length);$('add-text').disabled=!state.project || (!isUniversal()&&!scenes().length);
   $('play-pause').disabled=!state.project; $('seek').disabled=!state.project;

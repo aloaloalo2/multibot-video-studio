@@ -25,9 +25,11 @@ class ProductionTest(unittest.TestCase):
                         "production_request": dict(REQUEST), "tracks": [{"clips": [{"kind": "animation"}] * 3}]}
         for item in (patch.object(store, "load_project", side_effect=lambda pid: json.loads(json.dumps(self.project))),
                      patch.object(store, "save_project", side_effect=lambda project: self.project.update(project)),
-                     patch.object(store, "project_dir", return_value=base)):
+                     patch.object(store, "project_dir", return_value=base),
+                     patch.object(store, "project_animated", side_effect=lambda project: self.animated)):
             item.start()
             self.addCleanup(item.stop)
+        self.animated = True
         production.ACTIVE.clear()
 
     def test_brief_names_the_frames_and_the_limits(self):
@@ -59,6 +61,30 @@ class ProductionTest(unittest.TestCase):
         mirror = json.loads((Path(self.project["episode_path"]) / "Запит на створення.json").read_text())
         self.assertEqual(mirror["status"], "done")
         self.assertNotIn(self.project["id"], production.ACTIVE)
+
+    def test_a_photo_channel_gets_its_own_brief_and_is_done_when_its_frames_stand_on_the_timeline(self):
+        self.animated = False
+        text = production.photo_brief(self.project, REQUEST)
+        for part in ("кадри студії 1–3 з 73", "pixabay.py", "codex_image.py", "studio.py\" place", "--text", "стикмени",
+                     "razgon_bridge.py", "Не запускай експорт"):
+            self.assertIn(part, text)
+        plan = {"frames": [{"number": n, "start": 2.0 * (n - 1), "end": 2.0 * n} for n in range(1, 4)]}
+        picture = lambda n: {"id": f"c{n}", "kind": "image", "start": 2.0 * (n - 1), "duration": 2.0, "title": f"K{n:03d} кадр"}
+        self.project["tracks"] = [{"clips": [picture(1), picture(2), {"id": "p", "kind": "animation", "start": 0, "duration": 6, "title": "Плашка"}]}]
+        answer = {"result": "Кадри готові", "total_cost_usd": 1.0}
+        with patch.object(production.director, "claude", return_value=(0, answer)) as claude, \
+                patch.object(store, "load_project_plan", return_value=plan), patch.object(production.logo_layer, "place"):
+            production.ACTIVE.add(self.project["id"])
+            production.run(self.project["id"], Path("claude"))
+            self.assertEqual(self.project["production_request"]["status"], "failed")     # frame 3 is not on the timeline
+            self.assertIn("place", claude.call_args.args[1])                              # the photo brief went to Opus
+            self.project["tracks"][0]["clips"].append(picture(3))
+            production.ACTIVE.add(self.project["id"])
+            production.run(self.project["id"], Path("claude"))
+        self.assertEqual(self.project["production_request"]["status"], "done")
+        with patch.object(production.director, "executable", return_value=Path("claude")), patch.object(production.threading, "Thread") as thread:
+            production.start(self.project["id"])
+        thread.assert_called_once()                                                    # no longer only for animated channels
 
     def test_a_run_stopped_by_the_subscription_limit_is_a_pause_that_resumes_its_session(self):
         answer = {"is_error": True, "api_error": "usage_limit_reached", "session_id": "s1", "total_cost_usd": 3.0,

@@ -37,14 +37,14 @@ function appendSpeechReport(target,report){
   const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
 }
 
-// The recognition report sits behind one button next to «Додати озвучку»: the plan stays short, the details open on demand.
+// The recognition report lives folded at the bottom of the plan (director.js «Текст озвучки й розпізнавання»): once the
+// analysis arrives it fills that fold and the voice line.
 function renderSpeechReport(panel){
-  if(!state.analysis || state.analysis.job?.project_id!==state.project?.id)return;
-  const report=state.analysis.report;
-  // Every plan shows the full report in its «Озвучка й режисура» step, so it needs no button for it.
-  if(report)return;
-  const job=state.analysis.job;
-  if(job){const note=document.createElement('p');note.className='plan-note';note.textContent=job.status==='failed'?job.error:`${speechStageNames[job.stage] || 'Обробка файлу'}: ${job.progress}%`;panel.append(note);}
+  const episode=panel?.querySelector('.episode');
+  if(!episode || state.analysis?.job?.project_id!==state.project?.id)return;
+  const slot=episode.querySelector('.episode-report');
+  if(slot&&!slot.children.length&&state.analysis.report)appendSpeechReport(slot,state.analysis.report);
+  refreshEpisode(episode);
 }
 
 async function openMediaTimingImport(){

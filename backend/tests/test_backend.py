@@ -349,7 +349,8 @@ class BackendTest(unittest.TestCase):
                      for index, text in enumerate(["First sentence here.", "Second sentence here.", "Third sentence here.", "Fourth sentence here."])]
         timings = {"duration": 8.0, "sentences": sentences}
         store.generate_project_plan(cid, project["name"], project["episode_path"], project_id=pid, script=script, timings=timings)
-        code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        with patch.object(store, "project_animated", return_value=True):   # an animated film waits for its director
+            code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
         self.assertEqual(code, 400)
         plan = store.load_project_plan(pid)
         texts = [text for frame in plan["frames"] for text in frame["sentences"]]
@@ -370,11 +371,13 @@ class BackendTest(unittest.TestCase):
         code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 3})
         self.assertEqual(code, 400)
         import frame_progress
-        with patch.object(frame_progress, "drawn", return_value=[1]):          # frame 1 is already drawn as code
+        with patch.object(frame_progress, "drawn", return_value=[1]), patch.object(store, "project_animated", return_value=True):   # frame 1 is already drawn as code
             code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
         self.assertEqual(code, 409)
         self.assertIn("«Експорт MP4»", result["error"])
-        code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        with patch.object(app.production, "start") as start:   # the agent itself is not started from a test
+            code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        start.assert_called_once_with(pid)
         self.assertEqual(code, 200)
         self.assertEqual(result["project"]["production_request"]["frames"], 1)
         self.assertEqual(result["project"]["production_request"]["end"], rebuilt["frames"][0]["end"])

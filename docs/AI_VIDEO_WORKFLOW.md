@@ -61,7 +61,7 @@
 - `GET /api/projects/<id>/export/active` та `GET /api/jobs/<job_id>` показують стан експорту, `GET /api/projects/<id>/exports` показує активний і останні експорти.
 - `GET /api/studio/status` одним запитом повертає все, що зараз виконується.
 - `GET /api/projects/<id>/summary` повертає кадри проєкту коротко, разом із проблемами; `?format=text` віддає звичайний текст.
-- `POST /api/projects/<id>/ops` застосовує операції монтажу (`accent`, `clear_accents`, `replace`, `transitions`) одним кроком скасування.
+- `POST /api/projects/<id>/ops` застосовує операції монтажу (`accent`, `clear_accents`, `replace`, `transitions`, `place`) одним кроком скасування.
 - `POST /api/projects/<id>/still` малює стоп-кадр експорту в заданий момент.
 
 API працює локально. Не передавайте токени, ключі, особисті файли, сценарії чи матеріали випусків у публічний репозиторій. Не публікуйте відео та не запускайте зовнішні сервіси без окремого завдання користувача.

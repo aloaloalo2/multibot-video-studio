@@ -1,4 +1,9 @@
-"""Making the first N frames of an animated episode, started by «Створити N кадрів».
+"""Making the first N frames of an episode, started by «Почати створення ролика» on the plan of any channel.
+
+A photo channel's frames (stock photos and videos, pictures Codex draws, the author's own pictures from the episode
+folder, text frames and Razgon frames of a mixed episode) are made by the same agent with photo_brief: it places each
+frame on the timeline with tools/studio.py place, and the run is done when each of the requested frames has its clip
+(store.made_frames). An animated film's frames follow below.
 
 The production request (store.request_production) hands the frames to Claude Opus 5.5 (extra-high effort) through Claude
 Code on the user's subscription, in the YOUTUBE folder, as the channel rules' step 7 asks: scenes of the shots behind
@@ -40,10 +45,14 @@ def set_request(pid: str, **fields) -> dict:
 
 
 def drawn(pid: str, count: int) -> bool:
-    """True when each of the first `count` director frames has its scene written (frame_progress.py) and stands on the
+    """True when the first `count` frames are made: on a photo channel each has its clip on the timeline
+    (store.made_frames); on an animated one each of the first `count` director frames has its scene written (frame_progress.py) and stands on the
     timeline as its «Кадр N» code block, not as a rendered clip."""
     blocks = {clip.get("title") for track in store.load_project(pid).get("tracks", []) for clip in track.get("clips", [])
               if clip.get("kind") == "animation"}
+    project = store.load_project(pid)
+    if not store.project_animated(project):
+        return set(range(1, count + 1)) <= set(store.made_frames(project, store.load_project_plan(pid)))
     made = set(frame_progress.drawn(pid))
     return all(number in made and f"Razgon · кадр {number:03d}" in blocks for number in range(1, count + 1))
 
@@ -117,6 +126,55 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
 
 
+# The channels' own rule for every picture (user): people are stick figures in every frame of every channel, apart from
+# the host, and so in every prompt for a picture.
+PEOPLE = ("Люди в кожному кадрі, крім кадрів ведучого, лише стикмени: і на картинках, і в кожному промпті для картинки "
+          "чи відео прямо пиши, що всі люди намальовані стикменами. Стокове фото чи відео з живими людьми не бери.")
+
+
+def photo_brief(project: dict, request: dict, notes: str = "") -> str:
+    """The brief for a photo channel: each frame by its format, placed at its time on the timeline."""
+    root = store.YOUTUBE_ROOT
+    episode = Path(project["episode_path"])
+    rel = episode.relative_to(root) if root in episode.parents else episode
+    tools = store.APP_ROOT.name + "/tools"
+    remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
+               "Виправ саме це, перевір усі кадри за пунктом 5 і доведи решту до кінця.\n\n" if notes.strip() else "")
+    return f"""Ти монтажер випуску в VideoKey Studio. План кадрів іде за озвучкою, автор натиснув «Почати створення ролика».
+
+Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
+Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
+Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+
+Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'},
+{store.APP_ROOT / 'CLAUDE.md'} і {store.APP_ROOT / 'docs/AI_VIDEO_WORKFLOW.md'}. План кадрів (формат, час і слова кожного кадру):
+python3 "{tools}/studio.py" summary {project['id']} і GET http://127.0.0.1:8770/api/projects/{project['id']}/plan
+(python3 -c з urllib).
+
+{remarks}Твоє завдання: кадри 1–{request['frames']}, кожен за своїм форматом у плані і за змістом своїх слів.
+Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
+1. Картинки автора першими: якщо автор сам поклав картинки чи відео в папку випуску (find "{rel}" -maxdepth 2 -type f),
+   а вони пасують до кадру, бери їх.
+2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/pixabay.py" search image|video "англійські слова",
+   вибери кадр за змістом і завантаж: python3 "{tools}/pixabay.py" download image|video ID --dir "{rel}".
+3. Створені картинки (generated_photo, generated_video як картинка з рухом): малює Codex через термінал:
+   промпт у файлі, потім python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
+   {PEOPLE}
+4. Текстові кадри (text) робиш сам: python3 "{tools}/studio.py" place {project['id']} N --text ставить слова кадру на весь екран.
+   Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом через python3 "{tools}/razgon_bridge.py" (slots --frames N), як у правилах каналу,
+   без рендеру відео.
+   Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> [--motion zoom_in|zoom_out|none].
+5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
+   кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN) ти переглядаєш очима: картинка відповідає словам кадру,
+   люди лише стикмени, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
+
+Не запускай експорт, не змінюй план і налаштування каналу, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
+Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською повним реченням, наприклад «Шукаю стокове фото для кадру 3.».
+Довгі команди запускай на передньому плані з timeout до 600000 мс, без run_in_background.
+Незалежні кадри можна робити паралельно помічниками (Agent), а ти збираєш їхню роботу.
+Наприкінці коротко напиши українською повними реченнями: які кадри готові, звідки картинки, що лишилося або не вдалося."""
+
+
 def run(pid: str, cli: Path, notes: str = "") -> None:
     project = store.load_project(pid)
     request = project["production_request"]
@@ -126,7 +184,8 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
     fields = {}
     try:
         # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
-        code, answer = director.claude(cli, brief(project, request, notes), log, director.activity_path(pid, "production"), TIMEOUT,
+        text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
+        code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
                                        resume=request.get("session_id") if notes.strip() else None, effort=EFFORT)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
@@ -136,7 +195,9 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
             # a pause, not a failure: what is made stays, and «Продовжити» picks the same session up once the limit resets
             fields.update(status="failed", limit=True, error=director.limit_stop(answer))
         elif code or answer.get("is_error") or not drawn(pid, request["frames"]):
-            fields.update(status="failed", error=(answer.get("result") or "Не всі кадри намальовані й стоять на таймлайні студії блоками-кодом")[-600:])
+            missing = ("Не всі кадри намальовані й стоять на таймлайні студії блоками-кодом" if store.project_animated(project)
+                       else "Не всі вибрані кадри стоять на таймлайні студії")
+            fields.update(status="failed", error=(answer.get("result") or missing)[-600:])
         else:
             fields.update(status="done")
             try:
@@ -182,9 +243,9 @@ def resume(pid: str) -> dict:
 
 
 def start(pid: str, notes: str = "") -> None:
-    """Start making the requested frames; a request already in work is left to its run."""
+    """Start making the requested frames on any channel; a request already in work is left to its run."""
     project = store.load_project(pid)
-    if not director.animated(project) or not project.get("production_request"):
+    if not project.get("production_request") or not project.get("episode_path"):
         return
     with LOCK:
         if pid in ACTIVE:

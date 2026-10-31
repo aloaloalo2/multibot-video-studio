@@ -79,6 +79,16 @@ class StudioToolTest(unittest.TestCase):
                                         "font_size": 46, "style": "card"}])
         self.assertIn("застосовано дій: 3, версія 8", out)
 
+    def test_place_sends_the_frame_with_its_picture_or_its_text(self):
+        code, _, _, sent = self.run_tool("place", "горбунов 23", "4", "/tmp/k.png", "--motion", "none")
+        self.assertEqual(code, 0)
+        self.assertEqual(sent[-1][2]["ops"], [{"op": "place", "frame": 4, "path": str(Path("/tmp/k.png").resolve()), "motion": "none"}])
+        code, _, _, sent = self.run_tool("place", "горбунов 23", "5", "--text")
+        self.assertEqual(sent[-1][2]["ops"], [{"op": "place", "frame": 5, "text": True}])
+        code, _, err, _ = self.run_tool("place", "горбунов 23", "6")
+        self.assertEqual(code, 1)
+        self.assertIn("Вкажіть файл", err)
+
     def test_still_prints_the_picture_and_the_preview_link_at_the_same_moment(self):
         code, out, _, sent = self.run_tool("still", "горбунов 23", "f12")
         self.assertEqual(code, 0)
