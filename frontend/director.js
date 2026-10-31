@@ -282,6 +282,8 @@ function buildMake(make){
     const before=strip.offsetWidth || box.width,anchor=(scroll.scrollLeft+x)/before;
     make.querySelector('.frame-strip-tip')?.setAttribute('hidden','');
     const next=Math.max(1,Math.min(40,value));stripZoom[id]=next;strip.style.width=`${next*100}%`;
+    // a long film (499 frames) packs its frames edge to edge until the zoom gives each a few pixels
+    strip.classList.toggle('dense',strip.clientWidth/frames.length<7);
     scroll.scrollLeft=anchor*strip.offsetWidth-x;scroll.classList.toggle('zoomed',next>1);
     zoomOut.disabled=next<=1;zoomIn.disabled=next>=40;
   };
@@ -292,7 +294,9 @@ function buildMake(make){
   scroll.addEventListener('gesturechange',event=>{event.preventDefault();zoomTo(pinchFrom*event.scale,event.clientX);});
   zoomOut.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)/1.6));
   zoomIn.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)*1.6));
+  strip.classList.toggle('dense',frames.length>150);   // before the first layout, so it never spills out
   requestAnimationFrame(()=>zoomTo(stripZoom[id] || 1));
+  new ResizeObserver(()=>{if(scroll.isConnected)strip.classList.toggle('dense',strip.clientWidth/frames.length<7);}).observe(scroll);
   // Pointing at a format in the legend lights its frames on the strip; a click keeps it lit.
   const light=format=>{strip.classList.toggle('highlighting',!!format);cells.forEach((cell,index)=>cell.classList.toggle('lit',!!format&&frames[index].format===format));
     for(const chip of legend.querySelectorAll('[data-format]'))chip.classList.toggle('active',chip.dataset.format===format);};
@@ -306,11 +310,12 @@ function buildMake(make){
   scroll.addEventListener('scroll',()=>{tip.hidden=true;});
   const tell=index=>{
     if(index<0){tip.hidden=true;return;}
-    const frame=frames[index],cell=cells[index].getBoundingClientRect(),own=make.getBoundingClientRect();
+    const frame=frames[index],cell=cells[index].getBoundingClientRect(),own=make.getBoundingClientRect(),view=scroll.getBoundingClientRect();
+    if(cell.right<view.left||cell.left>view.right){tip.hidden=true;return;}   // a frame scrolled out of the window
     const format=directorAnimated()?'':`<b style="--format-color:${planFormatVisuals[frame.format]?.color || '#b8bec9'}"></b>${esc(planFormatNames[frame.format] || frame.format)} · `;
     tip.innerHTML=`${format}Кадр ${index+1} · ${clock(frame.start)}–${clock(frame.end)}${cells[index].classList.contains('made')?' · готовий':''}`;
     tip.hidden=false;
-    const left=Math.max(own.left+8,Math.min(own.right-8,cell.left+cell.width/2))-own.left;
+    const left=Math.max(view.left,Math.min(view.right,cell.left+cell.width/2))-own.left;
     tip.style.left=`${left}px`;tip.style.top=`${cell.top-own.top-8}px`;
   };
   // pointing at a frame reads its time, format and words below the strip

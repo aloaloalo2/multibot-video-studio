@@ -1026,7 +1026,12 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 /* the strip as a timeline: it zooms inside its window, a tip names the frame under the pointer, the legend lights a format */
 .frame-strip-scroll{position:relative;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:6px 0;margin:-6px 0;scrollbar-width:thin;scrollbar-color:#3a3a41 transparent}
 .frame-strip-scroll::-webkit-scrollbar{height:6px}.frame-strip-scroll::-webkit-scrollbar-thumb{background:#3a3a41;border-radius:3px}
-.frame-strip-scroll>.frame-strip{width:100%;box-sizing:border-box;flex:none}
+.frame-strip-scroll>.frame-strip{width:100%;box-sizing:border-box;flex:none;min-width:0}
+.frame-strip{min-width:0;overflow:hidden}
+.frame-strip.dense{gap:0}
+.frame-strip.dense .frame-strip-cell{min-width:0;border-radius:0}
+.frame-strip.dense .frame-strip-cell:first-child{border-radius:4px 0 0 4px}
+.frame-strip.dense .frame-strip-cell:nth-last-child(2){border-radius:0 4px 4px 0}
 .frame-strip-zoom{display:flex;flex:none;border:1px solid #3a3a41;border-radius:999px;overflow:hidden}
 .frame-strip-zoom button{width:30px;height:30px;border:0;background:#232327;color:#d9dae0;font-size:16px;line-height:1;cursor:pointer}
 .frame-strip-zoom button+button{border-left:1px solid #3a3a41}
