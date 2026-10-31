@@ -1283,7 +1283,8 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         except (ValueError,TypeError) as error:raise StudioError(str(error))
         if (kind=='text' or content_type=='text') and project.get('font_family'):
             clip['font_family']=project['font_family']
-        clip["easing"] = project.get("settings", {}).get("motion_easing", "ease_in_out")
+        # a clip glued to a photo takes the photo's motion curve (montage_ops), any other the project's
+        clip["easing"] = payload["easing"] if payload.get("easing") in {"linear", "ease_in", "ease_out", "ease_in_out"} else project.get("settings", {}).get("motion_easing", "ease_in_out")
         if "font_size" in payload:
             clip["font_size"] = finite_float(payload["font_size"], 8, 300)
         if "text_words" in payload:

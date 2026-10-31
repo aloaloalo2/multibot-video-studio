@@ -210,7 +210,12 @@ def alpha_for(layer,points,elapsed,clip_len,easing,t,lag,speeds,frame):
     return alpha
 
 prepared=[]
+# A still (engine/still.py) prepares only a short window: the slices before it are skipped and the first one starts at
+# the window, which timeline_scene draws as the export does at that moment (each clip's keyframes, words and joins).
+window_start=float(os.environ.get('STUDIO_GPU_WINDOW_START','0'))
 for idx,(begin,end,active) in enumerate(slices,1):
+    if end<=window_start+1e-9:continue
+    begin=max(begin,window_start)
     scene=render.timeline_scene(begin,end,active,assets,width,height,m.get('background','#101114'));duration=end-begin
     # Bake unsupported visual effects, blurred videos and animated images with
     # the established renderer. Regular transitions were separately checked.

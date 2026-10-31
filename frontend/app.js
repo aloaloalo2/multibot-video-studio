@@ -237,7 +237,9 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   state.project=data.project;
   setPreviewZoom(1);
   state.restoringProject=false;
-  state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
+  state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;
+  // a link with ?t=83.4 opens the montage at that moment (tools/studio.py still prints one beside the export's still)
+  const requested=Number(new URLSearchParams(location.search).get('t'));if(!updateUrl&&requested>0&&Number.isFinite(requested))state.playhead=requested;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
   state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='editor' && !editorUnlocked()?'plan':view;
   if(updateUrl)syncRoute();
