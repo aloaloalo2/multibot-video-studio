@@ -37,11 +37,38 @@ class SpeechTest(unittest.TestCase):
         self.assertEqual(report["differences"][0]["recognized"], "different")
         self.assertLess(report["word_match_percent"], 100)
 
-    def test_complete_text_match_is_not_a_claim_of_timing_accuracy(self):
+    def test_low_recognition_confidence_is_reported_without_blocking(self):
         words = self.words(); words[0]["probability"] = .2
         report = speech.compare_script(self.script, words, 2)
-        self.assertEqual(report["word_match_percent"], 100)
+        self.assertEqual(report["status"], "matched")
+        self.assertIn("low_recognition_confidence", report["phrases"][0]["issues"])
+
+    def long_script(self):
+        return ("The soles of your feet go soft in orbit. " * 3 + "Folds appear in the choroid layer. " * 3).strip()
+
+    def heard(self, text):
+        return [{"text": word, "start": index * .3, "end": index * .3 + .25, "probability": .95}
+                for index, word in enumerate(text.split())]
+
+    def test_recognition_slips_take_the_script_words_and_the_heard_time(self):
+        script = self.long_script()
+        words = self.heard(script.replace("soles", "souls", 1).replace("choroid", "coroid", 1))
+        report = speech.compare_script(script, words, 20)
+        self.assertEqual(report["status"], "matched")
+        self.assertEqual(report["corrected_words"], 2)
+        aligned = report["aligned_words"]
+        self.assertEqual([word["text"] for word in aligned], script.split())
+        self.assertEqual(aligned[1]["text"], "soles")
+        self.assertEqual((aligned[1]["start"], aligned[1]["end"]), (words[1]["start"], words[1]["end"]))
+        self.assertEqual(report["timings"]["sentences"][0]["text"], "The soles of your feet go soft in orbit.")
+
+    def test_a_real_gap_in_the_voice_still_needs_review(self):
+        script = self.long_script()
+        spoken = script.split()
+        words = self.heard(" ".join(spoken[:10] + spoken[16:]))
+        report = speech.compare_script(script, words, 20)
         self.assertEqual(report["status"], "needs_review")
+        self.assertIn("missing_speech", report["phrases"][1]["issues"])
         self.assertIsNone(report["timings"])
 
     def test_overlapping_sentences_require_review(self):
@@ -69,3 +96,17 @@ class SpeechTest(unittest.TestCase):
         with patch.object(analysis_jobs.os, "kill", side_effect=ProcessLookupError):
             self.assertFalse(analysis_jobs.owner_alive({"id": "test", "owner_pid": analysis_jobs.os.getpid() + 100000}))
 
+
+    def test_gpu_engine_is_used_when_a_local_mlx_model_exists(self):
+        words = [{"text": "First", "start": 0.0, "end": .2, "probability": .9}]
+        with patch.object(speech, "mlx_model_path", return_value="/models/small"), \
+             patch.object(speech, "transcribe_mlx", return_value=(words, {"engine": "mlx-whisper"})) as gpu:
+            self.assertEqual(speech.transcribe("voice.wav", 1, lambda value: None), (words, {"engine": "mlx-whisper"}))
+        gpu.assert_called_once()
+
+    def test_mlx_is_skipped_off_apple_silicon(self):
+        with patch.object(speech.sys, "platform", "linux"):
+            self.assertIsNone(speech.mlx_model_path())
+
+    def test_cpu_engine_uses_every_core(self):
+        self.assertEqual(speech.CPU_THREADS, speech.os.cpu_count() or 4)

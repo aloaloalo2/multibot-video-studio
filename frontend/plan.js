@@ -1,6 +1,9 @@
+// The editor opens once the plan follows a real voice, or for an older project that already has a montage.
+function editorUnlocked(project=state.project){return !!project && (!!project.production?.plan_ready || (project.tracks || []).some(track=>(track.clips || []).length));}
+
 async function setProjectView(view){
   if(!state.project)return;
-  if(view==='editor' && state.plan && !state.project.production?.plan_ready){status('Монтаж стане доступним після додавання таймінгів готової озвучки.',true);return;}
+  if(view==='editor' && !editorUnlocked()){status('Монтаж відкриється, коли план буде за озвучкою.',true);return;}
   if(view==='editor' && state.view==='agent'){await selectProject(state.project.id,{view:'editor'});return;}
   if(view==='plan'){
     const id=state.project.id;
@@ -127,6 +130,7 @@ function renderPlanTimeline(panel,frames,shares,names,total,formatButtons){
       bar.style.width=`${Math.max(0,Math.min(100,(end-start)/total*100))}%`;
       bar.style.setProperty('--format-color',planFormatVisuals[frame.format]?.color || '#b8bec9');
       bar.title=`Кадр ${frame.number ?? frames.indexOf(frame)+1}, ${planClock(start)} - ${planClock(end)}, ${names[frame.format] || frame.format}`;
+      if(format==='all')bar.dataset.index=String(frames.indexOf(frame));
       bar.addEventListener('mouseenter',()=>highlight(frame.format,frame));
       bar.addEventListener('mouseleave',()=>highlight(format==='all'?pinned:format));
       rail.append(bar);bars.push(bar);
@@ -139,8 +143,22 @@ function renderPlanTimeline(panel,frames,shares,names,total,formatButtons){
     }
   }
   addRow('all','Усі кадри',frames);
+  const overviewRail=rows[0].querySelector('.plan-timeline-rail');
+  const selection=document.createElement('span');selection.className='plan-selection';selection.hidden=true;
+  const selectionLabel=document.createElement('b');selection.append(selectionLabel);overviewRail.prepend(selection);
   for(const {format} of shares)addRow(format,names[format] || format,frames.filter(frame=>frame.format===format));
   timeline.append(detail);panel.append(timeline);
+  // The start panel marks the first N frames: the overview rail shows the stretch and its length.
+  timeline.selectFrames=count=>{
+    timeline.classList.toggle('has-selection',count>0);selection.hidden=!count;
+    for(const bar of bars)if(bar.dataset.index!==undefined)bar.classList.toggle('is-selected',Number(bar.dataset.index)<count);
+    if(!count)return;
+    const end=Number(frames[count-1].end);
+    selection.style.width=`${Math.max(0,Math.min(100,end/total*100))}%`;
+    selection.classList.toggle('is-wide',end/total>.85);
+    selectionLabel.textContent=`${count} ${planFrameWord(count)} · ${clock(end)}`;
+  };
+  return timeline;
   for(const button of formatButtons){
     const format=button.dataset.format;
     button.addEventListener('mouseenter',()=>highlight(format));
@@ -149,6 +167,102 @@ function renderPlanTimeline(panel,frames,shares,names,total,formatButtons){
     button.addEventListener('blur',()=>highlight(pinned));
     button.addEventListener('click',()=>{pinned=pinned===format?null:format;highlight(pinned);});
   }
+}
+
+const voiceScriptDraft={};
+function renderVoiceStart(panel){
+  const project=state.project;
+  const section=document.createElement('section');section.className='voice-start';
+  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.</p></div>
+    <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
+      <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
+      <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
+    <label class="voice-script"><span>Текст озвучки <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
+      <small>Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.</small></label>
+    <div class="voice-start-actions"><div class="voice-progress" aria-live="polite"></div><button type="button" class="primary" disabled>Розпізнати озвучку</button></div>`;
+  panel.append(section);
+  const drop=section.querySelector('.voice-drop'),input=drop.querySelector('input'),fileLabel=drop.querySelector('.voice-drop-file');
+  const text=section.querySelector('textarea'),start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
+  let file=null,busy=false;
+  text.value=voiceScriptDraft[project.id] || project.voice_script?.text || '';
+  text.addEventListener('input',()=>{voiceScriptDraft[project.id]=text.value;});
+  function choose(next){
+    if(busy || !next)return;
+    if(!/^(audio|video)\//.test(next.type) && !/\.(mp3|wav|m4a|aac|flac|ogg|opus|aif|aiff|mp4|mov|mkv|webm)$/i.test(next.name)){status('Потрібен аудіо- або відеофайл з озвучкою.',true);return;}
+    file=next;fileLabel.hidden=false;fileLabel.textContent=next.name;drop.classList.add('has-file');start.disabled=false;
+  }
+  input.addEventListener('change',()=>choose(input.files[0]));
+  for(const name of ['dragenter','dragover'])drop.addEventListener(name,event=>{event.preventDefault();drop.classList.add('is-over');});
+  for(const name of ['dragleave','drop'])drop.addEventListener(name,()=>drop.classList.remove('is-over'));
+  drop.addEventListener('drop',event=>{event.preventDefault();choose(event.dataTransfer.files[0]);});
+  function show(stage,value){progress.innerHTML=`<span>${esc(stage)}</span>${value===undefined?'':`<progress max="100" value="${value}"></progress>`}`;}
+  function lock(value){busy=value;start.disabled=value || !file;text.disabled=value;drop.classList.toggle('is-busy',value);}
+  start.addEventListener('click',async()=>{
+    if(!file || busy)return;lock(true);
+    try{
+      show('Завантажуємо озвучку…');
+      const response=await fetch(`/api/projects/${encodeURIComponent(project.id)}/assets/upload`,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
+      const result=await response.json();if(!response.ok)throw new Error(result.error || 'Не вдалося додати файл');
+      // The saved script of an animated episode goes untouched; only an edited text is sent as the voice text.
+      const payload={asset_id:result.asset.id},typed=text.value.trim();if(typed && typed!==(project.voice_script?.text || '').trim())payload.script=typed;
+      await api(`/api/projects/${encodeURIComponent(project.id)}/plan/analyze`,'POST',payload);await poll();
+    }catch(error){lock(false);show(error.message);}
+  });
+  async function poll(){
+    if(!section.isConnected)return;
+    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);state.analysis=result;
+    const job=result.job;if(!job || !section.isConnected)return;
+    if(job.status==='failed'){lock(false);show(job.error || 'Обробку зупинено');return;}
+    if(job.status==='complete'){
+      if(result.report?.applied){delete voiceScriptDraft[project.id];status('Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
+      lock(false);show('Озвучку розпізнано, але текст не збігся з озвученим. Перевірте звіт нижче.');if(result.report)appendSpeechReport(section,result.report);return;
+    }
+    lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
+  }
+  const job=state.analysis?.job;
+  if(job && job.project_id===project.id && (job.status==='queued' || job.status==='running'))poll().catch(error=>show(error.message));
+}
+
+const planStartOpen={};
+function isDirectorPlan(plan){return plan?.frame_source==='razgon-direction';}
+function renderProductionStart(section,frames,getTimeline){
+  const project=state.project,total=frames.length,request=project.production_request;
+  section.className='plan-start';section.replaceChildren();section.hidden=!planStartOpen[project.id];
+  let count=Math.max(1,Math.min(total,Number(planStartOpen[project.id]?.count) || request?.frames || Math.min(3,total)));
+  const head=document.createElement('div');head.className='plan-start-head';
+  head.innerHTML='<div><h2>Скільки кадрів створити зараз</h2><p>Почніть з кількох кадрів, перегляньте їх і продовжуйте, коли все подобається. Вибрані кадри підсвічені на таймлайні.</p></div>';
+  const readout=document.createElement('div');readout.className='plan-start-readout';readout.setAttribute('aria-live','polite');head.append(readout);
+  const slider=document.createElement('input');slider.type='range';slider.min='1';slider.max=String(total);slider.step='1';slider.className='plan-start-range';slider.setAttribute('aria-label','Кількість перших кадрів');
+  const quick=document.createElement('div');quick.className='plan-start-quick';
+  const presets=[...new Set([1,3,5,10].filter(value=>value<total)),total];
+  const chips=presets.map(value=>{const chip=document.createElement('button');chip.type='button';chip.className='plan-start-chip';chip.textContent=value===total?`Усі ${total}`:String(value);chip.addEventListener('click',()=>update(value));quick.append(chip);return [value,chip];});
+  const actions=document.createElement('div');actions.className='plan-start-actions';
+  const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Скасувати';
+  const start=document.createElement('button');start.type='button';start.className='primary';
+  actions.append(cancel,start);
+  section.append(head,slider,quick,actions);
+  function update(value){
+    count=Math.max(1,Math.min(total,Number(value)));slider.value=String(count);
+    planStartOpen[project.id]={count};
+    const end=Number(frames[count-1].end),all=Number(frames[total-1].end);
+    readout.innerHTML=`<strong>${count}</strong> ${planFrameWord(count)} з ${total}<span>${clock(end)} з ${clock(all)}</span>`;
+    slider.style.setProperty('--fill',`${total>1?(count-1)/(total-1)*100:100}%`);
+    for(const [preset,chip] of chips)chip.classList.toggle('active',preset===count);
+    start.textContent=`Створити ${count} ${planFrameWord(count)}`;
+    if(!section.hidden)getTimeline()?.selectFrames(count);
+  }
+  slider.addEventListener('input',()=>update(slider.value));
+  cancel.addEventListener('click',()=>{delete planStartOpen[project.id];section.hidden=true;getTimeline()?.selectFrames(0);});
+  start.addEventListener('click',async()=>{
+    start.disabled=true;
+    try{
+      const result=await api(`/api/projects/${encodeURIComponent(project.id)}/production-request`,'POST',{frames:count});
+      state.project=result.project;delete planStartOpen[project.id];
+      status(`Запит надіслано агенту: кадри 1–${count}.`);renderPlan();
+    }catch(error){start.disabled=false;status(error.message,true);}
+  });
+  section.open=()=>{planStartOpen[project.id]={count};section.hidden=false;update(count);section.scrollIntoView({block:'nearest',behavior:'smooth'});};
+  update(count);
 }
 
 const planEstimateCache=new WeakMap();
@@ -181,13 +295,22 @@ function renderPlan(){
   $('view-agent').setAttribute('aria-pressed',String(state.view==='agent'));
   const panel=$('project-plan');panel.replaceChildren();
   if(!state.project || state.view!=='plan')return;
+  if(!state.plan?.frames?.length){renderVoiceStart(panel);return;}
+  if(typeof directorAwaited==='function' && directorAwaited()){renderDirectorWait(panel);return;}
   const heading=document.createElement('div');heading.className='plan-heading';
   heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
   const actions=document.createElement('div');actions.className='plan-actions';
-  const build=document.createElement('button');build.type='button';build.className='primary';build.textContent=state.plan?.frames?.length?'Перегенерувати план':'Створити план';build.addEventListener('click',openPlanBuilder);actions.append(build);
+  const director=isDirectorPlan(state.plan),startSection=document.createElement('section');
+  if(director){
+    // An animated film: the director owns the frames, so the author starts production instead of rebuilding the plan.
+    const begin=document.createElement('button');begin.type='button';begin.className='primary plan-start-button';begin.textContent='Почати створення відео';
+    begin.disabled=!state.project.production?.plan_ready;if(begin.disabled)begin.title='Спершу додайте озвучку';
+    begin.addEventListener('click',()=>startSection.open?.());actions.append(begin);
+  }else{
+    const build=document.createElement('button');build.type='button';build.className='primary';build.textContent='Перегенерувати план';build.addEventListener('click',openPlanBuilder);actions.append(build);
+  }
   heading.append(actions);panel.append(heading);
   const frames=state.plan?.frames;
-  if(!frames?.length){const empty=document.createElement('div');empty.className='overview-empty';empty.textContent=state.planError || 'Додайте готовий сценарій через кнопку «Створити план».';panel.append(empty);return;}
   if(state.planSettingsMatch===false){const warning=document.createElement('p');warning.className='plan-settings-warning';warning.setAttribute('role','status');warning.textContent='Збережені налаштування змінилися після створення цієї карти. Перегенеруйте план, щоб застосувати їх.';panel.append(warning);}
   const synced=state.project.production?.plan_ready;
   const stage=document.createElement('span');stage.className='plan-stage-tag '+(synced?'audio-synced':'draft');stage.textContent=synced?'За озвучкою':'Чернетка';stage.title=synced?'Кадри прив’язані до фраз готової озвучки':state.project.production?.reason || 'Час приблизний';heading.querySelector('.plan-heading-label').append(stage);
@@ -199,7 +322,10 @@ function renderPlan(){
   const remainder=1000-shares.reduce((sum,item)=>sum+item.units,0);
   [...shares].sort((a,b)=>(b.exact-b.units)-(a.exact-a.units)).slice(0,remainder).forEach(item=>item.units++);
   const summary=document.createElement('div');summary.className='plan-summary';summary.innerHTML=`<span><strong>${frames.length}</strong> ${planFrameWord(frames.length)}</span><span><strong>${synced?planClock(total):clock(total)}</strong> ${synced?'тривалість озвучки':'орієнтовна тривалість'}</span>`;
+  const request=director?state.project.production_request:null;
+  if(request){const sent=document.createElement('span');sent.className='plan-request-tag';sent.textContent=`Запит агенту: кадри 1–${request.frames} · ${clock(request.end)} · ${request.status==='requested'?'очікує':request.status}`;summary.append(sent);}
   const bind=document.createElement('button');bind.type='button';bind.className='secondary plan-bind-audio';bind.textContent='Додати озвучку / таймінги';bind.addEventListener('click',openNarrationBinding);summary.append(bind);panel.append(summary);
+  if(state.plan.director_stale){const warning=document.createElement('p');warning.className='plan-settings-warning';warning.setAttribute('role','status');warning.textContent='Сценарій змінився після режисури. Режисер має заново розбити кадри, перш ніж починати створення.';panel.append(warning);}
   renderPlanCostEstimate(panel,state.plan,state.project.id);
   if(typeof renderSpeechReport==='function')renderSpeechReport(panel);
   if(typeof renderDirectorStatus==='function')renderDirectorStatus(panel);
@@ -215,7 +341,10 @@ function renderPlan(){
     formats.append(item);formatButtons.push(item);
   }
   panel.append(formats);
-  renderPlanTimeline(panel,frames,shares,names,total,formatButtons);
+  let timeline=null;
+  if(director&&synced){panel.append(startSection);renderProductionStart(startSection,frames,()=>timeline);}
+  timeline=renderPlanTimeline(panel,frames,shares,names,total,formatButtons);
+  if(director&&synced&&!startSection.hidden)timeline?.selectFrames(Number(planStartOpen[state.project.id]?.count) || 0);
   if(state.plan.settings_snapshot){
     const settings=document.createElement('p');settings.className='plan-note';
     const snapshot=state.plan.settings_snapshot;

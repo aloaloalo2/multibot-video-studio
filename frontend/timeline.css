@@ -172,7 +172,7 @@
 /* An animated film's frames that are not drawn yet (only the director's code block): darker and greyer than drawn ones. */
 .frame-group-clip.group-empty,.universal-clip.empty-frame{background:#26262b;color:#6e7078;border-color:#1c1c20}
 .frame-group-clip.group-empty.selected,.universal-clip.empty-frame.selected{background:#34343a;color:#c9cbd2}
-.frame-group-clip.group-draft,.universal-clip.draft-frame{background:repeating-linear-gradient(135deg,#24533f 0 6px,#1d4434 6px 12px);color:#a8ecc8;border-color:#3fbf8666}
-.frame-group-clip.group-draft.selected,.universal-clip.draft-frame.selected{background:repeating-linear-gradient(135deg,#2f6b51 0 6px,#285c45 6px 12px);color:#e6fff1}
+/* a frame drawn as code is made: grey like every made frame (only the export renders it); a rendered one turns green */
+.universal-clip.draft-frame{background:#4b4a53}
 .frame-group-clip.group-made{background:#2f7d5a;color:#eafff3;border-color:#3fbf86}
 .frame-group-clip.group-made.selected{background:#3fa575;color:#fff}

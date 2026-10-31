@@ -104,6 +104,11 @@ class NumberTextTest(unittest.TestCase):
             "Ни один из этих шагов": "Ни один из этих шагов",
             "связывает одно с другим": "связывает одно с другим",
             "одно исследование": "1 исследование",
+            "Всё это означает одно и то же": "Всё это означает одно и то же",
+            "одна и та же капуста": "одна и та же капуста",
+            "одно и то же семейство веществ": "одно и то же семейство веществ",
+            "наблюдали за четвертью миллиона жителей": "наблюдали за 250000 жителей",
+            "почти половину тысячи": "почти 500",
         }
         for source, expected in cases.items():
             with self.subTest(source=source):
@@ -220,6 +225,13 @@ class NumberTextTest(unittest.TestCase):
         self.assertEqual(len(plan["timing"]["sentences"]),2)
         self.assertIn("3. Versuch",plan["script"])
         planner.validate_synced_plan(plan,2)
+
+    def test_english_half_and_article_scales_stay_readable(self):
+        self.assertEqual(number_text.to_digits("from your lower half to your upper half", "en"), "from your lower half to your upper half")
+        self.assertEqual(number_text.to_digits("still there half a year later", "en"), "still there half a year later")
+        self.assertEqual(number_text.to_digits("one and a half hours", "en"), "1.5 hours")
+        self.assertEqual(number_text.to_digits("in a hundred small ways", "en"), "in 100 small ways")
+        self.assertEqual(number_text.to_digits("A thousand people came.", "en"), "1000 people came.")
 
 
 if __name__=="__main__":unittest.main()

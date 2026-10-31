@@ -184,6 +184,22 @@ def replacements(text,locale=None):
                 and fold(matches[i+1].group()) == "с"
                 and fold(matches[i+2].group()) == "другим"):
             i+=1;continue
+        # «одно и то же», «одна и та же», «один і той же» mean «the same», not a quantity.
+        if (locale in {"ru","uk"} and word in {"один","одна","одно","одни","одну","одной","одного","одним","одном","одних","одними","одне","одні","одній","одного"}
+                and i+3<len(matches)
+                and all(text[matches[k].end():matches[k+1].start()].isspace() for k in range(i,i+3))
+                and fold(matches[i+1].group()) in {"и","і"}
+                and fold(matches[i+2].group()) in {"тот","та","то","те","того","той","тому","тем","том","тех","теми","ту","ті","тієї","тим","тих"}
+                and fold(matches[i+3].group()) in {"же","ж"}):
+            i+=1;continue
+        # «четвертью миллиона», «половину тысячи»: a fraction of a scale is one whole number, 250000 or 500.
+        fraction_forms={"половина":2,"половины":2,"половину":2,"половиной":2,"четверть":4,"четверти":4,"четвертью":4,"чверть":4,"чверті":4}
+        if (locale in {"ru","uk"} and word in fraction_forms and i+1<len(matches)
+                and text[matches[i].end():matches[i+1].start()].isspace()
+                and fold(matches[i+1].group()) in SCALE):
+            whole=Fraction(SCALE[fold(matches[i+1].group())],fraction_forms[word])
+            if whole.denominator==1:
+                result.append((matches[i].start(),matches[i+1].end(),str(whole.numerator)));i+=2;continue
         multiple={"вдвое":2,"втрое":3,"вчетверо":4,"впятеро":5,"удвічі":2,"вдвічі":2,"утричі":3,"втричі":3}
         if word in multiple:
             result.append((matches[i].start(),matches[i].end(),("у " if locale=="uk" else "в ")+str(multiple[word])+(" рази" if locale=="uk" else " раза")));i+=1;continue
@@ -259,11 +275,20 @@ def replacements(text,locale=None):
             if value:
                 number,suffix=value;seen=True;j=start+1
             elif word in {"half","половина","половину","треть","четверть","чверть"}:
+                # A bare English «half» stays a word: «the lower half», «half the time», and «half a year»
+                # would turn into the ungrammatical «0.5 year». «one and a half» is handled above as 1.5.
+                if word=="half" and locale=="en":
+                    i+=1;continue
                 number=Fraction(1,DENOM[word]);seen=True;j=start+1
                 if word=="half" and j<len(matches) and fold(matches[j].group()) in {"a","an"} and text[matches[j-1].end():matches[j].start()].isspace():j+=1
         if seen:
             end=matches[j-1].end()
-            result.append((matches[start].start(),end,str(int(number))+suffix if suffix else written(number,locale)))
+            begin=matches[start].start()
+            # «in a hundred small ways» becomes «in 100 small ways», never «in a 100 small ways».
+            if (locale=="en" and start and word in {"hundred","thousand","million","billion"}
+                    and fold(matches[start-1].group()) in {"a","an"} and text[matches[start-1].end():begin].isspace()):
+                begin=matches[start-1].start()
+            result.append((begin,end,str(int(number))+suffix if suffix else written(number,locale)))
             i=j
         else:i+=1
     return result

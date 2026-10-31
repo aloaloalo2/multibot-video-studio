@@ -32,16 +32,25 @@ class ProductionTest(unittest.TestCase):
 
     def test_brief_names_the_frames_and_the_limits(self):
         text = production.brief(self.project, REQUEST)
-        for part in ("кадри студії 1–3 з 73", "--frames 1,2,3", "codex_image.py", '"assets": false', "Не роби фінальний MP4"):
+        for part in ("кадри студії 1–3 з 73", "slots --razgon <проєкт> --frames 1,2,3", "codex_image.py", '"assets": false',
+                     "Не роби фінальний MP4", "«Експорт MP4»"):
             self.assertIn(part, text)
+        self.assertNotIn("push --razgon", text)                                        # the agent renders no frames
 
-    def test_done_only_when_the_frames_are_pictures_on_the_timeline(self):
+    def test_done_only_when_the_frames_are_drawn_and_stay_code_blocks(self):
         answer = json.dumps({"result": "Кадри 1–3 готові", "total_cost_usd": 4.2, "usage": {"input_tokens": 10, "output_tokens": 5}, "duration_ms": 60000})
-        with patch.object(production.director, "claude", return_value=(0, json.loads(answer))):
+        blocks = lambda kind: [{"clips": [{"kind": kind, "title": f"Razgon · кадр {n:03d}"} for n in (1, 2, 3)]}]
+        with patch.object(production.director, "claude", return_value=(0, json.loads(answer))), \
+                patch.object(production.frame_progress, "drawn", return_value=[1, 2]) as scenes:
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
-            self.assertEqual(self.project["production_request"]["status"], "failed")     # still code blocks
-            self.project["tracks"] = [{"clips": [{"kind": "video"}] * 3}]
+            self.assertEqual(self.project["production_request"]["status"], "failed")     # frame 3 has no scene yet
+            scenes.return_value = [1, 2, 3]
+            self.project["tracks"] = blocks("video")
+            production.ACTIVE.add(self.project["id"])
+            production.run(self.project["id"], Path("claude"))
+            self.assertEqual(self.project["production_request"]["status"], "failed")     # rendered, not left to the export
+            self.project["tracks"] = blocks("animation")
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
         request = self.project["production_request"]

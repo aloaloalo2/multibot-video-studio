@@ -19,6 +19,7 @@ EFFORT = "high"
 TIMEOUT = 3 * 3600
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
+NO_RENDER = "MULTIBOT_RENDER_ON_EXPORT"   # set for the agents; tools/razgon_bridge.py then refuses push and final
 # The Claude Code process behind each live activity feed, so a run can be stopped with every tool it started; a feed
 # whose run was stopped on purpose (episode_restart) ends without writing its state back.
 RUNNING: dict[str, subprocess.Popen] = {}
@@ -115,7 +116,7 @@ def spent(answer: dict, started: float | None = None) -> dict:
 # director's too: the Studio itself only receives them.
 COMMANDS = [("razgon_bridge.py prepare", "opus", "Готує проєкт Razgon зі студії"), ("gen_shots.py", "opus", "Розбиває озвучку на шоти"),
             ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
-            ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py push", "razgon", "Рендерить кадри й кладе їх на таймлайн"),
+            ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py slots", "opus", "Ставить кадри кодом на таймлайн"),
             ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
             ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
             ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
@@ -155,9 +156,10 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
-    # its own process group: stopping the run stops the renders and helpers it started as well
+    # its own process group; kill() also stops the commands, renders and helpers under it
+    # the agents draw frames as code; only «Експорт MP4» renders them, so razgon_bridge.py refuses push and final here
     process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True)
+                               stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, NO_RENDER: "1"})
     RUNNING[str(activity)] = process
     if str(activity) in CANCELLED:
         kill(process)
@@ -206,11 +208,38 @@ def limit_stop(answer: dict) -> str | None:
     return f"Закінчився ліміт підписки Claude, він оновиться о {hour:02d}:{reset.group(2) or '00'}."
 
 
+def descendants(pid: int) -> list[int]:
+    """Every process under `pid`, read from ps."""
+    try:
+        table = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children: dict[int, list[int]] = {}
+    for line in table.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, todo = [], [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            found.append(child)
+            todo.append(child)
+    return found
+
+
 def kill(process: subprocess.Popen) -> None:
+    """Stop the run with everything it started. Claude Code gives each command a process group of its own, so the run's
+    group alone would leave a render going (30 October 2026): the processes under it are stopped as well."""
+    under = descendants(process.pid)
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         process.kill()
+    for child in under:
+        try:
+            os.kill(child, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def stop(pid: str, kind: str) -> None:

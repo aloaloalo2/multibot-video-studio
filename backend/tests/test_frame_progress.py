@@ -37,6 +37,12 @@ class FrameProgressTest(unittest.TestCase):
         (self.razgon / "scenes" / "shots" / "e03_end.js").write_text("take( 'e03', draw);")
         self.assertEqual(frame_progress.drawn("p" * 24), [1, 2])
 
+    def test_a_take_in_parts_registered_in_a_loop_counts_as_drawn(self):
+        # episode 06 drew its opening this way, and the plan showed frame 1 as not drawn
+        (self.razgon / "scenes" / "shots" / "e01_film.js").write_text(
+            "for (const id of ['e01', 'e02', 'e03']) take(id, (g, t) => world(g, t));")
+        self.assertEqual(frame_progress.drawn("p" * 24), [1, 2])
+
     def test_an_episode_without_razgon_has_no_drawn_frames(self):
         with patch.object(store, "load_project", return_value={"id": "p" * 24, "episode_path": self.tmp.name}):
             self.assertEqual(frame_progress.drawn("p" * 24), [])

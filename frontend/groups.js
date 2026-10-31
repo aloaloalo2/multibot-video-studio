@@ -96,7 +96,8 @@ function expandFrameGroup(group){
 }
 
 function frameBlock(clip){return clip.kind==='animation'&&clip.content_type==='shape'&&!clip.asset_id&&/^Razgon · кадр/.test(clip.title || '');}
-// a frame block whose scene the agent has already drawn, not rendered into the Studio yet (director.js framesDrawn)
+// a frame block whose scene the agent has drawn (director.js framesDrawn): a made frame, grey like any other made frame;
+// only the export renders it
 function draftFrameClip(clip){return frameBlock(clip)&&!!(typeof framesDrawn==='function'&&framesDrawn()?.has(Number(/кадр (\d+)/.exec(clip.title)?.[1])));}
 function emptyFrameClip(clip){return frameBlock(clip)&&!draftFrameClip(clip);}
 
@@ -114,9 +115,9 @@ function groupLane(title,groups,ref){
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
     // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty
     if(members.every(emptyFrameClip))button.classList.add('group-empty');
-    // a rendered Razgon frame is done: green like on the plan's strip; a drawn one striped; an empty one dark
+    // a Razgon frame drawn as code is grey like every made frame, one already rendered into video green (user, 31 October
+    // 2026: «створені кодом кадри сірі, відрендерені вже відео можуть бути зелені»); a frame not drawn yet stays dark
     else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')))button.classList.add('group-made');
-    else if(members.some(draftFrameClip))button.classList.add('group-draft');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
     const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
     button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');

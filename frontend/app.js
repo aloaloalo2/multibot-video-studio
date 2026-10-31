@@ -335,7 +335,7 @@ function updateOverviewExports(){
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
-    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
+    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='razgon_frames'?`Малюємо кадри Razgon · ${Number(job.razgon_completed)||0} з ${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
   }
 }
@@ -397,10 +397,23 @@ function requestMediaPlayback(element){
   const promise=element.play();element._studioPlayPending=true;
   Promise.resolve(promise).catch(error=>{if(error.name==='NotAllowedError')status('Браузер очікує натискання Play для запуску звуку.',true);}).finally(()=>{element._studioPlayPending=false;if(!state.playing)element.pause();});
 }
+// The voice at 100% plays at the Studio's standard level (backend/audio_level.py): its clip carries the gain the export
+// uses. A gain above 1 (a quiet voice brought up) needs Web Audio, which an <audio> element's volume cannot give.
+const studioAudio={context:null};
+function setClipLevel(element,clip){
+  const level=Math.max(0,Number(clip.volume ?? 1)*Number(state.project?.audio_gain?.[clip.asset_id] ?? 1)*state.monitorVolume);
+  if(level<=1&&!element._studioGain){element.volume=level;return;}
+  try{
+    if(!element._studioGain){studioAudio.context=studioAudio.context || new AudioContext();const source=studioAudio.context.createMediaElementSource(element),gain=studioAudio.context.createGain();
+      source.connect(gain).connect(studioAudio.context.destination);element._studioGain=gain;element.volume=1;}
+    if(studioAudio.context.state==='suspended')studioAudio.context.resume().catch(()=>{});
+    element._studioGain.gain.value=level;
+  }catch{element.volume=Math.min(1,level);}
+}
 function syncStudioAudio(){
   for(const {clip,element} of state.audioNodes){
     const start=seconds(clip.start),end=start+seconds(clip.duration),active=state.playhead>=start&&state.playhead<end;
-    element.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 1)*state.monitorVolume));element.muted=state.monitorMuted || (isUniversal()&&clipIsMuted(clip));
+    setClipLevel(element,clip);element.muted=state.monitorMuted || (isUniversal()&&clipIsMuted(clip));
     if(!active){if(!element.paused)element.pause();continue;}
     const target=seconds(clip.trim_start)+state.playhead-start,threshold=state.playing ? .45 : .025;
     if(element.readyState===0){element._studioSeekTarget=target;if(!element._studioMetadataBound){element._studioMetadataBound=true;element.addEventListener('loadedmetadata',()=>{if(element._studioSeekTarget!=null)element.currentTime=Math.min(element._studioSeekTarget,element.duration);});}}
@@ -471,7 +484,6 @@ function renderProject() {
   $('add-transition').disabled=!state.project || (isUniversal()?!universalClips().length:!scenes().length);$('add-text').disabled=!state.project || (!isUniversal()&&!scenes().length);
   $('play-pause').disabled=!state.project; $('seek').disabled=!state.project;
   $('time-total').textContent=clock(duration());
-  $('project-resolution').textContent=state.project ? `${state.project.width || 1920} × ${state.project.height || 1080}` : '1920 × 1080';
   $('add-scene').hidden=isUniversal();$('add-scene').disabled=!state.project;
   $('add-layer').hidden=!isUniversal();$('add-layer').disabled=!state.project;
   $('add-animation').hidden=!isUniversal();$('add-animation').disabled=!state.project;
@@ -671,7 +683,7 @@ function renderPreview() {
     if(state.playhead>=start && state.playhead<end){
       const target=seconds(clip.trim_start)+(state.playhead-start);
       if(Number.isFinite(element.duration) && Math.abs(element.currentTime-target)>.35)element.currentTime=Math.min(Math.max(0,target),element.duration);
-      element.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 1)*state.monitorVolume));
+      setClipLevel(element,clip);
       element.muted=state.monitorMuted;
       if(state.playing && element.paused)element.play().catch(()=>{});
       if(!state.playing && !element.paused)element.pause();
@@ -866,9 +878,12 @@ function motionPicker(value){
 
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
-  const keys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
+  const allKeys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
   const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
-  const colors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
+  const allColors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
+  // «Анімація» (the old generated scheme) is retired: its row stays only for a channel that still has a share in it
+  const shown=allKeys.map((key,index)=>index).filter(index=>allKeys[index]!=='animation'||Number(weights.animation)>0);
+  const keys=shown.map(index=>allKeys[index]),colors=shown.map(index=>allColors[index]);
   const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
   const body=`${brandingSections(channel)}<p class="settings-purpose regular-only">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
@@ -1025,8 +1040,8 @@ async function pollJob(){
     const progress=Math.max(0,Math.min(100,Math.round(state.job.progress||0)));
     const target=$('render-state');
     if(target && state.project?.id===state.job.project_id){
-      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
-      const detail=cancelled?'Проєкт знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Проєкт заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Проєкт заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Проєкт заблоковано до завершення експорту.':'Проєкт заблоковано до завершення експорту.';
+      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='razgon_frames'?'Малюємо кадри Razgon':state.job.stage==='razgon_sound'?'Зводимо звук':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
+      const detail=cancelled?'Проєкт знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Проєкт заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Проєкт заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Проєкт заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Проєкт заблоковано до завершення експорту.':'Проєкт заблоковано до завершення експорту.';
       const estimate=!complete&&!failed&&!cancelled&&jobStatus!=='cancelling'?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
       target.innerHTML=`<p>${label}</p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }

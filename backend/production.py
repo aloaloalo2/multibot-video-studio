@@ -2,9 +2,11 @@
 
 The production request (store.request_production) hands the frames to Claude Opus 5.5 (extra-high effort) through Claude
 Code on the user's subscription, in the YOUTUBE folder, as the channel rules' step 7 asks: scenes of the shots behind
-those frames, props from the library or drawn by Codex (tools/codex_image.py), checks on contact sheets, then
-razgon_bridge.py push puts the rendered frames on the Studio timeline. No final film and nothing published. The run
-counts as done only when those frames are pictures on the timeline. Its state lives in the project's request.
+those frames, props from the library or drawn by Codex (tools/codex_image.py), checks on contact sheets. The frames stay
+«Кадр N» code blocks on the timeline that the live preview draws: nothing is rendered until the author presses «Експорт
+MP4», which renders the blocks (razgon_export.py; user, 30 October 2026: «має показати мені код, і коли я нажимаю
+експорт, тоді починається рендер»). No final film and nothing published. The run counts as done only when every one of
+those frames has its scene written and stands on the timeline as a code block. Its state lives in the project's request.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import subprocess, threading, time
 from pathlib import Path
 
 import director
+import frame_progress
 import logo_layer
 import store
 
@@ -36,16 +39,19 @@ def set_request(pid: str, **fields) -> dict:
     return request
 
 
-def drawn(project: dict, count: int) -> bool:
-    """True when the first `count` director frames are rendered pictures on the timeline, not code blocks."""
-    clips = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])]
-    return sum(clip.get("kind") in {"video", "image"} for clip in clips) >= count
+def drawn(pid: str, count: int) -> bool:
+    """True when each of the first `count` director frames has its scene written (frame_progress.py) and stands on the
+    timeline as its «Кадр N» code block, not as a rendered clip."""
+    blocks = {clip.get("title") for track in store.load_project(pid).get("tracks", []) for clip in track.get("clips", [])
+              if clip.get("kind") == "animation"}
+    made = set(frame_progress.drawn(pid))
+    return all(number in made and f"Razgon · кадр {number:03d}" in blocks for number in range(1, count + 1))
 
 
 # What the author checks first, so the agent checks it before it calls a frame done (user, 30 October 2026: long, wrongly
 # bent legs and bare triangles instead of props were handed in as finished frames).
 QUALITY = """5. Здача тільки після власного перегляду. Подивись кожен кадр очима глядача на кількох стоп-кадрах (tools/frame_review.py або стоп-кадри
-   render.mjs) і виправ, доки все не так:
+   render.mjs; вони тільки для твоєї перевірки й у студію не йдуть) і виправ, доки все не так:
    - пропорції героїв як у попередніх випусках каналу: ноги й руки не довші за норму, коліна й лікті згинаються природно, у правильний бік;
    - жоден предмет не намальований голою примітивною фігурою (трикутник, коло, прямокутник замість речі): такий предмет бери з бібліотеки
      або замов у Codex і став через pic();
@@ -59,11 +65,15 @@ QUALITY = """5. Здача тільки після власного перегл
    - стики: дія не починається заново після стику. Запусти python3 "VideoKey Studio/tools/cut_check.py" --razgon <проєкт> --only <шоти цих кадрів> і
      переглянь кожну смугу build/cuts/seams_NN.png очима: після стику дія йде далі з того стану, де закінчилась;
    - кадр має бути привабливим, як у топових каналів: глибина, світло, деталі;
+   - швидкість: g.filter (blur, brightness) діє окремим проходом на відеокарті на кожен виклик малювання, тож не став його
+     на шар, де малюється багато фігур. Групу розмивай одним blurLayer(g, px, fn, cam, depth), предмети затемнюй через
+     pic(..., { shade }). node render.mjs --project <проєкт> --speed-check (у папці What If/razgon-2d-studio) має показати OK:
+     дубль, повільніший за 2,5 медіани, перепиши (у 06 такі дублі рендерилися в 4–6 разів довше за решту);
    - текст у кадрі лише там, де він щось додає: цифри, роки й дати, виміри, дані, порівняння (їх показуй, навіть коли їх називає
      озвучка), підпис до предмета, який інакше не впізнати. Жодних словесних рядків, що повторюють озвучку (імена, посади, фрази:
      вони виглядають як субтитри), і жодних плашок під текстом: напис без підкладки через
      label() з engine/ui2d.js: чистий текст без фону, заливки чи ореолу, крупніший, ніж був би на плашці.
-   Кадр, що не пройшов цю перевірку, не готовий: не клади його в студію, а виправ. Автор не перевіряє за тебе: якщо на кадрі
+   Кадр, що не пройшов цю перевірку, не готовий: не здавай його, а виправ. Автор не перевіряє за тебе: якщо на кадрі
    лишилась хоч одна видима вада, кадр не здається."""
 
 
@@ -73,7 +83,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     rel = episode.relative_to(root) if root in episode.parents else episode
     frames = ",".join(str(n) for n in range(1, request["frames"] + 1))
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
-               "Виправ саме це у сценах цих кадрів, перевір усі кадри за пунктом 5 і поклади виправлені кадри в студію знову (крок 4).\n\n"
+               "Виправ саме це у сценах цих кадрів, перевір усі кадри за пунктом 5 і зроби крок 4.\n\n"
                if notes.strip() else "")
     return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
 
@@ -85,14 +95,21 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 («{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, де випуск.
 
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
-Кадри, що вже лежать на таймлайні студії готовим відео, не переробляй, якщо автор не просить правок саме до них.
+Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "What If/razgon-2d-studio/tools/library.py" search <слова> і use.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
 3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці What If/razgon-2d-studio, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
 {QUALITY}
-4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" push --razgon <проєкт> --frames {frames}: кадри рендеряться й лягають на таймлайн студії.
+4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
+   «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
+   знову робить блоком.
+   Не рендери відео кадрів: не запускай razgon_bridge.py push, final чи export, а render.mjs запускай тільки з --sheet
+   або для стоп-кадрів. Рендер і склейку робить сама студія, коли автор натисне «Експорт MP4».
+
+Довгі перевірки (cut_check.py, frame_review.py, render.mjs) запускай на передньому плані з timeout до 600000 мс і чекай результату
+в тій самій команді, без run_in_background: коли ти закінчуєш відповідь, сесія закривається, і фонова перевірка обривається разом з нею.
 
 Не роби фінальний MP4, не змінюй режисуру й стиль, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Рендерю аркуш кадрів 1–3».
@@ -118,8 +135,8 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
         if director.limit_stop(answer):
             # a pause, not a failure: what is made stays, and «Продовжити» picks the same session up once the limit resets
             fields.update(status="failed", limit=True, error=director.limit_stop(answer))
-        elif code or answer.get("is_error") or not drawn(store.load_project(pid), request["frames"]):
-            fields.update(status="failed", error=(answer.get("result") or "Кадри не з'явилися на таймлайні студії")[-600:])
+        elif code or answer.get("is_error") or not drawn(pid, request["frames"]):
+            fields.update(status="failed", error=(answer.get("result") or "Не всі кадри намальовані й стоять на таймлайні студії блоками-кодом")[-600:])
         else:
             fields.update(status="done")
             try:
@@ -152,7 +169,7 @@ def fix(pid: str, notes: str) -> dict:
 
 
 RESUME = ("Ліміт підписки оновився. Продовж роботу над цими кадрами з того місця, де зупинився: не переробляй уже готове, "
-          "доведи решту кадрів до кінця з тією ж перевіркою якості й поклади їх у студію.")
+          "доведи решту кадрів до кінця з тією ж перевіркою якості й зроби крок 4 без рендеру відео.")
 
 
 def resume(pid: str) -> dict:

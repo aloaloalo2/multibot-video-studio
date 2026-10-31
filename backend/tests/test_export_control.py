@@ -131,6 +131,28 @@ class ExportControlTest(unittest.TestCase):
             self.assertEqual(job['status'], 'failed')
             self.assertEqual(job['error'], 'Сцена 3: test encoder failure')
 
+    def test_cancel_stops_a_render_that_outlives_its_exporter(self):
+        # razgon_bridge.py export dies on SIGTERM, while a Razgon render it started ignores it and keeps the output open
+        project = store.create_project(store.channel_id(self.channel), 'Export cancellation of a stubborn render')
+        script = Path(self.tmp.name) / 'stubborn_engine.py'
+        script.write_text('import subprocess,sys,time\n'
+                          'code="import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"\n'
+                          'subprocess.Popen([sys.executable,"-c",code])\n'
+                          'print("started",flush=True)\n'
+                          'time.sleep(60)\n')
+        ready = {'stage': 'audio_synced', 'plan_ready': True, 'export_ready': True, 'reason': ''}
+        with patch.object(app, 'ENGINE_SCRIPT', script), patch.object(app, 'STOP_GRACE', 0.3), \
+                patch.object(store, 'plan_readiness', return_value=ready), patch.object(app, 'normalize_for_engine', return_value={'timeline_layers': []}):
+            code, first = self.request('/api/projects/'+project['id']+'/export', 'POST', {'confirm_export': True})
+            jid = first['job']['id']
+            deadline = time.monotonic() + 5
+            while app.ACTIVE_EXPORTS.get(jid, {}).get('process') is None and time.monotonic() < deadline: time.sleep(.02)
+            time.sleep(.5)
+            self.request('/api/jobs/'+jid+'/cancel', 'POST', {})
+            deadline = time.monotonic() + 5
+            while app.load_job(jid)['status'] != 'cancelled' and time.monotonic() < deadline: time.sleep(.05)
+            self.assertEqual(app.load_job(jid)['status'], 'cancelled')
+
     def test_cancel_duplicate_and_project_lock(self):
         project = store.create_project(store.channel_id(self.channel), 'Export cancellation')
         pid = project['id']
@@ -153,6 +175,7 @@ class ExportControlTest(unittest.TestCase):
             self.assertEqual(self.request('/api/projects/'+pid+'/export/active')[1]['job']['id'], jid)
             self.assertIn(jid,[item['id'] for item in self.request('/api/exports/active')[1]['jobs']])
             self.assertEqual(self.request('/api/projects/'+pid+'/actions', 'POST', {'type':'undo'})[0], 423)
+            self.assertNotEqual(self.request('/api/projects/'+pid+'/razgon-live', 'POST', {})[0], 423)   # it changes nothing
             childfile = store.project_dir(pid) / 'renders' / (jid+'.childpid')
             deadline = time.monotonic() + 5
             while not childfile.exists() and time.monotonic() < deadline: time.sleep(.02)

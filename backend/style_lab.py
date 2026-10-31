@@ -62,7 +62,7 @@ def validate(animation) -> None:
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
 
 
-GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "chalk")
+GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "chalk", "clinic", "bluewhite", "whiteblue", "blueglow", "care")
 
 
 def razgon_text(animation: dict | None) -> dict:
@@ -198,12 +198,20 @@ def warm() -> None:
 
 
 def showcase(cid: str) -> dict:
-    """The style cards for a channel's settings, with the style its newest film uses now."""
+    """The style cards for a channel's settings, with the style its newest film uses now.
+
+    A regular channel has no films of its own, yet its 2D-animation frames are Razgon scenes too: it borrows the
+    Razgon studio of any animated channel, and its current style is the one saved in its settings."""
     choices = films(store.get_channel_folder(cid))
-    if not choices:
-        raise StyleLabError("Немає сцени-візитки Razgon")
-    root, project = choices[0]
-    current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
+    if choices:
+        root, project = choices[0]
+        current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
+    else:
+        root = razgon_root()
+        if root is None:
+            raise StyleLabError("Немає сцени-візитки Razgon")
+        channel = next((item for item in store.list_channels() if item["id"] == cid), {})
+        current = ((channel.get("settings") or {}).get("animation") or {}).get("style")
     result = cards(root, style_copy.load(cid))
     result.pop("keys")
     return {"film_style": current, **result}

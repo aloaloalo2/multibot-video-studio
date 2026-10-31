@@ -130,7 +130,7 @@ class PlannerTest(unittest.TestCase):
         timings = [{"text": sentences[0], "start": .1, "end": 8.7}, {"text": sentences[1], "start": 9.3, "end": 11}]
         settings = {"first_clip_seconds": 8, "weights": {"text": 100}}
         plan = planner.build_plan(script, settings, "Channel", duration=12, alignment=timings)
-        self.assertEqual(plan["frames"][1]["format"], "animation")
+        self.assertEqual(plan["frames"][1]["format"], "generated_photo")   # the retired «Анімація» is no fallback any more
         self.assertEqual(plan["frames"][1]["start"], 8)
         planner.validate_synced_plan(plan, 12)
         with self.assertRaisesRegex(ValueError, "Текстова підказка"):

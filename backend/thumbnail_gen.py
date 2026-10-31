@@ -19,6 +19,7 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 import director
+import frame_progress
 import store
 
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
@@ -78,7 +79,7 @@ def defaults(pid: str) -> dict:
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
-            "preview": bool(preview(project)), "pictures": len(pictures(project)), "min_frames": MIN_FRAMES}
+            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES}
 
 
 def job_path(pid: str) -> Path:
@@ -128,6 +129,34 @@ def frame_stills(project: dict, work: Path) -> list[Path]:
                                   capture_output=True, timeout=60)
             if done.returncode or not target.is_file():
                 continue
+        stills.append(target)
+    return stills
+
+
+def code_stills(project: dict, work: Path) -> list[Path]:
+    """Stills of up to three frames a Razgon episode holds as code, not rendered («Кадр ролику N.png»): the Razgon player
+    draws each at the middle of its frame (render.mjs --stills); the video itself stays unrendered."""
+    razgon = frame_progress.razgon_project(project)
+    drawn = set(frame_progress.drawn(project["id"])) if razgon else set()
+    frames = [frame for frame in (store.read_json(razgon / "story" / "studio_frames.json", {}) if razgon else {}).get("frames") or []
+              if frame["number"] in drawn]
+    if not frames:
+        return []
+    count = min(STILLS, len(frames))
+    moments = [(frame["start"] + frame["end"]) / 2 for frame in (frames[round(i * (len(frames) - 1) / max(1, count - 1))] for i in range(count))]
+    out = razgon / "build" / "thumbnail-stills"
+    node = shutil.which("node") or "/opt/homebrew/bin/node"
+    done = subprocess.run([node, "render.mjs", "--project", str(razgon), "--stills", ",".join(f"{t:.2f}" for t in moments), "--dir", str(out)],
+                          cwd=razgon.parents[1], capture_output=True, timeout=600)
+    if done.returncode:
+        return []
+    # render.mjs names a still «<t>s_<t>.png» and adds contact sheets: the stills in time order
+    found = sorted((path for path in out.glob("*.png") if not path.name.startswith("sheet_")),
+                   key=lambda path: float(path.stem.rsplit("_", 1)[-1]))
+    stills = []
+    for number, source in enumerate(found[:count], 1):
+        target = work / f"Кадр ролику {number}.png"
+        shutil.copyfile(source, target)
         stills.append(target)
     return stills
 
@@ -210,7 +239,7 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
         name = f"Превью v{number}.png"
         # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
-        refs = frame_stills(project, work) or references(folder)
+        refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
         # 1. Claude picks the moment and writes the prompt; it is kept next to the picture even if the drawing fails
         written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent, work)
         (work / f"Промпт прев'ю v{number}.txt").write_text(written + "\n", encoding="utf-8")
@@ -257,7 +286,7 @@ def start(pid: str, title: str, script: str, wishes: str = "") -> dict:
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")
-    if len(pictures(project)) < MIN_FRAMES:
+    if store.picture_count(project) < MIN_FRAMES:
         raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {MIN_FRAMES} кадри ролику: з них береться стиль", 409)
     if not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)

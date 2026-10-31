@@ -39,6 +39,8 @@ import agent_storage
 import credentials
 import analysis_jobs
 import razgon_live
+import razgon_export
+import audio_level
 import waveforms
 import joins
 import thumbnails
@@ -100,6 +102,9 @@ def active_export(project_id):
     return None
 
 
+STOP_GRACE = 8   # seconds a cancelled export has to stop on SIGTERM before its whole group is killed
+
+
 def cancel_export(jid):
     with JOBS_LOCK:
         entry = ACTIVE_EXPORTS.get(jid)
@@ -120,10 +125,11 @@ def cancel_export(jid):
             except ProcessLookupError:
                 pass
             def force_stop():
-                if process.poll() is None:
-                    try: os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError: pass
-            timer = threading.Timer(8, force_stop)
+                # the whole group, even when its leader is gone: a Razgon render left behind by razgon_bridge.py export
+                # outlives a SIGTERM and holds the job's output open, so the export would read as stopping for ever
+                try: os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError): pass
+            timer = threading.Timer(STOP_GRACE, force_stop)
             timer.daemon = True
             timer.start()
         return dict(entry['job'])
@@ -210,6 +216,7 @@ def normalize_for_engine(project: dict) -> dict:
     if project.get("schema_version") == 2:
         layers = []
         assets = {asset["id"]: asset for asset in store.discover_assets(project)}
+        voice = audio_level.voice_gains(project)   # the voice at 100% is the Studio's standard level (audio_level.py)
         visual_count = 0
         for z, layer in enumerate(project.get("tracks", [])):
             rendered_clips = []
@@ -228,7 +235,7 @@ def normalize_for_engine(project: dict) -> dict:
                         raise store.StudioError("Матеріал кліпу недоступний")
                 if kind != "audio":
                     visual_count += 1
-                rendered_clips.append({"id": clip["id"], "type": kind, "source": str(source) if source else None, "text": clip.get("text", ""), "content_type": clip.get("content_type"), "color": clip.get("color", "#101114"), "start": float(clip["start"]), "duration": float(clip["duration"]), "trim_start": float(clip.get("trim_start", 0)), "volume": 0.0 if layer.get("muted") else float(clip.get("volume", 1)), "transition": copy.deepcopy(clip.get("transition", {"type": "cut", "duration": 0})), "x": clip.get("x", .5), "y": clip.get("y", .5), "width": clip.get("width", 1), "height": clip.get("height", 1), "scale": clip.get("scale", 1), "opacity": clip.get("opacity", 1), "preset": clip.get("preset"), "preset_duration": clip.get("preset_duration", 0), "keyframes": copy.deepcopy(clip.get("keyframes", [])), "audio_role": clip.get("audio_role"), "easing": clip.get("easing", "linear")})
+                rendered_clips.append({"id": clip["id"], "type": kind, "source": str(source) if source else None, "text": clip.get("text", ""), "content_type": clip.get("content_type"), "color": clip.get("color", "#101114"), "start": float(clip["start"]), "duration": float(clip["duration"]), "trim_start": float(clip.get("trim_start", 0)), "volume": 0.0 if layer.get("muted") else float(clip.get("volume", 1)) * (voice.get(clip.get("asset_id"), 1.0) if kind == "audio" else 1.0), "transition": copy.deepcopy(clip.get("transition", {"type": "cut", "duration": 0})), "x": clip.get("x", .5), "y": clip.get("y", .5), "width": clip.get("width", 1), "height": clip.get("height", 1), "scale": clip.get("scale", 1), "opacity": clip.get("opacity", 1), "preset": clip.get("preset"), "preset_duration": clip.get("preset_duration", 0), "keyframes": copy.deepcopy(clip.get("keyframes", [])), "audio_role": clip.get("audio_role"), "easing": clip.get("easing", "linear")})
                 for field in ("font_size", "text_words", "mask", "corner_radius", "shadow", "font_family", "font_weight", "text_align", "line_height", "word_entrance", "gradient", "blur", "motion_blur", "visual_effect"):
                     if field in clip:
                         rendered_clips[-1][field] = copy.deepcopy(clip[field])
@@ -323,8 +330,51 @@ def _check_render(path: Path) -> None:
             raise RuntimeError("Готовий файл має порожній відеопотік")
 
 
-def _render_worker(job: dict, render_manifest: Path, staging: Path, destination: Path) -> None:
-    started_at = time.monotonic()
+def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: Path) -> None:
+    """A mixed episode's export, first part: razgon_bridge.py frames renders the Razgon code blocks (or reuses the clips
+    rendered from the same code), then the manifest draws each block from its clip for the engine that follows."""
+    started_at, clips, error = time.monotonic(), None, None
+    with JOBS_LOCK:
+        if entry['cancel']:
+            return
+        process = subprocess.Popen(razgon_export.frames_command(mixed), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        entry['process'] = process
+    try:
+        for line in process.stdout:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue   # render.mjs's own lines
+            if event.get('stage') == 'error':
+                error = str(event.get('message') or '')[:2000]
+            elif event.get('stage') == 'razgon_frames_done':
+                clips = event.get('clips') or {}
+            elif event.get('stage') == 'razgon':
+                with JOBS_LOCK:
+                    if entry['cancel']:
+                        break
+                    share = max(0.0, min(1.0, float(event.get('progress', 0))))
+                    job.update(stage='razgon_frames', progress=min(99, round(99 * share)), razgon_completed=int(event.get('completed', 0)), razgon_total=int(event.get('total', 0)))
+                    elapsed = time.monotonic() - started_at
+                    job['remaining_seconds'] = round(elapsed * (1 - share) / share) if share >= .02 else None
+                    save_job(job)
+        returncode = process.wait()
+    finally:
+        process.stdout.close()
+    if entry['cancel']:
+        return
+    if returncode or clips is None:
+        raise RuntimeError('Кадри Razgon: ' + (error or f'код {returncode}'))
+    manifest = store.read_json(render_manifest)
+    razgon_export.point_blocks_at_clips(manifest, mixed, clips)
+    store.atomic_json(render_manifest, manifest)
+    with JOBS_LOCK:
+        # the engine's own progress starts over from 0 for the whole timeline
+        job.update(stage='preparing', progress=0, remaining_seconds=None)
+        save_job(job)
+
+
+def _render_worker(job: dict, render_manifest: Path, staging: Path, destination: Path, command: list[str] | None = None, mixed: dict | None = None) -> None:
     with JOBS_LOCK:
         entry = ACTIVE_EXPORTS[job['id']]
         if not entry['cancel']:
@@ -333,9 +383,14 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
     try:
         if entry['cancel']:
             return
-        if not ENGINE_SCRIPT.is_file():
+        if mixed:
+            _render_razgon_blocks(job, entry, mixed, render_manifest)
+            if entry['cancel']:
+                return
+        started_at = time.monotonic()
+        if command is None and not ENGINE_SCRIPT.is_file():
             raise RuntimeError("Рушій експорту ще не встановлено")
-        command = [sys.executable, str(ENGINE_SCRIPT), "--project", str(render_manifest), "--output", str(staging)]
+        command = command or [sys.executable, str(ENGINE_SCRIPT), "--project", str(render_manifest), "--output", str(staging)]
         render_data = store.read_json(render_manifest)
         scene_total = len(render_data.get("scenes", [])) or sum(len(layer.get("clips", [])) for layer in render_data.get("timeline_layers", []))
         with JOBS_LOCK:
@@ -344,9 +399,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
             entry['process'] = process
         def terminate_group():
-            if process.poll() is None:
-                try: os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
+            try: os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError): pass
         timeout = threading.Timer(4 * 3600, terminate_group)
         timeout.daemon = True
         timeout.start()
@@ -354,6 +408,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         verification_started_at = None
         current_scene = None
         try:
+            progress_from = None
             for line in process.stdout:
                 try:
                     event = json.loads(line)
@@ -393,6 +448,14 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                 elif event.get("stage") == "compose":
                     progress = min(98, 80 + round(18 * float(event.get("progress", 0))))
                     stage = 'composing'
+                elif event.get('stage') == 'razgon':
+                    # razgon_bridge.py export: Razgon draws the frames, then the glue and the sound mix (razgon_export.py)
+                    progress = min(99, round(99 * float(event.get('progress', 0))))
+                    stage = str(event.get('phase') or 'rendering')
+                    # frames rendered by an earlier export count from the start: the time left follows this run's own pace
+                    progress_from = progress if progress_from is None else progress_from
+                    if 'total' in event:
+                        job['razgon_completed'], job['razgon_total'] = int(event.get('completed', 0)), int(event['total'])
                 elif event.get('stage') == 'verify':
                     if verification_started_at is None:
                         verification_started_at = time.monotonic()
@@ -410,7 +473,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                             verify_elapsed=max(0.0,time.monotonic()-verification_started_at)
                             job['remaining_seconds']=round(verify_elapsed*(1-verification_progress)/verification_progress) if verification_progress>=.02 else None
                         else:
-                            job['remaining_seconds']=round(elapsed*(100-job['progress'])/job['progress']) if job['progress']>=1 else None
+                            made=job['progress']-(progress_from or 0)
+                            job['remaining_seconds']=round(elapsed*(100-job['progress'])/made) if made>=1 else None
                         save_job(job)
             returncode = process.wait()
         finally:
@@ -459,7 +523,11 @@ def start_export(project: dict, confirmation: bool) -> dict:
     readiness = store.plan_readiness(project)
     if not readiness["export_ready"]:
         raise store.StudioError(readiness["reason"], 409)
-    manifest = normalize_for_engine(project)
+    razgon = razgon_export.export_job(project)
+    # a mixed episode: the bridge renders its Razgon code blocks first, then the engine exports the timeline
+    mixed = razgon if razgon and razgon.get("mixed") else None
+    razgon = None if mixed else razgon
+    manifest = razgon or normalize_for_engine(project)
     jid = uuid.uuid4().hex[:24]
     output_folder = Path(project["episode_path"])
     channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
@@ -478,6 +546,11 @@ def start_export(project: dict, confirmation: bool) -> dict:
     staging = render_dir / (jid + ".mp4")
     store.atomic_json(manifest_path, manifest)
     job = {"id": jid, "project_id": project["id"], "status": "queued", "progress": 0, "stage": "preparing", "remaining_seconds": None, "output_path": None, "error": None}
+    if razgon:
+        # every frame of the film; the ones the timeline already holds rendered are done (the bridge adds its cached ones)
+        job.update(razgon_completed=len(razgon["clips"]) - razgon["render"], razgon_total=len(razgon["clips"]))
+    if mixed:
+        job.update(razgon_completed=0, razgon_total=len(set(mixed["blocks"].values())))
     with JOBS_LOCK:
         existing = active_export(project['id'])
         if existing:
@@ -492,7 +565,8 @@ def start_export(project: dict, confirmation: bool) -> dict:
                 raise store.StudioError("Проєкт змінився перед експортом. Спробуйте ще раз.", 409)
             save_job(job)
             ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False, 'project_guard': guard}
-            threading.Thread(target=_render_worker, args=(job, manifest_path, staging, destination), daemon=True).start()
+            command = razgon_export.command(manifest_path, staging) if razgon else None
+            threading.Thread(target=_render_worker, args=(job, manifest_path, staging, destination, command, mixed), daemon=True).start()
         except Exception:
             ACTIVE_EXPORTS.pop(jid, None)
             guard.close()
@@ -512,6 +586,7 @@ class Handler(BaseHTTPRequestHandler):
             project = dict(value["project"])
             project.update(store.history_state(project["id"]))
             project["production"] = store.plan_readiness(project)
+            project["audio_gain"] = audio_level.voice_gains(project)   # the preview plays the voice at the export's level
             value = {**value, "project": project}
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -554,7 +629,8 @@ class Handler(BaseHTTPRequestHandler):
                 if UPDATE_RESTARTING:
                     raise store.StudioError('Студія перезапускається після оновлення.', 503)
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
-                if project_match and not path.endswith('/export') and active_export(project_match.group(1)):
+                # the live preview only starts a viewer of the Razgon code and changes nothing in the project
+                if project_match and not path.endswith(('/export', '/razgon-live')) and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
                 if project_match and not path.endswith('/agent/cancel') and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
@@ -750,10 +826,15 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
         if match and method == "POST":
             return self.json_response(razgon_live.start(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-request", path)
+        if match and method == "POST":
+            project = store.request_production(match.group(1), body.get("frames"))
+            production.start(project["id"])   # Claude Opus starts on the frames at once
+            return self.json_response({"project": store.load_project(project["id"])})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/analyze", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))
-            return self.json_response({"job": analysis_jobs.start(project, body.get("asset_id"), save_job, load_job)}, 202)
+            return self.json_response({"job": analysis_jobs.start(project, body.get("asset_id"), save_job, load_job, body.get("script"))}, 202)
         if method == "POST" and path == "/api/projects/generate-plan":
             if "settings" in body:
                 raise store.StudioError("План використовує збережені налаштування каналу у студії")

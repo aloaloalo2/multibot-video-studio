@@ -146,6 +146,31 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual(caught.exception.status, 409)
         self.made_frames(2)
 
+    def test_a_razgon_episode_takes_its_style_from_frames_drawn_as_code(self):
+        (self.episode / "razgon.json").write_text("{}", encoding="utf-8")
+        razgon = Path(self.tmp.name) / "razgon" / "projects" / "05-test"
+        (razgon / "story").mkdir(parents=True)
+        (razgon / "story" / "studio_frames.json").write_text(json.dumps({"frames": [
+            {"number": n, "start": (n - 1) * 10.0, "end": n * 10.0} for n in (1, 2, 3, 4)]}), encoding="utf-8")
+        work = Path(self.tmp.name) / "work"
+        work.mkdir()
+
+        def render(command, **kwargs):
+            out = Path(command[command.index("--dir") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            for t in command[command.index("--stills") + 1].split(","):
+                Image.new("RGB", (16, 9), (int(float(t)), 0, 0)).save(out / f"{t}s_{t}.png")
+            Image.new("RGB", (16, 9)).save(out / "sheet_01.png")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(thumbnail_gen.frame_progress, "razgon_project", return_value=razgon), \
+                patch.object(thumbnail_gen.frame_progress, "drawn", return_value=[1, 2, 3, 4]), \
+                patch.object(thumbnail_gen.subprocess, "run", side_effect=render) as run:
+            self.assertEqual(store.picture_count(self.project), 4)                     # code frames count as made
+            stills = thumbnail_gen.code_stills(self.project, work)
+        self.assertIn("--stills", run.call_args.args[0])
+        self.assertEqual([Image.open(path).getpixel((0, 0))[0] for path in stills], [5, 25, 35])   # first, middle, last
+
 
 if __name__ == "__main__":
     unittest.main()

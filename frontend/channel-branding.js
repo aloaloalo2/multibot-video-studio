@@ -15,7 +15,12 @@ const styleNames={neon:['Неоновий нуар','Глибокий чорни
   chalk:['Крейда','Зелена дошка, білі крейдяні контури, прозорі заливки.'],
   midnight:['Північна синява','Холодний нічний світ, біло-блакитний контур, помаранчеві ліхтарі.'],
   golden:['Золота година','Тепле помаранчево-бірюзове світло, великі сонячні відблиски.'],
-  storybook:['Казкова книжка','Світла пастель, м’яка контрастність, лавандові тіні.']};
+  storybook:['Казкова книжка','Світла пастель, м’яка контрастність, лавандові тіні.'],
+  clinic:['Чиста клініка','Світлий медичний світ: біло-блакитні стіни, тонкий синій контур, бірюзові акценти, без зерна.'],
+  bluewhite:['Синє на білому','Синій малюнок на білому: п’ять відтінків синього, тонкий темно-синій контур, суцільні заливки, без світіння.'],
+  whiteblue:['Біле на синьому','Синій світ і білі лінії: сині заливки, білий контур і білий герой, без світіння.'],
+  blueglow:['Синє сяйво','Нічний синій світ із бірюзовим світлом: м’які переливи, світний контур героя, сильне сяйво, без ліній.'],
+  care:['Турбота','Дружня аптечна пастель: м’ятні й білі кімнати, коралові акценти, м’які паперові тіні.']};
 
 function brandingSections(channel){
   const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
@@ -24,13 +29,13 @@ function brandingSections(channel){
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></section>
     <section class="settings-section channel-kind-section"><h3>Тип каналу</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип каналу">${kindCard('regular','Звичайний','Фото, стокове й створене відео, текст')}${kindCard('animated','Анімаційний','Мультфільм Razgon зі своїм стилем')}</div></section>
-    <section class="settings-section channel-look"><h3><span class="animated-only">Стиль і логотип</span><span class="regular-only">Логотип каналу</span></h3>
+    <section class="settings-section channel-look"><h3><span class="animated-only">Стиль і логотип</span><span class="regular-only">Логотип і стиль 2D-анімації</span></h3>
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="logo-preview-empty" class="regular-only">Логотип ще не додано</span><span id="style-stage-state" class="style-stage-state animated-only" role="status" aria-live="polite"></span></div>
-      <div class="animated-only"><p id="style-caption" class="style-caption"></p>
+      <div><p class="regular-only style-note">Стиль кадрів 2D-анімації Razgon у звичайних роликах каналу.</p><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}</option>`).join('')}</select></label>
           <label class="logo-toggle" title="Ролики каналу використовують картинки-предмети: з бібліотеки й згенеровані. Без асетів усе малюється фігурами."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Асети</label>
-          <button id="style-film-toggle" class="secondary" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
+          <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div>
       <div class="logo-controls"><div class="logo-file-row"><label class="secondary logo-file-button">Завантажити логотип<input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><button id="logo-remove" class="secondary" type="button">Прибрати</button>
           <label class="logo-toggle"><input id="logo-enabled" type="checkbox" ${logo.enabled?'checked':''}> Показувати в роликах</label></div>
@@ -63,11 +68,12 @@ function bindBranding(channel){
   const load=()=>{image.onload=()=>{present=true;draw();};image.onerror=()=>{present=false;draw();};image.src=logoUrl();};
   // Every card (style x title font x assets) is drawn ahead of time, so switching a font or the assets only swaps pictures.
   const card=id=>cards?.[$('style-title-font').value]?.[$('style-assets').checked?'1':'0']?.[id] || '';
-  // A regular channel shows the logo on a neutral frame; an animated one on the style card of its chosen style.
+  // The logo sits on the style card of the chosen Razgon style: an animated channel's films and a regular channel's 2D-animation frames.
   const backdrop=()=>{
-    const style=kind()==='animated'&&styles?.find(item=>item.id===chosen);
+    const style=styles?.find(item=>item.id===chosen);
     frame.style.backgroundImage=style?`url("${card(style.id)}")`:'';
     if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<span>${esc(text)}</span>`;}
+    else $('style-caption').innerHTML='<strong>Стиль ще не вибрано</strong><span>Оберіть картку нижче й збережіть налаштування.</span>';
   };
   const choose=id=>{chosen=id;strip.querySelectorAll('.style-thumb').forEach(item=>item.setAttribute('aria-checked',String(item.dataset.style===id)));backdrop();if(!film.hidden)loadFilm();};
   const renderStrip=()=>{
@@ -117,13 +123,13 @@ function bindBranding(channel){
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
   const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
   const loadStyles=async(announce=true)=>{
-    if(kind()!=='animated')return;
     const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
       const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{});
       if(mine!==request||!strip.isConnected)return;
       styles=data.styles;cards=data.cards;filmStyle=data.film_style;
-      if(!styles.some(style=>style.id===chosen))chosen=styles.some(style=>style.id===filmStyle)?filmStyle:styles[0]?.id;
+      // A regular channel without a saved style keeps none until the user picks one, so saving other settings never writes a style.
+      if(!styles.some(style=>style.id===chosen))chosen=styles.some(style=>style.id===filmStyle)?filmStyle:kind()==='animated'?styles[0]?.id:null;
       stage.textContent='';renderStrip();
     }catch(error){if(mine===request&&strip.isConnected)stage.textContent=error.message;}
   };
@@ -161,12 +167,12 @@ function bindBranding(channel){
   $('logo-remove').addEventListener('click',async()=>{
     try{await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'DELETE');version=Date.now();present=false;draw();feedback.textContent='Логотип прибрано.';}catch(error){feedback.textContent=error.message;}
   });
-  const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(kind()==='animated'&&!styles)loadStyles();};
+  const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(!styles)loadStyles();};
   for(const radio of document.querySelectorAll('input[name="channel-kind"]'))radio.addEventListener('change',applyKind);
   applyKind();draw();load();
   // The folder keeps its name (its path is the channel's id); a different name is stored in the settings.
   const displayName=()=>{const name=$('channel-name').value.trim();if(!name)throw new Error('Вкажіть назву каналу.');return name===(channel.folder_name || channel.name)?null:name;};
   return ()=>({display_name:displayName(),channel_kind:kind(),
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Number($('logo-margin').value),opacity:Number($('logo-opacity').value),version},
-    ...(kind()==='animated'?{animation:{...(chosen?{style:chosen}:{}),...textStyle()}}:{})});
+    animation:{...(chosen?{style:chosen}:{}),...textStyle()}});
 }

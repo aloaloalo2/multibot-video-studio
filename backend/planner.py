@@ -368,7 +368,7 @@ def build_plan(script: str, settings: dict, channel_name: str, duration=None, hi
                 raise ValueError("Текстова підказка конфліктує з продовженням вступної фрази. Оберіть для цього кадру візуальний формат")
             choices = sorted((key for key, weight in config["weights"].items() if key != "text" and weight > 0),
                              key=lambda key: (-float(config["weights"][key]), key))
-            for candidate in choices + ["animation", "generated_photo"]:
+            for candidate in choices + ["generated_photo"]:
                 trial = formats[:]
                 trial[1] = candidate
                 run = 0
@@ -416,3 +416,39 @@ def build_plan(script: str, settings: dict, channel_name: str, duration=None, hi
     }
 
 
+
+
+DIRECTOR_FRAME_SOURCE = "razgon-direction"
+
+
+def keep_director_frames(plan, previous):
+    """A director's frames survive any rebuild of a synced plan: the same groups of sentences, fresh voice times.
+
+    The frames of an animated film come from its direction, never from the sentence planner. When the sentences
+    themselves changed, the old grouping no longer fits: the plan keeps the planner frames and is marked
+    `director_stale`, so the next step is a new pass of the director.
+    """
+    if not previous or previous.get("frame_source") != DIRECTOR_FRAME_SOURCE or plan.get("timing", {}).get("status") != "audio_synced":
+        return plan
+    sentences = [text for frame in plan["frames"] for text in frame["sentences"]]
+    timings = [item for frame in plan["frames"] for item in frame["sentence_timings"]]
+    old = [text for frame in previous["frames"] for text in frame["sentences"]]
+    if len(old) != len(sentences) or [number_text.to_digits(t) for t in old] != [number_text.to_digits(t) for t in sentences]:
+        return dict(plan, director_stale=True)
+    groups, offset = [], 0
+    for frame in previous["frames"]:
+        groups.append(sentences[offset:offset + len(frame["sentences"])])
+        offset += len(frame["sentences"])
+    times = aligned_times(groups, timings, plan["timing"]["audio"]["duration"], None)
+    frames, offset = [], 0
+    for number, (old_frame, group, (start, end)) in enumerate(zip(previous["frames"], groups, times), 1):
+        frame = {key: old_frame[key] for key in ("format", "episode", "scene") if key in old_frame}
+        frame.update(number=number, start=round(start, 3), end=round(end, 3), sentences=group,
+                     sentence_timings=copy.deepcopy(timings[offset:offset + len(group)]))
+        frames.append(frame)
+        offset += len(group)
+    updated = dict(plan, frames=frames, frame_source=DIRECTOR_FRAME_SOURCE, opening_clip_split=False)
+    updated.pop("director_stale", None)
+    updated["report"] = dict(plan.get("report", {}), frames=len(frames))
+    validate_synced_plan(updated, plan["timing"]["audio"]["duration"])
+    return updated

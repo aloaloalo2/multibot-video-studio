@@ -368,9 +368,14 @@ def project_cover_asset(project: dict) -> str | None:
 
 
 def picture_count(project: dict) -> int:
-    """Made frames: pictures on the timeline apart from the channel's logo and plate (the thumbnail needs a few)."""
-    return sum(clip.get("kind") in {"video", "image"} and not re.search("Логотип|Плашка", clip.get("title") or "")
-               for track in project.get("tracks", []) for clip in track.get("clips", []))
+    """Made frames: pictures on the timeline apart from the channel's logo and plate, or for a Razgon episode the frames
+    drawn as code that only the export renders (the thumbnail needs a few)."""
+    pictures = sum(clip.get("kind") in {"video", "image"} and not re.search("Логотип|Плашка", clip.get("title") or "")
+                   for track in project.get("tracks", []) for clip in track.get("clips", []))
+    if not project.get("episode_path") or not (Path(project["episode_path"]) / "razgon.json").is_file():
+        return pictures
+    import frame_progress   # it reads the project through this module
+    return max(pictures, len(frame_progress.drawn(project["id"])))
 
 
 def list_projects(cid: str | None = None) -> list[dict]:
@@ -495,6 +500,10 @@ def attach_plan(pid: str, plan: dict) -> dict:
             versions.mkdir(exist_ok=True)
             shutil.copy2(path, versions / (str(time.time_ns()) + ".json"))
         atomic_json(path, plan)
+        # The episode's own plan file mirrors the attached plan, so no older draft is left behind in the folder.
+        episode_plan = Path(project["episode_path"]) / "План видео.json"
+        if plan.get("frame_source") and episode_plan.is_file():
+            atomic_json(episode_plan, plan)
         project["plan_source"] = str(path)
         project["plan_updated_at"] = time.time()
         project["revision"] = project.get("revision", 0) + 1
@@ -630,13 +639,17 @@ def plan_readiness(project, plan=None, stage_only=False):
         clips = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])]
         full_voice = False
         for clip in clips:
-            if clip.get("kind") != "audio" or audio.get("asset_id") and clip.get("asset_id") != audio["asset_id"]:
+            # the voice is the timed file itself, or any copy of it with the same bytes: timings attached by a file path
+            # name the audio by an id made before the project had it, which no timeline clip carries (GORBUNOV-23)
+            same = not audio.get("asset_id") or clip.get("asset_id") == audio["asset_id"]
+            if clip.get("kind") != "audio" or not same and not audio.get("sha256"):
                 continue
             asset = resolve_asset(project, clip.get("asset_id"))
             path = Path(asset["path"])
             measured = media_duration(path)
             if asset.get("kind") != "audio" or not measured or abs(measured - duration) > .002 or audio.get("sha256") and audio["sha256"] != audio_fingerprint(path):
-                result["reason"] = "Озвучка на таймлайні не відповідає файлу таймінгів"
+                if same:
+                    result["reason"] = "Озвучка на таймлайні не відповідає файлу таймінгів"
                 continue
             full_voice = abs(float(clip.get("start", 0))) < .001 and abs(float(clip.get("trim_start", 0))) < .001 and abs(float(clip.get("duration", 0)) - duration) < .002 and float(clip.get("volume", 1)) > 0
             if full_voice:
@@ -651,6 +664,46 @@ def plan_readiness(project, plan=None, stage_only=False):
     return result
 
 
+def channel_animated(channel: Path) -> bool:
+    return (read_json(channel / PLAN_CONFIG, {}) or {}).get("channel_kind") == "animated"
+
+
+def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> dict:
+    """An animated episode gets no plan before its voice: the Studio keeps the script and waits.
+
+    Its frames come from the director (Claude Opus 5.5) once the voice is recognised, never from the sentence
+    splitter. A draft cut from the script alone moves to the plan history; a plan that follows the voice or the
+    director is left alone."""
+    if not isinstance(script, str) or not script.strip():
+        raise StudioError("Додайте сценарій випуску")
+    with LOCK:
+        if project_id:
+            project = load_project(project_id)
+            if project["channel_id"] != cid or Path(project["episode_path"]).resolve() != episode:
+                raise StudioError("Проєкт належить іншому випуску")
+        else:
+            found = next((item for item in list_projects(cid) if Path(item["episode_path"]).resolve() == episode), None)
+            project = load_project(found["id"]) if found else create_project(cid, name, str(episode))
+        plan = load_project_plan(project["id"])
+        if plan and (plan.get("frame_source") or plan.get("timing", {}).get("status") == "audio_synced"):
+            raise StudioError("План уже йде за озвучкою або режисурою. Нову озвучку додайте в плані випуску", 409)
+        if plan:
+            versions = project_dir(project["id"]) / "plan-history"
+            versions.mkdir(exist_ok=True)
+            for path in (project_plan_file(project), episode / "План видео.json"):
+                if path is not None and path.is_file():
+                    shutil.move(str(path), versions / (str(time.time_ns()) + "-" + path.name))
+            project.pop("plan_source", None)
+            project.pop("plan_updated_at", None)
+        digest = hashlib.sha256(script.encode()).hexdigest()
+        project["voice_script"] = {"text": script, "sha256": digest, "saved_at": time.time()}
+        follow_title(project)
+        project["revision"] = project.get("revision", 0) + 1
+        save_project(project)
+    url = f"/channels/{cid}/projects/{project['id']}/plan"
+    return {"project": project, "plan": None, "plan_url": url, "awaiting_voice": True, "script_sha256": digest}
+
+
 def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None, script_path=None, duration=None, hints=None, project_id=None, narration=None, timings=None, weights=None, use_channel_weights=False) -> dict:
     """The only planning entry point. Read saved channel settings at execution time."""
     channel = get_channel_folder(cid)
@@ -662,6 +715,9 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if not path.is_file() or path.suffix.lower() != ".txt" or not under(path, episode):
             raise StudioError("Сценарій має бути TXT-файлом у папці випуску")
         script = path.read_text(encoding="utf-8-sig")
+    # An animated channel never gets a plan split from the script alone: it waits for the voice and the director.
+    if narration is None and timings is None and channel_animated(channel):
+        return await_voice(cid, validated_name(name), episode, script, project_id)
     with LOCK:
         settings = validate_settings(read_json(channel / PLAN_CONFIG, {}))
         if project_id:
@@ -689,6 +745,7 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
                 audio["sha256"] = timings["audio_sha256"]
             alignment = timings["sentences"]
         build_script = script
+        previous_plan = None
         if existing_project:
             previous_plan = load_project_plan(existing_project["id"])
             if previous_plan and previous_plan.get("spoken_script") and number_text.to_digits(previous_plan["spoken_script"]) == script:
@@ -703,6 +760,11 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
             plan["timing"]["audio"] = audio
             plan = planner.digitize_synced_plan(plan)
             planner.validate_synced_plan(plan, audio["duration"])
+            # An animated film keeps its director's frames through every rebuild of the plan.
+            try:
+                plan = planner.keep_director_frames(plan, previous_plan)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise StudioError("Кадри режисера не вдалося перенести на нову озвучку: " + str(exc)) from None
         plan["settings_scope"] = "project" if weights is not None else "channel"
         plan["channel_id"] = cid
         plan["generated_at"] = time.time()
@@ -1696,4 +1758,40 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
         push_history(pid, "past", previous)
         clear_history(pid, "future")
         save_project(project)
+        return project
+
+
+def request_production(pid: str, frames) -> dict:
+    """«Почати створення відео»: the author asks the agent to make the first N frames of an animated film.
+
+    The Studio only records the request; the agent picks it up, builds those frames in Razgon and puts them on the
+    timeline. The same request is mirrored next to the episode so a terminal agent sees it without the Studio.
+    """
+    with LOCK:
+        project = load_project(pid)
+        plan = load_project_plan(pid)
+        if not plan or plan.get("timing", {}).get("status") != "audio_synced":
+            raise StudioError("Спершу додайте озвучку, щоб план став «За озвучкою»")
+        if plan.get("frame_source") != planner.DIRECTOR_FRAME_SOURCE:
+            raise StudioError("Кадри ще не розбиті режисером. Дочекайтеся режисури")
+        total = len(plan["frames"])
+        try:
+            count = int(frames)
+        except (TypeError, ValueError):
+            raise StudioError("Вкажіть кількість кадрів") from None
+        if not 1 <= count <= total:
+            raise StudioError(f"Кількість кадрів має бути від 1 до {total}")
+        import frame_progress   # it reads the project through this module
+        # frames drawn as code are made: asking for them again would only start the agent over the same frames
+        if set(range(1, count + 1)) <= set(frame_progress.drawn(pid)):
+            raise StudioError(f"Кадри 1–{count} уже намальовані: їх видно в «Монтажі» в режимі «Наживо». "
+                              "Готовий ролик рендерить «Експорт MP4».", 409)
+        chosen = plan["frames"][:count]
+        request = {"id": uuid.uuid4().hex[:12], "frames": count, "total_frames": total,
+                   "start": chosen[0]["start"], "end": chosen[-1]["end"], "status": "requested",
+                   "created_at": time.time(), "script_sha256": plan["script_sha256"]}
+        project["production_request"] = request
+        project["revision"] = project.get("revision", 0) + 1
+        save_project(project)
+        atomic_json(Path(project["episode_path"]) / "Запит на створення.json", request)
         return project

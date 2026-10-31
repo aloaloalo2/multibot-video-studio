@@ -2,7 +2,7 @@
 // directs it and writes the frame plan back (backend/director.py); the author does nothing in between, so both read as
 // one step whose result is the frame plan. Each tab opens its own pane with its buttons and data: the frame plan with
 // the recognition report, script and director's report; how many frames to make with the run and its spend. The film is
-// exported by the header's «Експорт MP4», which shows once the frames are pictures. The current stage opens first.
+// exported by the header's «Експорт MP4», which renders the frames drawn as code. The current stage opens first.
 const directorRuns={};
 const stepChoice=new Map();
 let directorTimer=null,productionTimer=null;
@@ -306,10 +306,14 @@ function framePicker(picker){
   if(floor>=frames.length){strip.classList.add('complete');max.disabled=true;}
 }
 
-// Frames of the director's plan that are already pictures on the timeline, by their index.
+// Frames of the director's plan that are made, by their index: pictures on the timeline or frames drawn as code. Code is
+// a made frame the author reviews live; «Експорт MP4» only converts it into video (user, 30 October 2026: «якщо ти
+// кодом зробив їх, то вони рахуються створені… коли я нажимаю експорт, це вже конвертація в відео»).
+function productionWorking(){return ['requested','in_progress'].includes(state.project?.production_request?.status);}
 function madeSet(frames){
   const pictures=(state.project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || ''));
-  return new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)?index:-1).filter(index=>index>=0));
+  const drawn=framesDrawn();
+  return new Set(frames.map((frame,index)=>pictures.some(clip=>Math.abs(Number(clip.start)-Number(frame.start))<0.1)||drawn?.has(Number(frame.number || index+1))?index:-1).filter(index=>index>=0));
 }
 function madeFrames(){return madeSet(state.plan?.frames || []).size;}
 
@@ -322,11 +326,13 @@ function filmStrip(frames,made){
   return {strip,cells};
 }
 
-// Frames the agent has drawn as scenes but not rendered into the Studio yet (backend/frame_progress.py): on the strips
-// they show striped green, on the timeline their code blocks stop reading as empty.
+// Frames the agent has drawn as scenes (backend/frame_progress.py): they are made, green on the strips and on the
+// timeline, though only the export renders them.
 const drawnFrames={};
 function framesDrawn(){
-  const id=state.project?.id;if(!id || !directorAnimated())return null;
+  // an animated channel's film, or a mixed episode whose timeline holds Razgon frame blocks among photos and text
+  const id=state.project?.id,blocks=(state.project?.tracks || []).some(track=>(track.clips || []).some(clip=>/^Razgon · кадр/.test(clip.title || '')));
+  if(!id || !(directorAnimated() || blocks))return null;
   if(!(id in drawnFrames)){drawnFrames[id]=null;loadDrawn(id);}
   return drawnFrames[id];
 }
@@ -335,18 +341,19 @@ async function loadDrawn(id){
   try{numbers=(await api(`/api/projects/${encodeURIComponent(id)}/frames-drawn`)).drawn || [];}catch{return;}
   const before=[...(drawnFrames[id] || [])].join();drawnFrames[id]=new Set(numbers);
   if(state.project?.id!==id || before===numbers.join())return;
-  // the plan's strips repaint in place; the editor draws its timeline again
-  for(const strip of document.querySelectorAll('.frame-strip'))paintStrip(strip);
+  // with no run going the plan is drawn again, so the picker starts after the drawn frames; while the agent draws, the
+  // strips only turn its new frames green; the editor draws its timeline again
+  if(state.view==='plan'&&!productionWorking()&&typeof renderPlan==='function')renderPlan();
+  else for(const strip of document.querySelectorAll('.frame-strip'))paintStrip(strip);
   if(state.view==='editor'&&typeof renderTimeline==='function')renderTimeline();
 }
 function paintStrip(strip){
   const drawn=framesDrawn(),cells=[...strip.querySelectorAll('.frame-strip-cell')];
-  for(const cell of cells)cell.classList.toggle('drawn',!cell.classList.contains('made')&&!!drawn?.has(Number(cell.dataset.frame)));
+  for(const cell of cells)if(drawn?.has(Number(cell.dataset.frame)))cell.classList.add('made');
   const box=strip.closest('.frame-plan,.plan-start'),legend=box?.querySelector('.frame-strip-legend');if(!legend)return;
-  const made=cells.filter(cell=>cell.classList.contains('made')).length,draft=cells.filter(cell=>cell.classList.contains('drawn')).length;
+  const made=cells.filter(cell=>cell.classList.contains('made')).length;
   const picking=box.classList.contains('plan-start')&&made<cells.length;
   legend.innerHTML=[made?`<span><b class="made"></b>Готові: ${made} з ${cells.length}</span>`:'',
-    draft?`<span><b class="drawn"></b>Намальовані, чекають перевірки: ${draft}</span>`:'',
     picking?'<span class="is-chosen"><b class="chosen"></b>Вибрані для створення</span>':''].join('');
   legend.hidden=!legend.innerHTML;
 }
@@ -366,7 +373,7 @@ function framePlan(){
   const show=index=>{if(index===shown)return;cells[shown]?.classList.remove('pointed');shown=index;
     if(index<0){read.textContent=hint;return;}
     const frame=frames[index];cells[index].classList.add('pointed');
-    read.innerHTML=`<b>Кадр ${index+1}${made.has(index)?' · готовий':cells[index].classList.contains('drawn')?' · намальований, чекає перевірки':''}</b> · ${clock(frame.start)}–${clock(frame.end)} · ${esc((frame.sentences || []).join(' '))}`;};
+    read.innerHTML=`<b>Кадр ${index+1}${made.has(index)||cells[index].classList.contains('made')?' · готовий':''}</b> · ${clock(frame.start)}–${clock(frame.end)} · ${esc((frame.sentences || []).join(' '))}`;};
   strip.addEventListener('pointermove',event=>show(cells.indexOf(event.target.closest?.('.frame-strip-cell'))));
   strip.addEventListener('pointerleave',()=>show(-1));
   return card;

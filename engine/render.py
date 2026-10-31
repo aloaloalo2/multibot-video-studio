@@ -882,7 +882,8 @@ def compose(project: dict, project_file: Path, segments: list[Path], output: Pat
     silence_index = len(segments) + len(audio_tracks)
     audio_labels.append(f"{silence_index}:a")
     if len(audio_labels) > 1:
-        filters.append("".join(f"[{label}]" for label in audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={expected_duration:.6f}[mix]")
+        # the mix never goes over the top: a peak limiter at −1 dBFS, without its auto levelling (user, 31 October 2026)
+        filters.append("".join(f"[{label}]" for label in audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.891:attack=5:release=50:level=false,atrim=duration={expected_duration:.6f}[mix]")
     else:
         filters.append(f"[{audio_labels[0]}]atrim=duration={expected_duration:.6f}[mix]")
     hardware = hardware_export(width, height, fps)
@@ -1098,6 +1099,33 @@ def timed_text_units(clip,width):
             units.append({**word,'text':char,'x':left+(before+after)/2/box_width,'width':(after-before+12)/box_width,'start':word['start']+spread*j/max(1,len(text)-1)})
     return units
 
+@lru_cache(maxsize=1024)
+def _image_size(path: str, stamp: int) -> tuple[int, int] | None:
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except (OSError, ValueError):
+        return None
+
+
+def contained(path: str, box_width: int, box_height: int) -> tuple[int, int]:
+    """The size an image takes inside its box when it keeps its own shape (CSS object-fit: contain, as the preview).
+    A vertical photo in a 16:9 box became left-aligned in exports (the renderers placed the fitted picture at the box's
+    corner) while the preview showed it centred between black side fields (GORBUNOV-23, 31 October 2026)."""
+    try:
+        size = _image_size(path, Path(path).stat().st_mtime_ns)
+    except OSError:
+        size = None
+    if not size or not size[0] or not size[1]:
+        return box_width, box_height
+    aspect = size[0] / size[1]
+    if abs(aspect - box_width / box_height) < 1e-3:
+        return box_width, box_height
+    if aspect > box_width / box_height:
+        return box_width, max(1, round(box_width / aspect))
+    return max(1, round(box_height * aspect)), box_height
+
+
 def timeline_scene(start: float, end: float, active: list[dict], work: Path, width: int, height: int, background: str) -> dict:
     scene = {"type": "color", "color": background, "duration": end - start, "layers": []}
     for clip in active:
@@ -1112,6 +1140,8 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
         if normalized:
             clip_width = max(1, round(number(clip.get("width", 1), "clip width", .01) * width))
             clip_height = max(1, round(number(clip.get("height", 1), "clip height", .01) * height))
+            if kind == "image" and not shape and clip.get("source") and clip.get("mask", "none") != "circle":
+                clip_width, clip_height = contained(str(clip["source"]), clip_width, clip_height)
             center_x = number(clip.get("x", .5), "clip x", -8)
             center_y = number(clip.get("y", .5), "clip y", -8)
             layer_x = center_x if kind == "text" else center_x * width - clip_width / 2
@@ -1184,6 +1214,8 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
             if kind == "video":
                 layer["trim_start"] = clip["trim_start"] + elapsed
         if kind == "text" and clip.get("text_words"):
+            motion = [point for point in layer["keyframes"] if any(axis in point for axis in ("x", "y", "scale"))]
+            moving = len(motion) > 1
             for word in timed_text_units(clip,width):
                 reveal = max(0, float(word["start"]) - elapsed)
                 if reveal >= end - start:
@@ -1194,6 +1226,24 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
                     "width": max(1, round(word["width"] * clip_width)), "height": max(1, round(word["height"] * clip_height)),
                     "keyframes": [], "font_size": clip.get("font_size", 54)}
                 effect=clip.get('word_entrance')
+                if moving:
+                    # A text clip that moves (a label pinned to a panning photo) carries its words along: each word keeps
+                    # its place in the clip while the clip's own keyframes move and scale it, in the clip's easing, so
+                    # the words stay on the card that moves with them (the words used to stand still, GORBUNOV-23).
+                    # The word's entrance becomes a fade, the one part that cannot share the clip's motion.
+                    ox, oy = (word["x"] - .5) * float(clip.get("width", 1)), (word["y"] - .5) * float(clip.get("height", 1))
+                    points = {}
+                    for point in motion:
+                        moment = float(point["time"])
+                        x, y = (scalar_value(motion, axis, base, moment, layer["easing"]) for axis, base in (("x", layer_x), ("y", layer_y)))
+                        scale = scalar_value(motion, "scale", float(layer["scale"]), moment, layer["easing"])
+                        points[moment] = dict(time=moment, x=x + ox * scale, y=y + oy * scale, scale=scale)
+                    if effect:
+                        for moment, value in ((float(word["start"]), 0.0), (float(word["start"]) + float(effect["duration"]), 1.0)):
+                            points.setdefault(moment, {"time": moment})["opacity"] = value
+                    word_layer["keyframes"] = sorted(points.values(), key=lambda point: point["time"])
+                    scene['layers'].append(word_layer)
+                    continue
                 if effect:
                     mode=effect['type'].replace('letters_','');distance=effect['distance'];x,y=word_layer['x'],word_layer['y'];dx=-distance/width if mode=='left' else distance/width if mode=='right' else 0;dy=distance/height if mode in {'up','blur_up'} else -distance/height if mode=='down' else 0
                     scale=.82 if mode=='pop' else .88 if mode=='grow' else 1.1 if mode=='shrink' else 1
@@ -1232,7 +1282,8 @@ def compose_timeline(segments: list[Path], tracks: list[dict], output: Path, wor
         filters.append(f"[{index}:a]aresample=48000,atrim=duration={track['duration']:.6f},volume={track['volume']:.6f},adelay={delay}|{delay},atrim=duration={total:.6f},asetpts=PTS-STARTPTS[{label}]")
         labels.append(label)
     labels.append(f"{len(tracks) + 1}:a")
-    filters.append("".join(f"[{label}]" for label in labels) + f"amix=inputs={len(labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={total:.6f}[mix]")
+    # the mix never goes over the top: a peak limiter at −1 dBFS, without its auto levelling (user, 31 October 2026)
+    filters.append("".join(f"[{label}]" for label in labels) + f"amix=inputs={len(labels)}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.891:attack=5:release=50:level=false,atrim=duration={total:.6f}[mix]")
     cmd += ["-filter_complex", ";".join(filters), "-map", "0:v", "-map", "[mix]", "-t", f"{total:.6f}",
             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
     run_ffmpeg(cmd, "compose", duration=total)

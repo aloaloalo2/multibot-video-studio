@@ -20,6 +20,7 @@ import app  # noqa: E402
 import store  # noqa: E402
 import credentials  # noqa: E402
 import speech  # noqa: E402
+import planner  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
@@ -224,6 +225,49 @@ class BackendTest(unittest.TestCase):
         code, _ = self.request(path, "POST", {"type":"batch", "payload":{"actions":edits}, "expected_revision":1})
         self.assertEqual(code, 409)
 
+    def test_animated_channel_waits_for_voice_instead_of_splitting_the_script(self):
+        import hashlib
+        import analysis_jobs
+        channel = store.YOUTUBE_ROOT / "Animated Test"
+        channel.mkdir(exist_ok=True)
+        (channel / "video-plan.json").write_text(json.dumps({"channel_kind": "animated", "weights": {"razgon_2d": 100}}))
+        cid = store.channel_id(channel)
+        episode = channel / "05 Frozen"
+        episode.mkdir(exist_ok=True)
+        script = "First animated sentence. Second animated sentence.\n"
+        (episode / "Сценарий.txt").write_text(script, encoding="utf-8")
+        # A draft cut from the script before this rule is moved away, not kept as the plan.
+        project = store.create_project(cid, episode.name, str(episode))
+        draft = planner.build_plan(script, store.validate_settings({"weights": {"razgon_2d": 100}}), channel.name, None, None, None)
+        store.attach_plan(project["id"], draft)
+        (episode / "План видео.json").write_text(json.dumps(draft))
+        result = store.generate_project_plan(cid, episode.name, str(episode), script_path=str(episode / "Сценарий.txt"))
+        self.assertTrue(result["awaiting_voice"])
+        self.assertIsNone(result["plan"])
+        self.assertEqual(result["project"]["id"], project["id"])
+        self.assertIsNone(store.load_project_plan(project["id"]))
+        self.assertFalse((episode / "План видео.json").exists())
+        self.assertTrue(list((store.project_dir(project["id"]) / "plan-history").glob("*План видео.json")))
+        saved = store.load_project(project["id"])["voice_script"]
+        self.assertEqual(saved["text"], script)
+        self.assertEqual(saved["sha256"], hashlib.sha256(script.encode()).hexdigest())
+        # The voice then brings the author's script, and real timings build the plan as usual.
+        captured = {}
+        with patch.object(analysis_jobs, "worker", side_effect=lambda job, text, save: captured.update(script=text, source=job["script_from"])), \
+             patch.object(store, "resolve_asset", return_value={"kind": "audio", "name": "voice.wav"}):
+            analysis_jobs.start(store.load_project(project["id"]), "a" * 20, app.save_job, app.load_job)
+        for _ in range(100):
+            if captured:
+                break
+            time.sleep(.01)
+        self.assertEqual(captured, {"script": script, "source": "project"})
+        timings = {"duration": 3.0, "sentences": [{"text": "First animated sentence.", "start": .1, "end": 1.2}, {"text": "Second animated sentence.", "start": 1.4, "end": 2.8}]}
+        synced = store.generate_project_plan(cid, episode.name, str(episode), project_id=project["id"], script=script, timings=timings)
+        self.assertEqual(synced["plan"]["timing"]["status"], "audio_synced")
+        # A plan that already follows the voice is never replaced by a script-only call.
+        with self.assertRaises(store.StudioError):
+            store.generate_project_plan(cid, episode.name, str(episode), script=script)
+
     def test_background_speech_analysis_applies_only_complete_matches(self):
         cid = store.channel_id(self.channel)
         project = store.create_project(cid, "Speech analysis")
@@ -261,6 +305,72 @@ class BackendTest(unittest.TestCase):
         self.assertFalse(analysis["report"]["applied"])
         self.assertEqual(store.load_project_plan(pid), before)
 
+    def test_a_voice_without_a_script_becomes_the_plan(self):
+        cid = store.channel_id(self.channel)
+        project = store.create_project(cid, "Voice only")
+        pid = project["id"]
+        Path(project["episode_path"]).mkdir(parents=True, exist_ok=True)
+        source = Path(project["episode_path"]) / "voice.wav"
+        with wave.open(str(source), "wb") as audio:
+            audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(8000); audio.writeframes(b"\0\0" * 16000)
+        asset = store.asset_record(source, pid)
+        heard = ["Hello", "there,", "friend.", "Second", "sentence", "here."]
+        words = [{"text": text, "start": index * .3, "end": index * .3 + .25, "probability": .9} for index, text in enumerate(heard)]
+        with patch.object(speech, "transcribe", return_value=(words, {"engine": "test", "model": "fixture", "local": True})):
+            code, _ = self.request("/api/projects/" + pid + "/plan/analyze", "POST", {"asset_id": asset["id"]})
+            self.assertEqual(code, 202)
+            for _ in range(100):
+                _, analysis = self.request("/api/projects/" + pid + "/analysis")
+                if analysis["job"]["status"] in {"complete", "failed"}: break
+                time.sleep(.02)
+        self.assertEqual(analysis["job"]["status"], "complete", analysis["job"].get("error"))
+        self.assertEqual(analysis["report"]["script_from"], "audio")
+        self.assertTrue(analysis["report"]["applied"])
+        plan = store.load_project_plan(pid)
+        self.assertEqual(plan["script"], "Hello there, friend. Second sentence here.")
+        self.assertTrue(store.plan_readiness(store.load_project(pid))["plan_ready"])
+
+    def test_director_frames_survive_a_rebuild_and_start_production(self):
+        cid = store.channel_id(self.channel)
+        project = store.create_project(cid, "Director frames")
+        pid = project["id"]
+        script = "First sentence here. Second sentence here. Third sentence here. Fourth sentence here."
+        sentences = [{"text": text, "start": index * 2.0, "end": index * 2.0 + 1.5}
+                     for index, text in enumerate(["First sentence here.", "Second sentence here.", "Third sentence here.", "Fourth sentence here."])]
+        timings = {"duration": 8.0, "sentences": sentences}
+        store.generate_project_plan(cid, project["name"], project["episode_path"], project_id=pid, script=script, timings=timings)
+        code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        self.assertEqual(code, 400)
+        plan = store.load_project_plan(pid)
+        texts = [text for frame in plan["frames"] for text in frame["sentences"]]
+        rows = [item for frame in plan["frames"] for item in frame["sentence_timings"]]
+        groups = [texts[:3], texts[3:]]
+        times = planner.aligned_times(groups, rows, 8.0)
+        frames = [{"number": n, "start": a, "end": b, "sentences": g, "format": "razgon_2d", "episode": "E%02d" % n,
+                   "sentence_timings": rows[:3] if n == 1 else rows[3:]} for n, (g, (a, b)) in enumerate(zip(groups, times), 1)]
+        store.attach_plan(pid, dict(plan, frames=frames, frame_source=planner.DIRECTOR_FRAME_SOURCE))
+        shifted = {"duration": 8.0, "sentences": [dict(item, start=item["start"] + .1, end=item["end"] + .1) for item in sentences]}
+        store.generate_project_plan(cid, project["name"], project["episode_path"], project_id=pid, script=script, timings=shifted)
+        rebuilt = store.load_project_plan(pid)
+        self.assertEqual(rebuilt["frame_source"], planner.DIRECTOR_FRAME_SOURCE)
+        self.assertEqual([len(frame["sentences"]) for frame in rebuilt["frames"]], [3, 1])
+        self.assertEqual(rebuilt["frames"][1]["episode"], "E02")
+        self.assertAlmostEqual(rebuilt["frames"][1]["sentence_timings"][0]["start"], 6.1)
+        self.assertEqual(len(json.loads((Path(project["episode_path"]) / "План видео.json").read_text())["frames"]), 2)
+        code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 3})
+        self.assertEqual(code, 400)
+        import frame_progress
+        with patch.object(frame_progress, "drawn", return_value=[1]):          # frame 1 is already drawn as code
+            code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        self.assertEqual(code, 409)
+        self.assertIn("«Експорт MP4»", result["error"])
+        code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 1})
+        self.assertEqual(code, 200)
+        self.assertEqual(result["project"]["production_request"]["frames"], 1)
+        self.assertEqual(result["project"]["production_request"]["end"], rebuilt["frames"][0]["end"])
+        mirrored = json.loads((Path(project["episode_path"]) / "Запит на створення.json").read_text())
+        self.assertEqual(mirrored["status"], "requested")
+
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg is needed for video audio extraction")
     def test_video_analysis_reuses_extracted_audio_without_duplicate_assets(self):
         cid = store.channel_id(self.channel)
@@ -289,6 +399,29 @@ class BackendTest(unittest.TestCase):
                 results.append(analysis["report"]["audio"]["asset_id"])
         self.assertEqual(results[0], results[1])
         self.assertEqual(sum(asset["kind"] == "audio" for asset in store.discover_assets(store.load_project(pid))), 1)
+
+    def test_voice_copy_with_the_same_bytes_unlocks_export(self):
+        # timings attached by a file path name the audio by an id the project never got (GORBUNOV-23, 31 October 2026):
+        # the timeline's copy of the same recording is the voice, another recording of the same length is not
+        cid = store.channel_id(self.channel)
+        project = store.create_project(cid, "Voice copy")
+        pid = project["id"]
+        script = "First complete sentence about a simple subject. Second complete sentence about another simple subject."
+        phrases = [{"text": text, "start": start, "end": end} for text, start, end in zip(store.planner.split_sentences(script), [.1, 1.1], [.8, 1.8])]
+        status, _ = self.request("/api/projects/" + pid + "/plan/generate", "POST", {"script": script, "timings": {"duration": 2, "sentences": phrases}})
+        self.assertEqual(status, 200)
+        episode = Path(project["episode_path"])
+        for name, sample in (("voice.wav", b"\1\0"), ("copy.wav", b"\1\0"), ("other.wav", b"\2\0")):
+            with wave.open(str(episode / name), "wb") as audio:
+                audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(8000); audio.writeframes(sample * 16000)
+        plan = store.load_project_plan(pid)
+        plan["timing"]["audio"] = {"asset_id": store.asset_record(episode / "voice.wav", "pending")["id"], "duration": 2,
+                                   "sha256": store.audio_fingerprint(episode / "voice.wav")}
+        project = store.load_project(pid)
+        for name, ready in (("other.wav", False), ("copy.wav", True)):
+            asset = store.asset_record(episode / name, pid)
+            project = store.apply_action(pid, "add_clip", {"layer_id": project["tracks"][0]["id"], "kind": "audio", "asset_id": asset["id"], "start": 0, "duration": 2})
+            self.assertEqual(store.plan_readiness(project, plan)["export_ready"], ready, name)
 
     def test_draft_export_is_blocked_and_timing_file_unlocks_only_montage(self):
         cid = store.channel_id(self.channel)

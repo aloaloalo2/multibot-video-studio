@@ -160,24 +160,56 @@ button.danger:hover:not(:disabled){background:#523034}
 /* A card whose montage has no picture yet gets a calm backdrop with a faint film frame instead of a black box. */
 .project-card.no-cover{background:radial-gradient(120% 95% at 88% 0%,#2b2b33 0%,#1a1a1e 52%,#141417 100%)}
 .project-card.no-cover:before{content:'';position:absolute;right:18px;bottom:40px;width:96px;height:64px;opacity:.09;pointer-events:none;background:no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 16' fill='none' stroke='white' stroke-width='1.3'%3E%3Crect x='1' y='1' width='22' height='14' rx='2.5'/%3E%3Cpath d='M6 1v14M18 1v14M1 5h5M1 11h5M18 5h5M18 11h5'/%3E%3Cpath d='M10.5 5.6v4.8L14.4 8z' fill='white' stroke='none'/%3E%3C/svg%3E")}
-/* Shade only behind the title and the bottom line so the frame itself stays visible. */
-.project-card.has-cover:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,13,.82),rgba(10,10,13,.45) 34%,rgba(10,10,13,0) 58%,rgba(10,10,13,0) 68%,rgba(10,10,13,.6));pointer-events:none}
-.project-card.has-cover h2,.project-card.has-cover .project-created{text-shadow:0 1px 3px rgba(0,0,0,.85)}
+/* A cover is a YouTube thumbnail with big words and faces of its own («-40% ЖИРА»): any text laid over it collides with
+   them (user, 31 October 2026: the boxes were «не стильно», the words over the picture a «баг тексту»). So the card keeps
+   them apart: the title in a band of its own on top and the picture under it to the card's bottom, where the date, the
+   length and the export state stay over its softly shaded lower edge, as before (user, 31 October 2026). The header is
+   always two lines high (12 + 44 px); the picture starts 16 px under its second line (at 40 px) and fades into it, so
+   the band has no hard edge (user: «щоб грань була нечітка»). */
+.overview-projects .project-card{aspect-ratio:auto;container-type:inline-size}
+.overview-projects .project-open{padding:12px 16px 0}
+.overview-projects .project-card h2{order:0;height:44px;margin:0;font-size:16px;font-weight:600;line-height:1.38;align-items:flex-start;overflow:hidden}
+.overview-projects .project-card h2 svg{flex:none;margin-top:2px;opacity:.7}
+.overview-projects .project-open:before{content:'';order:1;display:block;aspect-ratio:16/9;margin:-16px -16px 0}
+.overview-projects .project-meta{position:absolute;left:16px;right:10px;bottom:11px;margin:0}
+.overview-projects .project-duration{margin-left:auto}   /* stays on the right while the export line hides the date */
+.overview-projects .project-export-state{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.overview-projects .project-cover{inset:auto;top:40px;left:0;width:100%;height:auto;aspect-ratio:16/9}
+.overview-projects .project-card.has-cover{background:#0c0c0f}
+.overview-projects .project-card.has-cover:hover{background:#0c0c0f}
+/* the dark band melts into the picture: solid behind the title, gone 60 px lower */
+.overview-projects .project-card.has-cover:before{content:'';position:absolute;left:0;right:0;top:0;height:100px;z-index:1;pointer-events:none;background:linear-gradient(180deg,#0c0c0f 0,#0c0c0f 44px,rgba(12,12,15,.82) 58px,rgba(12,12,15,.4) 76px,rgba(12,12,15,0) 100px)}
+.overview-projects .project-card.has-cover:after{content:'';position:absolute;left:0;right:0;top:40px;bottom:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,8,11,0) 52%,rgba(8,8,11,.55) 76%,rgba(8,8,11,.92) 100%)}
+.overview-projects .project-card.has-cover:hover .project-cover,.overview-projects .project-card.has-cover:focus-within .project-cover{transform:none;filter:brightness(1.06)}
+.overview-projects .project-card.has-cover .project-created{color:#e2e3e8;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.overview-projects .project-card.no-cover:before{right:auto;bottom:auto;left:50%;top:calc(40px + 100cqw * 9 / 32 - 32px);transform:translateX(-50%);z-index:2}
+/* the buttons show over the picture's corner while the card is pointed at, never over the title */
+.overview-projects .project-card>.project-actions{top:62px;right:10px;opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s}
+.overview-projects .project-card:hover>.project-actions,.overview-projects .project-card:focus-within>.project-actions{opacity:1;transform:none}
+.overview-projects .project-card .project-action{background:rgba(12,12,16,.62);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+
 .project-card .project-open{position:relative;z-index:1}
 .project-card>.project-actions{z-index:2}
 .project-card .project-action{border-radius:9.5px}
-.project-duration{font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.78);padding:4px 6px;border-radius:8px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.project-duration{font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.72);padding:4px 6px;border-radius:6px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .project-card.has-cover .project-created{color:#e4e4e8}
 .export-spinner{display:inline-block;width:1em;height:1em;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:studio-export-spin .8s linear infinite}
 @keyframes studio-export-spin{to{transform:rotate(360deg)}}
 .export-busy{display:inline-flex;align-items:center;justify-content:center;gap:9px}
-.project-card.exporting{border-color:#f0b429}
-.project-export-state{width:100%;margin:6px 0 18px;color:#f0b429;font-size:12px}
+.project-card.exporting{border-color:rgba(240,180,41,.55)}
+/* while exporting, a short amber line takes the date's place and the progress runs along the picture's bottom edge */
+.project-export-state{color:#f5c04a;font-size:12px;font-weight:600}
+.project-card.exporting .project-created{display:none}
 .project-export-state[hidden]{display:none}
-.project-export-label{display:flex;align-items:center;gap:7px}
-.project-export-label strong{margin-left:auto;font-variant-numeric:tabular-nums}
-.project-export-progress{display:block;height:4px;border-radius:5px;background:#39342a;margin-top:9px;overflow:hidden}
-.project-export-progress>span{display:block;height:100%;background:#f0b429;transition:width .25s}
+.project-export-label{display:flex;align-items:center;gap:7px;min-width:0;white-space:nowrap}
+.project-export-label>span{overflow:hidden;text-overflow:ellipsis}
+/* the percent follows the stage right away («Перевіряємо файл · 98%»), not floating in the middle of the card */
+.project-export-label strong{font-variant-numeric:tabular-nums;color:#f1f1f2;font-weight:600}
+.project-export-label strong:before{content:'·';margin-right:7px;color:#f5c04a99}
+.project-export-progress{display:block;height:3px;background:rgba(255,255,255,.16);overflow:hidden}
+/* from the label's box (16 px in, 90 px from the right, 14 px up) out to the card's whole bottom edge */
+.overview-projects .project-export-progress{position:absolute;left:-16px;right:-90px;bottom:-14px}
+.project-export-progress>span{display:block;height:100%;background:linear-gradient(90deg,#f0b429,#ffd36e);box-shadow:0 0 10px #f0b42999;transition:width .25s}
 @media(prefers-reduced-motion:reduce){.export-spinner{animation:none}}
 .overview-empty{padding:35px;border:1px dashed #444449;border-radius:15px;color:#a9abb2;grid-column:1/-1;text-align:center}
 .overview-empty strong{display:block;font-size:16px;color:#f1f1f2;margin-bottom:5px}
@@ -624,7 +656,10 @@ button.danger:hover:not(:disabled){background:#523034}
 .editor-brand{justify-content:center}
 @media(min-width:761px){
   .sidebar>.brand{align-items:flex-start;padding-top:9px}
-  .editor-open .editor-brand{width:172px;height:46px;padding:0;align-self:start;justify-content:center}
+  /* the logo block is as wide as the home page's sidebar (210px with its borders; 208px inside, plus the divider) and
+     starts at the bar's edge: the logo sits in the middle of it and in the same place as on the home page, and the
+     divider stands where the sidebar's edge is */
+  .editor-open .editor-brand{width:209px;margin-left:-19px;height:46px;padding:0;align-self:start;justify-content:center}
 }
 
 .overview-heading{display:flex;align-items:center;gap:10px;margin-bottom:7px}
@@ -760,6 +795,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(max-width:600px){.logo-place,.logo-sliders{grid-template-columns:1fr}.logo-file-row .logo-toggle{margin-left:0}}
 .style-stage-state{position:absolute;inset:auto 0 0;display:block;padding:10px 14px;font-size:12px;color:#d6d7dc;background:linear-gradient(transparent,#000a)}
 .style-stage-state:empty{display:none}
+.style-note{margin:0 0 6px;font-size:12px;color:#9a9ca4}
 .style-caption{display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px;margin:0 0 10px;font-size:12px;color:#9a9ca4;line-height:1.4}
 .style-caption strong{font-size:14px;color:#f1f1f2}
 .style-caption>span:last-child{flex-basis:100%}
@@ -824,7 +860,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @keyframes thumb-sweep{to{left:120%}}
 @keyframes thumb-fade{from{opacity:0}}
 .project-action.thumbnail svg{stroke:#f0b429}
-.project-card h2{margin-top:0;margin-right:104px}
+.project-card h2{margin-top:0;margin-right:0}   /* the card's buttons show only while it is pointed at: the title takes the width */
 .speech-report-button[data-applied="false"]{color:#f0b429;border-color:#f0b42966}
 #speech-report-modal .speech-report{margin:0}
 /* One rounding scale for the whole Studio, as strong as the project cards:

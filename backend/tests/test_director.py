@@ -53,6 +53,36 @@ class DirectorTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             director.start(PROJECT["id"])
 
+    def test_stopping_a_run_stops_a_render_in_a_process_group_of_its_own(self):
+        # the way Claude Code runs a command: the render sits in its own group under the run
+        code = ("import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+                "start_new_session=True); time.sleep(60)")
+        run = subprocess.Popen([sys.executable, "-c", code], start_new_session=True)
+        self.addCleanup(run.kill)
+        for _ in range(50):
+            render = director.descendants(run.pid)
+            if render:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(render), 1)
+        director.kill(run)
+        run.wait(10)
+        for _ in range(50):
+            try:
+                os.kill(render[0], 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            os.kill(render[0], 9)
+            self.fail("the render outlived the stopped run")
+
+    def test_agents_run_with_the_render_left_to_the_export(self):
+        with patch.object(director.subprocess, "Popen", side_effect=OSError("no claude")) as popen:
+            with self.assertRaises(OSError):
+                director.claude(Path("claude"), "brief", Path(self.tmp.name) / "log", Path(self.tmp.name) / "feed.json", 60)
+        self.assertEqual(popen.call_args.kwargs["env"][director.NO_RENDER], "1")
+
     def test_a_run_left_by_a_restart_reads_as_failed(self):
         director.save(PROJECT["id"], {"status": "running", "started_at": time.time()})
         self.assertEqual(director.state(PROJECT["id"])["status"], "failed")
