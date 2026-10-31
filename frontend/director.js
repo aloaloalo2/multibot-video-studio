@@ -283,7 +283,7 @@ function buildMake(make){
     make.querySelector('.frame-strip-tip')?.setAttribute('hidden','');
     const next=Math.max(1,Math.min(40,value));stripZoom[id]=next;strip.style.width=`${next*100}%`;
     // a long film (499 frames) packs its frames edge to edge until the zoom gives each a few pixels
-    strip.classList.toggle('dense',strip.clientWidth/frames.length<7);
+    packStrip();
     scroll.scrollLeft=anchor*strip.offsetWidth-x;scroll.classList.toggle('zoomed',next>1);
     zoomOut.disabled=next<=1;zoomIn.disabled=next>=40;
   };
@@ -294,9 +294,11 @@ function buildMake(make){
   scroll.addEventListener('gesturechange',event=>{event.preventDefault();zoomTo(pinchFrom*event.scale,event.clientX);});
   zoomOut.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)/1.6));
   zoomIn.addEventListener('click',()=>zoomTo((stripZoom[id] || 1)*1.6));
-  strip.classList.toggle('dense',frames.length>150);   // before the first layout, so it never spills out
+  // a hairline between frames while each has 3 px, edge to edge below that, so a long film never spills out
+  function packStrip(){const each=(strip.clientWidth || 1)/frames.length;strip.classList.toggle('tight',each<7);strip.classList.toggle('dense',each<3);}
+  strip.classList.toggle('tight',frames.length>120);strip.classList.toggle('dense',frames.length>350);   // before the first layout
   requestAnimationFrame(()=>zoomTo(stripZoom[id] || 1));
-  new ResizeObserver(()=>{if(scroll.isConnected)strip.classList.toggle('dense',strip.clientWidth/frames.length<7);}).observe(scroll);
+  new ResizeObserver(()=>{if(scroll.isConnected)packStrip();}).observe(scroll);
   // Pointing at a format in the legend lights its frames on the strip; a click keeps it lit.
   const light=format=>{strip.classList.toggle('highlighting',!!format);cells.forEach((cell,index)=>cell.classList.toggle('lit',!!format&&frames[index].format===format));
     for(const chip of legend.querySelectorAll('[data-format]'))chip.classList.toggle('active',chip.dataset.format===format);};
@@ -403,7 +405,7 @@ function fillLegend(legend,frames,made){
     const formats=[...new Set(frames.map(frame=>frame.format))];
     for(const format of formats)parts.push(`<span class="frame-strip-format" data-format="${esc(format)}" title="Показати ці кадри на смужці"><b style="--format-color:${planFormatVisuals[format]?.color || '#b8bec9'}"></b>${esc(planFormatNames[format] || format)}</span>`);
   }
-  if(made)parts.push(`<span><b class="made"></b>Готові: ${made} з ${frames.length}</span>`);
+  if(made)parts.push(directorAnimated()?`<span><b class="made"></b>Готові: ${made} з ${frames.length}</span>`:`<span class="frame-strip-made">✓ Готові: ${made} з ${frames.length}</span>`);
   legend.innerHTML=parts.join('');legend.hidden=!parts.length;
   legend.closest('.episode-make')?.lightFormat?.();
 }

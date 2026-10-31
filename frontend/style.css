@@ -983,9 +983,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-make .frame-strip-cell.pointed{background:#ffd166}.episode-make .frame-strip-cell.made.pointed{background:#9dffd0}
 .episode-make .frame-strip-legend+.frame-plan-read{margin-top:-8px}
 /* a photo channel: each frame in its format's colour, dim until it is chosen; a made frame has a green foot */
-.frame-strip.formats .frame-strip-cell{background:color-mix(in srgb,var(--format-color) 30%,#232327)}
-.frame-strip.formats .frame-strip-cell.chosen{background:var(--format-color)}
-.frame-strip.formats .frame-strip-cell.made{background:color-mix(in srgb,var(--format-color) 55%,#232327);box-shadow:inset 0 -5px 0 #6bf2ae}
+/* made frames in their full colour, frames picked to make with a yellow top line, the rest dim */
+.frame-strip.formats .frame-strip-cell{background:color-mix(in srgb,var(--format-color) 24%,#232327)}
+.frame-strip.formats .frame-strip-cell.made{background:var(--format-color)}
+.frame-strip.formats .frame-strip-cell.chosen{background:color-mix(in srgb,var(--format-color) 78%,#232327);box-shadow:inset 0 3px 0 #ffd166}
 .frame-strip.formats .frame-strip-cell.pointed{background:var(--format-color);box-shadow:inset 0 0 0 2px #fff6dc}
 .frame-strip-legend b[style]{background:var(--format-color)}
 .frame-strip-handle[hidden]{display:none}
@@ -1028,8 +1029,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-scroll::-webkit-scrollbar{height:6px}.frame-strip-scroll::-webkit-scrollbar-thumb{background:#3a3a41;border-radius:3px}
 .frame-strip-scroll>.frame-strip{width:100%;box-sizing:border-box;flex:none;min-width:0}
 .frame-strip{min-width:0;overflow:hidden}
+.frame-strip.tight{gap:1px}
+.frame-strip.tight .frame-strip-cell{min-width:0;border-radius:1.5px}
 .frame-strip.dense{gap:0}
-.frame-strip.dense .frame-strip-cell{min-width:0;border-radius:0}
+.frame-strip.dense .frame-strip-cell{border-radius:0}
 .frame-strip.dense .frame-strip-cell:first-child{border-radius:4px 0 0 4px}
 .frame-strip.dense .frame-strip-cell:nth-last-child(2){border-radius:0 4px 4px 0}
 .frame-strip-zoom{display:flex;flex:none;border:1px solid #3a3a41;border-radius:999px;overflow:hidden}
@@ -1044,3 +1047,4 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-tip{position:absolute;z-index:5;transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #45454c;border-radius:9px;background:#1b1b1e;color:#f1f1f2;font-size:12px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px #0009}
 .frame-strip-tip[hidden]{display:none}
 .frame-strip-tip b{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--format-color)}
+.frame-strip-made{color:#c9cbd2}
