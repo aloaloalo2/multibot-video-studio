@@ -68,24 +68,24 @@ def brief(project: dict) -> str:
     episode = Path(project["episode_path"])
     channel = episode.parent
     rel = episode.relative_to(root) if root in episode.parents else episode
-    return f"""Ти режисер анімаційного випуску в MultiBot Video Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
+    return f"""Ти режисер анімаційного випуску в VideoKey Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'}, {root / 'MultiBot Video Studio' / 'AGENTS.md'} і навик режисури Razgon
-(What If/razgon-2d-studio/skills або плагін «Навыки для переноса/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
+Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'} і навик режисури Razgon
+(What If/razgon-2d-studio/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
 Подивись, як зроблено режисуру попередніх випусків: What If/razgon-2d-studio/projects/*/story/gen_shots.py.
 
 Твоє завдання: режисура й план кадрів, кроки 3–5 правил каналу.
-1. python3 tools/episode.py "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
-   python3 tools/razgon_bridge.py prepare --project-id {project['id']}
+1. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
+   python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" prepare --project-id {project['id']}
 2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
    і запусти його. Кадри ділиш за змістом, не за кількістю слів. Кожна дія відбувається рівно в одному шоті: наступний шот
    описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
    одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 What If/razgon-2d-studio/tools/direction_check.py --project <проєкт>
    має пройти без FAIL. На WARN відповідай у story/bible.md або виправляй.
-3. python3 tools/razgon_bridge.py check --razgon <проєкт>, потім python3 tools/razgon_bridge.py plan --razgon <проєкт>: план кадрів іде в студію.
+3. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
 
 Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».

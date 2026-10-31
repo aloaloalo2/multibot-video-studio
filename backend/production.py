@@ -56,7 +56,7 @@ QUALITY = """5. Здача тільки після власного перегл
      Предмет не буває водночас переднім планом для лінії схилу й заднім планом для героя;
    - поява: ніщо не з'являється й не зникає миттєво («блим»): герой, предмет чи напис проявляється плавно, виїжджає з краю,
      виходить з-за іншого предмета або входить у кадр сам;
-   - стики: дія не починається заново після стику. Запусти tools/cut_check.py --razgon <проєкт> --only <шоти цих кадрів> і
+   - стики: дія не починається заново після стику. Запусти python3 "VideoKey Studio/tools/cut_check.py" --razgon <проєкт> --only <шоти цих кадрів> і
      переглянь кожну смугу build/cuts/seams_NN.png очима: після стику дія йде далі з того стану, де закінчилась;
    - кадр має бути привабливим, як у топових каналів: глибина, світло, деталі;
    - текст у кадрі лише там, де він щось додає: цифри, роки й дати, виміри, дані, порівняння (їх показуй, навіть коли їх називає
@@ -75,14 +75,14 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ саме це у сценах цих кадрів, перевір усі кадри за пунктом 5 і поклади виправлені кадри в студію знову (крок 4).\n\n"
                if notes.strip() else "")
-    return f"""Ти аніматор анімаційного випуску в MultiBot Video Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
+    return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
 Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'}, {root / 'MultiBot Video Studio' / 'AGENTS.md'} і навики Razgon
-(«Навыки для переноса/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). python3 tools/episode.py "{rel}" показує, де випуск.
+Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'} і навики Razgon
+(«{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, де випуск.
 
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
 Кадри, що вже лежать на таймлайні студії готовим відео, не переробляй, якщо автор не просить правок саме до них.
@@ -92,7 +92,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
 3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці What If/razgon-2d-studio, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
 {QUALITY}
-4. python3 tools/razgon_bridge.py push --razgon <проєкт> --frames {frames}: кадри рендеряться й лягають на таймлайн студії.
+4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" push --razgon <проєкт> --frames {frames}: кадри рендеряться й лягають на таймлайн студії.
 
 Не роби фінальний MP4, не змінюй режисуру й стиль, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Рендерю аркуш кадрів 1–3».

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local frame-based renderer for MultiBot Video Studio manifests.
+"""Local frame-based renderer for VideoKey Studio manifests.
 
 No server, API token, or HyperFrames installation is required. FFmpeg and
 FFprobe are the only runtime dependencies. Original media files are read-only.
@@ -1427,7 +1427,7 @@ def main() -> None:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, request_cancel)
-    parser = argparse.ArgumentParser(description="Render a MultiBot Video Studio project to MP4")
+    parser = argparse.ArgumentParser(description="Render a VideoKey Studio project to MP4")
     parser.add_argument("project_pos", nargs="?", type=Path)
     parser.add_argument("output_pos", nargs="?", type=Path)
     parser.add_argument("--project", type=Path)

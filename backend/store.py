@@ -1,4 +1,4 @@
-"""Persistent, non-destructive local project model for MultiBot Video Studio."""
+"""Persistent, non-destructive local project model for VideoKey Studio."""
 
 from __future__ import annotations
 

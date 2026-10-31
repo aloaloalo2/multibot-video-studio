@@ -332,7 +332,7 @@ class BackendTest(unittest.TestCase):
         script_file.write_text(script)
         timing_file = Path(project["episode_path"]) / "phrases.json"
         timing_file.write_text(json.dumps(timings))
-        tool = BACKEND.parents[1] / "tools" / "video_plan.py"
+        tool = BACKEND.parent / "tools" / "video_plan.py"
         run = subprocess.run([sys.executable, str(tool), "--channel", str(self.channel), "--script", str(script_file), "--timings", str(timing_file), "--studio-url", self.base_url], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout)["timing_basis"], "audio_alignment")
@@ -457,7 +457,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(status, 400)
         status, _ = self.request("/api/projects/generate-plan", "POST", {**payload, "script_path": str(self.channel / "outside.txt")})
         self.assertEqual(status, 400)
-        tool = BACKEND.parents[1] / "tools" / "video_plan.py"
+        tool = BACKEND.parent / "tools" / "video_plan.py"
         run = subprocess.run([sys.executable, str(tool), "--channel", str(self.channel), "--script", str(script), "--studio-url", self.base_url], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout)["project_id"], pid)

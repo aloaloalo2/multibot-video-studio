@@ -1,4 +1,4 @@
-# MultiBot Video Studio backend
+# VideoKey Studio backend
 
 Local Python standard-library server. It binds only to `127.0.0.1`, serves `frontend/` at `/`, and keeps editable project manifests under `backend/data/projects/`. Existing episode files are read-only; selected media is copied into a managed project folder. The user must confirm a final export in the interface.
 

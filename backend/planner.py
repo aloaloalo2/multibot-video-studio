@@ -1,4 +1,4 @@
-"""Scene planning owned and executed by MultiBot Video Studio."""
+"""Scene planning owned and executed by VideoKey Studio."""
 from __future__ import annotations
 import copy
 import hashlib

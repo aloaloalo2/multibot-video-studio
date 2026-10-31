@@ -33,8 +33,8 @@ class DirectorTest(unittest.TestCase):
 
     def test_brief_names_the_episode_steps_and_the_limits(self):
         text = director.brief(PROJECT)
-        for part in (PROJECT["id"], "What If/05 Test", "razgon_bridge.py prepare", "gen_shots.py", "direction_check.py",
-                     "razgon_bridge.py plan", "Не малюй сцени"):
+        for part in (PROJECT["id"], "What If/05 Test", 'tools/razgon_bridge.py" prepare', "gen_shots.py", "direction_check.py",
+                     'tools/razgon_bridge.py" plan', "Не малюй сцени"):
             self.assertIn(part, text)
 
     def test_only_animated_channels_and_only_when_direction_is_due(self):

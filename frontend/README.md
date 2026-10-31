@@ -1,4 +1,4 @@
-# MultiBot Video Studio frontend
+# VideoKey Studio frontend
 
 Static frontend served by the local studio backend at `/`. It has no build step or external network dependency. Open `index.html` through the backend so the relative API routes are available.
 

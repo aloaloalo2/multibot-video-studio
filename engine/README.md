@@ -1,4 +1,4 @@
-# MultiBot Video Studio render engine
+# VideoKey Studio render engine
 
 This is the first local export engine for the Video Studio app. It composes editable project manifests into MP4 using the installed FFmpeg, FFprobe, and Pillow. The input media is read only. It does not call HyperFrames or a cloud service.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local HTTP API and static shell for MultiBot Video Studio."""
+"""Local HTTP API and static shell for VideoKey Studio."""
 
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def choose_local_file(prompt: str) -> Path:
 
 
 def pixabay_module():
-    sys.path.insert(0, str(store.YOUTUBE_ROOT / "tools"))
+    sys.path.insert(0, str(store.APP_ROOT / "tools"))
     import pixabay  # type: ignore
     return pixabay
 
@@ -985,7 +985,7 @@ def tidy_project(pid: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MultiBot Video Studio local server")
+    parser = argparse.ArgumentParser(description="VideoKey Studio local server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8770)
     args = parser.parse_args()
@@ -997,7 +997,7 @@ def main():
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
-    print(f"MultiBot Video Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
+    print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
