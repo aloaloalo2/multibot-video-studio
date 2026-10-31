@@ -183,12 +183,15 @@ button.danger:hover:not(:disabled){background:#523034}
 .overview-projects .project-card.has-cover:hover .project-cover,.overview-projects .project-card.has-cover:focus-within .project-cover{transform:none;filter:brightness(1.06)}
 .overview-projects .project-card.has-cover .project-created{color:#e2e3e8;text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .overview-projects .project-card.no-cover:before{right:auto;bottom:auto;left:50%;top:calc(40px + 100cqw * 9 / 32 - 32px);transform:translateX(-50%);z-index:2}
-/* A card without a picture keeps the picture's place as a quiet panel that melts into the title band, so its buttons sit
-   in that panel's corner as on a cover instead of hanging in an empty card (user, 31 October 2026: «баг»). */
+/* A card without a picture keeps the picture's place as a quiet panel that melts into the title band, as on a cover,
+   instead of an empty card (user, 31 October 2026: «баг»). */
 .overview-projects .project-card.no-cover,.overview-projects .project-card.no-cover:hover,.overview-projects .project-card.no-cover:focus-within{background:#121215}
 .overview-projects .project-card.no-cover .project-open:before{background:linear-gradient(180deg,#121215 0,rgba(18,18,21,0) 34px),radial-gradient(120% 100% at 50% 45%,#27272d 0%,#1d1d22 60%,#18181c 100%)}
-/* the buttons show over the picture's corner while the card is pointed at, never over the title */
-.overview-projects .project-card>.project-actions{top:62px;right:10px;opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s}
+/* the buttons show in the title band's right corner, level with the title's first line, while the card is pointed at;
+   the title keeps their width free, so it never runs under them (user, 31 October 2026: over the picture they sat
+   «низько якось») */
+.overview-projects .project-card>.project-actions{top:10px;right:12px;opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s}
+.overview-projects .project-card h2{padding-right:132px}
 .overview-projects .project-card:hover>.project-actions,.overview-projects .project-card:focus-within>.project-actions{opacity:1;transform:none}
 .overview-projects .project-card .project-action{background:rgba(12,12,16,.62);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 
