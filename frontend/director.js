@@ -95,8 +95,17 @@ function arrangeEpisode(episode){
 
 // The voice itself, to listen to on the plan: play and pause, a bar to seek and the time (user, 31 October 2026).
 const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',pauseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
+// The recording to play: the plan's own voice file when the project has it. Timings attached by a file path name the
+// voice by an id made before the project had the file (GORBUNOV-23: the player answered 404); then it is the recording
+// on the timeline with the same bytes, the one the Studio levels to 100% (project.audio_gain, backend/audio_level.py).
+function voiceAssetId(plan,project){
+  const planned=plan?.timing?.audio?.asset_id;
+  if(!planned)return null;
+  if((project?.assets || []).some(asset=>asset.id===planned))return planned;
+  return Object.keys(project?.audio_gain || {})[0] || planned;
+}
 function voicePlayer(id){
-  const asset=state.plan?.timing?.audio?.asset_id;
+  const asset=voiceAssetId(state.plan,state.project);
   if(!asset)return null;
   const box=document.createElement('div');box.className='voice-player';
   const audio=document.createElement('audio');audio.preload='metadata';audio.src=`/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;

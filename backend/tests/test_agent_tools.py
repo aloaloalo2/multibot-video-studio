@@ -306,6 +306,22 @@ class AgentToolsTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
+@unittest.skipUnless(shutil.which("node"), "node required")
+class VoicePlayerTest(unittest.TestCase):
+    def test_the_plan_player_finds_the_voice_by_its_bytes_when_the_plan_names_another_id(self):
+        sys.path.insert(0, str(BACKEND.parent / "engine" / "tests"))
+        import preview_js
+        plan = {"timing": {"audio": {"asset_id": "fromapath0000000000a", "sha256": "abc"}}}
+        cases = [
+            (plan, {"assets": [{"id": "fromapath0000000000a"}], "audio_gain": {"other": .8}}),   # the plan's file is in the project
+            (plan, {"assets": [{"id": "voice00000000000000b"}], "audio_gain": {"voice00000000000000b": .84}}),   # GORBUNOV-23
+            (plan, {"assets": [], "audio_gain": {}}),                                              # nothing better known
+            ({"timing": {}}, {"assets": [], "audio_gain": {"x": 1}}),                             # no voice yet
+        ]
+        found = preview_js.run(["voiceAssetId"], f"console.log(JSON.stringify({json.dumps(cases)}.map(([p,q])=>voiceAssetId(p,q))))")
+        self.assertEqual(found, ["fromapath0000000000a", "voice00000000000000b", "fromapath0000000000a", None])
+
+
 class WordTimingTest(unittest.TestCase):
     def test_digit_words_take_the_time_of_their_spoken_words(self):
         words = [{"text": t, "start": i * .5, "sentence": 1} for i, t in enumerate("питались полтора года по трём разным схемам".split())]
