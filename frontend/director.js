@@ -3,7 +3,7 @@
 // animated film into frames (backend/director.py), then «Створення ролика»: the film as a strip of its frames, the
 // count picked by a drag across it (all frames by default), «Макс» and «Почати створення ролика», which hands the
 // frames to the frame agent (backend/production.py) and goes back to the channel's projects, where the card shows the
-// progress. The voice line opens to the voice text with its recognition, the frame table and the director's report;
+// progress. The voice line opens to the script, the recognised text, the frame table and the director's report;
 // the agent's report closes «Створення ролика». The film is exported by the header's «Експорт MP4».
 const directorRuns={};
 let directorTimer=null,productionTimer=null;
@@ -54,7 +54,7 @@ function renderEpisode(panel){
 }
 
 // The blocks of the page in their order; refreshEpisode fills what changes. The voice is a stage already passed: its
-// block is one line that opens on demand to the voice text with its recognition, the frame table and the director's
+// block is one line that opens on demand to the author's script, the recognised text with its report, the frame table and the director's
 // report (user, 31 October 2026: «це все туди засунь… цей етап ми вже пройшли»). The next stage, «Створення ролика»,
 // stands open under it.
 const voiceOpen={};
@@ -67,24 +67,28 @@ function arrangeEpisode(episode){
   const director=document.createElement('section');director.className='episode-director';director.hidden=true;
   const make=document.createElement('section');make.className='episode-make';buildMake(make);
   episode.append(stage,director,make);
-  // Voice text and recognition: the text the frames follow and the recognition report under it.
-  const words=episodeFold('Текст озвучки й розпізнавання');
+  // The author's script, then what the recognition heard in the voice with its report (user, 31 October 2026).
   const frames=state.plan?.frames || [];
+  const scriptFold=episodeFold('Ваш сценарій');
   const script=typeof state.plan?.script==='string'?state.plan.script:frames.map(frame=>(frame.sentences || []).join(' ')).join('\n\n');
-  if(script.trim()){const text=document.createElement('div');text.className='plan-script-text';text.textContent=script;words.append(text);}
-  const reportSlot=document.createElement('div');reportSlot.className='episode-report';words.append(reportSlot);
+  if(script.trim()){const text=document.createElement('div');text.className='plan-script-text';text.textContent=script;scriptFold.append(text);}
+  const heard=episodeFold('Розпізнаний текст');
+  const heardText=document.createElement('div');heardText.className='plan-script-text episode-heard';
+  const reportSlot=document.createElement('div');reportSlot.className='episode-report';heard.append(heardText,reportSlot);
+  const fillHeard=report=>{heardText.textContent=report.recognized_text || '';if(!reportSlot.children.length)appendSpeechReport(reportSlot,report,{transcript:false});};
   const report=episodeAnalysis()?.report;
-  if(report)appendSpeechReport(reportSlot,report);
-  else if(state.project){
+  if(report)fillHeard(report);
+  else{
+    heardText.textContent='Студія ще не має тексту, розпізнаного з озвучки.';
     // a plan opened by its link has not loaded the recognition yet: fetch it and fill the fold and the voice line
     api(`/api/projects/${encodeURIComponent(id)}/analysis`).then(result=>{
       if(state.project?.id!==id||!reportSlot.isConnected)return;
-      state.analysis=result;if(result.report&&!reportSlot.children.length)appendSpeechReport(reportSlot,result.report);refreshEpisode(episode);
+      state.analysis=result;if(result.report)fillHeard(result.report);refreshEpisode(episode);
     }).catch(()=>{});
   }
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';
-  body.append(words,table,directorReport);
+  body.append(scriptFold,heard,table,directorReport);
 }
 
 // The line of the voice opens and closes its stage; its buttons (add a voice, start over) keep their own clicks.
@@ -92,7 +96,7 @@ function voiceToggle(stage,id){
   const button=document.createElement('button');button.type='button';button.className='episode-voice-toggle';
   const body=stage.querySelector('.episode-voice-body'),open=!body.hidden;
   button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-controls',body.id);
-  button.innerHTML=`<span>${open?'Згорнути':'Текст, розпізнавання й кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  button.innerHTML=`<span>${open?'Згорнути':'Сценарій, розпізнаний текст і кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
   button.addEventListener('click',event=>{event.stopPropagation();setVoiceOpen(stage,id,body.hidden);});
   return button;
 }

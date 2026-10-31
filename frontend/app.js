@@ -493,7 +493,8 @@ function renderProject() {
   // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
   // they are drawn, and a voice alone is not a video either.
   const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=state.channel?.settings?.channel_kind==='animated';
-  $('export-open').hidden=!clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
+  // «Експорт MP4» belongs to «Монтаж» only (user, 31 October 2026)
+  $('export-open').hidden=state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   renderPlan();
   if(typeof renderThumbView==='function')renderThumbView();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();

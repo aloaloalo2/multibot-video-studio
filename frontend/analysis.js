@@ -1,7 +1,7 @@
 const speechStageNames={queued:'У черзі',preparing:'Підготовка звуку',loading_model:'Завантаження локальної моделі',recognizing:'Розпізнавання мовлення',comparing:'Зіставлення зі сценарієм',complete:'Обробку завершено',failed:'Обробку зупинено'};
 const speechIssueNames={text_difference:'Розбіжність тексту',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання',out_of_order:'Прозвучала не на своєму місці',repeated_speech:'Прозвучала кілька разів'};
 
-function appendSpeechReport(target,report){
+function appendSpeechReport(target,report,{transcript:withTranscript=true}={}){
   const box=document.createElement('section');box.className='speech-report';
   const title=document.createElement('h3');title.textContent=report.applied?'Таймінги застосовано':'Потрібна перевірка';box.append(title);
   const counts=document.createElement('div');counts.className='speech-report-counts';
@@ -34,7 +34,7 @@ function appendSpeechReport(target,report){
     const details=document.createElement('details');details.className='speech-issues';const summary=document.createElement('summary');summary.textContent='Пропущені, додані та змінені слова';details.append(summary);
     for(const difference of words){const item=document.createElement('p');item.textContent=`Фрази ${difference.sentences.join(', ')}. Сценарій: ${difference.expected || 'немає'}. Розпізнано: ${difference.recognized || 'немає'}.`;details.append(item);}box.append(details);
   }
-  const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
+  if(withTranscript){  const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);}target.append(box);
 }
 
 // The recognition report lives folded at the bottom of the plan (director.js «Текст озвучки й розпізнавання»): once the
@@ -42,8 +42,9 @@ function appendSpeechReport(target,report){
 function renderSpeechReport(panel){
   const episode=panel?.querySelector('.episode');
   if(!episode || state.analysis?.job?.project_id!==state.project?.id)return;
-  const slot=episode.querySelector('.episode-report');
-  if(slot&&!slot.children.length&&state.analysis.report)appendSpeechReport(slot,state.analysis.report);
+  const slot=episode.querySelector('.episode-report'),heard=episode.querySelector('.episode-heard'),report=state.analysis.report;
+  if(report&&heard)heard.textContent=report.recognized_text || '';
+  if(slot&&!slot.children.length&&report)appendSpeechReport(slot,report,{transcript:false});
   refreshEpisode(episode);
 }
 
