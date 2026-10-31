@@ -6,7 +6,7 @@ import unicodedata
 from fractions import Fraction
 
 WORD = re.compile(r"[^\W\d_]+(?:['’ʼ][^\W\d_]+)*", re.UNICODE)
-TOKEN = re.compile(r"[+-]?\d+(?:[.,]\d+)?(?:/\d+)?(?:-\d+(?:[.,]\d+)?)?(?:st|nd|rd|th|-(?:го|му|ми|й|я|е|ю|м|х|а|у))?|[^\W\d_]+", re.UNICODE)
+TOKEN = re.compile(r"(?:(?<!\w)[+-])?\d+(?:[.,]\d+)?(?:/\d+)?(?:-\d+(?:[.,]\d+)?)?(?:st|nd|rd|th|-(?:го|му|ми|й|я|е|ю|м|х|а|у))?|[^\W\d_]+", re.UNICODE)
 CARDINAL = {}
 SCALE = {}
 
@@ -34,7 +34,7 @@ for value, words in enumerate([
 ]):
     add(value, words)
 for value, words in [
-    (20,"двадцать двадцати twenty zwanzig двадцять двадцяти"),(30,"тридцать тридцати thirty dreißig тридцять тридцяти"),
+    (20,"двадцать двадцати двадцатью twenty zwanzig двадцять двадцяти"),(30,"тридцать тридцати тридцатью thirty dreißig тридцять тридцяти"),
     (40,"сорок сорока forty vierzig"),(50,"пятьдесят пятидесяти fifty fünfzig п'ятдесят п'ятдесяти"),
     (60,"шестьдесят шестидесяти sixty sechzig шістдесят шістдесяти"),(70,"семьдесят семидесяти seventy siebzig сімдесят сімдесяти"),
     (80,"восемьдесят восьмидесяти eighty achtzig вісімдесят вісімдесяти"),(90,"девяносто девяноста ninety neunzig дев'яносто дев'яноста"),
@@ -105,7 +105,10 @@ def ordinal(word,locale=None):
 def detect_locale(text):
     if re.search("[ієїґІЇЄҐ]",text):return "uk"
     if re.search("[а-яА-ЯёЁ]",text):return "ru"
-    if re.search(r"\b(?:und|der|die|das|einen|eine|ist|für|acht|zwei|drei|ein|halb|halbe|halben)\b|[äöüß]",text,re.I):return "de"
+    german=len(re.findall(r"\b(?:und|der|die|das|einen|eine|ist|für|acht|zwei|drei|ein|halb|halbe|halben)\b|[äöüß]",text,re.I))
+    # English «people die» must not turn a whole English script German.
+    english=len(re.findall(r"\b(?:the|and|you|is|of|that|it|with)\b",text,re.I))
+    if german and german>=english:return "de"
     return "en"
 
 
@@ -116,6 +119,30 @@ def written(value,locale):
         result=format(float(value),".8f").rstrip("0").rstrip(".")
         return result.replace(".",",") if locale in {"ru","uk","de"} else result
     return str(value.numerator)+"/"+str(value.denominator)
+
+
+def english_pronoun_one(text,matches,i):
+    previous=fold(matches[i-1].group()) if i and text[matches[i-1].end():matches[i].start()].isspace() else ""
+    following=fold(matches[i+1].group()) if i+1<len(matches) and text[matches[i].end():matches[i+1].start()].isspace() else ""
+    if previous in {"the","this","that","which","every","no","any","each","another","some","a","an","last","only","right","wrong","little","big","new","old"}:
+        return True
+    if following in {"who","whom","whose","that","which","of","another"}:
+        return True
+    # «a convincing one.»: an adjective after an article, then the sentence ends.
+    if i>=2 and fold(matches[i-2].group()) in {"a","an","the"} and not following:
+        return True
+    # «the hardest one», «it was one.», «your body is offering one.»
+    if len(previous)>3 and previous.endswith("est"):
+        return True
+    return text[matches[i].end():matches[i].end()+1] in {".","!","?"} and i>0
+
+
+def english_ordinal(text,matches,i):
+    previous=fold(matches[i-1].group()) if i and text[matches[i-1].end():matches[i].start()].isspace() else ""
+    if previous in {"the","his","her","my","your","our","their","its"}:
+        return True
+    # «Second, keep your wake-up time steady.»: a list marker at the start of a sentence.
+    return text[matches[i].end():matches[i].end()+1]=="," and not text[:matches[i].start()].strip(" \"'“‘(")[-1:].isalnum()
 
 
 def replacements(text,locale=None):
@@ -131,6 +158,48 @@ def replacements(text,locale=None):
             result.append((matches[i].start(),matches[i].end(),"100"));i+=1;continue
         if word in {"полтора","полторы","полутора","півтора","півтори"}:
             result.append((matches[i].start(),matches[i].end(),written(Fraction(3,2),locale)));i+=1;continue
+        # English «one» is often a pronoun: «the one who», «a convincing one.», «one of them».
+        if locale == "en" and word == "one" and english_pronoun_one(text,matches,i):
+            i+=1;continue
+        # A standalone English ordinal needs a determiner: «the first way», but «first aid»,
+        # «need you first» and time units such as «every second» stay words.
+        if locale == "en" and word in ORDINAL and not english_ordinal(text,matches,i):
+            i+=1;continue
+        # «300 million» already starts with digits; «a few thousand» is not an exact number.
+        if word in SCALE and (re.search(r"\d\s+$",text[:matches[i].start()])
+                              or (i and fold(matches[i-1].group()) in {"few","several","many","of"})):
+            i+=1;continue
+        # A bare plural scale is a vague amount: «shed millions of cells» is not 1000000.
+        if word in {"millions","billions","millionen","milliarden"}:
+            i+=1;continue
+        # Indefinite expressions such as «одно из» and «одни из» stay in words.
+        if (locale == "ru" and word in {"один", "одна", "одно", "одни"} and i+1<len(matches)
+                and text[matches[i].end():matches[i+1].start()].isspace()
+                and fold(matches[i+1].group()) == "из"):
+            i+=1;continue
+        # In the expression «одно с другим», «одно» is a pronoun, not a quantity.
+        if (locale == "ru" and word == "одно" and i+2<len(matches)
+                and text[matches[i].end():matches[i+1].start()].isspace()
+                and text[matches[i+1].end():matches[i+2].start()].isspace()
+                and fold(matches[i+1].group()) == "с"
+                and fold(matches[i+2].group()) == "другим"):
+            i+=1;continue
+        # «одно и то же», «одна и та же», «один і той же» mean «the same», not a quantity.
+        if (locale in {"ru","uk"} and word in {"один","одна","одно","одни","одну","одной","одного","одним","одном","одних","одними","одне","одні","одній","одного"}
+                and i+3<len(matches)
+                and all(text[matches[k].end():matches[k+1].start()].isspace() for k in range(i,i+3))
+                and fold(matches[i+1].group()) in {"и","і"}
+                and fold(matches[i+2].group()) in {"тот","та","то","те","того","той","тому","тем","том","тех","теми","ту","ті","тієї","тим","тих"}
+                and fold(matches[i+3].group()) in {"же","ж"}):
+            i+=1;continue
+        # «четвертью миллиона», «половину тысячи»: a fraction of a scale is one whole number, 250000 or 500.
+        fraction_forms={"половина":2,"половины":2,"половину":2,"половиной":2,"четверть":4,"четверти":4,"четвертью":4,"чверть":4,"чверті":4}
+        if (locale in {"ru","uk"} and word in fraction_forms and i+1<len(matches)
+                and text[matches[i].end():matches[i+1].start()].isspace()
+                and fold(matches[i+1].group()) in SCALE):
+            whole=Fraction(SCALE[fold(matches[i+1].group())],fraction_forms[word])
+            if whole.denominator==1:
+                result.append((matches[i].start(),matches[i+1].end(),str(whole.numerator)));i+=2;continue
         multiple={"вдвое":2,"втрое":3,"вчетверо":4,"впятеро":5,"удвічі":2,"вдвічі":2,"утричі":3,"втричі":3}
         if word in multiple:
             result.append((matches[i].start(),matches[i].end(),("у " if locale=="uk" else "в ")+str(multiple[word])+(" рази" if locale=="uk" else " раза")));i+=1;continue
@@ -139,7 +208,11 @@ def replacements(text,locale=None):
             separator=text[matches[j-1].end():matches[j].start()] if j>start else ""
             if j>start and not (separator.isspace() or separator=="-"):break
             if current in {"and","und"} and seen and j+1<len(matches) and (group>=100 or total):
-                j+=1;continue
+                # «one hundred and five» is one number; «one hundred and keep» keeps its «and».
+                following=fold(matches[j+1].group())
+                if following in CARDINAL or following in SCALE or german_value(following) is not None:
+                    j+=1;continue
+                break
             value=CARDINAL.get(current)
             scale=SCALE.get(current)
             # Russian «семью» can mean a family rather than the number seven.
@@ -180,6 +253,13 @@ def replacements(text,locale=None):
             if k<len(matches) and fold(matches[k].group()) in {"a","an"}:k+=1
             if k<len(matches) and fold(matches[k].group()) in {"half","halfes","hälfte","половина","половиной"}:
                 number=Fraction(number)+Fraction(1,2);j=k+1
+            elif locale == "ru" and k+1<len(matches):
+                numerator=CARDINAL.get(fold(matches[k].group()))
+                denominator=DENOM.get(fold(matches[k+1].group()))
+                if (numerator is not None and denominator and 0<numerator<denominator
+                        and text[matches[j].end():matches[k].start()].isspace()
+                        and text[matches[k].end():matches[k+1].start()].isspace()):
+                    number=Fraction(number)+Fraction(numerator,denominator);j=k+2
         # Fractions are resolved before ordinals: one tenth, две трети.
         if seen and j<len(matches) and text[matches[j-1].end():matches[j].start()].isspace():
             denominator=DENOM.get(fold(matches[j].group()))
@@ -195,11 +275,20 @@ def replacements(text,locale=None):
             if value:
                 number,suffix=value;seen=True;j=start+1
             elif word in {"half","половина","половину","треть","четверть","чверть"}:
+                # A bare English «half» stays a word: «the lower half», «half the time», and «half a year»
+                # would turn into the ungrammatical «0.5 year». «one and a half» is handled above as 1.5.
+                if word=="half" and locale=="en":
+                    i+=1;continue
                 number=Fraction(1,DENOM[word]);seen=True;j=start+1
                 if word=="half" and j<len(matches) and fold(matches[j].group()) in {"a","an"} and text[matches[j-1].end():matches[j].start()].isspace():j+=1
         if seen:
             end=matches[j-1].end()
-            result.append((matches[start].start(),end,str(int(number))+suffix if suffix else written(number,locale)))
+            begin=matches[start].start()
+            # «in a hundred small ways» becomes «in 100 small ways», never «in a 100 small ways».
+            if (locale=="en" and start and word in {"hundred","thousand","million","billion"}
+                    and fold(matches[start-1].group()) in {"a","an"} and text[matches[start-1].end():begin].isspace()):
+                begin=matches[start-1].start()
+            result.append((begin,end,str(int(number))+suffix if suffix else written(number,locale)))
             i=j
         else:i+=1
     return result
@@ -225,7 +314,18 @@ def word_spans(text,locale=None):
             if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?(?:/\d+)?",normalized):
                 normalized=str(Fraction(normalized.replace(",",".")))
             result.append((normalized,start+token.start() if end is None else start,start+token.end() if end is None else end))
-    return result
+    # Preserve numeric ranges as one token in both spoken and digit form.
+    # Keep fractions and separate numbers distinct and retain source spans.
+    joined=[]
+    for item in result:
+        value,start,end=item
+        if (joined and re.fullmatch(r'\d+',joined[-1][0]) and re.fullmatch(r'\d+',value)
+                and text[joined[-1][2]:start] in ('-', '–')):
+            previous=joined.pop()
+            joined.append((previous[0]+'-'+value,previous[1],end))
+        else:
+            joined.append(item)
+    return joined
 
 
 def comparison_tokens(text,locale=None):

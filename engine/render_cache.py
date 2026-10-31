@@ -47,7 +47,7 @@ class RenderCache:
         if kind not in {'media','chunk','visual','build'} or not re.fullmatch('[0-9a-f]{64}',key):raise ValueError('Invalid cache key')
         return self.root/kind/key
 
-    def source(self,path):
+    def source(self,path,_stability_retries=2):
         """Reuse content hashes only while the complete filesystem identity agrees."""
         path=Path(path).resolve();s=path.stat()
         identity=(str(path),s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
@@ -62,7 +62,11 @@ class RenderCache:
             value=digest_file(path)
             # Do not cache a hash computed while the source was changing.
             after=path.stat()
-            if (after.st_size,after.st_mtime_ns,after.st_ctime_ns)!=(s.st_size,s.st_mtime_ns,s.st_ctime_ns):raise RuntimeError('Media changed during export')
+            if (after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)!=(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns):
+                # Hydration and cache hardlinks can change metadata while a
+                # first hash is read. Only retain a hash from a stable read.
+                if _stability_retries:return self.source(path,_stability_retries-1)
+                raise RuntimeError(f'Media changed during export: {path.name}')
         if self.enabled:
             with sqlite3.connect(self.root/'sources.sqlite',timeout=30) as db:
                 db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?)',(token,value,time.time()))

@@ -2,6 +2,10 @@
 
 function isUniversal(){return Number(state.project?.schema_version)>=2;}
 function layers(){return isUniversal()?(state.project.tracks || []).filter(track=>track.type==='universal'):[];}
+// The timeline reads like any editor: the higher a row, the higher its layer in the picture, and the sound rows, which
+// sit in no layer of the picture, go under all of them (user, 30 October 2026).
+function soundOnlyLayer(layer){return (layer.clips || []).length>0&&layer.clips.every(clip=>clip.kind==='audio');}
+function timelineRowOrder(list){const top=[...list].reverse();return [...top.filter(layer=>!soundOnlyLayer(layer)),...top.filter(soundOnlyLayer)];}
 function universalClips(){return layers().flatMap(layer=>layer.clips || []);}
 function universalSelection(){for(const layer of layers()){const clip=(layer.clips || []).find(item=>item.id===state.selected);if(clip)return {clip,layer};}return null;}
 function activeLayer(){return layers().find(layer=>layer.id===state.activeLayer) || layers()[layers().length-1];}
@@ -18,19 +22,20 @@ function selectUniversalClip(id){const chosen=universalClips().find(clip=>clip.i
 
 function renderUniversalTimeline(){
   renderGroupingControls();
+  if(state.channel?.settings?.channel_kind==='animated')state.compactTimeline=true;   // only frames, never layers
   if(state.compactTimeline && sceneGroups().length && !state.expandedGroup){renderGroupedTimeline();return;}
   const ruler=$('time-ruler'),tracks=$('timeline-tracks');ruler.replaceChildren();tracks.replaceChildren();
   const total=timelineSpan(),width=timelineWidth();ruler.className='time-ruler universal-ruler';
   const label=document.createElement('div');label.className='track-label';ruler.append(label);
   const marks=document.createElement('div');marks.className='time-ruler-marks';marks.style.width=width+'px';
   renderTimelineRulerMarks(marks,total,width);ruler.append(marks);
-  for(const layer of [...layers()].reverse()){
+  for(const layer of timelineRowOrder(layers())){
     if(state.expandedGroup && !sceneGroups().find(g=>g.id===state.expandedGroup)?.clip_ids.some(id=>(layer.clips || []).some(c=>c.id===id)))continue;
     const index=layers().findIndex(item=>item.id===layer.id);
     const row=document.createElement('div');row.className='track-row universal-row'+(state.activeLayer===layer.id?' active-layer':'');
     const heading=document.createElement('div');heading.className='layer-heading';
     enableLayerReorder(heading,layer);
-    const name=document.createElement('button');name.type='button';name.className='layer-name';name.textContent=layer.name || 'Шар';name.title='Вибрати шар';name.addEventListener('click',()=>{clearTransitionSelection();state.activeLayer=layer.id;state.selectedStack=null;state.selected=null;renderTimeline();renderInspector();status(`Вибрано «${layer.name}».`);});
+    const name=document.createElement('button');name.type='button';name.className='layer-name';name.textContent=layer.name || 'Шар';name.title='Вибрати шар';name.addEventListener('click',()=>{clearTransitionSelection();state.activeLayer=layer.id;state.selectedStack=null;state.selected=null;selectTimelineIds((layer.clips || []).map(clip=>clip.id));status(`Вибрано «${layer.name}».`);});
     const controls=document.createElement('div');controls.className='layer-controls';
     for(const [symbol,title,run] of [['✎','Перейменувати шар',()=>renameUniversalLayer(layer)],['×','Прибрати шар',()=>removeUniversalLayer(layer)]]){
       const button=document.createElement('button');button.type='button';if(symbol==='×')setTrashButton(button,`${title} ${layer.name}`,true);else button.textContent=symbol;button.title=title;button.setAttribute('aria-label',`${title} ${layer.name}`);button.disabled=(symbol==='↑'&&index===layers().length-1)||(symbol==='↓'&&index===0)||(symbol==='×'&&layers().length===1);button.addEventListener('click',run);controls.append(button);
@@ -42,7 +47,7 @@ function renderUniversalTimeline(){
       let slot=occupiedUntil.findIndex(end=>end<=seconds(clip.start));
       if(slot<0)slot=occupiedUntil.length;
       occupiedUntil[slot]=seconds(clip.start)+seconds(clip.duration);
-      const button=document.createElement('button');button.type='button';button.draggable=true;button.className=`track-clip universal-clip kind-${clip.kind}${state.selected===clip.id?' selected':''}`;button.dataset.clipId=clip.id;button.style.left=seconds(clip.start)/total*100+'%';button.style.width=seconds(clip.duration)/total*100+'%';button.setAttribute('aria-label',clipLabel(clip));const caption=document.createElement('span');caption.className='clip-title';caption.textContent=clipLabel(clip);button.append(caption);button.title=`${clipKindLabel(clip.kind)}: ${clipLabel(clip)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+seconds(clip.duration))}`;
+      const button=document.createElement('button');button.type='button';button.draggable=true;button.className=`track-clip universal-clip kind-${clip.kind}${state.selected===clip.id?' selected':''}${typeof emptyFrameClip==='function'&&emptyFrameClip(clip)?' empty-frame':typeof draftFrameClip==='function'&&draftFrameClip(clip)?' draft-frame':''}`;button.dataset.clipId=clip.id;button.style.left=seconds(clip.start)/total*100+'%';button.style.width=seconds(clip.duration)/total*100+'%';button.setAttribute('aria-label',clipLabel(clip));const caption=document.createElement('span');caption.className='clip-title';caption.textContent=clipLabel(clip);button.append(caption);button.title=`${clipKindLabel(clip.kind)}: ${clipLabel(clip)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+seconds(clip.duration))}`;
       button.style.top=(2+slot*27)+'px';button.style.left=((seconds(clip.start)-timelineOrigin())/total*100)+'%';
       button.addEventListener('click',event=>{event.stopPropagation();if(event.metaKey||event.ctrlKey||event.shiftKey){toggleClipSelection(clip.id);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});
       if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');
@@ -56,7 +61,7 @@ function renderUniversalTimeline(){
     const visual=[...(layer.clips || [])].filter(c=>c.kind!=='audio').sort((a,b)=>Number(a.start)-Number(b.start));
     for(let i=1;i<visual.length;i++)if(Math.abs(Number(visual[i-1].start)+Number(visual[i-1].duration)-Number(visual[i].start))<=1/Number(state.project.fps||25)+.001)transitionJoinMarker(lane,'clip:'+visual[i-1].id,'clip:'+visual[i].id,Number(visual[i].start));
     lane.style.height=(Math.max(1,occupiedUntil.length)*27+2)+'px';
-    lane.addEventListener('click',event=>{if(event.target!==lane)return;clearTransitionSelection();state.activeLayer=layer.id;state.selected=null;state.playhead=layerTime(event,lane);renderTimeline();renderInspector();renderPreview();});
+    lane.addEventListener('click',event=>{if(event.target!==lane)return;clearTransitionSelection();state.activeLayer=layer.id;state.selected=null;state.playhead=layerTime(event,lane);selectTimelineIds((layer.clips || []).map(clip=>clip.id),event.metaKey||event.ctrlKey||event.shiftKey);renderPreview();});
     lane.addEventListener('dragover',event=>{if(['application/x-videostudio-asset','application/x-videostudio-clip'].some(type=>event.dataTransfer.types.includes(type))){event.preventDefault();lane.classList.add('drop-lane');}});
     lane.addEventListener('dragleave',event=>{if(!lane.contains(event.relatedTarget))lane.classList.remove('drop-lane');});
     lane.addEventListener('drop',event=>dropOnUniversalLane(event,lane));
@@ -146,15 +151,50 @@ function animatedValues(clip,local){
   return transitionValues(clip,local,values);
 }
 
+// Stretches of the video where no scene frame is placed; the export shows an empty screen there.
+// Scene groups define the montage when they exist, so a channel badge running the whole length does not hide a hole.
+function visualGaps(){
+  return memoForProject('visualGaps',()=>{
+    if(!isUniversal())return [];
+    const fps=Number(state.project.fps || 25),frame=time=>Math.floor(Number(time)*fps+.5+1e-8);
+    const groups=sceneGroups().filter(group=>group.role!=='overlay');
+    const sceneIds=groups.length?new Set(groups.flatMap(group=>group.clip_ids)):null;
+    const spans=universalClips().filter(clip=>clip.kind!=='audio'&&(!sceneIds||sceneIds.has(clip.id))).map(clip=>[frame(clip.start),frame(Number(clip.start)+Number(clip.duration))]).sort((a,b)=>a[0]-b[0]);
+    const total=frame(duration()),gaps=[];let covered=0;
+    if(!spans.length)return [];
+    for(const [start,end] of spans){if(start>covered)gaps.push({start:covered/fps,end:start/fps});covered=Math.max(covered,end);}
+    if(covered<total)gaps.push({start:covered/fps,end:total/fps});
+    return gaps;
+  });
+}
+function renderTimelineGaps(){
+  const marks=document.querySelector('.time-ruler-marks');if(!marks)return;
+  const origin=timelineOrigin(),span=timelineSpan();
+  for(const gap of visualGaps()){
+    const start=Math.max(gap.start,origin),end=Math.min(gap.end,origin+span);if(end<=start)continue;
+    const mark=document.createElement('div');mark.className='timeline-gap';
+    mark.style.left=((start-origin)/span*100)+'%';mark.style.width=((end-start)/span*100)+'%';
+    mark.title=`Немає кадру: ${clock(gap.start)}–${clock(gap.end)}`;marks.prepend(mark);
+  }
+}
+
 function renderUniversalPreview(){
   const composition=$('preview-composition'),placeholder=$('preview-placeholder');
   $('preview-video').pause();$('preview-video').hidden=true;$('preview-image').hidden=true;$('preview-overlay').style.display='none';
-  const visible=[],prepared=[],order=new Map();
-  for(const layer of layers())for(const clip of layer.clips || []){
-    if(clip.kind==='audio')continue;
-    order.set(clip.id,order.size);
-    if(state.playhead>=clipRenderStart(clip)&&state.playhead<clipRenderEnd(clip))visible.push(clip);
-    if(state.playhead>=clipRenderStart(clip)-1.5&&state.playhead<clipRenderEnd(clip))prepared.push(clip);
+  // Kept per layers() function as well: the Razgon live view swaps it to draw only the overlay layers.
+  const byLayers=memoForProject('visualSpans',()=>new WeakMap());
+  if(!byLayers.has(layers))byLayers.set(layers,(()=>{
+    const order=new Map(),spans=[];
+    for(const layer of layers())for(const clip of layer.clips || []){
+      if(clip.kind==='audio')continue;
+      order.set(clip.id,order.size);spans.push({clip,start:clipRenderStart(clip),end:clipRenderEnd(clip)});
+    }
+    return {order,spans};
+  })());
+  const visible=[],prepared=[],{order,spans}=byLayers.get(layers);
+  for(const {clip,start,end} of spans){
+    if(state.playhead>=start&&state.playhead<end)visible.push(clip);
+    if(state.playhead>=start-1.5&&state.playhead<end)prepared.push(clip);
   }
   const needed=new Set(prepared.map(clip=>clip.id)),shown=new Set(visible.map(clip=>clip.id));
   const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));
@@ -173,7 +213,7 @@ function renderUniversalPreview(){
       let element;
       const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
       if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
-      else if(mediaKind==='image'&&url){element=document.createElement('img');element.src=url;element.alt='';}
+      else if(mediaKind==='image'&&url){element=document.createElement('img');element.decoding='async';element.src=url;element.alt='';element.decode().catch(()=>{});}
       else if(mediaKind==='video'&&url){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});element.src=url;}
       else if(mediaKind==='text'){element=document.createElement('div');element.className='composition-text';element.textContent=clip.text || clip.title || '';element.style.color=clip.color || '#ffffff';}
       else {element=document.createElement('div');element.className='composition-shape';element.style.background=clip.color || '#f0b429';}
@@ -204,7 +244,7 @@ function renderUniversalPreview(){
     applyGraphicStyle(wrapper,clip,composition.clientWidth);
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
-    const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(video.currentTime-target)>.2)video.currentTime=Math.min(Math.max(0,target),video.duration);video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
+    const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
   $('time-current').textContent=clock(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();
@@ -227,7 +267,7 @@ function renderUniversalInspector(){
   const transition=clip.transition || {type:'cut',duration:0};
   box.innerHTML=`<div class="universal-properties"><strong>${esc(clipLabel(clip))}</strong><small>${esc(layer.name)} · ${esc(clipKindLabel(clip.kind))}</small>
     <section><h3>Час</h3><div class="property-grid"><label>На таймлайні, с<input id="u-start" type="number" min="0" step="0.1" value="${seconds(clip.start)}"></label><label>Тривалість, с<input id="u-duration" type="number" min="0.1" step="0.1" value="${seconds(clip.duration)}"></label>${clip.asset_id?`<label>Початок у файлі, с<input id="u-trim" type="number" min="0" step="0.1" value="${seconds(clip.trim_start)}"></label>`:''}</div><button id="u-save-time" class="secondary full" type="button">Застосувати час</button></section>
-    ${sound?`<section><h3>Звук</h3><label>Гучність <span id="u-volume-value">${Math.round(Number(clip.volume ?? 1)*100)}%</span><input id="u-volume" type="range" min="0" max="150" value="${Math.round(Number(clip.volume ?? 1)*100)}"></label><button id="u-save-volume" class="secondary full" type="button">Застосувати гучність</button></section>`:''}
+    ${sound?`<section><h3>Звук</h3><label>Гучність <span id="u-volume-value">${Math.round(Number(clip.volume ?? 1)*100)}%</span><input id="u-volume" type="range" min="0" max="150" value="${Math.round(Number(clip.volume ?? 1)*100)}"></label>${state.project?.audio_gain?.[clip.asset_id]?'<p class="style-note">Голос вирівняно: 100% — стандартний рівень студії (−16 LUFS, піки не вище −1,5 дБ). Правіше голосніше, лівіше тихіше.</p>':''}<button id="u-save-volume" class="secondary full" type="button">Застосувати гучність</button></section>`:''}
     ${visual?`<section><h3>Вигляд і анімація</h3>${['text','animation'].includes(clip.kind)&&clip.kind!=='animation'||clip.content_type==='text'?`<label>Текст<input id="u-text" type="text" value="${esc(clip.text || '')}"></label>`:''}<div class="property-grid"><label>Центр X, %<input id="u-x" type="number" min="-200" max="200" step="1" value="${Math.round(Number(clip.x ?? .5)*100)}"></label><label>Центр Y, %<input id="u-y" type="number" min="-200" max="200" step="1" value="${Math.round(Number(clip.y ?? .5)*100)}"></label><label>Ширина, %<input id="u-width" type="number" min="1" max="400" step="1" value="${Math.round(Number(clip.width ?? 1)*100)}"></label><label>Висота, %<input id="u-height" type="number" min="1" max="400" step="1" value="${Math.round(Number(clip.height ?? 1)*100)}"></label><label>Масштаб, %<input id="u-scale" type="number" min="5" max="800" step="1" value="${Math.round(Number(clip.scale ?? 1)*100)}"></label><label>Прозорість, %<input id="u-opacity" type="number" min="0" max="100" step="1" value="${Math.round(Number(clip.opacity ?? 1)*100)}"></label></div><label>Готова анімація<select id="u-preset"><option value="none">Без анімації</option><option value="fade_in">Поява</option><option value="fade_out">Зникнення</option><option value="slide_in">В'їзд</option><option value="slide_out">Виїзд</option><option value="zoom_in">Наближення</option><option value="pop">Пружна поява</option></select></label><label>Тривалість анімації, с<input id="u-preset-duration" type="number" min="0.1" max="5" step="0.1" value="${Number(clip.preset_duration || .6)}"></label><button id="u-save-look" class="secondary full" type="button">Застосувати вигляд</button></section>
     <section><h3>Ключові кадри</h3><p>Задайте положення, масштаб і прозорість у потрібний момент кліпу.</p><div id="u-keyframes"></div><button id="u-add-keyframe" class="secondary full" type="button">＋ Ключ у поточній позиції</button><button id="u-save-keyframes" class="secondary full" type="button">Зберегти ключі</button></section>
     <section><h3>Перехід після кліпу</h3><div class="property-grid"><label>Тип<select id="u-transition"><option value="cut">Склейка</option><option value="crossfade">Плавний</option><option value="swipe">Зсув</option></select></label><label>Тривалість, с<input id="u-transition-duration" type="number" min="0" max="5" step="0.1" value="${seconds(transition.duration)}"></label></div><button id="u-save-transition" class="secondary full" type="button">Застосувати перехід</button></section>`:''}

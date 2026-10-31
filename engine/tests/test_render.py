@@ -194,7 +194,8 @@ class RenderIntegration(unittest.TestCase):
         try:
             for line in process.stdout:
                 observed.append(line)
-                if '"stage": "scene_start"' in line:
+                # the first sign of work on either route: the CPU route's scene_start, the Apple GPU route's gpu_start
+                if '"stage": "scene_start"' in line or '"stage": "gpu_start"' in line:
                     process.terminate()
                     break
             remaining, errors = process.communicate(timeout=15)
@@ -222,6 +223,40 @@ class RenderIntegration(unittest.TestCase):
             self.assertTrue(bright, mode)
             center = (min(bright)+max(bright))/2
             self.assertAlmostEqual(center, (.2+.6*progress)*320, delta=4, msg=mode)
+
+    def frame(self, output, second):
+        data = subprocess.check_output([FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", str(second), "-i", str(output), "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"])
+        return Image.open(io.BytesIO(data)).convert("RGB")
+
+    def test_vertical_image_sits_in_the_middle_of_its_box(self):
+        # a 3:4 photo in a full 16:9 box keeps its shape between two black side fields, as the preview shows it
+        Image.new("RGB", (90, 120), (230, 60, 60)).save(self.root / "tall.png")
+        project = {"width": 320, "height": 180, "fps": 15, "background": "#000000", "timeline_layers": [{"id": "photo", "clips": [
+            {"id": "tall", "type": "image", "source": "tall.png", "start": 0, "duration": 1, "x": .5, "y": .5, "width": 1, "height": 1}]}]}
+        result, output = self.invoke(project, "tall.mp4")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        image = self.frame(output, .5)
+        red = [x for x in range(320) if image.getpixel((x, 90))[0] > 150]
+        self.assertAlmostEqual((min(red) + max(red)) / 2, 160, delta=3)
+        self.assertAlmostEqual(max(red) - min(red) + 1, 135, delta=4)   # 180 * 3/4, not stretched
+
+    def test_words_of_a_moving_text_move_with_it(self):
+        # a label pinned to a panning photo: its card and its timed words carry the same keyframes and stay together
+        motion = [{"time": 0, "x": .3, "y": .5, "scale": 1}, {"time": 1.5, "x": .7, "y": .5, "scale": 1}]
+        project = {"width": 320, "height": 180, "fps": 20, "background": "#000000", "timeline_layers": [
+            {"id": "card", "clips": [{"id": "card", "type": "animation", "content_type": "shape", "color": "#2040c0", "start": 0, "duration": 1.5,
+                                      "x": .3, "y": .5, "width": .3, "height": .2, "easing": "ease_in_out", "keyframes": motion}]},
+            {"id": "label", "clips": [{"id": "label", "type": "text", "text": "НН", "start": 0, "duration": 1.5, "x": .3, "y": .5, "width": .3, "height": .2,
+                                       "font_size": 30, "color": "#ffffff", "easing": "ease_in_out", "keyframes": motion,
+                                       "text_words": [{"text": "НН", "start": 0, "x": .5, "y": .5, "width": .5, "height": .6}]}]}]}
+        result, output = self.invoke(project, "moving-text.mp4")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for second in (.1, .75, 1.4):
+            image = self.frame(output, second)
+            card = [x for x in range(320) if image.getpixel((x, 75))[2] > 150 and image.getpixel((x, 75))[0] < 90]
+            white = [x for x in range(320) for y in range(70, 110) if min(image.getpixel((x, y))) > 200]
+            self.assertTrue(card and white, second)
+            self.assertAlmostEqual((min(white) + max(white)) / 2, (min(card) + max(card)) / 2, delta=6, msg=second)
 
     def test_transition_connects_separate_item_layers(self):
         project = {"width": 320, "height": 180, "fps": 20, "layer_mode": "item", "timeline_layers": [

@@ -44,7 +44,7 @@ const seconds = value => Number.isFinite(Number(value)) ? Math.max(0, Number(val
 const clock = value => { const n = Math.floor(seconds(value)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
 const projectIcon='<svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4m10-8h4m-4 8h4m-11-5 4 3-4 3z"/></svg>';
 
-function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/plan)?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]?'plan':'editor'}:null;}
+function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':'editor'}:null;}
 let restoreGeneration=0,restoreTimer=null;
 function cancelLocationRestore(){restoreGeneration++;if(restoreTimer!==null){clearTimeout(restoreTimer);restoreTimer=null;}state.restoringProject=false;$('project-loading').hidden=true;}
 async function restoreCurrentLocation(){
@@ -61,7 +61,7 @@ async function restoreCurrentLocation(){
   }
 }
 function syncRoute(replace=false){
-  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':''):''}`:'/';
+  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':state.view==='thumb'?thumbRoute:''):''}`:'/';
   if(location.pathname!==path || location.search || location.hash)history[replace?'replaceState':'pushState'](null,'',path);
 }
 
@@ -184,8 +184,12 @@ function renderProjects() {
 function projectActions(project){
   const actions=document.createElement('div');actions.className='project-actions';
   const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
-  for(const [type,title,run] of [['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
+  if(project.episode_path)icons.thumbnail=thumbnailIcon;
+  icons.space=spaceIcon;
+  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['space','Звільнити місце',()=>openSpace(project)],['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
+    // the thumbnail takes its look from the video's own frames: grey until a couple are made (thumbnail.js)
+    if(type==='thumbnail'&&!thumbnailReady(project))thumbnailWaits(button);
   }
   return actions;
 }
@@ -215,11 +219,7 @@ function deleteProject(project){
     try{
       await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');
       if(state.project?.id===project.id)showProjectList();
-      await refreshProjects();status(`Проєкт «${project.name}» видалено зі списку.`);
-      modal('Проєкт видалено',`<p>«${esc(project.name)}» прибрано зі списку. За потреби його можна відразу відновити.</p>`,[{label:'Відновити проєкт',run:async()=>{
-        const restore=$('modal-actions').querySelector('button');restore.disabled=true;
-        try{await api(`/api/projects/${encodeURIComponent(project.id)}/restore`,'POST',{});await refreshProjects();closeModal();status(`Проєкт «${project.name}» відновлено.`);}catch(error){restore.disabled=false;status(error.message,true);}
-      }},{label:'Готово',primary:true,run:closeModal}]);
+      closeModal();await refreshProjects();status(`Проєкт «${project.name}» видалено зі списку.`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
 }
@@ -239,7 +239,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   state.restoringProject=false;
   state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
-  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=state.plan && !state.project.production?.plan_ready?'plan':view;
+  state.plan=plan.plan;state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='editor' && !editorUnlocked()?'plan':view;
   if(updateUrl)syncRoute();
   buildAudioNodes();
   renderProjects(); renderProject(); status('');if(state.job)pollJob();
@@ -287,7 +287,7 @@ function projectCreationDate(timestamp){
   const values=Object.fromEntries(formatter.formatToParts(date).map(part=>[part.type,part.value]));
   const now=Object.fromEntries(formatter.formatToParts(new Date()).map(part=>[part.type,part.value]));
   const today=values.day===now.day && values.month===now.month && values.year===now.year;
-  return {label:today?'Створено сьогодні':'Створено',text:today?`(${values.hour}:${values.minute})`:`${values.day} ${values.month} ${values.year} (${values.hour}:${values.minute})`,datetime:date.toISOString()};
+  return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
 }
 
 function renderOverview() {
@@ -300,16 +300,31 @@ function renderOverview() {
   for(const project of state.projects){
     const card=document.createElement('article');card.className='project-card';card.dataset.projectId=project.id;card.setAttribute('aria-label',`Випуск «${project.name}»`);
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
-    const statusText=project.has_plan?(project.plan_stage==='audio_synced'?'План за озвучкою':'Чернетка плану'):project.status==='draft' ? 'Чернетка' : project.status || (project.scene_count?'У роботі':'Новий');
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<span class="project-status ${statusText==='Чернетка плану'?'plan-draft':statusText==='Новий'||statusText==='Чернетка'?'draft':''}">${esc(statusText)}</span><h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span>${esc(created?.label || 'Створено')}</span>${created?`<time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'<span>Дата невідома</span>'}</div>`;
-    open.addEventListener('click',()=>selectProject(project.id,{view:project.has_plan&&!count?'plan':'editor'}).catch(error=>status(error.message,true)));
+    open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
+    open.addEventListener('click',()=>selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true)));
+    if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
+      const duration=document.createElement('span');duration.className='project-duration';
+      const value=Number(project.duration),hours=Math.floor(value/3600);
+      const formatted=hours?`${hours}:${String(Math.floor(value/60)%60).padStart(2,'0')}:${String(Math.floor(value)%60).padStart(2,'0')}`:clock(value);
+      duration.textContent=formatted;duration.title='Тривалість ролика';
+      open.querySelector('.project-meta').append(duration);
+    }
+    if(project.cover_asset_id || project.preview_mtime){
+      // The Studio picks a telling frame of the montage for the cover and fades it in once loaded.
+      const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
+      cover.src=`/api/projects/${encodeURIComponent(project.id)}/cover?v=${encodeURIComponent(project.preview_mtime || project.updated_at || project.revision || 0)}`;
+      cover.addEventListener('load',()=>card.classList.add('cover-ready'),{once:true});
+      cover.addEventListener('error',()=>{card.classList.remove('has-cover');card.classList.add('no-cover');cover.remove();},{once:true});
+      card.classList.add('has-cover');card.append(cover);
+    }else card.classList.add('no-cover');
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
     card.append(open,projectActions(project));
     container.append(card);
   }
   updateOverviewExports();pollOverviewExports(true);
+  if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
 }
 
 function updateOverviewExports(){
@@ -320,7 +335,7 @@ function updateOverviewExports(){
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
-    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
+    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='razgon_frames'?`Малюємо кадри Razgon · ${Number(job.razgon_completed)||0} з ${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
   }
 }
@@ -382,10 +397,23 @@ function requestMediaPlayback(element){
   const promise=element.play();element._studioPlayPending=true;
   Promise.resolve(promise).catch(error=>{if(error.name==='NotAllowedError')status('Браузер очікує натискання Play для запуску звуку.',true);}).finally(()=>{element._studioPlayPending=false;if(!state.playing)element.pause();});
 }
+// The voice at 100% plays at the Studio's standard level (backend/audio_level.py): its clip carries the gain the export
+// uses. A gain above 1 (a quiet voice brought up) needs Web Audio, which an <audio> element's volume cannot give.
+const studioAudio={context:null};
+function setClipLevel(element,clip){
+  const level=Math.max(0,Number(clip.volume ?? 1)*Number(state.project?.audio_gain?.[clip.asset_id] ?? 1)*state.monitorVolume);
+  if(level<=1&&!element._studioGain){element.volume=level;return;}
+  try{
+    if(!element._studioGain){studioAudio.context=studioAudio.context || new AudioContext();const source=studioAudio.context.createMediaElementSource(element),gain=studioAudio.context.createGain();
+      source.connect(gain).connect(studioAudio.context.destination);element._studioGain=gain;element.volume=1;}
+    if(studioAudio.context.state==='suspended')studioAudio.context.resume().catch(()=>{});
+    element._studioGain.gain.value=level;
+  }catch{element.volume=Math.min(1,level);}
+}
 function syncStudioAudio(){
   for(const {clip,element} of state.audioNodes){
     const start=seconds(clip.start),end=start+seconds(clip.duration),active=state.playhead>=start&&state.playhead<end;
-    element.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 1)*state.monitorVolume));element.muted=state.monitorMuted || (isUniversal()&&clipIsMuted(clip));
+    setClipLevel(element,clip);element.muted=state.monitorMuted || (isUniversal()&&clipIsMuted(clip));
     if(!active){if(!element.paused)element.pause();continue;}
     const target=seconds(clip.trim_start)+state.playhead-start,threshold=state.playing ? .45 : .025;
     if(element.readyState===0){element._studioSeekTarget=target;if(!element._studioMetadataBound){element._studioMetadataBound=true;element.addEventListener('loadedmetadata',()=>{if(element._studioSeekTarget!=null)element.currentTime=Math.min(element._studioSeekTarget,element.duration);});}}
@@ -393,7 +421,11 @@ function syncStudioAudio(){
     if(state.playing)requestMediaPlayback(element);else if(!element.paused)element.pause();
   }
 }
-function duration() {return isUniversal()?Math.max(seconds(state.project?.duration),...universalClips().map(c=>seconds(c.start)+seconds(c.duration)),0):Math.max(seconds(state.project?.duration), ...scenes().map(s=>seconds(s.start)+seconds(s.duration)), 0);}
+// Each edit replaces state.project, so values derived from the whole project are kept per project object.
+const projectMemo=new WeakMap();
+function memoForProject(key,compute){if(!state.project)return compute();let memo=projectMemo.get(state.project);if(!memo)projectMemo.set(state.project,memo=new Map());if(!memo.has(key))memo.set(key,compute());return memo.get(key);}
+function duration() {return memoForProject('duration',measureDuration);}
+function measureDuration() {return isUniversal()?Math.max(seconds(state.project?.duration),...universalClips().map(c=>seconds(c.start)+seconds(c.duration)),0):Math.max(seconds(state.project?.duration), ...scenes().map(s=>seconds(s.start)+seconds(s.duration)), 0);}
 function selectedScene() {return scenes().find(s=>s.id===state.selected);}
 function stopPlayback(){state.playing=false;$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());$('play-pause').textContent='▶';$('play-pause').setAttribute('aria-label','Відтворити');}
 
@@ -409,39 +441,49 @@ function saveMonitorSettings(){
 }
 
 function renderProject() {
-  if(state.plan && state.project && !state.project.production?.plan_ready)state.view='plan';
+  if(state.plan && state.project && !state.project.production?.plan_ready && state.view==='editor')state.view='plan';
   updateMonitorControls();
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);
+  // An animated film has its own agents on the plan (director, frames), so the Studio agent tab is not offered there.
+  const animatedChannel=state.channel?.settings?.channel_kind==='animated';
+  if(animatedChannel && state.view==='agent')state.view='plan';
+  document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
+  $('overview-channel-settings').hidden=!!state.project || !state.channel;
   const title=$('project-title');title.replaceChildren();
   const channelName=document.createElement('strong');channelName.title=state.channel?.name || '';channelName.innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';title.append(channelName);
   if(state.project){
     const slash=document.createElement('span');slash.className='project-title-slash';slash.textContent='/';
     const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати проєкт «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати проєкт «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(slash,name);
   }
-  document.title=`${state.project?.name || state.channel?.name || 'MultiBot'} | Video Studio`;
+  document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent=state.project?'● Локально збережено':'';
-  $('back-to-projects').hidden=!state.project;
   $('channel-overview').hidden=!!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
   $('editor-timeline').hidden=!state.project || state.view!=='editor';
   $('project-plan').hidden=!state.project || state.view!=='plan';
+  $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
+  $('view-agent').hidden=animatedChannel;
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
-  $('export-open').hidden=!state.project;
+  // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
+  // they are drawn, and a voice alone is not a video either.
+  const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=state.channel?.settings?.channel_kind==='animated';
+  $('export-open').hidden=!clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   renderPlan();
+  if(typeof renderThumbView==='function')renderThumbView();
+  if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
-  $('view-editor').disabled=!!state.project && !!state.plan && !state.project.production?.plan_ready;
-  $('view-editor').title=$('view-editor').disabled?'Спочатку додайте таймінги готової озвучки':'';
+  $('view-editor').disabled=!!state.project && !editorUnlocked();
+  $('view-editor').title=$('view-editor').disabled?'Монтаж відкриється, коли план буде за озвучкою':'';
   $('export-open').disabled=!state.project;$('export-open').title=state.project?.production?.reason || ''; $('undo').disabled=!state.project?.can_undo; $('redo').disabled=!state.project?.can_redo;
   $('add-transition').disabled=!state.project || (isUniversal()?!universalClips().length:!scenes().length);$('add-text').disabled=!state.project || (!isUniversal()&&!scenes().length);
   $('play-pause').disabled=!state.project; $('seek').disabled=!state.project;
   $('time-total').textContent=clock(duration());
-  $('project-resolution').textContent=state.project ? `${state.project.width || 1920} × ${state.project.height || 1080}` : '1920 × 1080';
   $('add-scene').hidden=isUniversal();$('add-scene').disabled=!state.project;
   $('add-layer').hidden=!isUniversal();$('add-layer').disabled=!state.project;
   $('add-animation').hidden=!isUniversal();$('add-animation').disabled=!state.project;
@@ -552,7 +594,13 @@ function renderAssets() {
   $('transition-library').hidden=!transitions;$('asset-list').hidden=transitions;$('asset-search').hidden=state.libraryTab!=='pixabay';$('asset-search').placeholder='Пошук у Pixabay';
   if(transitions)return;
   if(effects){$('asset-list').hidden=true;return;}
-  const list=$('asset-list'); list.replaceChildren();
+  const list=$('asset-list');
+  // Most edits only move clips; rebuilding hundreds of cards then costs time and reloads thumbnails.
+  const used=[...new Set((state.project?.tracks || []).flatMap(track=>(track.clips || []).map(clip=>clip.asset_id)))].sort().join();
+  const key=[state.project?.id,state.libraryTab,state.libraryTab==='pixabay'?state.search:'',state.assetsLoading,used];
+  if(list._assets===state.assets&&list._pixabay===state.pixabay&&list._key?.every((value,index)=>value===key[index]))return;
+  list._assets=state.assets;list._pixabay=state.pixabay;list._key=key;
+  list.replaceChildren();
   const assets=visibleAssets();
   if (!assets.length) {const empty=document.createElement('div');empty.className='empty-state';empty.textContent=state.libraryTab==='pixabay' ? 'Введіть запит, щоб знайти матеріали Pixabay.' : (state.project?(state.assetsLoading?'Завантаження медіатеки...':state.libraryTab==='all'?'Додайте медіафайл через кнопку «+».':'Матеріалів цього типу ще немає.'):'Оберіть випуск.');list.append(empty);return;}
   for (const asset of assets) {
@@ -635,7 +683,7 @@ function renderPreview() {
     if(state.playhead>=start && state.playhead<end){
       const target=seconds(clip.trim_start)+(state.playhead-start);
       if(Number.isFinite(element.duration) && Math.abs(element.currentTime-target)>.35)element.currentTime=Math.min(Math.max(0,target),element.duration);
-      element.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 1)*state.monitorVolume));
+      setClipLevel(element,clip);
       element.muted=state.monitorMuted;
       if(state.playing && element.paused)element.play().catch(()=>{});
       if(!state.playing && !element.paused)element.pause();
@@ -698,8 +746,11 @@ function clipHtml(clip,kind,isScene=false,trackId='') {
   return `<button type="button" draggable="${isScene}" class="${cls}" data-clip-id="${esc(clip.id)}" data-track-id="${esc(trackId)}" data-scene="${isScene}" style="left:${left}%;width:${width}%" title="${esc(label)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+span)}">${esc(label)}</button>`;
 }
 
+// The ruler width is set from the zoom, so the previous value is remembered instead of measured:
+// measuring here would force a layout of everything the edit has just changed.
+let timelineMarksWidth=null;
 function renderTimeline() {
-  const scroller=document.querySelector('.timeline-scroll'),oldWidth=document.querySelector('.time-ruler-marks')?.getBoundingClientRect().width;
+  const scroller=document.querySelector('.timeline-scroll'),oldWidth=document.querySelector('.time-ruler-marks')?timelineMarksWidth:null;
   const oldScroll=scroller.scrollLeft,oldTop=scroller.scrollTop,layout=timelineLayout(),canvasWidth=layout.fit*state.zoom,width=canvasWidth*.98;
   const previousCache=timelineRenderCache;
   timelineRenderCache={layout,span:timelineSpan(),origin:timelineOrigin()};
@@ -710,11 +761,13 @@ function renderTimeline() {
   $('time-ruler').replaceChildren();$('timeline-tracks').replaceChildren();
   if(state.project)renderUniversalTimeline();
   const marks=document.querySelector('.time-ruler-marks');if(handle&&marks)marks.append(handle);
+  timelineMarksWidth=marks?Number.parseFloat(marks.style.width)||null:null;
+  if(state.project)renderTimelineGaps();
   scroller.scrollLeft=state.zoom<=1?0:oldWidth?oldScroll/oldWidth*width:0;
   $('zoom-value').textContent=Math.round(state.zoom*100)+'%';
   $('zoom-in').disabled=state.zoom>=timelineZoomLevels.at(-1);
   $('zoom-out').disabled=state.zoom<=timelineZoomLevels[0];
-  updateTimelinePlayhead();
+  invalidatePlayheadGeometry();updateTimelinePlayhead();
   scroller.scrollTop=oldTop;
   }finally{timelineRenderCache=previousCache;}
 }
@@ -741,20 +794,26 @@ new ResizeObserver(()=>{
   if(!width || Math.abs(width-timelineWidth())>.5)renderTimeline();
 }).observe(document.querySelector('.timeline-scroll'));
 
+// Reading element boxes after the preview has changed styles forces a full layout, so playback
+// reuses the timeline geometry until the timeline is redrawn, scrolled or resized.
+let playheadGeometry=null;
+function invalidatePlayheadGeometry(){playheadGeometry=null;}
 function updateTimelinePlayhead(){
   const marks=document.querySelector('.time-ruler-marks'),line=$('timeline-playhead');
   line.hidden=!state.project || !marks;
-  if(!marks)return;
-  const container=$('timeline-content').getBoundingClientRect(),rect=marks.getBoundingClientRect();
-  const local=Math.max(0,Math.min(timelineSpan(),state.playhead-timelineOrigin()));
-  const screenX=rect.left+local/timelineSpan()*rect.width,scroller=document.querySelector('.timeline-scroll'),viewport=scroller.getBoundingClientRect(),label=timelineLayout().label;
-  const visible=screenX>=viewport.left+label-.5&&screenX<=viewport.left+scroller.clientWidth+.5;
-  line.hidden=!visible;line.style.left=(screenX-container.left)+'px';
-  $('playhead-handle').hidden=!visible;
-  $('playhead-handle').style.left=(local/timelineSpan()*100)+'%';
-  $('playhead-handle').setAttribute('aria-valuemax',timelineSpan());$('playhead-handle').setAttribute('aria-valuenow',local.toFixed(2));$('playhead-handle').setAttribute('aria-valuetext',clock(local));
+  if(!marks){playheadGeometry=null;return;}
+  if(!playheadGeometry || playheadGeometry.marks!==marks){
+    const container=$('timeline-content').getBoundingClientRect(),rect=marks.getBoundingClientRect(),scroller=document.querySelector('.timeline-scroll'),viewport=scroller.getBoundingClientRect();
+    playheadGeometry={marks,left:rect.left-container.left,width:rect.width,visibleFrom:viewport.left+timelineLayout().label-.5-container.left,visibleTo:viewport.left+scroller.clientWidth+.5-container.left};
+  }
+  const geometry=playheadGeometry,span=timelineSpan(),local=Math.max(0,Math.min(span,state.playhead-timelineOrigin()));
+  const x=geometry.left+local/span*geometry.width,visible=x>=geometry.visibleFrom&&x<=geometry.visibleTo,handle=$('playhead-handle');
+  line.hidden=!visible;line.style.left=x+'px';
+  handle.hidden=!visible;handle.style.left=(local/span*100)+'%';
+  handle.setAttribute('aria-valuemax',span);handle.setAttribute('aria-valuenow',local.toFixed(2));handle.setAttribute('aria-valuetext',clock(local));
 }
-document.querySelector('.timeline-scroll').addEventListener('scroll',updateTimelinePlayhead,{passive:true});
+document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{invalidatePlayheadGeometry();updateTimelinePlayhead();},{passive:true});
+new ResizeObserver(invalidatePlayheadGeometry).observe(document.querySelector('.timeline-scroll'));
 
 function scrubTimeline(event){
   const marks=document.querySelector('.time-ruler-marks');if(!marks)return;
@@ -819,24 +878,35 @@ function motionPicker(value){
 
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
-  const keys=['stock_video','generated_video','stock_photo','generated_photo','animation','host','text'];
-  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','host':'Ведучий','text':'Текстові тези'};
-  const colors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff8845','#56e3c2'];
+  const allKeys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
+  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
+  const allColors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
+  // «Анімація» (the old generated scheme) is retired: its row stays only for a channel that still has a share in it
+  const shown=allKeys.map((key,index)=>index).filter(index=>allKeys[index]!=='animation'||Number(weights.animation)>0);
+  const keys=shown.map(index=>allKeys[index]),colors=shown.map(index=>allColors[index]);
   const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
-  const body=`<p class="settings-purpose">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
-    <section class="settings-section"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
-    <section class="settings-section"><h3>Візуальні формати</h3><p>Пропорції форматів під час автоматичного планування. Зміни одного поля не змінюють інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
-    <section class="settings-section"><h3>Рух анімації</h3>${motionPicker(original.motion_easing)}<p>Використовується для нових анімацій і ключових кадрів у випусках цього каналу.</p></section>
-    <section class="settings-section"><h3>Початок ролика</h3><label>Перший кліп, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Перший кліп: 0 означає тривалість за загальним планом.</p></section>
-    <section class="settings-section"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>`;
+  const body=`${brandingSections(channel)}<p class="settings-purpose regular-only">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
+    <section class="settings-section regular-only"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
+    <section class="settings-section regular-only"><h3>Візуальні формати</h3><p>Пропорції форматів під час автоматичного планування. Зміни одного поля не змінюють інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
+    <section class="settings-section regular-only"><h3>Рух анімації</h3>${motionPicker(original.motion_easing)}<p>Використовується для нових анімацій і ключових кадрів у випусках цього каналу.</p></section>
+    <section class="settings-section regular-only"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>
+    <section class="settings-section regular-only"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>
+    <section class="settings-section"><h3>Пам’ять агента для каналу</h3><p>Правила монтажу, які агент використовує в проєктах цього каналу.</p><textarea id="channel-agent-memory" rows="5" maxlength="30000" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
+  // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
+  let brandingValues=()=>({}),savedMemory=null;
   modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),motion_easing:$('settings-easing').value,first_clip_seconds:Number($('settings-first').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value)};
+    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),motion_easing:$('settings-easing').value,first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),...brandingValues()};
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
+      const memory=$('channel-agent-memory').value;
+      if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});
       const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;closeModal();renderChannels();status(`Налаштування каналу «${channel.name}» збережено.`);
     }catch(error){status(error.message,true);}
   }}]);
   $('modal-backdrop').classList.add('settings-modal-open');
+  brandingValues=bindBranding(channel);
+  const memoryField=$('channel-agent-memory'),memoryFeedback=$('channel-agent-memory-feedback');
+  api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`).then(data=>{if($('channel-agent-memory')!==memoryField)return;savedMemory=data.memory || '';memoryField.value=savedMemory;memoryField.disabled=false;memoryFeedback.textContent='';}).catch(error=>{if($('channel-agent-memory')===memoryField)memoryFeedback.textContent=error.message;});
   $('settings-easing').value=original.motion_easing || 'ease_in_out';
   const motionButtons=[...document.querySelectorAll('.easing-card')];
   motionButtons.forEach((button,index)=>{
@@ -941,7 +1011,9 @@ async function openExport() {
     modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());
     pollJob();return;
   }
-  modal('Експорт ролика',`<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
+  const gaps=visualGaps(),shownGaps=gaps.slice(0,6);
+  const gapWarning=gaps.length?`<div class="export-gaps" role="note"><p><strong>Без кадру: ${gaps.length} ${gaps.length===1?'місце':gaps.length<5?'місця':'місць'}.</strong> У готовому відео там буде порожній екран.</p><div class="export-gap-list">${shownGaps.map((gap,index)=>`<button type="button" data-gap="${index}">${clock(gap.start)}–${clock(gap.end)}</button>`).join('')}${gaps.length>shownGaps.length?`<span>і ще ${gaps.length-shownGaps.length}</span>`:''}</div></div>`:'';
+  modal('Експорт ролика',`${gapWarning}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');
     if(button.disabled)return;
     button.disabled=true;button.textContent='Підготовка...';
@@ -949,6 +1021,11 @@ async function openExport() {
     const projectId=state.project.id, renderState=$('render-state');
     try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
   }}]);
+  for(const button of document.querySelectorAll('.export-gap-list button'))button.addEventListener('click',()=>{const gap=shownGaps[Number(button.dataset.gap)];closeModal();stopPlayback();state.playhead=gap.start;renderPreview();revealTimelineTime(gap.start);});
+}
+function revealTimelineTime(time){
+  const marks=document.querySelector('.time-ruler-marks'),scroller=document.querySelector('.timeline-scroll');if(!marks)return;
+  const x=(time-timelineOrigin())/timelineSpan()*marks.offsetWidth;scroller.scrollLeft=Math.max(0,x-scroller.clientWidth/3);
 }
 async function pollJob(){
   if(!state.job)return;
@@ -963,8 +1040,8 @@ async function pollJob(){
     const progress=Math.max(0,Math.min(100,Math.round(state.job.progress||0)));
     const target=$('render-state');
     if(target && state.project?.id===state.job.project_id){
-      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
-      const detail=cancelled?'Проєкт знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Проєкт заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Проєкт заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Проєкт заблоковано до завершення експорту.':'Проєкт заблоковано до завершення експорту.';
+      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='razgon_frames'?'Малюємо кадри Razgon':state.job.stage==='razgon_sound'?'Зводимо звук':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
+      const detail=cancelled?'Проєкт знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Проєкт заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Проєкт заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Проєкт заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Проєкт заблоковано до завершення експорту.':'Проєкт заблоковано до завершення експорту.';
       const estimate=!complete&&!failed&&!cancelled&&jobStatus!=='cancelling'?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
       target.innerHTML=`<p>${label}</p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
@@ -974,10 +1051,10 @@ async function pollJob(){
 }
 
 $('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Створіть новий канал у папці YOUTUBE або додайте наявну папку каналу.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label>',[{label:'Скасувати',run:closeModal},{label:'Обрати папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
-$('back-to-projects').addEventListener('click',showProjectList);
+for(const logo of document.querySelectorAll('.brand-logo')){logo.addEventListener('click',showProjectList);logo.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}
 $('overview-create').addEventListener('click',()=>$('add-project').click());
 $('overview-channel-settings').addEventListener('click',()=>{if(state.channel)openChannelSettings(state.channel);});
-$('add-project').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label><p>Проєкт зберігатиметься у папці каналу.</p>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id);}catch(error){status(error.message,true);}}}]);});
+$('add-project').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id,{view:'plan'});}catch(error){status(error.message,true);}}}]);});
 $('global-settings').addEventListener('click',openStudioSettings);
 $('asset-search').addEventListener('input',event=>{state.search=event.target.value;renderAssets();if(state.libraryTab==='pixabay')debouncedPixabay();});
 let searchTimer;

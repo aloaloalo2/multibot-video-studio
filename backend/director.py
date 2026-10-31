@@ -1,0 +1,324 @@
+"""Direction of an animated episode by Claude Opus 5.5 (high effort), started as soon as the voice is recognised.
+
+For a channel of kind "animated" the Studio hands the episode to Claude Code once Whisper has turned the voice into
+timed words and the plan follows the voice. Claude Code runs on the user's claude.ai subscription, in the YOUTUBE
+folder, and does the director's steps of the channel rules: razgon_bridge.py prepare, the shot table (story/gen_shots.py)
+written by meaning, direction_check.py without FAIL, and razgon_bridge.py plan, which writes the frame plan back into
+the Studio. It draws no scenes and renders nothing. The state of the run lives next to the project (director.json), its
+full answer in director.log, and the plan page shows it.
+"""
+from __future__ import annotations
+
+import json, os, re, shutil, signal, subprocess, threading, time
+from pathlib import Path
+
+import store
+
+MODEL = "claude-opus-5-5"
+EFFORT = "high"
+TIMEOUT = 3 * 3600
+ACTIVE: set[str] = set()
+LOCK = threading.Lock()
+NO_RENDER = "MULTIBOT_RENDER_ON_EXPORT"   # set for the agents; tools/razgon_bridge.py then refuses push and final
+# The Claude Code process behind each live activity feed, so a run can be stopped with every tool it started; a feed
+# whose run was stopped on purpose (episode_restart) ends without writing its state back.
+RUNNING: dict[str, subprocess.Popen] = {}
+CANCELLED: set[str] = set()
+# Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder; Opus may send
+# helpers off in parallel.
+ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task"] + [f"Bash({cmd}:*)" for cmd in
+           ("python3", "node", "ls", "cat", "head", "tail", "wc", "grep", "find", "mkdir", "cp", "mv", "diff", "jq")]
+
+
+def state_path(pid: str) -> Path:
+    return store.project_dir(pid) / "director.json"
+
+
+def state(pid: str) -> dict | None:
+    data = store.read_json(state_path(pid), None)
+    if isinstance(data, dict) and data.get("status") in {"queued", "running"} and pid not in ACTIVE:
+        data.update(status="failed", error="Студію перезапустили під час режисури. Запустіть її ще раз.")
+    return data
+
+
+def save(pid: str, data: dict) -> None:
+    store.atomic_json(state_path(pid), data)
+
+
+def executable() -> Path:
+    found = shutil.which("claude")
+    if found:
+        return Path(found)
+    candidates = [Path.home() / ".local/bin/claude", Path.home() / ".claude/local/claude"]
+    bundled = Path.home() / "Library/Application Support/Claude/claude-code"
+    if bundled.is_dir():
+        candidates += sorted(bundled.glob("*/*/claude.app/Contents/MacOS/claude"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError("Не знайдено Claude Code на цьому Mac")
+
+
+def animated(project: dict) -> bool:
+    channel = next((c for c in store.list_channels() if c["id"] == project.get("channel_id")), None)
+    return bool(channel) and (channel.get("settings") or {}).get("channel_kind") == "animated"
+
+
+def brief(project: dict) -> str:
+    root = store.YOUTUBE_ROOT
+    episode = Path(project["episode_path"])
+    channel = episode.parent
+    rel = episode.relative_to(root) if root in episode.parents else episode
+    return f"""Ти режисер анімаційного випуску в VideoKey Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
+
+Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
+Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+
+Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'} і навик режисури Razgon
+(What If/razgon-2d-studio/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
+Подивись, як зроблено режисуру попередніх випусків: What If/razgon-2d-studio/projects/*/story/gen_shots.py.
+
+Твоє завдання: режисура й план кадрів, кроки 3–5 правил каналу.
+1. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
+   python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" prepare --project-id {project['id']}
+2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
+   і запусти його. Кадри ділиш за змістом, не за кількістю слів. Кожна дія відбувається рівно в одному шоті: наступний шот
+   описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
+   одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 What If/razgon-2d-studio/tools/direction_check.py --project <проєкт>
+   має пройти без FAIL. На WARN відповідай у story/bible.md або виправляй.
+3. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
+
+Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
+Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
+Наприкінці коротко напиши українською: скільки шотів і кадрів студії вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
+
+
+def spent(answer: dict, started: float | None = None) -> dict:
+    """What a run actually used: tokens in (cached ones included) and out, and minutes. Claude Code may close with several
+    results (it resumes after background work); their per-model usage is cumulative, so the last one holds the whole run,
+    and the minutes are the wall clock from the start."""
+    models = answer.get("modelUsage") if isinstance(answer.get("modelUsage"), dict) else {}
+    if models:
+        tokens_in = sum(int(u.get("inputTokens") or 0) + int(u.get("cacheReadInputTokens") or 0) + int(u.get("cacheCreationInputTokens") or 0) for u in models.values())
+        tokens_out = sum(int(u.get("outputTokens") or 0) for u in models.values())
+    else:
+        usage = answer.get("usage") if isinstance(answer.get("usage"), dict) else {}
+        tokens_in = sum(int(usage.get(key) or 0) for key in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        tokens_out = int(usage.get("output_tokens") or 0)
+    minutes = (time.time() - started) / 60 if started else float(answer.get("duration_ms") or 0) / 60000
+    return {"tokens_in": tokens_in, "tokens_out": tokens_out, "minutes": round(minutes, 1)}
+
+
+# What the agent is doing, in the author's words: each command or file it touches becomes one line of the activity
+# feed on the plan, so the author sees the work move.
+# Each line also names who does it: Opus directs, writes and picks props from the library, Codex draws new props,
+# Razgon renders, and helpers are the agents Opus sends off in parallel. Steps that write into the Studio are the
+# director's too: the Studio itself only receives them.
+COMMANDS = [("razgon_bridge.py prepare", "opus", "Готує проєкт Razgon зі студії"), ("gen_shots.py", "opus", "Розбиває озвучку на шоти"),
+            ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
+            ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py slots", "opus", "Ставить кадри кодом на таймлайн"),
+            ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
+            ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
+            ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
+            ("frame_review", "opus", "Переглядає кадри")]
+
+
+def describe(tool: str, args: dict) -> tuple[str, str] | None:
+    """(who, what) for one action of the agent, or None for the ones not worth a line."""
+    name = Path(str(args.get("file_path") or args.get("path") or "")).name
+    if tool == "Bash":
+        command = str(args.get("command") or "")
+        found = next(((who, text) for key, who, text in COMMANDS if key in command), None)
+        note = str(args.get("description") or "")
+        # the agent's own note is shown when it writes it in Ukrainian, as the brief asks
+        return found or ("opus", note if re.search("[а-яіїєґ]", note, re.I) else "Вивчає матеріали й готує роботу")
+    if tool in {"Task", "Agent"}:
+        return "helper", str(args.get("description") or "Окреме завдання")
+    if tool in {"Write", "Edit", "MultiEdit"} and name:
+        # what the file is for, never its name
+        target = str(args.get("file_path"))
+        what = ("Пише сцени" if "/scenes/" in target else "Описує предмети для художника" if "prompt" in name
+                else "Пише режисуру шотів" if name in {"gen_shots.py", "shots.json"} else "Записує задум ролика" if name == "bible.md"
+                else "Готує допоміжні файли")
+        return "opus", what
+    if tool == "Read":
+        return "opus", "Вивчає матеріали й готує роботу"
+    return None
+
+
+def activity_path(pid: str, kind: str) -> Path:
+    return store.project_dir(pid) / f"{kind}-activity.json"
+
+
+def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
+           effort: str = EFFORT) -> tuple[int, dict]:
+    """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
+    Returns the exit code and the final result event (cost, usage, the agent's last message)."""
+    command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+               "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
+    # its own process group; kill() also stops the commands, renders and helpers under it
+    # the agents draw frames as code; only «Експорт MP4» renders them, so razgon_bridge.py refuses push and final here
+    process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, NO_RENDER: "1"})
+    RUNNING[str(activity)] = process
+    if str(activity) in CANCELLED:
+        kill(process)
+    expired = threading.Event()
+    watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
+    watchdog.start()
+    answer, steps = {}, []
+    store.atomic_json(activity, [])
+    try:
+        process.stdin.write(prompt)
+        process.stdin.close()
+        with log.open("w", encoding="utf-8") as out:
+            for line in process.stdout:
+                out.write(line)
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("type") == "result":
+                    answer = event
+                if event.get("type") != "assistant":
+                    continue
+                for part in (event.get("message") or {}).get("content") or []:
+                    action = describe(part.get("name"), part.get("input") or {}) if part.get("type") == "tool_use" else None
+                    if action and (not steps or steps[-1]["text"] != action[1]):
+                        steps = (steps + [{"t": time.time(), "who": action[0], "text": action[1]}])[-40:]
+                        store.atomic_json(activity, steps)
+        process.wait()
+    finally:
+        watchdog.cancel()
+        RUNNING.pop(str(activity), None)
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(command, timeout)
+    return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
+
+
+def limit_stop(answer: dict) -> str | None:
+    """When the run stopped because the Claude subscription limit ran out: a readable note with the reset time."""
+    text = str(answer.get("result") or "")
+    if answer.get("api_error") != "usage_limit_reached" and not re.search(r"hit your \w+ limit", text):
+        return None
+    reset = re.search(r"resets (\d{1,2})(?::(\d{2}))?\s*([ap]m)", text, re.I)
+    if not reset:
+        return "Закінчився ліміт підписки Claude."
+    hour = int(reset.group(1)) % 12 + (12 if reset.group(3).lower() == "pm" else 0)
+    return f"Закінчився ліміт підписки Claude, він оновиться о {hour:02d}:{reset.group(2) or '00'}."
+
+
+def descendants(pid: int) -> list[int]:
+    """Every process under `pid`, read from ps."""
+    try:
+        table = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children: dict[int, list[int]] = {}
+    for line in table.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, todo = [], [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            found.append(child)
+            todo.append(child)
+    return found
+
+
+def kill(process: subprocess.Popen) -> None:
+    """Stop the run with everything it started. Claude Code gives each command a process group of its own, so the run's
+    group alone would leave a render going (30 October 2026): the processes under it are stopped as well."""
+    under = descendants(process.pid)
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+    for child in under:
+        try:
+            os.kill(child, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def stop(pid: str, kind: str) -> None:
+    """Stop the live run whose feed is `kind` («director» or «production») on this project; its state is not written back."""
+    feed = str(activity_path(pid, kind))
+    CANCELLED.add(feed)
+    process = RUNNING.get(feed)
+    if process:
+        kill(process)
+
+
+def cancelled(pid: str, kind: str) -> bool:
+    """True once for a run stopped on purpose, at its end."""
+    feed = str(activity_path(pid, kind))
+    found = feed in CANCELLED
+    CANCELLED.discard(feed)
+    return found
+
+
+def run(pid: str, cli: Path) -> None:
+    data = state(pid) or {}
+    project = store.load_project(pid)
+    data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None, limit=False)
+    save(pid, data)
+    try:
+        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT)
+        plan = store.load_project_plan(pid) or {}
+        plan_file = store.project_plan_file(store.load_project(pid))
+        # the run counts only if it wrote a fresh director plan into the Studio
+        directed = (plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale")
+                    and plan_file is not None and plan_file.stat().st_mtime >= data["started_at"])
+        if limit_stop(answer):
+            data.update(status="failed", limit=True, error=limit_stop(answer))
+        elif code or answer.get("is_error") or not directed:
+            data.update(status="failed", error=(answer.get("result") or "Режисура не записала план кадрів у студію")[-600:])
+        else:
+            data.update(status="done", summary=(answer.get("result") or "").strip()[-2000:], frames=len(plan.get("frames") or []))
+        data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"), **spent(answer, data["started_at"]))
+    except subprocess.TimeoutExpired:
+        data.update(status="failed", error="Режисура не вклалася в 3 години")
+    except (OSError, store.StudioError) as error:
+        data.update(status="failed", error=str(error))
+    finally:
+        if not cancelled(pid, "director"):
+            data["finished_at"] = time.time()
+            save(pid, data)
+        with LOCK:
+            ACTIVE.discard(pid)
+
+
+def start(pid: str, reason: str = "voice") -> dict:
+    """Start the director for an animated project; a second start while one runs returns the running one."""
+    project = store.load_project(pid)
+    if not animated(project):
+        raise store.StudioError("Режисура Opus потрібна лише анімаційним каналам")
+    if not project.get("episode_path"):
+        raise store.StudioError("У випуску немає папки")
+    with LOCK:
+        if pid in ACTIVE:
+            return state(pid)
+        try:
+            cli = executable()
+        except RuntimeError as error:
+            raise store.StudioError(str(error), 503) from None
+        ACTIVE.add(pid)
+        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": EFFORT}
+        save(pid, data)
+    threading.Thread(target=run, args=(pid, cli), daemon=True).start()
+    return data
+
+
+def after_voice(pid: str) -> None:
+    """Called when a voice analysis has been applied to the plan: animated channels go on to direction by themselves."""
+    try:
+        plan = store.load_project_plan(pid) or {}
+        # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
+        if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
+            return
+        if animated(store.load_project(pid)):
+            start(pid, "voice")
+    except store.StudioError:
+        pass

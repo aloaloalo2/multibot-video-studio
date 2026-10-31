@@ -9,7 +9,7 @@ if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin
 fi
 /usr/bin/python3 backend/updater.py --at-start
 umask 077
-studio_log_dir="$HOME/Library/Logs/MultiBot Video Studio"
+studio_log_dir="$HOME/Library/Logs/VideoKey Studio"
 /bin/mkdir -p "$studio_log_dir"
 /usr/bin/nohup /usr/bin/python3 -u backend/app.py --host 127.0.0.1 --port 8770 >>"$studio_log_dir/server.log" 2>&1 </dev/null &
 studio_pid=$!

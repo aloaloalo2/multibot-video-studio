@@ -1,5 +1,5 @@
 const speechStageNames={queued:'У черзі',preparing:'Підготовка звуку',loading_model:'Завантаження локальної моделі',recognizing:'Розпізнавання мовлення',comparing:'Зіставлення зі сценарієм',complete:'Обробку завершено',failed:'Обробку зупинено'};
-const speechIssueNames={text_difference:'Розбіжність тексту',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання'};
+const speechIssueNames={text_difference:'Розбіжність тексту',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання',out_of_order:'Прозвучала не на своєму місці',repeated_speech:'Прозвучала кілька разів'};
 
 function appendSpeechReport(target,report){
   const box=document.createElement('section');box.className='speech-report';
@@ -14,20 +14,42 @@ function appendSpeechReport(target,report){
   const issues=(report.phrases || []).filter(phrase=>phrase.issues.length);
   if(issues.length){
     const details=document.createElement('details');details.className='speech-issues';
-    const summary=document.createElement('summary');summary.textContent=`Фрази для перевірки: ${issues.length}`;details.append(summary);
+    const summary=document.createElement('summary');summary.textContent=report.applied?`Дрібні розбіжності, виправлені за сценарієм: ${issues.length}`:`Фрази для перевірки: ${issues.length}`;details.append(summary);
     const list=document.createElement('div');
     for(const phrase of issues){const item=document.createElement('article');item.innerHTML=`<strong>Фраза ${phrase.number}</strong><p>${esc(phrase.issues.map(issue=>speechIssueNames[issue] || issue).join(' · '))}</p><p><b>Сценарій:</b> ${esc(phrase.text)}</p><p><b>Розпізнано:</b> ${esc(phrase.recognized || 'Не знайдено відповідного фрагмента')}</p>`;list.append(item);}details.append(list);box.append(details);
   }
-  if(report.differences?.length){
+  // A voice said out of order or with a piece twice is the author's to fix (backend/speech_order.py): it shows open,
+  // above the folded details, and the studio cuts or moves nothing in it.
+  const order=(report.differences || []).filter(difference=>difference.note);
+  if(order.length){
+    const moved=order.some(difference=>difference.kind==='moved'),repeated=order.some(difference=>difference.kind==='repeated');
+    const warn=document.createElement('div');warn.className='speech-order';
+    const title=document.createElement('strong');title.textContent=moved&&repeated?'Озвучка йде не по порядку сценарію і має повтори':moved?'Озвучка йде не по порядку сценарію':'В озвучці є повтори';warn.append(title);
+    for(const difference of order){const line=document.createElement('p');line.textContent=difference.note;warn.append(line);}
+    const hint=document.createElement('small');hint.textContent='Виправте озвучку й додайте її знову. Студія нічого в ній не ріже й не переставляє.';warn.append(hint);
+    box.append(warn);
+  }
+  const words=(report.differences || []).filter(difference=>!difference.note);
+  if(words.length){
     const details=document.createElement('details');details.className='speech-issues';const summary=document.createElement('summary');summary.textContent='Пропущені, додані та змінені слова';details.append(summary);
-    for(const difference of report.differences){const item=document.createElement('p');item.textContent=`Фрази ${difference.sentences.join(', ')}. Сценарій: ${difference.expected || 'немає'}. Розпізнано: ${difference.recognized || 'немає'}.`;details.append(item);}box.append(details);
+    for(const difference of words){const item=document.createElement('p');item.textContent=`Фрази ${difference.sentences.join(', ')}. Сценарій: ${difference.expected || 'немає'}. Розпізнано: ${difference.recognized || 'немає'}.`;details.append(item);}box.append(details);
   }
   const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
 }
 
+// The recognition report sits behind one button next to «Додати озвучку»: the plan stays short, the details open on demand.
 function renderSpeechReport(panel){
   if(!state.analysis || state.analysis.job?.project_id!==state.project?.id)return;
-  if(state.analysis.report){appendSpeechReport(panel,state.analysis.report);return;}
+  const report=state.analysis.report;
+  // An animated plan shows the full report in its «Озвучка» tab, so it needs no button for it.
+  if(report && typeof directorAnimated==='function' && directorAnimated())return;
+  if(report){
+    const button=document.createElement('button');button.type='button';button.className='secondary speech-report-button';button.dataset.applied=String(!!report.applied);
+    button.textContent=`${report.applied?'Розпізнавання мовлення':'Розпізнавання: потрібна перевірка'} · ${Number(report.word_match_percent).toFixed(1)}%`;
+    button.addEventListener('click',()=>{modal('Розпізнавання мовлення','<div id="speech-report-modal"></div>',[{label:'Закрити',run:closeModal}]);appendSpeechReport($('speech-report-modal'),report);});
+    (panel.querySelector('.plan-summary') || panel).append(button);
+    return;
+  }
   const job=state.analysis.job;
   if(job){const note=document.createElement('p');note.className='plan-note';note.textContent=job.status==='failed'?job.error:`${speechStageNames[job.stage] || 'Обробка файлу'}: ${job.progress}%`;panel.append(note);}
 }
@@ -37,7 +59,8 @@ async function openMediaTimingImport(){
   const project=state.project,plan=state.plan;
   let candidate=null,busy=false;
   const media=state.assets.filter(asset=>asset.kind==='audio' || asset.kind==='video');
-  modal('Додати озвучку / таймінги',`<p>Аудіо або відео буде розпізнано локально через Whisper та зіставлено зі сценарієм. Також можна додати готовий JSON із таймінгами.</p><label>Аудіо, відео або таймінги<input id="plan-import-file" type="file" accept="audio/*,video/*,.json,.mkv,.aiff,.aif,.flac,.opus"></label>${media.length?`<details class="speech-existing"><summary>Вибрати медіа проєкту</summary><label>Матеріал<select id="speech-existing-asset"><option value="">Оберіть файл</option>${media.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.name)}</option>`).join('')}</select></label></details>`:''}<p id="plan-import-feedback" role="status"></p><div id="speech-analysis-state" aria-live="polite"></div>`,[{label:'Закрити',run:closeModal},{label:'Обробити файл',primary:true,run:submit}]);
+  const replacing=!!project.production?.plan_ready;
+  modal(replacing?'Замінити озвучку':'Додати озвучку / таймінги',`<p>${replacing?'Нова озвучка замінить поточну. Студія розпізнає її локально через Whisper і зіставить зі сценарієм, а якщо текст змінився, режисер заново розіб’є кадри. Можна також додати готовий JSON із таймінгами.':'Аудіо або відео буде розпізнано локально через Whisper та зіставлено зі сценарієм. Також можна додати готовий JSON із таймінгами.'}</p><label>Аудіо, відео або таймінги<input id="plan-import-file" type="file" accept="audio/*,video/*,.json,.mkv,.aiff,.aif,.flac,.opus"></label>${media.length?`<details class="speech-existing"><summary>Вибрати медіа проєкту</summary><label>Матеріал<select id="speech-existing-asset"><option value="">Оберіть файл</option>${media.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.name)}</option>`).join('')}</select></label></details>`:''}<p id="plan-import-feedback" role="status"></p><div id="speech-analysis-state" aria-live="polite"></div>`,[{label:'Закрити',run:closeModal},{label:'Обробити файл',primary:true,run:submit}]);
   const root=$('speech-analysis-state'),feedback=$('plan-import-feedback'),input=$('plan-import-file'),button=$('modal-actions').querySelector('.primary');button.disabled=true;
   function current(){return $('speech-analysis-state')===root;}
   function controls(disabled){input.disabled=disabled;const select=$('speech-existing-asset');if(select)select.disabled=disabled;button.disabled=disabled || !candidate;}

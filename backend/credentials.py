@@ -7,7 +7,7 @@ import platform
 import store
 
 
-DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}]
+DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}, {"id": "openrouter", "name": "OpenRouter"}]
 _keychain = None
 
 
@@ -21,6 +21,8 @@ class MacKeychain:
         self.security.SecKeychainFindGenericPassword.restype = ctypes.c_int32
         self.security.SecKeychainAddGenericPassword.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p]
         self.security.SecKeychainAddGenericPassword.restype = ctypes.c_int32
+        self.security.SecKeychainItemFreeContent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.security.SecKeychainItemFreeContent.restype = ctypes.c_int32
         self.security.SecKeychainItemModifyAttributesAndData.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p]
         self.security.SecKeychainItemModifyAttributesAndData.restype = ctypes.c_int32
         self.foundation.CFRelease.argtypes = [ctypes.c_void_p]
@@ -38,6 +40,19 @@ class MacKeychain:
         if item:
             self.foundation.CFRelease(item)
         return True if status == 0 else False if status == -25300 else None
+
+    def read(self, service):
+        service_bytes = service.encode("utf-8")
+        account = getpass.getuser().encode("utf-8")
+        length, data = ctypes.c_uint32(), ctypes.c_void_p()
+        status = self.security.SecKeychainFindGenericPassword(None, len(service_bytes), service_bytes, len(account), account, ctypes.byref(length), ctypes.byref(data), None)
+        if status:
+            raise RuntimeError("Не вдалося отримати ключ OpenRouter зі зв’язки ключів macOS.")
+        try:
+            return ctypes.string_at(data, length.value).decode("utf-8")
+        finally:
+            if data:
+                self.security.SecKeychainItemFreeContent(None, data)
 
     def save(self, service, secret):
         status, item = self.find(service)

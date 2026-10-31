@@ -1,4 +1,4 @@
-# MultiBot Video Studio backend
+# VideoKey Studio backend
 
 Local Python standard-library server. It binds only to `127.0.0.1`, serves `frontend/` at `/`, and keeps editable project manifests under `backend/data/projects/`. Existing episode files are read-only; selected media is copied into a managed project folder. The user must confirm a final export in the interface.
 
@@ -35,7 +35,7 @@ All mutations use `Content-Type: application/json`, local `Host`, and same-origi
 | POST | `/api/channels/pick` | Native folder chooser; optional `{path,copy_from}` for desktop integration; `{channel}` |
 | PATCH | `/api/channels/<id>` | `{settings:{...}}` merges into the channel's `video-plan.json`; `{channel}` |
 | DELETE | `/api/channels/<id>` | Hides channel without deleting its folder |
-| GET | `/api/projects?channel=<id>` | `{projects:[{id,name,status,scene_count,duration,revision,updated_at}]}` |
+| GET | `/api/projects?channel=<id>` | `{projects:[{id,name,status,scene_count,duration,revision,created_at,updated_at}]}`, newest creation first |
 | POST | `/api/projects` | `{channel_id,name,episode_path?}` creates managed project; `{project}` |
 | POST | `/api/projects/import` | `{channel_id,plan_path,name?}` imports `План видео.json`; `{project}` |
 | POST | `/api/projects/import/pick` | `{channel_id,name?}` opens the native JSON chooser; `{project}` |
@@ -69,7 +69,7 @@ The managed `project.json` contains `{id,name,channel_id,episode_path,schema_ver
 
 ## Drafts and phrase timings
 
-The planner creates a draft even when a total duration is supplied. A synchronized plan requires a timing file with the complete voiceover duration and every script sentence in order. POST `/api/projects/<id>/plan/generate` accepts `timings: {duration, sentences: [{text,start,end}], audio_sha256?}` alongside `script`. The text must match the script, intervals must be finite, positive, ordered, non-overlapping, and within the full duration. Frame boundaries are derived from those phrase times; original phrase intervals remain available in each frame. The optional audio fingerprint binds export to a particular file. Existing automation may alternatively submit `narration: {audio_path|asset_id, sentences}` to measure and fingerprint the source locally.
+The planner creates a draft even when a total duration is supplied. A synchronized plan requires a timing file with the complete voiceover duration and every script sentence in order. POST `/api/projects/<id>/plan/generate` accepts `timings: {duration, sentences: [{text,start,end}], audio_sha256?}` alongside `script`. The text must match the script, intervals must be finite, positive, ordered, non-overlapping, and within the full duration. Frame boundaries are derived from those phrase times. When first_clip_seconds is positive, the opening ends at that exact time; a sentence crossing the boundary remains unchanged and its original interval is also shown as continuation in the next frame. Original phrase intervals remain available in the plan. The optional audio fingerprint binds export to a particular file. Existing automation may alternatively submit `narration: {audio_path|asset_id, sentences}` to measure and fingerprint the source locally.
 
 `weights` overrides only this project's proportions; `use_channel_weights:true` resets the override. Regeneration preserves montage and previous plan versions. The first frame is always video, including when first-clip duration is zero or a photo is requested by a hint. At most five frames of one format can occur consecutively. An impossible single-format run or conflicting explicit hints returns an explanation instead of violating that limit.
 

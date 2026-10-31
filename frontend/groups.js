@@ -17,7 +17,13 @@ function enableLayerReorder(heading,layer){
   heading.addEventListener('drop',async event=>{const id=event.dataTransfer.getData('application/x-videostudio-layer');if(!id)return;event.preventDefault();event.stopPropagation();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.remove('layer-drop-above','layer-drop-below');if(id===layer.id)return;const order=layers().map(l=>l.id).filter(x=>x!==id),target=order.indexOf(layer.id);if(target<0)return;const index=Math.min(order.length,target+(above?1:0));try{await action('move_layer',{layer_id:id,to_index:index},'Порядок шарів збережено.');}catch(error){status(error.message,true);}});
 }
 let groupedRenderIndex=null;
+// A grouped timeline asks for each group's members and bounds many times per draw; both are fixed for one project version.
 function groupMembers(group){
+  const cache=memoForProject('groupMembers',()=>new WeakMap());
+  if(!cache.has(group))cache.set(group,findGroupMembers(group));
+  return cache.get(group).slice();
+}
+function findGroupMembers(group){
   const ids=new Set(group.clip_ids);
   if(!groupedRenderIndex)return universalClips().filter(c=>ids.has(c.id));
   const matches=[];
@@ -37,11 +43,15 @@ function addStackTools(heading,entry){
     for(const [name,run] of items){const item=document.createElement('button');item.type='button';if(name.startsWith('Прибрати'))setTrashButton(item,name);else item.textContent=name;item.setAttribute('role','menuitem');item.addEventListener('click',()=>{closeStackMenu();run();});menu.append(item);}
     document.body.append(menu);const rect=heading.getBoundingClientRect();menu.style.left=Math.min(window.innerWidth-menu.offsetWidth-8,event.type==='contextmenu'?event.clientX:rect.right-20)+'px';menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-8,rect.bottom)+'px';
   };
-  button.addEventListener('click',open);heading.addEventListener('contextmenu',open);heading.addEventListener('dblclick',()=>stackOpen(entry));heading.addEventListener('click',event=>{if(event.target.closest('.stack-menu-button,.layer-sound'))return;if(entry.ref==='scenes'){stackOpen(entry);return;}if(entry.clip){state.selectedGroup=null;selectUniversalClip(entry.clip.id);}else{const group=entry.groups.find(g=>{const b=groupBounds(g);return state.playhead>=b.start&&state.playhead<b.end;}) || entry.groups[0];selectFrameGroup(group);}});heading.append(button);
+  button.addEventListener('click',open);heading.addEventListener('contextmenu',open);heading.addEventListener('dblclick',()=>stackOpen(entry));heading.addEventListener('click',event=>{if(event.target.closest('.stack-menu-button,.layer-sound'))return;if(entry.ref==='scenes'){selectTimelineIds(entry.groups.flatMap(group=>group.clip_ids),event.metaKey||event.ctrlKey||event.shiftKey);return;}if(entry.clip){state.activeLayer=entry.layer.id;selectTimelineIds([entry.clip.id],event.metaKey||event.ctrlKey||event.shiftKey);}else{const group=entry.groups.find(g=>{const b=groupBounds(g);return state.playhead>=b.start&&state.playhead<b.end;}) || entry.groups[0];selectFrameGroup(group);}});heading.append(button);
 }
 document.addEventListener('click',event=>{if(!event.target.closest('.stack-context-menu,.stack-menu-button'))closeStackMenu();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeStackMenu();});
-function groupBounds(group){const clips=groupMembers(group);return {start:Math.min(...clips.map(c=>Number(c.start))),end:Math.max(...clips.map(c=>Number(c.start)+Number(c.duration)))};}
+function groupBounds(group){
+  const cache=memoForProject('groupBounds',()=>new WeakMap());
+  if(!cache.has(group)){const clips=groupMembers(group);cache.set(group,{start:Math.min(...clips.map(c=>Number(c.start))),end:Math.max(...clips.map(c=>Number(c.start)+Number(c.duration)))});}
+  return {...cache.get(group)};
+}
 
 function renderGroupingControls(){
   renderCompositionTabs();prepareTimelineMenu();
@@ -51,8 +61,14 @@ function renderGroupingControls(){
   let box=$('timeline-group-controls');
   if(!box){box=document.createElement('div');box.id='timeline-group-controls';box.className='timeline-group-controls';toolbar.insertBefore(box,toolbar.querySelector('.timeline-spacer'));}
   box.replaceChildren();
-  if(!state.expandedGroup)for(const [compact,label] of [[true,'Кадри'],[false,'Шари']]){const mode=document.createElement('button');mode.type='button';mode.id=compact?'timeline-mode-frames':'timeline-mode-layers';mode.textContent=label;mode.setAttribute('aria-pressed',String(state.compactTimeline===compact));mode.className='timeline-mode'+(state.compactTimeline===compact?' active':'');mode.addEventListener('click',()=>{state.compactTimeline=compact;state.expandedGroup=null;state.multiSelection=[];renderTimeline();});box.append(mode);}
-  if(!state.expandedGroup && (state.multiSelection?.length || 0)>=2){const group=document.createElement('button');group.type='button';group.id='group-selection';group.textContent='Згрупувати ('+state.multiSelection.length+')';group.addEventListener('click',()=>createSelectedGroup());box.append(group);}
+  const all=document.createElement('button');all.type='button';all.textContent='Виділити все';all.addEventListener('click',selectEntireTimeline);
+  const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Видалити виділене',true);remove.disabled=state.busy || !(state.selected || state.selectedGroup || state.multiSelection?.length);remove.addEventListener('click',deleteTimelineSelection);
+  box.append(all,remove);
+
+  // an animated film has only frames on its timeline: it always shows them, with no switch to layers
+  const animatedFilm=state.channel?.settings?.channel_kind==='animated';
+  if(!state.expandedGroup && !animatedFilm)for(const [compact,label] of [[false,'Шари'],[true,'Групи']]){const mode=document.createElement('button');mode.type='button';mode.id=compact?'timeline-mode-frames':'timeline-mode-layers';mode.textContent=label;mode.setAttribute('aria-pressed',String(state.compactTimeline===compact));mode.className='timeline-mode'+(state.compactTimeline===compact?' active':'');mode.addEventListener('click',()=>{state.compactTimeline=compact;state.expandedGroup=null;state.multiSelection=[];renderTimeline();});box.append(mode);}
+  if(!state.expandedGroup && (state.multiSelection?.length || 0)>=2 && state.multiSelection.length<=200 && !sceneGroups().some(group=>group.clip_ids.some(id=>state.multiSelection.includes(id)))){const group=document.createElement('button');group.type='button';group.id='group-selection';group.textContent='Згрупувати ('+state.multiSelection.length+')';group.addEventListener('click',()=>createSelectedGroup());box.append(group);}
 }
 
 function toggleClipSelection(id){
@@ -68,7 +84,7 @@ function createSelectedGroup(){
   modal('Згрупувати кадр','<label>Назва кадру<input id="new-frame-name" value="Новий кадр" maxlength="120"></label>',[{label:'Скасувати',run:closeModal},{label:'Згрупувати',primary:true,run:async()=>{try{await action('group_clips',{clip_ids:clipIds,title:$('new-frame-name').value},'Кадр згруповано.');state.multiSelection=[];state.compactTimeline=true;closeModal();renderTimeline();}catch(error){status(error.message,true);}}}]);
 }
 
-function selectFrameGroup(group){clearTransitionSelection();state.selectedStack=null;state.selected=null;state.selectedGroup=group.id;state.playhead=groupBounds(group).start;state.multiSelection=[];for(const node of document.querySelectorAll('[data-group-id]'))node.classList.toggle('selected',node.dataset.groupId===group.id);renderInspector();renderPreview();}
+function selectFrameGroup(group){clearTransitionSelection();state.selectedStack=null;state.selected=null;state.selectedGroup=group.id;state.playhead=groupBounds(group).start;state.multiSelection=[];renderGroupingControls();for(const node of document.querySelectorAll('[data-group-id]'))node.classList.toggle('selected',node.dataset.groupId===group.id);renderInspector();renderPreview();}
 function expandFrameGroup(group){
   state.selectedTransition=null;
   if(!state.expandedGroup)state.groupPreviousZoom=state.zoom;
@@ -78,6 +94,12 @@ function expandFrameGroup(group){
   document.querySelector('.timeline-scroll').scrollLeft=0;document.querySelector('.timeline-scroll').scrollTop=0;
   renderInspector();renderPreview();
 }
+
+function frameBlock(clip){return clip.kind==='animation'&&clip.content_type==='shape'&&!clip.asset_id&&/^Razgon · кадр/.test(clip.title || '');}
+// a frame block whose scene the agent has drawn (director.js framesDrawn): a made frame, grey like any other made frame;
+// only the export renders it
+function draftFrameClip(clip){return frameBlock(clip)&&!!(typeof framesDrawn==='function'&&framesDrawn()?.has(Number(/кадр (\d+)/.exec(clip.title)?.[1])));}
+function emptyFrameClip(clip){return frameBlock(clip)&&!draftFrameClip(clip);}
 
 function groupLane(title,groups,ref){
   const row=document.createElement('div');row.className='track-row universal-row grouped-row';
@@ -91,10 +113,15 @@ function groupLane(title,groups,ref){
     let slot=occupied.findIndex(end=>end<=bounds.start+.001);if(slot<0)slot=occupied.length;occupied[slot]=bounds.end;
     const button=document.createElement('button');button.type='button';button.draggable=true;button.className='frame-group-clip'+(state.selectedGroup===group.id?' selected':'');button.dataset.groupId=group.id;
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
+    // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty
+    if(members.every(emptyFrameClip))button.classList.add('group-empty');
+    // a Razgon frame drawn as code is grey like every made frame, one already rendered into video green (user, 31 October
+    // 2026: «створені кодом кадри сірі, відрендерені вже відео можуть бути зелені»); a frame not drawn yet stays dark
+    else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')))button.classList.add('group-made');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
     const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
-    button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);
-    button.addEventListener('click',event=>{event.stopPropagation();selectFrameGroup(group);});button.addEventListener('dblclick',()=>expandFrameGroup(group));
+    button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');
+    button.addEventListener('click',event=>{event.stopPropagation();if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds(group.clip_ids,true);return;}selectFrameGroup(group);});button.addEventListener('dblclick',()=>expandFrameGroup(group));
     button.addEventListener('dragstart',event=>{event.dataTransfer.setData('application/x-videostudio-group',group.id);event.dataTransfer.effectAllowed='move';});lane.append(button);
   }
   lane.style.height=(Math.max(1,occupied.length)*29+2)+'px';
@@ -124,12 +151,14 @@ function renderGroupedTimelineWithIndex(){
   for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:group.title,groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});
-  rows.sort((a,b)=>b.z-a.z);
+  // the higher the row, the higher its layer in the picture; sound rows go under all of them (universal.js timelineRowOrder)
+  const sound=entry=>!entry.groups&&entry.clip.kind==='audio';
+  rows.sort((a,b)=>sound(a)-sound(b) || b.z-a.z);
   for(const entry of rows){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
     const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
-    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind;button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',()=>{state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
+    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
   }
 }
 
@@ -165,3 +194,77 @@ function renderGroupInspector(){
   $('ungroup-frame').addEventListener('click',async()=>{try{await action('ungroup_clips',{group_id:group.id},'Кадр розгруповано.');state.selectedGroup=null;state.expandedGroup=null;renderTimeline();renderInspector();}catch(error){status(error.message,true);}});
   $('delete-frame').addEventListener('click',()=>modal('Прибрати кадр',`<p>Прибрати «${esc(group.title)}» та його ${members.length} елементів? Дію можна скасувати.</p>`,[{label:'Залишити',run:closeModal},{label:'Прибрати',primary:true,run:async()=>{try{await action('delete_group',{group_id:group.id},'Кадр прибрано.');state.selectedGroup=null;state.expandedGroup=null;closeModal();renderTimeline();renderInspector();}catch(error){status(error.message,true);}}}]));
 }
+
+function selectTimelineIds(ids,append=false){
+  clearTransitionSelection();state.selectedGroup=null;state.selectedStack=null;
+  const chosen=new Set(append?[...(state.multiSelection || []),...(state.selected?[state.selected]:[])]:[]);
+  for(const id of ids)chosen.add(id);
+  state.selected=null;state.multiSelection=[...chosen];
+  renderTimeline();renderInspector();
+}
+function selectEntireTimeline(){selectTimelineIds(universalClips().filter(clip=>!state.expandedGroup || sceneGroups().find(g=>g.id===state.expandedGroup)?.clip_ids.includes(clip.id)).map(clip=>clip.id));}
+async function deleteTimelineSelection(){
+  if(state.busy)return;
+  try{
+    if(state.selectedGroup)await action('delete_group',{group_id:state.selectedGroup},'Кадр видалено. Дію можна скасувати.');
+    else{
+      const ids=[...new Set([...(state.multiSelection || []),...(state.selected?[state.selected]:[])])].filter(id=>universalClips().some(c=>c.id===id));
+      if(!ids.length)return;
+      await action('batch',{actions:ids.map(id=>({type:'delete_clip',payload:{clip_id:id}}))},'Виділені кліпи видалено. Дію можна скасувати.');
+    }
+    state.selected=null;state.selectedGroup=null;state.multiSelection=[];renderProject();
+  }catch(error){status(error.message,true);}
+}
+let timelineKeyboardActive=false;
+document.addEventListener('pointerdown',event=>{timelineKeyboardActive=!!event.target.closest('#editor-timeline');});
+document.addEventListener('keydown',event=>{
+  if(state.view!=='editor' || !timelineKeyboardActive || event.isComposing || event.target.closest('input,textarea,select,[contenteditable="true"]') || !$('modal-backdrop').hidden)return;
+  if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='a'){event.preventDefault();selectEntireTimeline();}
+  else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();deleteTimelineSelection();}
+});
+
+let timelineMarquee=null,timelineIgnoreClickUntil=0;
+document.addEventListener('click',event=>{
+  if(!event.target.closest('#timeline-content'))return;
+  if(performance.now()<timelineIgnoreClickUntil){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(state.view!=='editor' || event.target.closest('button,.layer-heading,.time-ruler,.track-clip,.frame-group-clip,#timeline-playhead'))return;
+  event.preventDefault();event.stopImmediatePropagation();
+  const lane=event.target.closest('.track-lane');
+  if(lane)state.playhead=layerTime(event,lane);
+  state.activeLayer=null;selectTimelineIds([]);renderPreview();
+},true);
+document.addEventListener('pointerdown',event=>{
+  timelineIgnoreClickUntil=0;
+  if(event.button!==0 || state.view!=='editor' || state.busy || !event.target.closest('#timeline-content') || event.target.closest('button,.layer-heading,.time-ruler,.track-clip,.frame-group-clip,#timeline-playhead'))return;
+  const viewport=document.querySelector('.timeline-scroll').getBoundingClientRect();
+  const labelWidth=parseFloat(getComputedStyle(document.querySelector('.timeline-scroll')).getPropertyValue('--timeline-label-width')) || 142;
+  if(event.clientX<viewport.left+labelWidth)return;
+  event.preventDefault();
+  const box=document.createElement('div');box.className='timeline-selection-box';document.body.append(box);
+  const base=event.metaKey||event.ctrlKey||event.shiftKey?[...(state.multiSelection || []),...(state.selected?[state.selected]:[]),...(sceneGroups().find(g=>g.id===state.selectedGroup)?.clip_ids || [])]:[];
+  timelineMarquee={x:event.clientX,y:event.clientY,box,base,moved:false,ids:base,pointer:event.pointerId};
+});
+document.addEventListener('pointermove',event=>{
+  const drag=timelineMarquee;if(!drag || event.pointerId!==drag.pointer)return;
+  if(!drag.moved && Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<4)return;
+  event.preventDefault();drag.moved=true;
+  const left=Math.min(drag.x,event.clientX),top=Math.min(drag.y,event.clientY),right=Math.max(drag.x,event.clientX),bottom=Math.max(drag.y,event.clientY);
+  Object.assign(drag.box.style,{left:left+'px',top:top+'px',width:(right-left)+'px',height:(bottom-top)+'px'});
+  const viewport=document.querySelector('.timeline-scroll').getBoundingClientRect();
+  const ids=new Set(drag.base);
+  for(const node of document.querySelectorAll('#timeline-tracks [data-clip-id],#timeline-tracks [data-group-id]')){
+    const rect=node.getBoundingClientRect();
+    const hit=rect.right>Math.max(left,viewport.left) && rect.left<Math.min(right,viewport.right) && rect.bottom>Math.max(top,viewport.top) && rect.top<Math.min(bottom,viewport.bottom);
+    const members=node.dataset.groupId?sceneGroups().find(g=>g.id===node.dataset.groupId)?.clip_ids || []:[node.dataset.clipId];
+    if(hit)for(const id of members)ids.add(id);
+    node.classList.toggle(node.dataset.groupId?'selected':'multi-selected',hit || members.every(id=>ids.has(id)));
+  }
+  drag.ids=[...ids];
+});
+function finishTimelineMarquee(event){
+  const drag=timelineMarquee;if(!drag || event.pointerId!==drag.pointer)return;
+  timelineMarquee=null;drag.box.remove();
+  if(drag.moved){timelineIgnoreClickUntil=performance.now()+300;selectTimelineIds(event.type==='pointercancel'?drag.base:drag.ids);}
+}
+document.addEventListener('pointerup',finishTimelineMarquee);
+document.addEventListener('pointercancel',finishTimelineMarquee);

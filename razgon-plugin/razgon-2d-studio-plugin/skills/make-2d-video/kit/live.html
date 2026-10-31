@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Razgon · наживо</title>
+<style>
+:root{--bg:#0d0d12;--panel:#17171f;--line:#2a2a36;--text:#e8e8f0;--dim:#8a8aa0;--accent:#f0b429}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.3 system-ui,-apple-system,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column}
+#stage{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px}
+/* The canvas fills the stage at any quality: a lower scale draws fewer pixels and is stretched, so the choice is visible. */
+#main{width:100%;height:100%;object-fit:contain;background:#000;box-shadow:0 0 0 1px var(--line)}
+#bar{flex:none;background:var(--panel);border-top:1px solid var(--line);padding:8px 12px 10px;box-sizing:border-box}
+#row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px}
+button,select{white-space:nowrap}
+button,select{background:#24242f;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--accent)} #play{min-width:84px;font-weight:700}
+#time{font-variant-numeric:tabular-nums;color:var(--dim)} #frame{font-weight:700;color:var(--accent)} #fps{color:var(--dim);margin-left:auto}
+#tl{position:relative;height:46px;background:#111118;border-radius:8px;cursor:pointer;user-select:none;overflow:hidden}
+.seg{position:absolute;top:0;bottom:0;border-right:1px solid var(--line);color:var(--dim);font-size:11px;padding:3px 4px;box-sizing:border-box;overflow:hidden;white-space:nowrap}
+.seg.on{background:rgba(240,180,41,.14);color:var(--text)}
+#head{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);pointer-events:none}
+#msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.embed #bar{display:none} .embed #stage{padding:0} .embed #main{box-shadow:none}
+</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<div id="stage"><canvas id="main"></canvas><div id="msg">Завантаження сцен…</div></div>
+<div id="bar">
+  <div id="row"><button id="play">▶ Пуск</button><button id="back" title="Назад на 5 с">−5с</button><button id="fwd" title="Вперед на 5 с">+5с</button>
+    <span id="time">0:00.0 / 0:00</span><span id="frame"></span>
+    <label>Якість <select id="q"><option value="0.33">низька</option><option value="0.5">середня</option><option value="0.75">висока</option></select></label>
+    <button id="mute" title="Звук">🔇</button><span id="fps"></span></div>
+  <div id="tl"><div id="head"></div></div>
+</div>
+<script type="module">
+const q = new URLSearchParams(location.search);
+const EMBED = q.has('embed'); if (EMBED) document.body.classList.add('embed');
+if (!q.has('scale')) { q.set('scale', localStorage.getItem('razgonLiveScale') || '0.5'); history.replaceState(null, '', '?' + q); }
+await import('/engine/player.js');
+const $ = (id) => document.getElementById(id);
+const wait = () => new Promise((r) => { const k = () => (window.READY || window.BOOT_ERROR) ? r() : setTimeout(k, 50); k(); });
+await wait();
+if (window.BOOT_ERROR) { $('msg').textContent = 'Помилка сцен: ' + window.BOOT_ERROR.split('\n')[0]; throw new Error(window.BOOT_ERROR); }
+$('msg').remove();
+const cfg = await (await fetch('/project/config.json')).json(), fps = cfg.fps || 24, dur = window.DURATION;
+let frames = []; try { const r = await fetch('/project/story/studio_frames.json'); if (r.ok) frames = (await r.json()).frames; } catch {}
+if (!frames.length) frames = window.SHOT_LIST.map((s, i) => ({ number: i + 1, start: s.start, end: s.end }));
+// the timeline: one segment per Studio frame, numbered like in the Studio
+const tl = $('tl'); frames.forEach((f) => { const d = document.createElement('div'); d.className = 'seg'; d.style.left = (f.start / dur * 100) + '%'; d.style.width = ((f.end - f.start) / dur * 100) + '%'; d.textContent = f.number; d.title = `Кадр ${f.number}`; d.dataset.n = f.number; tl.append(d); });
+// the channel plashka from config.overlay (a transparent PNG of the full frame) is drawn over every frame, as in the final
+const logo = new Image(); if (cfg.overlay && !EMBED) {   // embedded, the host app shows its own overlay layer
+   logo.onload = () => { last = -1; draw(t); }; logo.src = '/project/' + cfg.overlay; }
+const audio = new Audio('/project/' + cfg.voiceover); audio.preload = 'auto'; audio.muted = true;
+const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+let t = +(sessionStorage.getItem('razgonLiveT') || 0), playing = false, last = -1, clock0 = 0, t0 = 0, drawn = 0, fpsT = performance.now();
+const draw = (time) => {
+  t = Math.max(0, Math.min(dur - 1 / fps, time)); const f = Math.round(t * fps);
+  if (f !== last) { window.renderFrame(f); if (logo.complete && logo.naturalWidth) { const c = $('main'); c.getContext('2d').drawImage(logo, 0, 0, c.width, c.height); } last = f; drawn++; }
+  $('time').textContent = `${fmt(t)} / ${fmt(dur)}`; $('head').style.left = (t / dur * 100) + '%';
+  const cur = frames.find((x) => t >= x.start && t < x.end); $('frame').textContent = cur ? `Кадр ${cur.number}` : '';
+  document.querySelectorAll('.seg').forEach((s) => s.classList.toggle('on', cur && +s.dataset.n === cur.number));
+  sessionStorage.setItem('razgonLiveT', t.toFixed(2));
+};
+// when the audio plays it is the clock; without sound a wall clock keeps the same pace
+const loop = () => { if (!playing) return; const now = audio.paused || audio.muted && audio.readyState < 2 ? t0 + (performance.now() - clock0) / 1000 : audio.currentTime; draw(now); if (t >= dur - 1 / fps) stop(); const n = performance.now(); if (n - fpsT > 1000) { $('fps').textContent = `${drawn} кадр/с`; drawn = 0; fpsT = n; } requestAnimationFrame(loop); };
+const start = () => { playing = true; $('play').textContent = '❚❚ Пауза'; t0 = t; clock0 = performance.now(); audio.currentTime = t; audio.play().catch(() => {}); requestAnimationFrame(loop); };
+const stop = () => { playing = false; $('play').textContent = '▶ Пуск'; audio.pause(); };
+const seek = (time) => { const was = playing; if (was) stop(); draw(time); audio.currentTime = t; if (was) start(); };
+$('play').onclick = () => (playing ? stop() : start());
+$('back').onclick = () => seek(t - 5); $('fwd').onclick = () => seek(t + 5);
+$('mute').onclick = () => { audio.muted = !audio.muted; $('mute').textContent = audio.muted ? '🔇' : '🔊'; if (playing) { stop(); start(); } };
+$('q').value = q.get('scale'); $('q').onchange = (e) => { localStorage.setItem('razgonLiveScale', e.target.value); q.set('scale', e.target.value); location.search = q; };
+let drag = false; const at = (e) => { const r = tl.getBoundingClientRect(); return (e.clientX - r.left) / r.width * dur; };
+tl.onpointerdown = (e) => { drag = true; tl.setPointerCapture(e.pointerId); seek(at(e)); }; tl.onpointermove = (e) => { if (drag) seek(at(e)); }; tl.onpointerup = () => { drag = false; };
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); playing ? stop() : start(); } if (e.code === 'ArrowLeft') seek(t - (e.shiftKey ? 1 / fps : 1)); if (e.code === 'ArrowRight') seek(t + (e.shiftKey ? 1 / fps : 1)); });
+// edits made to the scenes reload the page at the same moment
+new EventSource('/__events').onmessage = () => { sessionStorage.setItem('razgonLiveT', t.toFixed(2)); location.reload(); };
+window.RAZGON_LIVE = { seek, get t() { return t; } };
+// embedded in a host app (MultiBot Video Studio «Монтаж»): the host owns time and sound and sends the playhead
+if (EMBED) { addEventListener('message', (e) => { if (e.data && e.data.razgon === 'seek' && Number.isFinite(e.data.t)) draw(e.data.t); }); parent.postMessage({ razgon: 'ready' }, '*'); }
+draw(t);
+</script>
+</body></html>
