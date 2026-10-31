@@ -9,6 +9,7 @@
     python3 tools/studio.py accent P FRAME KIND [options]   # KIND: text, arrow, circle, card, image
     python3 tools/studio.py clear-accents P FRAME
     python3 tools/studio.py replace P (--clip ID | --frame N) FILE
+    python3 tools/studio.py place P N (FILE | --text | --asset ID) [--motion zoom_in|zoom_out|none]   # a plan frame at its time
     python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
 
@@ -161,6 +162,14 @@ def main(argv=None) -> int:
     replace.add_argument("--clip")
     replace.add_argument("--frame")
     replace.add_argument("--dry-run", action="store_true")
+    place = commands.add_parser("place", help="поставити кадр плану на таймлайн: картинку, відео чи його слова текстом")
+    place.add_argument("project")
+    place.add_argument("frame", type=int)
+    place.add_argument("file", nargs="?")
+    place.add_argument("--text", action="store_true", help="слова кадру текстом на весь екран")
+    place.add_argument("--asset", help="id матеріалу, що вже є в проєкті")
+    place.add_argument("--motion", choices=["zoom_in", "zoom_out", "none"])
+    place.add_argument("--dry-run", action="store_true")
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
     transitions.add_argument("--share", type=float, default=.7)
@@ -236,6 +245,20 @@ def main(argv=None) -> int:
                 raise Failure("Вкажіть --clip або --frame")
             spec = {"op": "replace", "path": str(Path(args.file).expanduser().resolve())}
             spec.update({"clip": args.clip} if args.clip else {"frame": int(args.frame) if args.frame.isdigit() else args.frame})
+            run_ops(project, [spec], args.dry_run)
+            return 0
+        if args.command == "place":
+            spec = {"op": "place", "frame": args.frame}
+            if args.text:
+                spec["text"] = True
+            elif args.asset:
+                spec["asset_id"] = args.asset
+            elif args.file:
+                spec["path"] = str(Path(args.file).expanduser().resolve())
+            else:
+                raise Failure("Вкажіть файл, --asset або --text")
+            if args.motion:
+                spec["motion"] = args.motion
             run_ops(project, [spec], args.dry_run)
             return 0
         if args.command == "transitions":

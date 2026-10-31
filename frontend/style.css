@@ -124,9 +124,9 @@ button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled)
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:10px;padding:9px 13px}
 button.primary:hover:not(:disabled){background:#f5c24b}
 /* The two main actions glow like the logo key, in their own gold. */
-#export-open,#overview-create,.plan-start-actions .primary{transition:background-color .15s,box-shadow .2s}
-#export-open:not(:disabled),#overview-create:not(:disabled),.plan-start-actions .primary:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
-#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover,.plan-start-actions .primary:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+#export-open,#overview-create{transition:background-color .15s,box-shadow .2s}
+#export-open:not(:disabled),#overview-create:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 button.secondary{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:9px;padding:8px 10px}
 button.secondary:hover:not(:disabled){background:#3a3a40}
 button.danger{border:1px solid #634045;background:#3b292c;color:#efb2b8;border-radius:9px;padding:8px 10px;margin-top:10px}
@@ -676,26 +676,6 @@ button.danger:hover:not(:disabled){background:#523034}
 @font-face{font-family:"VideoKey Wordmark";src:url("/fonts/oswald-bold.ttf") format("truetype");font-style:normal;font-weight:700;font-display:swap}
 
 /* «Почати створення відео»: choose how many first frames of an animated film to make now. */
-.plan-start{margin-top:16px;padding:18px 18px 16px;background:linear-gradient(180deg,#24221c,#1c1b1e);border:1px solid #5a4a22;border-radius:15px;box-shadow:0 10px 30px #0006}
-.plan-start[hidden]{display:none}
-.plan-start-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:14px}
-.plan-start-head h2{margin:0 0 5px;font-size:16px;color:#f6f2e6}
-.plan-start-head p{margin:0;max-width:520px;color:#b9b4a6;font-size:12px;line-height:1.45}
-.plan-start-readout{display:flex;flex-direction:column;align-items:flex-end;gap:3px;color:#d8d2c2;font-size:13px;font-variant-numeric:tabular-nums}
-.plan-start-readout strong{font-size:28px;line-height:1;color:#ffd166}
-.plan-start-readout span{color:#a8a395;font-size:12px}
-.plan-start-range{--fill:0%;width:100%;height:28px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
-.plan-start-range::-webkit-slider-runnable-track{height:8px;border-radius:999px;background:linear-gradient(to right,#f0b429 0,#ffd166 var(--fill),#3a3a41 var(--fill))}
-.plan-start-range::-moz-range-track{height:8px;border-radius:999px;background:#3a3a41}
-.plan-start-range::-moz-range-progress{height:8px;border-radius:999px;background:#f0b429}
-.plan-start-range::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-7px;border-radius:50%;background:#fff6dc;border:3px solid #f0b429;box-shadow:0 2px 10px #f0b42966;transition:transform .12s}
-.plan-start-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff6dc;border:3px solid #f0b429}
-.plan-start-range:active::-webkit-slider-thumb{transform:scale(1.15)}
-.plan-start-quick{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
-.plan-start-chip{padding:6px 13px;border-radius:999px;border:1px solid #4a4a52;background:#26262b;color:#d9dae0;font-size:12px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
-.plan-start-chip:hover{border-color:#8a7440;color:#fff}
-.plan-start-chip.active{background:#f0b429;border-color:#f0b429;color:#1b1608;font-weight:650}
-.plan-start-actions{display:flex;justify-content:flex-end;gap:10px}
 .plan-request-tag{padding:4px 10px;border-radius:999px;background:#2f2a1a;border:1px solid #6b5626;color:#ffd98a;font-size:12px}
 .plan-selection{position:absolute;top:0;bottom:0;left:0;z-index:1;pointer-events:none;border-right:2px solid #ffd166;background:linear-gradient(90deg,#f0b42926,#f0b42940);box-shadow:inset 0 0 0 1px #f0b42980;transition:width .18s ease}
 .plan-selection b{position:absolute;left:100%;margin-left:6px;top:50%;transform:translateY(-50%);padding:1px 7px;border-radius:999px;background:#1b1608e6;color:#ffd166;font-size:10px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -829,19 +809,6 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-add-box{display:grid;place-items:center;width:100%;aspect-ratio:16/9;border:2px dashed #4a4a52;border-radius:9.5px;color:#9a9ca4;font-size:22px;transition:border-color .15s,color .15s}
 @media(hover:hover){.style-add:not(:disabled):hover .style-add-box{border-color:#f0b429;color:#f0b429}}
 .style-add:disabled{opacity:.5;cursor:default}
-.episode-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
-@media(max-width:900px){.episode-steps{grid-template-columns:1fr}}
-.episode-step{padding:14px 16px;border:1px solid #35353a;border-radius:20.5px;background:#1b1b1e;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
-.episode-step-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.episode-step-head strong{font-size:14px;color:#f1f1f2}
-.episode-step-icon{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#26272b;color:#aeb0b7;flex:none}
-.episode-step-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.episode-step-number{font-size:12px;font-weight:700;color:#8a8c94}
-.episode-step p{margin:0;font-size:13px;color:#aeb0b7;line-height:1.45}
-.episode-step details{font-size:13px;color:#aeb0b7}.episode-step details p{white-space:pre-wrap;margin-top:6px}
-.episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
-.episode-step[data-state="active"]{border-color:#6bf2ae66}.episode-step[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae;animation:director-pulse 1.4s ease-in-out infinite}
-.episode-step[data-state="failed"]{border-color:#f0b42966}.episode-step[data-state="failed"] .episode-step-icon{background:#372f1e;color:#f0b429}
 @keyframes director-pulse{50%{opacity:.45}}
 .thumb-modal-open .modal{width:min(620px,100%)}
 .thumb-current{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;margin-bottom:12px}
@@ -866,7 +833,7 @@ button.danger:hover:not(:disabled){background:#523034}
 /* One rounding scale for the whole Studio, as strong as the project cards:
    large blocks 20.5px, blocks inside them 16.5px, buttons and fields 12.5px; small tags and timeline clips keep theirs. */
 .modal,.panel,.timeline-panel,.banner,.overview-empty,.plan-summary,.plan-timeline,.plan-cost-estimate,.speech-report,.plan-stage,.plan-script,.plan-table,
-.plan-start,.voice-drop,.director-card,.agent-message,.agent-composer,.agent-cost{border-radius:20.5px}
+.voice-drop,.director-card,.agent-message,.agent-composer,.agent-cost{border-radius:20.5px}
 .settings-section,.channel-kind-card>span,.logo-preview,.thumb-current,.plan-settings-warning,.service-key-panel,.weights-summary,
 .easing-card,.universal-properties section,.asset,.asset-video-result,.preview-surface,.export-gaps,.agent-empty>span{border-radius:16.5px}
 button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.channel-item,.channel-select,.project-item,
@@ -878,34 +845,8 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .plan-table-fold{border:1px solid #414149;border-radius:20.5px;background:#202024;margin:14px 0;overflow:hidden}
 .plan-table-fold>summary{cursor:pointer;padding:13px 15px;font-weight:600;color:#e4e5e9}
 .plan-table-fold>.plan-table{margin:0;border:0;border-radius:0}
-.episode-stage{margin:18px 0 -4px;font-size:13px;color:#aeb0b7}.episode-stage strong{color:#f1f1f2}
-.episode-steps{counter-reset:none;position:relative}
-.episode-step{position:relative;transition:opacity .2s,border-color .2s}
-.episode-step.upcoming{opacity:.5}
-.episode-step.current{border-color:#f0b429;box-shadow:inset 0 0 0 1px #f0b429,0 0 22px #f0b42922}
-.episode-step.current .episode-step-icon{background:#372f1e;color:#f0b429}
-.episode-step.current[data-state="active"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
-.episode-step.current .episode-step-head::after{content:'Зараз';font-size:11px;font-weight:600;color:#1a1408;background:#f0b429;padding:2px 8px;border-radius:9.5px}
-.episode-step[data-state="done"] .episode-step-number{color:#6bf2ae}
 /* a connector between neighbouring steps, so they read as one path */
-@media(min-width:901px){.episode-step:not(:last-child)::after{content:'';position:absolute;top:30px;right:-13px;width:14px;height:2px;background:#3a3a40}
-  .episode-step[data-state="done"]:not(:last-child)::after{background:#6bf2ae}}
-.episode-step{cursor:pointer}
-.episode-step:focus-visible{outline:2px solid #6bf2ae;outline-offset:3px}
-@media(hover:hover){.episode-step:not(.selected):hover{border-color:#5a5a62;opacity:1}}
-.episode-step.selected{background:#25252a}
 /* the selected step points at its pane below */
-.episode-step.selected::before{content:'';position:absolute;left:50%;bottom:-8px;width:14px;height:14px;transform:translateX(-50%) rotate(45deg);background:#25252a;border-right:1px solid #35353a;border-bottom:1px solid #35353a}
-.episode-step.selected.current::before{border-color:#f0b429}
-.episode-pane{margin-top:4px}
-.episode-pane>.speech-report{margin-top:0}
-.episode-pane-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.episode-pane-actions:empty{display:none}
-.episode-pane-info:empty{display:none}.episode-pane-info>.plan-note{margin:0 0 10px}
-.episode-pane>.plan-summary{margin-top:0}
-.episode-step p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.episode-pane .plan-start-actions .secondary{display:none}
-.episode-pane .plan-start{margin-top:0}
-.episode-pane .plan-start-range,.episode-pane .plan-start-quick{display:none}
 .frame-strip-row{display:flex;align-items:center;gap:12px;margin:4px 0 18px}
 .frame-strip{position:relative;flex:1;display:flex;gap:2px;height:38px;padding:4px;border-radius:12.5px;background:#141416;border:1px solid #3a3a41;cursor:ew-resize;touch-action:none;user-select:none}
 .frame-strip:focus-visible{outline:2px solid #f0b429;outline-offset:3px}
@@ -915,27 +856,13 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-handle{position:absolute;top:-5px;bottom:-5px;width:4px;margin-left:-2px;border-radius:2px;background:#fff6dc;box-shadow:0 0 10px #f0b429cc;pointer-events:none}
 .frame-strip-max{flex:none}
 .frame-strip-max.active{border-color:#f0b429;color:#ffd166}
-.episode-step-cost{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:8px;width:100%;border-top:1px solid #2c2c31;font-size:11.5px;color:#8a8c94;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.episode-step-cost::before{content:'$';display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:50%;background:#26272b;color:#aeb0b7;font-size:10px;font-weight:700}
-.episode-step-cost:empty{display:none}
-.plan-start.busy .frame-strip,.plan-start.busy .frame-strip-max{opacity:.55;pointer-events:none}
-.plan-start-actions .primary.loading{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;opacity:1;cursor:progress;max-width:min(100%,520px)}
-.plan-start-actions .primary.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,#fff6 50%,transparent 80%);transform:translateX(-100%);animation:button-sweep 1.6s ease-in-out infinite}
-.plan-start-actions .primary.loading svg{width:15px;height:15px;flex:none}
 @keyframes button-sweep{to{transform:translateX(100%)}}
-.episode-pane-info{font-size:13px;color:#aeb0b7;line-height:1.45}
 .team{margin:6px 0 14px;display:flex;flex-direction:column;gap:12px}
 .team-feed{list-style:none;margin:0;padding:10px 14px;border:1px solid #2c2c31;border-radius:16.5px;background:#151516;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:#c9cbd2}
 .team-feed li{display:flex;gap:10px;align-items:baseline;min-width:0}
 .team-feed li:first-child{color:#f1f1f2}
 .team-feed time{flex:none;color:#77798199;font-variant-numeric:tabular-nums}
 .team-feed b{flex:none;min-width:62px;font-weight:600;color:#8dffc6}
-/* a running step: a light runs along its top edge, so the work is seen moving */
-.episode-step-run{display:none;position:absolute;left:18px;right:18px;top:-1px;height:3px;border-radius:2px;overflow:hidden;pointer-events:none}
-.episode-step.running .episode-step-run{display:block;background:linear-gradient(90deg,transparent,#6bf2ae,#f0b429,transparent);background-size:45% 100%;background-repeat:no-repeat;animation:step-run 1.8s linear infinite}
-@keyframes step-run{from{background-position:-50% 0}to{background-position:150% 0}}
-.episode-step.running .episode-step-icon{animation:director-pulse 1.2s ease-in-out infinite}
-.episode-pane>.plan-start+.episode-pane-info{margin-top:14px}
 .frame-strip-cell.made{background:#3fbf86}
 .frame-strip-cell.made.chosen{background:#6bf2ae;box-shadow:inset 0 0 0 2px #f0b429}
 .frame-strip-legend{display:flex;align-items:center;gap:6px;margin:-10px 0 16px;font-size:11.5px;color:#9a9ca4}
@@ -945,63 +872,12 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-legend b.made{background:#3fbf86}.frame-strip-legend b.chosen{background:#f0b429}
 .frame-strip-legend b.drawn,.frame-strip-cell.drawn{background:repeating-linear-gradient(135deg,#2f8a62 0 3px,#1f4a39 3px 6px)}
 .frame-strip-cell.drawn.chosen{background:repeating-linear-gradient(135deg,#ffd166 0 3px,#a8791c 3px 6px)}
-.frame-plan .frame-strip-cell.drawn.pointed{background:#9dffd0}
-/* while the agent works or waits, the strip only shows what is made and drawn, not the choice */
-.plan-start.busy .frame-strip-cell.chosen{background:#3a3a41}
-.plan-start.busy .frame-strip-cell.chosen.drawn{background:repeating-linear-gradient(135deg,#2f8a62 0 3px,#1f4a39 3px 6px)}
-.plan-start.busy .frame-strip-legend .is-chosen{display:none}
-/* The making of an animated film as a path down the left: numbered steps joined by a line, the chosen step's data on the right. */
-.episode-flow{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:20px;align-items:start;margin-top:6px}
-.episode-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:10px}
-.episode-rail .episode-stage{margin:0 0 2px}
-.episode-flow .episode-steps{grid-template-columns:1fr;gap:14px;margin:0}
-.episode-flow .episode-step:not(:last-child)::after{top:auto;bottom:-15px;right:auto;left:31px;width:2px;height:16px}
-.episode-flow .episode-step.selected::before{left:auto;right:-8px;top:50%;bottom:auto;transform:translateY(-50%) rotate(-45deg)}
-.episode-flow .episode-step-number{font-size:13px}
-.episode-panes{min-width:0}
-.episode-panes>.episode-pane{margin-top:0}
 .glow-action{transition:background-color .15s,box-shadow .2s}
 .glow-action:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
 .glow-action:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
-@media(max-width:900px){.episode-flow{grid-template-columns:1fr}.episode-rail{position:static}.episode-flow .episode-step.selected::before{display:none}}
-.episode-flow .episode-step-number{display:grid;place-items:center;min-width:22px;height:22px;border-radius:50%;background:#26272b;color:#aeb0b7;font-weight:700}
-.episode-flow .episode-step[data-state="done"] .episode-step-number{background:#0e241a;color:#6bf2ae}
-.episode-flow .episode-step.current .episode-step-number{background:#f0b429;color:#1a1408}
-/* the chosen step glows like a project card under the pointer */
-.episode-flow .episode-step.selected{border-color:#6bf2ae88;background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
-.episode-flow .episode-step.selected::before{background:#202024;border-color:#6bf2ae88}
-.episode-flow .episode-step.selected.current{border-color:#f0b429;box-shadow:inset 0 0 0 1px #f0b429,0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
-.episode-pane-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;min-height:38px}
-.episode-pane-head h2{display:flex;align-items:center;gap:10px;margin:0;font-size:18px;color:#f1f1f2}
-.episode-pane-head h2 span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#26272b;color:#aeb0b7;font-size:13px}
-.episode-pane-head .episode-pane-actions{margin:0}
-.episode-pane-head .episode-pane-actions:empty{display:none}
-.episode-flow .episode-step-cost{white-space:normal;line-height:1.35;align-items:flex-start}
-.episode-flow .episode-step-cost::before{margin-top:1px}
-.episode-step[data-state="done"]:not(.current) .episode-step-head::after{content:'Готово';font-size:11px;font-weight:600;color:#6bf2ae;background:#0e241a;border:1px solid #3fe39a59;padding:1px 8px;border-radius:9.5px;margin-left:auto}
-.episode-step.current .episode-step-head::after{margin-left:auto}
-.episode-flow .episode-step[data-state="done"]:not(.current){border-color:#3fe39a33}
-.episode-flow .episode-step[data-state="done"] .episode-step-icon{background:#0e241a;color:#6bf2ae}
-.episode-flow .episode-step[data-state="done"] .episode-step-icon svg{stroke-width:3}
-.episode-flow .episode-step-head{align-self:stretch;width:100%;box-sizing:border-box}
-.frame-plan{padding:18px 18px 14px;background:linear-gradient(180deg,#24221c,#1c1b1e);border:1px solid #5a4a22;border-radius:20.5px;box-shadow:0 10px 30px #0006}
-.frame-plan .plan-start-head{margin-bottom:10px;align-items:center}
-.frame-plan .frame-strip{cursor:default}
-.frame-plan .frame-strip-cell.pointed{background:#ffd166}.frame-plan .frame-strip-cell.made.pointed{background:#9dffd0}
 .frame-plan-read{margin:4px 0 0;min-height:18px;font-size:12.5px;line-height:1.45;color:#b9b4a6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .frame-plan-read b{color:#f6f2e6;font-weight:650}
-.frame-plan .frame-strip-legend+.frame-plan-read{margin-top:-8px}
-.episode-pane>.frame-plan+.episode-pane-info:not(:empty){margin-top:14px}
-.episode-pane>.frame-plan~.plan-table-fold{margin-top:14px}
 .episode-restart{color:#c9cad0}.episode-restart:hover{background:#452a2e;color:#ffb7bc}
-.plan-start.paused .plan-start-actions{display:none}
-/* One highlight only: the open step glows green with its arrow; the current stage is the «Зараз» chip and the yellow number */
-.episode-flow .episode-step.current{border-color:#3a3a41;box-shadow:none}
-.episode-flow .episode-step.selected,.episode-flow .episode-step.selected.current{border-color:#6bf2ae88;background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
-.episode-flow .episode-step.selected.current::before{border-color:#6bf2ae88}
-.episode-flow .episode-step:not(.selected){cursor:pointer}
-.episode-flow .episode-step:not(.selected):hover{border-color:#55555c;background:#1d1d21}
-.episode-step.running .episode-step-run{background:linear-gradient(90deg,transparent,#6bf2ae,transparent);background-size:45% 100%;background-repeat:no-repeat}
 .project-action.is-off{opacity:.38;cursor:not-allowed}.project-action.is-off:hover{background:#242428;color:#bec0c8}
 .thumb-wishes span{display:block;margin-bottom:8px}.thumb-wishes em{font-style:normal;font-weight:400;font-size:12px;color:#8a8c94;margin-left:6px}
 /* the «Прев’ю» tab: the thumbnail large, wishes and the button under it */
@@ -1042,3 +918,66 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .thumb-view-gate{grid-column:2;grid-row:4;margin:0}
 .thumb-view textarea{min-height:96px}
 @media(max-width:760px){.thumb-view{grid-template-columns:1fr}.thumb-view-frame,.thumb-view .thumb-wishes,.thumb-view-actions,.thumb-view-gate{grid-column:1;grid-row:auto}}
+/* The plan page in one column (director.js): the voice line, the director while it works, «Створення ролика» and the
+   folds with the voice text, the frame table and the reports. */
+.episode{display:flex;flex-direction:column;gap:14px;max-width:1100px}
+.episode-voice{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 14px;border:1px solid #35353a;border-radius:16.5px;background:#1b1b1e;min-width:0}
+.episode-voice-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:50%;background:#0e241a;color:#6bf2ae}
+.episode-voice[data-state="working"] .episode-voice-icon{animation:director-pulse 1.2s ease-in-out infinite}
+.episode-voice[data-state="warn"] .episode-voice-icon{background:#372f1e;color:#f0b429}
+.episode-voice[data-state="empty"] .episode-voice-icon{background:#26272b;color:#aeb0b7}
+.episode-voice-icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.episode-voice-text{flex:1;display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;min-width:0;font-size:13px;color:#aeb0b7}
+.episode-voice-text b{color:#f1f1f2;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.episode-voice-text>span{font-variant-numeric:tabular-nums}
+.episode-voice[data-state="done"] .episode-voice-state{color:#6bf2ae}
+.episode-voice[data-state="warn"] .episode-voice-state{color:#f0c967}
+.episode-voice>button{flex:none}
+.episode-director{padding:14px 16px;border:1px solid #6bf2ae55;border-radius:20.5px;background:#18201c}
+.episode-director[hidden]{display:none}
+.episode-director-line{margin:0 0 10px;display:flex;flex-direction:column;gap:3px;font-size:13px;color:#aeb0b7;line-height:1.45}
+.episode-director-line strong{color:#f1f1f2;font-size:14px}
+.episode-director.working .episode-director-line strong::before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:#6bf2ae;vertical-align:middle;animation:director-pulse 1.2s ease-in-out infinite}
+.episode-director .team{margin-bottom:0}
+.episode-make{padding:18px 18px 16px;background:linear-gradient(180deg,#24221c,#1c1b1e);border:1px solid #5a4a22;border-radius:20.5px;box-shadow:0 10px 30px #0006}
+.episode-make-head{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.episode-make-head h2{margin:0;font-size:18px;color:#f6f2e6}
+.episode-make-readout{display:flex;align-items:baseline;gap:8px;color:#a8a395;font-size:12.5px;font-variant-numeric:tabular-nums}
+.episode-make-readout strong{font-size:24px;line-height:1;color:#ffd166}
+.episode-make-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;margin-top:12px}
+.episode-make-hint{flex:1;min-width:220px;margin:0;font-size:12.5px;line-height:1.45;color:#f0c967}
+.episode-make-hint[hidden]{display:none}
+.episode-make-start{transition:background-color .15s,box-shadow .2s}
+.episode-make-start:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+.episode-make-start:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+.episode-make-start.loading{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;opacity:1;cursor:progress}
+.episode-make-start.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,#fff6 50%,transparent 80%);transform:translateX(-100%);animation:button-sweep 1.6s ease-in-out infinite}
+.episode-make-start.loading svg{width:15px;height:15px;flex:none}
+.episode-make-feed:empty{display:none}
+.episode-make-feed{margin-top:12px}.episode-make-feed>.plan-note{margin:0 0 8px}
+.episode-make.locked .frame-strip{cursor:default}
+.episode-make.locked .frame-strip-max{opacity:.55}
+.episode-make.waiting .frame-strip{opacity:.5}
+.episode-make .frame-strip-cell.pointed{background:#ffd166}.episode-make .frame-strip-cell.made.pointed{background:#9dffd0}
+.episode-make .frame-strip-legend+.frame-plan-read{margin-top:-8px}
+/* a photo channel: each frame in its format's colour, dim until it is chosen; a made frame has a green foot */
+.frame-strip.formats .frame-strip-cell{background:color-mix(in srgb,var(--format-color) 30%,#232327)}
+.frame-strip.formats .frame-strip-cell.chosen{background:var(--format-color)}
+.frame-strip.formats .frame-strip-cell.made{background:color-mix(in srgb,var(--format-color) 55%,#232327);box-shadow:inset 0 -5px 0 #6bf2ae}
+.frame-strip.formats .frame-strip-cell.pointed{background:var(--format-color);box-shadow:inset 0 0 0 2px #fff6dc}
+.frame-strip-legend b[style]{background:var(--format-color)}
+.frame-strip-handle[hidden]{display:none}
+.episode-folds{display:flex;flex-direction:column}
+.episode-folds .episode-fold{margin:6px 0}
+.episode-fold .plan-table{margin:0 14px 14px;width:calc(100% - 28px)}
+.episode-fold>.episode-report,.episode-fold>.team{margin-left:14px;margin-right:14px}
+.episode-fold>.episode-report:empty{display:none}
+.episode-fold-cost{margin:0 16px 14px}
+.episode-reports{display:contents}
+/* the card of an episode whose frames the agent makes: its progress in place of the date, and it does not open */
+.project-making{color:#6bf2ae;font-size:12px;font-weight:600}
+.overview-projects .project-making{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.project-making .project-export-progress>span{background:linear-gradient(90deg,#3fbf86,#9dffd0);box-shadow:0 0 10px #6bf2ae99}
+.project-card.producing{border-color:#6bf2ae66}
+.project-card.producing .project-created{display:none}
+.project-card.producing .project-open{cursor:progress}

@@ -378,6 +378,64 @@ def picture_count(project: dict) -> int:
     return max(pictures, len(frame_progress.drawn(project["id"])))
 
 
+def film_clips(project: dict) -> list[dict]:
+    """Clips that are frames of the film itself: anything but sound, the channel's logo and plate (groups with the role
+    «overlay» and clips titled «Логотип» or «Плашка»). The montage opens with the first of them (frontend editorUnlocked)."""
+    overlay = {cid for group in project.get("scene_groups", []) if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
+    return [clip for track in project.get("tracks", []) for clip in track.get("clips", [])
+            if clip.get("kind") != "audio" and clip.get("id") not in overlay and not re.search("Логотип|Плашка", clip.get("title") or "")]
+
+
+def project_animated(project: dict) -> bool:
+    try:
+        return channel_animated(get_channel_folder(project["channel_id"], include_disabled=True))
+    except (StudioError, KeyError):
+        return False
+
+
+def made_frames(project: dict, plan: dict | None) -> list[int]:
+    """Numbers of the plan's frames that are made. An animated film's frame is made once its scene is written
+    (frame_progress.py); another channel's frame once a clip of the film covers its middle, a Razgon code block
+    counting only when its scene is written too."""
+    frames = (plan or {}).get("frames") or []
+    if project_animated(project):
+        import frame_progress   # it reads the project through this module
+        return sorted(set(frame_progress.drawn(project["id"])))
+    clips = film_clips(project)
+    drawn = None
+    made = []
+    for index, frame in enumerate(frames):
+        middle = (float(frame["start"]) + float(frame["end"])) / 2
+        number = int(frame.get("number") or index + 1)
+        for clip in clips:
+            if not float(clip["start"]) <= middle < float(clip["start"]) + float(clip["duration"]):
+                continue
+            if clip.get("kind") == "animation" and re.fullmatch(r"Razgon · кадр \d{3}", clip.get("title") or ""):
+                if drawn is None:
+                    import frame_progress
+                    drawn = set(frame_progress.drawn(project["id"]))
+                if number not in drawn:
+                    continue
+            made.append(number)
+            break
+    return made
+
+
+def production_state(project: dict) -> dict | None:
+    """The production request as the project list shows it: its state and how many of the asked frames are made."""
+    request = project.get("production_request") or {}
+    if not request.get("status"):
+        return None
+    state = {"status": request["status"], "frames": int(request.get("frames") or 0), "limit": bool(request.get("limit"))}
+    if request["status"] in {"requested", "in_progress"}:
+        try:
+            plan = load_project_plan(project["id"])
+        except (StudioError, OSError, ValueError):
+            plan = None
+        state["made"] = sum(1 for number in made_frames(project, plan) if number <= state["frames"])
+    return state
+
+
 def list_projects(cid: str | None = None) -> list[dict]:
     if cid is not None:
         get_channel_folder(cid, include_disabled=True)
@@ -395,6 +453,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
+                result[-1]["production_request"] = production_state(item)
                 # the thumbnail the studio keeps (thumbnail_gen.preview), or one still only in the episode folder
                 episode = Path(item.get("episode_path") or "") if item.get("episode_path") else None
                 previews = [folder / "preview" / "Превью.png"] + ([episode / name for name in ("Превью.png", "Превью.jpg", "Превью.jpeg")] if episode else [])
@@ -1763,18 +1822,23 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
 
 
 def request_production(pid: str, frames) -> dict:
-    """«Почати створення відео»: the author asks the agent to make the first N frames of an animated film.
+    """«Почати створення ролика»: the author asks the frame agent (production.py) to make the first N frames.
 
-    The Studio only records the request; the agent picks it up, builds those frames in Razgon and puts them on the
-    timeline. The same request is mirrored next to the episode so a terminal agent sees it without the Studio.
+    Any channel: an animated film once the director has split it, a photo channel once its plan follows the voice.
+    The same request is mirrored next to the episode so a terminal agent sees it without the Studio.
     """
     with LOCK:
         project = load_project(pid)
         plan = load_project_plan(pid)
         if not plan or plan.get("timing", {}).get("status") != "audio_synced":
             raise StudioError("Спершу додайте озвучку, щоб план став «За озвучкою»")
-        if plan.get("frame_source") != planner.DIRECTOR_FRAME_SOURCE:
+        animated = project_animated(project)
+        if animated and plan.get("frame_source") != planner.DIRECTOR_FRAME_SOURCE:
             raise StudioError("Кадри ще не розбиті режисером. Дочекайтеся режисури")
+        if plan.get("director_stale"):
+            raise StudioError("Сценарій розходиться з озвучкою. Режисер має заново розбити кадри")
+        if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
+            raise StudioError("Агент уже створює кадри цього ролика", 409)
         total = len(plan["frames"])
         try:
             count = int(frames)
@@ -1782,11 +1846,10 @@ def request_production(pid: str, frames) -> dict:
             raise StudioError("Вкажіть кількість кадрів") from None
         if not 1 <= count <= total:
             raise StudioError(f"Кількість кадрів має бути від 1 до {total}")
-        import frame_progress   # it reads the project through this module
-        # frames drawn as code are made: asking for them again would only start the agent over the same frames
-        if set(range(1, count + 1)) <= set(frame_progress.drawn(pid)):
-            raise StudioError(f"Кадри 1–{count} уже намальовані: їх видно в «Монтажі» в режимі «Наживо». "
-                              "Готовий ролик рендерить «Експорт MP4».", 409)
+        # made frames (drawn as code, or on the timeline) are not asked for again: that would only start the agent
+        # over the same frames
+        if set(range(1, count + 1)) <= set(made_frames(project, plan)):
+            raise StudioError(f"Кадри 1–{count} уже створені: їх видно в «Монтажі». Готовий ролик збирає «Експорт MP4».", 409)
         chosen = plan["frames"][:count]
         request = {"id": uuid.uuid4().hex[:12], "frames": count, "total_frames": total,
                    "start": chosen[0]["start"], "end": chosen[-1]["end"], "status": "requested",

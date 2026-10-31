@@ -172,6 +172,50 @@ class AgentToolsTest(unittest.TestCase):
         self.assertTrue(store.resolve_asset(store.load_project(project["id"]), photo["asset_id"])["path"].endswith("other.png"))
         self.assertEqual(photo["keyframes"], PHOTO_KEYS)
 
+    def test_place_puts_plan_frames_in_their_groups_and_counts_them_made(self):
+        project = self.project(frames=1)
+        episode = Path(project["episode_path"])
+        plan = {"frames": [{"number": n, "format": "text" if n == 3 else "stock_photo", "start": 4.0 * (n - 1), "end": 4.0 * n,
+                            "sentences": [f"Речення {n}."]} for n in range(1, 4)],
+                "timing": {"status": "audio_synced"}, "script_sha256": "x"}
+        with patch.object(store, "load_project_plan", return_value=plan):
+            status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [
+                {"op": "place", "frame": 2, "path": str(episode / "other.png")}, {"op": "place", "frame": 3, "text": True}]})
+            self.assertEqual(status, 200, result)
+            current = store.load_project(project["id"])
+            clips = self.clips(project["id"])
+            groups = {g["title"]: g for g in current["scene_groups"]}
+            self.assertIn(clips["K002 кадр"]["id"], groups["Кадр 2"]["clip_ids"])
+            self.assertIn(clips["K003 кадр"]["id"], groups["Кадр 3"]["clip_ids"])
+            self.assertEqual((clips["K002 кадр"]["start"], clips["K002 кадр"]["duration"]), (4.0, 4.0))
+            self.assertEqual([k["scale"] for k in clips["K002 кадр"]["keyframes"]], [1.0, 1.08])
+            self.assertEqual(clips["K003 кадр"]["text_role"], "full_frame")
+            # a frame already on the timeline is changed with replace, not placed twice
+            status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "place", "frame": 1, "path": str(episode / "other.png")}]})
+            self.assertEqual(status, 400, result)
+            self.assertEqual(store.made_frames(current, plan), [1, 2, 3])
+            # the plate is not a frame of the film
+            self.assertNotIn("Плашка", [c["title"] for c in store.film_clips(current)])
+
+    def test_a_photo_channel_asks_for_frames_and_the_list_shows_their_progress(self):
+        project = self.project(frames=1)
+        plan = {"frames": [{"number": n, "format": "stock_photo", "start": 4.0 * (n - 1), "end": 4.0 * n, "sentences": [f"Речення {n}."]} for n in range(1, 4)],
+                "timing": {"status": "audio_synced"}, "script_sha256": "x"}
+        with patch.object(store, "load_project_plan", return_value=plan):
+            with self.assertRaises(store.StudioError) as made:
+                store.request_production(project["id"], 1)   # frame 1 is already on the timeline
+            self.assertEqual(made.exception.status, 409)
+            store.request_production(project["id"], 3)
+            with self.assertRaises(store.StudioError):
+                store.request_production(project["id"], 3)   # one request at a time
+            listed = next(p for p in store.list_projects() if p["id"] == project["id"])
+            self.assertEqual(listed["production_request"], {"status": "requested", "frames": 3, "limit": False, "made": 1})
+            stale = {**plan, "director_stale": True}
+        with patch.object(store, "load_project_plan", return_value=stale):
+            other = self.project(frames=1)
+            with self.assertRaises(store.StudioError):
+                store.request_production(other["id"], 3)
+
     def test_transitions_follow_the_channel_rules(self):
         project = self.project(frames=12)
         current = store.load_project(project["id"])

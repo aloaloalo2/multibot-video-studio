@@ -37,21 +37,14 @@ function appendSpeechReport(target,report){
   const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);target.append(box);
 }
 
-// The recognition report sits behind one button next to «Додати озвучку»: the plan stays short, the details open on demand.
+// The recognition report lives folded at the bottom of the plan (director.js «Текст озвучки й розпізнавання»): once the
+// analysis arrives it fills that fold and the voice line.
 function renderSpeechReport(panel){
-  if(!state.analysis || state.analysis.job?.project_id!==state.project?.id)return;
-  const report=state.analysis.report;
-  // An animated plan shows the full report in its «Озвучка» tab, so it needs no button for it.
-  if(report && typeof directorAnimated==='function' && directorAnimated())return;
-  if(report){
-    const button=document.createElement('button');button.type='button';button.className='secondary speech-report-button';button.dataset.applied=String(!!report.applied);
-    button.textContent=`${report.applied?'Розпізнавання мовлення':'Розпізнавання: потрібна перевірка'} · ${Number(report.word_match_percent).toFixed(1)}%`;
-    button.addEventListener('click',()=>{modal('Розпізнавання мовлення','<div id="speech-report-modal"></div>',[{label:'Закрити',run:closeModal}]);appendSpeechReport($('speech-report-modal'),report);});
-    (panel.querySelector('.plan-summary') || panel).append(button);
-    return;
-  }
-  const job=state.analysis.job;
-  if(job){const note=document.createElement('p');note.className='plan-note';note.textContent=job.status==='failed'?job.error:`${speechStageNames[job.stage] || 'Обробка файлу'}: ${job.progress}%`;panel.append(note);}
+  const episode=panel?.querySelector('.episode');
+  if(!episode || state.analysis?.job?.project_id!==state.project?.id)return;
+  const slot=episode.querySelector('.episode-report');
+  if(slot&&!slot.children.length&&state.analysis.report)appendSpeechReport(slot,state.analysis.report);
+  refreshEpisode(episode);
 }
 
 async function openMediaTimingImport(){

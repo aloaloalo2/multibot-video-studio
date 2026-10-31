@@ -11,6 +11,10 @@ POST /api/projects/<id>/ops {"ops": [...], "expected_revision": n, "dry_run": fa
 - {"op": "clear_accents", "frame": 12} removes the accents a frame got from "accent" (titles «K012 акцент …»).
 - {"op": "replace", "clip": id, "path": file | "asset_id": id} swaps a clip's picture and keeps its title, box and motion.
 - {"op": "transitions", "share": 0.7, ...} designs about that share of the seams between frames by the channel rules.
+- {"op": "place", "frame": 12, "path": file | "asset_id": id | "text": true, "motion": "zoom_in"} puts a frame of the
+  plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video (a photo gets a slow
+  zoom unless "motion": "none"), or with "text" the frame's own spoken words as a full-frame text. The frame agent of
+  the photo channels (backend/production.py) builds the film with it.
 
 The answer is short (the report lines and the new revision), so an agent does not have to read the whole project back.
 """
@@ -249,6 +253,7 @@ class Context:
         self._words = None
         self.files: list[Path] = []          # pictures drawn for this request, registered as assets before the batch
         self.actions: list[dict] = []
+        self.groups: dict[str, str] = {}     # clip title -> the new frame group it opens (place)
         self.report: list[str] = []
         self.entrance = 0
         self.easing = project.get("settings", {}).get("motion_easing", "ease_in_out")
@@ -478,6 +483,53 @@ def replace(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"кліп «{clip.get('title')}»: новий матеріал")
 
 
+FRAME_CLIP = "K{:03d} кадр"
+MOTIONS = {"zoom_in": (1.0, 1.08), "zoom_out": (1.08, 1.0), "none": None}
+
+
+def place(ctx: Context, spec: dict) -> None:
+    number = int(spec["frame"])
+    planned = next((f for f in (ctx.plan or {}).get("frames", []) if int(f.get("number", 0)) == number), None)
+    if planned is None:
+        raise OpError(f"Кадру {number} немає в плані", 404)
+    have = next((f for f in ctx.frames if f["number"] == number), None)
+    if have and (main_picture(ctx.project, have) or _full_frame_text(have) and any(c.get("kind") == "text" for c in have["clips"])):
+        raise OpError(f"Кадр {number} уже стоїть на таймлайні: замініть його картинку через replace")
+    start, end = float(planned["start"]), float(planned["end"])
+    payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": round(start, 3), "duration": round(end - start, 3),
+               "title": FRAME_CLIP.format(number)}
+    if spec.get("text"):
+        words = display_text.clean(" ".join(planned.get("sentences") or []))
+        if not words.strip():
+            raise OpError(f"У кадрі {number} немає слів для текстового кадру")
+        payload.update(kind="text", text=words, text_role="full_frame", source_frame=number, source_text=" ".join(planned.get("sentences") or []))
+    else:
+        if spec.get("asset_id"):
+            asset = next((a for a in ctx.project.get("assets", []) if a.get("id") == spec["asset_id"]), None)
+            if asset is None:
+                raise OpError("Матеріал не знайдено в проєкті", 404)
+            kind = asset.get("kind")
+        else:
+            path = Path(spec["path"]).expanduser()
+            kind = store.media_kind(path)
+            asset = {"id": ctx.asset_for(path)}
+        if kind not in {"image", "video"}:
+            raise OpError("Кадр приймає картинку або відео")
+        payload.update(kind=kind, asset_id=asset["id"])
+        if kind == "video":
+            payload["volume"] = 0
+        motion = MOTIONS.get(spec.get("motion") or ("zoom_in" if kind == "image" else "none"), MOTIONS["zoom_in"])
+        if motion:
+            payload.update(scale=motion[0], easing=ctx.easing,
+                           keyframes=[{"time": 0.0, "scale": motion[0]}, {"time": round(end - start, 3), "scale": motion[1]}])
+    if have:
+        payload["group_id"] = have["group"]["id"]
+    else:
+        ctx.groups[FRAME_CLIP.format(number)] = f"Кадр {number}"
+    ctx.actions.append({"type": "add_clip", "payload": payload})
+    ctx.report.append(f"кадр {number}: {'текст' if spec.get('text') else payload['kind']} {start:.2f}–{end:.2f} с")
+
+
 def _full_frame_text(frame: dict) -> bool:
     return bool(frame.get("plan") and frame["plan"].get("format") == "text") or any(
         c.get("kind") == "text" and c.get("text_role") == "full_frame" for c in frame["clips"])
@@ -547,7 +599,7 @@ def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:
     return True
 
 
-OPS = {"accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions}
+OPS = {"accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
@@ -586,4 +638,12 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
             project["revision"] = project.get("revision", 0) + 1
             store.save_project(project)
         result = store.apply_action(pid, "batch", {"actions": ctx.actions}, project.get("revision", 0))
+        if ctx.groups:
+            # a frame placed where no group stood yet opens its own «Кадр N» group, as razgon_bridge.py slots does
+            grouped = {cid for group in result.get("scene_groups", []) for cid in group.get("clip_ids", [])}
+            new = [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": ctx.groups[clip.get("title")]}}
+                   for track in result.get("tracks", []) for clip in track.get("clips", [])
+                   if clip.get("title") in ctx.groups and clip["id"] not in grouped]
+            if new:
+                result = store.apply_action(pid, "batch", {"actions": new}, result.get("revision", 0))
     return {"revision": result.get("revision", 0), "report": ctx.report, "applied": len(ctx.actions)}

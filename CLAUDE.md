@@ -46,6 +46,9 @@ one project (`"Горбунов 23"`).
   moment, as the still of `f12` shows it; `--space photo` takes fractions of the picture. Words of `--phrase` appear in
   time with the voice. `clear-accents P 12` removes them.
 - `python3 tools/studio.py replace P --frame 12 FILE` — a new picture, with the clip's title, box and motion kept.
+- `python3 tools/studio.py place P 12 FILE` (or `--text`, `--asset ID`, `--motion zoom_in|zoom_out|none`) — puts frame 12 of
+  the plan on the timeline at its time, in the group «Кадр 12»: a picture or a video, or the frame's words as a full-frame
+  text. The frame agent of the photo channels builds the film with it.
 - `python3 tools/studio.py transitions P [--share 0.7]` — about 70% designed seams by the channel rule (a cut into a
   text frame, no transition other than a crossfade twice in a row, enough video for the transition); prints the planned
   and actual counts. Existing transitions stay unless `--replace`.

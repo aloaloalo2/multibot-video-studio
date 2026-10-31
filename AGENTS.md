@@ -38,13 +38,46 @@ Before planning or editing a video with this Studio, read [docs/AI_VIDEO_WORKFLO
 
 ## Animated films: voice first, director frames, start production
 
-A new episode opens on the plan with a voice drop zone and an optional voice text; without text the transcript becomes the script (`analysis_jobs.start(..., script=None)`). An animated channel never gets a plan split from the script alone: `generate_project_plan` without audio or timings calls `store.await_voice`, which keeps the script on the project as `voice_script` (shown in the voice text field and used by the recognition), moves a script-only draft to `plan-history`, refuses to replace a voice or director plan, and answers `awaiting_voice` (test: `test_animated_channel_waits_for_voice_instead_of_splitting_the_script`). The editor stays disabled until the plan follows the voice. A plan with `frame_source: razgon-direction` keeps its director's sentence groups through every rebuild (`planner.keep_director_frames`); changed sentences mark it `director_stale`. Such plans show «Почати створення відео» instead of plan regeneration; the request (`POST /api/projects/<id>/production-request`) is stored on the project and mirrored to `Запит на створення.json`. Speech comparison keeps script words with ASR time in `aligned_words`. Text fields have no focus ring. Restart or start the server only with `python3 tools/studio_restart.py` from this folder: it refuses while exports, speech, director, production, thumbnail or agent jobs run, and starts the server in its own session so it does not die with the agent's shell (on 30 October 2026 a server started with `nohup … &` from an agent session went down with that session).
+A new episode opens on the plan with a voice drop zone and an optional voice text; without text the transcript becomes the script (`analysis_jobs.start(..., script=None)`). An animated channel never gets a plan split from the script alone: `generate_project_plan` without audio or timings calls `store.await_voice`, which keeps the script on the project as `voice_script` (shown in the voice text field and used by the recognition), moves a script-only draft to `plan-history`, refuses to replace a voice or director plan, and answers `awaiting_voice` (test: `test_animated_channel_waits_for_voice_instead_of_splitting_the_script`). The editor stays closed until the timeline holds a frame of the film (see «The plan page» below). A plan with `frame_source: razgon-direction` keeps its director's sentence groups through every rebuild (`planner.keep_director_frames`); changed sentences mark it `director_stale`. Such plans show «Почати створення ролика» instead of plan regeneration; the request (`POST /api/projects/<id>/production-request`) is stored on the project and mirrored to `Запит на створення.json`. Speech comparison keeps script words with ASR time in `aligned_words`. Text fields have no focus ring. Restart or start the server only with `python3 tools/studio_restart.py` from this folder: it refuses while exports, speech, director, production, thumbnail or agent jobs run, and starts the server in its own session so it does not die with the agent's shell (on 30 October 2026 a server started with `nohup … &` from an agent session went down with that session).
 
 Frames of an animated film are code until the author presses «Експорт MP4» (user, 30 October 2026): the frame agent (`backend/production.py`) writes the scenes and leaves «Кадр N» code blocks (`razgon_bridge.py slots --frames`), its run is done when `frame_progress.drawn` covers the requested frames and each is a block, and a frame drawn as code counts as made on the plan and the timeline; a request for frames already drawn is refused with 409. Agents the Studio starts run with `MULTIBOT_RENDER_ON_EXPORT=1`, so the bridge refuses `push` and `final`; stopping a run (`director.kill`) also stops the commands Claude Code ran in their own process groups. A cancelled export kills its whole process group after `STOP_GRACE` seconds, even when the bridge is already gone. On a Mac the frames are rendered on the GPU and encoded on the hardware H.264 encoder (`render.mjs` defaults `--gl gpu` and `--encoder videotoolbox` on darwin; the bridge also passes `--gl gpu`): about 10 times faster than the software drawing with x264. The export's progress counts every frame of the film, with the frames already rendered from the same code done from the start. The export's project lock leaves the live preview (`/razgon-live`) free, and the page shows no banner for it. The thumbnail takes stills of code frames through `render.mjs --stills` (`thumbnail_gen.code_stills`). Tests: `test_production.py`, `test_director.py`, `test_export_control.py`, `../tools/tests/test_razgon_bridge.py`.
 
 A Razgon episode (`razgon.json` in the episode folder) exports the same film as `tools/razgon_bridge.py push` + `final`: `backend/razgon_export.py` hands the bridge's `export` command each frame's rendered timeline clip, or null for a code block; the bridge renders those frames longest first, one Chromium worker each and as many at a time as keep the Mac's RAM under 80% (`razgon_bridge.RAM_LIMIT`, about 2.2 GB a Chromium at 1080p; six at once froze a 16 GB Mac on 31 October 2026), reusing build/studio clips stamped with the same times and picture sources, glues them with the channel plate and Razgon's −14 LUFS mix. A Razgon timeline with other clips, Studio transitions or effects (a mixed episode: photos, stock and text frames around some Razgon frames, as Alexey Gorbunov's) exports through the engine: first `razgon_bridge.py frames` renders only its code blocks (the same build/studio cache, each with a 0.5 s held tail for the transition out), then the engine draws each block from its clip (`razgon_export._mixed`, `app._render_razgon_blocks`). The live preview of a mixed episode draws only its `razgon_2d` frames (`frontend/razgon-live.js`). Test: `backend/tests/test_razgon_export.py`.
 
 The voice at 100% is the studio's standard level (`backend/audio_level.py`, user 31 October 2026): the timed voice (the plan's audio asset, or a copy with the same bytes) is measured once (EBU R128) and played and exported with a gain to −16 LUFS, peaks at most −1.5 dBTP; the export mix ends in a −1 dBFS limiter. In the engine an image without a circle mask keeps its shape in the middle of its box (`render.contained`), and a text clip with motion keyframes carries its timed words along (tests in `engine/tests/test_render.py`).
+
+## The plan page and the frame agent, the same for every channel (31 October 2026)
+
+The plan page (`frontend/director.js`, `renderEpisode`) is one column, the same for photo and animated channels, with no
+numbered steps: a short voice line (file, length, «розпізнано, збіг N%» and the bin that starts the episode over), the
+director's state only while it works or needs the author (a stop, a limit pause, a changed text), then «Створення
+ролика»: the film as a strip of its frames (on a photo channel each frame in its format's colour from
+`planFormatVisuals`), the count picked by a drag across the strip (all frames by default), «Макс» and «Почати створення
+ролика». The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
+director and while the script is newer than the direction (`director_stale`). At the bottom, folded: «Текст озвучки й
+розпізнавання», «Таблиця кадрів», «Звіт режисера», «Звіт агента». A photo channel's plan from the planner keeps
+«Перегенерувати план» in the heading.
+
+«Монтаж» opens with the first frame of the film on the timeline: any clip but sound, the clips of `role: overlay`
+groups and clips titled «Логотип» or «Плашка» (`editorUnlocked`/`filmClips` in `frontend/plan.js`, `store.film_clips`);
+until then its tab says «Монтаж відкриється з першими кадрами ролика».
+
+«Почати створення ролика» posts the request and goes back to the channel's projects (`showProjectList`). Each project
+in `GET /api/projects` carries `production_request` (`status`, `frames`, `limit`, and `made` while the agent works,
+`store.production_state`); the card shows «Створюємо кадри · N з M», does not open while the agent works and opens
+again once it is done, paused or failed. The list is read again every 8 s while any card is in work. A frame counts as
+made (`store.made_frames`) when a film clip covers its middle; a Razgon code block counts once its scene is written;
+an animated film counts its frames drawn as code (`frame_progress.drawn`). A request for frames already made is refused
+with 409, a second request while one runs too.
+
+`production.start` runs for every channel. A photo channel's agent (`production.photo_brief`, Claude Opus 5.5 at
+`xhigh`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,
+stock through `tools/pixabay.py` (search, download into the episode), pictures drawn by Codex through
+`What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
+`razgon_bridge.py`, and puts each frame at its time with `python3 tools/studio.py place P N FILE|--text` (the montage op
+`place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). People in every frame and every
+prompt are stick figures, apart from the host. The run is done when each requested frame is made. Tests:
+`backend/tests/test_agent_tools.py`, `backend/tests/test_production.py`, `tools/tests/test_studio.py`.
 
 ## Timeline row order
 
