@@ -11,7 +11,8 @@ async function initServiceKeys(){
     const result=await api('/api/service-keys');
     if($('service-key-list')!==list)return;
     list.replaceChildren();
-    for(const provider of result.providers || []){
+    // Pexels and Unsplash are not used by the studio yet: they show only when a key was saved before
+    for(const provider of (result.providers || []).filter(item=>!['pexels','unsplash'].includes(item.id)||item.configured===true)){
       const row=document.createElement('div');row.className='service-key-panel';
       const header=document.createElement('div');header.className='service-key-row';
       const name=document.createElement('strong');name.textContent=provider.name;
@@ -19,6 +20,7 @@ async function initServiceKeys(){
       const label=document.createElement('label');label.textContent='Ключ доступу';
       const input=document.createElement('input');input.type='password';input.autocomplete='new-password';input.spellcheck=false;input.placeholder='Вставте ключ';input.setAttribute('aria-label',`${provider.name} ${label.textContent}`);if(provider.configured)input.value=mask;
       input.addEventListener('focus',()=>{if(input.value===mask)input.select();});label.append(input);
+      input.dataset.provider=provider.id;input.dataset.providerName=provider.name;
       const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=provider.configured?'Оновити ключ':'Зберегти ключ';button.disabled=true;
       input.addEventListener('input',()=>{button.disabled=!input.value.trim() || input.value===mask;});
       button.addEventListener('click',async()=>{
@@ -39,4 +41,16 @@ async function initServiceKeys(){
     finally{customButton.disabled=false;}
   });
   try{await refresh();}catch(error){notice(error.message,true);}
+}
+
+// The window's own «Зберегти» saves a key typed in but not saved with its row's button, instead of dropping it.
+async function saveTypedServiceKeys(){
+  const mask='••••••••••••••••';
+  for(const input of document.querySelectorAll('#service-key-list input[data-provider]')){
+    const key=input.value.trim();
+    if(!key||input.value===mask)continue;
+    await api('/api/service-keys','POST',{provider_id:input.dataset.provider,key});
+  }
+  const name=$('service-key-name')?.value.trim(),custom=$('service-key-value')?.value.trim();
+  if(name&&custom)await api('/api/service-keys','POST',{provider_id:'custom',name,key:custom});
 }

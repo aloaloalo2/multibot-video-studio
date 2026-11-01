@@ -124,7 +124,7 @@ function renderPlan(){
 }
 
 // The frames of the plan as a table: number and time, format, the spoken words and the idea of the frame.
-function planTable(frames,synced){
+function planTable(frames,synced,made=new Set()){
   const names=planFormatNames;
   const table=document.createElement('table');table.className='plan-table';table.innerHTML='<thead><tr><th scope="col">Кадр і час</th><th scope="col">Формат</th><th scope="col">Репліка й задум кадру</th></tr></thead>';
   const body=document.createElement('tbody');
@@ -133,7 +133,7 @@ function planTable(frames,synced){
     const visual=frame.visual || frame.description || frame.notes || '';
     const phraseItems=frame.continuation?[frame.continuation,...(frame.sentence_timings || [])]:(frame.sentence_timings || []);
     const phrases=synced?phraseItems.map(phrase=>`<li><time>${planClock(phrase.start)}–${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
-    row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}</strong><span>${planClock(frame.start)}–${planClock(frame.end)}</span><small>${planSeconds(Number(frame.end)-Number(frame.start))}</small></td><td>${esc(names[frame.format] || frame.format)}</td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
+    row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}${made.has(index)?'<span class="plan-made" title="Кадр готовий">✓</span>':''}</strong><span>${planClock(frame.start)}–${planClock(frame.end)}</span><small>${planSeconds(Number(frame.end)-Number(frame.start))}</small></td><td><span class="plan-format" style="--format-color:${planFormatVisuals[frame.format]?.color || '#b8bec9'}">${esc(names[frame.format] || frame.format)}</span></td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
   });
   table.append(body);
   return table;

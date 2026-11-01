@@ -12,7 +12,7 @@ function thumbnailReady(project){return project.pictures===undefined || project.
 function thumbnailWaits(button){
   const note=`Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролика: з них береться стиль.`;
   button.classList.add('is-off');button.setAttribute('aria-disabled','true');button.title=note;
-  button.addEventListener('click',event=>{event.stopImmediatePropagation();status(note,true);},{capture:true});
+  button.addEventListener('click',event=>{event.stopImmediatePropagation();status(note);},{capture:true});
 }
 
 async function openThumbnail(project){
@@ -38,7 +38,7 @@ function showThumbnailState(id){
   // the window's button and the tab's: busy while a run goes on, and the tab's also until a couple of frames are made
   for(const button of document.querySelectorAll('#modal-actions .primary, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
   box.dataset.status=run?.status || '';
-  box.textContent=!run?'':run.status==='running'?({prompt:'Claude вибирає момент і пише промпт, зазвичай до хвилини.',drawing:'Codex малює прев’ю за промптом Claude, зазвичай 1–3 хвилини.'}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою проєкту.':`Не вдалося: ${run.error}`;
+  box.textContent=!run?'':run.status==='running'?({prompt:'Claude вибирає момент і пише промпт, зазвичай до хвилини.',drawing:'Codex малює прев’ю за промптом Claude, зазвичай 1–3 хвилини.'}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою випуску.':`Не вдалося: ${run.error}`;
 }
 
 async function generateThumbnail(project){

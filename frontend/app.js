@@ -110,14 +110,30 @@ function modal(title, body, actions=[]) {
     button.addEventListener('click', action.run);
     box.append(button);
   }
-  $('modal-backdrop').hidden=false;
-  if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
+  $('modal-backdrop').hidden=false;modalDirty=false;
+  // the name field of a small dialog is ready to type into; a long form keeps the page's focus where it is
+  const field=$('modal-body').querySelector('input[type=text]:not([disabled]),input:not([type]):not([disabled])');
+  if(field&&$('modal-body').querySelectorAll('input,select,textarea').length<=3)setTimeout(()=>field.focus(),0);
+  else if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
 }
 function stopModalMedia() {$('modal-body').querySelectorAll('audio,video').forEach(media=>media.pause());}
 function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open');}
-$('modal-close').addEventListener('click',closeModal);
-$('modal-backdrop').addEventListener('click', event => {if (event.target === $('modal-backdrop')) closeModal();});
-document.addEventListener('keydown', event => {if (event.key==='Escape' && !$('modal-backdrop').hidden) closeModal();});
+// A dialog with something typed or changed in it asks before ×, Escape or a click beside it throws that away; its own
+// «Скасувати» means it and closes at once.
+let modalDirty=false;
+const marksDirty=event=>!(event.target instanceof HTMLInputElement&&event.target.name==='export-quality');   // a choice, not an edit
+$('modal-body').addEventListener('input',event=>{if(marksDirty(event))modalDirty=true;});
+$('modal-body').addEventListener('change',event=>{if(marksDirty(event))modalDirty=true;});
+function leaveModal(){if(modalDirty&&!confirm('Закрити без збереження? Зміни в цьому вікні пропадуть.'))return;closeModal();}
+$('modal-close').addEventListener('click',leaveModal);
+$('modal-backdrop').addEventListener('click', event => {if (event.target === $('modal-backdrop')) leaveModal();});
+document.addEventListener('keydown', event => {if (event.key==='Escape' && !$('modal-backdrop').hidden) leaveModal();});
+// Enter in a one-line field does what the dialog's main button does
+$('modal-body').addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||event.isComposing||!(event.target instanceof HTMLInputElement)||!['text','search','number',''].includes(event.target.type))return;
+  const primary=$('modal-actions').querySelector('.primary:not(:disabled)');if(!primary)return;
+  event.preventDefault();primary.click();
+});
 
 async function loadChannels(preferred,{restoreLocation=false}={}) {
   const route=restoreLocation?locationRoute():null;
@@ -176,7 +192,7 @@ function projectActions(project){
   const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(project.episode_path)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;
-  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['space','Звільнити місце',()=>openSpace(project)],['rename','Перейменувати проєкт',()=>renameProject(project)],['delete','Видалити проєкт',()=>deleteProject(project)]]){
+  for(const [type,title,run] of [...(project.episode_path?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),['space','Звільнити місце',()=>openSpace(project)],['rename','Перейменувати випуск',()=>renameProject(project)],['delete','Видалити випуск',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
     // the thumbnail takes its look from the video's own frames: grey until a couple are made (thumbnail.js)
     if(type==='thumbnail'&&!thumbnailReady(project))thumbnailWaits(button);
@@ -192,25 +208,25 @@ async function refreshProjects(){
 }
 
 function renameProject(project){
-  modal('Перейменувати проєкт',`<label>Назва проєкту<input id="rename-project-name" type="text" maxlength="100" value="${esc(project.name)}"></label>`,[{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+  modal('Перейменувати випуск',`<label>Назва випуску<input id="rename-project-name" type="text" maxlength="100" value="${esc(project.name)}"></label>`,[{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');button.disabled=true;
     try{
-      const name=$('rename-project-name').value.trim();if(!name)throw new Error('Введіть назву проєкту.');
+      const name=$('rename-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');
       const result=await api(`/api/projects/${encodeURIComponent(project.id)}`,'PATCH',{name,expected_revision:project.revision});
       if(state.project?.id===project.id){state.project=result.project;renderProject();}
-      await refreshProjects();closeModal();status(`Проєкт перейменовано на «${result.project.name}».`);
+      await refreshProjects();closeModal();status(`Випуск перейменовано на «${result.project.name}».`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
 }
 
 function deleteProject(project){
   // the bin deletes the project from the studio's disk; the episode folder in the channel stays (user, 31 October 2026)
-  modal('Видалити проєкт?',`<p>Проєкт «${esc(project.name)}» буде видалено з диска студії разом із монтажем, матеріалами, рендерами та прев’ю. Повернути його не вийде. Папка випуску в каналі залишиться.</p><p class="space-note" id="delete-size">Рахуємо, скільки місця звільниться…</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити проєкт',icon:'trash',danger:true,run:async()=>{
+  modal('Видалити випуск?',`<p>Випуск «${esc(project.name)}» буде видалено з диска студії разом із монтажем, матеріалами, рендерами та прев’ю. Повернути його не вийде. Папка випуску в каналі залишиться.</p><p class="space-note" id="delete-size">Рахуємо, скільки місця звільниться…</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити випуск',icon:'trash',danger:true,run:async()=>{
     const button=$('modal-actions').querySelector('.danger');button.disabled=true;
     try{
       const result=await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');
       if(state.project?.id===project.id)showProjectList();
-      closeModal();await refreshProjects();status(`Проєкт «${project.name}» видалено, звільнено ${spaceSize(result.freed || 0)}.`);
+      closeModal();await refreshProjects();status(`Випуск «${project.name}» видалено, звільнено ${spaceSize(result.freed || 0)}.`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
   api(`/api/projects/${encodeURIComponent(project.id)}/disk`).then(data=>{const note=$('delete-size');if(note)note.textContent=`Звільниться ${spaceSize(data.bytes)}.`;})
@@ -233,7 +249,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   const projectPath=`/api/projects/${encodeURIComponent(id)}`;
   const [data,plan,exportState]=await Promise.all([api(projectPath),api(`${projectPath}/plan`),api(`${projectPath}/export/active`)]);
   if(navigation!==state.navigation)return false;
-  if(data.project?.channel_id!==state.channel?.id)throw new Error('Проєкт належить іншому каналу.');
+  if(data.project?.channel_id!==state.channel?.id)throw new Error('Випуск належить іншому каналу.');
   state.project=data.project;
   setPreviewZoom(1);
   state.restoringProject=false;
@@ -329,8 +345,17 @@ function renderOverview() {
       card.classList.add('has-cover');card.append(cover);
     }else card.classList.add('no-cover');
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
+    // a stopped or paused run tells it on the card too: the author was sent here to watch the frames being made
+    const stopped=making?.status==='failed';
+    if(stopped){
+      const total=(Number(making.frames) || 0)-(Number(making.first) || 1)+1,done=Math.min(total,Number(making.made) || 0);
+      const box=document.createElement('div');box.className='project-making stopped';
+      box.innerHTML=`<span class="project-export-label"><span>${making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
+      box.title='Відкрийте випуск, щоб продовжити або почати ще раз';
+      open.insertBefore(box,open.querySelector('.project-meta'));card.classList.add('production-stopped');
+    }
     if(producing){
-      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
+      const total=(Number(making.frames) || 0)-(Number(making.first) || 1)+1,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
       const box=document.createElement('div');box.className='project-making';
       box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
       open.insertBefore(box,open.querySelector('.project-meta'));
@@ -483,7 +508,7 @@ function renderProject() {
     channelName.addEventListener('click',showProjectList);channelName.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}
   if(state.project){
     const slash=document.createElement('span');slash.className='project-title-slash';slash.textContent='/';
-    const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати проєкт «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати проєкт «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(slash,name);
+    const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати випуск «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати випуск «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(slash,name);
   }
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent=state.project?'● Локально збережено':'';
@@ -676,7 +701,7 @@ async function useAsset(asset, sceneId=selectedScene()?.id, options={}) {
 
 function openAddAudio(asset, preferredTrack) {
   const tracks=allTracks().filter(track=>['voice','audio','music','sfx','sound'].some(type=>(track.type || '').includes(type)));
-  if(!tracks.length){status('У проєкті немає звукової доріжки.',true);return;}
+  if(!tracks.length){status('У випуску немає звукової доріжки.',true);return;}
   const options=tracks.map(track=>`<option value="${esc(track.id)}" ${track.id===preferredTrack?'selected':''}>${esc(track.name || track.type)}</option>`).join('');
   modal(`Додати звук: ${asset.name}`,`<label>Доріжка<select id="audio-track">${options}</select></label><label>Початок, с<input id="audio-start" type="number" min="0" step="0.1" value="${state.playhead.toFixed(1)}"></label><label>Тривалість, с<input id="audio-duration" type="number" min="0.1" step="0.1" value="${Math.max(1,Number(asset.duration)||10)}"></label>`,[{label:'Скасувати',run:closeModal},{label:'Додати',primary:true,run:async()=>{try{const track_id=$('audio-track').value,start=Number($('audio-start').value),duration=Number($('audio-duration').value);if(!Number.isFinite(start)||!Number.isFinite(duration)||start<0||duration<=0)throw new Error('Перевірте час фрагмента.');await action('add_track_clip',{track_id,asset_id:asset.id,start,duration,volume:1},'Звуковий фрагмент додано.');closeModal();}catch(error){status(error.message,true);}}}]);
 }
@@ -867,7 +892,7 @@ async function action(type,payload,message,options={}) {
   const projectId=state.project.id;state.busy=true;$('save-state').textContent='● Зберігається…';$('save-state').classList.remove('unsaved');
   try {
     const result=await api(`/api/projects/${encodeURIComponent(state.project.id)}/actions`,'POST',{type,payload,expected_revision:state.project.revision});
-    if(!result.project)throw new Error('Сервер не підтвердив збереження проєкту.');
+    if(!result.project)throw new Error('Сервер не підтвердив збереження випуску.');
     if(options.preserveInspector && state.project?.id!==projectId)return result.project;
     state.project=result.project;
     if(options.preserveInspector){
@@ -889,9 +914,9 @@ function openChannelSettings(channel) {
   const keys=shown.map(index=>allKeys[index]),colors=shown.map(index=>allColors[index]);
   const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
-  const body=`${brandingSections(channel)}<p class="settings-purpose regular-only">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
+  const body=`${brandingSections(channel)}<p class="settings-purpose regular-only">Режисер ділить озвучку на кадри за цими частками форматів, а агент кадрів і студія беруть з цих налаштувань формат відео, акценти й початок ролика.</p>
     <section class="settings-section regular-only"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
-    <section class="settings-section regular-only"><h3>Візуальні формати</h3><p>Пропорції форматів під час автоматичного планування. Зміни одного поля не змінюють інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
+    <section class="settings-section regular-only"><h3>Візуальні формати</h3><p>Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
     <section class="settings-section regular-only"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>
     <section class="settings-section regular-only"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>
     <section class="settings-section"><h3>Формат відео</h3><div class="settings-three-column"><label>Роздільність<select id="settings-video-size">${[['1280x720','HD · 1280×720'],['1920x1080','Full HD · 1920×1080'],['2560x1440','2K · 2560×1440'],['3840x2160','4K · 3840×2160']].map(([value,label])=>`<option value="${value}" ${value===(original.video_size||'1920x1080')?'selected':''}>${label}</option>`).join('')}</select></label><label>Кадрів за секунду<select id="settings-video-fps">${[24,25,30,50,60].map(value=>`<option value="${value}" ${value===Number(original.video_fps||25)?'selected':''}>${value}</option>`).join('')}</select></label><label>Якість (бітрейт)<select id="settings-video-quality">${[['standard','Стандартна'],['high','Висока'],['max','Найвища']].map(([value,label])=>`<option value="${value}" ${value===(original.video_quality||'standard')?'selected':''}>${label}</option>`).join('')}</select></label></div><p id="settings-video-note">Нові випуски каналу створюються з цією роздільністю й частотою кадрів; уже створені лишаються як є. Якість — стартовий вибір у вікні експорту.</p></section>
@@ -899,7 +924,7 @@ function openChannelSettings(channel) {
     <section class="settings-section"><h3>Пам’ять агента для каналу</h3><p>Правила монтажу, які агент використовує в проєктах цього каналу.</p><textarea id="channel-agent-memory" rows="5" maxlength="30000" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
-  modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
+  modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
     try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       const memory=$('channel-agent-memory').value;
@@ -967,7 +992,7 @@ async function openStudioSettings(){
   try{
     const result=await api('/api/settings');const settings=result.settings || {};
     modal('Загальні налаштування студії',`<section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
-      try{const next={export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
+      try{if(typeof saveTypedServiceKeys==='function')await saveTypedServiceKeys();const next={export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
     await initServiceKeys();
@@ -991,7 +1016,7 @@ function updateExportLock(){
   $('export-open').innerHTML=locked?`${exportSpinner}<span>Експорт триває · ${exportPercent}%</span>`:'Експорт MP4';
   $('export-open').classList.toggle('export-busy',locked);$('export-open').setAttribute('aria-busy',String(locked));
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
-  if(locked)$('save-state').textContent='● Проєкт заблоковано під час експорту';
+  if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
   else if(state.project)$('save-state').textContent='● Локально збережено';
 }
 function exportActions(){
@@ -1037,11 +1062,11 @@ async function openExport() {
   }
   const gaps=visualGaps(),shownGaps=gaps.slice(0,6);
   const gapWarning=gaps.length?`<div class="export-gaps" role="note"><p><strong>Без кадру: ${gaps.length} ${gaps.length===1?'місце':gaps.length<5?'місця':'місць'}.</strong> У готовому відео там буде порожній екран.</p><div class="export-gap-list">${shownGaps.map((gap,index)=>`<button type="button" data-gap="${index}">${clock(gap.start)}–${clock(gap.end)}</button>`).join('')}${gaps.length>shownGaps.length?`<span>і ще ${gaps.length-shownGaps.length}</span>`:''}</div></div>`:'';
-  modal('Експорт ролика',`${gapWarning}${exportQualityHtml()}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
+  modal('Експорт ролика',`${gapWarning}${exportQualityHtml()}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Скасувати',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');
     if(button.disabled)return;
     button.disabled=true;button.textContent='Підготовка...';
-    $('render-state').textContent='Готуємо проєкт до експорту...';
+    $('render-state').textContent='Готуємо випуск до експорту...';
     const projectId=state.project.id, renderState=$('render-state');
     const quality=document.querySelector('input[name="export-quality"]:checked');
     try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:Number(quality.value)}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
@@ -1066,7 +1091,7 @@ async function pollJob(){
     const target=$('render-state');
     if(target && state.project?.id===state.job.project_id){
       const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='razgon_frames'?'Малюємо кадри Razgon':state.job.stage==='razgon_sound'?'Зводимо звук':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
-      const detail=cancelled?'Проєкт знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Проєкт заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Проєкт заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Проєкт заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Проєкт заблоковано до завершення експорту.':'Проєкт заблоковано до завершення експорту.';
+      const detail=cancelled?'Випуск знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Випуск заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Випуск заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Випуск заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Випуск заблоковано до завершення експорту.':'Випуск заблоковано до завершення експорту.';
       const estimate=!complete&&!failed&&!cancelled&&jobStatus!=='cancelling'?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
       target.innerHTML=`<p>${label}</p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
@@ -1075,7 +1100,7 @@ async function pollJob(){
   }catch(error){if(state.poll)clearInterval(state.poll);state.poll=null;const target=$('render-state');if(target)target.textContent=error.message;status(error.message,true);}
 }
 
-$('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Створіть новий канал у папці YOUTUBE або додайте наявну папку каналу.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label>',[{label:'Скасувати',run:closeModal},{label:'Обрати папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
+$('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Новий канал: введіть назву й натисніть «Створити канал», студія створить його папку в YOUTUBE.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label><p class="add-channel-or">Канал уже має свою папку? Натисніть «Додати наявну папку» й виберіть її.</p>',[{label:'Скасувати',run:closeModal},{label:'Додати наявну папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити канал',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
 for(const logo of document.querySelectorAll('.brand-logo')){logo.addEventListener('click',showProjectList);logo.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}
 $('overview-channel-settings').addEventListener('click',()=>{if(state.channel)openChannelSettings(state.channel);});
 $('overview-create').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id,{view:'plan'});}catch(error){status(error.message,true);}}}]);});

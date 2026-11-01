@@ -92,7 +92,7 @@ function arrangeEpisode(episode){
       refreshEpisode(episode);
     }).catch(error=>{if(reportSlot.isConnected)heardText.textContent=`Не вдалося завантажити розпізнаний текст: ${error.message}`;});
   }
-  const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready));
+  const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready,madeSet(frames)));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';
   body.append(scriptFold,heard,table,directorReport);
 }
@@ -178,7 +178,8 @@ function fillVoiceLine(box){
   const percent=report?`${Number(report.word_match_percent).toFixed(1).replace('.',',')}%`:'';
   let state_,text;
   if(working){state_='working';text=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
-  else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=percent?`розпізнано, збіг ${percent}`:'розпізнано';}
+  // recognised by the studio, or timed from a file the author brought (then there is no recognition to speak of)
+  else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
   else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
   else{state_='empty';text='озвучку ще не додано';}
@@ -205,7 +206,7 @@ function restartButton(id){
 }
 
 function confirmRestart(id){
-  modal('Почати випуск заново?','<p>Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну. Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії проєкту, а створені файли лишаться в папці випуску.</p>',
+  modal('Почати випуск заново?','<p>Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну. Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії випуску, а створені файли лишаться в папці випуску.</p>',
     [{label:'Скасувати',run:closeModal},{label:'Почати заново',icon:'trash',danger:true,run:async()=>{
       const button=$('modal-actions').querySelector('.danger');button.disabled=true;
       try{
@@ -372,6 +373,8 @@ function fillMake(make){
   make.classList.toggle('locked',locked);make.dispatchEvent(new Event('episode-refresh'));make.classList.toggle('waiting',directorAwaited());
   const count=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,Number(makeCount[id]) || frames.length));
   const shownCount=working||paused?Number(request.frames):count;
+  // the stretch this request or this choice covers: from the first frame not made before it
+  const first=working||paused||request?.status==='failed'?Number(request.first || 1):floor+1;
   cells.forEach((cell,index)=>{cell.classList.toggle('made',made.has(index));cell.classList.toggle('chosen',index<shownCount&&!made.has(index)&&!blocked);
     cell.title=`Кадр ${index+1} · ${clock(frames[index].start)}–${clock(frames[index].end)}${made.has(index)?' · готовий':''}`;});
   handle.hidden=!!blocked;
@@ -380,18 +383,18 @@ function fillMake(make){
   max.disabled=locked;max.classList.toggle('active',!locked&&count===frames.length);
   const end=Number(frames[shownCount-1]?.end) || 0,all=Number(frames[frames.length-1].end) || 0;
   readout.innerHTML=blocked&&!working&&!paused?`<strong>${frames.length}</strong><span>${planFrameWord(frames.length)} · ${clock(all)}</span>`
-    // a stretch after the made frames reads «Кадри 2–6 з 6», a count from the start «6 кадрів з 6»
-    :floor&&!working&&!paused?`<span>Кадри</span><strong>${floor+1}–${shownCount}</strong><span>з ${frames.length} · ${clock(end)} з ${clock(all)}</span>`
-    :`<strong>${shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · ${clock(end)} з ${clock(all)}</span>`;
+    // a stretch after the made frames reads «Кадри 2–6 з 6 · 00:04–00:48», a count from the start «6 кадрів з 6 · до 00:48»
+    :first>1?`<span>Кадри</span><strong>${first}–${shownCount}</strong><span>з ${frames.length} · ${clock(frames[first-1].start)}–${clock(end)}</span>`
+    :`<strong>${shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · до ${clock(end)} з ${clock(all)}</span>`;
   fillLegend(legend,frames,made.size);
   hint.textContent=blocked;hint.hidden=!blocked||working||paused;
   feed.replaceChildren();
   // While the agent works the button turns into its progress; the steps of the work read in the feed below.
   start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked;
   if(working){
-    const done=[...made].filter(index=>index<request.frames).length;
+    const done=[...made].filter(index=>index>=first-1&&index<request.frames).length,total=request.frames-first+1;
     start.disabled=true;start.classList.add('loading');
-    start.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо кадри · ${done} з ${request.frames}</span>`;
+    start.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо кадри · ${done} з ${total}</span>`;
     renderTeam(feed,'production',id,true);
     productionTimer=setTimeout(()=>pollProduction(id),8000);
   }else if(paused){
@@ -401,7 +404,8 @@ function fillMake(make){
     const note=document.createElement('p');note.className='plan-note';note.textContent=`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
   }else{
     start.textContent='Почати створення ролика';
-    if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';note.textContent=`Кадри 1–${request.frames} не вдалися. ${request.error || ''} Виберіть кадри й почніть ще раз.`;feed.append(note);}
+    if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();
+      note.textContent=`Кадри ${first}–${request.frames} не вдалися. ${error}${/почніть ще раз/.test(error)?'':' Виберіть кадри й почніть ще раз.'}`;feed.append(note);}
   }
 }
 
@@ -422,11 +426,12 @@ async function startMaking(button){
   if(!state.project||button.disabled||button.onclick)return;
   const id=state.project.id,frames=state.plan?.frames || [];
   const count=Math.max(1,Math.min(frames.length,Number(makeCount[id]) || frames.length));
+  const first=(Number(button.closest('.episode-make')?.dataset.floor) || 0)+1,many=count-first+1;
   button.disabled=true;
   try{
     await api(`/api/projects/${encodeURIComponent(id)}/production-request`,'POST',{frames:count});
     delete makeCount[id];
-    showProjectList();status(`Агент почав створювати ${count} ${planFrameWord(count)}. Хід видно на картці випуску.`);
+    showProjectList();status(`Агент почав створювати ${many} ${planFrameWord(many)}${first>1?` (кадри ${first}–${count})`:''}. Хід видно на картці випуску.`);
   }catch(error){button.disabled=false;status(error.message,true);}
 }
 

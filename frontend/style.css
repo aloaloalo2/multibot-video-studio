@@ -264,7 +264,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .icon-button{border:0;background:#2d2d32;color:#d5d6dc;border-radius:7.5px;min-width:26px;min-height:26px;font-size:19px;line-height:1}
 .search{margin:10px 10px 8px;width:calc(100% - 20px);border:1px solid #3c3c42;border-radius:9px;background:#28282c;color:#f1f1f2;padding:9px}
 .search::placeholder{color:#8b8d95}
-.library-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:10px 10px 8px}
+.library-tabs{display:flex;flex-wrap:nowrap;gap:4px;padding:10px 10px 8px;overflow-x:auto;scrollbar-width:none}.library-tabs::-webkit-scrollbar{display:none}.library-tabs button{flex:none}
 .library-tabs button{border:0;background:none;color:#989aa2;padding:6px 7px;border-radius:7.5px;font-size:12px;white-space:nowrap}
 .library-tabs button.active{background:#303036;color:#f1f1f2}
 .asset-list{padding:4px 10px 10px;overflow:auto;min-height:70px;flex:1;display:flex;flex-direction:column;gap:8px}
@@ -989,3 +989,10 @@ input[type=checkbox]:checked::before,input[type=radio]:checked::before{transform
 input[type=checkbox]:hover:not(:disabled),input[type=radio]:hover:not(:disabled){border-color:#8a7440}
 input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid #f0b429;outline-offset:2px}
 input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.45;cursor:not-allowed}
+.project-making.stopped{color:#f0c967}
+.project-card.production-stopped .project-created{display:none}
+/* the frame table speaks the strip's language: each format in its colour, a made frame ticked */
+.plan-table .plan-format{display:inline-flex;align-items:center;gap:7px;color:#e4e5e9}
+.plan-table .plan-format::before{content:'';width:10px;height:10px;border-radius:3px;background:var(--format-color);flex:none}
+.plan-table .plan-made{margin-left:7px;color:#6bf2ae;font-weight:700}
+.add-channel-or{margin-top:14px;padding-top:12px;border-top:1px solid #2c2c31;color:#9a9ca4}

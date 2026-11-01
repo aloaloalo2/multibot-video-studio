@@ -508,13 +508,15 @@ def production_state(project: dict) -> dict | None:
         request = production.settle(project["id"], project) or {}
     if not request.get("status"):
         return None
-    state = {"status": request["status"], "frames": int(request.get("frames") or 0), "limit": bool(request.get("limit"))}
-    if request["status"] in {"requested", "in_progress"}:
+    state = {"status": request["status"], "frames": int(request.get("frames") or 0), "first": int(request.get("first") or 1),
+             "limit": bool(request.get("limit"))}
+    if request["status"] in {"requested", "in_progress", "failed"}:
         try:
             plan = load_project_plan(project["id"])
         except (StudioError, OSError, ValueError):
             plan = None
-        state["made"] = sum(1 for number in made_frames(project, plan) if number <= state["frames"])
+        # made among the frames this request asks for (from its first one), so «1 з 6» never counts a frame made before
+        state["made"] = sum(1 for number in made_frames(project, plan) if state["first"] <= number <= state["frames"])
     return state
 
 
@@ -2045,10 +2047,13 @@ def request_production(pid: str, frames) -> dict:
             raise StudioError(f"Кількість кадрів має бути від 1 до {total}")
         # made frames (drawn as code, or on the timeline) are not asked for again: that would only start the agent
         # over the same frames
-        if set(range(1, count + 1)) <= set(made_frames(project, plan)):
+        made = set(made_frames(project, plan))
+        if set(range(1, count + 1)) <= made:
             raise StudioError(f"Кадри 1–{count} уже створені: їх видно в «Монтажі». Готовий ролик збирає «Експорт MP4».", 409)
+        # the first frame the agent makes: frames already made before it are not part of this request's progress
+        first = next(n for n in range(1, count + 1) if n not in made)
         chosen = plan["frames"][:count]
-        request = {"id": uuid.uuid4().hex[:12], "frames": count, "total_frames": total,
+        request = {"id": uuid.uuid4().hex[:12], "frames": count, "first": first, "total_frames": total,
                    "start": chosen[0]["start"], "end": chosen[-1]["end"], "status": "requested",
                    "created_at": time.time(), "script_sha256": plan["script_sha256"]}
         project["production_request"] = request
