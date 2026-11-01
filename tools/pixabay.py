@@ -157,6 +157,7 @@ def main():
     search.add_argument("kind", choices=["image", "video"])
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=12)
+    search.add_argument("--json", action="store_true", help="full JSON instead of one short line a candidate")
     save = subcommands.add_parser("download", help="Download one selected asset")
     save.add_argument("kind", choices=["image", "video"])
     save.add_argument("id", type=int)
@@ -175,6 +176,15 @@ def main():
             if quality not in valid:
                 raise RuntimeError("Unsupported quality for this media type")
             output = download(args.kind, args.id, quality, args.dir)
+        if args.command == "search" and not args.json:
+            # one short line a candidate: an agent reads a dozen of them for a few tokens each
+            for item in output:
+                size = max(item.get("sizes", {}).values(), key=lambda s: int(s.split("x")[0]), default="") if args.kind == "video" else ""
+                length = f"{item.get('duration_seconds')} с · " if args.kind == "video" else ""
+                print(f"{item['id']} · {length}{size + ' · ' if size else ''}{item.get('tags') or ''}")
+            if not output:
+                print("нічого не знайдено: спробуйте інші англійські слова")
+            return
         print(json.dumps(output, ensure_ascii=False, indent=2))
     except RuntimeError as error:
         parser.exit(1, f"{error}\n")

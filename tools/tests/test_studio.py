@@ -35,6 +35,14 @@ class FakeStudio:
         if "/summary" in path:
             data = {"fps": 25, "frames": [{"n": 12, "start": 10.0, "end": 14.0, "line": "", "issues": []}], "head": ["h"], "issues": []}
             return "h\n" if raw and "format=text" in path else data
+        if path.endswith("/plan"):
+            return {"plan": {"frames": [{"number": 1, "start": 0, "end": 4, "format": "stock_photo", "sentences": ["Печінка працює."], "visual": "печінка"},
+                                        {"number": 2, "start": 4, "end": 8, "format": "text", "sentences": ["Жир накопичується."]},
+                                        {"number": 3, "start": 8, "end": 12, "format": "text", "sentences": ["Овочі допомагають."]}]}}
+        if path.endswith("/frames-drawn"):
+            return {"drawn": [], "made": [1, 3]}
+        if path.endswith("/actions"):
+            return {"project": {"revision": 9}}
         if path.endswith("/ops"):
             return {"revision": 8, "report": ["кадр 12: text"], "applied": 3, "actions": []}
         if path.endswith("/still"):
@@ -88,6 +96,18 @@ class StudioToolTest(unittest.TestCase):
         code, _, err, _ = self.run_tool("place", "горбунов 23", "6")
         self.assertEqual(code, 1)
         self.assertIn("Вкажіть файл", err)
+
+    def test_plan_is_one_short_line_a_frame_and_all_text_places_the_missing_ones(self):
+        code, out, _, _ = self.run_tool("plan", "горбунов 23", "--todo")
+        self.assertEqual(code, 0)
+        self.assertIn("  2 · ", out)
+        self.assertNotIn("Печінка", out)                      # frame 1 is made, --todo leaves it out
+        self.assertIn("кадрів 3, зроблено 2", out)
+        _, _, _, sent = self.run_tool("place", "горбунов 23", "all-text")
+        self.assertEqual(sent[-1][2]["ops"], [{"op": "place", "frame": 2, "text": True}])   # frame 3 is made already
+        _, out, _, sent = self.run_tool("undo", "горбунов 23")
+        self.assertEqual(sent[-1][1:], (f"/api/projects/{'a' * 24}/actions", {"type": "undo", "payload": {}}))
+        self.assertIn("скасовано", out)
 
     def test_still_prints_the_picture_and_the_preview_link_at_the_same_moment(self):
         code, out, _, sent = self.run_tool("still", "горбунов 23", "f12")

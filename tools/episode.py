@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 STUDIO = "http://127.0.0.1:8770"
+APP = Path(__file__).resolve().parents[1].name   # the studio folder by its own name, whatever the clone is called
 
 
 def read_json(path: Path):
@@ -40,7 +41,7 @@ def project_of(episode: Path):
     if pid:
         return pid
     for channel in (studio("/api/channels") or {}).get("channels", []):
-        for item in (studio(f"/api/channels/{channel['id']}/projects") or {}).get("projects", []):
+        for item in (studio(f"/api/projects?channel={channel['id']}") or {}).get("projects", []):
             if Path(item.get("episode_path", "")).resolve() == episode.resolve():
                 return item["id"]
     return None
@@ -63,12 +64,12 @@ def steps(episode: Path):
 
     yield ("Озвучка розпізнана, план «За озвучкою»", synced,
            f"{plan['timing']['audio']['duration']:.0f} с, {len(plan['timing']['sentences'])} фраз" if synced else "у студії: «Додайте озвучку ролика»",
-           "Перетягнути аудіо у вкладці «План ролика» (або VideoKey Studio/tools/video_plan.py --audio)")
+           "Перетягнути аудіо у вкладці «План ролика»")
 
     words = read_json(razgon / "timeline" / "words.json") if razgon else None
     yield ("Проєкт Razgon створено", bool(razgon and razgon.is_dir() and words),
            ("слова сценарію з часом" if (words or {}).get("text") == "script" else "слова з розпізнавання (старий звіт)") if words else "немає",
-           f"python3 'VideoKey Studio/tools/razgon_bridge.py' prepare --project-id {pid}")
+           f"python3 '{APP}/tools/razgon_bridge.py' prepare --project-id {pid}")
 
     shots = (read_json(razgon / "story" / "shots.json") or {}).get("shots", []) if razgon else []
     directed = bool(shots) and all(shot.get("scene") for shot in shots) and (razgon / "story" / "beats.json").is_file()
@@ -79,7 +80,7 @@ def steps(episode: Path):
     director_frames = plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale")
     yield ("Кадри студії за режисурою", director_frames,
            f"{len(frames)} кадрів" if director_frames else ("сценарій змінився, режисуру треба оновити" if plan.get("director_stale") else f"зараз {len(frames)} кадрів за реченнями"),
-           f'python3 "VideoKey Studio/tools/razgon_bridge.py" plan --razgon "{razgon}"' if razgon else "спершу проєкт Razgon")
+           f'python3 "{APP}/tools/razgon_bridge.py" plan --razgon "{razgon}"' if razgon else "спершу проєкт Razgon")
 
     config = read_json(razgon / "config.json") if razgon else {}
     config = config or {}
@@ -127,11 +128,11 @@ def steps(episode: Path):
         report = razgon / "build" / "cuts" / "report.json"
         code = max((p.stat().st_mtime for d in ("scenes", "story") for p in (razgon / d).rglob("*") if p.suffix in (".js", ".json")), default=0)
         fresh = report.is_file() and report.stat().st_mtime >= code
-        bad = [j for j in read_json(report) if str(j.get("status", "")).startswith("FAIL")] if fresh else []
+        bad = [j for j in (read_json(report) or []) if str(j.get("status", "")).startswith("FAIL")] if fresh else []
         yield ("Стики без ривків", fresh and not bad,
                ("усі стики чисті" if not bad else f"брак на {len(bad)} стиках: " + ", ".join(f"{j['from']}→{j['to']}" for j in bad[:6])) if fresh
                else "перевірки ще не було або код сцен новіший за неї",
-               f'python3 "VideoKey Studio/tools/cut_check.py" --razgon "{razgon}" і виправити кожен FAIL (What If/AGENTS.md, «Стики без ривків»)')
+               f'python3 "{APP}/tools/cut_check.py" --razgon "{razgon}" і виправити кожен FAIL (What If/AGENTS.md, «Стики без ривків»)')
 
     # a take far slower than the rest puts a filter on each of many draws: the speed check must be newer than the code
     if razgon and shots and not missing_all:
@@ -146,7 +147,7 @@ def steps(episode: Path):
 
     finals = sorted(episode.glob("*.mp4"))
     yield ("Фінальний MP4", bool(finals), finals[-1].name if finals else "ще немає",
-           f'Після команди користувача: python3 "VideoKey Studio/tools/razgon_bridge.py" push / final --razgon "{razgon}"')
+           f'Після команди користувача: python3 "{APP}/tools/razgon_bridge.py" push / final --razgon "{razgon}"')
 
 
 def main():

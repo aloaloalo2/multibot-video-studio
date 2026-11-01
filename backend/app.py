@@ -992,7 +992,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(director_plan.sentences(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frames-drawn", path)
         if match:
-            return self.json_response({"drawn": frame_progress.drawn(match.group(1))})
+            project = store.load_project(match.group(1))
+            return self.json_response({"drawn": frame_progress.drawn(match.group(1)),
+                                       "made": store.made_frames(project, store.load_project_plan(project["id"]))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
         if match:
             return self.json_response({**space.usage(match.group(1)), "exporting": bool(active_export(match.group(1)))})

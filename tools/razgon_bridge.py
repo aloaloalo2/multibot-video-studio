@@ -157,7 +157,8 @@ def prepare(args) -> None:
     duration = float(audio["duration"])
     other = sorted({frame["format"] for frame in plan["frames"] if frame["format"] != "razgon_2d"})
     if other:
-        print("Увага: у плані є кадри інших форматів (" + ", ".join(other) + "). Razgon намалює всі кадри.")
+        print("У плані є кадри інших форматів (" + ", ".join(other) + "): Razgon малює лише кадри «2D-анімація Razgon», "
+              "шоти проєкту все одно покривають усю озвучку.")
 
     analysis = studio.call("GET", f"/api/projects/{args.project_id}/analysis").get("report") or {}
     voice_record = voice_asset(project, audio, analysis)
@@ -675,6 +676,12 @@ def push(args) -> None:
 
 # ---------------------------------------------------------------- plan
 # ---------------------------------------------------------------- frames for review without a render
+def drawn_frames(link: dict) -> list[dict]:
+    """The Studio frames Razgon draws: all of an animated film, only the «2D-анімація Razgon» ones of a mixed episode
+    (photos, stock and text around them stay the Studio's). An older link without formats is all Razgon."""
+    return [f for f in link["frames"] if f.get("format", "razgon_2d") == "razgon_2d"]
+
+
 def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict, reset: frozenset = frozenset()) -> dict:
     """Put every Studio frame on the timeline as a numbered "Кадр N" block before any render. The block is a Studio code
     clip (an invisible shape, no media file): live mode, which only keeps overlay and audio clips, draws the Razgon film
@@ -684,14 +691,16 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     pid, fps = link["project_id"], int(link["fps"])
     # the blocks follow the plan: a block whose frame is gone (the director joined takes) or whose frame moved is removed
     # and put back at the frame's place below
-    want = {FRAME_TITLE.format(f["number"]): (frame_index(f["start"], fps), frame_index(f["end"], fps)) for f in link["frames"]}
+    # a block only on the frames Razgon draws: a mixed episode's photo, stock and text frames get none
+    drawn = drawn_frames(link)
+    want = {FRAME_TITLE.format(f["number"]): (frame_index(f["start"], fps), frame_index(f["end"], fps)) for f in drawn}
     stale = [clip for _, clip in all_clips(project) if re.fullmatch(r"Razgon · кадр \d{3}", clip.get("title", ""))
              and (clip["title"] not in want or (round(clip["start"] * fps), round((clip["start"] + clip["duration"]) * fps)) != want[clip["title"]]
                   or (int(clip["title"][-3:]) in reset and clip.get("kind") != "animation"))]
     if stale:
         project = studio.batch(project, [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in stale])
     have = {clip.get("title") for _, clip in all_clips(project)}
-    frames = [f for f in link["frames"] if FRAME_TITLE.format(f["number"]) not in have]
+    frames = [f for f in drawn if FRAME_TITLE.format(f["number"]) not in have]
     if not frames:
         return project
     base_layer = project["tracks"][0]["id"]

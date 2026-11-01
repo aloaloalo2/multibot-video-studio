@@ -1235,6 +1235,15 @@ def apply_group_action(project, action, payload):
     clips={c['id']:c for t in project['tracks'] for c in t.get('clips',[])}
     if action=='group_clips':
         ids=payload.get('clip_ids')
+        if ids is None and isinstance(payload.get('clip_titles'),list):
+            # clips added earlier in the same batch have no id the caller knows: name them by title (the newest one not
+            # yet in a group), so a clip and its frame group are one undo step (montage_ops.place)
+            occupied={cid for g in groups for cid in g['clip_ids']}
+            ids=[]
+            for title in payload['clip_titles']:
+                found=[c for t in project['tracks'] for c in t.get('clips',[]) if c.get('title')==title and c['id'] not in occupied and c['id'] not in ids]
+                if not found:raise StudioError(f'Кліп «{title}» не знайдено')
+                ids.append(found[-1]['id'])
         if not isinstance(ids,list) or not 1<=len(ids)<=200 or any(not isinstance(cid,str) for cid in ids) or len(set(ids))!=len(ids) or any(cid not in clips for cid in ids):
             raise StudioError('Invalid frame members')
         occupied={cid for g in groups for cid in g['clip_ids']}

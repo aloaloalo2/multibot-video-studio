@@ -11,6 +11,7 @@ POST /api/projects/<id>/ops {"ops": [...], "expected_revision": n, "dry_run": fa
 - {"op": "clear_accents", "frame": 12} removes the accents a frame got from "accent" (titles «K012 акцент …»).
 - {"op": "replace", "clip": id, "path": file | "asset_id": id} swaps a clip's picture and keeps its title, box and motion.
 - {"op": "transitions", "share": 0.7, ...} designs about that share of the seams between frames by the channel rules.
+- {"op": "remove", "frame": 12} takes the frame off the timeline with its whole group.
 - {"op": "place", "frame": 12, "path": file | "asset_id": id | "text": true, "motion": "zoom_in"} puts a frame of the
   plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video (a photo gets a slow
   zoom unless "motion": "none"), or with "text" the frame's own spoken words as a full-frame text. The frame agent of
@@ -495,8 +496,12 @@ def place(ctx: Context, spec: dict) -> None:
     have = next((f for f in ctx.frames if f["number"] == number), None)
     if have and (main_picture(ctx.project, have) or _full_frame_text(have) and any(c.get("kind") == "text" for c in have["clips"])):
         raise OpError(f"Кадр {number} уже стоїть на таймлайні: замініть його картинку через replace")
-    start, end = float(planned["start"]), float(planned["end"])
-    payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": round(start, 3), "duration": round(end - start, 3),
+    # both edges on whole video frames by the same rule as the export (AGENTS.md: never round start and length apart,
+    # that leaves a one-frame gap or overlap at a seam)
+    fps = int(ctx.project.get("fps") or 25)
+    first, last = (math.floor(float(planned[key]) * fps + .5 + 1e-8) for key in ("start", "end"))   # render.frame_index
+    start, end = first / fps, last / fps
+    payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": end - start,
                "title": FRAME_CLIP.format(number)}
     if spec.get("text"):
         words = display_text.clean(" ".join(planned.get("sentences") or []))
@@ -518,6 +523,14 @@ def place(ctx: Context, spec: dict) -> None:
         payload.update(kind=kind, asset_id=asset["id"])
         if kind == "video":
             payload["volume"] = 0
+            # a stock video shorter than its frame would leave the end of the frame empty: say so now, not in a later summary
+            source = Path(asset["path"]) if asset.get("path") else Path(spec["path"]).expanduser()
+            length = store.media_duration(source) if source.is_file() else None
+            trim = float(spec.get("trim_start") or 0)
+            if length and length - trim < end - start - 1 / fps:
+                raise OpError(f"Відео кадру {number} триває {length - trim:.1f} с, а кадр {end - start:.1f} с: візьміть довше відео")
+            if trim:
+                payload["trim_start"] = trim
         motion = MOTIONS.get(spec.get("motion") or ("zoom_in" if kind == "image" else "none"), MOTIONS["zoom_in"])
         if motion:
             payload.update(scale=motion[0], easing=ctx.easing,
@@ -528,6 +541,13 @@ def place(ctx: Context, spec: dict) -> None:
         ctx.groups[FRAME_CLIP.format(number)] = f"Кадр {number}"
     ctx.actions.append({"type": "add_clip", "payload": payload})
     ctx.report.append(f"кадр {number}: {'текст' if spec.get('text') else payload['kind']} {start:.2f}–{end:.2f} с")
+
+
+def remove(ctx: Context, spec: dict) -> None:
+    """Take a frame off the timeline with everything in its group (picture, accents, text); undo brings it back."""
+    frame = find_frame(ctx.frames, spec.get("frame"))
+    ctx.actions.append({"type": "delete_group", "payload": {"group_id": frame["group"]["id"]}})
+    ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: прибрано кліпів {len(frame['clips'])}")
 
 
 def _full_frame_text(frame: dict) -> bool:
@@ -599,7 +619,7 @@ def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:
     return True
 
 
-OPS = {"accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place}
+OPS = {"accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
@@ -637,13 +657,7 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
             project.setdefault("assets", []).extend(record for record in (store.asset_record(path, pid) for path in ctx.files) if record["id"] not in known)
             project["revision"] = project.get("revision", 0) + 1
             store.save_project(project)
-        result = store.apply_action(pid, "batch", {"actions": ctx.actions}, project.get("revision", 0))
-        if ctx.groups:
-            # a frame placed where no group stood yet opens its own «Кадр N» group, as razgon_bridge.py slots does
-            grouped = {cid for group in result.get("scene_groups", []) for cid in group.get("clip_ids", [])}
-            new = [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": ctx.groups[clip.get("title")]}}
-                   for track in result.get("tracks", []) for clip in track.get("clips", [])
-                   if clip.get("title") in ctx.groups and clip["id"] not in grouped]
-            if new:
-                result = store.apply_action(pid, "batch", {"actions": new}, result.get("revision", 0))
+        # a frame placed where no group stood yet opens its own «Кадр N» group in the same batch: one undo step
+        groups = [{"type": "group_clips", "payload": {"clip_titles": [title], "title": frame}} for title, frame in ctx.groups.items()]
+        result = store.apply_action(pid, "batch", {"actions": ctx.actions + groups}, project.get("revision", 0))
     return {"revision": result.get("revision", 0), "report": ctx.report, "applied": len(ctx.actions)}

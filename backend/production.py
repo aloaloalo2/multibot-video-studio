@@ -71,7 +71,7 @@ QUALITY = """5. Здача тільки після власного перегл
      Предмет не буває водночас переднім планом для лінії схилу й заднім планом для героя;
    - поява: ніщо не з'являється й не зникає миттєво («блим»): герой, предмет чи напис проявляється плавно, виїжджає з краю,
      виходить з-за іншого предмета або входить у кадр сам;
-   - стики: дія не починається заново після стику. Запусти python3 "VideoKey Studio/tools/cut_check.py" --razgon <проєкт> --only <шоти цих кадрів> і
+   - стики: дія не починається заново після стику. Запусти python3 "<студія>/tools/cut_check.py" --razgon <проєкт> --only <шоти цих кадрів> і
      переглянь кожну смугу build/cuts/seams_NN.png очима: після стику дія йде далі з того стану, де закінчилась;
    - кадр має бути привабливим, як у топових каналів: глибина, світло, деталі;
    - швидкість: g.filter (blur, brightness) діє окремим проходом на відеокарті на кожен виклик малювання, тож не став його
@@ -110,7 +110,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
 3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці What If/razgon-2d-studio, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
-{QUALITY}
+{QUALITY.replace("<студія>", store.APP_ROOT.name)}
 4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
    знову робить блоком.
@@ -146,10 +146,12 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'},
-{store.APP_ROOT / 'CLAUDE.md'} і {store.APP_ROOT / 'docs/AI_VIDEO_WORKFLOW.md'}. План кадрів (формат, час і слова кожного кадру):
-python3 "{tools}/studio.py" summary {project['id']} і GET http://127.0.0.1:8770/api/projects/{project['id']}/plan
-(python3 -c з urllib).
+Спершу прочитай правила каналу {episode.parent / 'AGENTS.md'} (і {root / 'AGENTS.md'}, якщо він є): там стиль і що в якому форматі.
+Великі документи студії (її AGENTS.md, CLAUDE.md, docs/) не читай: усе потрібне для цієї роботи нижче.
+План кадрів по рядку на кадр (час, формат, ідея режисера, слова, ✓ зроблено): python3 "{tools}/studio.py" plan {project['id']} --frames 1-{request['frames']} --todo
+Що вже стоїть на таймлайні і які проблеми: python3 "{tools}/studio.py" summary {project['id']} --issues.
+Правила студії, які легко порушити: кожен кадр стоїть у свій час плану (place робить це сам); озвучку й плашку каналу не чіпай;
+у кадрі одна головна картинка чи відео; стокове відео не коротше за кадр (place перевіряє); експорт запускає тільки автор.
 
 {remarks}Твоє завдання: кадри 1–{request['frames']}, кожен за своїм форматом у плані і за змістом своїх слів.
 Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
@@ -158,16 +160,19 @@ python3 "{tools}/studio.py" summary {project['id']} і GET http://127.0.0.1:8770
 2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/pixabay.py" search image|video "англійські слова",
    вибери кадр за змістом і завантаж: python3 "{tools}/pixabay.py" download image|video ID --dir "{rel}".
 3. Створені картинки (generated_photo, generated_video як картинка з рухом): малює Codex через термінал:
-   промпт у файлі, потім python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
+   промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
    {PEOPLE}
-4. Текстові кадри (text) робиш сам: python3 "{tools}/studio.py" place {project['id']} N --text ставить слова кадру на весь екран.
-   Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом через python3 "{tools}/razgon_bridge.py" (slots --frames N), як у правилах каналу,
-   без рендеру відео.
+4. Текстові кадри (text) робиш сам одним кроком: python3 "{tools}/studio.py" place {project['id']} all-text ставить слова кожного ще не
+   поставленого текстового кадру на весь екран.
+   Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
+   python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
+   python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>: блоки-код стануть лише на кадри формату razgon_2d.
    Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> [--motion zoom_in|zoom_out|none].
 5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN) ти переглядаєш очима: картинка відповідає словам кадру,
    люди лише стикмени, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
 
+Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
 Не запускай експорт, не змінюй план і налаштування каналу, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською повним реченням, наприклад «Шукаю стокове фото для кадру 3.».
 Довгі команди запускай на передньому плані з timeout до 600000 мс, без run_in_background.

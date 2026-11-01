@@ -20,6 +20,12 @@ answer in Ukrainian. The detailed rules of every subsystem are in @AGENTS.md and
   `video_plan.py`, `episode.py`, `pixabay.py`, `razgon_sync.py` (brings the Razgon working copy up to the kit at every
   start; a change to Razgon goes into the kit in `razgon-plugin/` to reach other Macs).
 
+## Setting up a Mac
+
+`python3 tools/doctor.py [--install]` checks everything the studio needs (Python packages from `requirements.txt`,
+FFmpeg, Node.js, the Whisper model, Claude, Codex, the Pixabay key, Razgon's packages, updates, that the server loads)
+and puts in what it can.
+
 ## Running the studio
 
 - Start or restart only with `python3 tools/studio_restart.py` (`--check` lists running work). It refuses while an
@@ -47,9 +53,14 @@ one project (`"Горбунов 23"`).
   moment, as the still of `f12` shows it; `--space photo` takes fractions of the picture. Words of `--phrase` appear in
   time with the voice. `clear-accents P 12` removes them.
 - `python3 tools/studio.py replace P --frame 12 FILE` — a new picture, with the clip's title, box and motion kept.
+- `python3 tools/studio.py plan P [--frames 1-20] [--todo]` — the plan a line a frame: time, format, the director's idea,
+  the words and ✓ when the frame is made. Read it instead of the plan's JSON.
+- `python3 tools/studio.py undo P` / `redo P`, `remove P 12` (the frame off the timeline with its group),
+  `place P all-text` (every text frame not placed yet, one undo step).
 - `python3 tools/studio.py place P 12 FILE` (or `--text`, `--asset ID`, `--motion zoom_in|zoom_out|none`) — puts frame 12 of
   the plan on the timeline at its time, in the group «Кадр 12»: a picture or a video, or the frame's words as a full-frame
-  text. The frame agent of the photo channels builds the film with it.
+  text. Both edges sit on whole video frames, a video shorter than its frame is refused, and the clip with its group is
+  one undo step. The frame agent of the photo channels builds the film with it.
 - `python3 tools/studio.py transitions P [--share 0.7]` — about 70% designed seams by the channel rule (a cut into a
   text frame, no transition other than a crossfade twice in a row, enough video for the transition); prints the planned
   and actual counts. Existing transitions stay unless `--replace`.

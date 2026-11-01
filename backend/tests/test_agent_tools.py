@@ -194,6 +194,14 @@ class AgentToolsTest(unittest.TestCase):
             status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "place", "frame": 1, "path": str(episode / "other.png")}]})
             self.assertEqual(status, 400, result)
             self.assertEqual(store.made_frames(current, plan), [1, 2, 3])
+            # one undo takes back the whole request: both clips and their «Кадр N» groups
+            store.apply_action(project["id"], "undo", {})
+            self.assertNotIn("K002 кадр", self.clips(project["id"]))
+            self.assertNotIn("Кадр 2", {g["title"] for g in store.load_project(project["id"])["scene_groups"]})
+            store.apply_action(project["id"], "redo", {})
+            status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "remove", "frame": 3}]})
+            self.assertEqual(status, 200, result)
+            self.assertNotIn("K003 кадр", self.clips(project["id"]))
             # the plate is not a frame of the film
             self.assertNotIn("Плашка", [c["title"] for c in store.film_clips(current)])
 

@@ -9,7 +9,11 @@
     python3 tools/studio.py accent P FRAME KIND [options]   # KIND: text, arrow, circle, card, image
     python3 tools/studio.py clear-accents P FRAME
     python3 tools/studio.py replace P (--clip ID | --frame N) FILE
+    python3 tools/studio.py plan P [--frames 1-20] [--todo]   # the plan in one line a frame: time, format, idea, words, made
     python3 tools/studio.py place P N (FILE | --text | --asset ID) [--motion zoom_in|zoom_out|none]   # a plan frame at its time
+    python3 tools/studio.py place P all-text               # every text frame not on the timeline yet, one undo step
+    python3 tools/studio.py remove P N                     # a frame off the timeline with its group
+    python3 tools/studio.py undo|redo P
     python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
     python3 tools/studio.py sentences P                     # the director: numbered sentences of the voice, the channel's formats
@@ -171,12 +175,22 @@ def main(argv=None) -> int:
     replace.add_argument("--dry-run", action="store_true")
     place = commands.add_parser("place", help="поставити кадр плану на таймлайн: картинку, відео чи його слова текстом")
     place.add_argument("project")
-    place.add_argument("frame", type=int)
+    place.add_argument("frame", help="номер кадру або all-text: усі ще не поставлені текстові кадри одним кроком")
     place.add_argument("file", nargs="?")
     place.add_argument("--text", action="store_true", help="слова кадру текстом на весь екран")
     place.add_argument("--asset", help="id матеріалу, що вже є в проєкті")
     place.add_argument("--motion", choices=["zoom_in", "zoom_out", "none"])
     place.add_argument("--dry-run", action="store_true")
+    plan = commands.add_parser("plan", help="план кадрів коротко: час, формат, ідея, слова, чи кадр уже зроблено")
+    plan.add_argument("project")
+    plan.add_argument("--frames", help="діапазон номерів, напр. 10-20")
+    plan.add_argument("--todo", action="store_true", help="лише ще не зроблені кадри")
+    for name, text in (("undo", "скасувати останню зміну монтажу"), ("redo", "повторити скасовану зміну")):
+        commands.add_parser(name, help=text).add_argument("project")
+    remove = commands.add_parser("remove", help="прибрати кадр з таймлайну разом з його групою")
+    remove.add_argument("project")
+    remove.add_argument("frame")
+    remove.add_argument("--dry-run", action="store_true")
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
     transitions.add_argument("--share", type=float, default=.7)
@@ -283,8 +297,41 @@ def main(argv=None) -> int:
             spec.update({"clip": args.clip} if args.clip else {"frame": int(args.frame) if args.frame.isdigit() else args.frame})
             run_ops(project, [spec], args.dry_run)
             return 0
+        if args.command == "plan":
+            data, made = call("GET", f"/api/projects/{pid}/plan"), set(call("GET", f"/api/projects/{pid}/frames-drawn").get("made", []))
+            frames = (data.get("plan") or {}).get("frames") or []
+            low, high = (int(x) for x in (args.frames.split("-") + [args.frames])[:2]) if args.frames else (1, 10 ** 6)
+            shown = 0
+            for f in frames:
+                n = int(f["number"])
+                if not low <= n <= high or (args.todo and n in made):
+                    continue
+                words = " ".join(f.get("sentences") or [])
+                idea = f" | {f['visual']}" if f.get("visual") else ""
+                print(f"{n:>3} {'✓' if n in made else '·'} {float(f['start']):7.2f}–{float(f['end']):7.2f} {f['format']:<15}{idea} | {words[:90]}")
+                shown += 1
+            print(f"кадрів {len(frames)}, зроблено {len(made)}" + (f", показано {shown}" if shown != len(frames) else ""))
+            return 0
+        if args.command in ("undo", "redo"):
+            data = call("POST", f"/api/projects/{pid}/actions", {"type": args.command, "payload": {}})
+            print(("скасовано" if args.command == "undo" else "повторено") + f", версія {data['project']['revision']}")
+            return 0
+        if args.command == "remove":
+            run_ops(project, [{"op": "remove", "frame": int(args.frame) if args.frame.isdigit() else args.frame}], args.dry_run)
+            return 0
+        if args.command == "place" and args.frame == "all-text":
+            frames = (call("GET", f"/api/projects/{pid}/plan").get("plan") or {}).get("frames") or []
+            made = set(call("GET", f"/api/projects/{pid}/frames-drawn").get("made", []))
+            todo = [{"op": "place", "frame": int(f["number"]), "text": True} for f in frames if f["format"] == "text" and int(f["number"]) not in made]
+            if not todo:
+                print("усі текстові кадри вже стоять на таймлайні")
+                return 0
+            run_ops(project, todo, args.dry_run)
+            return 0
         if args.command == "place":
-            spec = {"op": "place", "frame": args.frame}
+            if not args.frame.isdigit():
+                raise Failure("Номер кадру або all-text")
+            spec = {"op": "place", "frame": int(args.frame)}
             if args.text:
                 spec["text"] = True
             elif args.asset:

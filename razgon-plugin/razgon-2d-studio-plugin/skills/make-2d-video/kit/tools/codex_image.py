@@ -24,7 +24,12 @@ text = prompt.read_text(encoding="utf-8").strip() + (
 command = [CODEX, "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(out.parent)]
 for ref in a.ref:
     command += ["-i", str(Path(ref).resolve())]
-result = subprocess.run(command + ["-"], input=text, text=True, capture_output=True, timeout=1200)
+try:
+    result = subprocess.run(command + ["-"], input=text, text=True, capture_output=True, timeout=1200)
+except subprocess.TimeoutExpired:
+    sys.exit(f"Codex не намалював {out.name} за 20 хвилин: спробуйте ще раз або спростіть промпт")
+except OSError as error:
+    sys.exit(f"Codex не запустився: {error}. Потрібен застосунок ChatGPT для Mac із входом у підписку")
 out.with_suffix(".log.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
 if not out.is_file():
     sys.exit(f"Codex did not save {out.name}: {(result.stderr or result.stdout)[-300:]}")
