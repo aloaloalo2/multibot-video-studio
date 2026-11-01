@@ -105,6 +105,17 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.project["production_request"]["status"], "in_progress")  # a live run is left alone
         production.ACTIVE.clear()
 
+    def test_accents_follow_the_channel_setting(self):
+        with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \
+                patch.object(store, "read_json", return_value={"accents": True}):
+            on = production.photo_brief(self.project, REQUEST)
+        with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \
+                patch.object(store, "read_json", return_value={}):
+            off = production.photo_brief(self.project, REQUEST)
+        self.assertIn("studio.py\" accent", on)
+        self.assertIn("не додавай", off)
+        self.assertNotIn("studio.py\" accent", off)
+
     def test_a_run_stopped_by_the_subscription_limit_is_a_pause_that_resumes_its_session(self):
         answer = {"is_error": True, "api_error": "usage_limit_reached", "session_id": "s1", "total_cost_usd": 3.0,
                   "result": "You've hit your session limit · resets 12:50pm (Europe/Kiev)"}

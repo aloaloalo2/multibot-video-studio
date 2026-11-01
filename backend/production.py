@@ -132,6 +132,21 @@ PEOPLE = ("Люди в кожному кадрі, крім кадрів веду
           "чи відео прямо пиши, що всі люди намальовані стикменами. Стокове фото чи відео з живими людьми не бери.")
 
 
+def accents_step(project: dict, tools: str) -> str:
+    """What the channel's settings say about accents (an arrow, a ring or a caption over a picture, «Акценти на кадрах»)."""
+    try:
+        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+    except (store.StudioError, KeyError):
+        settings = {}
+    if not settings.get("accents"):
+        return ("6. Акцентів (стрілок, кіл, підписів поверх фото) не додавай: у налаштуваннях каналу вони вимкнені.")
+    return f"""6. Акценти для різноманіття (увімкнені в налаштуваннях каналу): приблизно на кожен третій-четвертий кадр з фото чи стоковим відео,
+   де це допомагає зрозуміти сказане, додай один акцент: стрілку на деталь, про яку саме говорять, коло навколо неї або короткий підпис
+   (число, назва предмета). Спершу подивись стоп-кадр кадру (python3 "{tools}/studio.py" still {project['id']} fN), щоб узяти точки, потім
+   python3 "{tools}/studio.py" accent {project['id']} N arrow --from x,y --to x,y --word слово (або circle --at x,y --radii rx,ry, text --phrase "слова голосу" --at x,y).
+   Не на текстових кадрах, не на кадрах ведучого й анімації; не два акценти поспіль на сусідніх кадрах. Перевір стоп-кадром, що акцент на місці."""
+
+
 def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     """The brief for a photo channel: each frame by its format, placed at its time on the timeline."""
     root = store.YOUTUBE_ROOT
@@ -171,6 +186,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN) ти переглядаєш очима: картинка відповідає словам кадру,
    люди лише стикмени, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
+{accents_step(project, tools)}
 
 Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
 Не запускай експорт, не змінюй план і налаштування каналу, не чіпай кадри після {request['frames']}-го і нічого не публікуй.

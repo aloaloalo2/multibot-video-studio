@@ -98,7 +98,10 @@ stock through `tools/pixabay.py` (search, download into the episode), pictures d
 `What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
 `razgon_bridge.py`, and puts each frame at its time with `python3 tools/studio.py place P N FILE|--text` (the montage op
 `place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). People in every frame and every
-prompt are stick figures, apart from the host. The run is done when each requested frame is made. Tests:
+prompt are stick figures, apart from the host. The channel setting «Акценти на кадрах» (`accents` in
+`video-plan.json`, photo and video channels only, off by default) tells the agent to add an arrow, a ring or a short
+caption with `studio.py accent` on about every third or fourth picture frame where it helps (`production.accents_step`),
+or none at all. The run is done when each requested frame is made. Tests:
 `backend/tests/test_agent_tools.py`, `backend/tests/test_production.py`, `tools/tests/test_studio.py`.
 
 ## Razgon follows the Studio's kit (31 October 2026)

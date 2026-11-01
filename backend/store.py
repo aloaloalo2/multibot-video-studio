@@ -173,6 +173,8 @@ def validate_settings(value: dict) -> dict:
                 raise StudioError("Невірне значення: " + key)
             if key in {"opening_clip_count", "short_sentence_words", "max_sentences_per_scene"} and number != int(number):
                 raise StudioError("Потрібне ціле число: " + key)
+    if "accents" in value and not isinstance(value["accents"], bool):
+        raise StudioError("Невірне значення: accents")
     if "opening_clip_types" in value and (not isinstance(value["opening_clip_types"], list) or any(item not in allowed for item in value["opening_clip_types"])):
         raise StudioError("Невірні типи вступних кліпів")
     import channel_branding
