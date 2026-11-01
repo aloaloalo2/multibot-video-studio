@@ -233,3 +233,13 @@ VideoKey folder. «Звільнити місце» frees that cache too (`space.
 A project stays in the studio when its episode folder is deleted: its code, preview and title are there (user, 1 November
 2026, after a version that hid such projects for deletion; `store.restore_hidden_projects` takes those marks off at
 every start). The studio never deletes a project or its data by itself. Tests: `backend/tests/test_episode_store.py`, `test_space.py`.
+
+## The thumbnail library (1 November 2026)
+
+The thumbnail window and the «Прев'ю» tab show every thumbnail made for the episode (`thumbnail_gen.versions`, served by
+`GET /api/projects/<id>/thumbnails/<name>`), newest first, the cover marked and the prompt's author tagged (DeepSeek, or
+«Правка vN» for an edit). A click on another one makes it the cover (`POST /thumbnail/choose`); «Згенерувати ще одне»
+adds a new version and keeps the others. «Правка» on a version sends the author's remark to Codex with that picture
+attached (`POST /thumbnail` with `base`; `thumbnail_gen.editing`), and the result is the next version. The window closes
+once a run starts, so the card shows «Малюємо прев'ю». «Згенерувати з DeepSeek» is a trial: DeepSeek (OpenRouter)
+writes the prompt from the same brief, the frames attached as pictures (`thumbnail_gen.write_prompt_deepseek`).

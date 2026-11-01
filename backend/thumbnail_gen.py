@@ -71,6 +71,55 @@ def first_title(folder: Path) -> str | None:
     return store.episode_title(folder)
 
 
+VERSION = re.compile(r"Превью (?:до )?v(\d+)\.png")
+
+
+def versions(pid: str) -> list[dict]:
+    """Every thumbnail made for the project, newest first: «Превью vN.png» and the earlier «Превью до vN.png» (the one
+    that stood before vN), with who wrote the prompt and which one is the cover now (user, 1 November 2026: «немає
+    бібліотеки моїх прев'юшок»)."""
+    work = keep_dir(pid)
+    if not work.is_dir():
+        return []
+    kept = work / PREVIEW
+    items = []
+    for path in work.glob("Превью*.png"):
+        match = VERSION.fullmatch(path.name)
+        if not match:
+            continue
+        number = int(match.group(1))
+        prompt = work / f"Промпт прев'ю v{number}.txt"
+        head = prompt.read_text(encoding="utf-8", errors="replace")[:200] if " до " not in path.name and prompt.is_file() else ""
+        writer = "deepseek" if head.startswith("[DeepSeek]") else "edit" if head.startswith("[Правка") else None
+        edit = re.match(r"\[Правка Превью (?:до )?v(\d+)\.png\] (.*)", head)
+        items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
+                      **({"from": int(edit.group(1)), "notes": edit.group(2).strip()} if edit else {}),
+                      "current": kept.is_file() and filecmp.cmp(path, kept, shallow=False), "time": path.stat().st_mtime})
+    return sorted(items, key=lambda item: (item["number"], not item["earlier"]), reverse=True)
+
+
+def version_file(pid: str, name: str) -> Path:
+    path = keep_dir(pid) / name
+    if not VERSION.fullmatch(name) or not path.is_file():
+        raise store.StudioError("Прев'ю не знайдено", 404)
+    return path
+
+
+def choose(pid: str, name: str) -> dict:
+    """Make one of the made thumbnails the cover again: the studio's «Превью.png» and, while the episode folder is
+    there, the one next to the video."""
+    source = version_file(pid, name)
+    with LOCK:
+        if pid in ACTIVE:
+            raise store.StudioError("Зачекайте, доки домалюється нове прев'ю", 409)
+        shutil.copyfile(source, keep_dir(pid) / PREVIEW)
+        project = store.load_project(pid)
+        folder = Path(project.get("episode_path") or "")
+        if project.get("episode_path") and folder.is_dir():
+            shutil.copyfile(source, folder / PREVIEW)
+    return {"versions": versions(pid)}
+
+
 def defaults(pid: str) -> dict:
     project = store.load_project(pid)
     folder = Path(project.get("episode_path") or "")
@@ -79,7 +128,8 @@ def defaults(pid: str) -> dict:
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
-            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES}
+            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES,
+            "versions": versions(pid)}
 
 
 def job_path(pid: str) -> Path:
@@ -270,7 +320,18 @@ def write_prompt_deepseek(text: str, folder: Path, refs: list[Path]) -> tuple[st
     return written, {"total_cost_usd": (result.get("usage") or {}).get("cost")}
 
 
-def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude") -> None:
+def editing(notes: str, name: str) -> str:
+    """What Codex gets for an author's remark on a thumbnail already made: the picture itself is attached."""
+    return f"""Edit the attached YouTube thumbnail. Change only this, as the author asks (in Ukrainian or Russian):
+{notes.strip()}
+
+Keep everything else as it is: the composition, the characters and their look, the style, the colours, the text that is not
+asked to change. Keep the top right corner empty for the channel logo and the bottom right free for the video length.
+Use the built-in image generation tool and make exactly one image. Save it in the current working directory as "{name}"
+and reply only with the saved path."""
+
+
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None) -> None:
     data = state(pid) or {}
     try:
         project = store.load_project(pid)
@@ -280,21 +341,25 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude") 
         work.mkdir(exist_ok=True)
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
         name = f"Превью v{number}.png"
-        # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
-        refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
-        # 1. Claude picks the moment and writes the prompt; it is kept next to the picture even if the drawing fails
-        if writer == "deepseek":
-            written, answer = write_prompt_deepseek(brief(title, script, wishes, folder, refs), folder, refs)
+        if base:
+            # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
+            refs, answer = [version_file(pid, base)], {}
+            written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
-            written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent, work)
-        (work / f"Промпт прев'ю v{number}.txt").write_text((f"[DeepSeek] " if writer == "deepseek" else "") + written + "\n", encoding="utf-8")
+            # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
+            refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
+            # 1. Claude (or DeepSeek, on trial) picks the moment and writes the prompt; it is kept even if the drawing fails
+            text = brief(title, script, wishes, folder, refs)
+            written, answer = write_prompt_deepseek(text, folder, refs) if writer == "deepseek" else write_prompt(text, folder.parent, work)
+            note = ("[DeepSeek] " if writer == "deepseek" else "") + written
+        (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
         # 2. Codex draws it with the channel's style frames attached
         command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
         for ref in refs:
             command += ["-i", str(ref)]
-        result = subprocess.run(command + ["-"], input=drawing(written, name), cwd=work, text=True,
+        result = subprocess.run(command + ["-"], input=written if base else drawing(written, name), cwd=work, text=True,
                                 capture_output=True, timeout=TIMEOUT)
         (work / f"Лог генерації v{number}.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
         made = work / name
@@ -328,8 +393,12 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude") 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude") -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None) -> dict:
     writer = "deepseek" if writer == "deepseek" else "claude"
+    if base:
+        version_file(pid, base)
+        if not str(wishes or "").strip():
+            raise store.StudioError("Напишіть, що змінити в прев'ю")
     project = store.load_project(pid)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
@@ -342,7 +411,8 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
         if pid in ACTIVE:
             return state(pid)
         ACTIVE.add(pid)
-        data = {"status": "running", "stage": "prompt", "started_at": time.time(), "title": title, "wishes": wishes, "writer": writer}
+        data = {"status": "running", "stage": "drawing" if base else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
+                "writer": writer, **({"base": base} if base else {})}
         store.atomic_json(job_path(pid), data)
-    threading.Thread(target=run, args=(pid, title, script, wishes, writer), daemon=True).start()
+    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base), daemon=True).start()
     return data

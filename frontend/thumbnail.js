@@ -15,6 +15,57 @@ function thumbnailWaits(button){
   button.addEventListener('click',event=>{event.stopImmediatePropagation();status(note);},{capture:true});
 }
 
+// Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
+// adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
+// додається ще одна»).
+function thumbLibrary(id,versions){
+  const box=document.createElement('div');box.className='thumb-library';
+  if(!versions?.length)return box;
+  const url=name=>`/api/projects/${encodeURIComponent(id)}/thumbnails/${encodeURIComponent(name)}`;
+  const tag=item=>item.writer==='deepseek'?'<i>DeepSeek</i>':item.writer==='edit'?`<i title="${esc(item.notes || '')}">Правка v${item.from}</i>`:'';
+  box.innerHTML=`<p class="thumb-library-head"><b>Ваші прев’ю</b><span>${versions.length} · натисніть на картинку, щоб зробити її обкладинкою</span></p>
+    <div class="thumb-library-grid">${versions.map(item=>`<div class="thumb-tile${item.current?' current':''}" data-name="${esc(item.name)}">
+      <button type="button" class="thumb-pick" aria-pressed="${item.current}" title="${item.current?'Зараз обкладинка':'Зробити обкладинкою'}"><img src="${url(item.name)}?v=${Math.round(item.time)}" alt="" loading="lazy"></button>
+      <span class="thumb-tile-tags">${item.current?'<em>Обкладинка</em>':''}${tag(item)}</span>
+      <small>${item.earlier?`до v${item.number}`:`v${item.number}`}</small>
+      <button type="button" class="thumb-edit" title="Внести правку в це прев’ю">Правка</button></div>`).join('')}</div>
+    <div class="thumb-edit-box" hidden><label><span class="thumb-edit-title"></span><textarea rows="3" maxlength="1500" placeholder="Наприклад: зроби фон темнішим, а слово DAY 340 більшим і жовтим"></textarea></label>
+      <div class="thumb-edit-actions"><button type="button" class="secondary thumb-edit-cancel">Скасувати</button><button type="button" class="primary thumb-edit-send">Внести правку</button></div></div>`;
+  const editBox=box.querySelector('.thumb-edit-box');let base=null;
+  box.addEventListener('click',async event=>{
+    const tile=event.target.closest('.thumb-tile');
+    if(event.target.closest('.thumb-edit')&&tile){
+      base=tile.dataset.name;editBox.hidden=false;
+      box.querySelectorAll('.thumb-tile').forEach(item=>item.classList.toggle('editing',item===tile));
+      editBox.querySelector('.thumb-edit-title').textContent=`Що змінити в ${tile.querySelector('small').textContent}? Codex перемалює цю картинку з вашою правкою, а результат додасться новою версією.`;
+      editBox.querySelector('textarea').focus();return;
+    }
+    if(event.target.closest('.thumb-edit-cancel')){editBox.hidden=true;base=null;box.querySelectorAll('.thumb-tile.editing').forEach(item=>item.classList.remove('editing'));return;}
+    if(event.target.closest('.thumb-edit-send')){
+      const notes=editBox.querySelector('textarea').value.trim();
+      if(!notes){status('Напишіть, що змінити в прев’ю.',true);return;}
+      const source=thumbnailSources.get(id) || {};
+      try{
+        const {job}=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`,'POST',{title:source.title || state.project?.name || '',script:source.script || '',wishes:notes,base});
+        thumbnailRuns.set(id,job);
+        if(!$('modal-backdrop').hidden&&$('modal-backdrop').classList.contains('thumb-modal-open'))closeModal();
+        editBox.hidden=true;showThumbnailState(id);markThumbnailCard(id);pollThumbnail(id);
+      }catch(error){status(error.message,true);}
+      return;
+    }
+    if(!event.target.closest('.thumb-pick')||!tile||tile.classList.contains('current'))return;
+    try{
+      const {versions:next}=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail/choose`,'POST',{name:tile.dataset.name});
+      box.replaceWith(thumbLibrary(id,next));
+      for(const img of document.querySelectorAll(`.thumb-current[data-project-id="${CSS.escape(id)}"]`))img.src=`/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}`;
+      if(!state.project&&state.channel)refreshProjects().catch(()=>{});
+      status('Обкладинку змінено.');
+    }catch(error){status(error.message,true);}
+  });
+  return box;
+}
+function thumbAddsNote(versions){return versions?.length?`<p class="thumb-adds">«Згенерувати» додасть ще одне прев’ю в бібліотеку й зробить його обкладинкою. Попередні лишаться, до них можна повернутися.</p>`:'';}
+
 async function openThumbnail(project){
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){status(error.message,true);return;}
@@ -22,12 +73,13 @@ async function openThumbnail(project){
   const current=data.preview?`<img class="thumb-current" data-project-id="${esc(project.id)}" src="/api/projects/${encodeURIComponent(project.id)}/cover?v=${Date.now()}" alt="Поточне прев’ю">`:'';
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script});
-  modal('Прев’ю ролика',`${current}
+  modal('Прев’ю ролика',`${current}<div class="thumb-library-slot"></div>
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-wishes" rows="4" maxlength="2000" placeholder="Наприклад: крупно обличчя героя в шоці, велике слово DAY 340"></textarea></label>
-    <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
+    ${thumbAddsNote(data.versions)}<p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
-    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek')},{label:'Згенерувати',primary:true,run:()=>generateThumbnail(project)}]);
+    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek')},{label:data.versions?.length?'Згенерувати ще одне':'Згенерувати',primary:true,run:()=>generateThumbnail(project)}]);
   $('modal-backdrop').classList.add('thumb-modal-open');
+  document.querySelector('#modal-body .thumb-library-slot')?.replaceWith(thumbLibrary(project.id,data.versions));
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
   showThumbnailState(project.id);
   if(thumbnailBusy(project.id))pollThumbnail(project.id);
@@ -40,7 +92,7 @@ function showThumbnailState(id){
   for(const button of document.querySelectorAll('#modal-actions button, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
   box.dataset.status=run?.status || '';
   const writer=run?.writer==='deepseek'?'DeepSeek':'Claude';
-  box.textContent=!run?'':run.status==='running'?({prompt:`${writer} вибирає момент і пише промпт, зазвичай до хвилини.`,drawing:`Codex малює прев’ю за промптом ${writer}, зазвичай 1–3 хвилини.`}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою випуску.':`Не вдалося: ${run.error}`;
+  box.textContent=!run?'':run.status==='running'?({prompt:`${writer} вибирає момент і пише промпт, зазвичай до хвилини.`,drawing:run.base?'Codex вносить вашу правку, зазвичай 1–3 хвилини.':`Codex малює прев’ю за промптом ${writer}, зазвичай 1–3 хвилини.`}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою випуску.':`Не вдалося: ${run.error}`;
 }
 
 async function generateThumbnail(project,writer='claude'){
@@ -99,7 +151,9 @@ async function pollThumbnail(id){
     const frame=document.querySelector(`.thumb-view-frame[data-project-id="${CSS.escape(id)}"]`);
     const img=document.querySelector(`.thumb-current[data-project-id="${CSS.escape(id)}"]`);if(img)img.src=`/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}`;
     if(frame&&!img)frame.innerHTML=`<img class="thumb-current" data-project-id="${esc(id)}" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролика">`;
-    const again=document.querySelector('.thumb-view-generate');if(again)again.textContent='Згенерувати нове';
+    const again=document.querySelector('.thumb-view-generate');if(again)again.textContent='Згенерувати ще одне';
+    // the tab's library takes in the new picture
+    const view=document.getElementById('project-thumb');if(view&&!view.hidden&&view.dataset.project===id){delete view.dataset.project;renderThumbView();}
     if(!state.project&&state.channel)refreshProjects().catch(()=>{});
   }
 }
@@ -139,7 +193,10 @@ async function buildThumbView(section,project){
   if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
   if(data.job)thumbnailRuns.set(id,data.job);
   if(data.preview)section.querySelector('.thumb-view-frame').innerHTML=`<img class="thumb-current" data-project-id="${esc(id)}" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролика">`;
-  section.querySelector('.thumb-view-generate').textContent=data.preview?'Згенерувати нове':'Згенерувати';
+  section.querySelector('.thumb-view-generate').textContent=data.versions?.length?'Згенерувати ще одне':'Згенерувати';
+  section.querySelector('.thumb-library')?.remove();section.querySelector('.thumb-adds')?.remove();
+  section.querySelector('.thumb-view-frame').after(thumbLibrary(id,data.versions));
+  section.querySelector('.thumb-view-actions').insertAdjacentHTML('beforebegin',thumbAddsNote(data.versions));
   renderThumbView();                      // the gate again, now with the server's count of made frames
   showThumbnailState(id);markThumbnailCard(id);if(thumbnailBusy(id))pollThumbnail(id);
 }

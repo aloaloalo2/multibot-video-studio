@@ -1066,6 +1066,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
             return self.json_response(thumbnail_gen.defaults(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnails/([^/]+\.png)", path)
+        if match:
+            return self.serve_media(thumbnail_gen.version_file(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
             store.load_project(match.group(1))
@@ -1209,7 +1212,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
-            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude")}, 202)
+            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None)}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
+        if match and method == "POST":
+            return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
             return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})
