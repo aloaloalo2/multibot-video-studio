@@ -1,5 +1,10 @@
 /* Check for a new Studio version without interrupting the current project. */
 const updateButton = document.getElementById('studio-update');
+// The button wears a download mark (an arrow into a tray); a stopped update shows a warning mark instead.
+const updateIcons={download:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
+  reload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>',
+  warning:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4L12 4zM12 10v4.5M12 17.2v.3"/></svg>'};
+function setUpdateLabel(text,icon){updateButton.innerHTML=`${updateIcons[icon] || ''}<span>${text}</span>`;}
 let updateBoot = null, updateWaiting = false, updatePageOutdated = false, updateTimer = null, updateBlocked = null;
 
 // Why a new version cannot arrive, in plain words, and what to do (backend/updater.py names the files or the branch).
@@ -24,14 +29,14 @@ async function pollStudioUpdates(){
     if(updateBoot && result.boot!==updateBoot){
       if(updateWaiting){location.reload();return;}
       updatePageOutdated=true;
-      updateButton.hidden=false;updateButton.disabled=false;updateButton.textContent='Перезавантажити студію';
+      updateButton.hidden=false;updateButton.disabled=false;setUpdateLabel('Перезавантажити студію','reload');
       return;
     }
     updateBoot=result.boot;
     if(!updateWaiting && !updatePageOutdated){
       updateBlocked=updateReasonHtml(result)?result:null;
       updateButton.hidden=result.status!=='available'&&!updateBlocked;
-      updateButton.textContent=updateBlocked?'Оновлення зупинене':'Оновити студію';
+      setUpdateLabel(updateBlocked?'Оновлення зупинене':'Оновити студію',updateBlocked?'warning':'download');
       updateButton.classList.toggle('update-blocked',!!updateBlocked);
     }
   }catch{}
@@ -43,7 +48,7 @@ updateButton.addEventListener('click',async()=>{
   updateButton.disabled=true;
   try{
     await api('/api/update/apply','POST',{});
-    updateWaiting=true;updateButton.textContent='Студія оновлюється…';
+    updateWaiting=true;setUpdateLabel('Студія оновлюється…','reload');updateButton.classList.add('updating');
     scheduleUpdatePoll(1500);
   }catch(error){updateButton.disabled=false;status(error.message,true);}
 });
