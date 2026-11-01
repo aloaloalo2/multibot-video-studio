@@ -180,11 +180,15 @@ def render_gpu(renderer, project_file: Path, output: Path, project: dict,
         binary = work / 'gpu-render'
         pipeline=os.environ.get('MULTIBOT_GPU_PIPELINE','1')!='0'
         cache=RenderCache(max_bytes=None if pipeline else 0)
+        # the author picks the quality in the export window (2, 8 or 12 Mbit/s, 2 by default); the cache keeps video of
+        # each quality apart, so a change never reuses pictures encoded at another one
+        bitrate=renderer.video_bitrate(project)
         version=renderer_version(root)
+        build_version=version;version=key_for([version,'bitrate',bitrate])
         env = {**os.environ, 'STUDIO_GPU_CPU_FALLBACK': '1',
                'STUDIO_GPU_PROCEDURAL_GRADIENT': '1', 'STUDIO_GPU_VIDEO_BLUR': '0',
                'STUDIO_GPU_PERSISTENT_CACHE':'1' if pipeline else '0',
-               'GPU_CODEC': 'hevc', 'GPU_BITRATE': '2000000'}
+               'GPU_CODEC': 'hevc', 'GPU_BITRATE': str(bitrate)}
         video = work / 'video.mp4'
         visual,audio,_=renderer.timeline_plan(project,project_file,width,height,fps)
         scene_count=len(renderer.timeline_segments(visual,total,fps))
@@ -199,7 +203,7 @@ def render_gpu(renderer, project_file: Path, output: Path, project: dict,
             renderer.emit('cache_video',reused=True)
             renderer.emit('scene_done',rendered_duration=1,total_duration=1)
         else:
-            _build(root,binary,cache,version)
+            _build(root,binary,cache,build_version)
             if pipeline:
                 segments,metadata=_pipelined(renderer,root,binary,project_file,work,env,width,height,fps,total,cache,version)
             else:

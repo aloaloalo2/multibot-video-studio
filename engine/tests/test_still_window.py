@@ -30,5 +30,20 @@ class StillWindowTest(unittest.TestCase):
 
 
 
+class VideoBitrateTest(unittest.TestCase):
+    def test_the_export_window_quality_reaches_the_encoder(self):
+        sys.path.insert(0, str(ROOT))
+        import render
+        self.assertEqual(render.video_bitrate({}), 2_000_000)                     # 2 Mbit/s unless the author picks
+        self.assertEqual(render.video_bitrate({"video_bitrate": 8_000_000}), 8_000_000)
+        self.assertEqual(render.video_bitrate({"video_bitrate": 999}), 2_000_000)  # only the window's choices
+        render.EXPORT_BITRATE = 12_000_000
+        try:
+            options = render.video_encoder_options(True)
+            self.assertEqual(options[options.index("-b:v") + 1], "12000000")
+        finally:
+            render.EXPORT_BITRATE = render.DEFAULT_VIDEO_BITRATE
+
+
 if __name__ == "__main__":
     unittest.main()

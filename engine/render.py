@@ -70,9 +70,23 @@ def hardware_export(width: int, height: int, fps: int) -> bool:
             and hardware_hevc_available(width, height, fps))
 
 
+DEFAULT_VIDEO_BITRATE = 2_000_000
+VIDEO_BITRATES = (2_000_000, 8_000_000, 12_000_000)
+EXPORT_BITRATE = DEFAULT_VIDEO_BITRATE   # set by render() from the manifest's video_bitrate
+
+
+def video_bitrate(project: dict) -> int:
+    """The film's video bitrate the author chose in the export window: 2, 8 or 12 Mbit/s, 2 by default."""
+    try:
+        value = int(project.get("video_bitrate") or DEFAULT_VIDEO_BITRATE)
+    except (TypeError, ValueError):
+        return DEFAULT_VIDEO_BITRATE
+    return value if value in VIDEO_BITRATES else DEFAULT_VIDEO_BITRATE
+
+
 def video_encoder_options(hardware: bool) -> list[str]:
     if hardware:
-        return ["-c:v", "hevc_videotoolbox", "-q:v", "65", "-tag:v", "hvc1",
+        return ["-c:v", "hevc_videotoolbox", "-b:v", str(EXPORT_BITRATE), "-tag:v", "hvc1",
                 "-color_range", "tv", "-pix_fmt", "yuv420p"]
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p"]
 
@@ -1474,6 +1488,8 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
     if not project_file.is_file():
         raise ValueError(f"Project JSON not found: {project_file}")
     project = json.loads(project_file.read_text(encoding="utf-8"))
+    global EXPORT_BITRATE
+    EXPORT_BITRATE = video_bitrate(project)
     prepare_cloud_sources(offline_sources(project,project_file),validate_only=validate_only)
     universal = "timeline_layers" in project
     if universal:

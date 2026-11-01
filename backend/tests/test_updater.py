@@ -158,6 +158,11 @@ class UpdateTest(unittest.TestCase):
             apply.assert_not_called()
         self.assertIn('створення кадрів', str(busy.exception))
 
+    def test_an_export_takes_only_the_window_s_qualities(self):
+        with self.assertRaises(store.StudioError) as wrong:
+            app.start_export({"id": "a" * 24}, True, 3_000_000)
+        self.assertEqual(wrong.exception.status, 400)
+
     def test_update_does_not_interrupt_an_export_or_audio_analysis(self):
         with patch.dict(app.ACTIVE_EXPORTS, {'test': {}}, clear=True), patch.object(app.UPDATE_MANAGER, 'apply') as apply:
             with self.assertRaises(store.StudioError): app.begin_update()

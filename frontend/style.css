@@ -972,3 +972,12 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
   .editor-open .library-panel{min-height:200px;max-height:320px}
   .editor-open .inspector-panel{grid-column:1;min-height:0}
 }
+/* the export window's quality: three rows, each with what the file will weigh */
+.export-quality{margin:0 0 14px;padding:0;border:0;display:grid;gap:8px}
+.export-quality legend{margin-bottom:8px;font-weight:600;color:#f1f1f2}
+.export-quality .export-quality-option{display:flex;flex-direction:row;align-items:center;margin:0;gap:12px;padding:10px 14px;border:1px solid #35353a;border-radius:12.5px;background:#1b1b1e;cursor:pointer}
+.export-quality .export-quality-option:has(input:checked){border-color:#f0b429;background:#24221c}
+.export-quality .export-quality-option input{accent-color:#f0b429;margin:0;width:auto;flex:none}
+.export-quality .export-quality-option span{flex:1;display:flex;flex-direction:column;gap:2px;color:#d9dae0;font-size:13.5px}
+.export-quality-option small{color:#9a9ca4;font-size:12px}
+.export-quality-option em{font-style:normal;font-variant-numeric:tabular-nums;color:#ffd166;font-weight:600;white-space:nowrap}

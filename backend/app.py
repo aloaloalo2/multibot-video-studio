@@ -528,9 +528,14 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     guard.close()
 
 
-def start_export(project: dict, confirmation: bool) -> dict:
+VIDEO_BITRATES = (2_000_000, 8_000_000, 12_000_000)   # the export window's choices; engine/render.py VIDEO_BITRATES
+
+
+def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     if confirmation is not True:
         raise store.StudioError("Підтвердіть фінальний експорт після перегляду проєкту")
+    if bitrate is not None and bitrate not in VIDEO_BITRATES:
+        raise store.StudioError("Невідома якість відео", 400)
     readiness = store.plan_readiness(project)
     if not readiness["export_ready"]:
         raise store.StudioError(readiness["reason"], 409)
@@ -539,6 +544,9 @@ def start_export(project: dict, confirmation: bool) -> dict:
     mixed = razgon if razgon and razgon.get("mixed") else None
     razgon = None if mixed else razgon
     manifest = razgon or normalize_for_engine(project)
+    if not razgon:
+        # the quality picked in the export window; an all-Razgon film keeps the bridge's own encoding
+        manifest["video_bitrate"] = bitrate or VIDEO_BITRATES[0]
     jid = uuid.uuid4().hex[:24]
     output_folder = Path(project["episode_path"])
     channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
@@ -1242,7 +1250,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))
-            return self.json_response({"job": start_export(project, body.get("confirm_export") is True)}, 202)
+            bitrate = body.get("video_bitrate")
+            return self.json_response({"job": start_export(project, body.get("confirm_export") is True,
+                                                           int(bitrate) if isinstance(bitrate, (int, float)) else None)}, 202)
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})/cancel", path)
         if match and method == 'POST':
             return self.json_response({'job': cancel_export(match.group(1))}, 202)

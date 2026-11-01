@@ -1011,6 +1011,22 @@ function exportActions(){
   }});
   return actions;
 }
+// The film's quality in the export window, with what the file will weigh for this episode: 2 Mbit/s by default
+// (user, 1 November 2026: «2 мегабіта мені в принципі подобалась якість», the others on choice). An all-Razgon film
+// keeps the bridge's own encoding, so it shows no choice.
+const exportQualities=[[2000000,'Стандартна','менший файл'],[8000000,'Висока','чистіше на русі, для YouTube'],[12000000,'Найвища','найбільший файл']];
+let exportQuality=2000000;
+try{const saved=Number(localStorage.getItem('exportQuality'));if(exportQualities.some(([value])=>value===saved))exportQuality=saved;}catch{}
+function exportSize(bitrate){
+  const bytes=(bitrate+192000)*Number(state.project?.duration || 0)/8;
+  return bytes>=1e9?`≈ ${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:`≈ ${Math.max(1,Math.round(bytes/1e6))} МБ`;
+}
+function exportQualityHtml(){
+  const clips=filmClips(state.project);
+  if(directorAnimated()&&clips.length&&clips.every(clip=>/^Razgon · кадр/.test(clip.title || '')))return '';
+  return `<fieldset class="export-quality"><legend>Якість відео</legend>${exportQualities.map(([value,name,note])=>`<label class="export-quality-option"><input type="radio" name="export-quality" value="${value}" ${value===exportQuality?'checked':''}><span><b>${name} · ${value/1e6} Мбіт/с</b><small>${note}</small></span><em>${exportSize(value)}</em></label>`).join('')}</fieldset>`;
+}
+
 async function openExport() {
   if(!state.project)return;
   try{const result=await api(`/api/projects/${encodeURIComponent(state.project.id)}/export/active`);if(result.job)state.job=result.job;updateExportLock();}catch(error){status(error.message,true);return;}
@@ -1024,13 +1040,15 @@ async function openExport() {
   }
   const gaps=visualGaps(),shownGaps=gaps.slice(0,6);
   const gapWarning=gaps.length?`<div class="export-gaps" role="note"><p><strong>Без кадру: ${gaps.length} ${gaps.length===1?'місце':gaps.length<5?'місця':'місць'}.</strong> У готовому відео там буде порожній екран.</p><div class="export-gap-list">${shownGaps.map((gap,index)=>`<button type="button" data-gap="${index}">${clock(gap.start)}–${clock(gap.end)}</button>`).join('')}${gaps.length>shownGaps.length?`<span>і ще ${gaps.length-shownGaps.length}</span>`:''}</div></div>`:'';
-  modal('Експорт ролика',`${gapWarning}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
+  modal('Експорт ролика',`${gapWarning}${exportQualityHtml()}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Закрити',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');
     if(button.disabled)return;
     button.disabled=true;button.textContent='Підготовка...';
     $('render-state').textContent='Готуємо проєкт до експорту...';
     const projectId=state.project.id, renderState=$('render-state');
-    try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
+    const quality=document.querySelector('input[name="export-quality"]:checked');
+    if(quality){exportQuality=Number(quality.value);try{localStorage.setItem('exportQuality',String(exportQuality));}catch{}}
+    try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:exportQuality}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
   }}]);
   for(const button of document.querySelectorAll('.export-gap-list button'))button.addEventListener('click',()=>{const gap=shownGaps[Number(button.dataset.gap)];closeModal();stopPlayback();state.playhead=gap.start;renderPreview();revealTimelineTime(gap.start);});
 }

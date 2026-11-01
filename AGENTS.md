@@ -155,6 +155,15 @@ radius is 8 px in both and rounds the contained picture. Equal already and now h
 cinematic transitions, transition covers (`graphicShapes` against `transition_graphics.shapes`), contained pictures. The FFmpeg renderer takes some 60 keyframes in one expression (100 failed), so sampled curves stay
 under that and `render.window_keyframes` keeps only the keyframes of the scene's moments.
 
+## Export quality is the author's choice (1 November 2026)
+
+The export window offers the film's video bitrate with what the file will weigh for this episode (`exportQualityHtml`
+in `frontend/app.js`, the duration × (bitrate + 192 kbit/s audio)): «Стандартна» 2 Mbit/s by default (the author likes
+it), «Висока» 8 and «Найвища» 12; the last choice is remembered in the browser. `POST /export` takes `video_bitrate`
+(only these values), the manifest carries it, the GPU path encodes with it and keys its cache on it, the CPU path's
+VideoToolbox encoder uses `-b:v` with it (`render.video_bitrate`, `render.EXPORT_BITRATE`). An all-Razgon film keeps the
+bridge's own encoding and shows no choice. Tests: `engine/tests/test_still_window.py`, `backend/tests/test_updater.py`.
+
 ## Updates say why they stop (31 October 2026)
 
 The studio updates itself from GitHub (`backend/updater.py`: a fetch every 2 minutes, «Оновити студію» when the
