@@ -82,8 +82,8 @@ def helper_installed() -> bool:
     return any((SUPPORT / browser / "NativeMessagingHosts" / "com.videokey.studio.json").is_file() for browser in BROWSERS)
 
 
-def install_helper() -> None:
-    run = subprocess.run([sys.executable, str(HELPER)], capture_output=True, text=True, timeout=60)
+def install_helper(folder: Path | None = None) -> None:
+    run = subprocess.run([sys.executable, str(HELPER), *([str(folder)] if folder else [])], capture_output=True, text=True, timeout=60)
     if run.returncode:
         raise store.StudioError((run.stdout + run.stderr).strip() or "Помічник кнопки не налаштувався", 409)
 
@@ -97,11 +97,9 @@ def update() -> dict:
     if current.get("git") and current.get("dirty"):
         # the author's own unsaved work stays as it is: no update over it, no commit of it; the item is only written
         # into the same files on top of it (user, 1 November 2026: the folder held unsaved YouTube Studio changes)
-        if has_item(folder):
-            raise store.StudioError("У папці Multi Bot є власні незбережені зміни: " + ", ".join(current["dirty"])
-                                    + ". Оновлювати поверх них студія не стане; попросіть агента зберегти їх у Git", 409)
-        add_item(folder, in_git=False)
-        install_helper()
+        if not has_item(folder):
+            add_item(folder, in_git=False)
+        install_helper(folder)   # also when an earlier click put the item in and stopped at the helper
         return {**state(fetch=False), "note": "Кнопку додано. У теці Multi Bot є ваші незбережені зміни, тож студія нічого "
                 "не зберігала в Git: збережіть їх разом із кнопкою (попросіть Codex «закоміть і запуш зміни в flow-bot/heygen-grabber»)."}
     if current.get("git"):
@@ -112,7 +110,7 @@ def update() -> dict:
             if pulled.returncode:
                 raise store.StudioError("Не вдалося оновити Multi Bot: " + (pulled.stderr or pulled.stdout).strip()[-300:], 409)
     note = add_item(folder, current.get("git"))
-    install_helper()
+    install_helper(folder)
     return {**state(fetch=False), **({"note": note} if note else {})}
 
 

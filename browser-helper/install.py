@@ -2,9 +2,10 @@
 """Let the Multi Bot extension start VideoKey Studio: registers host/videokey_host.py as the native messaging host
 «com.videokey.studio» in every Chrome-based browser on this Mac, for the Multi Bot extension only.
 
-Multi Bot is loaded unpacked, so its id comes from its folder; it is read from each browser profile's Preferences
-(an extension named «Multi Bot»). Run «Встановити.command» once, and again after Multi Bot is loaded from another folder.
+Multi Bot is loaded unpacked, so its id comes from its folder's path (unpacked_id), and from each browser profile's
+Preferences where they name the extension «Multi Bot». Run «Встановити.command» once, and again after Multi Bot is loaded from another folder.
 """
+import hashlib
 import json
 import os
 import sys
@@ -33,14 +34,35 @@ def extension_ids(base: Path) -> set:
     return ids
 
 
+def unpacked_id(folder: Path) -> str:
+    """The id Chrome gives an extension loaded unpacked from this folder: its path hashed (sha256), the first 32 hex
+    digits written with the letters a to p. Preferences do not always name the extension, the path always gives it."""
+    digest = hashlib.sha256(str(folder.resolve()).encode("utf-8")).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(char, 16)) for char in digest)
+
+
+def multibot_folders(given: list) -> list:
+    """Multi Bot's folders: the ones passed in (the studio passes the one it found), else ~/flow-bot and its subfolders."""
+    found = [Path(item) for item in given if (Path(item) / "manifest.json").is_file()]
+    if not found:
+        for manifest in [*(Path.home() / "flow-bot").glob("manifest.json"), *(Path.home() / "flow-bot").glob("*/manifest.json")]:
+            try:
+                if json.loads(manifest.read_text(encoding="utf-8")).get("name") == "Multi Bot":
+                    found.append(manifest.parent)
+            except (OSError, ValueError):
+                continue
+    return found
+
+
 def main() -> int:
     os.chmod(HOST, 0o755)
+    from_path = {unpacked_id(folder) for folder in multibot_folders(sys.argv[1:])}
     done = []
     for name in BROWSERS:
         base = SUPPORT / name
         if not base.is_dir():
             continue
-        ids = extension_ids(base)
+        ids = extension_ids(base) | from_path
         if not ids:
             continue
         folder = base / "NativeMessagingHosts"

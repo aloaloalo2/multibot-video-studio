@@ -1027,8 +1027,8 @@ async function fillExtension(){
   try{
     const data=await api('/api/extension');if(!box.isConnected)return;
     box.innerHTML=extensionText(data);
-    button.hidden=!data.found || (!!data.dirty?.length && data.item) || (!data.behind && data.helper && data.item);
-    button.textContent=data.behind?'Оновити розширення':!data.item?'Додати кнопку «VideoKey Studio»':'Налаштувати кнопку «VideoKey Studio»';
+    button.hidden=!data.found || (data.helper && data.item && (!data.behind || !!data.dirty?.length));
+    button.textContent=!data.item?'Додати кнопку «VideoKey Studio»':!data.helper?'Налаштувати кнопку «VideoKey Studio»':'Оновити розширення';
   }catch(error){box.textContent=error.message;}
 }
 async function updateExtension(){
