@@ -1069,3 +1069,8 @@ select option{background:#232327;color:#f1f1f2}
   border:2px solid #6bf2ae33;border-top-color:#6bf2ae;animation:director-spin .9s linear infinite;vertical-align:-1px;box-sizing:border-box}
 @keyframes director-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.episode-director.working .episode-director-line strong::before{animation-duration:2.4s}}
+/* The episode list and the plan page scroll down to the window's bottom edge, which fades softly: a card no longer
+   ends on a hard line 12 px above it, as if a block covered it (user, 1 November 2026) */
+#channel-overview,#project-plan{margin-bottom:-12px;padding-bottom:56px;
+  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 36px),transparent)}
+@media(max-width:560px){#channel-overview,#project-plan{margin-bottom:0;-webkit-mask-image:none;mask-image:none}}
