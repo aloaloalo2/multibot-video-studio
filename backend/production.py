@@ -172,8 +172,10 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
 1. Картинки автора першими: якщо автор сам поклав картинки чи відео в папку випуску (find "{rel}" -maxdepth 2 -type f),
    а вони пасують до кадру, бери їх.
-2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/pixabay.py" search image|video "англійські слова",
-   вибери кадр за змістом і завантаж: python3 "{tools}/pixabay.py" download image|video ID --dir "{rel}".
+2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/studio.py" stock {project['id']} N "англійські слова" [--video]
+   складає аркуш пронумерованих варіантів Pixabay для кадру N; подивись його (Read) і вибери за змістом слів кадру, без живих людей,
+   а відео не коротше за кадр. Вибраний ставить кадром одна команда: python3 "{tools}/studio.py" stock-pick {project['id']} N <id> [--video].
+   Нічого не підходить: інші слова, ще один аркуш.
 3. Створені картинки (generated_photo, generated_video як картинка з рухом): малює Codex через термінал:
    промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
    {PEOPLE}

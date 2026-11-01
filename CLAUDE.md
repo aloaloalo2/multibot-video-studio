@@ -55,6 +55,8 @@ one project (`"Горбунов 23"`).
 - `python3 tools/studio.py replace P --frame 12 FILE` — a new picture, with the clip's title, box and motion kept.
 - `python3 tools/studio.py plan P [--frames 1-20] [--todo]` — the plan a line a frame: time, format, the director's idea,
   the words and ✓ when the frame is made. Read it instead of the plan's JSON.
+- `python3 tools/studio.py stock P 12 "fatty liver" [--video]` — a numbered sheet of Pixabay candidates for frame 12 (one
+  PNG to look at, a short line each); `stock-pick P 12 ID [--video] [--trim 2]` downloads the chosen one and places it.
 - `python3 tools/studio.py undo P` / `redo P`, `remove P 12` (the frame off the timeline with its group),
   `place P all-text` (every text frame not placed yet, one undo step).
 - `python3 tools/studio.py place P 12 FILE` (or `--text`, `--asset ID`, `--motion zoom_in|zoom_out|none`) — puts frame 12 of

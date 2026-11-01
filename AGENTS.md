@@ -94,7 +94,8 @@ otherwise stopped (a fresh request gets 30 s to start).
 
 `production.start` runs for every channel. A photo channel's agent (`production.photo_brief`, Claude Opus 5.5 at
 `xhigh`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,
-stock through `tools/pixabay.py` (search, download into the episode), pictures drawn by Codex through
+stock through `studio.py stock` (a numbered contact sheet of Pixabay previews, `backend/stock_sheet.py`, looked at
+instead of lists of tags) and `studio.py stock-pick` (downloads the chosen one into the project and places it), pictures drawn by Codex through
 `What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
 `razgon_bridge.py`, and puts each frame at its time with `python3 tools/studio.py place P N FILE|--text` (the montage op
 `place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). People in every frame and every

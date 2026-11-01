@@ -237,6 +237,25 @@ class AgentToolsTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             store.validate_settings({"weights": {"stock_photo": 100}, "video_size": "1000x1000"})
 
+    def test_a_stock_sheet_numbers_the_candidates_on_one_picture(self):
+        import io, stock_sheet
+        project = self.project(frames=1)
+        hits = {"hits": [{"id": 100 + n, "tags": f"liver, tag{n}", "duration": 9 + n,
+                          "videos": {"medium": {"thumbnail": f"https://cdn/{n}.jpg", "width": 1920, "height": 1080}}} for n in range(5)]}
+        def preview(url):
+            buffer = io.BytesIO(); Image.new("RGB", (640, 360), (30, 120, 60)).save(buffer, "JPEG"); return buffer.getvalue()
+        fake = type("Pixabay", (), {"api_get": staticmethod(lambda kind, **params: hits)})
+        with patch.object(app, "pixabay_module", return_value=fake), patch.object(stock_sheet, "fetch", side_effect=preview):
+            status, result = self.request(f"/api/projects/{project['id']}/stock-sheet", "POST", {"frame": 3, "query": "liver", "kind": "video", "count": 5})
+        self.assertEqual(status, 200, result)
+        self.assertEqual([c["n"] for c in result["candidates"]], [1, 2, 3, 4, 5])
+        self.assertEqual(result["candidates"][0], {"n": 1, "id": 100, "duration": 9, "size": "1920x1080", "tags": "liver, tag0"})
+        with Image.open(result["sheet"]) as sheet:
+            self.assertEqual(sheet.width, 4 * 360 + 5 * 10)                       # four a row, two rows for five
+            self.assertEqual(sheet.getpixel((15, 15))[:3], (240, 180, 41))        # the yellow number of candidate 1
+        status, result = self.request(f"/api/projects/{project['id']}/stock-sheet", "POST", {"frame": 3, "query": "", "kind": "video"})
+        self.assertEqual(status, 400)
+
     def test_transitions_follow_the_channel_rules(self):
         project = self.project(frames=12)
         current = store.load_project(project["id"])

@@ -43,6 +43,10 @@ class FakeStudio:
             return {"drawn": [], "made": [1, 3]}
         if path.endswith("/actions"):
             return {"project": {"revision": 9}}
+        if path.endswith("/stock-sheet"):
+            return {"sheet": "/s/frame_004.png", "candidates": [{"n": 1, "id": 77, "duration": 12, "size": "1920x1080", "tags": "liver"}]}
+        if path.endswith("/assets/from-pixabay"):
+            return {"asset": {"id": "f" * 20}}
         if path.endswith("/ops"):
             return {"revision": 8, "report": ["кадр 12: text"], "applied": 3, "actions": []}
         if path.endswith("/still"):
@@ -108,6 +112,16 @@ class StudioToolTest(unittest.TestCase):
         _, out, _, sent = self.run_tool("undo", "горбунов 23")
         self.assertEqual(sent[-1][1:], (f"/api/projects/{'a' * 24}/actions", {"type": "undo", "payload": {}}))
         self.assertIn("скасовано", out)
+
+    def test_stock_shows_a_sheet_and_pick_places_the_chosen_one(self):
+        code, out, _, sent = self.run_tool("stock", "горбунов 23", "4", "fatty liver", "--video")
+        self.assertEqual(code, 0)
+        self.assertEqual(sent[-1][2], {"frame": 4, "query": "fatty liver", "kind": "video", "count": 8})
+        self.assertIn("/s/frame_004.png", out)
+        self.assertIn("1. id 77 · 12 с · 1920x1080 · liver", out)
+        code, _, _, sent = self.run_tool("stock-pick", "горбунов 23", "4", "77", "--video", "--trim", "2")
+        self.assertEqual(code, 0)
+        self.assertEqual(sent[-1][2]["ops"], [{"op": "place", "frame": 4, "asset_id": "f" * 20, "trim_start": 2.0}])
 
     def test_still_prints_the_picture_and_the_preview_link_at_the_same_moment(self):
         code, out, _, sent = self.run_tool("still", "горбунов 23", "f12")

@@ -1243,6 +1243,11 @@ class Handler(BaseHTTPRequestHandler):
             project = store.load_project(match.group(1))
             selected = Path(body["path"]).expanduser().resolve() if body.get("path") else choose_local_file("Оберіть медіафайл")
             return self.json_response({"asset": store.import_asset_file(project, selected)}, 201)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/stock-sheet", path)
+        if match and method == "POST":
+            import stock_sheet
+            return self.json_response(stock_sheet.sheet(store.load_project(match.group(1)), body.get("frame", 0), str(body.get("query") or ""),
+                                                        str(body.get("kind") or "image"), body.get("count", 8)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/from-pixabay", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))

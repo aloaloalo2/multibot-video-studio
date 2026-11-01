@@ -13,6 +13,8 @@
     python3 tools/studio.py place P N (FILE | --text | --asset ID) [--motion zoom_in|zoom_out|none]   # a plan frame at its time
     python3 tools/studio.py place P all-text               # every text frame not on the timeline yet, one undo step
     python3 tools/studio.py remove P N                     # a frame off the timeline with its group
+    python3 tools/studio.py stock P N "query" [--video]    # a numbered sheet of Pixabay candidates for frame N
+    python3 tools/studio.py stock-pick P N ID [--video]    # download candidate ID and place it as frame N
     python3 tools/studio.py undo|redo P
     python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
@@ -191,6 +193,19 @@ def main(argv=None) -> int:
     remove.add_argument("project")
     remove.add_argument("frame")
     remove.add_argument("--dry-run", action="store_true")
+    stock = commands.add_parser("stock", help="аркуш стокових варіантів для кадру: пронумеровані прев'ю Pixabay на одній картинці")
+    stock.add_argument("project")
+    stock.add_argument("frame", type=int)
+    stock.add_argument("query", help="англійські слова пошуку")
+    stock.add_argument("--video", action="store_true", help="відео замість фото")
+    stock.add_argument("--n", type=int, default=8, help="скільки варіантів (до 16)")
+    pick = commands.add_parser("stock-pick", help="завантажити вибраний варіант Pixabay і поставити його кадром")
+    pick.add_argument("project")
+    pick.add_argument("frame", type=int)
+    pick.add_argument("id", type=int, help="id Pixabay з аркуша")
+    pick.add_argument("--video", action="store_true")
+    pick.add_argument("--motion", choices=["zoom_in", "zoom_out", "none"])
+    pick.add_argument("--trim", type=float, help="з якої секунди відео почати")
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
     transitions.add_argument("--share", type=float, default=.7)
@@ -343,6 +358,28 @@ def main(argv=None) -> int:
             if args.motion:
                 spec["motion"] = args.motion
             run_ops(project, [spec], args.dry_run)
+            return 0
+        if args.command == "stock":
+            data = call("POST", f"/api/projects/{pid}/stock-sheet", {"frame": args.frame, "query": args.query,
+                                                                       "kind": "video" if args.video else "image", "count": args.n})
+            if not data.get("sheet"):
+                print(data.get("note") or "нічого не знайдено")
+                return 0
+            print(data["sheet"])
+            for c in data["candidates"]:
+                length = f"{c['duration']} с · " if c.get("duration") else ""
+                print(f"{c['n']}. id {c['id']} · {length}{c['size']} · {c['tags']}")
+            print(f"подивіться аркуш і виберіть: studio.py stock-pick {pid} {args.frame} <id>" + (" --video" if args.video else ""))
+            return 0
+        if args.command == "stock-pick":
+            asset = call("POST", f"/api/projects/{pid}/assets/from-pixabay", {"kind": "video" if args.video else "image", "pixabay_id": args.id})["asset"]
+            project = find_project(pid)   # the download raised the revision
+            spec = {"op": "place", "frame": args.frame, "asset_id": asset["id"]}
+            if args.motion:
+                spec["motion"] = args.motion
+            if args.trim:
+                spec["trim_start"] = args.trim
+            run_ops(project, [spec], False)
             return 0
         if args.command == "transitions":
             run_ops(project, [{"op": "transitions", "share": args.share, "seed": args.seed, "replace": args.replace}], args.dry_run)
