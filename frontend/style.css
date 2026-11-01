@@ -981,3 +981,19 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .export-quality .export-quality-option span{flex:1;display:flex;flex-direction:column;gap:2px;color:#d9dae0;font-size:13.5px}
 .export-quality-option small{color:#9a9ca4;font-size:12px}
 .export-quality-option em{font-style:normal;font-variant-numeric:tabular-nums;color:#ffd166;font-weight:600;white-space:nowrap}
+/* One look for every tick box and choice in the studio: a dark rounded square that turns the studio's yellow with a dark
+   tick, and a round choice with a yellow ring and dot (user, 1 November 2026: «не такі білі, а стильні, один стиль») */
+input[type=checkbox],input[type=radio]{-webkit-appearance:none;appearance:none;flex:none;width:18px!important;height:18px!important;min-width:18px;margin:0;
+  border:1.5px solid #55555c;background:#1b1b1e;display:inline-grid;place-content:center;vertical-align:middle;cursor:pointer;
+  transition:background-color .15s,border-color .15s,box-shadow .15s}
+input[type=checkbox]{border-radius:5px}
+input[type=radio]{border-radius:50%}
+input[type=checkbox]::before{content:'';width:10px;height:10px;background:#1a1408;transform:scale(0);transition:transform .12s ease-out;
+  clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0,43% 62%)}
+input[type=radio]::before{content:'';width:8px;height:8px;border-radius:50%;background:#f0b429;transform:scale(0);transition:transform .12s ease-out}
+input[type=checkbox]:checked{background:#f0b429;border-color:#f0b429;box-shadow:0 0 8px rgba(240,180,41,.35)}
+input[type=radio]:checked{border-color:#f0b429;box-shadow:0 0 8px rgba(240,180,41,.3)}
+input[type=checkbox]:checked::before,input[type=radio]:checked::before{transform:scale(1)}
+input[type=checkbox]:hover:not(:disabled),input[type=radio]:hover:not(:disabled){border-color:#8a7440}
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid #f0b429;outline-offset:2px}
+input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.45;cursor:not-allowed}
