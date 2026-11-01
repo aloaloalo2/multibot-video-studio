@@ -59,14 +59,6 @@ class AgentOpenRouterTest(unittest.TestCase):
         summary = agent_storage.cost_summary(agent_storage.get_conversation(self.project["id"])["costs"])
         self.assertEqual(summary["unknown_count"], 1)
 
-    def test_estimate_uses_current_model_pricing(self):
-        payload = {"data": [{"id": agent_openrouter.MODEL, "pricing": {"prompt": "0.000001", "completion": "0.000002"}}]}
-        with patch.object(agent_openrouter.urllib.request, "urlopen", return_value=Response(json.dumps(payload).encode())):
-            prices = agent_openrouter.model_prices()
-        estimated = agent_openrouter.estimate([{"role": "user", "content": "тест"}], prices, max_output_tokens=100)
-        self.assertGreater(estimated["estimated_input_tokens"], 0)
-        self.assertAlmostEqual(estimated["estimated_usd"], estimated["estimated_input_tokens"] * .000001 + .0002)
-
     def test_effort_is_sent_and_auto_preserves_provider_default(self):
         body = {"choices": [{"message": {"role": "assistant", "content": "OK"}}]}
         for effort in ("auto", "low", "high", "max"):

@@ -16,29 +16,6 @@ MODEL = "deepseek/deepseek-v4.1-flash-1017"
 BASE = "https://openrouter.ai/api/v1"
 
 
-def model_prices():
-    request = urllib.request.Request(BASE + "/models", headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            data = json.load(response)
-        model = next(item for item in data["data"] if item.get("id") == MODEL)
-        pricing = model["pricing"]
-        prompt, completion = float(pricing["prompt"]), float(pricing["completion"])
-        if not all(math.isfinite(price) and price >= 0 for price in (prompt, completion)):
-            raise ValueError("Invalid pricing")
-        return {"prompt_per_token": prompt, "completion_per_token": completion}
-    except (OSError, ValueError, KeyError, TypeError, StopIteration):
-        raise store.StudioError("Не вдалося отримати поточні ціни OpenRouter.", 503) from None
-
-
-def estimate(messages, prices, max_output_tokens=4096):
-    # Character-based approximation: actual tokenization and provider pricing vary.
-    characters = len(json.dumps(messages, ensure_ascii=False))
-    approximate_input = max(1, math.ceil(characters / 3))
-    amount = approximate_input * prices["prompt_per_token"] + max_output_tokens * prices["completion_per_token"]
-    return {"estimated_input_tokens": approximate_input, "max_output_tokens": max_output_tokens, "estimated_usd": amount}
-
-
 def chat(project_id, messages, tools=None, max_output_tokens=4096, reasoning_effort="auto"):
     if not isinstance(reasoning_effort, str) or reasoning_effort not in agent_storage.REASONING_EFFORTS:
         raise store.StudioError("Невідомий рівень мислення")

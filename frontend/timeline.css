@@ -45,8 +45,6 @@
 .transition-join.join-drop{opacity:1;background:#f3cc72;border-color:#fff2c7;}
 .transition-join.selected-transition{opacity:1;background:#ffd15b;border-color:#fff4cc;box-shadow:0 0 0 2px #c8922e;}
 .transition-chip{border-radius:6.5px;background:linear-gradient(135deg,#4b4652,#25252c);min-height:48px;border:1px solid #57515c;color:#e6e0e9;cursor:grab;}
-.transition-slide_left,.transition-slide_right{background:linear-gradient(110deg,#4d5260,#29282f 65%);}
-.transition-zoom_in,.transition-zoom_out{background:radial-gradient(ellipse at center,#716551,#2a292e);}
 .timeline-toolbar{min-height:33px;height:33px;padding:2px 8px;gap:5px;flex-wrap:nowrap;overflow:visible;}
 .timeline-toolbar h2{font-size:11px;margin:0 4px 0 0;flex-basis:auto;white-space:nowrap;}
 .timeline-toolbar button{font-size:10px;padding:3px 6px;min-height:23px;}
@@ -155,7 +153,6 @@
 #playhead-handle:hover::before{background:#ffd15b;}
 .speech-issues summary:hover,.speech-existing summary:hover{color:#fff;}
 .timeline-add-menu summary:hover{background:#34343a;border-color:#5c5c63;color:#fff;}
-.plan-zoom button:not(:disabled):hover{background:#3d3d45;border-color:#7a7b84;}
 .transition-filters button:not(.active):not([aria-pressed=true]):hover{background:#303037;color:#f1f1f2;}
 .transition-favorite:hover{color:#efbe56;}
 .agent-reasoning select:not(:disabled):hover,.pixabay-kind select:hover,.modal-body select:hover{border-color:#6a6a73;}

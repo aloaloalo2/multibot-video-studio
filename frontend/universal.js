@@ -83,7 +83,6 @@ async function dropOnUniversalClip(event,clipId){
   }catch(error){status(error.message,true);}
 }
 
-function moveUniversalLayer(layerId,toIndex){if(toIndex<0||toIndex>=layers().length)return;action('move_layer',{layer_id:layerId,to_index:toIndex},'Порядок шарів оновлено.').catch(()=>{});}
 function renameUniversalLayer(layer){modal('Назва шару',`<label>Назва<input id="layer-new-name" type="text" maxlength="80" value="${esc(layer.name)}"></label>`,[{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{try{const name=$('layer-new-name').value.trim();if(!name)throw new Error('Введіть назву шару.');await action('update_layer',{layer_id:layer.id,name},'Назву шару збережено.');closeModal();}catch(error){status(error.message,true);}}}]);}
 function removeUniversalLayer(layer){const count=(layer.clips || []).length;modal('Прибрати шар',`<p>Шар «${esc(layer.name)}» містить ${count} кліпів. Дію можна скасувати кнопкою «Скасувати дію» після видалення.</p>`,[{label:'Залишити',run:closeModal},{label:'Прибрати шар',primary:true,run:async()=>{try{await action('remove_layer',{layer_id:layer.id},'Шар прибрано.');state.activeLayer=activeLayer()?.id;state.selected=null;closeModal();renderProject();}catch(error){status(error.message,true);}}}]);}
 

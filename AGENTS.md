@@ -26,15 +26,11 @@ Store each generated plan's settings snapshot, settings signature, generator ide
 
 Ignore retired `opening_seconds`, `opening_clip_count` and `opening_clip_types` in new plans. Opening formats follow `first_clip_format` and `first_clip_count`; automatic mode prefers an enabled video format first and otherwise uses the normal weighted plan. `first_clip_seconds=0` uses normal timing; a positive value sets the first frame duration without choosing its format. Show actual format shares by duration separately from target settings. Hints are explicit exceptions.
 
-For planning changes run `python3 -m unittest discover -s backend/tests -v` and the compatibility client tests in `tools/tests/test_video_plan.py`. Cover current saved settings, zero first clip with legacy keys, stale detection, preserved montage and offline failure. Verify UI changes in the embedded Codex browser.
+For planning changes run `python3 -m unittest discover -s backend/tests -v` and the compatibility client tests in `tools/tests/test_video_plan.py`. Cover current saved settings, zero first clip with legacy keys, stale detection, preserved montage and offline failure. Verify UI changes in a real browser.
 
 ## Post-Whisper number text
 
 After real phrase timings or a successful local Whisper comparison, format written-out quantities as digits in the actual saved script, phrase text and text inserts for every channel. Use backend/number_text.py. Keep spoken_script, its hash and an immutable spoken-source TXT separately; preserve ASR word boundaries when collapsing multiword numbers. Save the numeric script to the matching episode source, preserving unrelated local text. Keep exact fractions distinct from ranges. Draft scripts retain their pre-voice form. Test Russian, Ukrainian, English and German cases, value mismatches, genuine ASR boundaries and idempotent regeneration.
-
-## Video production workflow
-
-Before planning or editing a video with this Studio, read [docs/AI_VIDEO_WORKFLOW.md](docs/AI_VIDEO_WORKFLOW.md) and the applicable channel instructions. Use the Studio's saved channel settings and verify the plan and project through its local API.
 
 ## Every channel: voice first, the director's frames, a light plan page (31 October 2026)
 
@@ -48,10 +44,8 @@ and an idea, and `tools/studio.py frames P FILE [--dry-run]` hands them in. `bac
 sentence once and in order, at most `max_sentences_per_scene` a frame, only the channel's formats, its opening format,
 at most five frames of one format in a row (Razgon scenes excepted) and each format's share within ±5 points of the
 channel's, and saves the frames as a director plan (`frame_source` stays `razgon-direction`, the marker of a director's
-frames; `visual` holds the idea and survives re-recognition). The plan page of every channel is the two steps of
-`frontend/director.js`: «Озвучка й режисура» with the formats and the voice timeline (photo channels) or the film strip
-(animated), and «Створення відео». On a photo channel the montage is cut in Claude Code outside the Studio, so its step 2
-only counts the frames that a picture, video or text covers. No cost estimate, frame counts, stage tag or notes. Tests:
+frames; `visual` holds the idea and survives re-recognition). The plan page is described in «The plan page and the
+frame agent» below; it has no cost estimate, stage tag or notes. Tests:
 `backend/tests/test_director_plan.py`, `test_director.py`.
 
 ## Animated films: voice first, director frames, start production

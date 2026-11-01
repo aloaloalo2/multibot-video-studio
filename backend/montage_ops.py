@@ -50,7 +50,6 @@ STYLES = {   # text colour, card colour (None: no card), shadow of the text
 # The channel rule (AGENTS.md, 28 October 2026): about 70% of the seams between frames get a designed transition, varied
 # but calm; a full-frame text frame starts with a cut, its first word must show at once.
 DEFAULT_POOL = ["crossfade"] * 10 + ["slide_left", "slide_right", "zoom_in", "zoom_out", "cin_pearl_mist", "cin_blue_moon", "cin_arctic_mist"]
-EASINGS = {"linear", "ease_in", "ease_out", "ease_in_out"}
 
 
 class OpError(store.StudioError):

@@ -14,7 +14,6 @@ from collections import Counter, defaultdict
 import number_text
 import planner
 
-ORDER_ISSUES = {"out_of_order", "repeated_speech"}
 MIN_TOKENS = 5      # shorter sentences («It's called brown fat.») turn up elsewhere by chance
 GRAM = 3
 SHARE = .6          # share of a sentence's word triples one hearing of it must hold

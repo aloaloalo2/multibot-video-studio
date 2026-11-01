@@ -35,7 +35,6 @@ import frame_progress
 import space
 import production
 import thumbnail_gen
-import agent_estimate
 import agent_runtime
 import agent_storage
 import credentials
@@ -942,9 +941,6 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
         if match:
             return self.json_response({"memory": agent_storage.get_memory(match.group(1))})
-        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/cost-estimate", path)
-        if match:
-            return self.json_response({"estimate": agent_estimate.estimate(match.group(1))})
         if path == "/api/pixabay/search":
             q = (query.get("q") or [""])[0].strip()
             kind = (query.get("kind") or ["video"])[0]
