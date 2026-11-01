@@ -207,12 +207,19 @@ function body(g, o, p, s, f, of, ink, far, rim, flat) {
   if (rim) { g.save(); tf(rim.dir[0] * rim.w, rim.dir[1] * rim.w); parts(g, o, p, { ...of, _sil: rim.color }, rim.color, rim.color, 'sil', 1.6); g.restore(); }
   g.save(); tf(); parts(g, o, p, of, o.dim ? mix(ink, far, 0.6) : ink, far, 'main'); g.restore();
 }
+// A style's figure: { limb, torso, head } scale the leg and arm, torso and head of every character (1 = the classic
+// figure), joints: k draws round knees and elbows k times the limb width, ends: k round hands and feet. A style without
+// a figure draws exactly the classic one.
 function parts(g, o, p, of, ink, far, pass, grow = 0) {
-  const sil = pass === 'sil', L = 12.5 + grow, A = 11 + grow, T = 15 + grow, HR = 26 + grow * 0.6;
+  const F = S().figure || {}, lk = F.limb ?? 1, tk = F.torso ?? 1, hk = F.head ?? 1;
+  const sil = pass === 'sil', L = 12.5 * lk + grow, A = 11 * lk + grow, T = 15 * tk + grow, HR = 26 * hk + grow * 0.6;
+  const knot = (pt, w, color, k) => { if (k) circle(g, pt[0], pt[1], w * k / 2 + grow * 0.5, color); };
   const sl = sleeve(of);
   // far leg + far arm
   seg(g, [p.hip, p.kB, p.fB, [p.fB[0] + 12, p.fB[1]]], L - 1, sil ? ink : of.legs ? shade(of.legs, -0.35) : far);
+  knot(p.kB, L - 1, sil ? ink : of.legs ? shade(of.legs, -0.35) : far, F.joints); knot([p.fB[0] + 12, p.fB[1]], L - 1, sil ? ink : far, F.ends);
   seg(g, [p.sh, p.eB, p.hB], A - 1, sil ? ink : far);
+  knot(p.eB, A - 1, sil ? ink : far, F.joints); if (!of.gloves) knot(p.hB, A - 1, sil ? ink : far, F.ends);
   if (!sil && sl) seg(g, sl === 'long' ? [p.sh, p.eB, [lerp(p.eB[0], p.hB[0], 0.7), lerp(p.eB[1], p.hB[1], 0.7)]] : [p.sh, [lerp(p.sh[0], p.eB[0], 0.75), lerp(p.sh[1], p.eB[1], 0.75)]], 16, sleeveColor(of, true));
   if (of.gloves) circle(g, p.hB[0], p.hB[1], 8.5 + grow, sil ? ink : shade(of.gloves, -0.2));
   // hair / hood behind head
@@ -224,9 +231,11 @@ function parts(g, o, p, of, ink, far, pass, grow = 0) {
   if (of.top && of.top !== 'none') torsoWear(g, of, p, pass);
   // near leg
   seg(g, [p.hip, p.kF, p.fF, [p.fF[0] + 13, p.fF[1]]], L, sil ? ink : of.legs || ink);
+  knot(p.kF, L, sil ? ink : of.legs || ink, F.joints); knot([p.fF[0] + 13, p.fF[1]], L, sil ? ink : of.legs || ink, F.ends);
   if (!sil && ['labcoat', 'trench'].includes(of.top)) { const c = of.top === 'labcoat' ? '#ebe7f0' : of.color || '#2c2833'; poly(g, [[p.sh[0] - 4, p.sh[1] + 40], [p.hip[0] + 25, p.hip[1] + 44], [p.hip[0] - 23, p.hip[1] + 44]], c); }
   // near arm
   seg(g, [p.sh, p.eF, p.hF], A, ink);
+  knot(p.eF, A, ink, F.joints); if (!of.gloves) knot(p.hF, A, ink, F.ends);
   if (!sil && sl) seg(g, sl === 'long' ? [p.sh, p.eF, [lerp(p.eF[0], p.hF[0], 0.72), lerp(p.eF[1], p.hF[1], 0.72)]] : [p.sh, [lerp(p.sh[0], p.eF[0], 0.75), lerp(p.sh[1], p.eF[1], 0.75)]], 16.5, sleeveColor(of, false));
   if (of.gloves) circle(g, p.hF[0], p.hF[1], 9 + grow, sil ? ink : of.gloves);
   // head
