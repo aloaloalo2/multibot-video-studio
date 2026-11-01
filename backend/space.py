@@ -48,6 +48,15 @@ def old_renders(pid: str, project: dict) -> list[dict]:
             and store.RAZGON_RENDER.fullmatch(Path(asset.get("path") or "").name) and Path(asset["path"]).is_file()]
 
 
+def freeable(pid: str) -> bool:
+    """Whether the episode has anything to free, cheaply (no sizes): the card shows «Звільнити місце» only then."""
+    try:
+        project = store.listed_project(store.project_dir(pid) / "project.json")
+        return bool(build_items(project)) or bool(old_renders(pid, project))
+    except (OSError, ValueError, KeyError, TypeError, store.StudioError):
+        return False
+
+
 def busy(pid: str) -> str | None:
     if pid in director.ACTIVE:
         return "Зараз іде режисура"

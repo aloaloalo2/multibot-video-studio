@@ -964,7 +964,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/service-keys":
             return self.json_response({"providers": credentials.providers()})
         if path == "/api/projects":
-            return self.json_response({"projects": store.list_projects((query.get("channel") or [None])[0])})
+            projects = store.list_projects((query.get("channel") or [None])[0])
+            for item in projects:
+                item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
+            return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
                 jobs=[dict(entry['job']) for entry in ACTIVE_EXPORTS.values()
