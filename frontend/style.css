@@ -1015,6 +1015,51 @@ select option{background:#232327;color:#f1f1f2}
 /* a long title's second line sits over the top of the cover (its dark fade is made for it), not under it */
 .overview-projects .project-card h2{position:relative;z-index:3}
 /* stacked fields in a settings section keep a gap */
-.settings-section label+label{margin-top:12px}
+.settings-section>label+label{margin-top:12px}
 /* library tabs wrap at narrow widths instead of hiding «Ефекти» past the edge */
 .library-tabs{flex-wrap:wrap;row-gap:6px}
+/* «Логотип каналу»: the file itself in a tile, what it is, its actions and the switch in one row; below it, while there
+   is a logo, a small frame with the logo in its place beside the place, size, margin and visibility controls */
+.logo-file{display:grid;grid-template-columns:88px minmax(0,1fr) auto;gap:16px;align-items:center}
+.logo-tile{position:relative;display:grid;place-items:center;width:88px;height:88px;margin:0!important;border-radius:14px;cursor:pointer;overflow:hidden;
+  border:1.5px dashed #55555e;background:#1f1f24;transition:border-color .15s,background-color .15s}
+.logo-tile.has-logo{border-style:solid;border-color:#3b3b41;
+  background:repeating-conic-gradient(#2a2a30 0 25%,#212126 0 50%) 0 0/14px 14px}
+.logo-tile.is-over,.logo-tile:focus-within{border-color:#f0b429;background-color:#2a2618}
+@media(hover:hover){.logo-tile:hover{border-color:#8a8a94}.logo-tile.has-logo:hover{border-color:#f0b429}}
+.logo-tile img{max-width:78%;max-height:78%;object-fit:contain}
+.logo-tile-empty{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#c9cad0}
+.logo-tile-empty svg{width:22px;height:22px;fill:none;stroke:#f0b429;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.logo-file-info{display:flex;flex-direction:column;gap:4px;min-width:0}
+.logo-file-info strong{font-size:14px;color:#f1f1f2}
+.logo-file-info small{font-size:12px;color:#9a9ca4;line-height:1.4}
+.logo-file-actions{display:flex;gap:8px;margin-top:6px}
+.logo-file-actions button{padding:6px 12px;font-size:12.5px;border-radius:9px}
+.logo-file-actions button[hidden]{display:none}
+.logo-remove{background:transparent;border:1px solid #5a3236;color:#ff8f8f}
+@media(hover:hover){.logo-remove:hover{background:#3a2226;border-color:#7a3a40}}
+/* a switch instead of a checkbox: on and off read at a glance */
+.logo-switch{display:flex!important;flex-direction:row!important;align-items:center;gap:10px;margin:0!important;font-size:13px;color:#d6d7dc;cursor:pointer;white-space:nowrap}
+.logo-switch[hidden]{display:none!important}
+.logo-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.logo-switch span{position:relative;flex:none;width:36px;height:20px;border-radius:999px;background:#45454d;transition:background-color .15s}
+.logo-switch span:after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#f1f1f2;transition:transform .15s}
+.logo-switch input:checked+span{background:#f0b429}
+.logo-switch input:checked+span:after{transform:translateX(16px)}
+.logo-switch input:focus-visible+span{outline:2px solid #f0b429;outline-offset:2px}
+.logo-section .logo-place{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid #3b3b41}
+.logo-section .logo-place[hidden]{display:none}
+.logo-place.is-off{opacity:.45}
+.logo-mini{position:relative;aspect-ratio:16/9;border-radius:9px;overflow:hidden;border:1px solid #35353a;
+  background:#141417 radial-gradient(120% 95% at 88% 0%,#2b2b33,#18181b 60%) center/cover no-repeat}
+.logo-mini img{position:absolute;height:auto;max-width:none}
+.logo-place-controls{display:flex;flex-direction:column;gap:14px;min-width:0}
+.logo-place-row{display:flex;align-items:center;gap:14px}
+.logo-place-label{font-size:12px;color:#aeb0b7}
+.logo-section .logo-sliders{grid-template-columns:repeat(3,minmax(0,1fr))}
+.logo-feedback{margin:10px 0 0;font-size:12px;color:#c9cad0}
+.logo-feedback:empty{display:none}
+.channel-look .style-note{margin:-4px 0 10px}
+@media(max-width:640px){.logo-file{grid-template-columns:88px minmax(0,1fr)}.logo-switch{grid-column:1/-1}
+  .logo-section .logo-place{grid-template-columns:1fr}.logo-section .logo-sliders{grid-template-columns:1fr}}
+.modal-body .logo-tile{display:flex;flex-direction:row;align-items:center;justify-content:center;padding:0}
