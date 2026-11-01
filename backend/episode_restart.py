@@ -20,7 +20,7 @@ import store
 
 # What a project keeps through a restart: who it is, where its episode lives, its frame size and its media library.
 KEEP = ("id", "name", "channel_id", "channel_name", "episode_path", "created_at", "schema_version", "width", "height",
-        "fps", "assets", "settings")
+        "fps", "assets", "settings", "plan_weights")
 STOP_WAIT = 15
 
 
@@ -43,6 +43,9 @@ def restart(pid: str) -> dict:
     pointer = store.read_json(folder / "analysis-state.json", {}) or {}
     if pointer.get("job_id") in analysis_jobs.ACTIVE_JOBS:
         raise store.StudioError("Студія ще розпізнає озвучку. Зачекайте, доки вона закінчить, і почніть заново", 409)
+    import thumbnail_gen
+    if pid in thumbnail_gen.ACTIVE:
+        raise store.StudioError("Студія ще малює прев'ю цього випуску. Зачекайте, доки воно буде готове, і почніть заново", 409)
     stop_runs(pid)
     with store.LOCK:
         project = store.load_project(pid)

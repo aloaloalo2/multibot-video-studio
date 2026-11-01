@@ -429,6 +429,8 @@ def keep_director_frames(plan, previous):
     themselves changed, the old grouping no longer fits: the plan keeps the planner frames and is marked
     `director_stale`, so the next step is a new pass of the director.
     """
+    if previous and previous.get("director_stale") and plan.get("timing", {}).get("status") == "audio_synced":
+        return dict(plan, director_stale=True)   # still waiting for the director: a rebuild must not hide that
     if not previous or previous.get("frame_source") != DIRECTOR_FRAME_SOURCE or plan.get("timing", {}).get("status") != "audio_synced":
         return plan
     sentences = [text for frame in plan["frames"] for text in frame["sentences"]]

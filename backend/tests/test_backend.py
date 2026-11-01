@@ -475,6 +475,16 @@ class BackendTest(unittest.TestCase):
         clip = project["tracks"][0]["clips"][0]
         project = store.apply_action(pid, "set_clip_volume", {"clip_id": clip["id"], "volume": 0})
         self.assertFalse(store.plan_readiness(project)["export_ready"])
+        project = store.apply_action(pid, "set_clip_volume", {"clip_id": clip["id"], "volume": 1})
+        # a voice on a muted layer plays nothing in the film
+        muted = store.load_project(pid); muted["tracks"][0]["muted"] = True
+        self.assertFalse(store.plan_readiness(muted)["export_ready"])
+        self.assertIn("вимкнено", store.plan_readiness(muted)["reason"])
+        # a second piece of the voice would play twice
+        project = store.apply_action(pid, "add_clip", {"layer_id": project["tracks"][0]["id"], "kind": "audio", "asset_id": asset["id"], "start": 0, "duration": 1})
+        self.assertFalse(store.plan_readiness(project)["export_ready"])
+        self.assertIn("двічі", store.plan_readiness(project)["reason"])
+        project = store.apply_action(pid, "undo", {})
         # A plan that follows the voice takes no new script without a voice: another text means another voice.
         status, _ = self.request(endpoint, "POST", {"script": "A changed complete sentence about a simple subject."})
         self.assertEqual(status, 409)

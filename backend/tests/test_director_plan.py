@@ -79,5 +79,10 @@ class DirectorPlanTest(unittest.TestCase):
             good = frames(([1, 2], "stock_photo"), ([3, 4], "stock_photo"), ([5, 6], "stock_photo"), ([7, 8], "stock_photo"))
             self.assertTrue(director_plan.apply(own["id"], good, dry_run=True)["ok"])
 
+    def test_a_plan_waiting_for_the_director_keeps_waiting_through_a_rebuild(self):
+        stale = dict(self.plan, director_stale=True)
+        rebuilt = planner.keep_director_frames(dict(self.plan), stale)
+        self.assertTrue(rebuilt.get("director_stale"))
+
 if __name__ == "__main__":
     unittest.main()

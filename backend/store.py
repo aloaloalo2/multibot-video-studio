@@ -59,8 +59,53 @@ _DURATION_CACHE = {}
 _AUDIO_HASH_CACHE = {}
 
 
+# Messages of the timeline's checks (here, graphics.py, joins.py) as the author reads them: the studio speaks Ukrainian.
+UKRAINIAN = {
+    "Invalid typography": "Невірні налаштування шрифту каналу",
+    "Invalid timed text layout": "Невірне розташування слів тексту",
+    "Invalid timed text word": "Невірне слово тексту",
+    "Timed text words must be ordered": "Слова тексту мають іти по черзі",
+    "Timed text words need a positive box": "Слово тексту має мати розмір",
+    "Timed text differs from clip text": "Слова не збігаються з текстом кліпу",
+    "Invalid frame members": "Невірний склад кадру",
+    "Frame title is empty": "Назва кадру порожня",
+    "Invalid frame role": "Невідома роль кадру",
+    "Frame group not found": "Кадр не знайдено",
+    "Invalid mute state": "Невірний стан звуку",
+    "This layer has no sound": "На цьому шарі немає звуку",
+    "Stack group not found": "Групу не знайдено",
+    "Invalid stack reference": "Невірне посилання на шар",
+    "Invalid stack destination": "Невірне місце для шару",
+    "Source offset is after the end of the file": "Початок фрагмента пізніше за кінець файлу",
+    "Timed words require a text clip": "Слова з часом бувають лише в текстовому кліпі",
+    "Invalid text role": "Невідома роль тексту",
+    "Text frame is missing from the approved plan": "Текстового кадру немає в плані",
+    "A text frame must contain its complete spoken passage": "Текстовий кадр має містити всі свої слова озвучки",
+    "A text frame must begin with its first spoken word": "Текстовий кадр має починатися з першого слова озвучки",
+    "Invalid batch size": "Забагато або замало дій за раз",
+    "Unsupported batch action": "Ця дія не підтримується в пакеті",
+    "Waveform requires audio": "Хвиля звуку буває лише в аудіо чи відео",
+    "Invalid graphics value": "Невірне значення графіки",
+    "Unknown mask": "Невідома маска",
+    "Unknown font": "Невідомий шрифт",
+    "Invalid text alignment": "Невідоме вирівнювання тексту",
+    "Invalid gradient": "Невірний градієнт",
+    "Invalid shadow color": "Невірний колір тіні",
+    "Invalid shadow": "Невірна тінь",
+    "Scene not found": "Кадр не знайдено",
+    "Invalid transition endpoint": "Невірний край переходу",
+    "A transition requires visual clips": "Перехід можливий лише між картинками чи відео",
+    "Transitions can only be dropped onto touching frame edges": "Перехід ставиться лише на стик сусідніх кадрів",
+    "Unknown transition": "Невідомий перехід",
+    "Transition is longer than an adjacent frame": "Перехід довший за сусідній кадр",
+}
+
+
 class StudioError(Exception):
     def __init__(self, message, status=400):
+        message = UKRAINIAN.get(str(message), message)
+        if isinstance(message, str) and message.startswith(("Unknown visual effect", "Frame exceeds", "Invalid ")) and message not in UKRAINIAN.values():
+            message = "Невірні параметри: " + message   # a rare check without a translation still says it is the input
         super().__init__(message)
         self.status = status
 
@@ -711,7 +756,7 @@ def plan_settings_match(pid: str, plan: dict | None) -> bool | None:
     if not plan or not plan.get("settings_signature"):
         return None
     project = load_project(pid)
-    channel = get_channel_folder(project["channel_id"])
+    channel = get_channel_folder(project["channel_id"], include_disabled=True)
     settings = read_json(channel / PLAN_CONFIG, {})
     if project.get("plan_weights") is not None:
         settings["weights"] = project["plan_weights"]
@@ -788,9 +833,11 @@ def plan_readiness(project, plan=None, stage_only=False):
         result.update(stage="audio_synced", plan_ready=True, reason="Додайте повну озвучку на таймлайн для експорту")
         if stage_only:
             return result
-        clips = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])]
-        full_voice = False
-        for clip in clips:
+        # a muted layer plays nothing in the export (app.normalize_for_engine): its voice does not count
+        clips = [(bool(track.get("muted")), clip) for track in project.get("tracks", []) for clip in track.get("clips", [])]
+        full_voice = muted_voice = False
+        voice_ids = set()
+        for muted, clip in clips:
             # the voice is the timed file itself, or any copy of it with the same bytes: timings attached by a file path
             # name the audio by an id made before the project had it, which no timeline clip carries (GORBUNOV-23)
             same = not audio.get("asset_id") or clip.get("asset_id") == audio["asset_id"]
@@ -803,9 +850,18 @@ def plan_readiness(project, plan=None, stage_only=False):
                 if same:
                     result["reason"] = "Озвучка на таймлайні не відповідає файлу таймінгів"
                 continue
-            full_voice = abs(float(clip.get("start", 0))) < .001 and abs(float(clip.get("trim_start", 0))) < .001 and abs(float(clip.get("duration", 0)) - duration) < .002 and float(clip.get("volume", 1)) > 0
-            if full_voice:
-                break
+            if muted:
+                muted_voice = True
+                continue
+            voice_ids.add(clip["id"])
+            whole = abs(float(clip.get("start", 0))) < .001 and abs(float(clip.get("trim_start", 0))) < .001 and abs(float(clip.get("duration", 0)) - duration) < .002 and float(clip.get("volume", 1)) > 0
+            full_voice = full_voice or whole
+        if full_voice and len(voice_ids) > 1:
+            # a second copy of the voice (a piece left on another layer) would play twice over the film
+            full_voice = False
+            result["reason"] = "Озвучка стоїть на таймлайні двічі: приберіть зайву копію"
+        if not full_voice and muted_voice:
+            result["reason"] = "Шар з озвучкою вимкнено: увімкніть звук озвучки перед експортом"
         if full_voice:
             if abs(float(project.get("duration", 0)) - duration) > max(.002, 1 / max(1, int(project.get("fps", 30)))):
                 result["reason"] = "Тривалість монтажу має відповідати готовій озвучці"
@@ -854,7 +910,9 @@ def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> 
 
 def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None, script_path=None, duration=None, hints=None, project_id=None, narration=None, timings=None, weights=None, use_channel_weights=False) -> dict:
     """The only planning entry point. Read saved channel settings at execution time."""
-    channel = get_channel_folder(cid)
+    # an existing episode keeps working when its channel is switched off (a recognition that ends after it); a new one
+    # cannot be started there
+    channel = get_channel_folder(cid, include_disabled=project_id is not None)
     episode = validated_episode_path(channel, episode_path, validated_name(name))
     if script is not None and script_path is not None:
         raise StudioError("Передайте текст або файл сценарію")
@@ -1462,7 +1520,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         clip["trim_start"] = trim_start
         style_defaults={}
         if kind=='text' or content_type=='text':
-            config=read_json(get_channel_folder(project['channel_id'])/PLAN_CONFIG,{}) if project.get('channel_id') else {}
+            config=read_json(get_channel_folder(project['channel_id'],include_disabled=True)/PLAN_CONFIG,{}) if project.get('channel_id') else {}
             style_defaults=config.get('typography',{})
         try:clip.update(graphics.validate({**style_defaults,**payload}))
         except (ValueError,TypeError) as error:raise StudioError(str(error))
@@ -1770,9 +1828,14 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
             current = {asset["id"]: asset for asset in project.get("assets", [])}
             restored = [asset for asset in previous.get("assets", []) if asset.get("id") not in current and Path(asset.get("path", "")).is_file()]
             previous["assets"] = list(current.values()) + restored
-            for key in ("plan_source", "plan_updated_at", "plan_original_source"):
+            # undo is about the montage: the plan, the frame agent's request, the episode's own shares, its voice text and
+            # its restart stay as they are now (an undo once brought a finished run back to «in progress»)
+            for key in ("plan_source", "plan_updated_at", "plan_original_source", "production_request", "plan_weights",
+                        "voice_script", "restarted_at", "name"):
                 if key in project:
                     previous[key] = project[key]
+                else:
+                    previous.pop(key, None)
             previous["revision"] = project.get("revision", 0) + 1
             save_project(previous)
             return previous
@@ -1970,6 +2033,9 @@ def request_production(pid: str, frames) -> dict:
             raise StudioError("Сценарій розходиться з озвучкою. Режисер має заново розбити кадри")
         if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
             raise StudioError("Агент уже створює кадри цього ролика", 409)
+        import director
+        if pid in director.ACTIVE:
+            raise StudioError("Режисер ще розкладає озвучку на кадри. Дочекайтеся, поки він закінчить", 409)
         total = len(plan["frames"])
         try:
             count = int(frames)

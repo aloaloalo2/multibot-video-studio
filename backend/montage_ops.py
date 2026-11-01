@@ -654,7 +654,8 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
                     raise OpError(f"Файл поза випуском: {path}")
             known = {a["id"] for a in project.get("assets", [])}
             project.setdefault("assets", []).extend(record for record in (store.asset_record(path, pid) for path in ctx.files) if record["id"] not in known)
-            project["revision"] = project.get("revision", 0) + 1
+            # the media list is not an edit (as prune_razgon_renders): the revision moves only with the batch below, so a
+            # batch that fails leaves no phantom change for an open editor
             store.save_project(project)
         # a frame placed where no group stood yet opens its own «Кадр N» group in the same batch: one undo step
         groups = [{"type": "group_clips", "payload": {"clip_titles": [title], "title": frame}} for title, frame in ctx.groups.items()]

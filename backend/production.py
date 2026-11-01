@@ -37,7 +37,8 @@ def set_request(pid: str, **fields) -> dict:
         project = store.load_project(pid)
         request = {**(project.get("production_request") or {}), **fields}
         project["production_request"] = request
-        project["revision"] = project.get("revision", 0) + 1
+        # the request's state is not an edit of the montage: the revision stays, so an open editor is not told the
+        # project changed under it at every start and end of a run
         store.save_project(project)
         if project.get("episode_path") and Path(project["episode_path"]).is_dir():
             store.atomic_json(Path(project["episode_path"]) / "Запит на створення.json", request)

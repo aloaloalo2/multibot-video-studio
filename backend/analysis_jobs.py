@@ -49,6 +49,10 @@ def latest(pid, load_job):
 
 def start(project, asset_id, save_job, load_job, script=None):
     """Recognise a voice. The text comes from the author's script when there is one, else from the voice itself."""
+    import director, production
+    if project["id"] in director.ACTIVE or project["id"] in production.ACTIVE:
+        # a new voice rebuilds the plan: not under the director or the frame agent at work
+        raise store.StudioError("Над випуском зараз працює режисер або агент кадрів. Дочекайтеся, поки він закінчить", 409)
     plan = store.load_project_plan(project["id"])
     if isinstance(script, str) and script.strip():
         script, script_from = script.strip(), "request"

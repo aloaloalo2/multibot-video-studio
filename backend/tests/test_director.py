@@ -24,7 +24,8 @@ class DirectorTest(unittest.TestCase):
         patches = [patch.object(store, "project_dir", return_value=Path(self.tmp.name)),
                    patch.object(store, "load_project", return_value=PROJECT),
                    patch.object(store, "load_project_plan", side_effect=lambda pid: self.plan),
-                   patch.object(store, "list_channels", side_effect=lambda: [{"id": "c" * 16, "settings": {"channel_kind": self.kind}}])]
+                   patch.object(store, "list_channels", side_effect=lambda: [{"id": "c" * 16, "settings": {"channel_kind": self.kind}}]),
+                   patch.object(store, "project_animated", side_effect=lambda project: self.kind == "animated")]
         for item in patches:
             item.start()
             self.addCleanup(item.stop)

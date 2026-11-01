@@ -793,6 +793,7 @@ def plan_from_direction(args) -> None:
                        "sentence_timings": timings[offset:offset + len(group)], "episode": first.get("episode"), "scene": first.get("scene", "")})
         offset += len(group)
     new_plan = dict(plan, frames=frames, frame_source="razgon-direction")
+    new_plan.pop("director_stale", None)   # the director's fresh frames answer the changed text
     # the frames come from the direction, not from the channel's planner settings: bind the plan to the settings saved
     # now, so the Studio doesn't flag it as stale after an unrelated settings change
     channel = next((c for c in studio.call("GET", "/api/channels")["channels"] if c["id"] == plan.get("channel_id")), None)

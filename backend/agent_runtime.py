@@ -97,7 +97,7 @@ def execute(project_id, name, args, callbacks, allow_images):
     project = store.load_project(project_id)
     if name == "get_project":
         assets = store.discover_assets(project)
-        settings = store.read_json(store.get_channel_folder(project["channel_id"]) / store.PLAN_CONFIG, {})
+        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {})
         setting_keys = ("weights", "first_clip_format", "first_clip_count", "first_clip_seconds", "motion_easing", "typography")
         return {"revision": project.get("revision", 0), "production": store.plan_readiness(project), "channel_settings": {key: settings[key] for key in setting_keys if key in settings}, "layers": [{"id": layer["id"], "name": layer.get("name"), "clips": [{"id": c["id"], "kind": c.get("kind"), "start": c.get("start"), "duration": c.get("duration")} for c in layer.get("clips", [])]} for layer in project.get("tracks", [])][:500], "groups": [{key: group.get(key) for key in ("id", "title", "role", "clip_ids")} for group in project.get("scene_groups", [])], "assets": [{key: a.get(key) for key in ("id", "name", "kind", "duration", "source")} for a in assets[:500]]}
     if name == "get_plan":

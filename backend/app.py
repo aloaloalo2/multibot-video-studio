@@ -538,6 +538,9 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     readiness = store.plan_readiness(project)
     if not readiness["export_ready"]:
         raise store.StudioError(readiness["reason"], 409)
+    if project["id"] in production.ACTIVE or project["id"] in director.ACTIVE:
+        # the export locks the project: the agent's next frame would fail and the film would miss what it is making
+        raise store.StudioError("Над випуском зараз працює режисер або агент кадрів. Експортуйте, коли він закінчить", 409)
     razgon = razgon_export.export_job(project)
     # a mixed episode: the bridge renders its Razgon code blocks first, then the engine exports the timeline
     mixed = razgon if razgon and razgon.get("mixed") else None
@@ -850,6 +853,9 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return None
         except (KeyError, TypeError, ValueError) as exc:
+            # mostly a request that misses a field, but a bug looks the same from here: keep its trace in the server log
+            sys.stderr.write(f"[video-studio] {self.command} {self.path}: {type(exc).__name__}: {exc}\n")
+            traceback.print_exc()
             return self.json_response({"error": "Невірні параметри запиту"}, 400)
         except Exception:
             traceback.print_exc()

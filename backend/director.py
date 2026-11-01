@@ -63,8 +63,8 @@ def executable() -> Path:
 
 
 def animated(project: dict) -> bool:
-    channel = next((c for c in store.list_channels() if c["id"] == project.get("channel_id")), None)
-    return bool(channel) and (channel.get("settings") or {}).get("channel_kind") == "animated"
+    # one answer across the studio, a switched-off channel included (store.project_animated)
+    return store.project_animated(project)
 
 
 def brief(project: dict) -> str:
@@ -282,6 +282,9 @@ def kill(process: subprocess.Popen) -> None:
 def stop(pid: str, kind: str) -> None:
     """Stop the live run whose feed is `kind` («director» or «production») on this project; its state is not written back."""
     feed = str(activity_path(pid, kind))
+    import production
+    if feed not in RUNNING and pid not in (ACTIVE if kind == "director" else production.ACTIVE):
+        return   # nothing runs: a stop mark left here would stop the next run the moment it starts
     CANCELLED.add(feed)
     process = RUNNING.get(feed)
     if process:
@@ -343,6 +346,10 @@ def start(pid: str, reason: str = "voice") -> dict:
     project = store.load_project(pid)
     if not project.get("episode_path"):
         raise store.StudioError("У випуску немає папки")
+    import production
+    if pid in production.ACTIVE:
+        # a new direction would rewrite the frames under the frame agent at work
+        raise store.StudioError("Агент саме створює кадри цього випуску. Дочекайтеся, поки він закінчить", 409)
     with LOCK:
         if pid in ACTIVE:
             return state(pid)
