@@ -37,6 +37,13 @@ def find() -> Path | None:
                 path = Path(str(entry.get("path") or ""))
                 if (entry.get("manifest") or {}).get("name") == NAME and path.is_absolute() and (path / "manifest.json").is_file():
                     return path
+    # where the README installs it (~/flow-bot/heygen-grabber), should no profile say so
+    for manifest in [*(Path.home() / "flow-bot").glob("manifest.json"), *(Path.home() / "flow-bot").glob("*/manifest.json")]:
+        try:
+            if json.loads(manifest.read_text(encoding="utf-8")).get("name") == NAME:
+                return manifest.parent
+        except (OSError, ValueError):
+            continue
     return None
 
 
