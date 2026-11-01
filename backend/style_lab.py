@@ -107,11 +107,21 @@ def card_dir(key: str) -> Path:
     return store.DATA_ROOT / CARDS / key
 
 
+def card_scene(root: Path) -> tuple[Path, float]:
+    """The scene and moment every style card shows: the café of the kit's example film at 8 s (user, 1 November 2026:
+    «візьми за основу… перший» of the style comparison), the kit's example reaches every Razgon copy through
+    razgon_sync; the older showcase scene (the character by a house) only where the example is missing."""
+    example = root / "examples" / "reaction-time"
+    if (example / "scenes").is_dir() and (example / "config.json").is_file():
+        return example, 8.0
+    return root / "showcase", 2.0
+
+
 def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, definition: dict | None = None) -> str:
     """Render the style card in every gallery style for one title font and assets choice, unless it is cached. A
     channel's own style (one id with its definition) travels in the config, as it does in a film."""
-    scene = root / "showcase"
-    key = hashlib.sha256(json.dumps(["showcase", font, assets, ids, stamp, definition], sort_keys=True).encode()).hexdigest()[:20]
+    scene, moment = card_scene(root)
+    key = hashlib.sha256(json.dumps([scene.name, moment, font, assets, ids, stamp, definition], sort_keys=True).encode()).hexdigest()[:20]
     cache = card_dir(key)
     if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
         return key
@@ -131,10 +141,10 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
         config.update(style=ids[0], styleDef=definition)
     (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))
     try:
-        out = render_stills(root, folder, ids, [2.0])
+        out = render_stills(root, folder, ids, [moment])
         cache.mkdir(parents=True, exist_ok=True)
         for sid in ids:
-            shutil.copyfile(still(out, sid, 2.0), cache / f"{sid}-0.jpg")
+            shutil.copyfile(still(out, sid, moment), cache / f"{sid}-0.jpg")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return key
@@ -144,7 +154,7 @@ def cards(root: Path, own: list[dict] | None = None) -> dict:
     """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
     logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
     switching a font or the assets in the settings only swaps pictures."""
-    scene = root / "showcase"
+    scene = card_scene(root)[0]
     if not (scene / "scenes").is_dir():
         raise StyleLabError("Немає сцени-візитки Razgon")
     known = {style["id"]: style for style in presets(root)}
