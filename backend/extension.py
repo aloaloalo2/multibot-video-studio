@@ -63,7 +63,7 @@ def state(fetch: bool = True) -> dict:
     if not folder:
         return {"found": False}
     result = {"found": True, "path": str(folder), "version": version(folder), "git": (folder / ".git").exists(),
-              "helper": helper_installed(), "item": has_item(folder)}
+              "helper": helper_installed(), "item": has_item(folder) and item_current(folder)}
     if not result["git"]:
         return result
     try:
@@ -78,8 +78,26 @@ def state(fetch: bool = True) -> dict:
     return result
 
 
+HELPER_HOME = SUPPORT / "VideoKey Studio" / "videokey_host.py"
+
+
 def helper_installed() -> bool:
-    return any((SUPPORT / browser / "NativeMessagingHosts" / "com.videokey.studio.json").is_file() for browser in BROWSERS)
+    """The helper is set up where Chrome may run it (not in the studio's folder: an earlier version put it there)."""
+    for browser in BROWSERS:
+        try:
+            manifest = json.loads((SUPPORT / browser / "NativeMessagingHosts" / "com.videokey.studio.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if manifest.get("path") == str(HELPER_HOME) and HELPER_HOME.is_file():
+            return True
+    return False
+
+
+def item_current(folder: Path) -> bool:
+    try:
+        return (ITEM / "item.js").read_text(encoding="utf-8") in (folder / "popup.js").read_text(encoding="utf-8")
+    except OSError:
+        return False
 
 
 def install_helper(folder: Path | None = None) -> None:
@@ -97,8 +115,7 @@ def update() -> dict:
     if current.get("git") and current.get("dirty"):
         # the author's own unsaved work stays as it is: no update over it, no commit of it; the item is only written
         # into the same files on top of it (user, 1 November 2026: the folder held unsaved YouTube Studio changes)
-        if not has_item(folder):
-            add_item(folder, in_git=False)
+        add_item(folder, in_git=False)   # puts the item in, or brings it up to date; no commit over unsaved work
         install_helper(folder)   # also when an earlier click put the item in and stopped at the helper
         return {**state(fetch=False), "note": "Кнопку додано. У теці Multi Bot є ваші незбережені зміни, тож студія нічого "
                 "не зберігала в Git: збережіть їх разом із кнопкою (попросіть Codex «закоміть і запуш зміни в flow-bot/heygen-grabber»)."}
@@ -115,6 +132,29 @@ def update() -> dict:
 
 
 ITEM = store.APP_ROOT / "browser-helper" / "multibot"
+CSS_MARK, HTML_MARK, JS_MARK = "    /* VideoKey Studio: пятая полоса", '  <hr id="studioHr" />', "// VideoKey Studio (пользователь"
+
+
+def refresh_item(folder: Path, in_git: bool) -> str | None:
+    """Bring an item put in earlier up to the studio's current one: its style, markup and script are swapped in place
+    (from their first line to where they end: the </style>, the popup script tag, the end of popup.js)."""
+    html_path, js_path = folder / "popup.html", folder / "popup.js"
+    html, js = html_path.read_text(encoding="utf-8"), js_path.read_text(encoding="utf-8")
+    css_new, html_new, js_new = ((ITEM / name).read_text(encoding="utf-8") for name in ("item.css", "item.html", "item.js"))
+    try:
+        c0 = html.index(CSS_MARK); c1 = html.index("</style>", c0)
+        html = html[:c0] + css_new + html[c1:]
+        h0 = html.index(HTML_MARK); h1 = html.rindex("\n", 0, html.index('<script src="popup.js"></script>', h0)) + 1
+        html = html[:h0] + html_new + html[h1:]
+        j0 = js.index(JS_MARK)
+    except ValueError:
+        return None   # an item someone changed by hand stays as it is
+    js = js[:j0] + js_new
+    if html == html_path.read_text(encoding="utf-8") and js == js_path.read_text(encoding="utf-8"):
+        return None
+    html_path.write_text(html, encoding="utf-8")
+    js_path.write_text(js, encoding="utf-8")
+    return None if in_git is False else commit_item(folder, "VideoKey Studio item: newer version")
 
 
 def has_item(folder: Path) -> bool:
@@ -129,9 +169,9 @@ def add_item(folder: Path, in_git: bool) -> str | None:
     features, so the item goes in on top of them, not as a switch to the public one): the item's style, markup and
     script from browser-helper/multibot, the nativeMessaging permission, the version one step up. Then a commit in the
     folder's Git and a push to its GitHub, when it has one. Nothing happens to a Multi Bot that has the item."""
-    if has_item(folder):
-        return None
     html_path, js_path, manifest_path = folder / "popup.html", folder / "popup.js", folder / "manifest.json"
+    if has_item(folder):
+        return refresh_item(folder, in_git)
     html = html_path.read_text(encoding="utf-8")
     script_tag = '<script src="popup.js"></script>'
     if "</style>" not in html or script_tag not in html or not js_path.is_file():
@@ -155,9 +195,12 @@ def add_item(folder: Path, in_git: bool) -> str | None:
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if not in_git:
         return "Кнопку додано. Зміна лишилась лише на цьому Mac, у Git студія її не зберігала."
+    return commit_item(folder, "VideoKey Studio item: open the studio, start it when it is closed")
+
+
+def commit_item(folder: Path, message: str) -> str | None:
     git(folder, "add", "popup.html", "popup.js", "manifest.json")
-    committed = git(folder, "-c", "user.name=VideoKey Studio", "-c", "user.email=studio@videokey.local", "commit", "-qm",
-                    "VideoKey Studio item: open the studio, start it when it is closed")
+    committed = git(folder, "-c", "user.name=VideoKey Studio", "-c", "user.email=studio@videokey.local", "commit", "-qm", message)
     if committed.returncode:
         return "Кнопку додано, але зберегти її в Git не вдалося: " + (committed.stderr or committed.stdout).strip()[-200:]
     pushed = git(folder, "push", "-q", timeout=120)

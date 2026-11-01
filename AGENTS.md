@@ -256,8 +256,10 @@ and `store.razgon_rel()` (the agents' briefs) find it in either place. Test: `to
 
 The Multi Bot extension (its own repositories, multibot-extension and multibot-extension-public) has a fifth item,
 «VideoKey Studio»: it opens the studio or brings its open tab forward; only when the studio does not answer it asks the
-native messaging helper `browser-helper/host/videokey_host.py` to start it. The helper runs «Запустить студию.command»
-with `VIDEOKEY_NO_OPEN=1` in its own session, waits for `/api/health` and answers; it accepts only
+native messaging helper to start it. `install.py` copies `browser-helper/host/videokey_host.py` with a `config.json`
+to `~/Library/Application Support/VideoKey Studio` (macOS keeps Chrome out of protected folders such as Documents);
+the helper asks macOS to open «Запустить студию.command» (`open -g -j`, a hidden Terminal), leaving a marker so the
+command opens no second tab and hides its window, waits for `/api/health` and answers; it accepts only
 `{"command": "start"}`. «browser-helper/Встановити.command» (`install.py`) registers it in each Chrome-based browser for
 the extension named «Multi Bot» only, its id read from the browser profiles' Preferences.
 The studio's settings («Розширення Multi Bot», `backend/extension.py`, `GET /api/extension`, `POST /api/extension/update`)

@@ -2,12 +2,14 @@
 """The browser extension's helper: starts VideoKey Studio on this Mac and nothing else.
 
 The browser runs it for the Multi Bot extension only (the allowed origin in its manifest, written by install.py via
-«Встановити.command»). It reads one message ({"command": "start"}), runs «Запустить студию.command» in its own session
-(so the studio outlives the helper and the browser) without opening a tab, waits until the studio answers and replies
-{"ok": true}, or {"ok": false, "error": ...}.
+«Встановити.command»). install.py copies it to ~/Library/Application Support/VideoKey Studio with config.json naming
+«Запустить студию.command»: macOS does not let Chrome run programs from a protected folder such as Documents, where the
+studio may live (user, 1 November 2026: «помощник не установлен», though it was). It reads one message
+({"command": "start"}) and asks macOS to open the command, as a double click does, in a hidden Terminal (`open -g -j`),
+so nothing of Chrome's needs to read the studio's folder; a marker tells the command not to open a second tab. It waits
+until the studio answers and replies {"ok": true}, or {"ok": false, "error": ...}.
 """
 import json
-import os
 import struct
 import subprocess
 import sys
@@ -15,10 +17,16 @@ import time
 import urllib.request
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[2]
-COMMAND = APP / "Запустить студию.command"
+HERE = Path(__file__).resolve().parent
 HEALTH = "http://127.0.0.1:8770/api/health"
-LOG = Path.home() / "Library/Logs/VideoKey Studio/extension.log"
+MARKER = Path.home() / "Library/Caches/VideoKey Studio/no-open"
+
+
+def command() -> Path:
+    try:
+        return Path(json.loads((HERE / "config.json").read_text(encoding="utf-8"))["command"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return HERE.parents[1] / "Запустить студию.command"   # run from the studio's own folder
 
 
 def read():
@@ -50,19 +58,19 @@ def main():
     if alive():
         send({"ok": True})
         return
-    if not COMMAND.is_file():
-        send({"ok": False, "error": f"Не знайдено {COMMAND.name} у папці студії"})
+    target = command()
+    MARKER.parent.mkdir(parents=True, exist_ok=True)
+    MARKER.write_text(str(time.time()))
+    run = subprocess.run(["/usr/bin/open", "-g", "-j", str(target)], capture_output=True, text=True, timeout=30)
+    if run.returncode:
+        send({"ok": False, "error": "macOS не відкрив «Запустить студию.command»: " + (run.stderr or run.stdout).strip()[-200:]})
         return
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG, "ab") as log:
-        subprocess.Popen(["/bin/zsh", str(COMMAND)], cwd=APP, env={**os.environ, "VIDEOKEY_NO_OPEN": "1"},
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
     for _ in range(120):          # the update check at start can take a while
         if alive():
             send({"ok": True})
             return
         time.sleep(0.5)
-    send({"ok": False, "error": f"Студія не відповіла за хвилину. Діагностика: {LOG.parent / 'server.log'}"})
+    send({"ok": False, "error": "Студія не відповіла за хвилину. Журнал: ~/Library/Logs/VideoKey Studio/server.log"})
 
 
 if __name__ == "__main__":

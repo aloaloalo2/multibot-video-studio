@@ -1019,7 +1019,8 @@ function extensionText(data){
   if(data.git===false)return `${where}<br>Ця папка не зв’язана з GitHub, тому оновлень звідси не буде.${data.item?'':' Але кнопку «VideoKey Studio» студія може додати.'}`;
   if(data.dirty?.length)return `${where}<br>У папці є ваші незбережені зміни (${esc(data.dirty.join(', '))}): студія їх не затиратиме й нічого не зберігатиме в Git.${data.item?' Щоб оновлюватись звідси, попросіть Codex зберегти їх у Git.':' Кнопку «VideoKey Studio» додати можна: вона допишеться поверх них.'}`;
   if(data.behind)return `${where}<br>На GitHub є новіша версія.`;
-  if(!data.item)return `${where}<br>У меню Multi Bot ще немає кнопки «VideoKey Studio». Студія може додати її сама, не чіпаючи решту розширення.`;
+  if(!data.item)return `${where}<br>Кнопки «VideoKey Studio» у меню Multi Bot ще немає або вона старої версії. Студія може додати чи оновити її сама, не чіпаючи решту розширення.`;
+  if(!data.helper)return `${where}<br>Кнопці «VideoKey Studio» бракує помічника, який запускає студію.`;
   return `${where}<br>Це остання версія.${data.helper?'':' Кнопці «VideoKey Studio» ще бракує помічника для запуску студії.'}`;
 }
 async function fillExtension(){
@@ -1028,7 +1029,7 @@ async function fillExtension(){
     const data=await api('/api/extension');if(!box.isConnected)return;
     box.innerHTML=extensionText(data);
     button.hidden=!data.found || (data.helper && data.item && (!data.behind || !!data.dirty?.length));
-    button.textContent=!data.item?'Додати кнопку «VideoKey Studio»':!data.helper?'Налаштувати кнопку «VideoKey Studio»':'Оновити розширення';
+    button.textContent=!data.item?'Оновити кнопку «VideoKey Studio»':!data.helper?'Налаштувати кнопку «VideoKey Studio»':'Оновити розширення';
   }catch(error){box.textContent=error.message;}
 }
 async function updateExtension(){

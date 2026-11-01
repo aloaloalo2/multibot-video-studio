@@ -8,11 +8,16 @@ Preferences where they name the extension «Multi Bot». Run «Встанови�
 import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-HOST = HERE / "host" / "videokey_host.py"
+SOURCE = HERE / "host" / "videokey_host.py"
+# Chrome runs the helper from here, not from the studio's folder: macOS keeps Chrome out of protected folders such as
+# Documents, where the studio may live
+HOME_DIR = Path.home() / "Library" / "Application Support" / "VideoKey Studio"
+HOST = HOME_DIR / "videokey_host.py"
 NAME = "com.videokey.studio"
 SUPPORT = Path.home() / "Library" / "Application Support"
 BROWSERS = ["Google/Chrome", "Google/Chrome Beta", "Chromium", "Arc/User Data", "BraveSoftware/Brave-Browser",
@@ -54,8 +59,16 @@ def multibot_folders(given: list) -> list:
     return found
 
 
-def main() -> int:
+def place_helper() -> None:
+    HOME_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(SOURCE, HOST)
     os.chmod(HOST, 0o755)
+    (HOME_DIR / "config.json").write_text(json.dumps({"command": str(HERE.parent / "Запустить студию.command")},
+                                                     ensure_ascii=False), encoding="utf-8")
+
+
+def main() -> int:
+    place_helper()
     from_path = {unpacked_id(folder) for folder in multibot_folders(sys.argv[1:])}
     done = []
     for name in BROWSERS:
