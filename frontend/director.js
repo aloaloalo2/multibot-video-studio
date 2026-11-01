@@ -81,12 +81,16 @@ function arrangeEpisode(episode){
   const report=episodeAnalysis()?.report;
   if(report)fillHeard(report);
   else{
-    heardText.textContent='Студія ще не має тексту, розпізнаного з озвучки.';
-    // a plan opened by its link has not loaded the recognition yet: fetch it and fill the fold and the voice line
-    api(`/api/projects/${encodeURIComponent(id)}/analysis`).then(result=>{
+    heardText.textContent='Завантажуємо розпізнаний текст…';
+    // a plan opened by its link has not loaded the recognition yet: fetch it (the same request the page makes) and fill
+    // the fold and the voice line
+    loadAnalysis(id).then(result=>{
       if(state.project?.id!==id||!reportSlot.isConnected)return;
-      state.analysis=result;if(result.report)fillHeard(result.report);refreshEpisode(episode);
-    }).catch(()=>{});
+      state.analysis=result;
+      if(result.report)fillHeard(result.report);
+      else heardText.textContent='Розпізнаного тексту немає: таймінги озвучки додали готовим файлом, без розпізнавання.';
+      refreshEpisode(episode);
+    }).catch(error=>{if(reportSlot.isConnected)heardText.textContent=`Не вдалося завантажити розпізнаний текст: ${error.message}`;});
   }
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';
@@ -376,7 +380,9 @@ function fillMake(make){
   max.disabled=locked;max.classList.toggle('active',!locked&&count===frames.length);
   const end=Number(frames[shownCount-1]?.end) || 0,all=Number(frames[frames.length-1].end) || 0;
   readout.innerHTML=blocked&&!working&&!paused?`<strong>${frames.length}</strong><span>${planFrameWord(frames.length)} · ${clock(all)}</span>`
-    :`<strong>${floor&&!working&&!paused?`${floor+1}–${shownCount}`:shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · ${clock(end)} з ${clock(all)}</span>`;
+    // a stretch after the made frames reads «Кадри 2–6 з 6», a count from the start «6 кадрів з 6»
+    :floor&&!working&&!paused?`<span>Кадри</span><strong>${floor+1}–${shownCount}</strong><span>з ${frames.length} · ${clock(end)} з ${clock(all)}</span>`
+    :`<strong>${shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · ${clock(end)} з ${clock(all)}</span>`;
   fillLegend(legend,frames,made.size);
   hint.textContent=blocked;hint.hidden=!blocked||working||paused;
   feed.replaceChildren();
@@ -453,7 +459,6 @@ async function resumeFrames(id,button){
 // Frames of the plan that are made, by their index: a clip of the film covering the frame's middle (as
 // store.made_frames counts them), or a frame of an animated film drawn as code. Code is a made frame the author
 // reviews live; «Експорт MP4» only converts it into video (user, 30 October 2026).
-function productionWorking(){return ['requested','in_progress'].includes(state.project?.production_request?.status);}
 function madeSet(frames){
   const drawn=framesDrawn(),clips=filmClips(state.project);
   return new Set(frames.map((frame,index)=>{
@@ -464,7 +469,6 @@ function madeSet(frames){
     return found?index:-1;
   }).filter(index=>index>=0));
 }
-function madeFrames(){return madeSet(state.plan?.frames || []).size;}
 
 // Frames the agent has drawn as scenes (backend/frame_progress.py): they are made, green on the strip and on the
 // timeline, though only the export renders them.
@@ -529,7 +533,10 @@ function renderTeam(info,kind,id,live){
 async function pollProduction(id){
   if(state.project?.id!==id)return;
   try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
-    const before=state.project.production_request?.status;state.project=project;loadDrawn(id);
+    const before=state.project.production_request?.status;
+    // only the plan is redrawn from the fresh project; in «Монтаж» the author's own edits stay, the request alone moves on
+    if(state.view==='plan')state.project=project;else state.project={...state.project,production_request:project.production_request};
+    loadDrawn(id);
     if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}catch{}
   refreshEpisode();
 }

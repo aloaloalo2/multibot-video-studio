@@ -5,7 +5,7 @@ function appendSpeechReport(target,report,{transcript:withTranscript=true}={}){
   const box=document.createElement('section');box.className='speech-report';
   const title=document.createElement('h3');title.textContent=report.applied?'Таймінги застосовано':'Потрібна перевірка';box.append(title);
   const counts=document.createElement('div');counts.className='speech-report-counts';
-  counts.innerHTML=`<span><strong>${Number(report.word_match_percent).toFixed(1)}%</strong> слів зіставлено</span><span><strong>${report.matched_phrases} з ${report.phrase_count}</strong> фраз без зауважень</span>`;box.append(counts);
+  counts.innerHTML=`<span><strong>${Number(report.word_match_percent).toFixed(1).replace('.',',')}%</strong> слів зіставлено</span><span><strong>${report.matched_phrases} з ${report.phrase_count}</strong> фраз без зауважень</span>`;box.append(counts);
   const source=document.createElement('p');source.className='plan-note';source.textContent=report.source.name;box.append(source);
   if(report.status==='script_changed' || report.status==='source_changed'){
     const warning=document.createElement('p');warning.className='speech-warning';warning.textContent=report.status==='script_changed'?'Сценарій змінився під час обробки. Повторіть аналіз.':'Медіафайл змінився під час обробки. Повторіть аналіз.';box.append(warning);

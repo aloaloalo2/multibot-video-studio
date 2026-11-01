@@ -23,36 +23,6 @@ async function setProjectView(view){
   stopPlayback();state.view=view;syncRoute();renderProject();
 }
 
-function openPlanBuilder(){
-  if(!state.project)return;
-  const project=state.project,previous=state.plan;
-  const formats=Object.keys(planFormatVisuals),values={...(project.plan_weights || state.channel.settings.weights)};
-  modal(previous?'Перегенерувати план':'Створити план ролика',
-    `<p>Початкові кадри формуються за налаштуваннями каналу. Студія збереже попередню версію карти. Після зміни сценарію потрібно оновити таймінги фраз.</p><label>TXT-файл сценарію<input id="plan-script-file" type="file" accept=".txt,text/plain"></label><label>Сценарій<textarea id="plan-script-input" rows="12" placeholder="Вставте готовий сценарій"></textarea></label><label>Орієнтовна тривалість, с<input id="plan-audio-duration" type="number" min="0.1" step="0.001" placeholder="Можна залишити порожнім"></label><label class="check"><input id="plan-own-weights" type="checkbox" ${project.plan_weights?'checked':''}>Власні пропорції для цього проєкту</label><section id="plan-weights-panel" ${project.plan_weights?'':'hidden'}><div class="weights-grid">${formats.map(format=>`<label>${planFormatNames[format]}, %<input data-plan-weight="${format}" type="number" min="0" max="100" step="1" value="${values[format] || 0}"></label>`).join('')}</div><p id="plan-weight-total"></p><button id="plan-normalize-weights" class="secondary" type="button">Привести до 100%</button><p>Налаштування каналу збережуться.</p></section>`,
-    [{label:'Скасувати',run:closeModal},{label:previous?'Перегенерувати план':'Створити чернетку',primary:true,run:async()=>{
-      const button=$('modal-actions').querySelector('.primary');button.disabled=true;
-      try{
-        const script=$('plan-script-input').value,duration=$('plan-audio-duration').value;
-        if(!script.trim())throw new Error('Додайте текст сценарію.');
-        const payload={script};if(duration)payload.duration=Number(duration);
-        if($('plan-own-weights').checked)payload.weights=Object.fromEntries([...document.querySelectorAll('[data-plan-weight]')].map(input=>[input.dataset.planWeight,Number(input.value)]));
-        else payload.use_channel_weights=true;
-        if(script===previous?.script && previous.hints)payload.hints=previous.hints;
-        if(script===previous?.script && previous?.timing?.status==='audio_synced')payload.timings={duration:previous.timing.audio.duration,audio_sha256:previous.timing.audio.sha256,sentences:previous.timing.sentences};
-        const result=await api(`/api/projects/${encodeURIComponent(project.id)}/plan/generate`,'POST',payload);
-        closeModal();await selectProject(result.project.id,{view:'plan'});status('Нову версію плану збережено.');
-      }catch(error){button.disabled=false;status(error.message,true);}
-    }}]);
-  $('plan-script-input').value=previous?.script || '';
-  if(previous?.timing?.status==='audio_synced')$('plan-audio-duration').disabled=true;
-  function drawTotal(){const sum=[...document.querySelectorAll('[data-plan-weight]')].reduce((sum,input)=>sum+Number(input.value),0);$('plan-weight-total').textContent=`Разом ${sum}%`;$('plan-weight-total').classList.toggle('invalid',sum!==100);}
-  $('plan-own-weights').addEventListener('change',()=>{$('plan-weights-panel').hidden=!$('plan-own-weights').checked;});
-  document.querySelectorAll('[data-plan-weight]').forEach(input=>input.addEventListener('input',drawTotal));
-  $('plan-normalize-weights').addEventListener('click',()=>{try{const inputs=[...document.querySelectorAll('[data-plan-weight]')],weights=normalizeWeights(Object.fromEntries(inputs.map(input=>[input.dataset.planWeight,Number(input.value)])),formats);inputs.forEach(input=>input.value=weights[input.dataset.planWeight]);drawTotal();}catch(error){status(error.message,true);}});drawTotal();
-  $('plan-script-file').addEventListener('change',async event=>{
-    try{const file=event.target.files[0];if(file)$('plan-script-input').value=await file.text();}catch(error){status(error.message,true);}
-  });
-}
 
 async function openNarrationBinding(){
   return openMediaTimingImport();
@@ -64,7 +34,9 @@ function planFrameSpeech(frame){
   if(frame.continuation?.text)return `Продовження фрази: ${frame.continuation.text}${text?' '+text:''}`;
   return text || (frame.opening_tail?'Пауза між фразами':'');
 }
-function planClock(value){const milliseconds=Math.round(Number(value)*1000);return clock(milliseconds/1000)+(milliseconds%1000?','+String(milliseconds%1000).padStart(3,'0'):'');}
+// Time on the plan to a tenth of a second, the Ukrainian way: 00:04,1 (the rounding of the whole seconds stays clock's).
+function planClock(value){const tenths=Math.round(Number(value)*10);return clock(Math.floor(tenths/10))+(tenths%10?','+(tenths%10):'');}
+function planSeconds(value){return `${String(Number(Number(value).toFixed(1))).replace('.',',')} с`;}
 
 const planFormatVisuals={
   generated_video:{color:'#ffd429',symbol:'▶'},
@@ -160,8 +132,8 @@ function planTable(frames,synced){
     const row=document.createElement('tr');const speech=planFrameSpeech(frame);
     const visual=frame.visual || frame.description || frame.notes || '';
     const phraseItems=frame.continuation?[frame.continuation,...(frame.sentence_timings || [])]:(frame.sentence_timings || []);
-    const phrases=synced?phraseItems.map(phrase=>`<li><time>${planClock(phrase.start)} - ${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
-    row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}</strong><span>${planClock(frame.start)} - ${planClock(frame.end)}</span><small>${Number((Number(frame.end)-Number(frame.start)).toFixed(3))} с</small></td><td>${esc(names[frame.format] || frame.format)}</td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
+    const phrases=synced?phraseItems.map(phrase=>`<li><time>${planClock(phrase.start)}–${planClock(phrase.end)}</time> ${esc(phrase.text)}</li>`).join(''):'';
+    row.innerHTML=`<td><strong>${esc(frame.number ?? index+1)}</strong><span>${planClock(frame.start)}–${planClock(frame.end)}</span><small>${planSeconds(Number(frame.end)-Number(frame.start))}</small></td><td>${esc(names[frame.format] || frame.format)}</td><td><p>${esc(speech)}</p>${phrases?`<details class="plan-phrases"><summary>Час кожної фрази</summary><ul>${phrases}</ul></details>`:''}${visual?`<small>${esc(visual)}</small>`:''}</td>`;body.append(row);
   });
   table.append(body);
   return table;

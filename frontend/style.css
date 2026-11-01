@@ -916,7 +916,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .speech-order small{display:block;margin-top:8px;color:#c9b48a}
 /* the «Прев’ю» tab kept compact (user, 30 October 2026: «не таку велику, скромніше, компактніше»): the picture at a modest
    size on the left, the wishes and the button beside it; one column on a narrow window */
-.thumb-view{max-width:860px;margin:0;grid-template-columns:minmax(0,440px) minmax(220px,1fr);gap:12px 20px;align-items:start}
+.thumb-view{max-width:860px;margin:0 auto;grid-template-columns:minmax(0,440px) minmax(220px,1fr);gap:12px 20px;align-items:start}
 .thumb-view h1{grid-column:1/-1;font-size:20px}
 .thumb-view-frame{grid-column:1;grid-row:2/span 3;border-radius:16.5px}
 .thumb-view .thumb-wishes{grid-column:2;grid-row:2}
@@ -1048,3 +1048,14 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-tip[hidden]{display:none}
 .frame-strip-tip b{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--format-color)}
 .frame-strip-made{color:#c9cbd2}
+#save-state.unsaved{color:#ff8a8a}
+.project-title-channel{cursor:pointer;border-radius:8px;transition:color .15s}.project-title-channel:hover{color:#6bf2ae}.project-title-channel:focus-visible{outline:2px solid #6bf2ae;outline-offset:3px}
+/* «Монтаж» on a narrow window: the picture first at its full width, the page scrolls as one instead of a 400 px box
+   with the play button cut off; the library and the properties follow under it */
+@media(max-width:900px){
+  .editor-open .main{overflow-y:auto}
+  .editor-open .workspace{flex:none;overflow:visible;grid-template-columns:1fr;grid-auto-rows:min-content}
+  .editor-open .preview-panel{order:-1;min-height:calc((100vw - 40px) * 9 / 16 + 96px)}
+  .editor-open .library-panel{min-height:200px;max-height:320px}
+  .editor-open .inspector-panel{grid-column:1;min-height:0}
+}

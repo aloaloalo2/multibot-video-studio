@@ -16,7 +16,7 @@ async function initServiceKeys(){
       const header=document.createElement('div');header.className='service-key-row';
       const name=document.createElement('strong');name.textContent=provider.name;
       const status=document.createElement('span');status.className=provider.configured?'configured':'';status.textContent=provider.configured===true?'Ключ збережено':provider.configured===false?'Додайте ключ':'Зв’язка ключів недоступна';header.append(name,status);row.append(header);
-      const label=document.createElement('label');label.textContent=provider.id==='unsplash'?'Access Key':'API Key';
+      const label=document.createElement('label');label.textContent='Ключ доступу';
       const input=document.createElement('input');input.type='password';input.autocomplete='new-password';input.spellcheck=false;input.placeholder='Вставте ключ';input.setAttribute('aria-label',`${provider.name} ${label.textContent}`);if(provider.configured)input.value=mask;
       input.addEventListener('focus',()=>{if(input.value===mask)input.select();});label.append(input);
       const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=provider.configured?'Оновити ключ':'Зберегти ключ';button.disabled=true;

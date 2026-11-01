@@ -10,7 +10,7 @@ function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
 // a server from before the count knows nothing about frames: the button stays as it was
 function thumbnailReady(project){return project.pictures===undefined || project.pictures>=thumbnailFrames;}
 function thumbnailWaits(button){
-  const note=`Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролику: з них береться стиль.`;
+  const note=`Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролика: з них береться стиль.`;
   button.classList.add('is-off');button.setAttribute('aria-disabled','true');button.title=note;
   button.addEventListener('click',event=>{event.stopImmediatePropagation();status(note,true);},{capture:true});
 }
@@ -19,7 +19,7 @@ async function openThumbnail(project){
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(data.job)thumbnailRuns.set(project.id,data.job);
-  const current=data.preview?`<img class="thumb-current" src="/api/projects/${encodeURIComponent(project.id)}/cover?v=${Date.now()}" alt="Поточне прев’ю">`:'';
+  const current=data.preview?`<img class="thumb-current" data-project-id="${esc(project.id)}" src="/api/projects/${encodeURIComponent(project.id)}/cover?v=${Date.now()}" alt="Поточне прев’ю">`:'';
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script});
   modal('Прев’ю ролика',`${current}
@@ -90,9 +90,10 @@ async function pollThumbnail(id){
     }while(thumbnailBusy(id));
   }finally{thumbnailPolling.delete(id);}
   if(thumbnailRuns.get(id)?.status==='done'){
-    const img=document.querySelector('.thumb-current');if(img)img.src=`/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}`;
+    // only this project's picture: another episode's window may be open by now
     const frame=document.querySelector(`.thumb-view-frame[data-project-id="${CSS.escape(id)}"]`);
-    if(frame&&!img)frame.innerHTML=`<img class="thumb-current" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролику">`;
+    const img=document.querySelector(`.thumb-current[data-project-id="${CSS.escape(id)}"]`);if(img)img.src=`/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}`;
+    if(frame&&!img)frame.innerHTML=`<img class="thumb-current" data-project-id="${esc(id)}" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролика">`;
     const again=document.querySelector('.thumb-view-generate');if(again)again.textContent='Згенерувати нове';
     if(!state.project&&state.channel)refreshProjects().catch(()=>{});
   }
@@ -123,7 +124,7 @@ async function buildThumbView(section,project){
     <div class="thumb-view-frame" data-project-id="${esc(id)}"><p class="thumb-view-empty">Прев’ю ще немає</p></div>
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-wishes" rows="3" maxlength="2000" placeholder="Наприклад: крупно обличчя героя в шоці, велике слово DAY 340"></textarea></label>
     <div class="thumb-view-actions"><p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p><button type="button" class="primary glow-action thumb-view-generate">Згенерувати</button></div>
-    <p class="thumb-view-gate" hidden>Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролику: з них береться стиль.</p></div>`;
+    <p class="thumb-view-gate" hidden>Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролика: з них береться стиль.</p></div>`;
   section.querySelector('.thumb-view-generate').addEventListener('click',()=>generateThumbnail(state.project));
   if(!thumbRoute)fetch(`/channels/${state.channel.id}/projects/${id}/preview`,{method:'GET'}).then(response=>{if(response.ok&&response.headers.get('content-type')?.includes('text/html')){thumbRoute='/preview';if(state.view==='thumb')syncRoute(true);}}).catch(()=>{});
   let data;
@@ -132,7 +133,7 @@ async function buildThumbView(section,project){
   thumbnailSources.set(id,{title:data.title,script:data.script});
   if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
   if(data.job)thumbnailRuns.set(id,data.job);
-  if(data.preview)section.querySelector('.thumb-view-frame').innerHTML=`<img class="thumb-current" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролику">`;
+  if(data.preview)section.querySelector('.thumb-view-frame').innerHTML=`<img class="thumb-current" data-project-id="${esc(id)}" src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю ролика">`;
   section.querySelector('.thumb-view-generate').textContent=data.preview?'Згенерувати нове':'Згенерувати';
   renderThumbView();                      // the gate again, now with the server's count of made frames
   showThumbnailState(id);markThumbnailCard(id);if(thumbnailBusy(id))pollThumbnail(id);

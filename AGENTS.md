@@ -78,8 +78,7 @@ pointing at a format in the legend lights its frames (a click keeps them lit); a
 Safari's gesture events) or − and + zoom it up to 40 times around the pointer, two fingers sideways move along it.
 The button stays disabled while `production.plan_ready` is false, while an animated film waits for its
 director and while the script is newer than the direction (`director_stale`). «Звіт агента» closes «Створення
-ролика». A photo channel's plan from the planner keeps
-«Перегенерувати план» in the heading.
+ролика». Every plan comes from the director after the voice, so the page has no plan regeneration.
 
 Under the voice line stands the voice itself to listen to (`voicePlayer` in `frontend/director.js`, the plan's
 `timing.audio.asset_id`): play and pause, a seek bar, the time and the volume (a mute button and a slider, remembered in the browser), inside the page; it stops when the page changes.
