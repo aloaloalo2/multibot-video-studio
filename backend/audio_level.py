@@ -22,6 +22,8 @@ TARGET_LUFS = -16.0   # spoken video under quiet music: clear and well below You
 PEAK_DBTP = -1.5      # the loudest moment of the voice at 100% stays this far under full scale
 CACHE = store.DATA_ROOT / "audio_levels.json"
 _LOCK = threading.Lock()
+_MEASURING: dict[str, threading.Lock] = {}   # a lock per file being measured now
+_FAILED: set[str] = set()                    # file versions ffmpeg could not measure, until the next start
 
 
 def _key(path: Path) -> str:
@@ -40,17 +42,37 @@ def measure(path: Path) -> dict | None:
         cache = store.read_json(CACHE, {}) or {}
         if key in cache:
             return cache[key]
-    log = subprocess.run(["ffmpeg", "-nostats", "-hide_banner", "-i", str(path), "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"],
-                         capture_output=True, text=True).stderr
-    summary = log.rsplit("Summary:", 1)[-1]
-    lufs, peak = re.search(r"I:\s+(-?[\d.]+|-inf) LUFS", summary), re.search(r"Peak:\s+(-?[\d.]+|-inf) dBFS", summary)
-    if not lufs or not peak or "inf" in lufs.group(1):
-        return None
+        if key in _FAILED:
+            return None
+        gate = _MEASURING.setdefault(key, threading.Lock())
+    # one measure a file at a time: a second request waits for the first one's answer instead of decoding it again
+    with gate:
+        with _LOCK:
+            cache = store.read_json(CACHE, {}) or {}
+            if key in cache or key in _FAILED:
+                return cache.get(key)
+        try:
+            log = subprocess.run(["ffmpeg", "-nostats", "-hide_banner", "-i", str(path), "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"],
+                                 capture_output=True, text=True, timeout=600).stderr
+        except (OSError, subprocess.TimeoutExpired):
+            log = ""
+        summary = log.rsplit("Summary:", 1)[-1]
+        lufs, peak = re.search(r"I:\s+(-?[\d.]+|-inf) LUFS", summary), re.search(r"Peak:\s+(-?[\d.]+|-inf) dBFS", summary)
+        if not lufs or not peak or "inf" in lufs.group(1):
+            with _LOCK:
+                _FAILED.add(key)   # a file that cannot be measured is not decoded again on every read of the project
+                _MEASURING.pop(key, None)
+            return None
+        return _store(key, lufs, peak)
+
+
+def _store(key, lufs, peak) -> dict:
     result = {"lufs": float(lufs.group(1)), "peak": float(peak.group(1)) if "inf" not in peak.group(1) else -99.0}
     with _LOCK:
         cache = store.read_json(CACHE, {}) or {}
         cache[key] = result
         store.atomic_json(CACHE, cache)
+        _MEASURING.pop(key, None)
     return result
 
 

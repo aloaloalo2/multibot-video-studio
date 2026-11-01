@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import copy
 import hashlib
 import json
@@ -62,6 +63,7 @@ _AUDIO_HASH_CACHE = {}
 # Messages of the timeline's checks (here, graphics.py, joins.py) as the author reads them: the studio speaks Ukrainian.
 UKRAINIAN = {
     "Invalid typography": "Невірні налаштування шрифту каналу",
+    "Invalid source offset": "Невірний початок фрагмента у файлі",
     "Invalid timed text layout": "Невірне розташування слів тексту",
     "Invalid timed text word": "Невірне слово тексту",
     "Timed text words must be ordered": "Слова тексту мають іти по черзі",
@@ -480,14 +482,24 @@ def made_frames(project: dict, plan: dict | None) -> list[int]:
     if project_animated(project):
         import frame_progress   # it reads the project through this module
         return sorted(set(frame_progress.drawn(project["id"])))
-    clips = film_clips(project)
+    # clips sorted by start with the furthest end so far: a frame looks only at the clips that can cover its middle
+    # (a film of 500 frames and 3000 clips was 70 ms a project on every read of the list)
+    clips = sorted(film_clips(project), key=lambda clip: float(clip["start"]))
+    starts = [float(clip["start"]) for clip in clips]
+    reach, furthest = [], float("-inf")
+    for clip in clips:
+        furthest = max(furthest, float(clip["start"]) + float(clip["duration"]))
+        reach.append(furthest)
     drawn = None
     made = []
     for index, frame in enumerate(frames):
         middle = (float(frame["start"]) + float(frame["end"])) / 2
         number = int(frame.get("number") or index + 1)
-        for clip in clips:
-            if not float(clip["start"]) <= middle < float(clip["start"]) + float(clip["duration"]):
+        at = bisect.bisect_right(starts, middle) - 1
+        while at >= 0 and reach[at] > middle:
+            clip = clips[at]
+            at -= 1
+            if not middle < float(clip["start"]) + float(clip["duration"]):
                 continue
             if clip.get("kind") == "animation" and re.fullmatch(r"Razgon · кадр \d{3}", clip.get("title") or ""):
                 if drawn is None:
@@ -498,6 +510,12 @@ def made_frames(project: dict, plan: dict | None) -> list[int]:
             made.append(number)
             break
     return made
+
+
+def listed_plan(project: dict) -> dict | None:
+    """The project's plan for reading only, from the plan cache, without parsing project.json again."""
+    path = project_plan_file(project)
+    return cached_plan(path, private=False)[0] if path else None
 
 
 def production_state(project: dict) -> dict | None:
@@ -512,7 +530,7 @@ def production_state(project: dict) -> dict | None:
              "limit": bool(request.get("limit"))}
     if request["status"] in {"requested", "in_progress", "failed"}:
         try:
-            plan = load_project_plan(project["id"])
+            plan = listed_plan(project)
         except (StudioError, OSError, ValueError):
             plan = None
         # made among the frames this request asks for (from its first one), so «1 з 6» never counts a frame made before
@@ -578,7 +596,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
                 # placed read «00:04» on its card)
                 if item.get("plan_source"):
                     try:
-                        audio = ((load_project_plan(item["id"]) or {}).get("timing") or {}).get("audio") or {}
+                        audio = ((listed_plan(item) or {}).get("timing") or {}).get("audio") or {}
                         if audio.get("duration"):
                             result[-1]["voice_duration"] = float(audio["duration"])
                     except (StudioError, OSError, ValueError, TypeError):
@@ -821,7 +839,7 @@ def plan_readiness(project, plan=None, stage_only=False):
             path = project_plan_file(project)
             plan, key = cached_plan(path, private=False) if path else (None, None)
         if not plan:
-            result["reason"] = "Створіть план і додайте таймінги готової озвучки"
+            result["reason"] = "Спочатку додайте озвучку на сторінці «План ролика»"
             return result
         if plan.get("timing", {}).get("status") != "audio_synced":
             return result

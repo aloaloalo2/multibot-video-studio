@@ -1,7 +1,8 @@
 const monitorStorageKey='multibot-studio-monitor';
 function loadMonitorSettings(){
-  const defaults={monitorMuted:true,monitorVolume:0,monitorPreviousVolume:1};
-  if(new URLSearchParams(location.search).get('muted')==='1')return defaults;
+  // a first visit hears the voice: a silent ▶ read as a broken voice; the author's own choice is remembered below
+  const defaults={monitorMuted:false,monitorVolume:1,monitorPreviousVolume:1};
+  if(new URLSearchParams(location.search).get('muted')==='1')return {monitorMuted:true,monitorVolume:0,monitorPreviousVolume:1};
   try{
     const saved=JSON.parse(localStorage.getItem(monitorStorageKey));
     if(!saved || typeof saved.volume!=='number' || !Number.isFinite(saved.volume))return defaults;
@@ -243,7 +244,7 @@ function loadAnalysis(id){
 async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   if(updateUrl)cancelLocationRestore();
   const navigation=++state.navigation;
-  if (state.poll) {clearInterval(state.poll);state.poll=null;}
+  if (state.poll) {clearTimeout(state.poll);state.poll=null;}
   if (state.exportWatch) {clearInterval(state.exportWatch);state.exportWatch=null;}
   stopPlayback();
   const projectPath=`/api/projects/${encodeURIComponent(id)}`;
@@ -286,7 +287,7 @@ function showProjectList() {
   cancelLocationRestore();
   ++state.navigation;
   if(state.exportWatch){clearInterval(state.exportWatch);state.exportWatch=null;}
-  if(state.poll){clearInterval(state.poll);state.poll=null;}
+  if(state.poll){clearTimeout(state.poll);state.poll=null;}
   stopPlayback();state.project=null;state.selected=null;state.selectedTransition=null;state.selectedTrack=null;
   state.audioNodes=[];state.previewNodes.clear();state.previewSignature='';$('preview-audio-container').replaceChildren();$('preview-composition').replaceChildren();renderProject();
   syncRoute();
@@ -829,8 +830,14 @@ function setTimelineZoom(zoom,pointerX){
 }
 document.querySelector('.timeline-scroll').addEventListener('wheel',event=>{
   if(!(event.ctrlKey||event.metaKey||event.altKey)||!state.project)return;
-  event.preventDefault();setTimelineZoom(Math.round(state.zoom*Math.exp(-event.deltaY*.004)*100)/100,event.clientX);
+  // a pinch sends a wheel event per screen refresh and more: they add up and the timeline is drawn once a frame
+  event.preventDefault();wheelZoom.delta+=event.deltaY;wheelZoom.x=event.clientX;
+  if(!wheelZoom.frame)wheelZoom.frame=requestAnimationFrame(()=>{
+    const delta=wheelZoom.delta;wheelZoom.delta=0;wheelZoom.frame=0;
+    if(state.project)setTimelineZoom(Math.round(state.zoom*Math.exp(-delta*.004)*100)/100,wheelZoom.x);
+  });
 },{passive:false});
+const wheelZoom={delta:0,x:0,frame:0};
 
 new ResizeObserver(()=>{
   if(!state.project || $('editor-timeline').hidden)return;
@@ -864,7 +871,9 @@ function scrubTimeline(event){
   const rect=marks.getBoundingClientRect();state.playhead=timelineOrigin()+Math.max(0,Math.min(timelineSpan(),(event.clientX-rect.left)/rect.width*timelineSpan()));renderPreview();updateTimelinePlayhead();
 }
 $('timeline-content').addEventListener('pointerdown',event=>{if(event.button!==0 || !event.target.closest('#playhead-handle,.time-ruler-marks'))return;event.preventDefault();stopPlayback();state.scrubbing=true;scrubTimeline(event);});
-document.addEventListener('pointermove',event=>{if(state.scrubbing)scrubTimeline(event);});
+// the preview is drawn once a frame while scrubbing, from the latest pointer position
+let scrubFrame=0,scrubEvent=null;
+document.addEventListener('pointermove',event=>{if(!state.scrubbing)return;scrubEvent=event;if(!scrubFrame)scrubFrame=requestAnimationFrame(()=>{scrubFrame=0;if(state.scrubbing&&scrubEvent)scrubTimeline(scrubEvent);});});
 document.addEventListener('pointerup',()=>{state.scrubbing=false;});
 $('playhead-handle').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();stopPlayback();const first=timelineOrigin(),last=first+timelineSpan();state.playhead=event.key==='Home'?first:event.key==='End'?last:Math.max(first,Math.min(last,state.playhead+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?1:.1)));renderPreview();updateTimelinePlayhead();});
 
@@ -893,7 +902,8 @@ async function action(type,payload,message,options={}) {
   try {
     const result=await api(`/api/projects/${encodeURIComponent(state.project.id)}/actions`,'POST',{type,payload,expected_revision:state.project.revision});
     if(!result.project)throw new Error('Сервер не підтвердив збереження випуску.');
-    if(options.preserveInspector && state.project?.id!==projectId)return result.project;
+    // the author went to another episode or the list while this was saving: the answer must not bring the old one back
+    if(state.project?.id!==projectId)return result.project;
     state.project=result.project;
     if(options.preserveInspector){
       $('save-state').textContent='● Локально збережено';$('undo').disabled=!state.project.can_undo;$('redo').disabled=!state.project.can_redo;
@@ -971,8 +981,8 @@ function openChannelSettings(channel) {
     $('settings-total').textContent=Number.isFinite(sum)?`Разом ${sum}% із 100%`:'Перевірте відсотки';
     $('settings-total').classList.toggle('invalid',!valid);$('settings-feedback').classList.toggle('invalid',!valid);
     // «Привести до 100%» is only offered while the shares do not add up to 100% (user, 1 November 2026)
-    $('normalize-weights').hidden=valid;
-    $('settings-feedback').textContent=!finite?'Укажіть ціле число від 0 до 100 для кожного формату.':sum===100?'Готово до збереження.':sum===0?'Сума 0%. Укажіть частки перед нормалізацією.':sum<100?`Не вистачає ${100-sum}%.`:`Забагато на ${sum-100}%.`;
+    $('normalize-weights').hidden=valid || !finite || sum===0;   // at 0% there is nothing to scale
+    $('settings-feedback').textContent=!finite?'Укажіть ціле число від 0 до 100 для кожного формату.':sum===100?'Готово до збереження.':sum===0?'Зараз усі частки 0%. Впишіть, скільки відсотків ролика займає кожен формат.':sum<100?`Не вистачає ${100-sum}%.`:`Забагато на ${sum-100}%.`;
     const bar=$('settings-bar'),legend=$('settings-legend');bar.replaceChildren();legend.replaceChildren();
     const scale=Math.max(100,keys.reduce((total,key)=>total+(Number.isFinite(values[key])&&values[key]>0?values[key]:0),0));
     keys.forEach((key,index)=>{
@@ -1077,12 +1087,16 @@ function revealTimelineTime(time){
   const marks=document.querySelector('.time-ruler-marks'),scroller=document.querySelector('.timeline-scroll');if(!marks)return;
   const x=(time-timelineOrigin())/timelineSpan()*marks.offsetWidth;scroller.scrollLeft=Math.max(0,x-scroller.clientWidth/3);
 }
+// One request at a time, the next one 1.5 s after the answer: a busy export no longer piles requests up, and a lost
+// answer retries (slower each time) instead of freezing the progress with the episode locked.
+let jobPollInFlight=false,jobPollFailures=0;
+function scheduleJobPoll(delay=1500){if(state.poll)clearTimeout(state.poll);state.poll=setTimeout(()=>{state.poll=null;pollJob();},delay);}
 async function pollJob(){
-  if(!state.job)return;
-  const jobId=state.job.id;
+  if(!state.job || jobPollInFlight)return;
+  const jobId=state.job.id;jobPollInFlight=true;
   try{
     const result=await api(`/api/jobs/${encodeURIComponent(jobId)}`);
-    if(state.job?.id!==jobId)return;
+    if(state.job?.id!==jobId){if(state.job)scheduleJobPoll(0);return;}
     state.job=result.job;
     const jobStatus=(state.job.status||'').toLowerCase();
     const complete=['done','complete','completed'].includes(jobStatus),failed=['failed','error'].includes(jobStatus),cancelled=jobStatus==='cancelled';
@@ -1095,9 +1109,15 @@ async function pollJob(){
       const estimate=!complete&&!failed&&!cancelled&&jobStatus!=='cancelling'?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
       target.innerHTML=`<p>${label}</p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
-    if(complete||failed||cancelled){if(state.poll)clearInterval(state.poll);state.poll=null;if(target){const box=$('modal-actions');box.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='Закрити';close.addEventListener('click',closeModal);box.append(close);}status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}
-    if(!state.poll)state.poll=setInterval(pollJob,1500);
-  }catch(error){if(state.poll)clearInterval(state.poll);state.poll=null;const target=$('render-state');if(target)target.textContent=error.message;status(error.message,true);}
+    jobPollFailures=0;
+    if(complete||failed||cancelled){if(state.poll)clearTimeout(state.poll);state.poll=null;if(target){const box=$('modal-actions');box.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='Закрити';close.addEventListener('click',closeModal);box.append(close);}status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}
+    scheduleJobPoll();
+  }catch(error){
+    if(state.job?.id!==jobId){if(state.job)scheduleJobPoll(0);return;}
+    jobPollFailures+=1;const target=$('render-state');
+    if(target && jobPollFailures>=3)target.querySelector('p')?.replaceChildren('Немає зв’язку зі студією, пробуємо ще раз…');
+    scheduleJobPoll(Math.min(15000,1500*2**Math.min(jobPollFailures,4)));
+  }finally{jobPollInFlight=false;}
 }
 
 $('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Новий канал: введіть назву й натисніть «Створити канал», студія створить його папку в YOUTUBE.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label><p class="add-channel-or">Канал уже має свою папку? Натисніть «Додати наявну папку» й виберіть її.</p>',[{label:'Скасувати',run:closeModal},{label:'Додати наявну папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити канал',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
@@ -1129,14 +1149,14 @@ $('add-text').addEventListener('click',()=>{if(!state.project)return;if(isUniver
 $('undo').addEventListener('click',()=>action('undo',{},'Дію скасовано.').catch(()=>{}));$('redo').addEventListener('click',()=>action('redo',{},'Дію повторено.').catch(()=>{}));
 $('export-open').addEventListener('click',openExport);
 $('seek').addEventListener('input',event=>{state.playhead=timelineOrigin()+timelineSpan()*Number(event.target.value)/1000;renderPreview();updateTimelinePlayhead();});
-$('play-pause').addEventListener('click',()=>{if(!state.project)return;state.playing=!state.playing;if(state.playing && state.playhead>=timelineOrigin()+timelineSpan()-.04)state.playhead=timelineOrigin();$('play-pause').textContent=state.playing?'❚❚':'▶';$('play-pause').setAttribute('aria-label',state.playing?'Пауза':'Відтворити');if(state.playing){syncStudioAudio();requestAnimationFrame(tick);}else {$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());}});
+$('play-pause').addEventListener('click',()=>{if(!state.project)return;state.playing=!state.playing;if(state.playing && state.playhead>=timelineOrigin()+timelineSpan()-.04)state.playhead=timelineOrigin();$('play-pause').textContent=state.playing?'❚❚':'▶';$('play-pause').setAttribute('aria-label',state.playing?'Пауза':'Відтворити');if(state.playing){syncStudioAudio();cancelAnimationFrame(tickFrame);tickFrame=requestAnimationFrame(tick);}else {$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());}});
 $('monitor-audio').addEventListener('click',()=>{
   if(state.monitorMuted || state.monitorVolume===0){state.monitorVolume=state.monitorPreviousVolume || 1;state.monitorMuted=false;}
   else{state.monitorPreviousVolume=state.monitorVolume;state.monitorVolume=0;state.monitorMuted=true;}
   saveMonitorSettings();updateMonitorControls();renderPreview();status(state.monitorMuted?'Звук перегляду вимкнено.':'Звук перегляду увімкнено.');
 });
 $('monitor-volume').addEventListener('input',event=>{state.monitorVolume=Number(event.target.value)/100;state.monitorMuted=state.monitorVolume===0;if(state.monitorVolume>0)state.monitorPreviousVolume=state.monitorVolume;saveMonitorSettings();updateMonitorControls();renderPreview();});
-let lastFrame=0;
+let lastFrame=0,tickFrame=0;   // one playback loop: a quick pause and play no longer runs two
 function tick(now){
   if(!state.playing){lastFrame=0;return;}if(!lastFrame)lastFrame=now;
   const delta=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;
@@ -1144,7 +1164,7 @@ function tick(now){
   if(master){const audio=master.element;if(audio._studioSeekTarget!=null&&!audio.seeking&&audio.readyState>=2&&Math.abs(audio.currentTime-audio._studioSeekTarget)<.15)audio._studioSeekTarget=null;if(audio._studioSeekTarget==null&&audio.readyState>=2&&!audio.seeking&&!audio.paused)state.playhead=seconds(master.clip.start)+audio.currentTime-seconds(master.clip.trim_start);}
   else state.playhead+=delta;
   const end=timelineOrigin()+timelineSpan();if(state.playhead>=end){state.playhead=Math.max(timelineOrigin(),end-.001);stopPlayback();lastFrame=0;}
-  renderPreview();if(state.playing)requestAnimationFrame(tick);
+  renderPreview();if(state.playing)tickFrame=requestAnimationFrame(tick);
 }
 $('zoom-in').addEventListener('click',()=>setTimelineZoom(timelineZoomLevels.find(value=>value>state.zoom) || timelineZoomLevels.at(-1)));
 $('zoom-out').addEventListener('click',()=>setTimelineZoom([...timelineZoomLevels].reverse().find(value=>value<state.zoom) || timelineZoomLevels[0]));

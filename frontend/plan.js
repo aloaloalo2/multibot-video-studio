@@ -96,7 +96,9 @@ function renderVoiceStart(panel){
   });
   async function poll(){
     if(!section.isConnected)return;
-    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);state.analysis=result;
+    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);
+    if(!section.isConnected || state.project?.id!==project.id)return;
+    state.analysis=result;
     const job=result.job;if(!job || !section.isConnected)return;
     if(job.status==='failed'){lock(false);show(job.error || 'Обробку зупинено');return;}
     if(job.status==='complete'){

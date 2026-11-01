@@ -2,7 +2,8 @@ const waveformRequests=new Map();
 function drawAudioWaveform(button,clip){
   if(!clip.asset_id)return;
   const url=`/api/projects/${state.project.id}/assets/${clip.asset_id}/waveform`;
-  if(!waveformRequests.has(url))waveformRequests.set(url,fetch(url).then(r=>{if(!r.ok)throw new Error('Waveform unavailable');return r.json();}));
+  // a failed request is forgotten, so the next drawing asks again
+  if(!waveformRequests.has(url))waveformRequests.set(url,fetch(url).then(r=>{if(!r.ok)throw new Error('Waveform unavailable');return r.json();}).catch(error=>{waveformRequests.delete(url);throw error;}));
   waveformRequests.get(url).then(data=>{
     if(!button.isConnected || !data.peaks?.length)return;
     const first=Math.max(0,Math.floor(Number(clip.trim_start || 0)/data.duration*data.peaks.length)),last=Math.min(data.peaks.length,Math.ceil((Number(clip.trim_start || 0)+Number(clip.duration))/data.duration*data.peaks.length));

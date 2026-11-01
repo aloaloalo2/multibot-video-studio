@@ -16,6 +16,7 @@ import number_text
 
 RUN_LOCK = threading.Lock()
 ACTIVE_JOBS = set()
+ACTIVE_PROJECTS: dict[str, str] = {}   # job id → project id of the recognitions this server runs
 
 
 def owner_alive(job):
@@ -78,6 +79,7 @@ def start(project, asset_id, save_job, load_job, script=None):
                "script_from": script_from}
         save_job(job)
         ACTIVE_JOBS.add(job["id"])
+        ACTIVE_PROJECTS[job["id"]] = project["id"]
         store.atomic_json(store.project_dir(project["id"]) / "analysis-state.json", {"job_id": job["id"]})
     threading.Thread(target=worker, args=(job, script, save_job), daemon=True).start()
     return job
@@ -159,7 +161,11 @@ def worker(job, script, save_job):
             store.atomic_json(work / "result.json", report)
             job.update(status="complete", progress=100, stage="complete", analysis_status=report["status"], applied=report["applied"])
         if report["applied"]:
-            director.after_voice(project["id"])
+            try:
+                director.after_voice(project["id"])
+            except Exception:   # the voice is recognised and applied already: a director that cannot start never fails it
+                import traceback
+                traceback.print_exc()
     except (store.StudioError, RuntimeError) as error:
         job.update(status="failed", stage="failed", error=str(error))
     except Exception:
@@ -170,3 +176,4 @@ def worker(job, script, save_job):
         job["finished_at"] = time.time()
         save_job(job)
         ACTIVE_JOBS.discard(job["id"])
+        ACTIVE_PROJECTS.pop(job["id"], None)

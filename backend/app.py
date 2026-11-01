@@ -62,6 +62,10 @@ UPDATE_MUTEX = threading.RLock()
 UPDATE_MANAGER = updater.Updater(APP_ROOT)
 UPDATE_BOOT = uuid.uuid4().hex
 UPDATE_RESTARTING = False
+# Changes run side by side; the mutex only guards this count and the restart flag, so a slow still, picker or upload
+# no longer holds every other edit (the export's cancel button among them). An update waits until the count is its own.
+IN_FLIGHT = 0
+IN_FLIGHT_DONE = threading.Condition(UPDATE_MUTEX)
 
 
 def restart_after_update():
@@ -79,12 +83,14 @@ def begin_update():
     with UPDATE_MUTEX:
         if UPDATE_RESTARTING:
             raise store.StudioError('Студія вже оновлюється.', 409)
+        if not IN_FLIGHT_DONE.wait_for(lambda: IN_FLIGHT <= 1, timeout=30):
+            raise store.StudioError('Студія ще зберігає зміни: спробуйте оновити за хвилину.', 409)
         with JOBS_LOCK:
             if ACTIVE_EXPORTS or analysis_jobs.ACTIVE_JOBS:
                 raise store.StudioError('Дочекайтеся завершення експорту або обробки озвучки.', 409)
         # the restart would also cut the director, the frame agent, a thumbnail or the studio's agent mid-run, the same
         # work studio_restart.py waits for
-        busy = agent_view.studio_status([], project_jobs)["busy"]
+        busy = agent_view.studio_status([], project_jobs, busy_candidates())["busy"]
         if busy:
             raise store.StudioError('Дочекайтеся, поки закінчиться робота: ' + '; '.join(busy[:3]), 409)
         try:
@@ -320,7 +326,14 @@ def load_job(jid: str) -> dict:
     path = job_path(jid)
     if not path.is_file():
         raise store.StudioError("Завдання не знайдено", 404)
-    return store.read_json(path)
+    with JOBS_LOCK:   # an export is saved and registered under this lock: read it the same way
+        job = store.read_json(path)
+        stale = job.get("id") not in ACTIVE_EXPORTS if isinstance(job, dict) else False
+    # an export this server does not run (the studio restarted under it) is not running any more; speech jobs, saved
+    # in the same folder, answer for themselves (analysis_jobs.owner_alive)
+    if stale and not job.get("type") and job.get("status") in {"queued", "running", "cancelling"}:
+        job = {**job, "status": "failed", "error": job.get("error") or "Експорт перервано: студію перезапустили. Запустіть його знову"}
+    return job
 
 
 def save_job(job: dict) -> None:
@@ -619,6 +632,13 @@ STILL_SCRIPT = APP_ROOT / "engine" / "still.py"
 STILL_LOCK = threading.Lock()
 
 
+def busy_candidates() -> set[str]:
+    """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
+    # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
+    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | set(agent_runtime.JOBS.copy())
+            | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
+
+
 def project_jobs(pid: str) -> dict:
     """{what: status} of the work that runs for one project besides its export."""
     request = store.load_project(pid).get("production_request")
@@ -832,9 +852,12 @@ class Handler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             if method == "GET":
                 return self.route_get(path, query)
+            global IN_FLIGHT
             with UPDATE_MUTEX:
                 if UPDATE_RESTARTING:
                     raise store.StudioError('Студія перезапускається після оновлення.', 503)
+                IN_FLIGHT += 1
+            try:
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
                 # the live preview only starts a viewer of the Razgon code and changes nothing in the project
                 # a still only reads the project, as the live preview does
@@ -847,6 +870,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.route_upload(upload.group(1))
                 body = self.read_json_body() if method in {"POST", "PATCH"} else None
                 return self.route_mutation(method, path, body or {})
+            finally:
+                with UPDATE_MUTEX:
+                    IN_FLIGHT -= 1
+                    IN_FLIGHT_DONE.notify_all()
         except store.StudioError as exc:
             return self.json_response({"error": str(exc)}, exc.status)
         except (BrokenPipeError, ConnectionResetError):
@@ -904,7 +931,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/studio/status":
             with JOBS_LOCK:
                 jobs = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
-            return self.json_response(agent_view.studio_status(jobs, project_jobs))
+            return self.json_response(agent_view.studio_status(jobs, project_jobs, busy_candidates()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
         if match:
             return self.json_response({'job': active_export(match.group(1))})

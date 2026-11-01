@@ -1,11 +1,15 @@
 const defaultGradient={colors:['#eee5d5','#d7c6ae','#eadbc5','#f4ecdf'],points:[[.15,.15],[.85,.15],[.8,.85],[.2,.85]],speed:.05,amplitude:.14,softness:.1};
+// drawn at most 30 times a second (the slow motion of the points does not need more), the settings compared once
+const gradientKeys=new WeakMap();
 function drawGradient(canvas,config,time){
-  const gradient=config || defaultGradient;if(canvas._gradientTime===time && canvas._gradientConfig===JSON.stringify(gradient))return;
+  const gradient=config || defaultGradient;time=Math.round(time*30)/30;
+  if(!gradientKeys.has(gradient))gradientKeys.set(gradient,JSON.stringify(gradient));
+  const key=gradientKeys.get(gradient);if(canvas._gradientTime===time && canvas._gradientConfig===key)return;
   if(canvas.width!==320){canvas.width=320;canvas.height=180;}
   const context=canvas.getContext('2d'),image=canvas._gradientImage || context.createImageData(320,180);canvas._gradientImage=image;
   const phase=time*gradient.speed*Math.PI*2,points=(gradient.points || defaultGradient.points).map((p,i)=>[Math.max(.02,Math.min(.98,p[0]+gradient.amplitude*Math.sin(phase+i*1.7))),Math.max(.02,Math.min(.98,p[1]+gradient.amplitude*Math.cos(phase*.82+i*1.3)))]),colors=gradient.colors.map(c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]);
   for(let y=0;y<180;y++)for(let x=0;x<320;x++){let total=0,r=0,g=0,b=0;for(let i=0;i<4;i++){const dx=x/319-points[i][0],dy=y/179-points[i][1],weight=1/Math.pow(dx*dx+dy*dy+gradient.softness,1.8);total+=weight;r+=weight*colors[i][0];g+=weight*colors[i][1];b+=weight*colors[i][2];}const index=(y*320+x)*4;image.data[index]=Math.round(r/total);image.data[index+1]=Math.round(g/total);image.data[index+2]=Math.round(b/total);image.data[index+3]=255;}
-  context.putImageData(image,0,0);canvas._gradientTime=time;canvas._gradientConfig=JSON.stringify(gradient);
+  context.putImageData(image,0,0);canvas._gradientTime=time;canvas._gradientConfig=key;
 }
 async function openGradientClip(){
   if(!state.project)return;

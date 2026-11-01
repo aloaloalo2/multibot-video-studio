@@ -242,6 +242,7 @@ function renderUniversalPreview(){
   }
   composition.hidden=!visible.length;placeholder.hidden=!!visible.length;
   if(!visible.length)placeholder.textContent=duration()?'На цій позиції немає візуального кліпу':'Додайте матеріал на шар';
+  const frameWidth=composition.clientWidth;   // read once: a read after the style writes below forces a layout per clip
   for(const clip of visible){
     const wrapper=state.previewNodes.get(clip.id);if(!wrapper)continue;
     const local=now-seconds(clip.start),values=animatedValues(clip,local);
@@ -250,9 +251,9 @@ function renderUniversalPreview(){
     wrapper.style.opacity=String(Math.max(0,Math.min(1,values.opacity)));
     wrapper.style.transform=`translate(-50%, -50%) scale(${Math.max(.05,values.scale)})`;
     const text=wrapper.querySelector('.composition-text');
-    if(text && clip.font_size){text.style.fontSize=(Number(clip.font_size)*composition.clientWidth/Number(state.project.width))+'px';text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);text.style.textShadow='none';if(!clip.text_words?.length)text.style.whiteSpace='pre-wrap';}
-    if(text && clip.text_words?.length)for(const word of text.children)applyWordEntrance(word,Number(word.dataset.wordStart),clip,local,composition.clientWidth);
-    applyGraphicStyle(wrapper,clip,composition.clientWidth);
+    if(text && clip.font_size){text.style.fontSize=(Number(clip.font_size)*frameWidth/Number(state.project.width))+'px';text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);text.style.textShadow='none';if(!clip.text_words?.length)text.style.whiteSpace='pre-wrap';}
+    if(text && clip.text_words?.length)for(const word of text.children)applyWordEntrance(word,Number(word.dataset.wordStart),clip,local,frameWidth);
+    applyGraphicStyle(wrapper,clip,frameWidth);
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
     const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}

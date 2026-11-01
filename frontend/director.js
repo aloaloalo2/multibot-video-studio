@@ -23,7 +23,8 @@ function directorDone(){return state.plan?.frame_source==='razgon-direction' && 
 
 async function loadDirector(id){
   try{directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`)).director || {status:'none'};}
-  catch{directorRuns[id]={status:'none'};}
+  // a lost answer keeps what was known: «none» would offer to start a second director while one still works
+  catch{directorRuns[id]=directorRuns[id] || {status:'none'};}
   return directorRuns[id];
 }
 
@@ -274,7 +275,9 @@ function buildMake(make){
   const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
     const index=frames.findIndex(frame=>Number(frame.end)>=time);return index<0?frames.length:index+1;};
   const set=count=>{if(make.classList.contains('locked'))return;const floor=Number(make.dataset.floor) || 0;
-    makeCount[id]=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,count));fillMake(make);};
+    const next=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,count));
+    if(next===makeCount[id])return;   // a drag inside one frame redraws nothing
+    makeCount[id]=next;fillMake(make);};
   strip.addEventListener('pointerdown',event=>{if(make.classList.contains('locked'))return;strip.setPointerCapture(event.pointerId);set(at(event));});
   strip.addEventListener('pointermove',event=>{if(strip.hasPointerCapture(event.pointerId))set(at(event));else show(cells.indexOf(event.target.closest?.('.frame-strip-cell')));});
   strip.addEventListener('pointerleave',()=>show(-1));
@@ -538,9 +541,10 @@ function renderTeam(info,kind,id,live){
 async function pollProduction(id){
   if(state.project?.id!==id)return;
   try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
+    // «Монтаж» shows no request: the poll ends there and starts again with the plan page, the author's edits untouched
+    if(state.view!=='plan')return;
     const before=state.project.production_request?.status;
-    // only the plan is redrawn from the fresh project; in «Монтаж» the author's own edits stay, the request alone moves on
-    if(state.view==='plan')state.project=project;else state.project={...state.project,production_request:project.production_request};
+    state.project=project;
     loadDrawn(id);
     if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}catch{}
   refreshEpisode();

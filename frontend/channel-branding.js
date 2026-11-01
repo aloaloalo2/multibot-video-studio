@@ -131,7 +131,12 @@ function bindBranding(channel){
       // A regular channel without a saved style keeps none until the user picks one, so saving other settings never writes a style.
       if(!styles.some(style=>style.id===chosen))chosen=styles.some(style=>style.id===filmStyle)?filmStyle:kind()==='animated'?styles[0]?.id:null;
       stage.textContent='';renderStrip();
-    }catch(error){if(mine===request&&strip.isConnected)stage.textContent=error.message;}
+    }catch(error){
+      if(mine!==request||!strip.isConnected)return;
+      // the stage line shows only on an animated channel: the caption says why there are no cards on both
+      stage.textContent=error.message;
+      $('style-caption').innerHTML=`<strong>Стилі анімації зараз недоступні</strong><span>${esc(error.message)}</span>`;
+    }
   };
   // Real frames of the latest film in the chosen style, drawn only when asked for: they take a few seconds per style.
   const loadFilm=async()=>{

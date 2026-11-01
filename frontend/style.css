@@ -1012,3 +1012,9 @@ select{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:point
 select:hover:not(:disabled){filter:brightness(1.08)}
 select:disabled{cursor:not-allowed;opacity:.6}
 select option{background:#232327;color:#f1f1f2}
+/* a long title's second line sits over the top of the cover (its dark fade is made for it), not under it */
+.overview-projects .project-card h2{position:relative;z-index:3}
+/* stacked fields in a settings section keep a gap */
+.settings-section label+label{margin-top:12px}
+/* library tabs wrap at narrow widths instead of hiding «Ефекти» past the edge */
+.library-tabs{flex-wrap:wrap;row-gap:6px}

@@ -24,6 +24,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import math
 import random
 import re
@@ -118,8 +119,23 @@ def is_accent(clip: dict) -> bool:
     return bool(re.search(r"(^|\s)акцент(\s|$)", str(clip.get("title", ""))))
 
 
+_SIZES: dict[tuple, tuple[int, int] | None] = {}
+
+
 def media_size(path: str) -> tuple[int, int] | None:
-    """The picture's display size (a video's frame turned by its rotation)."""
+    """The picture's display size (a video's frame turned by its rotation), measured once per file version: the summary
+    and every placing operation ask it for each video, and ffprobe takes a moment each time."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in _SIZES:
+        _SIZES[key] = _measure_size(path)
+    return _SIZES[key]
+
+
+def _measure_size(path: str) -> tuple[int, int] | None:
     try:
         with Image.open(path) as image:
             return image.size

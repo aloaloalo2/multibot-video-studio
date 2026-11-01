@@ -296,7 +296,8 @@ class AgentToolsTest(unittest.TestCase):
         project = self.project(frames=1)
         status, data = self.request("/api/studio/status")
         self.assertEqual((status, data["busy"]), (200, []))
-        with patch.object(app, "project_jobs", return_value={"режисура": "running"}):
+        with patch.object(app, "project_jobs", return_value={"режисура": "running"}), \
+             patch.object(app, "busy_candidates", return_value={project["id"]}):
             status, data = self.request("/api/studio/status")
         self.assertTrue(any(line.startswith("режисура:") for line in data["busy"]))
         app.JOBS_ROOT.mkdir(parents=True, exist_ok=True)

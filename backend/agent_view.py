@@ -161,13 +161,20 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
     return {"head": head, "fps": int(fps), "revision": project.get("revision", 0), "frames": rows, "issues": issues}
 
 
-def studio_status(active_exports: list[dict], project_jobs) -> dict:
+def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> dict:
     """What the studio is doing now: running exports and every project's busy jobs (the list studio_restart.py checks
-    before a restart). `project_jobs(pid)` gives {what: status} for one project."""
+    before a restart). `project_jobs(pid)` gives {what: status} for one project; `candidates`, when given, are the only
+    projects that can be busy (the work this server holds in memory), so the rest are not read at all."""
     busy = [f"експорт {job['project_id']}: {job.get('progress', 0)}%, {job.get('stage', '')}" for job in active_exports if job.get("status") in BUSY]
     names = {c["id"]: c.get("name") for c in store.list_channels()}
-    for item in store.list_projects():
+    for pid in sorted(candidates) if candidates is not None else [item["id"] for item in store.list_projects()]:
+        try:
+            item = store.listed_project(store.project_dir(pid) / "project.json")
+        except (OSError, ValueError, store.StudioError):
+            continue
+        if item.get("deleted_at"):
+            continue
         for what, status in project_jobs(item["id"]).items():
             if status in BUSY:
-                busy.append(f"{what}: {names.get(item.get('channel_id'), '')} / {item.get('name') or item['id']} ({item['id']})")
+                busy.append(f"{what}: {names.get(item.get('channel_id'), '')} / {item.get('name') or pid} ({pid})")
     return {"busy": busy, "exports": active_exports}

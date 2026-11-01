@@ -248,6 +248,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
     except (OSError, store.StudioError, KeyError) as error:
         fields.update(status="failed", error=str(error))
+    except Exception:   # a bug must not leave the request «in work» with nobody working on it
+        import traceback
+        traceback.print_exc()
+        fields.update(status="failed", error="Створення кадрів зупинилося через помилку студії. Спробуйте ще раз")
     finally:
         if not director.cancelled(pid, "production"):
             try:

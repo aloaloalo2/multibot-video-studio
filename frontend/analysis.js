@@ -85,8 +85,9 @@ async function openMediaTimingImport(){
   async function poll(){
     if(!current())return;
     try{
-      const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);state.analysis=result;
+      const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);
       if(!current())return;
+      state.analysis=result;
       const job=result.job;root.replaceChildren();
       if(!job)return;
       if(job.status==='failed'){feedback.textContent=job.error;busy=false;controls(false);return;}

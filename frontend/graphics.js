@@ -8,7 +8,7 @@ function applyGraphicStyle(wrapper,clip,frameWidth){
   if(image){
     const fitted=clip.mask==='rounded'&&image.naturalWidth?containedBox(image.naturalWidth,image.naturalHeight,Number(clip.width ?? 1)*Number(state.project.width),Number(clip.height ?? 1)*Number(state.project.height)):null;
     image.style.width=fitted?fitted.width*100+'%':'';image.style.height=fitted?fitted.height*100+'%':'';
-    if(clip.mask==='rounded'&&!image.complete)image.addEventListener('load',()=>applyGraphicStyle(wrapper,clip,frameWidth),{once:true});
+    if(clip.mask==='rounded'&&!image.complete&&!image._roundOnLoad){image._roundOnLoad=true;image.addEventListener('load',()=>{image._roundOnLoad=false;applyGraphicStyle(wrapper,clip,frameWidth);},{once:true});}
   }
   const shadow=effect.shadow || clip.shadow;
   if(shadow){const color=shadow.color || '#000000',r=parseInt(color.slice(1,3),16),g=parseInt(color.slice(3,5),16),b=parseInt(color.slice(5,7),16);wrapper.style.filter=`drop-shadow(${shadow.x*k}px ${shadow.y*k}px ${shadow.blur*k}px rgba(${r},${g},${b},${shadow.opacity}))`;}
