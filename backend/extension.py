@@ -93,17 +93,24 @@ def update() -> dict:
     current = state()
     if not current["found"]:
         raise store.StudioError("Не знайшов Multi Bot у Chrome. Додайте його на сторінці chrome://extensions", 404)
+    folder = Path(current["path"])
+    if current.get("git") and current.get("dirty"):
+        # the author's own unsaved work stays as it is: no update over it, no commit of it; the item is only written
+        # into the same files on top of it (user, 1 November 2026: the folder held unsaved YouTube Studio changes)
+        if has_item(folder):
+            raise store.StudioError("У папці Multi Bot є власні незбережені зміни: " + ", ".join(current["dirty"])
+                                    + ". Оновлювати поверх них студія не стане; попросіть агента зберегти їх у Git", 409)
+        add_item(folder, in_git=False)
+        install_helper()
+        return {**state(fetch=False), "note": "Кнопку додано. У теці Multi Bot є ваші незбережені зміни, тож студія нічого "
+                "не зберігала в Git: збережіть їх разом із кнопкою (попросіть Codex «закоміть і запуш зміни в flow-bot/heygen-grabber»)."}
     if current.get("git"):
-        if current.get("dirty"):
-            raise store.StudioError("У папці Multi Bot є власні зміни: " + ", ".join(current["dirty"])
-                                    + ". Студія не стане їх затирати; попросіть агента зберегти їх у Git", 409)
         if current.get("ahead"):
             raise store.StudioError("У папці Multi Bot є коміти, яких немає на GitHub. Попросіть агента їх залити", 409)
         if current.get("behind"):
             pulled = git(Path(current["path"]), "merge", "--ff-only", "@{upstream}")
             if pulled.returncode:
                 raise store.StudioError("Не вдалося оновити Multi Bot: " + (pulled.stderr or pulled.stdout).strip()[-300:], 409)
-    folder = Path(current["path"])
     note = add_item(folder, current.get("git"))
     install_helper()
     return {**state(fetch=False), **({"note": note} if note else {})}
@@ -149,7 +156,7 @@ def add_item(folder: Path, in_git: bool) -> str | None:
     js_path.write_text(js, encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if not in_git:
-        return "Кнопку додано. Ця папка не зв’язана з GitHub, тож зміна лишилась лише на цьому Mac."
+        return "Кнопку додано. Зміна лишилась лише на цьому Mac, у Git студія її не зберігала."
     git(folder, "add", "popup.html", "popup.js", "manifest.json")
     committed = git(folder, "-c", "user.name=VideoKey Studio", "-c", "user.email=studio@videokey.local", "commit", "-qm",
                     "VideoKey Studio item: open the studio, start it when it is closed")

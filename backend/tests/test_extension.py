@@ -41,8 +41,10 @@ class ExtensionTest(unittest.TestCase):
                 found = extension.state()
                 self.assertEqual((found["path"], found["version"], found["behind"], found["dirty"]), (str(folder), "2.88", 1, []))
                 (folder / "notes.txt").write_text("my own file")
-                with self.assertRaises(store.StudioError):       # the author's own change is never overwritten
-                    extension.update()
+                with mock.patch.object(extension, "add_item") as add:
+                    unsaved = extension.update()                 # unsaved work: the item only, no pull, no commit
+                    add.assert_called_once_with(folder, in_git=False)
+                self.assertEqual((unsaved["version"], unsaved["behind"]), ("2.88", 1))
                 (folder / "notes.txt").unlink()
                 done = extension.update()
                 # the newer version came in, then the «VideoKey Studio» item went on top of it, one step up
