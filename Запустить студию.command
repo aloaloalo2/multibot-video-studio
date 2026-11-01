@@ -11,7 +11,10 @@ open_studio() { [[ -n "$VIDEOKEY_NO_OPEN" ]] || /usr/bin/open "$studio_url"; }
 close_window() {
   [[ "$TERM_PROGRAM" == "Apple_Terminal" && -z "$VIDEOKEY_NO_OPEN" ]] || return 0
   local tty_name="$(/usr/bin/tty)"
-  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\" to close (every window whose selected tab's tty is \"$tty_name\")" >/dev/null 2>&1 ) &!
+  # the window closes, and Terminal quits too when no other window of it is open (no dot left under it in the Dock)
+  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\"" \
+      -e "close (every window whose selected tab's tty is \"$tty_name\")" \
+      -e "if (count of windows) is 0 then quit" -e "end tell" >/dev/null 2>&1 ) &!
 }
 if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
   open_studio
