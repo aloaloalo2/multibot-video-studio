@@ -62,8 +62,10 @@ def validate(animation) -> None:
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
 
 
-# «Крейда» (chalk) left the choice (user, 1 November 2026); films already in it still render, Razgon keeps the style
-GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "clinic", "bluewhite", "whiteblue", "blueglow", "care")
+# Only styles with volume: gradients, light, glow or texture (user, 1 November 2026: flat styles «не підходять… об'єм не
+# видно»). Chalk, Doodle, Ink, Cut-out, «Синє на білому» and «Біле на синьому» left the choice; films already in them
+# still render, and a channel that uses one still sees it (cards(keep=…)), so saving its settings never swaps its style.
+GALLERY = ("neon", "dusk", "clinic", "blueglow", "care")
 
 
 def razgon_text(animation: dict | None) -> dict:
@@ -150,7 +152,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     return key
 
 
-def cards(root: Path, own: list[dict] | None = None) -> dict:
+def cards(root: Path, own: list[dict] | None = None, keep=()) -> dict:
     """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
     logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
     switching a font or the assets in the settings only swaps pictures."""
@@ -159,23 +161,26 @@ def cards(root: Path, own: list[dict] | None = None) -> dict:
         raise StyleLabError("Немає сцени-візитки Razgon")
     known = {style["id"]: style for style in presets(root)}
     ids = [sid for sid in GALLERY if sid in known]
+    # a retired style a channel still uses gets its own small set, so the shared set (and its cache) stays the same
+    kept = [{"id": sid, "def": None} for sid in dict.fromkeys(keep) if sid in known and sid not in ids]
     stamp = newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")
     own = own or []
     combos = [(font, assets) for font in TITLE_FONTS for assets in (True, False)]
-    jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own for combo in combos]
+    jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own + kept for combo in combos]
     run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None)
     with LOCK:
         with ThreadPoolExecutor(max_workers=3) as pool:
             keys = dict(zip([(job[0]["id"] if job[0] else None, *job[1]) for job in jobs], pool.map(run, jobs)))
     result = {font: {("1" if assets else "0"): {sid: f"/api/{CARDS}/{keys[None, font, assets]}/{sid}-0.jpg" for sid in ids}
                      for assets in (True, False)} for font in TITLE_FONTS}
-    for style in own:
+    for style in own + kept:
         for font in TITLE_FONTS:
             for assets in (True, False):
                 result[font]["1" if assets else "0"][style["id"]] = f"/api/{CARDS}/{keys[style['id'], font, assets]}/{style['id']}-0.jpg"
     # the Studio's own styles (style_copy.BUILTIN) lead the gallery and cannot be deleted; a channel's copied ones close it
     listed = lambda s: {"id": s["id"], "name": s["name"], "desc": s["desc"], **({} if s.get("builtin") else {"own": True})}
-    return {"styles": [listed(s) for s in own if s.get("builtin")] + [known[sid] for sid in ids] + [listed(s) for s in own if not s.get("builtin")],
+    return {"styles": [listed(s) for s in own if s.get("builtin")] + [known[sid] for sid in ids] + [known[s["id"]] for s in kept]
+                  + [listed(s) for s in own if not s.get("builtin")],
             "cards": result, "keys": set(keys.values())}
 
 
@@ -204,8 +209,10 @@ def warm() -> None:
     root = razgon_root()
     if root is not None:
         try:
-            own = list({style["id"]: style for channel in store.list_channels() for style in style_copy.load(channel["id"])}.values())
-            prune_cards(cards(root, own).pop("keys"))
+            channels = store.list_channels()
+            own = list({style["id"]: style for channel in channels for style in style_copy.load(channel["id"])}.values())
+            saved = [((c.get("settings") or {}).get("animation") or {}).get("style") for c in channels]
+            prune_cards(cards(root, own, keep=[sid for sid in saved if sid]).pop("keys"))
         except (StyleLabError, OSError, subprocess.SubprocessError, store.StudioError):
             pass
 
@@ -216,6 +223,8 @@ def showcase(cid: str) -> dict:
     A regular channel has no films of its own, yet its 2D-animation frames are Razgon scenes too: it borrows the
     Razgon studio of any animated channel, and its current style is the one saved in its settings."""
     choices = films(store.get_channel_folder(cid))
+    channel = next((item for item in store.list_channels() if item["id"] == cid), {})
+    saved = ((channel.get("settings") or {}).get("animation") or {}).get("style")
     if choices:
         root, project = choices[0]
         current = json.loads((project / "config.json").read_text(encoding="utf-8")).get("style")
@@ -223,9 +232,8 @@ def showcase(cid: str) -> dict:
         root = razgon_root()
         if root is None:
             raise StyleLabError("Немає сцени-візитки Razgon")
-        channel = next((item for item in store.list_channels() if item["id"] == cid), {})
-        current = ((channel.get("settings") or {}).get("animation") or {}).get("style")
-    result = cards(root, style_copy.load(cid))
+        current = saved
+    result = cards(root, style_copy.load(cid), keep=[sid for sid in (current, saved) if sid])
     result.pop("keys")
     return {"film_style": current, **result}
 
