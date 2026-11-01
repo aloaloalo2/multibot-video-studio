@@ -10,6 +10,10 @@ open_studio() { [[ -n "$VIDEOKEY_NO_OPEN" ]] || /usr/bin/open "$studio_url"; }
 # ask about; a failure keeps the window open with its message.
 close_window() {
   [[ "$TERM_PROGRAM" == "Apple_Terminal" && -z "$VIDEOKEY_NO_OPEN" ]] || return 0
+  # a studio an older version started from a Terminal window still hangs on that window's terminal: closing Terminal
+  # would take it down, so the window stays (user, 1 November 2026: «термінал закривається і студія перестає»)
+  local studio_pid="$(/usr/sbin/lsof -tiTCP:8770 -sTCP:LISTEN 2>/dev/null | /usr/bin/head -1)"
+  [[ -n "$studio_pid" && "$(/bin/ps -o tty= -p "$studio_pid" | /usr/bin/tr -d ' ')" == "??" ]] || return 0
   local tty_name="$(/usr/bin/tty)"
   # the window closes, and Terminal quits too when no other window of it is open (no dot left under it in the Dock)
   ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\"" \
