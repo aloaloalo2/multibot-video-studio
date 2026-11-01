@@ -325,20 +325,75 @@ def frame_clip(razgon: Path, number: int) -> Path:
     return razgon / "build" / "studio" / f"frame_{number:03d}.mp4"
 
 
-def picture_fingerprint(razgon: Path) -> str:
-    """Everything the picture of a frame is drawn from: the project's config, story, word timings, scenes and assets, and
-    the Razgon engine. Sound-only settings (music, SFX, ambience, loudness, overlay) are left out."""
+TAKE = re.compile(r"take\(\s*['\"]([\w-]+)['\"]")
+TAKE_LOOP = re.compile(r"for\s*\(\s*const\s+(\w+)\s+of\s+\[([^\]]*)\]\s*\)\s*take\(\s*\1\b")
+_HASHES: dict[tuple, str] = {}
+
+
+def content_hash(path: Path) -> str:
+    """The file's bytes, hashed once per size and change time in this process."""
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in _HASHES:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        _HASHES[key] = digest.hexdigest()
+    return _HASHES[key]
+
+
+def taken_ids(text: str) -> set[str]:
+    """The shot ids a scene file registers with take(), written out or in a loop (as backend/frame_progress.py reads)."""
+    ids = set(TAKE.findall(text))
+    for _, items in TAKE_LOOP.findall(text):
+        ids |= set(re.findall(r"['\"]([\w-]+)['\"]", items))
+    return ids
+
+
+def picture_fingerprints(razgon: Path, frames: list[dict]) -> dict[int, str]:
+    """For each Studio frame, everything its picture is drawn from. Shared by all frames: the project's config, the
+    story's settings, the assets, the scene files that register no shot (helpers) and the Razgon engine. Its own: the
+    shots it shows (with the one before and after it, for transitions), the scene files that register them and the
+    words spoken in it. Editing one scene therefore re-renders only the frames that show it, not the whole film
+    (31 October 2026: one changed scene re-rendered every frame, about an hour on a 40-minute film). Files are read by
+    content and named relative to the project, so moving the YOUTUBE folder does not make clips stale. Sound-only
+    settings (music, SFX, ambience, loudness, overlay) are left out."""
     root = razgon.parents[1]
     config = {k: v for k, v in read_json(razgon / "config.json").items() if k not in {"music", "sfx", "loudness", "voiceover", "script", "overlay"}}
     story = read_json(razgon / "story" / "shots.json")
-    story = dict(story, music=None, sfx=None, shots=[{k: v for k, v in shot.items() if k not in {"sfx", "amb"}} for shot in story["shots"]])
-    digest = hashlib.sha256(json.dumps([config, story], sort_keys=True, ensure_ascii=False).encode())
-    for base in (razgon / "scenes", razgon / "assets", razgon / "timeline" / "words.json", root / "engine", root / "player.html", root / "render.mjs"):
+    shots = [{k: v for k, v in shot.items() if k not in {"sfx", "amb"}} for shot in story["shots"]]
+    settings = {k: v for k, v in story.items() if k not in {"shots", "music", "sfx"}}
+    shared = hashlib.sha256(json.dumps([config, settings], sort_keys=True, ensure_ascii=False).encode())
+    for base, anchor in ((razgon / "assets", razgon), (root / "engine", root), (root / "player.html", root), (root / "render.mjs", root)):
         for path in sorted(base.rglob("*")) if base.is_dir() else [base]:
             if path.is_file():
-                stat = path.stat()
-                digest.update(f"{path}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
-    return digest.hexdigest()
+                shared.update(f"{path.relative_to(anchor)}\0{content_hash(path)}\n".encode())
+    scenes_by_shot: dict[str, list[Path]] = {}
+    scene_dir = razgon / "scenes"
+    for path in sorted(scene_dir.rglob("*.js")) if scene_dir.is_dir() else []:
+        ids = taken_ids(path.read_text(encoding="utf-8", errors="replace"))
+        if not ids:   # a helper the scenes import: part of every frame
+            shared.update(f"{path.relative_to(razgon)}\0{content_hash(path)}\n".encode())
+        for item in ids:
+            scenes_by_shot.setdefault(item, []).append(path)
+    words_file = razgon / "timeline" / "words.json"
+    words = (read_json(words_file) or {}).get("words", []) if words_file.is_file() else []
+    base = shared.hexdigest()
+    result = {}
+    for frame in frames:
+        start, end = float(frame["start"]), float(frame["end"])
+        inside = [i for i, shot in enumerate(shots) if shot["start"] < end and shot["end"] > start]
+        near = sorted({j for i in inside for j in (i - 1, i, i + 1) if 0 <= j < len(shots)})
+        own = [shots[j] for j in near]
+        files = sorted({path for shot in own for path in scenes_by_shot.get(shot.get("id"), [])})
+        spoken = [w for w in words if float(w.get("end", 0)) > start and float(w.get("start", 0)) < end]
+        digest = hashlib.sha256(base.encode())
+        digest.update(json.dumps([own, spoken], sort_keys=True, ensure_ascii=False).encode())
+        for path in files:
+            digest.update(f"{path.relative_to(razgon)}\0{content_hash(path)}\n".encode())
+        result[int(frame["number"])] = digest.hexdigest()
+    return result
 
 
 def frame_stamp(fps: int, frame: dict, picture: str) -> dict:
@@ -358,12 +413,12 @@ def fresh_clip(razgon: Path, frame: dict, fps: int, picture: str) -> Path | None
     return None
 
 
-def render_frame(razgon: Path, frame: dict, fps: int, workers: str | None) -> Path:
+def render_frame(razgon: Path, frame: dict, fps: int, workers: str | None, picture: str | None = None) -> Path:
     path = frame_clip(razgon, frame["number"])
     path.parent.mkdir(parents=True, exist_ok=True)
     stamp = path.with_suffix(".json")
     stamp.unlink(missing_ok=True)
-    picture = picture_fingerprint(razgon)
+    picture = picture or picture_fingerprints(razgon, [frame])[frame["number"]]
     # The Studio slot is [frame_index(start), frame_index(end)). Python rounds .5 to even and render.mjs rounds it up,
     # so the renderer gets times that are already whole frames; otherwise a clip can come out one frame short.
     first, last = frame_index(frame["start"], fps), frame_index(frame["end"], fps)
@@ -832,8 +887,8 @@ def studio_export(args) -> None:
         link, story, config = load_link(razgon)
         fps = int(link["fps"])
         sources = {int(number): Path(path) for number, path in (spec.get("clips") or {}).items() if path}
-        picture = picture_fingerprint(razgon)
-        todo = [f for f in link["frames"] if f["number"] not in sources and not fresh_clip(razgon, f, fps, picture)]
+        pictures = picture_fingerprints(razgon, link["frames"])
+        todo = [f for f in link["frames"] if f["number"] not in sources and not fresh_clip(razgon, f, fps, pictures[f["number"]])]
         length = lambda f: frame_index(f["end"], fps) - frame_index(f["start"], fps)
         # rough weights from the 1080p renders: Razgon draws ~1.4 s per second of film, gluing and mixing take ~0.2 s
         film_frames = sum(length(f) for f in link["frames"])
@@ -881,8 +936,8 @@ def studio_frames(args) -> None:
         missing = sorted(numbers - {f["number"] for f in frames})
         if missing:
             raise BridgeError("У плані Razgon немає кадрів " + ", ".join(map(str, missing)))
-        picture = picture_fingerprint(razgon)
-        todo = [f for f in frames if not fresh_clip(razgon, f, fps, picture)]
+        pictures = picture_fingerprints(razgon, frames)
+        todo = [f for f in frames if not fresh_clip(razgon, f, fps, pictures[f["number"]])]
         length = lambda f: frame_index(f["end"], fps) - frame_index(f["start"], fps)
         whole, finished = sum(map(length, frames)), []
         def progress(frame=None):

@@ -94,5 +94,36 @@ class RenderMemoryTest(unittest.TestCase):
         self.assertEqual(self.run_frames(None, jobs=3), 3)
 
 
+
+class PictureFingerprintTest(unittest.TestCase):
+    """A rendered frame stays fresh until something it is drawn from changes, and only then."""
+
+    def test_one_changed_scene_makes_only_its_frames_stale(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); razgon = root / "projects" / "07"
+            for folder in ("engine", "projects/07/scenes", "projects/07/story", "projects/07/assets", "projects/07/timeline"):
+                (root / folder).mkdir(parents=True)
+            (root / "engine" / "core.js").write_text("core")
+            (root / "render.mjs").write_text("render")
+            (razgon / "config.json").write_text(json.dumps({"style": "dusk", "music": "calm"}))
+            shots = [{"id": f"e0{n}", "start": 5.0 * (n - 1), "end": 5.0 * n} for n in range(1, 5)]
+            (razgon / "story" / "shots.json").write_text(json.dumps({"shots": shots}))
+            for n in range(1, 5):
+                (razgon / "scenes" / f"s{n}.js").write_text(f"take('e0{n}', () => draw{n}())")
+            (razgon / "scenes" / "helpers.js").write_text("export const glow = 1")
+            frames = [{"number": n, "start": 5.0 * (n - 1), "end": 5.0 * n} for n in range(1, 5)]
+            before = razgon_bridge.picture_fingerprints(razgon, frames)
+            (razgon / "scenes" / "s4.js").write_text("take('e04', () => drawBetter())")
+            after = razgon_bridge.picture_fingerprints(razgon, frames)
+            # frame 4 shows it; frame 3 too, through the transition into it; frames 1 and 2 stay fresh
+            self.assertEqual([before[n] == after[n] for n in range(1, 5)], [True, True, False, False])
+            config = json.loads((razgon / "config.json").read_text()); config["music"] = "dark"
+            (razgon / "config.json").write_text(json.dumps(config))
+            self.assertEqual(razgon_bridge.picture_fingerprints(razgon, frames), after)   # sound only: no frame stale
+            (razgon / "scenes" / "helpers.js").write_text("export const glow = 2")
+            changed = razgon_bridge.picture_fingerprints(razgon, frames)
+            self.assertTrue(all(changed[n] != after[n] for n in range(1, 5)))           # a shared helper: every frame
+
 if __name__ == "__main__":
     unittest.main()
