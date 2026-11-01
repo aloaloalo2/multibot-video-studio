@@ -47,7 +47,10 @@ async function generateThumbnail(project,writer='claude'){
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes:$('thumb-wishes').value,writer};
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);
-    thumbnailRuns.set(project.id,job);showThumbnailState(project.id);markThumbnailCard(project.id);pollThumbnail(project.id);
+    thumbnailRuns.set(project.id,job);
+    // the window closes once the wishes are sent: the card behind it shows «Малюємо прев’ю» while the picture is made
+    if(!$('modal-backdrop').hidden&&$('modal-backdrop').classList.contains('thumb-modal-open'))closeModal();
+    showThumbnailState(project.id);markThumbnailCard(project.id);pollThumbnail(project.id);
   }catch(error){status(error.message,true);}
 }
 

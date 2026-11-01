@@ -118,7 +118,7 @@ function modal(title, body, actions=[]) {
   else if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
 }
 function stopModalMedia() {$('modal-body').querySelectorAll('audio,video').forEach(media=>media.pause());}
-function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open');}
+function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open','thumb-modal-open');}
 // A dialog with something typed or changed in it asks before ×, Escape or a click beside it throws that away; its own
 // «Скасувати» means it and closes at once.
 let modalDirty=false;
