@@ -11,6 +11,7 @@ what older episodes still carry.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 import director
@@ -58,13 +59,34 @@ def cache_items(pid: str) -> list[Path]:
     return [folder / name for name in CACHE if (folder / name).exists() and any((folder / name).iterdir())]
 
 
-def freeable(pid: str) -> bool:
-    """Whether the episode has anything to free, cheaply (no sizes): the card shows «Звільнити місце» only then."""
+# The card offers «Звільнити місце» only when it frees at least this much (user, 1 November 2026: «менше, чим 100
+# мегабайт… не потрібно кнопку висвітлювати»). The size is measured at most every FREEABLE_TTL seconds a project: the
+# list is read every few seconds while an agent works, and a render cache holds thousands of files.
+FREEABLE_MIN = 100 * 1024 ** 2
+FREEABLE_TTL = 300
+_FREEABLE: dict[str, tuple[float, bool]] = {}
+
+
+def freeable(pid: str, now: float | None = None) -> bool:
+    """Whether the episode has at least FREEABLE_MIN to free: the card shows «Звільнити місце» only then."""
+    now = time.time() if now is None else now
+    cached = _FREEABLE.get(pid)
+    if cached and now - cached[0] < FREEABLE_TTL:
+        return cached[1]
     try:
         project = store.listed_project(store.project_dir(pid) / "project.json")
-        return bool(build_items(project)) or bool(old_renders(pid, project)) or bool(cache_items(pid))
+        total = 0
+        for item in [*build_items(project), *cache_items(pid)]:
+            total += size(item)
+            if total >= FREEABLE_MIN:
+                break
+        if total < FREEABLE_MIN:
+            total += sum(Path(asset["path"]).stat().st_size for asset in old_renders(pid, project))
+        answer = total >= FREEABLE_MIN
     except (OSError, ValueError, KeyError, TypeError, store.StudioError):
-        return False
+        answer = False
+    _FREEABLE[pid] = (now, answer)
+    return answer
 
 
 def busy(pid: str) -> str | None:
@@ -99,6 +121,7 @@ def free(pid: str) -> dict:
     for item in cache_items(pid):
         freed += size(item)
         shutil.rmtree(item, ignore_errors=True)
+    _FREEABLE.pop(pid, None)
     # replaced frame renders follow the studio's one rule for them, with the undo steps that still show them
     freed += store.prune_razgon_renders(pid)["bytes"]
     return {"freed": freed}

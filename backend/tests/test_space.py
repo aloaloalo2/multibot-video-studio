@@ -49,10 +49,15 @@ class SpaceTest(unittest.TestCase):
     def test_it_says_how_much_goes_and_frees_exactly_that(self):
         listed = patch.object(store, "listed_project", side_effect=lambda path: json.loads(json.dumps(self.project)))
         listed.start(); self.addCleanup(listed.stop)
-        self.assertTrue(space.freeable(PID))                     # the card offers «Звільнити місце»
+        space._FREEABLE.clear()
+        self.assertFalse(space.freeable(PID))                    # 1.6 KB is not worth a button (100 MB at least)
+        with patch.object(space, "FREEABLE_MIN", 1000):
+            space._FREEABLE.clear()
+            self.assertTrue(space.freeable(PID))                 # the card offers «Звільнити місце»
         self.assertEqual(space.usage(PID), {"build": 1500, "old_renders": 100, "old_count": 1, "cache": 0, "total": 1600, "busy": None})
         self.assertEqual(space.free(PID), {"freed": 1600})
-        self.assertFalse(space.freeable(PID))                    # and stops offering it once nothing is left
+        with patch.object(space, "FREEABLE_MIN", 1000):
+            self.assertFalse(space.freeable(PID))                # and stops offering it once nothing is left
         self.assertEqual(sorted(path.name for path in self.build.iterdir()), ["kept.wav", "live.log"])
         self.assertFalse((self.folder / "media" / "frame_001-aaaaaaaa.mp4").exists())
         self.assertTrue((self.folder / "media" / "frame_001.mp4").exists())             # the frame on the timeline stays

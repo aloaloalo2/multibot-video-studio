@@ -228,8 +228,8 @@ accents) go to `<episode>/VideoKey/Матеріали` (`store.media_dir`); the 
 `backend/data/projects/<id>` (`store.cache_dir`): Razgon frame renders (`RAZGON_RENDER` names), export chunks
 (`renders/`), the engine's render cache (`render-cache/`, `MULTIBOT_RENDER_CACHE` per export and still), stills and stock
 sheets. Older media in `projects/<id>/media` stays valid (`store.media_roots`). The episode's media list skips the
-VideoKey folder. «Звільнити місце» frees that cache too (`space.CACHE`) and shows only when there is something to free
-(`space.freeable`); deleting a project in the studio removes its VideoKey folder, the author's own files stay.
+VideoKey folder. «Звільнити місце» frees that cache too (`space.CACHE`) and shows only when it frees at least 100 MB
+(`space.freeable`, measured at most every 5 minutes a project); deleting a project in the studio removes its VideoKey folder, the author's own files stay.
 A project stays in the studio when its episode folder is deleted: its code, preview and title are there (user, 1 November
 2026, after a version that hid such projects for deletion; `store.restore_hidden_projects` takes those marks off at
 every start). The studio never deletes a project or its data by itself. Tests: `backend/tests/test_episode_store.py`, `test_space.py`.
