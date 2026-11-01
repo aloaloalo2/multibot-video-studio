@@ -88,7 +88,9 @@ def helper_installed() -> bool:
             manifest = json.loads((SUPPORT / browser / "NativeMessagingHosts" / "com.videokey.studio.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if manifest.get("path") == str(HELPER_HOME) and HELPER_HOME.is_file():
+        source = store.APP_ROOT / "browser-helper" / "host" / "videokey_host.py"
+        # the copy must be the studio's current helper: an older one still opened a Terminal
+        if manifest.get("path") == str(HELPER_HOME) and HELPER_HOME.is_file() and HELPER_HOME.read_bytes() == source.read_bytes():
             return True
     return False
 

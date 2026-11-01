@@ -5,8 +5,9 @@ The browser runs it for the Multi Bot extension only (the allowed origin in its 
 «Встановити.command»). install.py copies it to ~/Library/Application Support/VideoKey Studio with config.json naming
 «Запустить студию.command»: macOS does not let Chrome run programs from a protected folder such as Documents, where the
 studio may live (user, 1 November 2026: «помощник не установлен», though it was). It reads one message
-({"command": "start"}) and asks macOS to open the command, as a double click does, in a hidden Terminal (`open -g -j`),
-so nothing of Chrome's needs to read the studio's folder; a marker tells the command not to open a second tab. It waits
+({"command": "start"}) and starts the server directly, with no Terminal (start_directly); only when that fails it asks
+macOS to open the command, as a double click does, in a hidden Terminal (`open -g -j`), with a marker so the command
+opens no second tab. It waits
 until the studio answers and replies {"ok": true}, or {"ok": false, "error": ...}.
 """
 import json
@@ -22,11 +23,44 @@ HEALTH = "http://127.0.0.1:8770/api/health"
 MARKER = Path.home() / "Library/Caches/VideoKey Studio/no-open"
 
 
+LOG = Path.home() / "Library/Logs/VideoKey Studio/server.log"
+
+
 def command() -> Path:
     try:
         return Path(json.loads((HERE / "config.json").read_text(encoding="utf-8"))["command"])
     except (OSError, ValueError, KeyError, TypeError):
         return HERE.parents[1] / "Запустить студию.command"   # run from the studio's own folder
+
+
+def wait_alive(seconds: float) -> bool:
+    end = time.time() + seconds
+    while time.time() < end:
+        if alive():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def start_directly(app: Path) -> bool:
+    """Start the server with no Terminal at all (user, 1 November 2026: «запускає та кнопка всеодно термінал»): its
+    own session, the same start the studio's tools use. macOS may first ask to let Chrome into the folder the studio
+    lives in (Documents); until that is allowed, or when it is refused, this fails and the command is opened instead."""
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG, "ab") as log:
+            process = subprocess.Popen(["/usr/bin/python3", "-u", "backend/app.py", "--host", "127.0.0.1", "--port", "8770"],
+                                       cwd=app, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    except OSError:
+        return False
+    end = time.time() + 25
+    while time.time() < end:
+        if alive():
+            return True
+        if process.poll() is not None:
+            return False
+        time.sleep(0.5)
+    return alive()
 
 
 def read():
@@ -59,17 +93,18 @@ def main():
         send({"ok": True})
         return
     target = command()
+    if start_directly(target.parent):
+        send({"ok": True})
+        return
     MARKER.parent.mkdir(parents=True, exist_ok=True)
     MARKER.write_text(str(time.time()))
     run = subprocess.run(["/usr/bin/open", "-g", "-j", str(target)], capture_output=True, text=True, timeout=30)
     if run.returncode:
         send({"ok": False, "error": "macOS не відкрив «Запустить студию.command»: " + (run.stderr or run.stdout).strip()[-200:]})
         return
-    for _ in range(120):          # the update check at start can take a while
-        if alive():
-            send({"ok": True})
-            return
-        time.sleep(0.5)
+    if wait_alive(60):            # the update check at start can take a while
+        send({"ok": True})
+        return
     send({"ok": False, "error": "Студія не відповіла за хвилину. Журнал: ~/Library/Logs/VideoKey Studio/server.log"})
 
 
