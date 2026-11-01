@@ -955,6 +955,8 @@ function openChannelSettings(channel) {
     const sum=finite?keys.reduce((total,key)=>total+values[key],0):NaN,valid=validWeights();
     $('settings-total').textContent=Number.isFinite(sum)?`Разом ${sum}% із 100%`:'Перевірте відсотки';
     $('settings-total').classList.toggle('invalid',!valid);$('settings-feedback').classList.toggle('invalid',!valid);
+    // «Привести до 100%» is only offered while the shares do not add up to 100% (user, 1 November 2026)
+    $('normalize-weights').hidden=valid;
     $('settings-feedback').textContent=!finite?'Укажіть ціле число від 0 до 100 для кожного формату.':sum===100?'Готово до збереження.':sum===0?'Сума 0%. Укажіть частки перед нормалізацією.':sum<100?`Не вистачає ${100-sum}%.`:`Забагато на ${sum-100}%.`;
     const bar=$('settings-bar'),legend=$('settings-legend');bar.replaceChildren();legend.replaceChildren();
     const scale=Math.max(100,keys.reduce((total,key)=>total+(Number.isFinite(values[key])&&values[key]>0?values[key]:0),0));
