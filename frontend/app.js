@@ -222,7 +222,7 @@ function renameProject(project){
 
 function deleteProject(project){
   // the bin deletes the project from the studio's disk; the episode folder in the channel stays (user, 31 October 2026)
-  modal('Видалити випуск?',`<p>Випуск «${esc(project.name)}» буде видалено з диска студії разом із монтажем, матеріалами, рендерами та прев’ю. Повернути його не вийде. Папка випуску в каналі залишиться.</p><p class="space-note" id="delete-size">Рахуємо, скільки місця звільниться…</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити випуск',icon:'trash',danger:true,run:async()=>{
+  modal('Видалити випуск?',`<p>Випуск «${esc(project.name)}» буде видалено з диска студії разом із монтажем, матеріалами, рендерами та прев’ю. Повернути його не вийде. Папка випуску в каналі залишиться з вашими файлами, з неї зникне лише тека «VideoKey» з картинками й відео, які принесла студія. Проєкт анімації Razgon із кодом сцен теж залишиться.</p><p class="space-note" id="delete-size">Рахуємо, скільки місця звільниться…</p>`,[{label:'Скасувати',run:closeModal},{label:'Видалити випуск',icon:'trash',danger:true,run:async()=>{
     const button=$('modal-actions').querySelector('.danger');button.disabled=true;
     try{
       const result=await api(`/api/projects/${encodeURIComponent(project.id)}`,'DELETE');

@@ -404,8 +404,11 @@ def save_project(project: dict) -> None:
 
 
 def project_bytes(pid: str) -> int:
-    """What deleting the project frees: its files in the studio, without hard links that the episode folder still holds."""
-    return sum(stat.st_size for item in project_dir(pid).rglob("*")
+    """What deleting the project frees: its files in the studio, without hard links that the episode folder still holds,
+    and the episode's VideoKey folder, which goes with it."""
+    project = read_json(project_path(pid), {}) or {}
+    roots = [project_dir(pid)] + ([Path(project["episode_path"]) / EPISODE_STORE] if project.get("episode_path") else [])
+    return sum(stat.st_size for root in roots if root.is_dir() for item in root.rglob("*")
                if not item.is_symlink() and item.is_file() and (stat := item.stat()).st_nlink == 1)
 
 
@@ -419,10 +422,8 @@ def delete_project(pid: str) -> int:
         shutil.rmtree(project_dir(pid))
         # the episode's VideoKey folder holds what the studio brought in for it: it goes with the project, the author's
         # own files in the episode folder stay
-        episode = Path(project.get("episode_path") or "")
-        store = episode / EPISODE_STORE if project.get("episode_path") else None
+        store = Path(project["episode_path"]) / EPISODE_STORE if project.get("episode_path") else None
         if store and store.is_dir():
-            freed += sum(item.stat().st_size for item in store.rglob("*") if item.is_file() and not item.is_symlink())
             shutil.rmtree(store, ignore_errors=True)
     return freed
 
