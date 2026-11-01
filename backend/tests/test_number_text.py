@@ -67,7 +67,8 @@ class NumberTextTest(unittest.TestCase):
 
     def test_english_second_as_time_and_scale_after_digits_stay_words(self):
         for value in ["A 10-second gap means 2 miles.", "Every second you spend hesitating is a second lost.",
-                      "40 to 50 bolts hit every single second.", "around 300 million volts"]:
+                      "40 to 50 bolts hit every single second.", "around 300 million volts",
+                      "a 1.326-billion-dollar Powerball jackpot", "a 25-million-dollar mansion"]:
             self.assertEqual(number_text.to_digits(value, "en"), value)
             self.assertEqual(number_text.comparison_tokens(number_text.to_digits(value, "en"), "en"),
                              number_text.comparison_tokens(value, "en"))

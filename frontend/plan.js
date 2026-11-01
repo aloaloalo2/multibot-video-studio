@@ -107,8 +107,11 @@ function renderVoiceStart(panel){
     }
     lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
   }
-  const job=state.analysis?.job;
-  if(job && job.project_id===project.id && (job.status==='queued' || job.status==='running'))poll().catch(error=>show(error.message));
+  // A recognition already running shows here too, started in another tab or by an agent through the API. An opening
+  // project draws this page before its recognition has loaded (selectProject asks for it afterwards), so wait for it.
+  const watch=job=>{if(job && job.project_id===project.id && (job.status==='queued' || job.status==='running'))poll().catch(error=>{lock(false);show(error.message);});};
+  if(state.analysis)watch(state.analysis.job);
+  else loadAnalysis(project.id).then(result=>{if(section.isConnected && state.project?.id===project.id)watch(result.job);}).catch(error=>show(error.message));
 }
 
 function renderPlan(){

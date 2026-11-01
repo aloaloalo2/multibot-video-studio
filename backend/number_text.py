@@ -165,8 +165,8 @@ def replacements(text,locale=None):
         # «need you first» and time units such as «every second» stay words.
         if locale == "en" and word in ORDINAL and not english_ordinal(text,matches,i):
             i+=1;continue
-        # «300 million» already starts with digits; «a few thousand» is not an exact number.
-        if word in SCALE and (re.search(r"\d\s+$",text[:matches[i].start()])
+        # «300 million» and «a 1.326-billion-dollar jackpot» already start with digits; «a few thousand» is not an exact number.
+        if word in SCALE and (re.search(r"\d(?:\s+|-)$",text[:matches[i].start()])
                               or (i and fold(matches[i-1].group()) in {"few","several","many","of"})):
             i+=1;continue
         # A bare plural scale is a vague amount: «shed millions of cells» is not 1000000.
