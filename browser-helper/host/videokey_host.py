@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """The browser extension's helper: starts VideoKey Studio on this Mac and nothing else.
 
-The browser runs it for the «VideoKey Studio» extension only (the allowed origin in its manifest, written by
+The browser runs it for the Multi Bot extension only (the allowed origin in its manifest, written by install.py via
 «Встановити.command»). It reads one message ({"command": "start"}), runs «Запустить студию.command» in its own session
 (so the studio outlives the helper and the browser) without opening a tab, waits until the studio answers and replies
 {"ok": true}, or {"ok": false, "error": ...}.

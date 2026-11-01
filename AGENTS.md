@@ -254,8 +254,9 @@ and `store.razgon_rel()` (the agents' briefs) find it in either place. Test: `to
 
 ## The browser button (1 November 2026)
 
-`browser-extension/` is a Chrome extension (loaded unpacked, a fixed id from the manifest's `key`): its toolbar button
-opens the studio, or brings its open tab forward; only when the studio does not answer it asks the native messaging
-helper `host/videokey_host.py` to start it. The helper runs «Запустить студию.command» with `VIDEOKEY_NO_OPEN=1` in its
-own session, waits for `/api/health` and answers; it accepts only `{"command": "start"}` and only this extension's
-origin («Встановити.command» writes the host manifest for Chrome, Arc, Brave, Edge, Chromium and Yandex).
+The Multi Bot extension (its own repositories, multibot-extension and multibot-extension-public) has a fifth item,
+«VideoKey Studio»: it opens the studio or brings its open tab forward; only when the studio does not answer it asks the
+native messaging helper `browser-helper/host/videokey_host.py` to start it. The helper runs «Запустить студию.command»
+with `VIDEOKEY_NO_OPEN=1` in its own session, waits for `/api/health` and answers; it accepts only
+`{"command": "start"}`. «browser-helper/Встановити.command» (`install.py`) registers it in each Chrome-based browser for
+the extension named «Multi Bot» only, its id read from the browser profiles' Preferences.
