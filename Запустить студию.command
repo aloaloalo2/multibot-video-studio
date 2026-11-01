@@ -5,13 +5,13 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 studio_url='http://127.0.0.1:8770/'
 # the browser extension's helper starts the studio with VIDEOKEY_NO_OPEN=1: the extension opens the tab itself
 open_studio() { [[ -n "$VIDEOKEY_NO_OPEN" ]] || /usr/bin/open "$studio_url"; }
-# Opened by a double click, this runs in a Terminal window. The window is minimized into the Dock once the studio is
-# up, never closed: on the author's Mac closing it, or quitting Terminal, took the studio down (1 November 2026, the
+# Opened by a double click, this runs in a Terminal window. The window is hidden once the studio is up (not minimized
+# into the Dock either, user: «в док не хочу»), never closed: on the author's Mac closing it, or quitting Terminal, took the studio down (1 November 2026, the
 # server log ends with no error). A failure keeps the window in front with its message.
 hide_window() {
   [[ "$TERM_PROGRAM" == "Apple_Terminal" && -z "$VIDEOKEY_NO_OPEN" ]] || return 0
   local tty_name="$(/usr/bin/tty)"
-  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\" to set miniaturized of (every window whose selected tab's tty is \"$tty_name\") to true" >/dev/null 2>&1 ) &!
+  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\" to set visible of (every window whose selected tab's tty is \"$tty_name\") to false" >/dev/null 2>&1 ) &!
 }
 if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
   open_studio
