@@ -146,9 +146,21 @@ def _queued_update() -> None:
                 UPDATE_QUEUED = None   # a stopped update shows its own reason on the button
 
 
+def sweep_orphans() -> None:
+    """An episode whose folder the author deleted leaves the list; its studio data goes after a grace period
+    (store.sweep_orphans, user's go-ahead 1 November 2026). Never for a project whose work runs."""
+    try:
+        with JOBS_LOCK:
+            exporting = {entry['job']['project_id'] for entry in ACTIVE_EXPORTS.values()}
+        store.sweep_orphans(busy_candidates() | exporting)
+    except Exception:   # never let it stop the updates
+        traceback.print_exc()
+
+
 def update_loop():
     while True:
         UPDATE_MANAGER.refresh()
+        sweep_orphans()
         time.sleep(120)
 
 
