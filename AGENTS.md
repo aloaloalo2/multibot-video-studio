@@ -210,3 +210,11 @@ briefs say so). Test: `backend/tests/test_topics.py`.
 gallery, cannot be deleted, and reach a film through its config (`razgon_bridge.py` puts `styleDef` in for `custom-` and
 `studio-` styles), so no Razgon copy's `engine/styles.js` is touched. «Крейда» (`chalk`) left the gallery the same day;
 films already in it still render.
+
+Style cards follow the channel's kind (`style_lab.card_scene`): a regular channel sees an infographic with no characters
+(kit `examples/style-card-info` at 2 s: a carrot, a brain and an eye joined by glowing arrows, Ukrainian labels and a
+title), an animated channel the café of `examples/reaction-time` at 8 s. The settings page asks for the kind it shows
+(`POST /style-cards {kind}`) and reloads the cards when the kind is switched. Only styles with volume are offered
+(user: flat styles show no volume); a retired style a channel still uses stays in its list. Razgon text falls back to
+Nunito, loaded with Cyrillic, when a title font has no Cyrillic letters. A style's `figure` ({limb, torso, head, joints,
+ends}) shapes its characters (`rig2d.parts`).

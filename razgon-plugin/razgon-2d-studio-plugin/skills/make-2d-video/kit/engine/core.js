@@ -86,12 +86,14 @@ export function backdrop(g, colors, area = [-E.W, -E.H, E.W * 3, E.H * 3]) { g.f
 
 // ---------- text ----------
 export const FONTS = { title: 'Fredoka', ui: 'Nunito', serif: 'Playfair Display' };
+// A font without a letter (Fredoka, Bebas and the other title fonts have no Cyrillic) falls back to Nunito, which player.js
+// loads with Cyrillic, never to the browser's serif.
 export function text(g, str, x, y, o = {}) {
   const { font = FONTS.title, weight = 700, color = '#fff', align = 'center', base = 'middle', glow: gl = 0, glowColor = 'rgba(255,140,60,.8)', spacing = 0, alpha: a = 1, stroke = 0, strokeColor = '#000', italic = false, maxWidth = 0 } = o;
   let size = o.size ?? 48;
   // maxWidth: shrink the font until the line fits its container (a notebook page, a card, the frame) — text never overflows
   if (maxWidth > 0) { const w = measure(g, str, size, font, weight) + spacing * Math.max(0, String(str).length - 1); if (w > maxWidth) size *= maxWidth / w; }
-  g.save(); g.globalAlpha *= a; g.font = `${italic ? 'italic ' : ''}${weight} ${size}px "${font}"`; g.textAlign = align; g.textBaseline = base;
+  g.save(); g.globalAlpha *= a; g.font = `${italic ? 'italic ' : ''}${weight} ${size}px "${font}", "Nunito", sans-serif`; g.textAlign = align; g.textBaseline = base;
   if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`;
   if (stroke) { g.lineJoin = 'round'; g.lineWidth = stroke; g.strokeStyle = strokeColor; g.strokeText(str, x, y); }
   if (gl) { g.shadowColor = glowColor; g.shadowBlur = gl; }
@@ -105,7 +107,7 @@ export function text(g, str, x, y, o = {}) {
   }
   g.restore();
 }
-export function measure(g, str, size, font = FONTS.title, weight = 700) { g.save(); g.font = `${weight} ${size}px "${font}"`; const w = g.measureText(str).width; g.restore(); return w; }
+export function measure(g, str, size, font = FONTS.title, weight = 700) { g.save(); g.font = `${weight} ${size}px "${font}", "Nunito", sans-serif`; const w = g.measureText(str).width; g.restore(); return w; }
 
 // ---------- camera & parallax ----------
 // cam = {x, y, z (zoom), r (roll, radians)}; depth 1 = character plane, <1 farther, >1 foreground

@@ -1195,7 +1195,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
         if match and method == "POST":
             try:
-                return self.json_response(style_lab.showcase(match.group(1)))
+                return self.json_response(style_lab.showcase(match.group(1), (body or {}).get("kind")))
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 409) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews", path)

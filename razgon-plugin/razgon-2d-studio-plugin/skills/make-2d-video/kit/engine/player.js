@@ -22,7 +22,10 @@ async function loadFonts() {
     ['Bebas Neue', '100 900', 'bebas-neue/files/bebas-neue-latin-400-normal.woff2'], ['Lilita One', '100 900', 'lilita-one/files/lilita-one-latin-400-normal.woff2'],
     ['Bangers', '100 900', 'bangers/files/bangers-latin-400-normal.woff2'], ['Permanent Marker', '100 900', 'permanent-marker/files/permanent-marker-latin-400-normal.woff2'],
     ['Baloo 2', '100 900', 'baloo-2/files/baloo-2-latin-800-normal.woff2'], ['Montserrat', '100 900', 'montserrat/files/montserrat-latin-800-normal.woff2'],
-    ['Montserrat', '100 900', 'montserrat/files/montserrat-cyrillic-800-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116']];
+    ['Montserrat', '100 900', 'montserrat/files/montserrat-cyrillic-800-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116'],
+    // Cyrillic for Ukrainian and Russian text: Nunito's letters, and the fallback of every font that has none (core.js text)
+    ['Nunito', '800', 'nunito/files/nunito-cyrillic-800-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116'],
+    ['Nunito', '900', 'nunito/files/nunito-cyrillic-900-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116']];
   for (const [fam, w, file, style, range] of F) { try { const ff = new FontFace(fam, `url(/node_modules/@fontsource/${file})`, { weight: w, style: style || 'normal', ...(range ? { unicodeRange: range } : {}) }); await ff.load(); document.fonts.add(ff); } catch (e) { console.log('font missing', fam, w); } }
 }
 async function boot() {

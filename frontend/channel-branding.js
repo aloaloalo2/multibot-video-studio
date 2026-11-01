@@ -144,7 +144,9 @@ function bindBranding(channel){
   const loadStyles=async(announce=true)=>{
     const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
-      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{});
+      // a regular channel's cards are an infographic, an animated one's show characters: the kind chosen on the page now
+      const asked=kind();loadedKind=asked;
+      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{kind:asked});
       if(mine!==request||!strip.isConnected)return;
       styles=data.styles;cards=data.cards;filmStyle=data.film_style;
       // A channel without a saved style shows the one its films are drawn in: the latest film's, otherwise Razgon's own
@@ -200,7 +202,8 @@ function bindBranding(channel){
     if(!confirm('Видалити логотип каналу? Нові експорти вийдуть без нього.'))return;
     try{await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'DELETE');version=Date.now();present=false;draw();feedback.textContent='Логотип видалено.';}catch(error){feedback.textContent=error.message;}
   });
-  const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(!styles)loadStyles();};
+  let loadedKind=null;
+  const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(!styles || loadedKind!==kind())loadStyles();};
   for(const radio of document.querySelectorAll('input[name="channel-kind"]'))radio.addEventListener('change',applyKind);
   applyKind();draw();load();
   // The folder keeps its name (its path is the channel's id); a different name is stored in the settings.

@@ -109,20 +109,23 @@ def card_dir(key: str) -> Path:
     return store.DATA_ROOT / CARDS / key
 
 
-def card_scene(root: Path) -> tuple[Path, float]:
-    """The scene and moment every style card shows: the café of the kit's example film at 8 s (user, 1 November 2026:
-    «візьми за основу… перший» of the style comparison), the kit's example reaches every Razgon copy through
-    razgon_sync; the older showcase scene (the character by a house) only where the example is missing."""
-    example = root / "examples" / "reaction-time"
-    if (example / "scenes").is_dir() and (example / "config.json").is_file():
-        return example, 8.0
+def card_scene(root: Path, kind: str = "animated") -> tuple[Path, float]:
+    """The scene and moment every style card shows (user, 1 November 2026). An animated channel sees the café of the
+    kit's example film at 8 s, its characters in the style; a regular channel, whose Razgon frames explain rather than
+    act, sees an infographic with no characters (examples/style-card-info at 2 s: a carrot, a brain and an eye joined by
+    glowing arrows, labels and a title). The kit's examples reach every Razgon copy through razgon_sync; the older
+    showcase scene (the character by a house) stays only where they are missing."""
+    for folder, moment, kinds in (("style-card-info", 2.0, {"regular"}), ("reaction-time", 8.0, {"animated", "regular"})):
+        example = root / "examples" / folder
+        if kind in kinds and (example / "scenes").is_dir() and (example / "config.json").is_file():
+            return example, moment
     return root / "showcase", 2.0
 
 
-def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, definition: dict | None = None) -> str:
+def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, definition: dict | None = None, kind: str = "animated") -> str:
     """Render the style card in every gallery style for one title font and assets choice, unless it is cached. A
     channel's own style (one id with its definition) travels in the config, as it does in a film."""
-    scene, moment = card_scene(root)
+    scene, moment = card_scene(root, kind)
     key = hashlib.sha256(json.dumps([scene.name, moment, font, assets, ids, stamp, definition], sort_keys=True).encode()).hexdigest()[:20]
     cache = card_dir(key)
     if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
@@ -152,11 +155,11 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     return key
 
 
-def cards(root: Path, own: list[dict] | None = None, keep=()) -> dict:
+def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "animated") -> dict:
     """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
     logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
     switching a font or the assets in the settings only swaps pictures."""
-    scene = card_scene(root)[0]
+    scene = card_scene(root, kind)[0]
     if not (scene / "scenes").is_dir():
         raise StyleLabError("Немає сцени-візитки Razgon")
     known = {style["id"]: style for style in presets(root)}
@@ -167,7 +170,7 @@ def cards(root: Path, own: list[dict] | None = None, keep=()) -> dict:
     own = own or []
     combos = [(font, assets) for font in TITLE_FONTS for assets in (True, False)]
     jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own + kept for combo in combos]
-    run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None)
+    run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None, kind)
     with LOCK:
         with ThreadPoolExecutor(max_workers=3) as pool:
             keys = dict(zip([(job[0]["id"] if job[0] else None, *job[1]) for job in jobs], pool.map(run, jobs)))
@@ -212,12 +215,21 @@ def warm() -> None:
             channels = store.list_channels()
             own = list({style["id"]: style for channel in channels for style in style_copy.load(channel["id"])}.values())
             saved = [((c.get("settings") or {}).get("animation") or {}).get("style") for c in channels]
-            prune_cards(cards(root, own, keep=[sid for sid in saved if sid]).pop("keys"))
+            # only the kinds of card the channels need: an infographic for regular channels, characters for animated ones
+            kinds = {channel_kind(c) for c in channels} or {"animated"}
+            keys = set()
+            for kind in sorted(kinds):
+                keys |= cards(root, own, keep=[sid for sid in saved if sid], kind=kind).pop("keys")
+            prune_cards(keys)
         except (StyleLabError, OSError, subprocess.SubprocessError, store.StudioError):
             pass
 
 
-def showcase(cid: str) -> dict:
+def channel_kind(channel: dict) -> str:
+    return "animated" if (channel.get("settings") or {}).get("channel_kind") == "animated" else "regular"
+
+
+def showcase(cid: str, kind: str | None = None) -> dict:
     """The style cards for a channel's settings, with the style its newest film uses now.
 
     A regular channel has no films of its own, yet its 2D-animation frames are Razgon scenes too: it borrows the
@@ -233,7 +245,9 @@ def showcase(cid: str) -> dict:
         if root is None:
             raise StyleLabError("Немає сцени-візитки Razgon")
         current = saved
-    result = cards(root, style_copy.load(cid), keep=[sid for sid in (current, saved) if sid])
+    # the kind the settings page shows now (a switch not saved yet), otherwise the channel's saved one
+    kind = kind if kind in {"regular", "animated"} else channel_kind(channel)
+    result = cards(root, style_copy.load(cid), keep=[sid for sid in (current, saved) if sid], kind=kind)
     result.pop("keys")
     return {"film_style": current, **result}
 
