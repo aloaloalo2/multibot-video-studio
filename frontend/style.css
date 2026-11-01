@@ -1107,3 +1107,7 @@ select option{background:#232327;color:#f1f1f2}
 .thumb-library .thumb-tile-tags{right:6px;flex-wrap:wrap;gap:3px;pointer-events:none}
 .thumb-library .thumb-tile-tags em,.thumb-library .thumb-tile-tags i{display:inline-block;white-space:nowrap;font-size:10px;line-height:1.5;padding:0 6px;margin:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .thumb-library .thumb-tile small{pointer-events:none}
+.extension-state{font-size:12.5px;color:#aeb0b7;line-height:1.55;margin:0 0 10px}
+.extension-state code{font-size:11.5px;color:#d6d7dc}
+.extension-state b{color:#5ee6a0}
+.extension-error{color:#ff8f8f}

@@ -1001,13 +1001,44 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 async function openStudioSettings(){
   try{
     const result=await api('/api/settings');const settings=result.settings || {};
-    modal('Загальні налаштування студії',`<section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+    modal('Загальні налаштування студії',`<section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
       try{if(typeof saveTypedServiceKeys==='function')await saveTypedServiceKeys();const next={export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
+    fillExtension();
     await initServiceKeys();
   }catch(error){status(error.message,true);}
 }
+
+// Multi Bot in the browser: where it is, whether GitHub has a newer version, and one button that takes it and sets up
+// the helper of its «VideoKey Studio» item (backend/extension.py). Chrome reloads an unpacked extension only by hand.
+function extensionText(data){
+  if(!data.found)return 'Multi Bot не знайдено в Chrome. Додайте його на сторінці chrome://extensions, і студія його побачить.';
+  const where=`Версія ${esc(data.version || '?')} · <code>${esc(data.path.replace(/^\/Users\/[^/]+/,'~'))}</code>`;
+  if(data.error)return `${where}<br>${esc(data.error)}`;
+  if(data.git===false)return `${where}<br>Ця папка не зв’язана з GitHub, тому оновити її звідси не вийде.`;
+  if(data.dirty?.length)return `${where}<br>У папці є власні зміни (${esc(data.dirty.join(', '))}): студія їх не затиратиме.`;
+  if(data.behind)return `${where}<br>На GitHub є новіша версія.`;
+  return `${where}<br>Це остання версія.${data.helper?'':' Кнопці «VideoKey Studio» ще бракує помічника для запуску студії.'}`;
+}
+async function fillExtension(){
+  const box=$('extension-state'),button=$('extension-update');if(!box)return;
+  try{
+    const data=await api('/api/extension');if(!box.isConnected)return;
+    box.innerHTML=extensionText(data);
+    button.hidden=!data.found || data.git===false || !!data.dirty?.length || (!data.behind && data.helper);
+    button.textContent=data.behind?'Оновити розширення':'Налаштувати кнопку «VideoKey Studio»';
+  }catch(error){box.textContent=error.message;}
+}
+async function updateExtension(){
+  const button=$('extension-update');button.disabled=true;button.textContent='Оновлюю…';
+  try{
+    const data=await api('/api/extension/update','POST',{});
+    $('extension-state').innerHTML=extensionText(data)+'<br><b>Готово.</b> Відкрийте chrome://extensions і натисніть у Multi Bot стрілку-кружечок, щоб Chrome підхопив нову версію.';
+    button.hidden=true;
+  }catch(error){button.disabled=false;button.textContent='Оновити розширення';$('extension-state').innerHTML+=`<br><span class="extension-error">${esc(error.message)}</span>`;}
+}
+document.addEventListener('click',event=>{if(event.target.closest('#extension-update'))updateExtension();});
 
 function confirmDisableChannel(channel){modal(`Видалити канал «${channel.name}» зі списку?`,'<p>Канал зникне зі списку студії. Його папка та файли залишаться на комп’ютері.</p>',[{label:'Скасувати',run:closeModal},{label:'Видалити канал зі списку',icon:'trash',danger:true,run:async()=>{try{await api(`/api/channels/${encodeURIComponent(channel.id)}`,'DELETE');closeModal();await loadChannels();status('Канал видалено зі списку.');}catch(error){status(error.message,true);}}}]);}
 

@@ -260,3 +260,8 @@ native messaging helper `browser-helper/host/videokey_host.py` to start it. The 
 with `VIDEOKEY_NO_OPEN=1` in its own session, waits for `/api/health` and answers; it accepts only
 `{"command": "start"}`. «browser-helper/Встановити.command» (`install.py`) registers it in each Chrome-based browser for
 the extension named «Multi Bot» only, its id read from the browser profiles' Preferences.
+The studio's settings («Розширення Multi Bot», `backend/extension.py`, `GET /api/extension`, `POST /api/extension/update`)
+find the folder Multi Bot is loaded from (the browsers' profile Preferences), show its version and whether GitHub has a
+newer one, and update it with one button: a fast-forward of the folder's own branch (never over its own changes or
+commits), then `browser-helper/install.py`. Chrome reloads the unpacked extension only by hand at chrome://extensions.
+Test: `backend/tests/test_extension.py`.

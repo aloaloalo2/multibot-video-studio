@@ -962,6 +962,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required"})
         if path == "/api/channels":
             return self.json_response({"channels": store.list_channels()})
+        if path == "/api/extension":
+            import extension
+            return self.json_response(extension.state())
         if path == "/api/settings":
             return self.json_response({"settings": store.global_settings()})
         if path == "/api/service-keys":
@@ -1203,6 +1206,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/cancel", path)
         if match and method == "POST":
             return self.json_response({"job": agent_runtime.cancel(match.group(1))}, 202)
+        if method == "POST" and path == "/api/extension/update":
+            import extension
+            return self.json_response(extension.update())
         if method == "PATCH" and path == "/api/settings":
             return self.json_response({"settings": store.update_global_settings(body.get("settings", {}))})
         if method == "POST" and path == "/api/channels/pick":
