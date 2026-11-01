@@ -33,6 +33,12 @@ async function pollStudioUpdates(){
       return;
     }
     updateBoot=result.boot;
+    // the server holds a queued update: the button says so, even on a page opened after the click
+    if(!updateWaiting && !updatePageOutdated && (result.queued || updateQueued)){
+      if(result.queued)showQueued(true);
+      else if(result.restarting){updateWaiting=true;showQueued(false);setUpdateLabel('Студія оновлюється…','reload');updateButton.classList.add('updating');}
+      else showQueued(false);
+    }
     if(!updateWaiting && !updatePageOutdated && !updateQueued){
       updateBlocked=updateReasonHtml(result)?result:null;
       updateButton.hidden=result.status!=='available'&&!updateBlocked;
@@ -40,7 +46,7 @@ async function pollStudioUpdates(){
       updateButton.classList.toggle('update-blocked',!!updateBlocked);
     }
   }catch{}
-  finally{scheduleUpdatePoll(updateWaiting?2000:30000);}
+  finally{scheduleUpdatePoll(updateWaiting?2000:updateQueued?5000:30000);}
 }
 // A short note by the button, never the red banner over the page (user, 1 November 2026: «збоку легенько»).
 let updateNoteTimer=null;
@@ -51,22 +57,22 @@ function updateNote(text){
   note.textContent=text;note.style.top=`${Math.round(box.bottom+8)}px`;note.style.right=`${Math.round(window.innerWidth-box.right)}px`;
   note.classList.add('shown');clearTimeout(updateNoteTimer);updateNoteTimer=setTimeout(()=>note.classList.remove('shown'),6000);
 }
-// While an agent or an export works, the click is remembered: the button waits and the update starts once the work ends.
-let updateQueued=false,updateRetry=null;
+// While an agent or an export works, the server keeps the click (app.queue_update) and updates once the work ends;
+// the button shows it after a reload too, from the update state's «queued».
+let updateQueued=false;
+function showQueued(on){
+  updateQueued=on;updateButton.classList.toggle('update-queued',on);updateButton.disabled=false;
+  if(on){updateButton.hidden=false;setUpdateLabel('Оновлю після роботи','reload');}
+}
 async function applyStudioUpdate(){
-  clearTimeout(updateRetry);updateButton.disabled=true;
+  updateButton.disabled=true;
   try{
-    await api('/api/update/apply','POST',{});
-    updateQueued=false;updateButton.classList.remove('update-queued');
+    const result=await api('/api/update/apply','POST',{});
+    if(result.status==='queued'){showQueued(true);updateNote(`${result.reason}. Оновлю студію, щойно закінчиться.`);scheduleUpdatePoll(5000);return;}
+    showQueued(false);
     updateWaiting=true;setUpdateLabel('Студія оновлюється…','reload');updateButton.classList.add('updating');
     scheduleUpdatePoll(1500);
-  }catch(error){
-    if(/^Зараз /.test(error.message)){
-      if(!updateQueued)updateNote(`${error.message}. Оновлю студію, щойно закінчиться.`);
-      updateQueued=true;updateButton.disabled=false;updateButton.classList.add('update-queued');setUpdateLabel('Оновлю після роботи','reload');
-      updateRetry=setTimeout(applyStudioUpdate,20000);
-    }else{updateQueued=false;updateButton.classList.remove('update-queued');updateButton.disabled=false;setUpdateLabel('Оновити студію','download');updateNote(error.message);}
-  }
+  }catch(error){showQueued(false);setUpdateLabel('Оновити студію','download');updateNote(error.message);}
 }
 updateButton.addEventListener('click',()=>{
   if(updatePageOutdated){location.reload();return;}

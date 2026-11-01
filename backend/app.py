@@ -118,6 +118,34 @@ def begin_update():
         return True
 
 
+# An update asked for while the director, an agent or an export works waits here, on the server, and starts by itself
+# once the work ends: the page may be reloaded or closed meanwhile (user, 1 November 2026).
+UPDATE_QUEUED = None   # the reason it waits («Зараз працює режисер»), or None
+
+
+def queue_update(reason: str) -> None:
+    global UPDATE_QUEUED
+    with UPDATE_MUTEX:
+        start = UPDATE_QUEUED is None
+        UPDATE_QUEUED = reason
+    if start:
+        threading.Thread(target=_queued_update, daemon=True).start()
+
+
+def _queued_update() -> None:
+    global UPDATE_QUEUED
+    while UPDATE_QUEUED is not None:
+        time.sleep(15)
+        try:
+            begin_update()
+            UPDATE_QUEUED = None
+        except store.StudioError as error:
+            if str(error).startswith('Зараз '):
+                UPDATE_QUEUED = str(error)
+            else:
+                UPDATE_QUEUED = None   # a stopped update shows its own reason on the button
+
+
 def update_loop():
     while True:
         UPDATE_MANAGER.refresh()
@@ -926,7 +954,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def route_get(self, path, query):
         if path == '/api/update':
-            return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING})
+            return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required"})
         if path == "/api/channels":
@@ -1112,7 +1140,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def route_mutation(self, method, path, body):
         if method == 'POST' and path == '/api/update/apply':
-            begin_update()
+            try:
+                begin_update()
+            except store.StudioError as error:
+                if not str(error).startswith('Зараз '):
+                    raise
+                queue_update(str(error))
+                return self.json_response({'status': 'queued', 'reason': str(error)}, 202)
             return self.json_response({'status': 'restarting'}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/tidy", path)
         if match and method == "POST":

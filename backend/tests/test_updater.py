@@ -158,6 +158,24 @@ class UpdateTest(unittest.TestCase):
             apply.assert_not_called()
         self.assertEqual(str(busy.exception), 'Зараз працює агент кадрів')   # short, no episode or id
 
+    def test_a_busy_update_waits_on_the_server_and_starts_after_the_work(self):
+        busy = ['режисура: What If / X (abc)']
+        with patch.dict(app.ACTIVE_EXPORTS, {}, clear=True), patch.object(app.analysis_jobs, 'ACTIVE_JOBS', set()), \
+                patch.object(app.agent_view, 'studio_status', side_effect=lambda *a: {'busy': list(busy)}), \
+                patch.object(app.time, 'sleep'), patch.object(app.UPDATE_MANAGER, 'apply') as apply, \
+                patch.object(app.threading, 'Timer'), patch.object(app.threading, 'Thread') as thread:
+            try:
+                app.UPDATE_QUEUED = None
+                app.queue_update('Зараз працює режисер')
+                self.assertEqual(app.UPDATE_QUEUED, 'Зараз працює режисер')   # what GET /api/update reports after a reload
+                busy.clear()                                                    # the director ends
+                thread.call_args.kwargs['target']()
+                apply.assert_called_once()
+                self.assertIsNone(app.UPDATE_QUEUED)
+            finally:
+                app.UPDATE_RESTARTING = False
+                app.UPDATE_QUEUED = None
+
     def test_an_export_takes_only_the_window_s_qualities(self):
         with self.assertRaises(store.StudioError) as wrong:
             app.start_export({"id": "a" * 24, "width": 1920, "height": 1080, "fps": 25}, True, 3_000_000)
