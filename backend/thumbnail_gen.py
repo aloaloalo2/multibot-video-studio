@@ -228,7 +228,49 @@ def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
     return written, answer
 
 
-def run(pid: str, title: str, script: str, wishes: str) -> None:
+# A trial the author asked for on 1 November 2026: DeepSeek (OpenRouter) writes the prompt instead of Claude Opus, from
+# the same brief, the same reference frames (sent as pictures) and the story bible (sent as text), so the two prompts can
+# be compared on the same Codex drawing. «Згенерувати з DeepSeek» in the thumbnail window starts it.
+def write_prompt_deepseek(text: str, folder: Path, refs: list[Path]) -> tuple[str, dict]:
+    import base64, io, urllib.request
+    import agent_openrouter, credentials
+    try:
+        key = credentials.vault().read(credentials.service_name("openrouter"))
+    except RuntimeError:
+        raise RuntimeError("Додайте ключ OpenRouter у налаштуваннях студії") from None
+    # DeepSeek has no Read tool: what Claude would open is attached here instead
+    text = re.sub(r"\nПеред тим як писати, подивись інструментом Read ці картинки[^\n]*\n", "\nКартинки стилю й героя прикріплені нижче.\n", text)
+    link = store.read_json(folder / "razgon.json", None)
+    bible = Path(link["project"]) / "story" / "bible.md" if isinstance(link, dict) and link.get("project") else None
+    if bible and bible.is_file():
+        text = re.sub(r"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: [^\n]*\n", "", text)
+        text += "\n\nГерої, їхній вигляд і світ ролику (story bible):\n" + bible.read_text(encoding="utf-8", errors="replace")[:8000]
+    content = [{"type": "text", "text": text}]
+    for path in [*refs, *examples(folder)[1]][:4]:
+        try:
+            with Image.open(path) as source:
+                image = source.convert("RGB")
+            image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            out = io.BytesIO(); image.save(out, format="JPEG", quality=88)
+            content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()}})
+        except (OSError, UnidentifiedImageError):
+            continue
+    payload = {"model": agent_openrouter.MODEL, "max_tokens": 8000, "usage": {"include": True}, "messages": [{"role": "user", "content": content}]}
+    request = urllib.request.Request(agent_openrouter.BASE + "/chat/completions", data=json.dumps(payload).encode(), method="POST",
+                                     headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=PROMPT_TIMEOUT) as response:
+            result = json.load(response)
+        written = str(result["choices"][0]["message"]["content"] or "").strip()
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        raise RuntimeError("DeepSeek не відповів. Перевірте ключ OpenRouter і спробуйте ще раз") from None
+    written = re.sub(r"^```\w*\n|\n```$", "", written).strip()
+    if len(written) < 200:
+        raise RuntimeError("DeepSeek не написав промпт прев'ю. " + written[-300:])
+    return written, {"total_cost_usd": (result.get("usage") or {}).get("cost")}
+
+
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude") -> None:
     data = state(pid) or {}
     try:
         project = store.load_project(pid)
@@ -241,8 +283,11 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
         # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
         refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
         # 1. Claude picks the moment and writes the prompt; it is kept next to the picture even if the drawing fails
-        written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent, work)
-        (work / f"Промпт прев'ю v{number}.txt").write_text(written + "\n", encoding="utf-8")
+        if writer == "deepseek":
+            written, answer = write_prompt_deepseek(brief(title, script, wishes, folder, refs), folder, refs)
+        else:
+            written, answer = write_prompt(brief(title, script, wishes, folder, refs), folder.parent, work)
+        (work / f"Промпт прев'ю v{number}.txt").write_text((f"[DeepSeek] " if writer == "deepseek" else "") + written + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
         # 2. Codex draws it with the channel's style frames attached
@@ -271,7 +316,7 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
             shutil.copyfile(made, folder / PREVIEW)
         data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
-        late = "Claude не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
+        late = ("DeepSeek" if writer == "deepseek" else "Claude") + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
         data.update(status="failed", error=late, finished_at=time.time())
     except (OSError, RuntimeError, store.StudioError) as error:
         data.update(status="failed", error=str(error), finished_at=time.time())
@@ -283,7 +328,8 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "") -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude") -> dict:
+    writer = "deepseek" if writer == "deepseek" else "claude"
     project = store.load_project(pid)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
@@ -296,7 +342,7 @@ def start(pid: str, title: str, script: str, wishes: str = "") -> dict:
         if pid in ACTIVE:
             return state(pid)
         ACTIVE.add(pid)
-        data = {"status": "running", "stage": "prompt", "started_at": time.time(), "title": title, "wishes": wishes}
+        data = {"status": "running", "stage": "prompt", "started_at": time.time(), "title": title, "wishes": wishes, "writer": writer}
         store.atomic_json(job_path(pid), data)
-    threading.Thread(target=run, args=(pid, title, script, wishes), daemon=True).start()
+    threading.Thread(target=run, args=(pid, title, script, wishes, writer), daemon=True).start()
     return data

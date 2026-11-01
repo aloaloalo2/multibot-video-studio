@@ -1209,7 +1209,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
-            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"))}, 202)
+            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude")}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
             return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})

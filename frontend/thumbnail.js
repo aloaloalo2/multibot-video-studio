@@ -25,7 +25,8 @@ async function openThumbnail(project){
   modal('Прев’ю ролика',`${current}
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-wishes" rows="4" maxlength="2000" placeholder="Наприклад: крупно обличчя героя в шоці, велике слово DAY 340"></textarea></label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
-    [{label:'Згенерувати',primary:true,run:()=>generateThumbnail(project)}]);
+    // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
+    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek')},{label:'Згенерувати',primary:true,run:()=>generateThumbnail(project)}]);
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
   showThumbnailState(project.id);
@@ -36,13 +37,14 @@ function showThumbnailState(id){
   const box=$('thumb-state'),run=thumbnailRuns.get(id);
   if(!box)return;
   // the window's button and the tab's: busy while a run goes on, and the tab's also until a couple of frames are made
-  for(const button of document.querySelectorAll('#modal-actions .primary, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
+  for(const button of document.querySelectorAll('#modal-actions button, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
   box.dataset.status=run?.status || '';
-  box.textContent=!run?'':run.status==='running'?({prompt:'Claude вибирає момент і пише промпт, зазвичай до хвилини.',drawing:'Codex малює прев’ю за промптом Claude, зазвичай 1–3 хвилини.'}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою випуску.':`Не вдалося: ${run.error}`;
+  const writer=run?.writer==='deepseek'?'DeepSeek':'Claude';
+  box.textContent=!run?'':run.status==='running'?({prompt:`${writer} вибирає момент і пише промпт, зазвичай до хвилини.`,drawing:`Codex малює прев’ю за промптом ${writer}, зазвичай 1–3 хвилини.`}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'Готово. Прев’ю стоїть обкладинкою випуску.':`Не вдалося: ${run.error}`;
 }
 
-async function generateThumbnail(project){
-  const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes:$('thumb-wishes').value};
+async function generateThumbnail(project,writer='claude'){
+  const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes:$('thumb-wishes').value,writer};
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);
     thumbnailRuns.set(project.id,job);showThumbnailState(project.id);markThumbnailCard(project.id);pollThumbnail(project.id);
@@ -59,7 +61,7 @@ function markThumbnailCard(id){
   if(!veil){veil=document.createElement('div');veil.className='thumb-progress';veil.setAttribute('role','status');
     veil.innerHTML=`<span class="thumb-progress-pill">${typeof exportSpinner==='string'?exportSpinner:''}<span><b>Малюємо прев’ю</b><small></small></span></span>`;card.append(veil);}
   const stage=thumbnailRuns.get(id)?.stage;
-  veil.querySelector('small').textContent=stage==='prompt'?'Claude пише промпт':stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
+  veil.querySelector('small').textContent=stage==='prompt'?`${thumbnailRuns.get(id)?.writer==='deepseek'?'DeepSeek':'Claude'} пише промпт`:stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
 }
 
 // After a reload the page knows no run: each episode's card asks once whether its thumbnail is being made right now.
