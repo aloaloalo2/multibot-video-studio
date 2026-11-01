@@ -656,7 +656,17 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         atomic_json(folder / "project.json", project)
+    note_topics(channel)
     return project
+
+
+def note_topics(channel: Path) -> None:
+    """The channel's «Теми каналу.txt» takes the new title (backend/topics.py); a problem never stops the action."""
+    try:
+        import topics
+        topics.update(channel)
+    except (OSError, StudioError, ImportError):
+        pass
 
 
 def import_plan(cid: str, plan_path: str, name: str | None = None) -> dict:
@@ -903,9 +913,11 @@ def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> 
             project.pop("plan_updated_at", None)
         digest = hashlib.sha256(script.encode()).hexdigest()
         project["voice_script"] = {"text": script, "sha256": digest, "saved_at": time.time()}
-        follow_title(project)
+        renamed = follow_title(project)
         project["revision"] = project.get("revision", 0) + 1
         save_project(project)
+    if renamed:
+        note_topics(episode.parent)
     url = f"/channels/{cid}/projects/{project['id']}/plan"
     return {"project": project, "plan": None, "plan_url": url, "awaiting_voice": True, "script_sha256": digest}
 

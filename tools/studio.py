@@ -125,6 +125,21 @@ def run_ops(project: dict, ops: list, dry: bool) -> None:
         print(f"застосовано дій: {result.get('applied', 0)}, версія {result.get('revision')}")
 
 
+def small_copy(path: str) -> str:
+    """A half-size copy of a still to look at: a picture costs tokens by its pixels, and checking that a frame matches its
+    words needs no full 1920 px. Points for accents stay the full still's, so that one is still printed when asked."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return path
+    source = Path(path)
+    target = source.with_name(source.stem + "-small" + source.suffix)
+    if not target.is_file() or target.stat().st_mtime < source.stat().st_mtime:
+        with Image.open(source) as image:
+            image.resize((max(1, image.width // 2), max(1, image.height // 2)), Image.LANCZOS).save(target)
+    return str(target)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -141,6 +156,8 @@ def main(argv=None) -> int:
     still.add_argument("time")
     still.add_argument("--frames", type=int, default=1)
     still.add_argument("--cpu", action="store_true", help="рендер FFmpeg навіть там, де є GPU")
+    still.add_argument("--small", action="store_true",
+                       help="половинний розмір для перегляду очима: у 4 рази менше токенів; для координат акцентів беріть повний")
     exports = commands.add_parser("export", help="стан експорту")
     exports.add_argument("project")
     accent = commands.add_parser("accent", help="підпис, стрілка, коло, картка чи картинка, прив'язані до руху фото кадру")
@@ -274,7 +291,7 @@ def main(argv=None) -> int:
             at = moment(project, args.time)
             data = call("POST", f"/api/projects/{pid}/still", {"time": at, "frames": args.frames, "cpu": args.cpu})
             for path in data["outputs"]:
-                print(path)
+                print(small_copy(path) if args.small else path)
             print(f"момент {data['time']:.3f} с, рендер {data['renderer']}{', з кешу' if data.get('cached') else ''}, {data.get('seconds', 0)} с")
             print(f"перегляд: {STUDIO}/channels/{project['channel_id']}/projects/{pid}?t={data['time']:.3f}")
             for note in data.get("notes", []):

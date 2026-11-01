@@ -1003,3 +1003,12 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.45;cursor:not-
 .plan-table .plan-format::before{content:'';width:10px;height:10px;border-radius:3px;background:var(--format-color);flex:none}
 .plan-table .plan-made{margin-left:7px;color:#6bf2ae;font-weight:700}
 .add-channel-or{margin-top:14px;padding-top:12px;border-top:1px solid #2c2c31;color:#9a9ca4}
+/* Every drop-down list in the studio draws its own arrow, set in from the rounded edge, instead of the browser's arrow
+   squeezed against the border (user, 1 November 2026). The rules above give each list its colours and corners; these
+   come last and add the arrow and room for it. */
+select{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aeb0b7' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:14px 14px!important;padding-right:40px!important}
+select:hover:not(:disabled){filter:brightness(1.08)}
+select:disabled{cursor:not-allowed;opacity:.6}
+select option{background:#232327;color:#f1f1f2}

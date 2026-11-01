@@ -83,7 +83,7 @@ def frames_brief(project: dict) -> str:
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
-Спершу прочитай правила каналу {channel / 'AGENTS.md'}: як ділити озвучку на кадри і для чого який формат.
+Спершу прочитай правила каналу {channel / 'AGENTS.md'}: як ділити озвучку на кадри і для чого який формат; сценарії інших випусків не читай.
 
 Твоє завдання: план кадрів за змістом озвучки.
 1. python3 "{studio}/tools/studio.py" sentences {project['id']} показує пронумеровані речення з часом, формати каналу з їхніми частками та обмеження.
@@ -111,9 +111,11 @@ def razgon_brief(project: dict) -> str:
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'}, {store.APP_ROOT / 'AGENTS.md'} і навик режисури Razgon
+Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'} і навик режисури Razgon
 (What If/razgon-2d-studio/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
-Подивись, як зроблено режисуру попередніх випусків: What If/razgon-2d-studio/projects/*/story/gen_shots.py.
+Великі документи самої студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для режисури є тут, у правилах каналу й у навику.
+Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках (What If/razgon-2d-studio/projects/*/story/gen_shots.py,
+ls -t покаже найновіші), а не в усіх.
 
 Твоє завдання: режисура й план кадрів, кроки 3–5 правил каналу.
 1. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:

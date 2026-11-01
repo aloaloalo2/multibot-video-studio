@@ -41,6 +41,7 @@ import credentials
 import analysis_jobs
 import razgon_live
 import razgon_export
+import topics
 import audio_level
 import waveforms
 import joins
@@ -1364,6 +1365,7 @@ def main():
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
+    threading.Thread(target=topics.update_all, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

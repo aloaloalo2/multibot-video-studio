@@ -193,3 +193,12 @@ The fetch runs outside the updater's lock. `requirements.txt` lists the Python p
 [--install]` checks a Mac end to end (packages, ffmpeg, node, the Whisper model, Claude, Codex, the Pixabay key,
 Razgon's node_modules, the update state, that the server loads). `backend/waveforms.py` reads PCM peaks with `array`
 (audioop is gone from Python 3.13). Tests: `backend/tests/test_updater.py`, `tools/tests/test_doctor.py`.
+
+## A channel's topics in one file (1 November 2026)
+
+The user: «попередні сценарії не варто передивлятися… просто зберігати теми, заголовки… в текстовому файлі». Each channel
+folder holds «Теми каналу.txt», a title a line (`backend/topics.py`): at every start, on a new project and when a project
+takes its video's title the Studio appends the titles the file lacks (projects of the channel and episode folders with
+«Метаданные.txt»); lines written by hand stay and nothing is removed. A new script reads this file to choose a new topic
+or a new telling of an old one; agents never read the scripts of other episodes (the director's and frame agent's
+briefs say so). Test: `backend/tests/test_topics.py`.
