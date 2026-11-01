@@ -1074,3 +1074,10 @@ select option{background:#232327;color:#f1f1f2}
 #channel-overview,#project-plan{margin-bottom:-12px;padding-bottom:56px;
   -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 36px),transparent)}
 @media(max-width:560px){#channel-overview,#project-plan{margin-bottom:0;-webkit-mask-image:none;mask-image:none}}
+/* the update waits for running work: a calm button with a slowly turning mark, and a short note under it */
+#studio-update.update-queued{background:#1d2a40;color:#b9d2ff;box-shadow:none}
+#studio-update.update-queued svg{animation:studio-export-spin 2.4s linear infinite}
+.update-note{position:fixed;z-index:60;max-width:300px;padding:9px 13px;border-radius:12px;background:#232327;border:1px solid #3b3b41;
+  color:#d6d7dc;font-size:12.5px;line-height:1.4;box-shadow:0 10px 28px rgba(0,0,0,.45);opacity:0;transform:translateY(-4px);
+  pointer-events:none;transition:opacity .2s,transform .2s}
+.update-note.shown{opacity:1;transform:none}

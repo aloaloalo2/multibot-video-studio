@@ -33,7 +33,7 @@ async function pollStudioUpdates(){
       return;
     }
     updateBoot=result.boot;
-    if(!updateWaiting && !updatePageOutdated){
+    if(!updateWaiting && !updatePageOutdated && !updateQueued){
       updateBlocked=updateReasonHtml(result)?result:null;
       updateButton.hidden=result.status!=='available'&&!updateBlocked;
       setUpdateLabel(updateBlocked?'Оновлення зупинене':'Оновити студію',updateBlocked?'warning':'download');
@@ -42,14 +42,36 @@ async function pollStudioUpdates(){
   }catch{}
   finally{scheduleUpdatePoll(updateWaiting?2000:30000);}
 }
-updateButton.addEventListener('click',async()=>{
-  if(updatePageOutdated){location.reload();return;}
-  if(updateBlocked){modal('Оновлення зупинене',updateReasonHtml(updateBlocked),[{label:'Зрозуміло',primary:true,run:closeModal}]);return;}
-  updateButton.disabled=true;
+// A short note by the button, never the red banner over the page (user, 1 November 2026: «збоку легенько»).
+let updateNoteTimer=null;
+function updateNote(text){
+  let note=document.getElementById('studio-update-note');
+  if(!note){note=document.createElement('div');note.id='studio-update-note';note.className='update-note';note.setAttribute('role','status');document.body.append(note);}
+  const box=updateButton.getBoundingClientRect();
+  note.textContent=text;note.style.top=`${Math.round(box.bottom+8)}px`;note.style.right=`${Math.round(window.innerWidth-box.right)}px`;
+  note.classList.add('shown');clearTimeout(updateNoteTimer);updateNoteTimer=setTimeout(()=>note.classList.remove('shown'),6000);
+}
+// While an agent or an export works, the click is remembered: the button waits and the update starts once the work ends.
+let updateQueued=false,updateRetry=null;
+async function applyStudioUpdate(){
+  clearTimeout(updateRetry);updateButton.disabled=true;
   try{
     await api('/api/update/apply','POST',{});
+    updateQueued=false;updateButton.classList.remove('update-queued');
     updateWaiting=true;setUpdateLabel('Студія оновлюється…','reload');updateButton.classList.add('updating');
     scheduleUpdatePoll(1500);
-  }catch(error){updateButton.disabled=false;status(error.message,true);}
+  }catch(error){
+    if(/^Зараз /.test(error.message)){
+      if(!updateQueued)updateNote(`${error.message}. Оновлю студію, щойно закінчиться.`);
+      updateQueued=true;updateButton.disabled=false;updateButton.classList.add('update-queued');setUpdateLabel('Оновлю після роботи','reload');
+      updateRetry=setTimeout(applyStudioUpdate,20000);
+    }else{updateQueued=false;updateButton.classList.remove('update-queued');updateButton.disabled=false;setUpdateLabel('Оновити студію','download');updateNote(error.message);}
+  }
+}
+updateButton.addEventListener('click',()=>{
+  if(updatePageOutdated){location.reload();return;}
+  if(updateBlocked){modal('Оновлення зупинене',updateReasonHtml(updateBlocked),[{label:'Зрозуміло',primary:true,run:closeModal}]);return;}
+  if(updateQueued){updateNote('Оновлення почнеться саме, щойно робота закінчиться.');return;}
+  applyStudioUpdate();
 });
 pollStudioUpdates();

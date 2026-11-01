@@ -156,7 +156,7 @@ class UpdateTest(unittest.TestCase):
                 patch.object(app.UPDATE_MANAGER, 'apply') as apply:
             with self.assertRaises(store.StudioError) as busy: app.begin_update()
             apply.assert_not_called()
-        self.assertIn('створення кадрів', str(busy.exception))
+        self.assertEqual(str(busy.exception), 'Зараз працює агент кадрів')   # short, no episode or id
 
     def test_an_export_takes_only_the_window_s_qualities(self):
         with self.assertRaises(store.StudioError) as wrong:

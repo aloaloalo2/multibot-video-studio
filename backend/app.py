@@ -78,21 +78,35 @@ def restart_after_update():
         UPDATE_RESTARTING = False
 
 
+BUSY_WORDS = {"режисура": "режисер", "створення кадрів": "агент кадрів", "прев'ю": "агент прев’ю", "агент студії": "агент студії",
+              "розпізнавання озвучки": "розпізнавання озвучки", "експорт": "експорт"}
+
+
+def busy_words(busy: list[str]) -> str:
+    """«Зараз працює режисер» from the busy list's «режисура: What If / … (id)» lines."""
+    names = list(dict.fromkeys(BUSY_WORDS.get(line.split(":")[0].split(" ")[0] if line.startswith("експорт") else line.split(":")[0], "агент")
+                               for line in busy))
+    return "Зараз працює " + " і ".join(names[:2])
+
+
 def begin_update():
     global UPDATE_RESTARTING
     with UPDATE_MUTEX:
         if UPDATE_RESTARTING:
             raise store.StudioError('Студія вже оновлюється.', 409)
         if not IN_FLIGHT_DONE.wait_for(lambda: IN_FLIGHT <= 1, timeout=30):
-            raise store.StudioError('Студія ще зберігає зміни: спробуйте оновити за хвилину.', 409)
+            raise store.StudioError('Зараз студія зберігає зміни', 409)
         with JOBS_LOCK:
-            if ACTIVE_EXPORTS or analysis_jobs.ACTIVE_JOBS:
-                raise store.StudioError('Дочекайтеся завершення експорту або обробки озвучки.', 409)
+            if ACTIVE_EXPORTS:
+                raise store.StudioError('Зараз іде експорт', 409)
+            if analysis_jobs.ACTIVE_JOBS:
+                raise store.StudioError('Зараз розпізнається озвучка', 409)
         # the restart would also cut the director, the frame agent, a thumbnail or the studio's agent mid-run, the same
         # work studio_restart.py waits for
         busy = agent_view.studio_status([], project_jobs, busy_candidates())["busy"]
         if busy:
-            raise store.StudioError('Дочекайтеся, поки закінчиться робота: ' + '; '.join(busy[:3]), 409)
+            # a short line by the update button, without episode names or ids (user, 1 November 2026)
+            raise store.StudioError(busy_words(busy), 409)
         try:
             UPDATE_MANAGER.apply()
         except updater.UpdateError as error:
