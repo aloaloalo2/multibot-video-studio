@@ -528,13 +528,12 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     guard.close()
 
 
-VIDEO_BITRATES = (2_000_000, 8_000_000, 12_000_000)   # the export window's choices; engine/render.py VIDEO_BITRATES
-
-
 def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     if confirmation is not True:
         raise store.StudioError("Підтвердіть фінальний експорт після перегляду проєкту")
-    if bitrate is not None and bitrate not in VIDEO_BITRATES:
+    # the export window's three choices for this episode's size and frame rate (store.video_bitrates)
+    choices = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080), int(project.get("fps") or 25))
+    if bitrate is not None and bitrate not in choices:
         raise store.StudioError("Невідома якість відео", 400)
     readiness = store.plan_readiness(project)
     if not readiness["export_ready"]:
@@ -546,7 +545,7 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     manifest = razgon or normalize_for_engine(project)
     if not razgon:
         # the quality picked in the export window; an all-Razgon film keeps the bridge's own encoding
-        manifest["video_bitrate"] = bitrate or VIDEO_BITRATES[0]
+        manifest["video_bitrate"] = bitrate or choices[0]
     jid = uuid.uuid4().hex[:24]
     output_folder = Path(project["episode_path"])
     channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
@@ -779,6 +778,8 @@ class Handler(BaseHTTPRequestHandler):
             project.update(store.history_state(project["id"]))
             # the preview plays the voice at the export's level (audio_gain)
             project["production"], project["audio_gain"] = derived_state(project)
+            project["video_bitrates"] = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
+                                                             int(project.get("fps") or 25))
             value = {**value, "project": project}
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)

@@ -71,24 +71,25 @@ def hardware_export(width: int, height: int, fps: int) -> bool:
 
 
 DEFAULT_VIDEO_BITRATE = 2_000_000
-VIDEO_BITRATES = (2_000_000, 8_000_000, 12_000_000)
 EXPORT_BITRATE = DEFAULT_VIDEO_BITRATE   # set by render() from the manifest's video_bitrate
 
 
 def video_bitrate(project: dict) -> int:
-    """The film's video bitrate the author chose in the export window: 2, 8 or 12 Mbit/s, 2 by default."""
+    """The film's video bitrate the author chose in the export window (the studio offers three by the picture's size,
+    backend/store.video_bitrates), 2 Mbit/s when none is given; anything outside 0.5–100 Mbit/s reads as the default."""
     try:
         value = int(project.get("video_bitrate") or DEFAULT_VIDEO_BITRATE)
     except (TypeError, ValueError):
         return DEFAULT_VIDEO_BITRATE
-    return value if value in VIDEO_BITRATES else DEFAULT_VIDEO_BITRATE
+    return value if 500_000 <= value <= 100_000_000 else DEFAULT_VIDEO_BITRATE
 
 
 def video_encoder_options(hardware: bool) -> list[str]:
     if hardware:
         return ["-c:v", "hevc_videotoolbox", "-b:v", str(EXPORT_BITRATE), "-tag:v", "hvc1",
                 "-color_range", "tv", "-pix_fmt", "yuv420p"]
-    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-b:v", str(EXPORT_BITRATE), "-maxrate", str(EXPORT_BITRATE * 3 // 2),
+            "-bufsize", str(EXPORT_BITRATE * 2), "-pix_fmt", "yuv420p"]
 
 
 def emit(stage: str, **fields: Any) -> None:

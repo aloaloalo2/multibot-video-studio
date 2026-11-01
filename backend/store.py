@@ -31,7 +31,27 @@ DATA_ROOT = Path(os.environ.get("MULTIBOT_STUDIO_DATA", str(APP_ROOT / "backend"
 PROJECTS_ROOT = DATA_ROOT / "projects"
 DISABLED_PATH = DATA_ROOT / "disabled_channels.json"
 GLOBAL_SETTINGS_PATH = DATA_ROOT / "settings.json"
-GLOBAL_DEFAULTS = {"default_width": 1920, "default_height": 1080, "default_fps": 30, "export_subfolder": ""}
+# A channel's video format (its settings, «Формат відео»): the size and frame rate every new episode gets, and the
+# quality the export window starts from. The bitrates grow with the picture: 2 Mbit/s suits Full HD, not 4K.
+VIDEO_SIZES = {"1280x720": "HD", "1920x1080": "Full HD", "2560x1440": "2K", "3840x2160": "4K"}
+VIDEO_FPS = (24, 25, 30, 50, 60)
+VIDEO_QUALITIES = ("standard", "high", "max")
+# a channel that chose nothing: Full HD at 25 frames a second, standard quality (user, 1 November 2026)
+DEFAULT_VIDEO_SIZE, DEFAULT_VIDEO_FPS, DEFAULT_VIDEO_QUALITY = "1920x1080", 25, "standard"
+VIDEO_BITRATES = {"1280x720": (1_000_000, 4_000_000, 6_000_000), "1920x1080": (2_000_000, 8_000_000, 12_000_000),
+                  "2560x1440": (4_000_000, 14_000_000, 20_000_000), "3840x2160": (8_000_000, 32_000_000, 48_000_000)}
+
+
+def video_bitrates(width: int, height: int, fps: int) -> tuple[int, int, int]:
+    """The export window's three bitrates for this picture: by its size (the nearest of VIDEO_SIZES by pixels), half as
+    much again at 50 or 60 frames a second."""
+    pixels = width * height
+    size = min(VIDEO_SIZES, key=lambda key: abs(int(key.split("x")[0]) * int(key.split("x")[1]) - pixels))
+    factor = 1.5 if fps > 30 else 1
+    return tuple(int(rate * factor) for rate in VIDEO_BITRATES[size])
+
+
+GLOBAL_DEFAULTS = {"export_subfolder": ""}
 PLAN_CONFIG = "video-plan.json"
 MEDIA_EXTENSIONS = {".mp4": "video", ".mov": "video", ".webm": "video", ".mkv": "video", ".m4v": "video", ".jpg": "image", ".jpeg": "image", ".png": "image", ".webp": "image", ".bmp": "image", ".tif": "image", ".tiff": "image", ".wav": "audio", ".aiff": "audio", ".aif": "audio", ".mp3": "audio", ".m4a": "audio", ".aac": "audio", ".flac": "audio", ".ogg": "audio", ".opus": "audio"}
 LOCK = threading.RLock()
@@ -75,20 +95,14 @@ def read_json(path: Path, default=None):
 
 def global_settings() -> dict:
     saved = read_json(GLOBAL_SETTINGS_PATH, {})
-    return {**GLOBAL_DEFAULTS, **saved} if isinstance(saved, dict) else dict(GLOBAL_DEFAULTS)
+    # only today's keys: a size and frame rate saved by an older studio now live in each channel's settings
+    return {key: saved.get(key, value) for key, value in GLOBAL_DEFAULTS.items()} if isinstance(saved, dict) else dict(GLOBAL_DEFAULTS)
 
 
 def update_global_settings(patch: dict) -> dict:
     if not isinstance(patch, dict) or set(patch) - set(GLOBAL_DEFAULTS):
         raise StudioError("Невідоме загальне налаштування")
     settings = {**global_settings(), **patch}
-    for key, maximum in (("default_width", 7680), ("default_height", 4320)):
-        value = settings[key]
-        if type(value) is not int or not 128 <= value <= maximum or value % 2:
-            raise StudioError("Розмір відео має бути парним числом від 128 до " + str(maximum))
-    fps = settings["default_fps"]
-    if type(fps) is not int or not 1 <= fps <= 120:
-        raise StudioError("Частота кадрів має бути від 1 до 120")
     subfolder = settings["export_subfolder"]
     if not isinstance(subfolder, str) or len(subfolder) > 80 or subfolder in {".", ".."} or any(ch in subfolder for ch in "/\\\x00") or subfolder != subfolder.strip():
         raise StudioError("Папка експорту має бути однією назвою без роздільників")
@@ -173,6 +187,12 @@ def validate_settings(value: dict) -> dict:
                 raise StudioError("Невірне значення: " + key)
             if key in {"opening_clip_count", "short_sentence_words", "max_sentences_per_scene"} and number != int(number):
                 raise StudioError("Потрібне ціле число: " + key)
+    if "video_size" in value and value["video_size"] not in VIDEO_SIZES:
+        raise StudioError("Невідома роздільність відео")
+    if "video_fps" in value and value["video_fps"] not in VIDEO_FPS:
+        raise StudioError("Невідома частота кадрів")
+    if "video_quality" in value and value["video_quality"] not in VIDEO_QUALITIES:
+        raise StudioError("Невідома якість відео")
     if "accents" in value and not isinstance(value["accents"], bool):
         raise StudioError("Невірне значення: accents")
     if "opening_clip_types" in value and (not isinstance(value["opening_clip_types"], list) or any(item not in allowed for item in value["opening_clip_types"])):
@@ -556,10 +576,14 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         pass
     pid = uuid.uuid4().hex[:24]
     folder = PROJECTS_ROOT / pid
+    # the channel's video format, or the studio's defaults for a channel that has none
+    plan_config = read_json(channel / PLAN_CONFIG, {}) or {}
+    size = tuple(int(n) for n in plan_config.get("video_size", DEFAULT_VIDEO_SIZE).split("x"))
+    fps = plan_config.get("video_fps", DEFAULT_VIDEO_FPS)
     with LOCK:
         folder.mkdir(parents=True, exist_ok=False)
         global_defaults = global_settings()
-        project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": global_defaults["default_width"], "height": global_defaults["default_height"], "fps": global_defaults["default_fps"], "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
+        project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         atomic_json(folder / "project.json", project)
     return project
 

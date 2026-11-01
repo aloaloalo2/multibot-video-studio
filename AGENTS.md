@@ -158,14 +158,22 @@ radius is 8 px in both and rounds the contained picture. Equal already and now h
 cinematic transitions, transition covers (`graphicShapes` against `transition_graphics.shapes`), contained pictures. The FFmpeg renderer takes some 60 keyframes in one expression (100 failed), so sampled curves stay
 under that and `render.window_keyframes` keeps only the keyframes of the scene's moments.
 
-## Export quality is the author's choice (1 November 2026)
+## A channel's video format and the export's quality (1 November 2026)
 
-The export window offers the film's video bitrate with what the file will weigh for this episode (`exportQualityHtml`
-in `frontend/app.js`, the duration × (bitrate + 192 kbit/s audio)): «Стандартна» 2 Mbit/s by default (the author likes
-it), «Висока» 8 and «Найвища» 12; the last choice is remembered in the browser. `POST /export` takes `video_bitrate`
-(only these values), the manifest carries it, the GPU path encodes with it and keys its cache on it, the CPU path's
-VideoToolbox encoder uses `-b:v` with it (`render.video_bitrate`, `render.EXPORT_BITRATE`). An all-Razgon film keeps the
-bridge's own encoding and shows no choice. Tests: `engine/tests/test_still_window.py`, `backend/tests/test_updater.py`.
+Each channel's settings hold «Формат відео»: the size (`video_size`: HD 1280×720, Full HD 1920×1080, 2K 2560×1440, 4K
+3840×2160), the frame rate (`video_fps`: 24, 25, 30, 50, 60) and the quality the export window starts from
+(`video_quality`: standard, high, max). A new episode takes the size and frame rate at creation (`store.create_project`);
+a channel that chose nothing gets Full HD at 25 frames a second and the standard quality (the author's defaults).
+They are not changed on an episode later: frame edges, transitions and Razgon's code frames are laid out at that rate.
+The studio's global settings keep only the export subfolder. The export window shows the episode's size and frame rate
+and three bitrates with the file each makes (duration × (bitrate + 192 kbit/s audio)); the bitrates grow with the
+picture (`store.video_bitrates`: 1/4/6 Mbit/s for HD, 2/8/12 for Full HD, 4/14/20 for 2K, 8/32/48 for 4K, half as much
+again above 30 frames). `POST /export` takes `video_bitrate` (only those three), the manifest carries it, the GPU path
+encodes with it and keys its cache on it, the CPU path uses it for VideoToolbox and x264 (`render.video_bitrate`). The
+Mac's fast GPU export works up to Full HD and 30 frames; 2K, 4K, 50 and 60 export on the processor, several times
+slower, and the settings say so. An all-Razgon film keeps the bridge's own encoding and shows no choice. «Рух анімації»
+is no longer in the settings: photos move with the saved `motion_easing`, «Плавно» (ease_in_out) by default. Tests:
+`backend/tests/test_agent_tools.py`, `backend/tests/test_updater.py`, `engine/tests/test_still_window.py`.
 
 ## Updates say why they stop (31 October 2026)
 

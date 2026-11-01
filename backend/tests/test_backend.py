@@ -893,12 +893,14 @@ class BackendTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg is needed for export integration")
     def test_export_renders_managed_project_into_temp_episode(self):
-        status, result = self.request("/api/settings", "PATCH", {"settings": {"default_width": 320, "default_height": 180, "default_fps": 8, "export_subfolder": "Ready"}})
+        status, result = self.request("/api/settings", "PATCH", {"settings": {"export_subfolder": "Ready"}})
         self.assertEqual(status, 200)
         self.assertEqual(result["settings"]["export_subfolder"], "Ready")
         self.addCleanup(lambda: store.update_global_settings(store.GLOBAL_DEFAULTS))
         cid = store.channel_id(self.channel)
-        project = store.create_project(cid, "Render Test")
+        # a tiny picture keeps the test fast: the channel's default format, made small for it
+        with patch.object(store, "DEFAULT_VIDEO_SIZE", "320x180"), patch.object(store, "DEFAULT_VIDEO_FPS", 8):
+            project = store.create_project(cid, "Render Test")
         self.assertEqual((project["width"], project["height"], project["fps"]), (320, 180, 8))
         from PIL import Image
         image_path = Path(self.tmp.name) / "frame.png"

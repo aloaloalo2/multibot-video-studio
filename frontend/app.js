@@ -878,15 +878,6 @@ async function action(type,payload,message,options={}) {
   finally{state.busy=false;}
 }
 
-function motionPicker(value){
-  const options=[['linear','Рівномірно'],['ease_in','Плавний старт'],['ease_out','Плавна зупинка'],['ease_in_out','Плавно']];
-  const selected=options.some(([key])=>key===value)?value:'ease_in_out';
-  return `<input id="settings-easing" type="hidden" value="${selected}"><div class="easing-options" role="radiogroup" aria-label="Рух анімації">${options.map(([mode,label])=>{
-    const path=Array.from({length:25},(_,i)=>`${i?'L':'M'}${(8+i/24*84).toFixed(2)},${(60-easedProgress(i/24,mode)*52).toFixed(2)}`).join(' ');
-    return `<button type="button" class="easing-card" role="radio" data-easing="${mode}" aria-checked="${selected===mode}" tabindex="${selected===mode?0:-1}"><svg viewBox="0 0 100 70" aria-hidden="true"><path class="easing-axes" d="M8 8V60H92"/><path class="easing-curve" d="${path}"/></svg><span>${label}</span></button>`;
-  }).join('')}</div>`;
-}
-
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
   const allKeys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
@@ -900,15 +891,15 @@ function openChannelSettings(channel) {
   const body=`${brandingSections(channel)}<p class="settings-purpose regular-only">Скрипт використовує ці налаштування для автоматичної розстановки кадрів у нових планах цього каналу.</p>
     <section class="settings-section regular-only"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
     <section class="settings-section regular-only"><h3>Візуальні формати</h3><p>Пропорції форматів під час автоматичного планування. Зміни одного поля не змінюють інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
-    <section class="settings-section regular-only"><h3>Рух анімації</h3>${motionPicker(original.motion_easing)}<p>Використовується для нових анімацій і ключових кадрів у випусках цього каналу.</p></section>
     <section class="settings-section regular-only"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>
     <section class="settings-section regular-only"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label><label>Речень на кадр, максимум<input id="settings-max-sentences" type="number" min="1" max="10" step="1" value="${Number(original.max_sentences_per_scene ?? 4)}"></label></div></section>
+    <section class="settings-section"><h3>Формат відео</h3><div class="settings-three-column"><label>Роздільність<select id="settings-video-size">${[['1280x720','HD · 1280×720'],['1920x1080','Full HD · 1920×1080'],['2560x1440','2K · 2560×1440'],['3840x2160','4K · 3840×2160']].map(([value,label])=>`<option value="${value}" ${value===(original.video_size||'1920x1080')?'selected':''}>${label}</option>`).join('')}</select></label><label>Кадрів за секунду<select id="settings-video-fps">${[24,25,30,50,60].map(value=>`<option value="${value}" ${value===Number(original.video_fps||25)?'selected':''}>${value}</option>`).join('')}</select></label><label>Якість (бітрейт)<select id="settings-video-quality">${[['standard','Стандартна'],['high','Висока'],['max','Найвища']].map(([value,label])=>`<option value="${value}" ${value===(original.video_quality||'standard')?'selected':''}>${label}</option>`).join('')}</select></label></div><p id="settings-video-note">Нові випуски каналу створюються з цією роздільністю й частотою кадрів; уже створені лишаються як є. Якість — стартовий вибір у вікні експорту.</p></section>
     <section class="settings-section regular-only"><h3>Акценти на кадрах</h3><label class="check"><input id="settings-accents" type="checkbox" ${original.accents?'checked':''}>Додавати акценти: стрілки, кола й підписи поверх фото та відео</label><p>Агент кадрів ставить їх на частину кадрів, де вони допомагають зрозуміти сказане, приблизно на кожен третій-четвертий. Вимкнено — кадри лишаються без акцентів.</p></section>
     <section class="settings-section"><h3>Пам’ять агента для каналу</h3><p>Правила монтажу, які агент використовує в проєктах цього каналу.</p><textarea id="channel-agent-memory" rows="5" maxlength="30000" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),motion_easing:$('settings-easing').value,first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,...brandingValues()};
+    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       const memory=$('channel-agent-memory').value;
       if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});
@@ -919,12 +910,10 @@ function openChannelSettings(channel) {
   brandingValues=bindBranding(channel);
   const memoryField=$('channel-agent-memory'),memoryFeedback=$('channel-agent-memory-feedback');
   api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`).then(data=>{if($('channel-agent-memory')!==memoryField)return;savedMemory=data.memory || '';memoryField.value=savedMemory;memoryField.disabled=false;memoryFeedback.textContent='';}).catch(error=>{if($('channel-agent-memory')===memoryField)memoryFeedback.textContent=error.message;});
-  $('settings-easing').value=original.motion_easing || 'ease_in_out';
-  const motionButtons=[...document.querySelectorAll('.easing-card')];
-  motionButtons.forEach((button,index)=>{
-    button.addEventListener('click',()=>{$('settings-easing').value=button.dataset.easing;motionButtons.forEach(item=>{const selected=item===button;item.setAttribute('aria-checked',String(selected));item.tabIndex=selected?0:-1;});});
-    button.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const next=motionButtons[(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:3))%4];next.click();});
-  });
+  // 2K, 4K, 50 or 60 frames a second leave the Mac's fast GPU export (up to Full HD and 30 frames): say it before saving
+  const videoNote=()=>{const big=$('settings-video-size').value!=='1920x1080'&&$('settings-video-size').value!=='1280x720',fast=Number($('settings-video-fps').value)<=30;
+    $('settings-video-note').textContent='Нові випуски каналу створюються з цією роздільністю й частотою кадрів; уже створені лишаються як є. Якість — стартовий вибір у вікні експорту.'+(big||!fast?' Увага: швидкий експорт на відеокарті Mac працює до Full HD і 30 кадрів/с, тож такий ролик експортуватиметься в кілька разів довше.':'');};
+  for(const id of ['settings-video-size','settings-video-fps'])$(id).addEventListener('change',videoNote);videoNote();
   const box=$('settings-weights');
   keys.forEach((key,index)=>{const row=document.createElement('label');row.className='weight-row';row.innerHTML=`<span class="weight-dot" style="background:${colors[index]}" aria-hidden="true">${index+1}</span><span>${names[key]}</span><span class="weight-input"><input type="number" min="0" max="100" step="1" value="${Number.isFinite(values[key])?values[key]:0}" data-weight="${key}" aria-label="${names[key]}, відсотків"><span>%</span></span>`;row.querySelector('input').addEventListener('input',event=>{values[key]=event.target.value===''?NaN:Number(event.target.value);drawSummary();});box.append(row);});
   $('settings-source-channel').addEventListener('change',event=>{$('settings-import').disabled=!event.target.value;});
@@ -976,8 +965,8 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 async function openStudioSettings(){
   try{
     const result=await api('/api/settings');const settings=result.settings || {};
-    modal('Загальні налаштування студії',`<section class="settings-section"><h3>Формат нових випусків</h3><p>Значення застосовуються до проєктів, які будуть створені після збереження.</p><div class="settings-three-column"><label>Ширина, пікселі<input id="studio-width" type="number" min="128" max="7680" step="2" value="${Number(settings.default_width || 1920)}"></label><label>Висота, пікселі<input id="studio-height" type="number" min="128" max="4320" step="2" value="${Number(settings.default_height || 1080)}"></label><label>Кадрів за секунду<input id="studio-fps" type="number" min="1" max="120" step="1" value="${Number(settings.default_fps || 30)}"></label></div></section><section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
-      try{const next={default_width:Number($('studio-width').value),default_height:Number($('studio-height').value),default_fps:Number($('studio-fps').value),export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
+    modal('Загальні налаштування студії',`<section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+      try{const next={export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
     await initServiceKeys();
@@ -1017,9 +1006,11 @@ function exportActions(){
 // The film's quality in the export window, with what the file will weigh for this episode: 2 Mbit/s by default
 // (user, 1 November 2026: «2 мегабіта мені в принципі подобалась якість», the others on choice). An all-Razgon film
 // keeps the bridge's own encoding, so it shows no choice.
-const exportQualities=[[2000000,'Стандартна','менший файл'],[8000000,'Висока','чистіше на русі, для YouTube'],[12000000,'Найвища','найбільший файл']];
-let exportQuality=2000000;
-try{const saved=Number(localStorage.getItem('exportQuality'));if(exportQualities.some(([value])=>value===saved))exportQuality=saved;}catch{}
+// The three bitrates grow with the episode's size and frame rate (the server's video_bitrates); the window starts from the
+// channel's «Якість (бітрейт)» in its settings, standard unless the channel says otherwise.
+const exportQualityNames=[['standard','Стандартна','менший файл'],['high','Висока','чистіше на русі, для YouTube'],['max','Найвища','найбільший файл']];
+function exportQualities(){const rates=state.project?.video_bitrates || [2000000,8000000,12000000];return exportQualityNames.map(([key,name,note],index)=>[rates[index],name,note,key]);}
+const sizeNames={'1280x720':'HD','1920x1080':'Full HD','2560x1440':'2K','3840x2160':'4K'};
 function exportSize(bitrate){
   const bytes=(bitrate+192000)*Number(state.project?.duration || 0)/8;
   return bytes>=1e9?`≈ ${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:`≈ ${Math.max(1,Math.round(bytes/1e6))} МБ`;
@@ -1027,7 +1018,9 @@ function exportSize(bitrate){
 function exportQualityHtml(){
   const clips=filmClips(state.project);
   if(directorAnimated()&&clips.length&&clips.every(clip=>/^Razgon · кадр/.test(clip.title || '')))return '';
-  return `<fieldset class="export-quality"><legend>Якість відео</legend>${exportQualities.map(([value,name,note])=>`<label class="export-quality-option"><input type="radio" name="export-quality" value="${value}" ${value===exportQuality?'checked':''}><span><b>${name} · ${value/1e6} Мбіт/с</b><small>${note}</small></span><em>${exportSize(value)}</em></label>`).join('')}</fieldset>`;
+  const chosen=state.channel?.settings?.video_quality || 'standard',size=`${state.project.width}x${state.project.height}`;
+  const format=`${sizeNames[size] || ''} ${state.project.width}×${state.project.height} · ${state.project.fps} кадрів/с`.trim();
+  return `<fieldset class="export-quality"><legend>Якість відео <small>${format}</small></legend>${exportQualities().map(([value,name,note,key])=>`<label class="export-quality-option"><input type="radio" name="export-quality" value="${value}" ${key===chosen?'checked':''}><span><b>${name} · ${String(value/1e6).replace('.',',')} Мбіт/с</b><small>${note}</small></span><em>${exportSize(value)}</em></label>`).join('')}</fieldset>`;
 }
 
 async function openExport() {
@@ -1050,8 +1043,7 @@ async function openExport() {
     $('render-state').textContent='Готуємо проєкт до експорту...';
     const projectId=state.project.id, renderState=$('render-state');
     const quality=document.querySelector('input[name="export-quality"]:checked');
-    if(quality){exportQuality=Number(quality.value);try{localStorage.setItem('exportQuality',String(exportQuality));}catch{}}
-    try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:exportQuality}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
+    try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:Number(quality.value)}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
   }}]);
   for(const button of document.querySelectorAll('.export-gap-list button'))button.addEventListener('click',()=>{const gap=shownGaps[Number(button.dataset.gap)];closeModal();stopPlayback();state.playhead=gap.start;renderPreview();revealTimelineTime(gap.start);});
 }

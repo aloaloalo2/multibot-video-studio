@@ -224,6 +224,19 @@ class AgentToolsTest(unittest.TestCase):
             with self.assertRaises(store.StudioError):
                 store.request_production(other["id"], 3)
 
+    def test_a_new_episode_takes_its_channel_s_video_format(self):
+        config = self.channel / "video-plan.json"
+        before = config.read_text()
+        self.addCleanup(lambda: config.write_text(before))
+        config.write_text(json.dumps({**json.loads(before), "video_size": "3840x2160", "video_fps": 50, "video_quality": "high"}))
+        project = store.create_project(store.channel_id(self.channel), "4K episode")
+        self.assertEqual((project["width"], project["height"], project["fps"]), (3840, 2160, 50))
+        # 4K at 50 frames: the Full HD bitrates times four, and half as much again for the frame rate
+        self.assertEqual(store.video_bitrates(3840, 2160, 50), (12_000_000, 48_000_000, 72_000_000))
+        self.assertEqual(store.video_bitrates(1920, 1080, 25), (2_000_000, 8_000_000, 12_000_000))
+        with self.assertRaises(store.StudioError):
+            store.validate_settings({"weights": {"stock_photo": 100}, "video_size": "1000x1000"})
+
     def test_transitions_follow_the_channel_rules(self):
         project = self.project(frames=12)
         current = store.load_project(project["id"])
@@ -258,7 +271,7 @@ class AgentToolsTest(unittest.TestCase):
         self.assertIn("відкритий край", text)
         status, data = self.request(f"/api/projects/{project['id']}/summary?frames=2-3&issues=1")
         self.assertEqual([row["n"] for row in data["frames"]], [2])
-        self.assertEqual(data["fps"], 30)
+        self.assertEqual(data["fps"], 25)   # a channel without its own format: Full HD at 25
 
     def test_status_and_exports_answer_in_one_request(self):
         project = self.project(frames=1)

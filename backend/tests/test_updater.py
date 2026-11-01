@@ -160,7 +160,7 @@ class UpdateTest(unittest.TestCase):
 
     def test_an_export_takes_only_the_window_s_qualities(self):
         with self.assertRaises(store.StudioError) as wrong:
-            app.start_export({"id": "a" * 24}, True, 3_000_000)
+            app.start_export({"id": "a" * 24, "width": 1920, "height": 1080, "fps": 25}, True, 3_000_000)
         self.assertEqual(wrong.exception.status, 400)
 
     def test_update_does_not_interrupt_an_export_or_audio_analysis(self):

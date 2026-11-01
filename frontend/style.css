@@ -492,14 +492,6 @@ button.danger:hover:not(:disabled){background:#523034}
 #service-key-name-label,#service-key-value{margin-top:8px}
 #service-key-save{margin-top:12px}
 #service-key-feedback.invalid{color:#f1a3a9}
-.easing-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.easing-card{display:grid;gap:8px;justify-items:center;min-width:0;padding:10px 8px;border:1px solid #505059;border-radius:10px;background:#232329;color:#aaaeb9;font-size:12px}
-.easing-card svg{width:100%;max-width:120px;fill:none}
-.easing-axes{stroke:#666974;stroke-width:1}
-.easing-curve{stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-.easing-card[aria-checked=true]{color:#ffcd53;border-color:#d6a83e;background:#373020;box-shadow:inset 0 0 0 1px #d6a83e}
-.easing-card:hover{border-color:#e1c47c}
-@media(max-width:480px){.easing-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(min-width:561px) and (max-width:760px){.sidebar>.brand{margin:0 -6px;padding-left:14px;padding-right:14px}}
 .settings-two-column,.settings-three-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .settings-three-column{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -974,7 +966,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 }
 /* the export window's quality: three rows, each with what the file will weigh */
 .export-quality{margin:0 0 14px;padding:0;border:0;display:grid;gap:8px}
-.export-quality legend{margin-bottom:8px;font-weight:600;color:#f1f1f2}
+.export-quality legend{margin-bottom:8px;font-weight:600;color:#f1f1f2}.export-quality legend small{margin-left:8px;font-weight:400;color:#9a9ca4}
 .export-quality .export-quality-option{display:flex;flex-direction:row;align-items:center;margin:0;gap:12px;padding:10px 14px;border:1px solid #35353a;border-radius:12.5px;background:#1b1b1e;cursor:pointer}
 .export-quality .export-quality-option:has(input:checked){border-color:#f0b429;background:#24221c}
 .export-quality .export-quality-option input{accent-color:#f0b429;margin:0;width:auto;flex:none}
