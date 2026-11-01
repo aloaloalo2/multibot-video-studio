@@ -229,7 +229,10 @@ function fillDirectorLine(box){
   const line=(text,note)=>{const head=document.createElement('p');head.className='episode-director-line';head.innerHTML=`<strong>${esc(text)}</strong>${note?`<span>${esc(note)}</span>`:''}`;box.append(head);box.hidden=false;};
   if(run.status==='queued'||run.status==='running'){
     box.classList.add('working');
-    line('Режисер розкладає озвучку на кадри','Claude Opus 5.5. Кадри з’являться тут, щойно режисер закінчить.');
+    // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
+    const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
+    const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
+    line('Режисер розкладає озвучку на кадри',`Claude Opus 5.5. Скільки буде кадрів, вирішить режисер: «Створення ролика» з’явиться, щойно він закінчить.${took}`);
     renderTeam(box,'director',id,true);
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
@@ -360,7 +363,10 @@ function fillMake(make){
   const strip=make.querySelector('.frame-strip'),cells=[...make.querySelectorAll('.frame-strip-cell')],handle=make.querySelector('.frame-strip-handle');
   const max=make.querySelector('.frame-strip-max'),start=make.querySelector('.episode-make-start'),hint=make.querySelector('.episode-make-hint');
   const readout=make.querySelector('.episode-make-readout'),legend=make.querySelector('.frame-strip-legend'),feed=make.querySelector('.episode-make-feed');
-  if(!frames.length||!start)return;
+  // until the director has laid the voice out, the plan holds draft sentences, not frames: no count, strip or start
+  // button that could read as the film's frames (user, 1 November 2026: «487 кадрів… ця інформація не має бути»)
+  make.hidden=directorAwaited();
+  if(!frames.length||!start||make.hidden)return;
   const made=madeSet(frames);
   let floor=0;while(made.has(floor))floor++;
   make.dataset.floor=String(floor);

@@ -1063,3 +1063,9 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:640px){.logo-file{grid-template-columns:88px minmax(0,1fr)}.logo-switch{grid-column:1/-1}
   .logo-section .logo-place{grid-template-columns:1fr}.logo-section .logo-sliders{grid-template-columns:1fr}}
 .modal-body .logo-tile{display:flex;flex-direction:row;align-items:center;justify-content:center;padding:0}
+.episode-make[hidden]{display:none}
+/* the director at work: a turning ring instead of a dot, so the page reads as busy */
+.episode-director.working .episode-director-line strong::before{width:13px;height:13px;margin-right:10px;border-radius:50%;background:none;
+  border:2px solid #6bf2ae33;border-top-color:#6bf2ae;animation:director-spin .9s linear infinite;vertical-align:-1px;box-sizing:border-box}
+@keyframes director-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.episode-director.working .episode-director-line strong::before{animation-duration:2.4s}}
