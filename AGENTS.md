@@ -251,3 +251,11 @@ The user: «цю папку з What If прибрати й засунути са
 `What If/razgon-2d-studio` there (same disk only, never over an existing folder) and `relink` rewrites the paths in every
 episode's `razgon.json` and in the channels' `AGENTS.md`/`CLAUDE.md`. `razgon_sync.home()`, `razgon_bridge.DEFAULT_STUDIO`
 and `store.razgon_rel()` (the agents' briefs) find it in either place. Test: `tools/tests/test_razgon_home.py`.
+
+## The browser button (1 November 2026)
+
+`browser-extension/` is a Chrome extension (loaded unpacked, a fixed id from the manifest's `key`): its toolbar button
+opens the studio, or brings its open tab forward; only when the studio does not answer it asks the native messaging
+helper `host/videokey_host.py` to start it. The helper runs «Запустить студию.command» with `VIDEOKEY_NO_OPEN=1` in its
+own session, waits for `/api/health` and answers; it accepts only `{"command": "start"}` and only this extension's
+origin («Встановити.command» writes the host manifest for Chrome, Arc, Brave, Edge, Chromium and Yandex).

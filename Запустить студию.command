@@ -3,8 +3,10 @@ set -e
 cd "${0:A:h}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 studio_url='http://127.0.0.1:8770/'
+# the browser extension's helper starts the studio with VIDEOKEY_NO_OPEN=1: the extension opens the tab itself
+open_studio() { [[ -n "$VIDEOKEY_NO_OPEN" ]] || /usr/bin/open "$studio_url"; }
 if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
-  /usr/bin/open "$studio_url"
+  open_studio
   exit 0
 fi
 /usr/bin/python3 backend/updater.py --at-start
@@ -15,7 +17,7 @@ studio_log_dir="$HOME/Library/Logs/VideoKey Studio"
 studio_pid=$!
 for attempt in {1..60}; do
   if /usr/bin/curl -fsS --max-time 1 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
-    /usr/bin/open "$studio_url"
+    open_studio
     exit 0
   fi
   /bin/sleep 0.25
