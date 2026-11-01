@@ -9,12 +9,12 @@ film, and consecutive clips meet frame-exact. A changed shot re-renders every
 Studio frame it passes through (push --shots).
 
   python3 "VideoKey Studio/tools/razgon_bridge.py" prepare --project-id <studio id>
-  python3 "VideoKey Studio/tools/razgon_bridge.py" plan    --razgon "What If/razgon-2d-studio/projects/<slug>" [--dry-run]
-  python3 "VideoKey Studio/tools/razgon_bridge.py" check   --razgon "What If/razgon-2d-studio/projects/<slug>"
-  python3 "VideoKey Studio/tools/razgon_bridge.py" slots   --razgon "What If/razgon-2d-studio/projects/<slug>" [--frames 3,7]
-  python3 "VideoKey Studio/tools/razgon_bridge.py" push    --razgon "What If/razgon-2d-studio/projects/<slug>" [--frames 3,7 | --shots e03s02] [--no-render]
-  python3 "VideoKey Studio/tools/razgon_bridge.py" overlay --razgon "What If/razgon-2d-studio/projects/<slug>"
-  python3 "VideoKey Studio/tools/razgon_bridge.py" export  --razgon "What If/razgon-2d-studio/projects/<slug>" --spec <studio job.json> --out <file.mp4>
+  python3 "VideoKey Studio/tools/razgon_bridge.py" plan    --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--dry-run]
+  python3 "VideoKey Studio/tools/razgon_bridge.py" check   --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>"
+  python3 "VideoKey Studio/tools/razgon_bridge.py" slots   --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--frames 3,7]
+  python3 "VideoKey Studio/tools/razgon_bridge.py" push    --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--frames 3,7 | --shots e03s02] [--no-render]
+  python3 "VideoKey Studio/tools/razgon_bridge.py" overlay --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>"
+  python3 "VideoKey Studio/tools/razgon_bridge.py" export  --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" --spec <studio job.json> --out <file.mp4>
 """
 from __future__ import annotations
 
@@ -38,7 +38,10 @@ import urllib.request
 from pathlib import Path
 
 YOUTUBE = Path(__file__).resolve().parents[2]
-DEFAULT_STUDIO = YOUTUBE / "What If" / "razgon-2d-studio"
+# the Razgon working copy: in the studio's own folder, or in What If before it moved (razgon_sync.home)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import razgon_sync
+DEFAULT_STUDIO = razgon_sync.home()
 STUDIO_BACKEND = Path(__file__).resolve().parents[1] / "backend"
 FRAME_TITLE = "Razgon · кадр {:03d}"
 BED_TITLE = "Razgon · музика й ефекти"

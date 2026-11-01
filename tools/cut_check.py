@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find every jump at a junction of a Razgon film: the camera jerks, a figure snaps to another pose or face, a thing vanishes.
 
-    python3 "VideoKey Studio/tools/cut_check.py" --razgon "What If/razgon-2d-studio/projects/<slug>" [--only e01,e13] [--scale 0.5]
+    python3 "VideoKey Studio/tools/cut_check.py" --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--only e01,e13] [--scale 0.5]
 
 A junction is where one take hands over to the next one (shots.json) or one part of a joined take to the next part
 ("parts"). For each it renders four frames in a row on the frame grid: two before and two after. The picture is cut

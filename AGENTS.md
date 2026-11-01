@@ -243,3 +243,11 @@ adds a new version and keeps the others. «Правка» on a version sends the
 attached (`POST /thumbnail` with `base`; `thumbnail_gen.editing`), and the result is the next version. The window closes
 once a run starts, so the card shows «Малюємо прев'ю». «Згенерувати з DeepSeek» is a trial: DeepSeek (OpenRouter)
 writes the prompt from the same brief, the frames attached as pictures (`thumbnail_gen.write_prompt_deepseek`).
+
+## Razgon lives in the studio's folder (1 November 2026)
+
+The user: «цю папку з What If прибрати й засунути саме в VideoKey Studio». The working copy is
+`<studio>/razgon-2d-studio` (in `.gitignore`). At the first start of this version `razgon_sync.move_home` renames
+`What If/razgon-2d-studio` there (same disk only, never over an existing folder) and `relink` rewrites the paths in every
+episode's `razgon.json` and in the channels' `AGENTS.md`/`CLAUDE.md`. `razgon_sync.home()`, `razgon_bridge.DEFAULT_STUDIO`
+and `store.razgon_rel()` (the agents' briefs) find it in either place. Test: `tools/tests/test_razgon_home.py`.

@@ -27,6 +27,14 @@ import typography
 
 
 YOUTUBE_ROOT = Path(__file__).resolve().parents[2]
+
+
+def razgon_rel() -> str:
+    """The Razgon working copy as a path from YOUTUBE, for the agents' briefs: in the studio's folder since 1 November
+    2026 (tools/razgon_sync.move_home), in What If before the move."""
+    home, old = APP_ROOT / "razgon-2d-studio", YOUTUBE_ROOT / "What If" / "razgon-2d-studio"
+    place = old if (old / "render.mjs").is_file() and not (home / "render.mjs").is_file() else home
+    return place.relative_to(YOUTUBE_ROOT).as_posix() if YOUTUBE_ROOT in place.parents else str(place)
 APP_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("MULTIBOT_STUDIO_DATA", str(APP_ROOT / "backend" / "data"))).expanduser().resolve()
 PROJECTS_ROOT = DATA_ROOT / "projects"

@@ -112,9 +112,9 @@ def razgon_brief(project: dict) -> str:
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 
 Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'} і навик режисури Razgon
-(What If/razgon-2d-studio/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
+({store.razgon_rel()}/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
 Великі документи самої студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для режисури є тут, у правилах каналу й у навику.
-Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках (What If/razgon-2d-studio/projects/*/story/gen_shots.py,
+Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках ({store.razgon_rel()}/projects/*/story/gen_shots.py,
 ls -t покаже найновіші), а не в усіх.
 
 Твоє завдання: режисура й план кадрів, кроки 3–5 правил каналу.
@@ -123,7 +123,7 @@ ls -t покаже найновіші), а не в усіх.
 2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
    і запусти його. Кадри ділиш за змістом, не за кількістю слів. Кожна дія відбувається рівно в одному шоті: наступний шот
    описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
-   одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 What If/razgon-2d-studio/tools/direction_check.py --project <проєкт>
+   одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 {store.razgon_rel()}/tools/direction_check.py --project <проєкт>
    має пройти без FAIL. На WARN відповідай у story/bible.md або виправляй.
 3. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
 

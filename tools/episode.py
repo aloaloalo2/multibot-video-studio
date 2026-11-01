@@ -142,7 +142,7 @@ def steps(episode: Path):
         yield ("Дублі без важких місць", fresh and not slow,
                ("усі дублі рендеряться рівно" if not slow else f"повільні дублі: " + ", ".join(f"{r['id']} {r['ms']} мс" for r in slow[:6])) if fresh
                else "перевірки ще не було або код сцен новіший за неї",
-               f'node render.mjs --project "{razgon}" --speed-check у папці What If/razgon-2d-studio і переписати кожен повільний дубль '
+               f'node render.mjs --project "{razgon}" --speed-check у папці Razgon (VideoKey Studio/razgon-2d-studio) і переписати кожен повільний дубль '
                "(What If/AGENTS.md, пункт 5б)")
 
     finals = sorted(episode.glob("*.mp4"))

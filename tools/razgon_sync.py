@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -31,11 +32,69 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 YOUTUBE = APP_ROOT.parent
 KIT = APP_ROOT / "razgon-plugin" / "razgon-2d-studio-plugin" / "skills" / "make-2d-video" / "kit"
 MANIFEST = ".videokey-kit.json"
+# The Razgon working copy lives inside the studio's own folder (user, 1 November 2026: «цю папку з What If прибрати й
+# засунути саме в VideoKey Studio»); it moved from What If at the first start of this version (move_home). It is in the
+# studio's .gitignore: its projects, node_modules and builds never reach GitHub.
+HOME = APP_ROOT / "razgon-2d-studio"
+OLD_HOME = YOUTUBE / "What If" / "razgon-2d-studio"
 NEVER = {"projects", "node_modules", "build", "assets", ".git"}
 
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def home() -> Path:
+    """Where the Razgon working copy is: in the studio, or still in What If before the move."""
+    return OLD_HOME if (OLD_HOME / "render.mjs").is_file() and not (HOME / "render.mjs").is_file() else HOME
+
+
+def move_home(old: Path = OLD_HOME, new: Path = HOME, youtube: Path = YOUTUBE) -> bool:
+    """Move the working copy from What If into the studio's folder once, as a rename on the same disk (no copying of
+    gigabytes), then point every episode's razgon.json and the channels' rules at the new place. Nothing moves when the
+    new place is taken, the old one is a link, or the two are on different disks."""
+    if not (old / "render.mjs").is_file() or old.is_symlink() or new.exists():
+        return False
+    if os.stat(old).st_dev != os.stat(new.parent).st_dev:
+        return False
+    os.rename(old, new)
+    relink(old, new, youtube)
+    return True
+
+
+def relink(old: Path, new: Path, youtube: Path = YOUTUBE) -> None:
+    """Rewrite the paths that name the old place: each episode's razgon.json and the channels' AGENTS.md / CLAUDE.md."""
+    old_s, new_s = str(old), str(new)
+    rel_old = old.relative_to(youtube).as_posix() if youtube in old.parents else None
+    rel_new = new.relative_to(youtube).as_posix() if youtube in new.parents else None
+    for link in youtube.glob("*/*/razgon.json"):
+        try:
+            data = json.loads(link.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        changed = False
+        for key, value in list(data.items()):
+            if isinstance(value, str) and (value == old_s or value.startswith(old_s + "/")):
+                data[key] = new_s + value[len(old_s):]
+                changed = True
+        if changed:
+            temp = link.with_name(link.name + ".tmp")
+            temp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(temp, link)
+    for rules in [*youtube.glob("*/AGENTS.md"), *youtube.glob("*/CLAUDE.md"), *youtube.glob("AGENTS.md"), *youtube.glob("CLAUDE.md")]:
+        if new in rules.parents or APP_ROOT in rules.parents:
+            continue
+        try:
+            text = rules.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        moved = text.replace(old_s, new_s)
+        if rel_old and rel_new:
+            moved = moved.replace(rel_old, rel_new)
+        if moved != text:
+            rules.write_text(moved, encoding="utf-8")
 
 
 def kit_files(kit: Path = KIT) -> dict[str, Path]:
@@ -108,6 +167,10 @@ def at_start() -> None:
     """Called by the Studio at start: every working copy is brought up to date; problems never stop the Studio."""
     if not KIT.is_dir():
         return
+    try:
+        move_home()
+    except OSError:
+        pass   # it stays in What If and works from there
     for target in copies():
         try:
             sync(target)

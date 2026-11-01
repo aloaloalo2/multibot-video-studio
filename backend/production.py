@@ -77,7 +77,7 @@ QUALITY = """5. Здача тільки після власного перегл
    - кадр має бути привабливим, як у топових каналів: глибина, світло, деталі;
    - швидкість: g.filter (blur, brightness) діє окремим проходом на відеокарті на кожен виклик малювання, тож не став його
      на шар, де малюється багато фігур. Групу розмивай одним blurLayer(g, px, fn, cam, depth), предмети затемнюй через
-     pic(..., { shade }). node render.mjs --project <проєкт> --speed-check (у папці What If/razgon-2d-studio) має показати OK:
+     pic(..., { shade }). node render.mjs --project <проєкт> --speed-check (у папці Razgon) має показати OK:
      дубль, повільніший за 2,5 медіани, перепиши (у 06 такі дублі рендерилися в 4–6 разів довше за решту);
    - текст у кадрі лише там, де він щось додає: цифри, роки й дати, виміри, дані, порівняння (їх показуй, навіть коли їх називає
      озвучка), підпис до предмета, який інакше не впізнати. Жодних словесних рядків, що повторюють озвучку (імена, посади, фрази:
@@ -108,10 +108,10 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
-2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "What If/razgon-2d-studio/tools/library.py" search <слова> і use.
+2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "{store.razgon_rel()}/tools/library.py" search <слова> і use.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
-   python3 "What If/razgon-2d-studio/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
-3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці What If/razgon-2d-studio, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
+   python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
+3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці {store.razgon_rel()}, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
 {QUALITY.replace("<студія>", store.APP_ROOT.name)}
 4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
