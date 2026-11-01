@@ -47,7 +47,9 @@ def restart(pid: str) -> dict:
     with store.LOCK:
         project = store.load_project(pid)
         backup = folder / "restarts" / time.strftime("%Y-%m-%d %H-%M-%S")
-        backup.mkdir(parents=True, exist_ok=True)
+        while backup.exists():     # two restarts in one second keep two backups
+            backup = backup.with_name(backup.name + "+")
+        backup.mkdir(parents=True)
         shutil.copy2(folder / "project.json", backup / "project.json")
         episode = Path(project.get("episode_path") or folder)
         try:

@@ -451,6 +451,28 @@ def production_state(project: dict) -> dict | None:
     return state
 
 
+def same_path(a, b) -> bool:
+    """Two paths to the same place, whatever Unicode form their Cyrillic letters take (macOS keeps some names in NFD)."""
+    norm = lambda p: unicodedata.normalize("NFC", str(Path(p).resolve()))
+    return norm(a) == norm(b)
+
+
+def project_for_episode(cid: str, episode) -> dict | None:
+    """The live project of this channel kept in this episode folder. Reads only each project.json, not the list rows
+    (covers, progress, plans), so it is cheap enough to run under LOCK."""
+    if not PROJECTS_ROOT.is_dir():
+        return None
+    for folder in PROJECTS_ROOT.iterdir():
+        try:
+            item = read_json(folder / "project.json")
+        except (OSError, ValueError, StudioError):
+            continue
+        if isinstance(item, dict) and not item.get("deleted_at") and item.get("channel_id") == cid and item.get("episode_path") \
+                and same_path(item["episode_path"], episode):
+            return item
+    return None
+
+
 def list_projects(cid: str | None = None) -> list[dict]:
     if cid is not None:
         get_channel_folder(cid, include_disabled=True)
@@ -475,7 +497,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
                 stamps = [path.stat().st_mtime_ns for path in previews if path.is_file()]
                 if stamps:
                     result[-1]["preview_mtime"] = max(stamps)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, TypeError, AttributeError, OSError, StudioError):
             continue
     return sorted(result, key=lambda item: (-item["created_at"], item["name"].casefold(), item["id"]))
 
@@ -609,11 +631,14 @@ def plan_file_key(path: Path) -> tuple:
 def cached_plan(path: Path, private: bool = True) -> tuple[dict, tuple]:
     """Parse and upgrade a plan once per file version. Pass private=False only to read without changing it."""
     key = plan_file_key(path)
-    if _PLAN_CACHE.get(key[0], (None,))[0] != key:
-        _PLAN_CACHE[key[0]] = (key, planner.upgrade_legacy_number_format(validate_plan(read_json(path))))
-        for stale in [item for item in _SYNCED_PLAN_CACHE if item[0][0] == key[0] and item[0] != key]:
-            del _SYNCED_PLAN_CACHE[stale]
-    plan = _PLAN_CACHE[key[0]][1]
+    entry = _PLAN_CACHE.get(key[0])
+    if not entry or entry[0] != key:
+        entry = (key, planner.upgrade_legacy_number_format(validate_plan(read_json(path))))
+        _PLAN_CACHE[key[0]] = entry
+        # many server threads read these caches: walk a copy of the keys and drop entries that may already be gone
+        for stale in [item for item in list(_SYNCED_PLAN_CACHE) if item[0][0] == key[0] and item[0] != key]:
+            _SYNCED_PLAN_CACHE.pop(stale, None)
+    plan = entry[1]
     return (copy.deepcopy(plan) if private else plan), key
 
 
@@ -627,7 +652,7 @@ def project_from_plan(cid: str, name: str, episode_path: str, plan: dict) -> dic
     channel = get_channel_folder(cid)
     episode = validated_episode_path(channel, episode_path, validated_name(name))
     with LOCK:
-        existing = next((item for item in list_projects(cid) if Path(item["episode_path"]).resolve() == episode), None)
+        existing = project_for_episode(cid, episode)
         project = load_project(existing["id"]) if existing else create_project(cid, name, str(episode))
         return attach_plan(project["id"], plan)
 
@@ -699,14 +724,17 @@ def plan_readiness(project, plan=None, stage_only=False):
         if key is None:
             planner.validate_synced_plan(plan, duration)
         else:
-            if (key, duration) not in _SYNCED_PLAN_CACHE:
+            missing = object()
+            verdict = _SYNCED_PLAN_CACHE.get((key, duration), missing)
+            if verdict is missing:
                 try:
                     planner.validate_synced_plan(plan, duration)
-                    _SYNCED_PLAN_CACHE[(key, duration)] = None
+                    verdict = None
                 except ValueError as error:
-                    _SYNCED_PLAN_CACHE[(key, duration)] = str(error)
-            if _SYNCED_PLAN_CACHE[(key, duration)] is not None:
-                raise ValueError(_SYNCED_PLAN_CACHE[(key, duration)])
+                    verdict = str(error)
+                _SYNCED_PLAN_CACHE[(key, duration)] = verdict
+            if verdict is not None:
+                raise ValueError(verdict)
         result.update(stage="audio_synced", plan_ready=True, reason="Додайте повну озвучку на таймлайн для експорту")
         if stage_only:
             return result
@@ -752,7 +780,7 @@ def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> 
             if project["channel_id"] != cid or Path(project["episode_path"]).resolve() != episode:
                 raise StudioError("Проєкт належить іншому випуску")
         else:
-            found = next((item for item in list_projects(cid) if Path(item["episode_path"]).resolve() == episode), None)
+            found = project_for_episode(cid, episode)
             project = load_project(found["id"]) if found else create_project(cid, name, str(episode))
         plan = load_project_plan(project["id"])
         if plan and (plan.get("frame_source") or plan.get("timing", {}).get("status") == "audio_synced"):
@@ -794,7 +822,7 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if project_id:
             existing_project = load_project(project_id)
         else:
-            found = next((item for item in list_projects(cid) if Path(item["episode_path"]).resolve() == episode), None)
+            found = project_for_episode(cid, episode)
             existing_project = load_project(found["id"]) if found else None
         if use_channel_weights:
             weights = None
@@ -1020,6 +1048,18 @@ def clone_or_copy(source: Path, target: Path) -> None:
         shutil.copyfileobj(stream, copy, length=1024 * 1024)
 
 
+def claim_media_name(media_dir: Path, base: str) -> Path:
+    """A file name in the project's media that no other import takes at the same moment: the name is created empty
+    and exclusively, so two imports of «voice.wav» at once get two files instead of one overwriting the other."""
+    for name in (base, Path(base).stem[:70] + "-" + uuid.uuid4().hex[:8] + Path(base).suffix.lower()):
+        try:
+            with open(media_dir / name, "x"):
+                return media_dir / name
+        except FileExistsError:
+            continue
+    raise StudioError("Не вдалося вибрати назву для медіафайлу")
+
+
 def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
     source = source.expanduser().resolve()
     if not source.is_file() or not media_kind(source):
@@ -1029,9 +1069,7 @@ def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
     media_dir = project_dir(project["id"]) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     base = re.sub(r"[^\w. -]", "_", source.name).strip(". ") or "asset"
-    dest = media_dir / base
-    if dest.exists():
-        dest = media_dir / (source.stem[:70] + "-" + uuid.uuid4().hex[:8] + source.suffix.lower())
+    dest = claim_media_name(media_dir, base)
     tmp = media_dir / (".import-" + uuid.uuid4().hex)
     try:
         clone_or_copy(source, tmp)
@@ -1056,9 +1094,7 @@ def import_asset_stream(project: dict, stream, size: int, filename: str) -> dict
     media_dir = project_dir(project["id"]) / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     base = re.sub(r"[^\w. -]", "_", filename).strip(". ") or "asset"
-    destination = media_dir / base
-    if destination.exists():
-        destination = media_dir / (Path(base).stem[:70] + "-" + uuid.uuid4().hex[:8] + Path(base).suffix.lower())
+    destination = claim_media_name(media_dir, base)
     temporary = media_dir / (".upload-" + uuid.uuid4().hex)
     try:
         remaining = size
@@ -1591,7 +1627,7 @@ RAZGON_RENDER = re.compile(r"(frame_\d{3}|music_sfx)(-[0-9a-f]{8})?\.(mp4|wav)")
 
 
 def prune_razgon_renders(pid: str) -> dict:
-    """Delete clip renders the Razgon bridge imported and later replaced.
+    """Delete clip renders the Razgon bridge imported and later replaced by a newer render of the same frame.
 
     Only files the bridge names (frame_NNN.mp4, music_sfx.wav) in this project's media folder are candidates. A frame is
     changed in its code and never brought back (user, 30 October 2026: «старі кадри не треба зберігати... міняємо напряму
@@ -1602,8 +1638,13 @@ def prune_razgon_renders(pid: str) -> dict:
     with LOCK:
         project = load_project(pid)
         used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
-        old = [asset for asset in project.get("assets", []) if asset.get("id") not in used
-               and Path(asset.get("path", "")).parent.resolve() == media and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)]
+        renders = [asset for asset in project.get("assets", []) if Path(asset.get("path", "")).parent.resolve() == media
+                   and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)]
+        # only a render that a newer render of the same frame replaced on the timeline goes; a frame the author deleted
+        # keeps its file and its undo steps, so «Скасувати» can bring it back
+        shown = {RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1) for asset in renders if asset.get("id") in used}
+        old = [asset for asset in renders if asset.get("id") not in used
+               and RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1) in shown]
         if not old:
             return {"removed": 0, "bytes": 0}
         migrate_history(pid)

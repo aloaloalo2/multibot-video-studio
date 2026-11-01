@@ -185,6 +185,12 @@ class BackendTest(unittest.TestCase):
         self.assertFalse(Path(first["path"]).exists())
         self.assertTrue({own["id"], second["id"]} <= ids)
         self.assertTrue(Path(own["path"]).exists())
+        # a frame deleted by hand is not replaced by anything: its render and its undo steps stay, so undo brings it back
+        store.apply_action(pid, "delete_clip", {"clip_id": clip_id})
+        self.assertEqual(store.prune_razgon_renders(pid)["removed"], 0)
+        self.assertTrue(Path(second["path"]).exists())
+        store.apply_action(pid, "undo", {})
+        self.assertIn(second["id"], {c.get("asset_id") for t in store.load_project(pid)["tracks"] for c in t["clips"]})
 
     def test_undo_keeps_media_imported_after_the_step(self):
         project = store.create_project(store.channel_id(self.channel), "Undo keeps library")

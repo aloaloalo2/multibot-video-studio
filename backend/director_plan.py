@@ -35,10 +35,15 @@ def synced_plan(pid: str) -> dict:
 
 
 def channel_settings(project: dict) -> dict:
+    """The channel's saved settings with the episode's own format shares when it has them (as plan_settings_match
+    reads them), so a director's plan is held to the shares the episode asks for and is not shown as stale."""
     channel = next((c for c in store.list_channels() if c["id"] == project.get("channel_id")), None)
     if not channel:
         raise store.StudioError("Канал проєкту не знайдено", 404)
-    return planner.effective_settings(channel.get("settings") or {})
+    settings = dict(channel.get("settings") or {})
+    if project.get("plan_weights") is not None:
+        settings["weights"] = project["plan_weights"]
+    return planner.effective_settings(settings)
 
 
 def shares(settings: dict) -> dict[str, float]:
@@ -142,7 +147,8 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
             frame["visual"] = idea
         made.append(frame)
     new_plan = dict(plan, frames=made, frame_source=planner.DIRECTOR_FRAME_SOURCE, opening_clip_split=False,
-                    settings_snapshot=settings, settings_signature=planner.settings_signature(settings), settings_scope="channel")
+                    settings_snapshot=settings, settings_signature=planner.settings_signature(settings),
+                    settings_scope="project" if project.get("plan_weights") is not None else "channel")
     new_plan.pop("director_stale", None)
     new_plan["report"] = dict(plan.get("report", {}), frames=len(made), format_seconds={key: round(value, 3) for key, value in seconds.items()})
     try:

@@ -176,13 +176,23 @@ python3 "{tools}/studio.py" summary {project['id']} і GET http://127.0.0.1:8770
 
 
 def run(pid: str, cli: Path, notes: str = "") -> None:
-    project = store.load_project(pid)
-    request = project["production_request"]
-    log = store.project_dir(pid) / f"production-{request['id']}.log"
-    started = time.time()
-    set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False)
+    # The run always leaves ACTIVE, whatever fails on the way (a full disk while the request is written, a project
+    # removed): otherwise the project read as «working» until the next restart and refused every new start.
+    try:
+        _run(pid, cli, notes)
+    finally:
+        with LOCK:
+            ACTIVE.discard(pid)
+
+
+def _run(pid: str, cli: Path, notes: str = "") -> None:
     fields = {}
     try:
+        project = store.load_project(pid)
+        request = project["production_request"]
+        log = store.project_dir(pid) / f"production-{request['id']}.log"
+        started = time.time()
+        set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False)
         # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
         text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
@@ -206,13 +216,14 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
                 pass
     except subprocess.TimeoutExpired:
         fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
-    except (OSError, store.StudioError) as error:
+    except (OSError, store.StudioError, KeyError) as error:
         fields.update(status="failed", error=str(error))
     finally:
         if not director.cancelled(pid, "production"):
-            set_request(pid, finished_at=time.time(), **fields)
-        with LOCK:
-            ACTIVE.discard(pid)
+            try:
+                set_request(pid, finished_at=time.time(), **fields)
+            except (OSError, store.StudioError):
+                pass
 
 
 def fix(pid: str, notes: str) -> dict:
@@ -224,7 +235,7 @@ def fix(pid: str, notes: str) -> dict:
     request = project.get("production_request") or {}
     if request.get("status") not in {"done", "failed"}:
         raise store.StudioError("Агент ще працює над цими кадрами")
-    set_request(pid, status="requested", notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
+    set_request(pid, status="requested", created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
     start(pid, notes)
     return store.load_project(pid)
 

@@ -276,9 +276,11 @@ def run(pid: str, title: str, script: str, wishes: str) -> None:
     except (OSError, RuntimeError, store.StudioError) as error:
         data.update(status="failed", error=str(error), finished_at=time.time())
     finally:
-        store.atomic_json(job_path(pid), data)
-        with LOCK:
-            ACTIVE.discard(pid)
+        try:
+            store.atomic_json(job_path(pid), data)
+        finally:   # a full disk must not leave the project «drawing» until a restart
+            with LOCK:
+                ACTIVE.discard(pid)
 
 
 def start(pid: str, title: str, script: str, wishes: str = "") -> dict:

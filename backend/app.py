@@ -160,7 +160,8 @@ def choose_local_file(prompt: str) -> Path:
 
 
 def pixabay_module():
-    sys.path.insert(0, str(store.APP_ROOT / "tools"))
+    if str(store.APP_ROOT / "tools") not in sys.path:
+        sys.path.insert(0, str(store.APP_ROOT / "tools"))
     import pixabay  # type: ignore
     return pixabay
 

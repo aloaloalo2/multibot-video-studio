@@ -18,6 +18,7 @@ SIZE = (960, 540)
 CANDIDATES = 6
 VERSION = 1
 LOCK = threading.Semaphore(2)
+PREVIEW_LOCK = threading.Lock()   # fitting a thumbnail is quick; one at a time, so two requests never race over its file
 
 
 def candidates(project: dict) -> list[tuple[Path, str, float]]:
@@ -78,10 +79,13 @@ def thumbnail(project: dict) -> Path | None:
     dest = cache / f"preview-{stat.st_mtime_ns}-{stat.st_size}.webp"
     if dest.exists():
         return dest
-    with LOCK:
+    with PREVIEW_LOCK:
+        if dest.exists():          # another request made it while this one waited
+            return dest
         cache.mkdir(parents=True, exist_ok=True)
         for old in cache.glob("preview-*.webp"):
-            old.unlink()
+            if old != dest:
+                old.unlink(missing_ok=True)
         with Image.open(source) as image:
             fitted = ImageOps.fit(image.convert("RGB"), SIZE, Image.Resampling.LANCZOS)
         temp = cache / f"preview-{uuid.uuid4().hex}.tmp.webp"

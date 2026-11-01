@@ -72,5 +72,12 @@ class DirectorPlanTest(unittest.TestCase):
         self.assertEqual([frame.get("visual") for frame in kept["frames"]], ["a picture"] * 4)
 
 
+    def test_an_episode_with_its_own_shares_is_held_to_them(self):
+        own = dict(PROJECT, plan_weights={"stock_photo": 100, "text": 0})
+        with patch.object(store, "load_project", return_value=own):
+            self.assertEqual(director_plan.sentences(own["id"])["shares"], {"stock_photo": 100.0})
+            good = frames(([1, 2], "stock_photo"), ([3, 4], "stock_photo"), ([5, 6], "stock_photo"), ([7, 8], "stock_photo"))
+            self.assertTrue(director_plan.apply(own["id"], good, dry_run=True)["ok"])
+
 if __name__ == "__main__":
     unittest.main()

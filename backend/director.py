@@ -297,11 +297,21 @@ def cancelled(pid: str, kind: str) -> bool:
 
 
 def run(pid: str, cli: Path) -> None:
-    data = state(pid) or {}
-    project = store.load_project(pid)
-    data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None, limit=False)
-    save(pid, data)
+    # the run always leaves ACTIVE, whatever fails on the way, so the director can be started again
     try:
+        _run(pid, cli)
+    finally:
+        with LOCK:
+            ACTIVE.discard(pid)
+
+
+def _run(pid: str, cli: Path) -> None:
+    data = {"started_at": time.time()}
+    try:
+        data = state(pid) or {}
+        project = store.load_project(pid)
+        data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None, limit=False)
+        save(pid, data)
         code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT)
         plan = store.load_project_plan(pid) or {}
         plan_file = store.project_plan_file(store.load_project(pid))
@@ -322,9 +332,10 @@ def run(pid: str, cli: Path) -> None:
     finally:
         if not cancelled(pid, "director"):
             data["finished_at"] = time.time()
-            save(pid, data)
-        with LOCK:
-            ACTIVE.discard(pid)
+            try:
+                save(pid, data)
+            except OSError:
+                pass
 
 
 def start(pid: str, reason: str = "voice") -> dict:
