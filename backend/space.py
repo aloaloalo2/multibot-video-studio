@@ -63,7 +63,7 @@ def cache_items(pid: str) -> list[Path]:
 # мегабайт… не потрібно кнопку висвітлювати»). The size is measured at most every FREEABLE_TTL seconds a project: the
 # list is read every few seconds while an agent works, and a render cache holds thousands of files.
 FREEABLE_MIN = 100 * 1024 ** 2
-FREEABLE_TTL = 300
+FREEABLE_TTL = 30 * 60   # half an hour (user, 1 November 2026)
 _FREEABLE: dict[str, tuple[float, bool]] = {}
 
 
