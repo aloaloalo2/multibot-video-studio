@@ -4,6 +4,7 @@
 // real frames of the channel's latest film. Every frame places the logo with the same rule as the backend
 // (backend/channel_branding.py): size and margin are percent of the frame width.
 const brandingPositions=[['top-left','Угорі ліворуч'],['top-center','Угорі по центру'],['top-right','Угорі праворуч'],['middle-left','Посередині ліворуч'],null,['middle-right','Посередині праворуч'],['bottom-left','Унизу ліворуч'],['bottom-center','Унизу по центру'],['bottom-right','Унизу праворуч']];
+const razgonDefaultStyle='dusk';   // tools/razgon_bridge.py prepare: the style of a channel that names none
 const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opacity:100};
 const titleFonts=['Fredoka','Baloo 2','Lilita One','Bangers','Bebas Neue','Montserrat','Permanent Marker','Nunito','Playfair Display'];
 // Ukrainian names for the template Razgon styles; a style the Studio does not know keeps its own name and description.
@@ -91,7 +92,7 @@ function bindBranding(channel){
     const style=styles?.find(item=>item.id===chosen);
     frame.style.backgroundImage=mini.style.backgroundImage=style?`url("${card(style.id)}")`:'';
     if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<span>${esc(text)}</span>`;}
-    else $('style-caption').innerHTML='<strong>Стиль ще не вибрано</strong><span>Оберіть картку нижче й збережіть налаштування.</span>';
+    else if(!styles)$('style-caption').innerHTML='<strong>Завантажуємо стилі…</strong>';
   };
   const choose=id=>{chosen=id;strip.querySelectorAll('.style-thumb').forEach(item=>item.setAttribute('aria-checked',String(item.dataset.style===id)));backdrop();if(!film.hidden)loadFilm();};
   const renderStrip=()=>{
@@ -146,8 +147,9 @@ function bindBranding(channel){
       const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{});
       if(mine!==request||!strip.isConnected)return;
       styles=data.styles;cards=data.cards;filmStyle=data.film_style;
-      // A regular channel without a saved style keeps none until the user picks one, so saving other settings never writes a style.
-      if(!styles.some(style=>style.id===chosen))chosen=styles.some(style=>style.id===filmStyle)?filmStyle:kind()==='animated'?styles[0]?.id:null;
+      // A channel without a saved style shows the one its films are drawn in: the latest film's, otherwise Razgon's own
+      // default «Кіно-сутінки» (razgon_bridge.py prepare takes dusk when the channel names none), never «не вибрано».
+      if(!styles.some(style=>style.id===chosen))chosen=[filmStyle,razgonDefaultStyle].find(id=>styles.some(style=>style.id===id)) || styles[0]?.id || null;
       stage.textContent='';renderStrip();
     }catch(error){
       if(mine!==request||!strip.isConnected)return;
