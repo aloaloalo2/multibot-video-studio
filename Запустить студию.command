@@ -15,10 +15,9 @@ close_window() {
   local studio_pid="$(/usr/sbin/lsof -tiTCP:8770 -sTCP:LISTEN 2>/dev/null | /usr/bin/head -1)"
   [[ -n "$studio_pid" && "$(/bin/ps -o tty= -p "$studio_pid" | /usr/bin/tr -d ' ')" == "??" ]] || return 0
   local tty_name="$(/usr/bin/tty)"
-  # the window closes, and Terminal quits too when no other window of it is open (no dot left under it in the Dock)
-  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\"" \
-      -e "close (every window whose selected tab's tty is \"$tty_name\")" \
-      -e "if (count of windows) is 0 then quit" -e "end tell" >/dev/null 2>&1 ) &!
+  # only the window closes: quitting Terminal took the studio down with it on the author's Mac (1 November 2026,
+  # the server log ends with no error), so Terminal itself keeps running
+  ( /bin/sleep 0.3; /usr/bin/osascript -e "tell application \"Terminal\" to close (every window whose selected tab's tty is \"$tty_name\")" >/dev/null 2>&1 ) &!
 }
 if /usr/bin/curl -fsS --max-time 2 'http://127.0.0.1:8770/api/health' | /usr/bin/grep -q 'multibot-video-studio'; then
   open_studio
