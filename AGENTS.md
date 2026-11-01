@@ -230,6 +230,6 @@ accents) go to `<episode>/VideoKey/Матеріали` (`store.media_dir`); the 
 sheets. Older media in `projects/<id>/media` stays valid (`store.media_roots`). The episode's media list skips the
 VideoKey folder. «Звільнити місце» frees that cache too (`space.CACHE`) and shows only when there is something to free
 (`space.freeable`); deleting a project in the studio removes its VideoKey folder, the author's own files stay.
-`store.sweep_orphans` (a project whose episode folder is gone leaves the list at once; its studio data goes after three
-days unless the folder comes back; never while its work runs or its channel folder is away) runs every two minutes in
-`app.update_loop` (the author agreed on 1 November 2026). Tests: `backend/tests/test_episode_store.py`, `test_space.py`.
+A project stays in the studio when its episode folder is deleted: its code, preview and title are there (user, 1 November
+2026, after a version that hid such projects for deletion; `store.restore_hidden_projects` takes those marks off at
+every start). The studio never deletes a project or its data by itself. Tests: `backend/tests/test_episode_store.py`, `test_space.py`.

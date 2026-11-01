@@ -33,25 +33,21 @@ class EpisodeStoreTest(unittest.TestCase):
                 self.assertTrue((episode / "Сценарій.txt").exists())
 
 
-    def test_a_deleted_episode_folder_hides_the_project_and_its_data_goes_after_the_grace(self):
+    def test_a_project_stays_in_the_studio_when_its_episode_folder_is_deleted(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             channel = root / "YOUTUBE" / "Канал"
             channel.mkdir(parents=True)
             (channel / store.PLAN_CONFIG).write_text("{}", encoding="utf-8")
             with mock.patch.object(store, "YOUTUBE_ROOT", root / "YOUTUBE"), mock.patch.object(store, "PROJECTS_ROOT", root / "projects"):
-                gone, renamed, working = (store.create_project(store.channel_id(channel), name) for name in ("Готовий", "Перейменований", "В роботі"))
-                for project in (gone, renamed, working):
-                    Path(project["episode_path"]).rmdir()
-                self.assertEqual(store.sweep_orphans(busy={working["id"]}, now=1000), [])
-                self.assertEqual([p["name"] for p in store.list_projects()], ["В роботі"])   # the others leave the list at once
-                Path(renamed["episode_path"]).mkdir()                                     # the folder comes back
-                self.assertEqual(store.sweep_orphans(busy={working["id"]}, now=1000 + store.ORPHAN_GRACE), [gone["id"]])
-                self.assertFalse((root / "projects" / gone["id"]).exists())
-                self.assertEqual(sorted(p["name"] for p in store.list_projects()), ["В роботі", "Перейменований"])
-                (root / "YOUTUBE" / "Канал").rename(root / "YOUTUBE" / "Відключений")   # a disk away deletes nothing
-                self.assertEqual(store.sweep_orphans(now=10 ** 9), [])
-
+                project = store.create_project(store.channel_id(channel), "Готовий")
+                Path(project["episode_path"]).rmdir()
+                self.assertEqual([p["name"] for p in store.list_projects()], ["Готовий"])
+                # a project an earlier version hid for its missing folder is listed again and loses the mark
+                hidden = store.load_project(project["id"]); hidden["episode_gone_at"] = 1000; store.save_project(hidden)
+                self.assertEqual([p["name"] for p in store.list_projects()], ["Готовий"])
+                self.assertEqual(store.restore_hidden_projects(), [project["id"]])
+                self.assertNotIn("episode_gone_at", store.load_project(project["id"]))
 
 if __name__ == "__main__":
     unittest.main()

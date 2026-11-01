@@ -427,40 +427,23 @@ def delete_project(pid: str) -> int:
     return freed
 
 
-ORPHAN_GRACE = 3 * 24 * 3600   # a gone episode folder may come back renamed; after three days the studio forgets it
-
-
-def sweep_orphans(busy=frozenset(), now=None) -> list[str]:
-    """The studio forgets an episode whose folder the author deleted (user, 1 November 2026: «я видаляю папку в YouTube…
-    а в студії ще багато файлів»): the project leaves the list at once and its data and cache go after ORPHAN_GRACE,
-    unless the folder comes back. Only while the channel folder is there (a disconnected disk deletes nothing), never
-    for a project whose work runs (`busy`). Returns the ids it removed."""
-    now = time.time() if now is None else now
-    removed = []
+def restore_hidden_projects() -> list[str]:
+    """A project stays in the studio when its episode folder is deleted (user, 1 November 2026: «якщо я видаляю з
+    YouTube папку… в студії вона хай залишається… там є код, прев'ю, заголовок»). An earlier version hid such projects
+    and marked them `episode_gone_at` to delete them later; this takes every mark off, at each start. Returns their ids."""
+    restored = []
     if not PROJECTS_ROOT.is_dir():
-        return removed
+        return restored
     for folder in PROJECTS_ROOT.iterdir():
         path = folder / "project.json"
-        if not path.is_file() or folder.name in busy:
+        if not path.is_file():
             continue
         with LOCK:
             project = read_json(path, None)
-            if not isinstance(project, dict) or not project.get("episode_path"):
-                continue
-            episode = Path(project["episode_path"])
-            if not episode.parent.is_dir():
-                continue
-            if episode.is_dir():
-                if project.pop("episode_gone_at", None):
-                    save_project(project)   # the folder is back: so is the project
-                continue
-            if not project.get("episode_gone_at"):
-                project["episode_gone_at"] = now
+            if isinstance(project, dict) and project.pop("episode_gone_at", None) is not None:
                 save_project(project)
-            elif now - float(project["episode_gone_at"]) >= ORPHAN_GRACE:
-                shutil.rmtree(folder, ignore_errors=True)
-                removed.append(folder.name)
-    return removed
+                restored.append(folder.name)
+    return restored
 
 
 def restore_project(pid: str) -> dict:
@@ -632,7 +615,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
             continue
         try:
             item = listed_project(path)
-            if not item.get("deleted_at") and not item.get("episode_gone_at") and (cid is None or item.get("channel_id") == cid):
+            if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
@@ -1161,7 +1144,7 @@ def media_duration(path: Path) -> float | None:
 # folder takes them with it (user, 1 November 2026: «картинки згенеровані, відео викачені… має бути в папці YouTube»).
 # What can always be made again stays in the studio as its cache (user: «код, який відрендерений, анімація… в папці
 # VideoKey Studio… це як кеш»): Razgon frame renders, export chunks, stills, stock sheets, the engine's render cache.
-# The studio drops that cache by itself once the episode folder is gone (sweep_orphans). The episode's own media list
+# The project and its cache stay in the studio when the episode folder is deleted; «Звільнити місце» frees the cache. The episode's own media list
 # leaves the VideoKey folder out (discover_assets).
 EPISODE_STORE = "VideoKey"
 

@@ -146,21 +146,9 @@ def _queued_update() -> None:
                 UPDATE_QUEUED = None   # a stopped update shows its own reason on the button
 
 
-def sweep_orphans() -> None:
-    """An episode whose folder the author deleted leaves the list; its studio data goes after a grace period
-    (store.sweep_orphans, user's go-ahead 1 November 2026). Never for a project whose work runs."""
-    try:
-        with JOBS_LOCK:
-            exporting = {entry['job']['project_id'] for entry in ACTIVE_EXPORTS.values()}
-        store.sweep_orphans(busy_candidates() | exporting)
-    except Exception:   # never let it stop the updates
-        traceback.print_exc()
-
-
 def update_loop():
     while True:
         UPDATE_MANAGER.refresh()
-        sweep_orphans()
         time.sleep(120)
 
 
@@ -1458,6 +1446,8 @@ def main():
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
+    # projects an earlier version hid when their episode folder was gone come back to the list
+    threading.Thread(target=store.restore_hidden_projects, daemon=True).start()
     threading.Thread(target=topics.update_all, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
