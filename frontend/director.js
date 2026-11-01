@@ -365,7 +365,9 @@ function fillMake(make){
   const readout=make.querySelector('.episode-make-readout'),legend=make.querySelector('.frame-strip-legend'),feed=make.querySelector('.episode-make-feed');
   // until the director has laid the voice out, the plan holds draft sentences, not frames: no count, strip or start
   // button that could read as the film's frames (user, 1 November 2026: «487 кадрів… ця інформація не має бути»)
-  make.hidden=directorAwaited();
+  // nor while the director still works: it writes the plan before it checks it, so its frames may change till it ends
+  // (an unknown run is waited for too: renderEpisode asks for it, so a working director never flashes the strip)
+  make.hidden=directorAwaited()||!directorRuns[id]||['queued','running'].includes(directorRuns[id].status);
   if(!frames.length||!start||make.hidden)return;
   const made=madeSet(frames);
   let floor=0;while(made.has(floor))floor++;
