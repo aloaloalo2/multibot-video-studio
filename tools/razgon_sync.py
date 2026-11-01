@@ -113,6 +113,19 @@ def at_start() -> None:
             sync(target)
         except (OSError, subprocess.SubprocessError):
             continue
+        collect_props(target)
+
+
+def collect_props(target: Path) -> None:
+    """The shared prop library (`library/props`) gathers the picture props of every Razgon project, so a later video
+    can reuse them. It was filled only when a new prop sheet was cut, so props made before never reached it (user,
+    1 November 2026: «папки Library я взагалі не бачив»). Adding only: clones on a Mac, nothing is removed."""
+    tool = target / "tools" / "library.py"
+    if tool.is_file() and (target / "projects").is_dir():
+        try:
+            subprocess.run([sys.executable, str(tool), "collect"], cwd=target, capture_output=True, timeout=600)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
 
 def main(argv=None) -> int:
