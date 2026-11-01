@@ -495,6 +495,22 @@ def project_for_episode(cid: str, episode) -> dict | None:
     return None
 
 
+_LISTED: dict[str, tuple[tuple, dict]] = {}
+
+
+def listed_project(path: Path) -> dict:
+    """A project.json as the list reads it, parsed and upgraded once per version of the file: the channel page asks for
+    the list every few seconds while an agent works, and a long episode's file is megabytes of timeline."""
+    stat = path.stat()
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _LISTED.get(str(path))
+    if cached and cached[0] == key:
+        return cached[1]
+    item = upgrade_legacy_project(read_json(path))
+    _LISTED[str(path)] = (key, item)
+    return item
+
+
 def list_projects(cid: str | None = None) -> list[dict]:
     if cid is not None:
         get_channel_folder(cid, include_disabled=True)
@@ -506,12 +522,20 @@ def list_projects(cid: str | None = None) -> list[dict]:
         if not path.is_file():
             continue
         try:
-            item = read_json(path)
+            item = listed_project(path)
             if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
-                item = upgrade_legacy_project(item)
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
+                # the film's length is its voice's, not how far the timeline is filled (a 30-minute film with four frames
+                # placed read «00:04» on its card)
+                if item.get("plan_source"):
+                    try:
+                        audio = ((load_project_plan(item["id"]) or {}).get("timing") or {}).get("audio") or {}
+                        if audio.get("duration"):
+                            result[-1]["voice_duration"] = float(audio["duration"])
+                    except (StudioError, OSError, ValueError, TypeError):
+                        pass
                 result[-1]["production_request"] = production_state(item)
                 # the thumbnail the studio keeps (thumbnail_gen.preview), or one still only in the episode folder
                 episode = Path(item.get("episode_path") or "") if item.get("episode_path") else None
@@ -1045,12 +1069,31 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
     return list(existing.values())
 
 
+_DISCOVERED: dict[str, tuple[float, int, list[dict]]] = {}
+
+
+def discovered(project: dict) -> list[dict]:
+    """discover_assets for a burst of file requests: the library asks for a thumbnail of every card at once, and each
+    used to walk the whole episode folder again. A walk is reused for 5 seconds while the project stays the same."""
+    now = time.monotonic()
+    hit = _DISCOVERED.get(project["id"])
+    if hit and now - hit[0] < 5 and hit[1] == project.get("revision", 0):
+        return hit[2]
+    found = discover_assets(project)
+    _DISCOVERED[project["id"]] = (now, project.get("revision", 0), found)
+    return found
+
+
 def resolve_asset(project: dict, aid: str) -> dict:
     for asset in project.get('assets',[]):
         if asset.get('id')==aid:
             path=Path(asset['path']).resolve()
             if path.is_file() and (under(path,Path(project['episode_path'])) or under(path,project_dir(project['id'])/'media')):return asset
-    for asset in discover_assets(project):
+    # a file new in the folder since the last walk is looked for once more with a fresh one
+    found = next((a for a in discovered(project) if a["id"] == aid), None)
+    if found is None:
+        _DISCOVERED.pop(project["id"], None)
+    for asset in ([found] if found else discovered(project)):
         if asset["id"] == aid:
             path = Path(asset["path"]).resolve()
             if not path.is_file() or not (under(path, Path(project["episode_path"])) or under(path, project_dir(project["id"]) / "media")):

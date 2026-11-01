@@ -312,9 +312,10 @@ function renderOverview() {
       if(producing){status('Агент ще створює кадри цього ролика. Випуск відкриється, коли він закінчить.');return;}
       selectProject(project.id,{view:count?'editor':'plan'}).catch(error=>status(error.message,true));
     });
-    if(count>0 && Number.isFinite(Number(project.duration)) && Number(project.duration)>0){
+    const length=Number(project.voice_duration || (count>0?project.duration:0));
+    if(Number.isFinite(length) && length>0){
       const duration=document.createElement('span');duration.className='project-duration';
-      const value=Number(project.duration),hours=Math.floor(value/3600);
+      const value=length,hours=Math.floor(value/3600);
       const formatted=hours?`${hours}:${String(Math.floor(value/60)%60).padStart(2,'0')}:${String(Math.floor(value)%60).padStart(2,'0')}`:clock(value);
       duration.textContent=formatted;duration.title='Тривалість ролика';
       open.querySelector('.project-meta').append(duration);
