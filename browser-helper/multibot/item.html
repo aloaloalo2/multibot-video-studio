@@ -1,9 +1,10 @@
   <hr id="studioHr" />
 
-  <!-- VideoKey Studio: вся полоса — ссылка (стрелка вверх-вправо). Студия работает: открываем её вкладку. Закрыта: помощник на Mac
+  <!-- VideoKey Studio: такой же пункт, как блоки выше (details/summary), только он не раскрывается, а открывает
+       студию: вся полоса — ссылка со стрелкой вверх-вправо. Студия работает: её вкладка. Закрыта: помощник на Mac
        запускает «Запустить студию.command», и вкладка открывается, когда студия ответит. -->
-  <div id="studioBox">
-    <button id="studioOpen" type="button"><span>🎞 &nbsp;VideoKey Studio</span><span id="studioLabel" class="studioGo" title="Открыть VideoKey Studio"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg></span></button>
-    <div id="studioNote" class="studioNote" hidden></div>
-  </div>
+  <details id="studioBox">
+    <summary id="studioOpen" title="Открыть VideoKey Studio">🎞 &nbsp;VideoKey Studio<span id="studioLabel" class="studioGo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg></span></summary>
+  </details>
+  <div id="studioNote" class="studioNote" hidden></div>
 

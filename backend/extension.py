@@ -132,7 +132,7 @@ def update() -> dict:
 
 
 ITEM = store.APP_ROOT / "browser-helper" / "multibot"
-CSS_MARK, HTML_MARK, JS_MARK = "    /* VideoKey Studio: пятая полоса", '  <hr id="studioHr" />', "// VideoKey Studio (пользователь"
+CSS_MARK, HTML_MARK, JS_MARK = "    /* VideoKey Studio:", '  <hr id="studioHr" />', "// VideoKey Studio (пользователь"
 
 
 def refresh_item(folder: Path, in_git: bool) -> str | None:
