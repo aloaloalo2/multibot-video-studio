@@ -414,9 +414,53 @@ def delete_project(pid: str) -> int:
     thumbnail (user, 31 October 2026: «щоб вона видаляла проект з диску саме в студії»). The episode folder in the
     channel stays as it is. Returns the bytes freed."""
     with LOCK:
+        project = read_json(project_path(pid), {}) or {}
         freed = project_bytes(pid)
         shutil.rmtree(project_dir(pid))
+        # the episode's VideoKey folder holds what the studio brought in for it: it goes with the project, the author's
+        # own files in the episode folder stay
+        episode = Path(project.get("episode_path") or "")
+        store = episode / EPISODE_STORE if project.get("episode_path") else None
+        if store and store.is_dir():
+            freed += sum(item.stat().st_size for item in store.rglob("*") if item.is_file() and not item.is_symlink())
+            shutil.rmtree(store, ignore_errors=True)
     return freed
+
+
+ORPHAN_GRACE = 3 * 24 * 3600   # a gone episode folder may come back renamed; after three days the studio forgets it
+
+
+def sweep_orphans(busy=frozenset(), now=None) -> list[str]:
+    """The studio forgets an episode whose folder the author deleted (user, 1 November 2026: «я видаляю папку в YouTube…
+    а в студії ще багато файлів»): the project leaves the list at once and its data and cache go after ORPHAN_GRACE,
+    unless the folder comes back. Only while the channel folder is there (a disconnected disk deletes nothing), never
+    for a project whose work runs (`busy`). Returns the ids it removed."""
+    now = time.time() if now is None else now
+    removed = []
+    if not PROJECTS_ROOT.is_dir():
+        return removed
+    for folder in PROJECTS_ROOT.iterdir():
+        path = folder / "project.json"
+        if not path.is_file() or folder.name in busy:
+            continue
+        with LOCK:
+            project = read_json(path, None)
+            if not isinstance(project, dict) or not project.get("episode_path"):
+                continue
+            episode = Path(project["episode_path"])
+            if not episode.parent.is_dir():
+                continue
+            if episode.is_dir():
+                if project.pop("episode_gone_at", None):
+                    save_project(project)   # the folder is back: so is the project
+                continue
+            if not project.get("episode_gone_at"):
+                project["episode_gone_at"] = now
+                save_project(project)
+            elif now - float(project["episode_gone_at"]) >= ORPHAN_GRACE:
+                shutil.rmtree(folder, ignore_errors=True)
+                removed.append(folder.name)
+    return removed
 
 
 def restore_project(pid: str) -> dict:
@@ -588,7 +632,7 @@ def list_projects(cid: str | None = None) -> list[dict]:
             continue
         try:
             item = listed_project(path)
-            if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
+            if not item.get("deleted_at") and not item.get("episode_gone_at") and (cid is None or item.get("channel_id") == cid):
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
                 result[-1]["cover_asset_id"] = cover_asset_id
@@ -665,6 +709,8 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         pass
     pid = uuid.uuid4().hex[:24]
     folder = PROJECTS_ROOT / pid
+    # every episode has its folder in the channel from the start: its pictures and videos go there
+    episode.mkdir(parents=True, exist_ok=True)
     # the channel's video format, or the studio's defaults for a channel that has none
     plan_config = read_json(channel / PLAN_CONFIG, {}) or {}
     size = tuple(int(n) for n in plan_config.get("video_size", DEFAULT_VIDEO_SIZE).split("x"))
@@ -1111,6 +1157,33 @@ def media_duration(path: Path) -> float | None:
         return None
 
 
+# Pictures, videos and sounds of an episode live in its own folder in YOUTUBE, «VideoKey/Матеріали», so deleting that
+# folder takes them with it (user, 1 November 2026: «картинки згенеровані, відео викачені… має бути в папці YouTube»).
+# What can always be made again stays in the studio as its cache (user: «код, який відрендерений, анімація… в папці
+# VideoKey Studio… це як кеш»): Razgon frame renders, export chunks, stills, stock sheets, the engine's render cache.
+# The studio drops that cache by itself once the episode folder is gone (sweep_orphans). The episode's own media list
+# leaves the VideoKey folder out (discover_assets).
+EPISODE_STORE = "VideoKey"
+
+
+def media_dir(project: dict) -> Path:
+    """Where an episode's pictures, videos and sounds go; the studio's data only for a project without an episode."""
+    episode = Path(project.get("episode_path") or "")
+    if project.get("episode_path") and episode.parent.is_dir():
+        return episode / EPISODE_STORE / "Матеріали"   # made with the first file, the episode folder too if it is new
+    return project_dir(project["id"]) / "media"
+
+
+def cache_dir(project: dict) -> Path:
+    """The studio's cache of an episode: export chunks, stills, stock sheets, frame renders, the render cache."""
+    return project_dir(project["id"])
+
+
+def media_roots(project: dict) -> list[Path]:
+    """The studio's own media folders of a project: the episode store, and the old one in the studio's data."""
+    return list(dict.fromkeys([media_dir(project), project_dir(project["id"]) / "media"]))
+
+
 def asset_record(path: Path, project_id: str, source="local") -> dict:
     resolved = path.resolve()
     asset = {"id": hashlib.sha256(str(resolved).encode()).hexdigest()[:20], "name": path.name, "kind": media_kind(path), "path": str(resolved), "source": source, "url": f"/api/projects/{project_id}/assets/{hashlib.sha256(str(resolved).encode()).hexdigest()[:20]}/file"}
@@ -1123,7 +1196,7 @@ def asset_record(path: Path, project_id: str, source="local") -> dict:
 
 def discover_assets(project: dict, limit=500) -> list[dict]:
     episode = Path(project["episode_path"])
-    own_media = project_dir(project["id"]) / "media"
+    own = media_roots(project)
     existing = {asset["id"]: asset for asset in project.get("assets", []) if isinstance(asset, dict) and "id" in asset}
     # A file imported from the episode folder exists twice, as the Studio copy and as the original; the library shows
     # the copy only, unless the timeline uses the original itself. An import may add -xxxxxxxx to the name on a clash.
@@ -1131,9 +1204,9 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
     copies = set()
     for asset in existing.values():
         path = Path(asset.get("path", ""))
-        if under(path, own_media) and path.is_file():
+        if any(under(path, root) for root in own) and path.is_file():
             copies.add((re.sub(r"-[0-9a-f]{8}$", "", path.stem), path.suffix.lower(), path.stat().st_size))
-    roots = [episode, own_media]
+    roots = [episode, *own]
     for root in roots:
         if not root.is_dir():
             continue
@@ -1142,13 +1215,13 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
             if rel_depth >= 3:
                 dirs[:] = []
             else:
-                dirs[:] = [item for item in dirs if not item.startswith(".") and item not in {"node_modules", "ТЕХНИЧЕСКИЕ ФАЙЛЫ", "Архив"}]
+                dirs[:] = [item for item in dirs if not item.startswith(".") and item not in {"node_modules", "ТЕХНИЧЕСКИЕ ФАЙЛЫ", "Архив", EPISODE_STORE}]
             for name in files:
                 if len(existing) >= limit:
                     break
                 path = Path(current) / name
                 if path.is_file() and media_kind(path) and under(path, root):
-                    asset = asset_record(path, project["id"], "project" if root == own_media else "episode")
+                    asset = asset_record(path, project["id"], "project" if root in own else "episode")
                     if root == episode and asset["id"] not in used and (path.stem, path.suffix.lower(), path.stat().st_size) in copies:
                         continue
                     existing.setdefault(asset["id"], asset)
@@ -1186,7 +1259,7 @@ def resolve_asset(project: dict, aid: str) -> dict:
     for asset in ([found] if found else discovered(project)):
         if asset["id"] == aid:
             path = Path(asset["path"]).resolve()
-            if not path.is_file() or not (under(path, Path(project["episode_path"])) or under(path, project_dir(project["id"]) / "media")):
+            if not path.is_file() or not (under(path, Path(project["episode_path"])) or any(under(path, root) for root in media_roots(project))):
                 break
             return asset
     raise StudioError("Матеріал не знайдено", 404)
@@ -1225,11 +1298,12 @@ def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
         raise StudioError("Підтримуються тільки фото, відео й аудіо")
     if source.stat().st_size > 10 * 1024 ** 3:
         raise StudioError("Файл завеликий для імпорту")
-    media_dir = project_dir(project["id"]) / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
+    # a Razgon frame render is cache: it stays in the studio, the episode folder gets the pictures and sounds
+    folder = project_dir(project["id"]) / "media" if RAZGON_RENDER.fullmatch(source.name) else media_dir(project)
+    folder.mkdir(parents=True, exist_ok=True)
     base = re.sub(r"[^\w. -]", "_", source.name).strip(". ") or "asset"
-    dest = claim_media_name(media_dir, base)
-    tmp = media_dir / (".import-" + uuid.uuid4().hex)
+    dest = claim_media_name(folder, base)
+    tmp = folder / (".import-" + uuid.uuid4().hex)
     try:
         clone_or_copy(source, tmp)
         os.replace(str(tmp), str(dest))
@@ -1250,11 +1324,11 @@ def import_asset_stream(project: dict, stream, size: int, filename: str) -> dict
         raise StudioError("Невірна назва медіафайлу")
     if not 0 < size <= 10 * 1024 ** 3 or not media_kind(Path(filename)):
         raise StudioError("Підтримуються тільки фото, відео й аудіо до 10 ГБ")
-    media_dir = project_dir(project["id"]) / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
+    folder = project_dir(project["id"]) / "media" if RAZGON_RENDER.fullmatch(filename) else media_dir(project)
+    folder.mkdir(parents=True, exist_ok=True)
     base = re.sub(r"[^\w. -]", "_", filename).strip(". ") or "asset"
-    destination = claim_media_name(media_dir, base)
-    temporary = media_dir / (".upload-" + uuid.uuid4().hex)
+    destination = claim_media_name(folder, base)
+    temporary = folder / (".upload-" + uuid.uuid4().hex)
     try:
         remaining = size
         with temporary.open("wb") as target:
@@ -1802,11 +1876,11 @@ def prune_razgon_renders(pid: str) -> dict:
     код, без можливості повернути назад»), so a render stays only while the timeline shows it. The undo steps that still
     show a replaced one go with it, oldest first, so the steps left form one unbroken chain; redo steps holding one are
     cleared."""
-    media = (project_dir(pid) / "media").resolve()
     with LOCK:
         project = load_project(pid)
+        media = {root.resolve() for root in media_roots(project)}
         used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
-        renders = [asset for asset in project.get("assets", []) if Path(asset.get("path", "")).parent.resolve() == media
+        renders = [asset for asset in project.get("assets", []) if Path(asset.get("path", "")).parent.resolve() in media
                    and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)]
         # only a render that a newer render of the same frame replaced on the timeline goes; a frame the author deleted
         # keeps its file and its undo steps, so «Скасувати» can bring it back

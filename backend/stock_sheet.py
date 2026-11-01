@@ -90,7 +90,7 @@ def sheet(project: dict, frame: int, query: str, kind: str = "image", count: int
             size = f"{hit.get('imageWidth', '')}x{hit.get('imageHeight', '')}".strip("x")
         candidates.append({"n": index + 1, "id": hit.get("id"), "duration": hit.get("duration") if kind == "video" else None,
                            "size": size, "tags": hit.get("tags") or ""})
-    folder = store.project_dir(project["id"]) / "stock"
+    folder = store.cache_dir(project) / "stock"
     folder.mkdir(parents=True, exist_ok=True)
     name = f"frame_{int(frame):03d}-{kind}-{hashlib.sha256(query.encode()).hexdigest()[:8]}.png"
     canvas.save(folder / name)

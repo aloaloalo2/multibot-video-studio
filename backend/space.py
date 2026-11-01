@@ -41,18 +41,28 @@ def build_items(project: dict) -> list[Path]:
 
 def old_renders(pid: str, project: dict) -> list[dict]:
     """Studio copies of frame renders the timeline no longer shows (the bridge's names in the project's media)."""
-    media = (store.project_dir(pid) / "media").resolve()
+    media = {root.resolve() for root in store.media_roots({**project, "id": pid})}
     used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
     return [asset for asset in project.get("assets", []) if asset.get("id") not in used
-            and Path(asset.get("path") or "").parent.resolve() == media
+            and Path(asset.get("path") or "").parent.resolve() in media
             and store.RAZGON_RENDER.fullmatch(Path(asset.get("path") or "").name) and Path(asset["path"]).is_file()]
+
+
+# The studio's cache of an episode (store.cache_dir): export chunks, the engine's render cache, stills and stock sheets.
+# All of it is made again when needed (user, 1 November 2026: «Звільнити місце… хай видаляє такий кеш з проєкту»).
+CACHE = ("renders", "render-cache", "stills", "stock")
+
+
+def cache_items(pid: str) -> list[Path]:
+    folder = store.project_dir(pid)
+    return [folder / name for name in CACHE if (folder / name).exists() and any((folder / name).iterdir())]
 
 
 def freeable(pid: str) -> bool:
     """Whether the episode has anything to free, cheaply (no sizes): the card shows «Звільнити місце» only then."""
     try:
         project = store.listed_project(store.project_dir(pid) / "project.json")
-        return bool(build_items(project)) or bool(old_renders(pid, project))
+        return bool(build_items(project)) or bool(old_renders(pid, project)) or bool(cache_items(pid))
     except (OSError, ValueError, KeyError, TypeError, store.StudioError):
         return False
 
@@ -70,7 +80,8 @@ def usage(pid: str) -> dict:
     build = sum(size(item) for item in build_items(project))
     old = old_renders(pid, project)
     renders = sum(Path(asset["path"]).stat().st_size for asset in old)
-    return {"build": build, "old_renders": renders, "old_count": len(old), "total": build + renders, "busy": busy(pid)}
+    cache = sum(size(item) for item in cache_items(pid))
+    return {"build": build, "old_renders": renders, "old_count": len(old), "cache": cache, "total": build + renders + cache, "busy": busy(pid)}
 
 
 def free(pid: str) -> dict:
@@ -85,6 +96,9 @@ def free(pid: str) -> dict:
             shutil.rmtree(item, ignore_errors=True)
         else:
             item.unlink(missing_ok=True)
+    for item in cache_items(pid):
+        freed += size(item)
+        shutil.rmtree(item, ignore_errors=True)
     # replaced frame renders follow the studio's one rule for them, with the undo steps that still show them
     freed += store.prune_razgon_renders(pid)["bytes"]
     return {"freed": freed}

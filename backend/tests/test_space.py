@@ -50,7 +50,7 @@ class SpaceTest(unittest.TestCase):
         listed = patch.object(store, "listed_project", side_effect=lambda path: json.loads(json.dumps(self.project)))
         listed.start(); self.addCleanup(listed.stop)
         self.assertTrue(space.freeable(PID))                     # the card offers «Звільнити місце»
-        self.assertEqual(space.usage(PID), {"build": 1500, "old_renders": 100, "old_count": 1, "total": 1600, "busy": None})
+        self.assertEqual(space.usage(PID), {"build": 1500, "old_renders": 100, "old_count": 1, "cache": 0, "total": 1600, "busy": None})
         self.assertEqual(space.free(PID), {"freed": 1600})
         self.assertFalse(space.freeable(PID))                    # and stops offering it once nothing is left
         self.assertEqual(sorted(path.name for path in self.build.iterdir()), ["kept.wav", "live.log"])
@@ -60,6 +60,14 @@ class SpaceTest(unittest.TestCase):
         # the undo steps that showed the old frame go, the newer one stays
         self.assertEqual([path.name for path in store.history_entries(PID, "past")], ["2.json"])
         self.assertEqual(space.usage(PID)["total"], 0)
+
+    def test_the_studio_cache_of_the_episode_goes_too(self):
+        stills = self.folder / "stills"; stills.mkdir()
+        (stills / "still-a.png").write_bytes(b"x" * 300)
+        self.assertEqual(space.usage(PID)["cache"], 300)
+        space.free(PID)
+        self.assertFalse(stills.exists())
+        self.assertTrue((self.folder / "media" / "frame_001.mp4").exists())   # the frame on the timeline stays
 
     def test_nothing_goes_while_an_agent_works_on_the_episode(self):
         director.ACTIVE.add(PID)

@@ -248,7 +248,7 @@ def from_pixabay(project: dict, kind: str, asset_id: int, quality: str | None = 
     quality = quality or ("medium" if kind == "video" else "large")
     if quality not in ({"medium", "large"} if kind == "video" else {"large", "fullhd"}):
         raise store.StudioError("Недоступна якість матеріалу")
-    dest = store.project_dir(project["id"]) / "media"
+    dest = store.media_dir(project)
     pixabay = pixabay_module()
     try:
         record = pixabay.download(kind, asset_id, quality, dest)
@@ -267,7 +267,7 @@ def from_pixabay(project: dict, kind: str, asset_id: int, quality: str | None = 
 
 
 def valid_local_source(path: Path, project: dict) -> bool:
-    return path.is_file() and (store.under(path, store.project_dir(project["id"]) / "media") or store.under(path, Path(project["episode_path"])))
+    return path.is_file() and (any(store.under(path, root) for root in store.media_roots(project)) or store.under(path, Path(project["episode_path"])))
 
 
 def normalize_for_engine(project: dict) -> dict:
@@ -462,7 +462,9 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         with JOBS_LOCK:
             if entry['cancel']:
                 return
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+            # the engine's render cache lives with the episode (next to its renders/), so it goes with the episode folder
+            env = {**os.environ, "MULTIBOT_RENDER_CACHE": str(render_manifest.parent.parent / "render-cache")}
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True, env=env)
             entry['process'] = process
         def terminate_group():
             try: os.killpg(process.pid, signal.SIGKILL)
@@ -617,7 +619,7 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
         raise store.StudioError("Папка експорту поза випуском")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     destination = output_folder / ("Video Studio " + timestamp + "-" + jid[:6] + ".mp4")
-    render_dir = store.project_dir(project["id"]) / "renders"
+    render_dir = store.cache_dir(project) / "renders"
     render_dir.mkdir(parents=True, exist_ok=True)
     # An export needs room for its chunks, the joined picture and the final file (about three times the film) and the
     # episode folder for the result: say so before an hour of rendering, not after.
@@ -721,8 +723,8 @@ def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = Fals
     from render_cache import renderer_version
     key = hashlib.sha256(json.dumps([manifest, round(float(moment), 4), int(frames), bool(cpu), renderer_version(APP_ROOT / "engine")],
                                     sort_keys=True, default=str).encode()).hexdigest()[:20]
-    folder = store.project_dir(project["id"]) / "stills"
-    folder.mkdir(exist_ok=True)
+    folder = store.cache_dir(project) / "stills"
+    folder.mkdir(parents=True, exist_ok=True)
     output = folder / f"still-{key}.png"
     info_path = folder / f"still-{key}.json"
     notes = [f"«{clip.get('title')}» тут код Razgon: на стоп-кадрі його немає, його малює тільки «Експорт MP4»"
@@ -736,7 +738,8 @@ def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = Fals
         try:
             result = subprocess.run(["nice", "-n", "10", sys.executable, str(STILL_SCRIPT), "--project", str(manifest_path), "--time", str(moment),
                                      "--output", str(output), "--frames", str(int(frames))] + (["--cpu"] if cpu else []),
-                                    capture_output=True, text=True, timeout=900)
+                                    capture_output=True, text=True, timeout=900,
+                                    env={**os.environ, "MULTIBOT_RENDER_CACHE": str(folder.parent / "render-cache")})
         finally:
             manifest_path.unlink(missing_ok=True)
         try:
@@ -1011,7 +1014,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(summary)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/stills/(still-[0-9a-f]{20}(?:-\d{2})?\.png)", path)
         if match:
-            target = store.project_dir(match.group(1)) / "stills" / match.group(2)
+            target = store.cache_dir(store.listed_project(store.project_dir(match.group(1)) / "project.json")) / "stills" / match.group(2)
             if not target.is_file():
                 raise store.StudioError("Стоп-кадр не знайдено", 404)
             return self.serve_media(target)

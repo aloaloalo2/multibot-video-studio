@@ -218,3 +218,18 @@ title), an animated channel the café of `examples/reaction-time` at 8 s. The se
 (user: flat styles show no volume); a retired style a channel still uses stays in its list. Razgon text falls back to
 Nunito, loaded with Cyrillic, when a title font has no Cyrillic letters. A style's `figure` ({limb, torso, head, joints,
 ends}) shapes its characters (`rig2d.parts`).
+
+## An episode's files live in its folder (1 November 2026)
+
+The user: «картинки згенеровані, відео викачені… має бути в папці YouTube… щоб я міг видалити ту папку і все»; the
+rendered animation stays in the studio «як кеш». A new episode gets its folder in the channel at once
+(`store.create_project`). Pictures, videos and sounds the studio brings in (imports, uploads, stock, generated pictures,
+accents) go to `<episode>/VideoKey/Матеріали` (`store.media_dir`); the studio's cache of the episode stays in
+`backend/data/projects/<id>` (`store.cache_dir`): Razgon frame renders (`RAZGON_RENDER` names), export chunks
+(`renders/`), the engine's render cache (`render-cache/`, `MULTIBOT_RENDER_CACHE` per export and still), stills and stock
+sheets. Older media in `projects/<id>/media` stays valid (`store.media_roots`). The episode's media list skips the
+VideoKey folder. «Звільнити місце» frees that cache too (`space.CACHE`) and shows only when there is something to free
+(`space.freeable`); deleting a project in the studio removes its VideoKey folder, the author's own files stay.
+`store.sweep_orphans` (a project whose episode folder is gone leaves the list at once; its studio data goes after three
+days unless the folder comes back; never while its work runs or its channel folder is away) is written and tested but
+not yet called: it waits for the author's go-ahead. Tests: `backend/tests/test_episode_store.py`, `test_space.py`.

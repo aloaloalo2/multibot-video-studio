@@ -546,7 +546,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("експорт", refusal["error"])
         plan_dir = self.channel / "Episode 1"
-        plan_dir.mkdir()
+        plan_dir.mkdir(exist_ok=True)
         plan_path = plan_dir / "План видео.json"
         plan_path.write_text(json.dumps({"frames": [
             {"number": 1, "start": 0, "end": 8, "sentences": ["First."], "format": "generated_video"},
@@ -667,7 +667,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(sum(store.read_json(self.channel / "video-plan.json")["weights"].values()), 100)
         project = store.create_project(cid, "Media Test")
         episode = Path(project["episode_path"])
-        episode.mkdir()
+        episode.mkdir(exist_ok=True)
         media = episode / "test.jpg"
         media.write_bytes(b"0123456789")
         status, result = self.request("/api/projects/%s/assets" % project["id"])
@@ -746,7 +746,7 @@ class BackendTest(unittest.TestCase):
         project = store.create_project(cid, "Project management")
         endpoint = "/api/projects/" + project["id"]
         episode = Path(project["episode_path"])
-        episode.mkdir()
+        episode.mkdir(exist_ok=True)
         source = episode / "original.png"
         source.write_bytes(b"original-media")
         asset = store.import_asset_file(project, source)
@@ -788,7 +788,7 @@ class BackendTest(unittest.TestCase):
     def test_attached_plan_routes_updates_and_preserves_montage(self):
         cid = store.channel_id(self.channel)
         episode = self.channel / "Attached plan"
-        episode.mkdir()
+        episode.mkdir(exist_ok=True)
         plan = {"report": {"timing": "Попередній таймінг"}, "frames": [{"number": 1, "start": 0, "end": 8, "format": "stock_video", "sentences": ["Перший кадр."]}]}
         payload = {"channel_id": cid, "name": "Attached plan", "episode_path": str(episode), "plan": plan}
         status, created = self.request("/api/projects/from-plan", "POST", payload)
@@ -824,7 +824,7 @@ class BackendTest(unittest.TestCase):
         project = store.create_project(cid, "Mixed universal layer")
         layer_id = project["tracks"][0]["id"]
         episode = Path(project["episode_path"])
-        episode.mkdir()
+        episode.mkdir(exist_ok=True)
         Image.new("RGB", (160, 90), "#116a8c").save(episode / "image.png")
         subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=8", "-t", "1", str(episode / "video.mp4")], check=True, capture_output=True)
         subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", str(episode / "audio.wav")], check=True, capture_output=True)

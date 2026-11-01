@@ -5,12 +5,13 @@ const spaceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h16v5
 function spaceSize(bytes){return bytes>=1e9?`${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:bytes<5e5?'менше 1 МБ':`${Math.round(bytes/1e6)} МБ`;}
 
 async function openSpace(project){
-  modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займають зайві копії кадрів…</p>',[{label:'Скасувати',run:closeModal}]);
+  modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займає кеш випуску…</p>',[{label:'Скасувати',run:closeModal}]);
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/space`);}
   catch(error){$('modal-body').innerHTML=`<p class="space-note">${esc(error.message)}</p>`;return;}
-  if(!data.total){modal('Звільнити місце','<p class="space-note">У цього випуску немає зайвих копій кадрів.</p>',[{label:'Добре',primary:true,run:closeModal}]);return;}
+  if(!data.total){modal('Звільнити місце','<p class="space-note">У цього випуску немає кешу, який можна звільнити.</p>',[{label:'Добре',primary:true,run:closeModal}]);return;}
   const rows=[data.build?`<li><b>${spaceSize(data.build)}</b><span>Робочі файли рендеру Razgon: кожен кадр окремим відео, звук без стиснення, ролик без звуку, смуги перевірки стиків.</span></li>`:'',
+    data.cache?`<li><b>${spaceSize(data.cache)}</b><span>Кеш студії: рендери експорту, стоп-кадри й аркуші стоку. Студія зробить їх знову, коли знадобляться.</span></li>`:'',
     data.old_renders?`<li><b>${spaceSize(data.old_renders)}</b><span>Старі версії кадрів (${data.old_count}), які лишались тільки для кнопки «Скасувати». Ці кроки скасування зникнуть разом із ними.</span></li>`:''].join('');
   const blocked=data.busy || (data.exporting?'Зараз іде експорт':'');
   modal(`Звільнити ${spaceSize(data.total)}?`,`<ul class="space-list">${rows}</ul>

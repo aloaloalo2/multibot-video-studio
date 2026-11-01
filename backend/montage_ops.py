@@ -304,7 +304,7 @@ class Context:
         return store.asset_record(Path(resolved), self.project["id"])["id"]
 
     def drawn_file(self, kind: str, spec: dict) -> Path:
-        folder = store.project_dir(self.project["id"]) / "media" / "accents"
+        folder = store.media_dir(self.project) / "accents"
         folder.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(json.dumps([kind, spec], sort_keys=True, default=str).encode()).hexdigest()[:16]
         return folder / f"{kind}-{digest}.png"
@@ -666,7 +666,7 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
             for path in ctx.files:
                 if not path.is_file() or not store.media_kind(path):
                     raise OpError(f"Файл недоступний: {path.name}")
-                if not (store.under(path, Path(project["episode_path"])) or store.under(path, store.project_dir(pid) / "media")):
+                if not (store.under(path, Path(project["episode_path"])) or any(store.under(path, root) for root in store.media_roots(project))):
                     raise OpError(f"Файл поза випуском: {path}")
             known = {a["id"] for a in project.get("assets", [])}
             project.setdefault("assets", []).extend(record for record in (store.asset_record(path, pid) for path in ctx.files) if record["id"] not in known)
