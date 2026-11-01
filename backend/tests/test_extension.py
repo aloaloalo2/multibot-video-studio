@@ -23,10 +23,13 @@ class ExtensionTest(unittest.TestCase):
             origin.mkdir()
             sh("git", "init", "-q", "-b", "main", cwd=origin)
             sh("git", "config", "user.email", "a@b", cwd=origin); sh("git", "config", "user.name", "a", cwd=origin)
-            (origin / "manifest.json").write_text(json.dumps({"name": "Multi Bot", "version": "2.88"}))
+            (origin / "manifest.json").write_text(json.dumps({"name": "Multi Bot", "version": "2.88", "permissions": ["tabs"]}))
+            (origin / "popup.html").write_text("<html><head><style>\n body{}\n  </style></head><body>\n  <div>Meet</div>\n  <script src=\"popup.js\"></script>\n</body></html>\n")
+            (origin / "popup.js").write_text("// meet search\n")
             sh("git", "add", ".", cwd=origin); sh("git", "commit", "-qm", "one", cwd=origin)
+            sh("git", "config", "receive.denyCurrentBranch", "updateInstead", cwd=origin)
             sh("git", "clone", "-q", str(origin), str(folder), cwd=tmp)
-            (origin / "manifest.json").write_text(json.dumps({"name": "Multi Bot", "version": "2.89"}))
+            (origin / "manifest.json").write_text(json.dumps({"name": "Multi Bot", "version": "2.89", "permissions": ["tabs"]}))
             sh("git", "commit", "-qam", "two", cwd=origin)
             profile = tmp / "support" / "Google" / "Chrome" / "Default"
             profile.mkdir(parents=True)
@@ -42,8 +45,15 @@ class ExtensionTest(unittest.TestCase):
                     extension.update()
                 (folder / "notes.txt").unlink()
                 done = extension.update()
-                self.assertEqual((done["version"], done["behind"]), ("2.89", 0))
+                # the newer version came in, then the «VideoKey Studio» item went on top of it, one step up
+                self.assertEqual((done["version"], done["behind"], done["item"], done["ahead"]), ("2.90", 0, True, 0))
                 self.assertTrue((tmp / "helper-ran").is_file())
+                html = (folder / "popup.html").read_text()
+                self.assertIn("Meet", html)                          # the private version's own features stay
+                self.assertLess(html.index('id="studioOpen"'), html.index('<script src="popup.js">'))
+                self.assertIn("nativeMessaging", json.loads((folder / "manifest.json").read_text())["permissions"])
+                self.assertIn("VideoKey Studio item", subprocess.run(["git", "log", "-1", "--format=%s"], cwd=origin, capture_output=True, text=True).stdout)
+                self.assertIsNone(extension.add_item(folder, True))  # once only
 
 
 if __name__ == "__main__":

@@ -263,5 +263,7 @@ the extension named «Multi Bot» only, its id read from the browser profiles' P
 The studio's settings («Розширення Multi Bot», `backend/extension.py`, `GET /api/extension`, `POST /api/extension/update`)
 find the folder Multi Bot is loaded from (the browsers' profile Preferences), show its version and whether GitHub has a
 newer one, and update it with one button: a fast-forward of the folder's own branch (never over its own changes or
-commits), then `browser-helper/install.py`. Chrome reloads the unpacked extension only by hand at chrome://extensions.
+commits), puts the «VideoKey Studio» item into a Multi Bot that lacks it (`extension.add_item`: the style, markup
+and script from `browser-helper/multibot/`, `nativeMessaging`, the version one step up, a commit and a push to the
+folder's own GitHub; the private version keeps its own features), then `browser-helper/install.py`. Chrome reloads the unpacked extension only by hand at chrome://extensions.
 Test: `backend/tests/test_extension.py`.

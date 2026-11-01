@@ -1016,9 +1016,10 @@ function extensionText(data){
   if(!data.found)return 'Multi Bot не знайдено в Chrome. Додайте його на сторінці chrome://extensions, і студія його побачить.';
   const where=`Версія ${esc(data.version || '?')} · <code>${esc(data.path.replace(/^\/Users\/[^/]+/,'~'))}</code>`;
   if(data.error)return `${where}<br>${esc(data.error)}`;
-  if(data.git===false)return `${where}<br>Ця папка не зв’язана з GitHub, тому оновити її звідси не вийде.`;
+  if(data.git===false)return `${where}<br>Ця папка не зв’язана з GitHub, тому оновлень звідси не буде.${data.item?'':' Але кнопку «VideoKey Studio» студія може додати.'}`;
   if(data.dirty?.length)return `${where}<br>У папці є власні зміни (${esc(data.dirty.join(', '))}): студія їх не затиратиме.`;
   if(data.behind)return `${where}<br>На GitHub є новіша версія.`;
+  if(!data.item)return `${where}<br>У меню Multi Bot ще немає кнопки «VideoKey Studio». Студія може додати її сама, не чіпаючи решту розширення.`;
   return `${where}<br>Це остання версія.${data.helper?'':' Кнопці «VideoKey Studio» ще бракує помічника для запуску студії.'}`;
 }
 async function fillExtension(){
@@ -1026,15 +1027,15 @@ async function fillExtension(){
   try{
     const data=await api('/api/extension');if(!box.isConnected)return;
     box.innerHTML=extensionText(data);
-    button.hidden=!data.found || data.git===false || !!data.dirty?.length || (!data.behind && data.helper);
-    button.textContent=data.behind?'Оновити розширення':'Налаштувати кнопку «VideoKey Studio»';
+    button.hidden=!data.found || !!data.dirty?.length || (!data.behind && data.helper && data.item);
+    button.textContent=data.behind?'Оновити розширення':!data.item?'Додати кнопку «VideoKey Studio»':'Налаштувати кнопку «VideoKey Studio»';
   }catch(error){box.textContent=error.message;}
 }
 async function updateExtension(){
   const button=$('extension-update');button.disabled=true;button.textContent='Оновлюю…';
   try{
     const data=await api('/api/extension/update','POST',{});
-    $('extension-state').innerHTML=extensionText(data)+'<br><b>Готово.</b> Відкрийте chrome://extensions і натисніть у Multi Bot стрілку-кружечок, щоб Chrome підхопив нову версію.';
+    $('extension-state').innerHTML=extensionText(data)+'<br><b>Готово.</b> Відкрийте chrome://extensions і натисніть у Multi Bot стрілку-кружечок, щоб Chrome підхопив нову версію.'+(data.note?`<br>${esc(data.note)}`:'');
     button.hidden=true;
   }catch(error){button.disabled=false;button.textContent='Оновити розширення';$('extension-state').innerHTML+=`<br><span class="extension-error">${esc(error.message)}</span>`;}
 }
