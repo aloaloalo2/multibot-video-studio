@@ -69,13 +69,38 @@ def path(cid: str):
     return store.DATA_ROOT / "channels" / cid / "custom-styles.json"
 
 
+# The Studio's own styles, offered to every channel: whole definitions, so they reach a film through its config
+# (razgon_bridge.py puts styleDef in) without touching engine/styles.js of anyone's Razgon copy.
+_DARK = {"sky": ["#070a09", "#0e1612", "#1a2a22", "#2f4a3c"], "ambient": "#18201c", "key": "#d8eee2", "rim": "#5ee6a0",
+         "wall": "#232927", "floor": "#161a18", "dark": "#080a09", "practical": "#f0b429", "grass": "#1f3a2b", "road": "#1b201e",
+         "fog": "#2c3a33"}
+BUILTIN = [{
+    "id": "studio-dark", "builtin": True, "name": "Темна студія",
+    "desc": "Чорно-сірий світ із темно-зеленими градієнтами, м’яте світіння контуру, стримано й строго, як сама студія.",
+    "def": {"name": "Studio Dark", "desc": "Black and graphite world with deep green gradients and a mint rim light.",
+            "ink": "#050706", "inkFar": "#1c2420", "feature": "#eef5f0", "rimWidth": 4,
+            "ui": {"card": "rgba(12,16,14,.94)", "cardLine": "rgba(94,230,160,.28)", "text": "#cfe9dc", "sub": "#7f958a",
+                   "accent": "#5ee6a0", "gold": "#f0b429", "cream": "#f1f5f2", "blueprint": "#6fe3b0", "bpBg": "#08100c", "good": "#5fd39a"},
+            "grade": {"contrast": 1.12, "sat": 0.82, "lift": [0.0, 0.012, 0.006], "gamma": [0.97, 1.02, 0.99], "gain": [0.92, 1.04, 0.96],
+                      "vignette": 0.72, "grain": 0.05, "bloom": 0.6},
+            "moods": {"day": {**_DARK, "sky": ["#141c18", "#22302a", "#3a4c42"], "ambient": "#222b26", "wall": "#2a302d", "floor": "#1d2220"},
+                      "golden": {**_DARK, "sky": ["#0e1512", "#1f2e26", "#3f5a48", "#6a7a5a"], "key": "#f2e2b8"},
+                      "dusk": _DARK, "interiorWarm": {**_DARK, "key": "#f2e2b8", "wall": "#262b28"},
+                      "interiorCool": _DARK, "storm": {**_DARK, "sky": ["#060908", "#101915", "#1d2b24"]},
+                      "night": {**_DARK, "sky": ["#030504", "#08100c", "#111c17"], "key": "#bfe6d0"},
+                      "void": {**_DARK, "sky": ["#030504", "#0a120e"]}}},
+}]
+
+
 def load(cid: str) -> list[dict]:
+    """The Studio's own styles, then the channel's copied ones."""
     store.get_channel_folder(cid)
+    builtin = json.loads(json.dumps(BUILTIN))
     try:
         styles = json.loads(path(cid).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
-    return [style for style in styles if isinstance(style, dict) and STYLE_ID.fullmatch(str(style.get("id")))] if isinstance(styles, list) else []
+        return builtin
+    return builtin + ([style for style in styles if isinstance(style, dict) and STYLE_ID.fullmatch(str(style.get("id")))] if isinstance(styles, list) else [])
 
 
 def find(cid: str, sid: str) -> dict | None:
@@ -91,7 +116,7 @@ def save_all(cid: str, styles: list[dict]) -> None:
 
 
 def remove(cid: str, sid: str) -> None:
-    styles = load(cid)
+    styles = [style for style in load(cid) if not style.get("builtin")]
     if not any(style["id"] == sid for style in styles):
         raise StyleCopyError("Такого стилю немає")
     save_all(cid, [style for style in styles if style["id"] != sid])
@@ -204,7 +229,7 @@ def style_def(answer: dict) -> dict:
 
 def create(cid: str, data: str, note: str = "") -> dict:
     """Ask DeepSeek for the look of a picture and keep it as the channel's own style."""
-    styles = load(cid)
+    styles = [style for style in load(cid) if not style.get("builtin")]
     if len(styles) >= MAX_STYLES:
         raise StyleCopyError(f"У каналу вже {MAX_STYLES} своїх стилів. Видаліть зайвий")
     image = picture(data)

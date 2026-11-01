@@ -62,7 +62,8 @@ def validate(animation) -> None:
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
 
 
-GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "chalk", "clinic", "bluewhite", "whiteblue", "blueglow", "care")
+# «Крейда» (chalk) left the choice (user, 1 November 2026); films already in it still render, Razgon keeps the style
+GALLERY = ("neon", "dusk", "doodle", "ink", "cutout", "clinic", "bluewhite", "whiteblue", "blueglow", "care")
 
 
 def razgon_text(animation: dict | None) -> dict:
@@ -162,7 +163,9 @@ def cards(root: Path, own: list[dict] | None = None) -> dict:
         for font in TITLE_FONTS:
             for assets in (True, False):
                 result[font]["1" if assets else "0"][style["id"]] = f"/api/{CARDS}/{keys[style['id'], font, assets]}/{style['id']}-0.jpg"
-    return {"styles": [known[sid] for sid in ids] + [{"id": s["id"], "name": s["name"], "desc": s["desc"], "own": True} for s in own],
+    # the Studio's own styles (style_copy.BUILTIN) lead the gallery and cannot be deleted; a channel's copied ones close it
+    listed = lambda s: {"id": s["id"], "name": s["name"], "desc": s["desc"], **({} if s.get("builtin") else {"own": True})}
+    return {"styles": [listed(s) for s in own if s.get("builtin")] + [known[sid] for sid in ids] + [listed(s) for s in own if not s.get("builtin")],
             "cards": result, "keys": set(keys.values())}
 
 
@@ -191,7 +194,7 @@ def warm() -> None:
     root = razgon_root()
     if root is not None:
         try:
-            own = [style for channel in store.list_channels() for style in style_copy.load(channel["id"])]
+            own = list({style["id"]: style for channel in store.list_channels() for style in style_copy.load(channel["id"])}.values())
             prune_cards(cards(root, own).pop("keys"))
         except (StyleLabError, OSError, subprocess.SubprocessError, store.StudioError):
             pass

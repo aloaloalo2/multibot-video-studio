@@ -70,17 +70,17 @@ class StyleCopyTest(unittest.TestCase):
             style = style_copy.create("c" * 16, picture())
             self.assertRegex(style["id"], r"^custom-[0-9a-f]{10}$")
             self.assertEqual(style["name"], "Паперова аплікація")
-            self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], [style["id"]])
+            self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], ["studio-dark", style["id"]])   # the Studio's own style leads
             self.assertEqual(style_copy.find("c" * 16, style["id"])["def"]["ink"], "#151515")
             style_copy.remove("c" * 16, style["id"])
-            self.assertEqual(style_copy.load("c" * 16), [])
+            self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], ["studio-dark"])
             with self.assertRaises(style_copy.StyleCopyError):
                 style_copy.remove("c" * 16, style["id"])
             # a damaged file reads as no styles, not as an error
             style_copy.path("c" * 16).write_text("{not json")
-            self.assertEqual(style_copy.load("c" * 16), [])
+            self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], ["studio-dark"])
             style_copy.path("c" * 16).write_text(json.dumps([{"id": "../evil"}]))
-            self.assertEqual(style_copy.load("c" * 16), [])
+            self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], ["studio-dark"])
 
 
 if __name__ == "__main__":

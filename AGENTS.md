@@ -202,3 +202,11 @@ takes its video's title the Studio appends the titles the file lacks (projects o
 «Метаданные.txt»); lines written by hand stay and nothing is removed. A new script reads this file to choose a new topic
 or a new telling of an old one; agents never read the scripts of other episodes (the director's and frame agent's
 briefs say so). Test: `backend/tests/test_topics.py`.
+
+## The Studio's own Razgon styles (1 November 2026)
+
+`style_copy.BUILTIN` holds styles the Studio ships to every channel as whole definitions: «Темна студія»
+(`studio-dark`, user: «як неоновий, тільки… чорніший… темно-зелено-чорний… як стиль нашої студії»). They lead the
+gallery, cannot be deleted, and reach a film through its config (`razgon_bridge.py` puts `styleDef` in for `custom-` and
+`studio-` styles), so no Razgon copy's `engine/styles.js` is touched. «Крейда» (`chalk`) left the gallery the same day;
+films already in it still render.

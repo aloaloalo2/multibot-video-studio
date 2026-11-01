@@ -201,7 +201,7 @@ def prepare(args) -> None:
         # Whether the film uses picture props (library and generated) or draws everything with shapes.
         config["assets"] = animation.get("assets", True) is not False
         # A style the channel copied from a picture is not in engine/styles.js: its whole definition goes into the config.
-        if str(config["style"]).startswith("custom-") and channel:
+        if str(config["style"]).startswith(("custom-", "studio-")) and channel:
             own = next((s for s in studio.call("GET", f"/api/channels/{channel['id']}/custom-styles").get("styles", []) if s["id"] == config["style"]), None)
             if own:
                 config["styleDef"] = own["def"]
