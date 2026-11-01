@@ -90,6 +90,7 @@ if os.environ.get('STUDIO_GPU_PROCEDURAL_GRADIENT','0')=='1':
         return marker
     render.gradient_background.video=procedural_gradient
 
+STILL_WINDOW='STUDIO_GPU_WINDOW_START' in os.environ
 source=Path(sys.argv[1]); folder=Path(sys.argv[2]); cut=float(sys.argv[3]) if len(sys.argv)>3 else 60
 folder.mkdir(parents=True,exist_ok=True); assets=folder/'assets';assets.mkdir(exist_ok=True)
 m=json.loads(source.read_text()); fps=int(m['fps']);width=int(m['width']);height=int(m['height']);cut=math.ceil(cut*fps-1e-8)/fps
@@ -99,14 +100,21 @@ for layer in m['timeline_layers']:
     for item in layer['clips']:
         start=float(item['start']);dur=float(item['duration'])
         if render.frame_index(start,fps)>=render.frame_index(cut,fps):continue
-        c=dict(item);c['duration']=min(dur,cut-start)
-        for key in ('join_in','join_out'):
-            if key in c and float(c[key]['seam'])>=cut:c.pop(key)
+        c=dict(item)
+        # A still (STUDIO_GPU_WINDOW_START) keeps every clip whole and only stops drawing at the window's end: a clip cut
+        # there would fade or slide out inside the window (fade_out drew 10% where the export draws 100%).
+        if not STILL_WINDOW:
+            c['duration']=min(dur,cut-start)
+            for key in ('join_in','join_out'):
+                if key in c and float(c[key]['seam'])>=cut:c.pop(key)
         clips.append(c)
     if clips:layers.append({**layer,'clips':clips})
-m['timeline_layers']=layers;m['duration']=cut
+m['timeline_layers']=layers
+if not STILL_WINDOW:m['duration']=cut
 (folder/'cpu-project.json').write_text(json.dumps(m,ensure_ascii=False))
 start_time=time.monotonic();visual,audio,total=render.timeline_plan(m,source,width,height,fps);slices=render.timeline_segments(visual,total,fps)
+if STILL_WINDOW:   # the whole film was planned so every clip keeps its own length; only the window up to the cut is drawn
+    slices=[(begin,min(end,cut),active) for begin,end,active in slices if begin<cut-1e-9];total=min(total,cut)
 stream_chunks=os.environ.get('STUDIO_GPU_CHUNKS')=='1'
 chunk_seconds=max(1,float(os.environ.get('STUDIO_GPU_CHUNK_SECONDS','30')))
 chunk_folder=folder/'chunks'

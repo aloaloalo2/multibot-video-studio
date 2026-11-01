@@ -8,6 +8,7 @@ FFprobe are the only runtime dependencies. Original media files are read-only.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import math
 import os
@@ -1084,8 +1085,9 @@ def timeline_plan(project: dict, project_file: Path, width: int, height: int, fp
 def timeline_segments(visual: list[dict], total: float, fps: int) -> list[tuple[float, float, list[dict]]]:
     boundaries = sorted({0, round(total * fps), *(round(clip["start"] * fps) for clip in visual),
                           *(round(clip["end"] * fps) for clip in visual)})
-    if len(boundaries) > 2001:
-        raise ValueError("Timeline has more than 2000 visual boundaries")
+    # a 40-minute film of 500 frames with accents passes 2000 edges; both renderers draw the slices one by one
+    if len(boundaries) > 20001:
+        raise ValueError("Timeline has more than 20000 visual boundaries")
     result = []
     for first, last in zip(boundaries, boundaries[1:]):
         if last <= first:
@@ -1502,6 +1504,9 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
                 # The established renderer remains available if GPU setup,
                 # media decoding or verification fails. Cancellation raises
                 # KeyboardInterrupt and is never converted into a retry.
+                # A full disk is not retried either: the CPU render would fail the same way an hour later.
+                if (isinstance(error, OSError) and error.errno == errno.ENOSPC) or 'No space left on device' in str(error):
+                    raise
                 emit('gpu_fallback', message=str(error))
     # Probe before launching concurrent scene workers so every segment uses
     # the same codec and the same parameter set.

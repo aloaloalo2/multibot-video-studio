@@ -516,6 +516,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
     finally:
         if staging.exists():
             staging.unlink()
+        render_manifest.unlink(missing_ok=True)   # the job file keeps what was exported; the manifest was only its input
         with JOBS_LOCK:
             if entry['cancel']:
                 job.update(status='cancelled', error=None, output_path=None)
@@ -553,6 +554,18 @@ def start_export(project: dict, confirmation: bool) -> dict:
     destination = output_folder / ("Video Studio " + timestamp + "-" + jid[:6] + ".mp4")
     render_dir = store.project_dir(project["id"]) / "renders"
     render_dir.mkdir(parents=True, exist_ok=True)
+    # An export needs room for its chunks, the joined picture and the final file (about three times the film) and the
+    # episode folder for the result: say so before an hour of rendering, not after.
+    seconds = float(project.get("duration") or 0)
+    need = 2 * 1024 ** 3 + int(seconds * 3 * 1024 ** 2)
+    for place in {render_dir, output_folder if output_folder.exists() else Path(project["episode_path"])}:
+        try:
+            free = shutil.disk_usage(place).free
+        except OSError:
+            continue
+        if free < need:
+            raise store.StudioError(f"Для експорту бракує місця на диску: вільно {free / 1024 ** 3:.1f} ГБ, потрібно близько "
+                                    f"{need / 1024 ** 3:.1f} ГБ. Звільніть місце (кнопка «Звільнити місце» на картці випуску) і спробуйте ще раз.", 507)
     manifest_path = render_dir / (jid + ".json")
     staging = render_dir / (jid + ".mp4")
     store.atomic_json(manifest_path, manifest)
@@ -567,6 +580,12 @@ def start_export(project: dict, confirmation: bool) -> dict:
         if existing:
             manifest_path.unlink(missing_ok=True)
             return existing
+        # what a killed or crashed export of this project left behind: GPU work folders and old manifests
+        for stale in render_dir.glob(".mbvs-gpu-*"):
+            shutil.rmtree(stale, ignore_errors=True)
+        for stale in render_dir.glob("*.json"):
+            if stale != manifest_path:
+                stale.unlink(missing_ok=True)
         guard = agent_runtime.acquire_project_guard(project['id'], 'export')
         if guard is None:
             manifest_path.unlink(missing_ok=True)

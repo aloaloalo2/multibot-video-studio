@@ -143,11 +143,27 @@ class RenderCache:
             shutil.rmtree(entry,ignore_errors=True);total-=size
 
 
+def tool_versions():
+    """Versions that change pixels without a change in the studio's own files: Pillow draws the text, FFmpeg decodes and
+    encodes, and the MULTIBOT_FAST_* switches pick other drawing paths. A cached video made by another version is not
+    reused."""
+    import os,shutil,subprocess
+    try:
+        import PIL;pillow=PIL.__version__
+    except ImportError:pillow=None
+    ffmpeg=None
+    if shutil.which('ffmpeg'):
+        try:ffmpeg=subprocess.run(['ffmpeg','-version'],capture_output=True,text=True,timeout=10).stdout.split('\n',1)[0]
+        except (OSError,subprocess.SubprocessError):pass
+    flags=sorted((k,v) for k,v in os.environ.items() if k.startswith('MULTIBOT_FAST_'))
+    return [pillow,ffmpeg,flags]
+
+
 def renderer_version(root):
     root=Path(root);files=[*root.glob('*.py'),root/'gpu_render.swift',
                          root.parent/'frontend/graphic-transitions.json',root.parent/'frontend/visual-effects.json',
                          root.parent/'backend/font_catalog.py',root.parent/'frontend/fonts/catalog.json']
-    return key_for([(str(p.relative_to(root.parent)),digest_file(p)) for p in sorted(files) if p.is_file()])
+    return key_for([(str(p.relative_to(root.parent)),digest_file(p)) for p in sorted(files) if p.is_file()]+[tool_versions()])
 
 
 def visual_key(project,project_file,width,height,fps,total,renderer,cache,version):
