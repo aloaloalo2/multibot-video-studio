@@ -82,6 +82,11 @@ def begin_update():
         with JOBS_LOCK:
             if ACTIVE_EXPORTS or analysis_jobs.ACTIVE_JOBS:
                 raise store.StudioError('Дочекайтеся завершення експорту або обробки озвучки.', 409)
+        # the restart would also cut the director, the frame agent, a thumbnail or the studio's agent mid-run, the same
+        # work studio_restart.py waits for
+        busy = agent_view.studio_status([], project_jobs)["busy"]
+        if busy:
+            raise store.StudioError('Дочекайтеся, поки закінчиться робота: ' + '; '.join(busy[:3]), 409)
         try:
             UPDATE_MANAGER.apply()
         except updater.UpdateError as error:

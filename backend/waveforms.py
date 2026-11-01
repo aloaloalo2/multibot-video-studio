@@ -1,12 +1,19 @@
 """Real PCM peak envelopes for the local timeline, cached by source fingerprint."""
-import audioop
+import array
 import hashlib
+import sys
 import json
 import math
 import subprocess
 import tempfile
 import wave
 from pathlib import Path
+
+def minmax(block):
+    """The lowest and highest 16-bit sample of a little-endian PCM block (audioop is gone since Python 3.13)."""
+    samples=array.array('h');samples.frombytes(block[:len(block)//2*2])
+    if sys.byteorder!='little':samples.byteswap()
+    return (min(samples),max(samples)) if samples else (0,0)
 
 def read_peaks(source, cache_dir, bins=8000):
     source=Path(source);stat=source.stat()
@@ -27,7 +34,7 @@ def read_peaks(source, cache_dir, bins=8000):
             while True:
                 block=audio.readframes(size)
                 if not block:break
-                low,high=audioop.minmax(block,2);peaks.append([round(low/32768,4),round(high/32768,4)])
+                low,high=minmax(block);peaks.append([round(low/32768,4),round(high/32768,4)])
             result=dict(duration=count/rate,peaks=peaks,samples_per_bin=size,sample_rate=rate,source_size=stat.st_size,source_mtime_ns=stat.st_mtime_ns)
     cache.parent.mkdir(parents=True,exist_ok=True)
     # Concurrent requests may finish in either order; each replacement is complete.

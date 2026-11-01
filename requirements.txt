@@ -1,0 +1,9 @@
+# Python packages of VideoKey Studio (python3 tools/doctor.py checks them; --install puts in what is missing).
+Pillow
+numpy
+huggingface_hub
+# speech recognition: on the GPU of an Apple Silicon Mac, otherwise on the processor
+mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
+faster-whisper; sys_platform != "darwin" or platform_machine != "arm64"
+# the PDF of a video plan (tools/video_plan_pdf.py)
+reportlab

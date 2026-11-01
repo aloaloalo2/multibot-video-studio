@@ -135,6 +135,29 @@ class UpdateTest(unittest.TestCase):
         self.assertIn('«agent-work»', html[3])
         self.assertEqual(html[4:], ['', '', '', ''])   # no notice when nothing is blocked
 
+    def test_a_version_that_does_not_load_is_taken_back(self):
+        self.publish()
+        self.updater.refresh()
+        with patch.object(Updater, 'starts', return_value='ModuleNotFoundError: No module named new_package'):
+            with self.assertRaises(UpdateError):
+                self.updater.apply()
+        self.assertEqual((self.install/'app.txt').read_text(), 'first')          # still the version that works
+        self.assertEqual(self.updater.public_state()['status'], 'update_failed')
+        self.assertIn('new_package', self.updater.public_state()['error'])
+        self.assertEqual(self.updater.refresh()['status'], 'update_failed')     # not offered again
+        self.publish('third')                                                   # a newer version is offered
+        self.assertEqual(self.updater.refresh()['status'], 'available')
+        self.updater.apply()
+        self.assertEqual((self.install/'app.txt').read_text(), 'third')
+
+    def test_update_waits_for_the_agents(self):
+        with patch.dict(app.ACTIVE_EXPORTS, {}, clear=True), patch.object(app.analysis_jobs, 'ACTIVE_JOBS', set()), \
+                patch.object(app.agent_view, 'studio_status', return_value={'busy': ['створення кадрів: Горбунов / 23']}), \
+                patch.object(app.UPDATE_MANAGER, 'apply') as apply:
+            with self.assertRaises(store.StudioError) as busy: app.begin_update()
+            apply.assert_not_called()
+        self.assertIn('створення кадрів', str(busy.exception))
+
     def test_update_does_not_interrupt_an_export_or_audio_analysis(self):
         with patch.dict(app.ACTIVE_EXPORTS, {'test': {}}, clear=True), patch.object(app.UPDATE_MANAGER, 'apply') as apply:
             with self.assertRaises(store.StudioError): app.begin_update()

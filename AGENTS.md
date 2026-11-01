@@ -171,4 +171,11 @@ it starts). An update that cannot run no longer hides: the button reads «Оно
 of the folder (ignored ones aside, up to eight and a count), `diverged` means local commits GitHub lacks,
 `unsafe_update` names the untracked file the update would replace, `other_branch` names the branch the folder stands
 on while GitHub's main has commits it lacks (an agent switched the folder and left it). Changed files while nothing new
-waits on GitHub read as `current`: no notice for an author or agent at work. Tests: `backend/tests/test_updater.py`.
+waits on GitHub read as `current`: no notice for an author or agent at work. A new version that does not load on this
+Mac (`Updater.starts` imports the server; a package missing, a syntax error) is taken back with `git reset --keep` and
+reads `update_failed` with the error until a newer version comes; the button never restarts the studio while any work
+of `agent_view.studio_status` runs (director, frame agent, thumbnail, the studio's agent, not only exports and speech).
+The fetch runs outside the updater's lock. `requirements.txt` lists the Python packages and `tools/doctor.py
+[--install]` checks a Mac end to end (packages, ffmpeg, node, the Whisper model, Claude, Codex, the Pixabay key,
+Razgon's node_modules, the update state, that the server loads). `backend/waveforms.py` reads PCM peaks with `array`
+(audioop is gone from Python 3.13). Tests: `backend/tests/test_updater.py`, `tools/tests/test_doctor.py`.

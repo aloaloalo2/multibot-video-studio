@@ -17,6 +17,7 @@ class Updater:
         self.root = Path(root).resolve()
         self.lock = threading.RLock()
         self.state = {'status': 'not_configured'}
+        self.failed = None   # a GitHub version that did not load here: offered again only when a newer one comes
 
     def git(self, *arguments, check=True, timeout=30):
         env = dict(os.environ, GIT_TERMINAL_PROMPT='0', GCM_INTERACTIVE='never')
@@ -81,26 +82,52 @@ class Updater:
                 return {'status': 'unsafe_update', 'files': [name]}
             if raw not in tracked and (self.root / name).exists():
                 return {'status': 'unsafe_update', 'files': [name]}
+        if remote == self.failed:
+            return {'status': 'update_failed', 'error': self.state.get('error', '')}
         return {'status': 'available', 'revision': remote}
 
     def refresh(self):
+        # the fetch runs outside the lock: on a slow network the page asking for the state must not wait 30 s for it
+        try:
+            if not (self.root / '.git').exists() or self.git('remote', 'get-url', 'origin', check=False).returncode:
+                state = {'status': 'not_configured'}
+            else:
+                self.git('fetch', '--quiet', '--no-tags', 'origin', timeout=30)
+                with self.lock:
+                    state = self._inspect()
+        except UpdateError:
+            state = {'status': 'offline'}
         with self.lock:
-            try:
-                if not (self.root / '.git').exists() or self.git('remote', 'get-url', 'origin', check=False).returncode:
-                    self.state = {'status': 'not_configured'}
-                else:
-                    self.git('fetch', '--quiet', '--no-tags', 'origin', timeout=30)
-                    self.state = self._inspect()
-            except UpdateError:
-                self.state = {'status': 'offline'}
+            self.state = state
             return dict(self.state)
 
+    def starts(self):
+        """None when the studio's code in the folder loads (every module and package it needs is there), otherwise the
+        tail of the error. A folder without the studio's server (tests of the updater itself) always passes."""
+        if not (self.root / 'backend' / 'app.py').is_file():
+            return None
+        check = 'import sys; sys.path[:0] = ["backend", "engine"]; import app'
+        try:
+            result = subprocess.run([sys.executable, '-c', check], cwd=str(self.root), capture_output=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return str(exc)
+        return None if result.returncode == 0 else result.stderr.decode('utf-8', 'replace').strip()[-600:]
+
     def apply(self):
+        """Move the folder to GitHub's version; a version that does not load on this Mac is taken back at once, so the
+        studio always starts (31 October 2026: a new package missing on the Mac would otherwise leave it dead)."""
         with self.lock:
             state = self._inspect()
             if state['status'] != 'available':
                 raise UpdateError('Оновлення недоступне або є незбережені зміни програми.')
+            before = self.text('rev-parse', 'HEAD')
             self.git('merge', '--ff-only', '--no-edit', state['revision'])
+            problem = self.starts()
+            if problem:
+                self.git('reset', '--keep', before)
+                self.failed = state['revision']
+                self.state = {'status': 'update_failed', 'error': problem}
+                raise UpdateError('Нова версія студії не запускається на цьому комп’ютері, тому студія лишилась на попередній.')
             self.state = {'status': 'current'}
 
     def public_state(self):
@@ -111,6 +138,8 @@ class Updater:
                 state.update(files=self.state['files'][:8], more=max(0, len(self.state['files']) - 8))
             if self.state.get('branch'):
                 state['branch'] = self.state['branch']
+            if self.state.get('error'):
+                state['error'] = self.state['error'][-400:]
             return state
 
 
@@ -131,5 +160,7 @@ if __name__ == '__main__':
         outcome = update_at_start(Path(__file__).resolve().parents[1])
         if outcome == 'updated':
             print('Студію оновлено.')
+        elif outcome == 'error':
+            print('Нова версія не запускається на цьому комп’ютері: студія лишилась на попередній. Причину показує кнопка у студії.')
         elif outcome in {'local_changes', 'diverged', 'unsafe_update', 'other_branch'}:
             print('Оновлення пропущено: причину показує кнопка «Оновлення зупинене» у студії.')
