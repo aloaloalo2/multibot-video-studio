@@ -676,7 +676,7 @@ def original_example(pid: str) -> dict | None:
             return None
         work.mkdir(parents=True, exist_ok=True)
         try:
-            run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(src["voice"]), "-t", f"{end:.2f}", "-ac", "1", "-ar", "44100",
+            run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(src["voice"]), "-t", f"{end:.2f}", "-af", EXAMPLE_FILTER, "-ac", "1",
                  "-b:a", "160k", str(audio_path)], "вирізати зразок голосу")
         except RuntimeError:
             return None
@@ -686,6 +686,13 @@ def original_example(pid: str) -> dict | None:
 
 NO_VOICE = ("Додайте приклад голосу цією мовою: запишіть себе або закиньте запис носія мови, тут чи в налаштуваннях "
             "каналу. Озвучка скопіює саме цей голос і вимову")
+
+
+# An example is made mono in floating point and brought to a speech level with headroom (user, 2 November 2026: «закинув
+# мп4 ролика як приклад… озвучує голос аж перегруз… роблю тихіше, але все одно рипить»): a loud stereo video folded to
+# mono by `-ac 1` adds both channels and went over full scale (+2.3 dB on a mastered track), the MP3 clipped, and Fish
+# cloned the crackle into every line.
+EXAMPLE_FILTER = "aformat=sample_fmts=flt:channel_layouts=mono,loudnorm=I=-18:TP=-2:LRA=11,aresample=44100"
 
 
 def store_example(folder: Path, stem: str, code: str, stream, size: int, said: str) -> None:
@@ -704,7 +711,7 @@ def store_example(folder: Path, stem: str, code: str, stream, size: int, said: s
             left -= len(chunk)
     target = folder / f"{stem}.mp3"
     try:
-        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(raw), "-vn", "-t", str(OWN_SECONDS), "-ac", "1", "-ar", "44100",
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(raw), "-vn", "-t", str(OWN_SECONDS), "-af", EXAMPLE_FILTER, "-ac", "1",
              "-b:a", "160k", str(target)], "прочитати запис")
     except RuntimeError as error:
         raise store.StudioError(str(error)) from None

@@ -300,6 +300,22 @@ class LanguagesTest(unittest.TestCase):
         with patch("speech.transcribe", side_effect=RuntimeError("no model")), self.assertRaises(store.StudioError):
             languages.save_channel_voice("c" * 16, "de", io.BytesIO(recording), len(recording), "")   # no words, no passage
 
+    def test_a_loud_stereo_video_as_the_example_is_not_clipped(self):
+        # user, 2 November 2026: «закинув мп4 ролика як приклад… озвучує голос аж перегруз»
+        import io
+        loud = Path(self.tmp.name) / "loud.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        "aevalsrc=0.97*sin(2*PI*220*t)|0.97*sin(2*PI*220*t):s=48000:d=8", "-c:a", "aac", str(loud)], check=True)
+        languages.add(self.pid, "en")
+        data = loud.read_bytes()
+        with patch("speech.transcribe", side_effect=RuntimeError("no model")):
+            languages.save_own_voice(self.pid, "en", io.BytesIO(data), len(data), "A passage read aloud.")
+        out = subprocess.run(["ffmpeg", "-i", str(languages.work_dir(self.pid, "en") / "own-voice.mp3"), "-af",
+                              "astats=measure_overall=Peak_level:measure_perchannel=0", "-f", "null", "-"],
+                             capture_output=True, text=True).stderr
+        peak = float(out.split("Peak level dB:")[-1].split()[0])
+        self.assertLess(peak, -1.0)
+
     def test_the_authors_recording_in_the_language_is_the_clones_reference(self):
         import io
         languages.add(self.pid, "en")
