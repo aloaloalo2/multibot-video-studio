@@ -391,21 +391,27 @@ class LanguagesTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             languages.save_text(self.pid, "uk", "Раз. Два. Три.\nЧотири.")          # two lines for three places
         # the second line is far too long for its place: sped up at most 1.25 times, and the third starts late
-        lengths = iter([1.5, 3.0, 0.5])
-        def speak(provider, voice, text, target, before="", after=""):
+        # the second line (3.0 s for 1.45 s): translated shorter (2.2 s), asked of the voice faster (1.9 s), then sped up 1.1×
+        lengths, calls = iter([1.5, 3.0, 2.2, 1.9, 0.5]), []
+        def speak(provider, voice, text, target, before="", after="", speed=1.0):
+            calls.append((text, speed))
             tone(target.with_suffix(".wav"), next(lengths))
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(target.with_suffix(".wav")), str(target)], check=True)
         self.example("uk")
-        with patch.object(languages, "speak", side_effect=speak), \
+        with patch.object(languages, "speak", side_effect=speak), patch.object(languages, "shorten", return_value="Три!") as shorter, \
                 patch.object(languages, "request", return_value=json.dumps({"voice_id": "v1"}).encode()):
             languages.start(self.pid, "voice", "uk", "elevenlabs")
             job = self.wait()
         self.assertEqual(job["status"], "done", job.get("error"))
+        self.assertEqual(shorter.call_count, 1)
+        self.assertEqual(calls[1:4], [("Три.", 1.0), ("Три!", 1.0), ("Три!", 1.15)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual(voice["fastest"], 1.25)
-        self.assertAlmostEqual(voice["latest"], 0.95, delta=0.1)       # 3.0 + 3.0/1.25 = 5.4 against 4.5
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (1, 1.15, 1.1))
+        self.assertAlmostEqual(voice["latest"], 0.23, delta=0.1)       # 3.0 + 1.9/1.1 = 4.73 against 4.5
         self.assertAlmostEqual(voice["duration"], 6, delta=0.15)       # the video's length: silence after the last line
+        self.assertEqual(languages.line_texts(self.pid, "uk"), ["Раз. Два.", "Три!", "Чотири."])   # the text says what is voiced
+        self.assertTrue(languages.overview(self.pid)["items"][0]["voice_current"])
 
     def test_a_saved_fish_model_is_made_once_per_example_and_used_by_id(self):
         self.example("ru")

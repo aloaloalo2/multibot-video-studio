@@ -386,7 +386,12 @@ def translator(code: str) -> str:
 # original stands, sped up a little when it is longer than its place.
 SEGMENT_GAP = 0.3          # sentences closer than this run on as one line
 SEGMENT_MAX = 14.0         # seconds a line may take at most
-SYNC_SPEED = 1.25          # how much a line may be sped up to fit its place
+SYNC_SPEED = 1.1           # how much a finished line may still be sped up afterwards (ffmpeg, pitch kept)
+VOICE_SPEED = 1.15         # how much faster the voice service may be asked to speak a line
+# A line too long for its place (user, 2 November 2026: «не хочу, щоб було дивно по швидкості і щоб тон мінявся… має бути
+# повноцінний дубляж»): first it is translated again, shorter, for its seconds; then the service speaks it a little
+# faster itself (Fish prosody, ElevenLabs speed), with its own intonation; only what is still left is sped up
+# afterwards, at most SYNC_SPEED, and the rest starts a moment later.
 CHARS_PER_SECOND = {"ja": 8, "zh": 6, "ko": 8}
 TRANSLATE_LINES = 30
 
@@ -780,10 +785,11 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     return found
 
 
-def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "") -> None:
+def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "", speed: float = 1.0) -> None:
     if provider == "elevenlabs":
         payload = {"text": text, "model_id": ELEVEN_MODEL, "voice_settings": {"stability": 0.5, "similarity_boost": 0.85, "style": 0.0,
-                                                                                "use_speaker_boost": True}}
+                                                                                "use_speaker_boost": True,
+                                                                                **({"speed": round(min(speed, 1.2), 2)} if speed > 1.001 else {})}}
         if before:
             payload["previous_text"] = before[-500:]
         if after:
@@ -796,7 +802,8 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
         voice_from = {"reference_id": ref["model_id"]} if ref.get("model_id") else {"references": [{"audio": ref["audio"], "text": ref["text"]}]}
         payload = {"text": text, **voice_from, "format": "mp3", "mp3_bitrate": 192,
                    "normalize": True, "latency": "normal", "chunk_length": 200,
-                   "temperature": style["temperature"], "top_p": style["top_p"]}
+                   "temperature": style["temperature"], "top_p": style["top_p"],
+                   **({"prosody": {"speed": round(speed, 2), "volume": 0}} if speed > 1.001 else {})}
         audio = request(FISH + "/v1/tts", msgpack(payload),
                         {"Authorization": "Bearer " + key(provider), "Content-Type": "application/msgpack",
                          "model": ref.get("engine") or FISH_ENGINE}, "Fish Audio")
@@ -910,7 +917,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     parts_dir = work / "parts"
     shutil.rmtree(parts_dir, ignore_errors=True)
     parts_dir.mkdir(parents=True)
-    pieces, cursor, fastest, latest = [], 0.0, 1.0, 0.0
+    pieces, cursor, fastest, latest, shortened, quicker = [], 0.0, 1.0, 0.0, 0, 1.0
+    texts = list(texts)
     def silence(seconds: float) -> None:
         if seconds < 0.01:
             return
@@ -921,10 +929,25 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     for number, (line, text) in enumerate(zip(segments, texts)):
         progress(pid, job, round(90 * number / len(segments)), f"Озвучуємо фразу {number + 1} з {len(segments)}")
         spoken = parts_dir / f"{number:05d}.mp3"
-        speak(provider, voice, text, spoken, texts[number - 1] if number else "", texts[number + 1] if number + 1 < len(texts) else "")
+        around = (texts[number - 1] if number else "", texts[number + 1] if number + 1 < len(texts) else "")
+        speak(provider, voice, text, spoken, *around)
         start = max(float(line["start"]), cursor)
         place = (float(segments[number + 1]["start"]) if number + 1 < len(segments) else max(total, float(line["end"]))) - start - 0.05
         length = store.media_duration(spoken) or 0
+        if place > 0 and length > place * 1.03:
+            # 1. the same meaning, shorter, for the seconds it has
+            shorter = shorten(code, line["source"], text, place, length)
+            if shorter and shorter != text:
+                speak(provider, voice, shorter, spoken, *around)
+                text, texts[number], shortened = shorter, shorter, shortened + 1
+                length = store.media_duration(spoken) or length
+        if place > 0 and length > place * 1.03:
+            # 2. the service speaks it a little faster itself, with its own intonation
+            asked = round(min(length / place, VOICE_SPEED), 2)
+            speak(provider, voice, text, spoken, *around, speed=asked)
+            quicker = max(quicker, asked)
+            length = store.media_duration(spoken) or length
+        # 3. only what is still left: sped up afterwards, at most SYNC_SPEED, pitch kept; the rest starts later
         speed = min(max(1.0, length / place if place > 0 else SYNC_SPEED), SYNC_SPEED)
         fitted = parts_dir / f"{len(pieces) + 1:05d}-line.wav"
         filters = (f"atempo={speed:.4f}," if speed > 1.001 else "") + "aresample=48000"
@@ -935,6 +958,10 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         cursor = start + (store.media_duration(fitted) or length / speed)
         fastest, latest = max(fastest, speed), max(latest, start - float(line["start"]))
     progress(pid, job, 92, "Склеюємо й вирівнюємо гучність")
+    if shortened:
+        # the text keeps the shorter lines the voice now says
+        (work / "text.txt").write_text("\n".join(texts) + "\n", encoding="utf-8")
+        copy_out(project, code, "text")
     silence(total - cursor)
     listing = parts_dir / "list.txt"
     listing.write_text("".join(f"file '{path.name}'\n" for path in pieces), encoding="utf-8")
@@ -950,11 +977,27 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     def keep(data):
         data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
             "provider": provider, "made_at": time.time(), "duration": final, "source_duration": total, "synced": True, **made_with(pid, provider, code),
-            "lines": len(segments), "fastest": round(fastest, 2), "latest": round(latest, 1),
+            "lines": len(segments), "fastest": round(fastest, 2), "latest": round(latest, 1), "shortened": shortened,
+            "quicker": round(quicker, 2),
             "longer": round(max(0.0, cursor - total), 1)}
     update(pid, keep)
     copy_out(project, code, "voice")
     job["cost"] = price(provider, "\n".join(texts), fish_engine(pid))
+
+
+def shorten(code: str, source_text: str, text: str, seconds: float, length: float) -> str | None:
+    """A shorter translation of one line for the seconds it has; None when the translator is not at hand."""
+    rate = CHARS_PER_SECOND.get(code, 15)
+    budget = max(8, int(len(text) * seconds / length * 0.95), int(seconds * rate * 0.8))
+    try:
+        answer, _ = ask([{"role": "system", "content": translator(code) + (
+                             f"\n\nThis dubbing line is too long for its {seconds:.1f} seconds. Rewrite the translation shorter, "
+                             f"at most {budget} characters, keeping its meaning and tone, natural to say. Answer with the line only.")},
+                         {"role": "user", "content": f"Original: {source_text}\nCurrent translation: {text}"}], 400)
+    except RuntimeError:
+        return None
+    answer = " ".join(answer.strip().strip('"«»').split())
+    return answer if 0 < len(answer) < len(text) else None
 
 
 def whole(pid: str, code: str, provider: str, job: dict) -> None:
