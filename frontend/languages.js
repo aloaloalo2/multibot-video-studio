@@ -96,7 +96,7 @@ function drawLangs(id){
   });
   view.addEventListener('change',async event=>{
     const select=event.target.closest('.lang-engine select');if(!select)return;
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',engine:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
+    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',[select.dataset.field || 'engine']:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
   });
   showLangJob();
 }
@@ -127,9 +127,9 @@ let langRecorder=null;
 async function langRecord(button,holder,done){
   if(langRecorder){langRecorder.stop();return;}
   let stream;
-  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});}
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1,sampleRate:48000}});}
   catch{langNote(holder,'Браузер не дав доступ до мікрофона. Дозвольте його в адресному рядку або закиньте запис файлом.',true);return;}
-  const chunks=[],recorder=new MediaRecorder(stream),idle=button.innerHTML;langRecorder=recorder;
+  const chunks=[],recorder=new MediaRecorder(stream,{audioBitsPerSecond:256000}),idle=button.innerHTML;langRecorder=recorder;
   const started=Date.now(),label=()=>{const s=Math.floor((Date.now()-started)/1000);button.innerHTML=`<span class="lang-rec-dot"></span>Зупинити · ${clock(s)}`;};
   button.classList.add('is-recording');label();const tick=setInterval(label,500);
   recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
@@ -214,7 +214,8 @@ function langCard(id,item,spec){
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
       ${item.text?`<div class="lang-provider">
-          ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
+          ${spec.engines?`<div class="lang-engines"><label class="lang-engine"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>
+          <label class="lang-engine"><span>Схожість на приклад</span><select data-field="style">${(spec.styles || []).map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label></div>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
         ${langOwnBlock(item)}
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>

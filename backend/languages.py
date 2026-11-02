@@ -190,6 +190,19 @@ def price(provider: str, text: str, engine: str | None = None) -> float | None:
     return round(len(text.encode("utf-8") if spec["bytes"] else text) * rate, 2)
 
 
+# How closely Fish keeps to the example (user, 2 November 2026: «голос поганий… може там є настройки?»): lower
+# temperature and top_p stay nearer to the example's voice, higher ones speak more freely.
+FISH_STYLES = {"exact": {"name": "Точно як приклад", "temperature": 0.5, "top_p": 0.6},
+               "normal": {"name": "Звичайно", "temperature": 0.7, "top_p": 0.7},
+               "lively": {"name": "Живіше", "temperature": 0.9, "top_p": 0.8}}
+FISH_STYLE = "exact"
+
+
+def fish_style(pid: str) -> str:
+    style = load_state(pid).get("fish_style")
+    return style if style in FISH_STYLES else FISH_STYLE
+
+
 def fish_engine(pid: str) -> str:
     engine = load_state(pid).get("fish_engine")
     return engine if engine in FISH_ENGINES else FISH_ENGINE
@@ -234,6 +247,7 @@ def overview(pid: str) -> dict:
     return {"languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
             "providers": [{"id": key, "name": spec["name"], "note": spec["note"], "configured": configured.get(key),
                            **({"engines": [{"id": eid, **item} for eid, item in FISH_ENGINES.items()], "engine": engine,
+                               "styles": [{"id": sid, "name": item["name"]} for sid, item in FISH_STYLES.items()], "style": fish_style(pid),
                                "free": FISH_ENGINES[engine]["per_char"] == 0} if key == "fishaudio" else {})}
                           for key, spec in PROVIDERS.items()],
             "openrouter": configured.get("openrouter"),
@@ -630,7 +644,7 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     if not example:
         raise RuntimeError(NO_VOICE)
     if provider == "fishaudio":
-        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid)}
+        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid), "style": fish_style(pid)}
     slot = f"elevenlabs-{code}-{example['from']}-{example['stamp']}"
     known = (load_state(pid).get("clones") or {}).get(slot)
     if known:
@@ -658,8 +672,10 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
                         {"xi-api-key": key(provider), "Content-Type": "application/json", "Accept": "audio/mpeg"}, "ElevenLabs")
     else:
         ref = voice if isinstance(voice, dict) else {}
+        style = FISH_STYLES.get(ref.get("style") or FISH_STYLE, FISH_STYLES[FISH_STYLE])
         payload = {"text": text, "references": [{"audio": ref["audio"], "text": ref["text"]}], "format": "mp3", "mp3_bitrate": 192,
-                   "normalize": True, "latency": "normal", "chunk_length": 200}
+                   "normalize": True, "latency": "normal", "chunk_length": 200,
+                   "temperature": style["temperature"], "top_p": style["top_p"]}
         audio = request(FISH + "/v1/tts", msgpack(payload),
                         {"Authorization": "Bearer " + key(provider), "Content-Type": "application/msgpack",
                          "model": ref.get("engine") or FISH_ENGINE}, "Fish Audio")
@@ -713,7 +729,7 @@ def voice_key(pid: str, provider: str, code: str | None = None) -> str:
     new example or engine never plays an older one's sample."""
     example = voice_for(pid, code)
     tail = f"-{example['from']}{example['stamp']}" if example else ""
-    return (f"fishaudio-{fish_engine(pid)}" if provider == "fishaudio" else provider) + tail
+    return (f"fishaudio-{fish_engine(pid)}-{fish_style(pid)}" if provider == "fishaudio" else provider) + tail
 
 
 def drop_samples(work: Path) -> None:
@@ -1145,14 +1161,18 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     return overview(pid)
 
 
-def set_provider(pid: str, provider: str, engine: str | None = None) -> dict:
+def set_provider(pid: str, provider: str, engine: str | None = None, style: str | None = None) -> dict:
     if provider not in PROVIDERS:
         raise store.StudioError("Невідомий сервіс озвучки")
     if engine is not None and engine not in FISH_ENGINES:
         raise store.StudioError("Невідомий рушій Fish Audio")
+    if style is not None and style not in FISH_STYLES:
+        raise store.StudioError("Невідома схожість голосу")
     def change(data):
         data["provider"] = provider
         if engine:
             data["fish_engine"] = engine
+        if style:
+            data["fish_style"] = style
     update(pid, change)
     return overview(pid)

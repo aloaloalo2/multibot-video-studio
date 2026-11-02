@@ -136,7 +136,7 @@ class LanguagesTest(unittest.TestCase):
         # Fish's engine keeps a sample of its own: switching engines never plays another one's
         languages.set_provider(self.pid, "fishaudio", "s1")
         fish = languages.overview(self.pid)["items"][0]["voice_key"]
-        self.assertTrue(fish.startswith("fishaudio-s1-episode"))
+        self.assertTrue(fish.startswith("fishaudio-s1-exact-episode"))
         with self.assertRaises(store.StudioError):
             languages.file_path(self.pid, "en", "sample-" + fish)
 
@@ -252,7 +252,13 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue(url.endswith("/v1/tts"))
         self.assertEqual((headers["Content-Type"], headers["model"]), ("application/msgpack", "s2.1-pro-free"))
         self.assertIn(voice["audio"][:200], body)
+        self.assertIn(languages.msgpack("temperature") + languages.msgpack(0.5), body)     # «Точно як приклад» by default
         self.assertNotIn("clones", languages.load_state(self.pid))
+        languages.set_provider(self.pid, "fishaudio", style="lively")
+        self.assertEqual(languages.voice_id(self.pid, "fishaudio", "uk")["style"], "lively")
+        self.assertIn("-lively-", languages.voice_key(self.pid, "fishaudio", "uk"))
+        with self.assertRaises(store.StudioError):
+            languages.set_provider(self.pid, "fishaudio", style="nope")
         languages.set_provider(self.pid, "fishaudio", "s1")
         self.assertEqual(languages.voice_id(self.pid, "fishaudio", "uk")["engine"], "s1")
         with self.assertRaises(store.StudioError):

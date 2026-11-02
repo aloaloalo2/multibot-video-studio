@@ -1268,3 +1268,4 @@ select option{background:#232327;color:#f1f1f2}
 .channel-voice-add svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 .channel-voice-add select{width:auto;flex:1}
 .channel-voice .project-action{flex:none}
+.lang-engines{display:flex;flex-wrap:wrap;gap:8px 18px}
