@@ -70,9 +70,11 @@ class LanguagesTest(unittest.TestCase):
         (work / "own-voice.wav").unlink()
         (work / "own-voice.txt").write_text(words, encoding="utf-8")
 
-    def wait(self):
+    def wait(self, slot=None):
         for _ in range(200):
-            if not languages.ACTIVE:
+            if slot and languages.job_key(self.pid, *slot.split("|")) not in languages.ACTIVE:
+                return languages.load_state(self.pid)["jobs"][slot]
+            if not slot and not languages.ACTIVE:
                 return languages.load_state(self.pid)["job"]
             time.sleep(0.05)
         self.fail("the job did not finish")
@@ -167,9 +169,13 @@ class LanguagesTest(unittest.TestCase):
             languages.start(self.pid, "voice", "en", "elevenlabs")         # nothing translated yet
         with self.assertRaises(store.StudioError):
             languages.start(self.pid, "translate", "xx")
-        languages.ACTIVE.add(self.pid)
+        languages.ACTIVE.add(languages.job_key(self.pid, "en", "voice"))
         with self.assertRaises(store.StudioError):
             languages.start(self.pid, "translate", "en")
+        self.assertTrue(languages.busy(self.pid))
+        self.assertFalse(languages.busy(self.pid, "en", "thumbnail"))
+        self.assertFalse(languages.busy(self.pid, "de"))
+        self.assertEqual(languages.active_projects(), {self.pid})
         languages.ACTIVE.clear()
 
     def test_saved_text_drops_the_old_sample_and_remove_keeps_the_episode_copies(self):
@@ -357,9 +363,13 @@ class LanguagesTest(unittest.TestCase):
             def poll(self):
                 return 0
         languages.add(self.pid, "de")
+        # the thumbnail is translated while the text of the same language is at work (user, 2 November 2026)
+        languages.ACTIVE.add(languages.job_key(self.pid, "de", "voice"))
         with patch.object(thumbnail_gen, "CODEX", self.voice), patch.object(languages.subprocess, "Popen", Codex):
             languages.start(self.pid, "thumbnail", "de", wishes="напис жовтий")
-            self.assertEqual(self.wait()["status"], "done")
+            self.assertEqual(self.wait("de|thumbnail")["status"], "done")
+        self.assertIn(languages.job_key(self.pid, "de", "voice"), languages.ACTIVE)
+        languages.ACTIVE.clear()
         self.assertIn("into German", prompts[0])
         self.assertIn("напис жовтий", prompts[0])
         self.assertTrue(languages.file_path(self.pid, "de", "thumbnail").is_file())

@@ -25,10 +25,10 @@ async function loadLangs(id){
   catch(error){const lead=document.querySelector('#project-langs .lang-lead');if(lead)lead.textContent=error.message;return;}
   if(state.project?.id!==id || state.view!=='langs')return;
   drawLangs(id);
-  if(langData.job?.status==='running')pollLangs(id);
+  if(langBusy())pollLangs(id);
 }
 
-function langBusy(){return langData?.job?.status==='running';}
+function langBusy(){return langJobs().some(job=>job.status==='running');}
 
 // A flag for each language, shown in its capsule and in the «+» menu.
 const langFlags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
@@ -317,53 +317,73 @@ function langNote(where,message,error=false){
   if(!error)setTimeout(()=>note.remove(),8000);
 }
 
-async function langCancel(id){
-  const button=document.querySelector('#project-langs .lang-cancel');if(button){button.disabled=true;button.textContent='Скасовуємо…';}
-  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{});}catch(error){langNote(button,error.message,true);}
+// the slots whose cancel the author pressed: only they read «Скасовуємо…» (the button used to be disabled with every other
+// button of the card while a job ran, and the next poll took that for a cancel asked; user, 2 November 2026)
+const langAsked=new Set();
+async function langCancel(id,slot,button){
+  langAsked.add(slot);
+  if(button){button.disabled=true;button.textContent='Скасовуємо…';}
+  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{slot});}catch(error){langNote(button,error.message,true);}
 }
 
 async function langStart(id,kind,code,extra={}){
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider,...extra});
     langPlace(code,kind)?.querySelector(':scope > .lang-note')?.remove();
-    langData.job=job;showLangJob();pollLangs(id);
+    langData.jobs=[...langJobs().filter(other=>other.slot!==job.slot),job];langData.job=job;
+    showLangJob();pollLangs(id);
   }catch(error){langNote(langPlace(code,kind),error.message,true);}
 }
 
+// Jobs run side by side (user, 2 November 2026: «перекладалось текст, я нажав перекласти прев'ю, і воно зупиняє
+// переклад?»): each language has two lanes, its text and voice, and its thumbnail; other languages run at once too.
+const langGroupOf=kind=>kind==='thumbnail'?'thumbnail':'voice';
+function langJobs(){return langData?.jobs || (langData?.job?[langData.job]:[]);}
+function langRunning(code,group){return langJobs().some(job=>job.status==='running'&&(!code||job.code===code)&&(!group||langGroupOf(job.kind)===group));}
+
 function showLangJob(){
-  // the line sits in the step it works on, inside the language's own card (user, 2 November 2026: «не треба розкидати
-  // блоки… все в один блок»): the text for a translation, the voice for a sample or the whole, the thumbnail
-  const job=langData?.job,busy=langBusy();
-  // the capsule of the language at work shows it, whichever card is open
-  document.querySelectorAll('#project-langs .lang-pill').forEach(pill=>pill.classList.toggle('is-working',busy&&pill.dataset.code===job?.code));
-  const step={translate:0,sample:1,voice:1,thumbnail:2}[job?.kind];
-  const card=job?.code?document.querySelector(`#project-langs .lang-card[data-code="${job.code}"]`):null;
-  const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
-  for(const other of document.querySelectorAll('#project-langs .lang-job'))if(other!==box){other.hidden=true;other.closest('.lang-step')?.classList.remove('is-working');}
-  document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
-    button.disabled=busy || button.dataset.blocked==='1';});
-  // adding a language touches nothing a running job uses: it stays open (user, 2 November 2026)
+  // a job's line sits in the step it works on, inside the language's own card (user, 2 November 2026: «не треба
+  // розкидати блоки… все в один блок»): the text for a translation, the voice for a sample or the whole, the thumbnail
+  const jobs=langJobs();
+  // the capsule of a language at work shows it, whichever card is open
+  document.querySelectorAll('#project-langs .lang-pill').forEach(pill=>pill.classList.toggle('is-working',langRunning(pill.dataset.code)));
+  for(const card of document.querySelectorAll('#project-langs .lang-card[data-code]')){
+    const code=card.dataset.code,steps=[...card.querySelectorAll('.lang-step')];
+    // a running lane locks only its own steps: the text and voice, or the thumbnail
+    card.querySelectorAll('button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
+      if(button.classList.contains('lang-cancel'))return;
+      const index=steps.findIndex(step=>step.contains(button));
+      const locked=index<0?langRunning(code):langRunning(code,index===2?'thumbnail':'voice');
+      button.disabled=locked || button.dataset.blocked==='1';});
+    steps.forEach((step,index)=>{
+      const box=step.querySelector(':scope > .lang-job');if(!box)return;
+      const own=jobs.filter(job=>job.code===code&&langStepOf[job.kind]===index);
+      const job=own.find(item=>item.status==='running') || own.sort((a,b)=>(b.finished_at||0)-(a.finished_at||0))[0];
+      const busy=job?.status==='running';
+      // a finished job shows itself in the card (the text, the player, the picture): only a failure or a cancel says so
+      const recent=job&&['failed','cancelled'].includes(job.status)&&job.finished_at&&Date.now()/1000-job.finished_at<120;
+      box.hidden=!job || (!busy && !recent);
+      box.dataset.status=job?.status || '';
+      step.classList.toggle('is-working',busy);
+      const slot=job?.slot || (job?`${job.code}|${langGroupOf(job.kind)}`:'');
+      if(!busy)langAsked.delete(slot);
+      if(box.hidden){box.innerHTML='';return;}
+      // the poll redraws this line every 2 s: a cancel already asked for stays shown
+      const stopping=langAsked.has(slot) || job.stage==='Скасовуємо…';
+      box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${stopping?' disabled':''}>${stopping?'Скасовуємо…':'Скасувати'}</button>`
+        :job.status==='cancelled'?`<span>Скасовано, нічого не збережено.</span>`
+        :`<span>Не вдалося: ${esc(job.error || '')}</span>`;
+      const cancel=box.querySelector('.lang-cancel');
+      cancel?.addEventListener('click',()=>langCancel(state.project.id,slot,cancel));
+    });
+  }
   // the «after» window of the language being redrawn says so in place of its wand
   for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){
-    const drawing=busy&&job.kind==='thumbnail'&&tile.closest('.lang-card')?.dataset.code===job.code;
+    const drawing=langRunning(tile.closest('.lang-card')?.dataset.code,'thumbnail');
     tile.classList.toggle('is-drawing',drawing);
     const label=tile.querySelector('.lang-thumb-wand small');
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex перекладає, 1–3 хвилини…':label.dataset.idle;}
   }
-  if(!box)return;
-  // a finished job shows itself in the card (the text, the player, the picture): only a failure or a cancel says so here
-  const recent=job&&['failed','cancelled'].includes(job.status)&&job.finished_at&&Date.now()/1000-job.finished_at<120;
-  box.hidden=!job || (!busy && !recent);
-  box.dataset.status=job?.status || '';
-  box.closest('.lang-step').classList.toggle('is-working',busy);
-  if(box.hidden)return;
-  // the poll redraws this line every 2 s: a cancel already asked for stays shown
-  const asked=box.querySelector('.lang-cancel')?.disabled;
-  box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${asked||job.stage==='Скасовуємо…'?' disabled':''}>${asked||job.stage==='Скасовуємо…'?'Скасовуємо…':'Скасувати'}</button>`
-    :job.status==='cancelled'?`<span>Скасовано, нічого не збережено.</span>`
-    :job.status==='done'?`<span>Готово.${job.cost?` Витрачено ${langMoney(job.cost)}.`:''}</span>`
-    :`<span>Не вдалося: ${esc(job.error || '')}</span>`;
-  box.querySelector('.lang-cancel')?.addEventListener('click',()=>langCancel(state.project.id));
 }
 
 async function pollLangs(id){
@@ -371,8 +391,10 @@ async function pollLangs(id){
   try{
     while(langBusy() && state.project?.id===id){
       await new Promise(resolve=>setTimeout(resolve,2000));
-      try{const data=await api(`/api/projects/${encodeURIComponent(id)}/languages`);
-        const finished=data.job?.status!=='running';langData=data;
+      try{const before=langJobs().filter(job=>job.status==='running').map(job=>job.slot);
+        langData=await api(`/api/projects/${encodeURIComponent(id)}/languages`);
+        // a lane that has just finished brings its result into the card
+        const finished=before.some(slot=>!langJobs().some(job=>job.slot===slot&&job.status==='running'));
         if(finished && state.view==='langs' && state.project?.id===id)drawLangs(id);else showLangJob();
       }catch{}
     }

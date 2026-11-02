@@ -72,9 +72,32 @@ VOICE_CHUNK = 2400
 SAMPLE_CHARS = 900           # about a minute (user, 2 November 2026: «дозволь слухати більше»)
 FIT_MAX = 1.15
 TIMEOUT = 300
+# Jobs run side by side (user, 2 November 2026: «перекладалось текст, я нажав перекласти превью, і воно зупиняє
+# переклад?»): one a language for its text and voice (they share the text), and one a language for its thumbnail; other
+# languages go on at the same time. A job's key is «<pid>|<code>|<group>»; its slot in the state is «<code>|<group>».
 ACTIVE: set[str] = set()
-CANCEL: set[str] = set()      # projects whose running job the author stopped
+CANCEL: set[str] = set()      # jobs the author stopped
 PROCS: dict[str, subprocess.Popen] = {}
+
+
+def group_of(kind: str) -> str:
+    return "thumbnail" if kind == "thumbnail" else "voice"
+
+
+def job_key(pid: str, code: str, group: str) -> str:
+    return f"{pid}|{code}|{group}"
+
+
+def active_projects() -> set[str]:
+    return {key.split("|", 1)[0] for key in ACTIVE.copy()}
+
+
+def busy(pid: str, code: str | None = None, group: str | None = None) -> bool:
+    for key in ACTIVE.copy():
+        own, own_code, own_group = key.split("|")
+        if own == pid and (code is None or own_code == code) and (group is None or own_group == group):
+            return True
+    return False
 LOCK = threading.Lock()
 
 
@@ -104,9 +127,9 @@ def state_path(pid: str) -> Path:
 def load_state(pid: str) -> dict:
     data = store.read_json(state_path(pid), {})
     data = data if isinstance(data, dict) else {}
-    job = data.get("job")
-    if isinstance(job, dict) and job.get("status") == "running" and pid not in ACTIVE:
-        job.update(status="failed", error="Студію перезапустили під час роботи. Спробуйте ще раз.")
+    for job in [data.get("job"), *(data.get("jobs") or {}).values()]:
+        if isinstance(job, dict) and job.get("status") == "running" and job_key(pid, job.get("code"), group_of(job.get("kind", ""))) not in ACTIVE:
+            job.update(status="failed", error="Студію перезапустили під час роботи. Спробуйте ще раз.")
     return data
 
 
@@ -283,7 +306,7 @@ def overview(pid: str) -> dict:
                        "estimate": {key: price(key, src["script"], engine) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             # Fish Audio only for now (user, 2 November 2026: «будемо працювати лише з фіш-аудіо»); ElevenLabs stays in code
-            "provider": "fishaudio", "job": data.get("job"),
+            "provider": "fishaudio", "job": data.get("job"), "jobs": list((data.get("jobs") or {}).values()),
             "channel_id": project.get("channel_id"),
             "thumbnail": bool(cover(project))}
 
@@ -659,7 +682,7 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
     check_code(code)
     store.load_project(pid)
     with LOCK:
-        if pid in ACTIVE and (load_state(pid).get("job") or {}).get("code") == code:
+        if busy(pid, code, "voice"):
             raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
     store_example(work_dir(pid, code), "own-voice", code, stream, size, said)
     drop_samples(work_dir(pid, code))
@@ -890,8 +913,6 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     announce_model(pid, provider, code, job)
     voice = voice_id(pid, provider, code)
     progress(pid, job, 50, "Озвучуємо зразок")
-    if pid in CANCEL:
-        raise Stop()
     piece = sample_text(text, job.get("sentences"))
     # each voice (a provider, and Fish's engine) keeps its own sample, so switching between them compares them
     speak(provider, voice, piece, work_dir(pid, code) / f"sample-{voice_key(pid, provider, code)}.mp3")
@@ -1095,15 +1116,15 @@ and reply only with the saved path."""
     command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base), "-"]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=work, text=True,
                                start_new_session=True)
-    PROCS[pid] = process
+    PROCS[job["key"]] = process
     try:
         out, err = process.communicate(prompt, timeout=thumbnail_gen.TIMEOUT)
     except subprocess.TimeoutExpired:
         process.kill()
         raise
     finally:
-        PROCS.pop(pid, None)
-    if pid in CANCEL:
+        PROCS.pop(job["key"], None)
+    if job["key"] in CANCEL:
         raise Stop()
     result = subprocess.CompletedProcess(command, process.returncode, out, err)
     (work / "thumbnail-log.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
@@ -1195,11 +1216,18 @@ def file_path(pid: str, code: str, kind: str) -> Path:
 
 # ---------- jobs ----------
 
+def put_job(pid: str, job: dict) -> None:
+    def keep(data):
+        data.setdefault("jobs", {})[job["slot"]] = {k: v for k, v in job.items() if k != "key"}
+        data["job"] = data["jobs"][job["slot"]]
+    update(pid, keep)
+
+
 def progress(pid: str, job: dict, value: int, stage: str) -> None:
-    if pid in CANCEL:
+    if job.get("key") in CANCEL:
         raise Stop()
     job.update(progress=value, stage=stage)
-    update(pid, lambda data: data.__setitem__("job", dict(job)))
+    put_job(pid, job)
 
 
 WORK = {"translate": translate, "sample": sample, "voice": whole, "thumbnail": thumbnail}
@@ -1221,28 +1249,34 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
         job.update(status="failed", error=str(error), finished_at=time.time())
     finally:
         try:
-            update(pid, lambda data: data.__setitem__("job", dict(job)))
+            put_job(pid, job)
         finally:
             with LOCK:
-                ACTIVE.discard(pid)
-                CANCEL.discard(pid)
+                ACTIVE.discard(job["key"])
+                CANCEL.discard(job["key"])
 
 
-def cancel(pid: str) -> dict:
-    """Stop the running job: at the next part of a translation or a voice (the part being made is finished and paid),
-    at once for the thumbnail, whose Codex is killed. Nothing half made is saved."""
+def cancel(pid: str, slot: str | None = None) -> dict:
+    """Stop a running job (the one of `slot`, «<code>|<group>», or all of the project): at the next part of a
+    translation or a voice (the part being made is finished and paid), at once for the thumbnail, whose Codex is killed.
+    Nothing half made is saved."""
+    import os, signal
     with LOCK:
-        if pid not in ACTIVE:
-            return overview(pid)
-        CANCEL.add(pid)
-        process = PROCS.get(pid)
-    if process and process.poll() is None:
-        import os, signal
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except OSError:
-            pass
-    update(pid, lambda data: (data.get("job") or {}).update(stage="Скасовуємо…"))
+        keys = [key for key in ACTIVE if key.startswith(pid + "|") and (not slot or key == f"{pid}|{slot}")]
+        CANCEL.update(keys)
+        processes = [PROCS.get(key) for key in keys]
+    for process in processes:
+        if process and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except OSError:
+                pass
+    def mark(data):
+        for key in keys:
+            job = (data.get("jobs") or {}).get(key.split("|", 1)[1])
+            if job:
+                job["stage"] = "Скасовуємо…"
+    update(pid, mark)
     return overview(pid)
 
 
@@ -1273,22 +1307,26 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
             raise store.StudioError("У випуску ще немає тексту озвучки", 409)
     if kind == "thumbnail" and not cover(project):
         raise store.StudioError("У випуску ще немає прев'ю: створіть його на вкладці «Прев'ю»", 409)
+    group = group_of(kind)
     with LOCK:
-        if pid in ACTIVE:
-            raise store.StudioError("Зачекайте, доки закінчиться попередня дія", 409)
-        ACTIVE.add(pid)
+        if busy(pid, code, group):
+            raise store.StudioError("Зачекайте, доки закінчиться попередня дія з цією мовою" if group == "voice"
+                                    else "Прев'ю цієї мови вже перекладається", 409)
+        ACTIVE.add(job_key(pid, code, group))
         job = {"status": "running", "kind": kind, "code": code, "provider": provider, "progress": 0, "stage": "Починаємо",
+               "slot": f"{code}|{group}", "key": job_key(pid, code, group),
                "what": NAMES[kind], "started_at": time.time(),
                **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {}),
                **({"sentences": int(sentences)} if kind == "sample" and str(sentences or "").isdigit() and int(sentences) in SAMPLE_SENTENCES else {})}
         data = load_state(pid)
-        data["job"] = dict(job)
+        data.setdefault("jobs", {})[job["slot"]] = {k: v for k, v in job.items() if k != "key"}
+        data["job"] = data["jobs"][job["slot"]]
         data.setdefault("languages", {}).setdefault(code, {})
         if provider:
             data["provider"] = provider
         save_state(pid, data)
     threading.Thread(target=worker, args=(pid, kind, code, provider, job), daemon=True).start()
-    return job
+    return {k: v for k, v in job.items() if k != "key"}
 
 
 def add(pid: str, code: str) -> dict:
@@ -1301,8 +1339,7 @@ def add(pid: str, code: str) -> dict:
 def remove(pid: str, code: str) -> dict:
     check_code(code)
     with LOCK:
-        job = load_state(pid).get("job") or {}
-        if pid in ACTIVE and job.get("code") == code:
+        if busy(pid, code):
             raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
         data = load_state(pid)
         (data.get("languages") or {}).pop(code, None)
@@ -1318,7 +1355,7 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     if len(text) > 400_000:
         raise store.StudioError("Текст задовгий")
     with LOCK:
-        if pid in ACTIVE and (load_state(pid).get("job") or {}).get("code") == code:
+        if busy(pid, code, "voice"):
             raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
     segments = synced_segments(pid, code)
     if segments:

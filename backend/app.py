@@ -682,7 +682,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.ACTIVE.copy() | set(agent_runtime.JOBS.copy())
+    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -698,7 +698,8 @@ def project_jobs(pid: str) -> dict:
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
             "прев'ю": status(lambda: thumbnail_gen.state(pid)),
-            "мови": status(lambda: languages.load_state(pid).get("job")),
+            "мови": status(lambda: next((job for job in (languages.load_state(pid).get("jobs") or {}).values() if job.get("status") == "running"),
+                                        languages.load_state(pid).get("job"))),
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
 
 
@@ -1257,7 +1258,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None)}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
         if match and method == "POST":
-            return self.json_response(languages.cancel(match.group(1)))
+            return self.json_response(languages.cancel(match.group(1), body.get("slot") or None))
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/remove", path)
         if match and method == "POST":
             return self.json_response(languages.remove_channel_voice(*match.groups()))
