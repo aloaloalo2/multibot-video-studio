@@ -420,7 +420,7 @@ function buildAudioNodes() {
   const container=$('preview-audio-container'),previous=new Map(state.audioNodes.map(item=>[item.clip.id,item]));state.audioNodes=[];
   if(isUniversal()){
     for(const layer of layers())for(const clip of layer.clips || [])if(clip.kind==='audio'){
-      const asset=assetById(clip.asset_id),url=asset?.preview_url || asset?.media_url || asset?.url;
+      const asset=assetById(clip.asset_id),dub=typeof dubbedVoiceUrl==='function'?dubbedVoiceUrl(clip):null,url=dub || asset?.preview_url || asset?.media_url || asset?.url;
       if(!url)continue;
       const old=previous.get(clip.id),element=old?.element.getAttribute('src')===url?old.element:document.createElement('audio');if(element!==old?.element){element.src=url;element.preload='auto';}element.muted=state.monitorMuted || layer.muted===true;if(element.parentElement!==container)container.append(element);state.audioNodes.push({clip,element});
     }
@@ -449,7 +449,8 @@ function requestMediaPlayback(element){
 // uses. A gain above 1 (a quiet voice brought up) needs Web Audio, which an <audio> element's volume cannot give.
 const studioAudio={context:null};
 function setClipLevel(element,clip){
-  const level=Math.max(0,Number(clip.volume ?? 1)*Number(state.project?.audio_gain?.[clip.asset_id] ?? 1)*state.monitorVolume);
+  // a translated voice from «Мови» is already at the studio's level (−16 LUFS): it takes no gain of the original's
+  const level=Math.max(0,Number(clip.volume ?? 1)*(typeof dubbedVoiceUrl==='function'&&dubbedVoiceUrl(clip)?1:Number(state.project?.audio_gain?.[clip.asset_id] ?? 1))*state.monitorVolume);
   if(level<=1&&!element._studioGain){element.volume=level;return;}
   try{
     if(!element._studioGain){studioAudio.context=studioAudio.context || new AudioContext();const source=studioAudio.context.createMediaElementSource(element),gain=studioAudio.context.createGain();

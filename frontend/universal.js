@@ -55,7 +55,7 @@ function renderUniversalTimeline(){
     for(const [symbol,title,run] of [['✎','Перейменувати шар',()=>renameUniversalLayer(layer)],['×','Прибрати шар',()=>removeUniversalLayer(layer)]]){
       const button=document.createElement('button');button.type='button';if(symbol==='×')setTrashButton(button,`${title} ${layer.name}`,true);else button.textContent=symbol;button.title=title;button.setAttribute('aria-label',`${title} ${layer.name}`);button.disabled=(symbol==='↑'&&index===layers().length-1)||(symbol==='↓'&&index===0)||(symbol==='×'&&layers().length===1);button.addEventListener('click',run);controls.append(button);
     }
-    heading.append(name);addLayerEyeControl(heading,layer);addLayerSoundControl(heading,layer);heading.append(controls);
+    heading.append(name);addLayerEyeControl(heading,layer);addLayerSoundControl(heading,layer);if(typeof addLayerDubControl==='function')addLayerDubControl(heading,layer);heading.append(controls);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=width+'px';lane.dataset.layerId=layer.id;
     const occupiedUntil=[];
     for(const clip of [...(layer.clips || [])].sort((a,b)=>seconds(a.start)-seconds(b.start))){

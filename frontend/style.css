@@ -1311,3 +1311,8 @@ select option{background:#232327;color:#f1f1f2}
 /* the sentence count stands right beside the sample; only a sample with its player takes the row's room */
 .lang-sample-row .lang-sample{flex:0 1 auto;min-width:0}
 .lang-sample-row .lang-sample:has(.voice-player){flex:1;min-width:260px}
+.layer-dub.is-dubbed{color:#6bf2ae}
+.layer-dub-flag{font-size:13px;line-height:1}
+.layer-dub-menu{min-width:220px}
+.layer-dub-menu button.active{background:#16221c;color:#6bf2ae}
+.layer-dub-empty{margin:4px 8px;max-width:240px;color:#9a9ca4;font-size:12.5px;line-height:1.45}
