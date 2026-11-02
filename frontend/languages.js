@@ -38,7 +38,7 @@ const langMarkIcons={text:'<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14
   thumbnail:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/></svg>',
   voice:'<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'};
 function langMarks(item){
-  const made=[['text',!!item.text,'Текст перекладено'],['thumbnail',!!item.files?.thumbnail,'Прев’ю перекладено'],['voice',!!item.files?.voice,'Озвучку зроблено']].filter(mark=>mark[1]);
+  const made=[['text',!!item.text,'Текст перекладено'],['thumbnail',!!item.files?.thumbnail,'Прев’ю перекладено'],['voice',!!item.files?.voice&&item.voice_current!==false,'Озвучку зроблено']].filter(mark=>mark[1]);
   return made.length?`<span class="lang-marks">${made.map(([kind,,title])=>`<i class="lang-mark" title="${title}" aria-label="${title}">${langMarkIcons[kind]}</i>`).join('')}</span>`:'';
 }
 function langFlag(code){return `<span class="lang-flag" aria-hidden="true">${langFlags[code] || '🌐'}</span>`;}
@@ -95,7 +95,7 @@ function drawLangs(id){
         catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}}}]));
   });
   view.addEventListener('change',async event=>{
-    const select=event.target.closest('.lang-engine select');if(!select)return;
+    const select=event.target.closest('.lang-chip-select select, .lang-engine select');if(!select)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',[select.dataset.field || 'engine']:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
   });
   showLangJob();
@@ -208,6 +208,8 @@ function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
   const hasSample=(item.files.samples || []).includes(item.voice_key);
+  // a voicing shows only while what made it still holds: the voice, engine, likeness, example and text
+  const readyVoice=item.files.voice&&item.voice_current!==false;
   const fit=voice.synced?[`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`найбільше запізнення ${String(voice.latest).replace('.',',')} с`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
     <section class="lang-step"><h3><em>1</em>Текст</h3>
@@ -220,10 +222,10 @@ function langCard(id,item,spec){
           <label class="lang-chip-select" title="Наскільки точно триматися прикладу голосу"><span>Схожість</span><select data-field="style">${(spec.styles || []).map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
           ${spec.configured===true?'':`<span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів»</span>`}</div>
         ${langOwnBlock(item)}
-        <div class="lang-sample-row"><div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div><button type="button" class="lang-icon lang-sample-run" title="Новий зразок" aria-label="Новий зразок">${langIcons.redo}</button>`
+        <div class="lang-sample-row"><div class="lang-sample">${hasSample?`<span class="lang-sample-by" title="Чим зроблено цей зразок">Зразок<small>${esc([spec.engines?.find(engine=>engine.id===spec.engine)?.name,spec.styles?.find(style=>style.id===spec.style)?.name].filter(Boolean).join(' · ') || spec.name)}</small></span><div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div><button type="button" class="lang-icon lang-sample-run" title="Новий зразок" aria-label="Новий зразок">${langIcons.redo}</button>`
             :`<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${langIcons.play}Послухати зразок<small>~1 хв</small></button>`}</div>
-          <button type="button" class="primary lang-voice-run" title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button></div>
-        ${item.files.voice?`<div class="lang-voice"><div class="lang-voice-head"><b>Готова озвучка</b><small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
+          <button type="button" class="primary lang-voice-run" title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${readyVoice?'Озвучити заново':'Озвучити весь ролик'} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button></div>
+        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b>Готова озвучка</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
           <a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити MP3${item.folder?' · копія лежить у папці випуску':''}" aria-label="Завантажити MP3">${langDownloadIcon}</a></div>
           <div class="lang-player" data-kind="voice"></div></div>`:''}`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
@@ -259,6 +261,9 @@ function langCard(id,item,spec){
       item.text=text;item.title=name;if(area.value===text)delete langDrafts[key];
       if(hint)hint.textContent=`${text.length.toLocaleString('uk-UA')} символів · збережено`;
       const old=card.querySelector('.lang-sample .voice-player');if(old){old.querySelector('audio')?.pause();old.remove();}
+      // the voicing was of the old words: it leaves the card, and the button voices anew
+      const made=card.querySelector('.lang-voice');if(made){made.querySelectorAll('audio').forEach(audio=>audio.pause());made.remove();}
+      const voiceRun=card.querySelector('.lang-voice-run');if(voiceRun&&voiceRun.firstChild?.nodeType===3)voiceRun.firstChild.textContent='Озвучити весь ролик · ';
       
       const fresh=langData.items.find(entry=>entry.code===item.code);
       if(fresh){const cost=card.querySelector('.lang-voice-cost');if(cost)cost.textContent=langCost(spec,fresh.prices?.[spec.id]);}

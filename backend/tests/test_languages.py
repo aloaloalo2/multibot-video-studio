@@ -431,6 +431,30 @@ class LanguagesTest(unittest.TestCase):
             self.assertIsNone(languages.voice_id(self.pid, "fishaudio", "de")["model_id"])
         self.assertEqual(len(refused), 1)
 
+    def test_a_voicing_leaves_the_card_once_anything_that_made_it_changes(self):
+        work = languages.work_dir(self.pid, "de")
+        work.mkdir(parents=True)
+        (work / "text.txt").write_text("Kurz.", encoding="utf-8")
+        self.example("de")
+        def speak(provider, voice, text, target, before="", after=""):
+            tone(target.with_suffix(".wav"), 2)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(target.with_suffix(".wav")), str(target)], check=True)
+        languages.add(self.pid, "de")
+        with patch.object(languages, "speak", side_effect=speak), patch.object(languages, "key", return_value="k"), \
+                patch.object(languages, "request", side_effect=RuntimeError("no model")):
+            languages.start(self.pid, "voice", "de", "fishaudio")
+            self.assertEqual(self.wait()["status"], "done")
+        current = lambda: languages.overview(self.pid)["items"][0]["voice_current"]
+        voice = languages.load_state(self.pid)["languages"]["de"]["voice"]
+        self.assertEqual(voice["made_by"], "Fish Audio · S2.1 Pro Free · Живіше")
+        self.assertTrue(current())
+        languages.set_provider(self.pid, "fishaudio", "s1")
+        self.assertFalse(current())                                   # another engine
+        languages.set_provider(self.pid, "fishaudio", "s2.1-pro-free")
+        self.assertTrue(current())
+        languages.save_text(self.pid, "de", "Ganz anders.")
+        self.assertFalse(current())                                   # other words
+
     def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
         import io, urllib.error
         body = b'{"message": "Insufficient API credit for this model. For text-to-speech you can generate for free right now with the model s2.1-pro-free"}'

@@ -17,6 +17,7 @@ next to the video, «<episode>/Мови/<language>/», while the episode folder 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -208,6 +209,28 @@ def fish_engine(pid: str) -> str:
     return engine if engine in FISH_ENGINES else FISH_ENGINE
 
 
+def text_hash(pid: str, code: str) -> str:
+    path = work_dir(pid, code) / "text.txt"
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() else ""
+
+
+def made_with(pid: str, provider: str, code: str) -> dict:
+    """What a voicing was made with: the voice (provider, engine, likeness, example) and the text, so the card shows a
+    voicing only while all of it still holds (user, 2 November 2026: «щоб воно дівалось після будь-яких змін, бо не
+    ясно, хто це згенерив»)."""
+    engine = FISH_ENGINES.get(fish_engine(pid), {}).get("name") if provider == "fishaudio" else None
+    style = FISH_STYLES.get(fish_style(pid), {}).get("name") if provider == "fishaudio" else None
+    return {"voice_key": voice_key(pid, provider, code), "text_hash": text_hash(pid, code),
+            "made_by": " · ".join(part for part in (PROVIDERS[provider]["name"], engine, style) if part)}
+
+
+def voice_current(pid: str, code: str, voice: dict) -> bool:
+    """A voicing made before this check knew its settings counts as current until something is voiced again."""
+    if not voice.get("voice_key"):
+        return True
+    return voice["voice_key"] == voice_key(pid, voice.get("provider") or "fishaudio", code) and voice.get("text_hash") == text_hash(pid, code)
+
+
 def files(pid: str, code: str, project: dict) -> dict:
     work = work_dir(pid, code)
     return {"samples": sorted(path.stem[len("sample-"):] for path in work.glob("sample-*.mp3")), "voice": (work / "voice.mp3").is_file() or bool(final_voice(project, code)),
@@ -236,6 +259,7 @@ def overview(pid: str) -> dict:
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
                       "chars": len(text), "prices": {key: price(key, text, engine) for key in PROVIDERS} if text else {},
                       "files": files(pid, code, project), "voice": item.get("voice") or {},
+                      "voice_current": voice_current(pid, code, item.get("voice") or {}),
                       "lines": len(synced_segments(pid, code) or []),
                       "passage": passage(text) if text else "",
                       "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
@@ -915,7 +939,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     final = store.media_duration(out)
     def keep(data):
         data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
-            "provider": provider, "made_at": time.time(), "duration": final, "source_duration": total, "synced": True,
+            "provider": provider, "made_at": time.time(), "duration": final, "source_duration": total, "synced": True, **made_with(pid, provider, code),
             "lines": len(segments), "fastest": round(fastest, 2), "latest": round(latest, 1),
             "longer": round(max(0.0, cursor - total), 1)}
     update(pid, keep)
@@ -968,7 +992,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     final = store.media_duration(out)
     def keep(data):
         data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
-            "provider": provider, "made_at": time.time(), "duration": final, "source_duration": target_length, **fit}
+            "provider": provider, "made_at": time.time(), "duration": final, "source_duration": target_length, **fit, **made_with(pid, provider, code)}
     update(pid, keep)
     copy_out(project, code, "voice")
     job["cost"] = price(provider, text, fish_engine(pid))
