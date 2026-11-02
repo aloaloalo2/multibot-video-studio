@@ -1050,7 +1050,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets", path)
         if match:
             project = store.load_project(match.group(1))
-            return self.json_response({"assets": store.discover_assets(project)})
+            return self.json_response({"assets": [asset for asset in store.discover_assets(project) if store.asset_available(project, asset)]})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/([0-9a-f]{20})/waveform", path)
         if match:
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))

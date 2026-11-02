@@ -102,6 +102,10 @@ class EpisodeStoreTest(unittest.TestCase):
                 project["assets"].append({"id": "c" * 20, "kind": "audio", "path": str(root / "gone-copy.wav")})
                 project["tracks"][0]["clips"] = [{"id": "v", "kind": "audio", "asset_id": "c" * 20, "start": 0, "duration": 60, "title": "Озвучка"}]
                 self.assertEqual(store.resolve_asset(project, "c" * 20)["path"], str(razgon / "input" / "voice.wav"))
+                # the library shows the voice (it plays from Razgon's copy) but not a frame render whose file is gone
+                project["assets"].append({"id": "d" * 20, "kind": "video", "path": str(root / "frame_004.mp4")})
+                shown = [a["id"] for a in project["assets"] if store.asset_available(project, a)]
+                self.assertEqual(shown, ["b" * 20, "c" * 20])
 
 
 if __name__ == "__main__":

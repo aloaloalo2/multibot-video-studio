@@ -1330,6 +1330,18 @@ def discovered(project: dict) -> list[dict]:
     return found
 
 
+def asset_available(project: dict, asset: dict) -> bool:
+    """A file the library can show: on disk, or played from a copy the studio keeps (a sound of an episode whose folder
+    is gone). Records whose file went with a deleted episode folder stay in the project for undo, not in the library
+    (user, 2 November 2026: «в медіатеці… це не файли, це просто пустишки»)."""
+    if Path(asset.get("path") or "").is_file():
+        return True
+    try:
+        return Path(resolve_asset(project, asset["id"])["path"]).is_file()
+    except (StudioError, OSError, KeyError):
+        return False
+
+
 def resolve_asset(project: dict, aid: str) -> dict:
     for asset in project.get('assets',[]):
         if asset.get('id')==aid:
