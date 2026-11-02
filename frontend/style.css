@@ -1128,10 +1128,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-provider{display:grid;gap:6px}
 .lang-provider small{color:#9a9ca4;line-height:1.45}
 .lang-warn{color:#f5c24b}
-.lang-segment{display:flex;gap:4px;padding:3px;background:#111113;border:1px solid #35353a;border-radius:12.5px;width:max-content;max-width:100%}
-.lang-segment button{border:0;background:transparent;color:#c9cad0;padding:7px 14px;border-radius:9.5px;font-weight:600;display:flex;gap:6px;align-items:center}
-.lang-segment button.active{background:#2f2f35;color:#fff;box-shadow:0 0 0 1px #6bf2ae55 inset}
-.lang-segment button i{font-style:normal;display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#f0b429;color:#181510;font-size:11px}
 .lang-job{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;border-radius:12.5px;background:#1f1f24;font-size:13px;color:#c9cad0}
 .lang-job span{flex:none}
 .lang-job button.secondary{padding:5px 10px;font-size:13px}
@@ -1206,3 +1202,17 @@ select option{background:#232327;color:#f1f1f2}
 .lang-original-facts:empty{display:none}
 .lang-engine{display:flex;align-items:center;gap:8px;font-size:13px;color:#9a9ca4}
 .lang-engine select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:6px 10px}
+.lang-own{display:grid;gap:8px;padding:12px 14px;border-radius:16.5px;border:1px solid #35353a;background:#1a1a1e}
+.lang-own.has-voice{border-color:#2f6b4c;background:#16201b}
+.lang-own-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.lang-own-head b{font-size:14px}
+.lang-own-head small{color:#9a9ca4;font-size:12px}
+.lang-own p{margin:0;color:#9a9ca4;font-size:13px;line-height:1.45}
+.lang-own-passage{margin:0;padding:10px 12px;border-left:3px solid #6bf2ae;background:#111113;border-radius:0 12.5px 12.5px 0;color:#f2f2f3;font-size:15px;line-height:1.6}
+.lang-own-actions{display:flex;gap:8px;flex-wrap:wrap}
+.lang-own-actions button,.lang-own-file{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.lang-own-actions svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.lang-own-file{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:12.5px;padding:8px 10px;font-size:13.5px}
+.lang-own-record.is-recording{background:#c0392b;color:#fff}
+.lang-rec-dot{width:9px;height:9px;border-radius:50%;background:#fff;animation:lang-rec 1s ease-in-out infinite}
+@keyframes lang-rec{50%{opacity:.25}}

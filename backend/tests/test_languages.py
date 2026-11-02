@@ -242,6 +242,42 @@ class LanguagesTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             languages.set_provider(self.pid, "fishaudio", "nope")
 
+    def test_the_authors_recording_in_the_language_is_the_clones_reference(self):
+        import io
+        languages.add(self.pid, "en")
+        languages.save_text(self.pid, "en", "First sentence here. Second one. " * 20, "T")
+        item = languages.overview(self.pid)["items"][0]
+        self.assertTrue(item["passage"].startswith("First sentence here."))
+        self.assertLessEqual(len(item["passage"]), languages.PASSAGE_CHARS + 40)
+        recording = tone(Path(self.tmp.name) / "me.wav", 8).read_bytes()
+        work = languages.work_dir(self.pid, "en")
+        (work / "sample-fishaudio-s2.1-pro-free.mp3").write_bytes(b"x")
+        languages.update(self.pid, lambda data: data.setdefault("clones", {}).update({"elevenlabs-en": "old", "elevenlabs": "episode"}))
+        data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"])
+        own = data["items"][0]["own_voice"]
+        self.assertAlmostEqual(own["duration"], 8, delta=0.2)
+        self.assertFalse((work / "sample-fishaudio-s2.1-pro-free.mp3").exists())       # the old voice's sample goes
+        self.assertEqual(languages.load_state(self.pid)["clones"], {"elevenlabs": "episode"})
+        fish = languages.voice_id(self.pid, "fishaudio", "en")
+        self.assertEqual(fish["text"], item["passage"])
+        self.assertEqual(fish["audio"], (work / "own-voice.mp3").read_bytes())
+        self.assertNotEqual(languages.voice_id(self.pid, "fishaudio", "de")["text"], item["passage"])   # other languages keep the episode's
+        added = []
+        def request(url, body, headers, what):
+            added.append(url)
+            return json.dumps({"voice_id": "mine-en"}).encode()
+        with patch.object(languages, "request", side_effect=request):
+            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "en"), "mine-en")
+            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "de"), "episode")
+        self.assertEqual(len(added), 1)
+        with self.assertRaises(store.StudioError):
+            languages.save_own_voice(self.pid, "en", io.BytesIO(b"x" * 10), 10, item["passage"])     # not audio
+        short = tone(Path(self.tmp.name) / "short.wav", 2).read_bytes()
+        with self.assertRaises(store.StudioError):
+            languages.save_own_voice(self.pid, "en", io.BytesIO(short), len(short), item["passage"])
+        languages.remove_own_voice(self.pid, "en")
+        self.assertIsNone(languages.overview(self.pid)["items"][0]["own_voice"])
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

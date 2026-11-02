@@ -59,12 +59,59 @@ function drawLangs(id){
     const select=event.target.closest('.lang-engine select');if(!select)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',engine:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
   });
-  // the voice service is chosen inside each card's voice step and holds for the whole episode
-  view.addEventListener('click',async event=>{
-    const button=event.target.closest('.lang-segment button');if(!button || button.dataset.provider===langData.provider)return;
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:button.dataset.provider});drawLangs(id);}catch(error){langNote(button,error.message,true);}
-  });
   showLangJob();
+}
+
+// The author's own voice in this language (user, 2 November 2026: the clone carried the original's accent, and stock
+// voices are not wanted): a passage of the translation to read aloud, recorded here or as a file; the clone takes its
+// voice and the right pronunciation from it.
+const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+function langOwnBlock(item){
+  const own=item.own_voice;
+  return `<div class="lang-own${own?' has-voice':''}"><div class="lang-own-head"><b>Ваш голос цією мовою</b><small>${own?'клон бере голос і вимову з вашого запису':'щоб не було чужого акценту'}</small></div>
+    ${own?`<div class="lang-player" data-kind="own"></div>
+      <div class="lang-own-actions"><button type="button" class="secondary lang-own-record">${micIcon}Записати заново</button><button type="button" class="secondary lang-own-remove">Прибрати запис</button></div>`
+    :`<p>Прочитайте вголос цей уривок, спокійно, як у ролику (20–30 секунд). Без запису голос клонується з оригіналу, разом з його акцентом.</p>
+      <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>
+      <div class="lang-own-actions"><button type="button" class="primary lang-own-record">${micIcon}Записати</button><label class="secondary lang-own-file">Завантажити запис<input type="file" accept="audio/*,video/*" hidden></label></div>`}
+</div>`;
+}
+async function langOwnUpload(id,item,blob,name,holder){
+  langNote(holder,'Зберігаємо запис…');
+  try{
+    const response=await fetch(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice`,{method:'POST',
+      headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name),'X-Said-Text':encodeURIComponent(item.own_voice?.text || item.passage)},body:blob});
+    const data=await response.json();if(!response.ok)throw new Error(data.error || 'Не вдалося зберегти запис');
+    langData=data;drawLangs(id);
+  }catch(error){langNote(holder,error.message,true);}
+}
+let langRecorder=null;
+function langOwnWire(id,card,item){
+  const box=card.querySelector('.lang-own');if(!box)return;
+  const record=box.querySelector('.lang-own-record'),file=box.querySelector('.lang-own-file input');
+  file?.addEventListener('change',()=>{const chosen=file.files[0];if(chosen)langOwnUpload(id,item,chosen,chosen.name,box);});
+  box.querySelector('.lang-own-remove')?.addEventListener('click',async()=>{
+    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice/remove`,'POST',{});drawLangs(id);}catch(error){langNote(box,error.message,true);}
+  });
+  record?.addEventListener('click',async()=>{
+    if(langRecorder){langRecorder.stop();return;}
+    if(item.own_voice){
+      // recording again shows the passage once more: the same words as before
+      const quote=document.createElement('blockquote');quote.className='lang-own-passage';quote.textContent=item.own_voice.text;box.querySelector('.lang-own-actions').before(quote);
+    }
+    let stream;
+    try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});}
+    catch{langNote(box,'Браузер не дав доступ до мікрофона. Дозвольте його в адресному рядку або завантажте запис файлом.',true);return;}
+    const chunks=[],recorder=new MediaRecorder(stream);langRecorder=recorder;
+    const started=Date.now(),label=()=>{const s=Math.floor((Date.now()-started)/1000);record.innerHTML=`<span class="lang-rec-dot"></span>Зупинити · ${clock(s)}`;};
+    record.classList.add('is-recording');label();const tick=setInterval(label,500);
+    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+    recorder.onstop=()=>{clearInterval(tick);stream.getTracks().forEach(track=>track.stop());langRecorder=null;
+      const blob=new Blob(chunks,{type:recorder.mimeType || 'audio/webm'});
+      if(Date.now()-started<5000){record.classList.remove('is-recording');record.innerHTML=`${micIcon}Записати`;langNote(box,'Запис закороткий: прочитайте весь уривок.',true);return;}
+      langOwnUpload(id,item,blob,'Мій голос.webm',box);};
+    recorder.start(1000);
+  });
 }
 
 // The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
@@ -92,9 +139,10 @@ function langCard(id,item,spec){
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
-      ${item.text?`<div class="lang-provider"><div class="lang-segment" role="radiogroup" aria-label="Сервіс озвучки">${langData.providers.map(entry=>`<button type="button" role="radio" data-provider="${entry.id}" aria-checked="${entry.id===spec.id}" class="${entry.id===spec.id?'active':''}">${esc(entry.name)}${entry.configured===true?'':'<i title="Ключ не додано">!</i>'}</button>`).join('')}</div>
+      ${item.text?`<div class="lang-provider">
           ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
+        ${langOwnBlock(item)}
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
         <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(langData.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${hasSample?' hidden':''}>Послухати зразок</button></div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
@@ -156,6 +204,7 @@ function langCard(id,item,spec){
       [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
   });
   card.querySelector('.lang-thumb-run')?.addEventListener('click',()=>langStart(id,'thumbnail',item.code));
+  langOwnWire(id,card,item);
   return card;
 }
 
@@ -207,7 +256,8 @@ function showLangJob(){
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex перекладає, 1–3 хвилини…':label.dataset.idle;}
   }
   if(!box)return;
-  const recent=job&&job.status!=='running'&&job.finished_at&&Date.now()/1000-job.finished_at<120;
+  // a finished job shows itself in the card (the text, the player, the picture): only a failure or a cancel says so here
+  const recent=job&&['failed','cancelled'].includes(job.status)&&job.finished_at&&Date.now()/1000-job.finished_at<120;
   box.hidden=!job || (!busy && !recent);
   box.dataset.status=job?.status || '';
   box.closest('.lang-step').classList.toggle('is-working',busy);
