@@ -256,6 +256,7 @@ class LanguagesTest(unittest.TestCase):
         with patch("speech.transcribe", side_effect=RuntimeError("no model")):
             data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"])
         own = data["items"][0]["own_voice"]
+        self.assertFalse(own["heard"])                   # no recognition: the passage stands, and the page says so
         self.assertAlmostEqual(own["duration"], 8, delta=0.2)
         self.assertFalse((work / "sample-fishaudio-s2.1-pro-free.mp3").exists())       # the old voice's sample goes
         self.assertEqual(languages.load_state(self.pid)["clones"], {"elevenlabs": "episode"})
@@ -288,7 +289,7 @@ class LanguagesTest(unittest.TestCase):
             languages.save_own_voice(self.pid, "uk", io.BytesIO(recording), len(recording), "уривок, який не читали")
         self.assertEqual(recognise.call_args.kwargs["language"], "uk")
         self.assertEqual(languages.own_voice(self.pid, "uk")["text"], "Привіт це я говорю українською мовою")
-
+        self.assertTrue(languages.own_voice(self.pid, "uk")["heard"])
     def test_the_thumbnail_is_translated_with_the_authors_wishes(self):
         from PIL import Image
         import thumbnail_gen

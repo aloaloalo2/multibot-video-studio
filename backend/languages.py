@@ -226,7 +226,7 @@ def overview(pid: str) -> dict:
                       "chars": len(text), "prices": {key: price(key, text, engine) for key in PROVIDERS} if text else {},
                       "files": files(pid, code, project), "voice": item.get("voice") or {},
                       "passage": passage(text) if text else "",
-                      "own_voice": ({"text": own["text"], "duration": own["duration"]} if (own := own_voice(pid, code)) else None), "sample_provider": item.get("sample_provider"),
+                      "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"]} if (own := own_voice(pid, code)) else None), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     return {"languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
@@ -402,7 +402,9 @@ def own_voice(pid: str, code: str | None) -> dict | None:
     work = work_dir(pid, code)
     audio, said = work / "own-voice.mp3", work / "own-voice.txt"
     if audio.is_file() and said.is_file():
-        return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio)}
+        meta = store.read_json(work / "own-voice.json", {}) or {}
+        return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio),
+                "heard": meta.get("heard", True)}
     return None
 
 
@@ -442,8 +444,10 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
         raise store.StudioError("Запис закороткий: прочитайте весь уривок, хоча б 10 секунд")
     # the author may read the passage or say anything in the language (user, 2 November 2026: «чи можна просто
     # говорити на українській мові?»): the recording is recognised locally, so Fish gets the words actually said
-    said = heard(target, length, code) or said
-    (work / "own-voice.txt").write_text(said + "\n", encoding="utf-8")
+    found = heard(target, length, code)
+    (work / "own-voice.txt").write_text((found or said) + "\n", encoding="utf-8")
+    # whether the words came from the recording itself: when not, Fish gets the passage, right only if it was read
+    store.atomic_json(work / "own-voice.json", {"heard": bool(found)})
     forget_own_clone(pid, code)
     return overview(pid)
 
@@ -462,7 +466,7 @@ def heard(path: Path, length: float, code: str) -> str | None:
 def remove_own_voice(pid: str, code: str) -> dict:
     check_code(code)
     work = work_dir(pid, code)
-    for name in ("own-voice.mp3", "own-voice.txt"):
+    for name in ("own-voice.mp3", "own-voice.txt", "own-voice.json"):
         (work / name).unlink(missing_ok=True)
     forget_own_clone(pid, code)
     return overview(pid)
