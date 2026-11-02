@@ -1214,9 +1214,11 @@ select option{background:#232327;color:#f1f1f2}
 .lang-rec-dot{width:9px;height:9px;border-radius:50%;background:#fff;animation:lang-rec 1s ease-in-out infinite}
 @keyframes lang-rec{50%{opacity:.25}}
 .lang-original{border-radius:16.5px;background:#141417}
-.lang-original-row{display:flex;align-items:center;gap:14px;padding:8px 10px 8px 16px;flex-wrap:wrap}
+.lang-original-row{display:flex;align-items:center;gap:14px;padding:8px;padding-left:16px;flex-wrap:wrap}
 .lang-original-name{display:grid;gap:2px;min-width:150px}
 .lang-original-name b{font-size:14px;font-weight:600;color:#e6e7ea}
 .lang-original-name small{font-size:12px;color:#8d8f97}
 .lang-original-row .voice-player{flex:1;min-width:260px}
 .lang-original-row .lang-off{flex:1}
+/* the plan page's player keeps a margin for its own box; on «Мови» it sits flush, so it is centred in its row */
+.lang-view .voice-player{margin:0}
