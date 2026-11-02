@@ -147,6 +147,8 @@ function langOwnWire(id,card,item){
 
 // The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
 // оригінала, длительність, послухати можна»).
+// «Оригінал (англійська)»: the original's name with its language, as on its card
+function langOriginalName(){const original=langData?.languages.find(item=>item.code===langData.source?.language);return `Оригінал${original?` (${esc(original.label)})`:''}`;}
 function langOriginal(id,src){
   const original=langData.languages.find(item=>item.code===src.language);
   const card=document.createElement('article');card.className='lang-card lang-original';
@@ -187,10 +189,10 @@ function langCard(id,item,spec){
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
       ${langData.thumbnail?`<div class="lang-thumbs"><figure class="lang-thumb"><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy">
-          <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>До</figcaption></figure>
+          <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>${langOriginalName()}</figcaption></figure>
         <figure class="lang-thumb">${item.files.thumbnail?`<div class="lang-thumb-run has-picture"><img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Перекласти ще раз</small></span></div>
           <div class="project-actions lang-thumb-actions"><button type="button" class="project-action thumbnail lang-thumb-redo" title="Перекласти ще раз" aria-label="Перекласти прев’ю ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю ${esc(item.name)}">${langDownloadIcon}</a></div>`
-          :`<button type="button" class="lang-thumb-run" aria-label="Перекласти прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб перекласти</small></span></button>`}<figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption>
+          :`<button type="button" class="lang-thumb-run" aria-label="Перекласти прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб перекласти</small></span></button>`}<figcaption>${langFlag(item.code)} ${esc(item.name)}</figcaption>
           <div class="lang-thumb-ask" hidden><label><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>
             <div class="lang-thumb-ask-actions"><button type="button" class="secondary lang-thumb-ask-cancel">Скасувати</button><button type="button" class="primary lang-thumb-ask-go">Перекласти</button></div></div></figure></div>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
