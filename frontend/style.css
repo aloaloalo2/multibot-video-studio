@@ -1114,3 +1114,4 @@ select option{background:#232327;color:#f1f1f2}
 /* a clip whose file went with its episode folder: a quiet striped box that says so */
 .composition-clip.media-missing{background:repeating-linear-gradient(135deg,#1b1b1f 0 14px,#222227 14px 28px);outline:1px dashed #4a4a52;outline-offset:-1px}
 .composition-clip.media-missing::after{content:attr(data-missing);position:absolute;inset:0;display:grid;place-items:center;padding:12px;text-align:center;font:600 clamp(10px,1.4vw,15px)/1.35 system-ui,sans-serif;color:#aeb0b7}
+.composition-clip.media-missing img,.composition-clip.media-missing video{visibility:hidden}
