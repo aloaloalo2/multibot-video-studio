@@ -49,11 +49,57 @@ def razgon_link(project: dict) -> dict | None:
     else:
         link = read_json(kept, None) if kept is not None else None
         if not isinstance(link, dict) or not link.get("project"):
-            return None
+            link = find_razgon_project(project.get("id"))
+            if not link:
+                return None
+            if kept is not None:
+                try:
+                    atomic_json(kept, link)
+                except OSError:
+                    pass
     old, home = str(YOUTUBE_ROOT / "What If" / "razgon-2d-studio"), str(APP_ROOT / "razgon-2d-studio")
     if not Path(link.get("razgon_root") or "").is_dir() and Path(home).is_dir():
         link = {key: home + value[len(old):] if isinstance(value, str) and value.startswith(old) else value for key, value in link.items()}
     return link
+
+
+_FOUND_RAZGON: dict[str, tuple[float, dict | None]] = {}
+
+
+def find_razgon_project(pid: str | None) -> dict | None:
+    """The Razgon project made for this studio project, found by the studio's id its story/studio_frames.json holds:
+    an episode deleted before the studio kept its link still finds its animation."""
+    if not pid:
+        return None
+    seen = _FOUND_RAZGON.get(pid)
+    if seen and time.time() - seen[0] < 300:   # the list reads every project often: one search per 5 minutes a project
+        return seen[1]
+    found = None
+    for root in (APP_ROOT / "razgon-2d-studio", YOUTUBE_ROOT / "What If" / "razgon-2d-studio"):
+        for frames in root.glob("projects/*/story/studio_frames.json"):
+            data = read_json(frames, None)
+            if isinstance(data, dict) and data.get("project_id") == pid:
+                found = {"razgon_root": str(root), "project": str(frames.parents[1])}
+                break
+        if found:
+            break
+    _FOUND_RAZGON[pid] = (time.time(), found)
+    return found
+
+
+def razgon_voice(project: dict, aid: str) -> Path | None:
+    """The voice of an animated episode as its Razgon project keeps it (input/…, config.json's voiceover), when the
+    asset is that voice: the studio's copy for an episode whose folder is gone."""
+    link = razgon_link(project)
+    if not link:
+        return None
+    razgon = Path(link["project"])
+    frames = read_json(razgon / "story" / "studio_frames.json", None)
+    config = read_json(razgon / "config.json", None)
+    if not isinstance(frames, dict) or frames.get("voice_asset_id") != aid or not isinstance(config, dict) or not config.get("voiceover"):
+        return None
+    voice = razgon / config["voiceover"]
+    return voice if voice.is_file() else None
 
 
 def razgon_rel() -> str:
@@ -1275,6 +1321,9 @@ def resolve_asset(project: dict, aid: str) -> dict:
             kept = PROJECTS_ROOT / project['id'] / 'kept' / f"{aid}.m4a"
             if not path.is_file() and kept.is_file():
                 return {**asset, 'path': str(kept), 'kept': True}
+            voice = razgon_voice(project, aid) if not path.is_file() else None
+            if voice:
+                return {**asset, 'path': str(voice), 'kept': True}
     # a file new in the folder since the last walk is looked for once more with a fresh one
     found = next((a for a in discovered(project) if a["id"] == aid), None)
     if found is None:

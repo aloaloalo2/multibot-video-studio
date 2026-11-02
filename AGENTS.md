@@ -234,7 +234,9 @@ A project stays in the studio when its episode folder is deleted: its code, prev
 2026, after a version that hid such projects for deletion; `store.restore_hidden_projects` takes those marks off at
 every start). The studio never deletes a project or its data by itself. An old episode still plays after its folder is gone (user,
 2 November 2026): `store.razgon_link` keeps the episode's razgon.json in the studio (`razgon-link.json`), so the code
-frames, live view and export find their Razgon project; `backend/keep.py` keeps an AAC copy of every sound clip and of
+frames, live view and export find their Razgon project; an episode deleted before that finds it by the studio id in
+the Razgon project's `story/studio_frames.json` (`store.find_razgon_project`), and its voice in that project's
+`input/` (`store.razgon_voice`); `backend/keep.py` keeps an AAC copy of every sound clip and of
 the plan's voice (`projects/<id>/kept/<asset>.m4a`, made at start and after a recognition), and `store.resolve_asset`
 falls back to it. Pictures and videos are not kept: the preview marks a clip whose file is gone «Файл видалено разом
 із папкою випуску». Tests: `backend/tests/test_episode_store.py`, `test_space.py`.

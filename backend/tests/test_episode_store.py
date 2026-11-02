@@ -78,5 +78,26 @@ class EpisodeStoreTest(unittest.TestCase):
                 self.assertTrue(kept["kept"] and kept["path"].endswith(".m4a") and Path(kept["path"]).is_file())
 
 
+    def test_an_episode_deleted_before_the_link_was_kept_finds_its_razgon_project_and_voice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            channel = root / "YOUTUBE" / "What If"
+            channel.mkdir(parents=True)
+            (channel / store.PLAN_CONFIG).write_text("{}", encoding="utf-8")
+            with mock.patch.object(store, "YOUTUBE_ROOT", root / "YOUTUBE"), mock.patch.object(store, "PROJECTS_ROOT", root / "projects"), \
+                    mock.patch.object(store, "APP_ROOT", root / "YOUTUBE" / "VideoKey Studio"):
+                project = store.create_project(store.channel_id(channel), "Старий")
+                Path(project["episode_path"]).rmdir()                       # deleted long ago, no link kept
+                razgon = root / "YOUTUBE" / "VideoKey Studio" / "razgon-2d-studio" / "projects" / "old-film"
+                (razgon / "story").mkdir(parents=True); (razgon / "input").mkdir()
+                (razgon / "story" / "studio_frames.json").write_text(json.dumps({"project_id": project["id"], "voice_asset_id": "b" * 20}))
+                (razgon / "config.json").write_text(json.dumps({"voiceover": "input/voice.wav"}))
+                (razgon / "input" / "voice.wav").write_bytes(b"RIFF")
+                self.assertEqual(store.razgon_link(project)["project"], str(razgon))
+                project = store.load_project(project["id"])
+                project["assets"] = [{"id": "b" * 20, "kind": "audio", "path": str(root / "gone.wav")}]
+                self.assertEqual(store.resolve_asset(project, "b" * 20)["path"], str(razgon / "input" / "voice.wav"))
+
+
 if __name__ == "__main__":
     unittest.main()
