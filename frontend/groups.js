@@ -33,7 +33,8 @@ function findGroupMembers(group){
 function closeStackMenu(){document.querySelector('.stack-context-menu')?.remove();}
 function stackOpen(entry){clearTransitionSelection();if(entry.ref==='scenes'){state.selectedStack='scenes';state.selected=null;state.selectedGroup=null;renderInspector();return;}if(entry.clip){state.selectedGroup=null;selectUniversalClip(entry.clip.id);return;}const group=entry.groups.find(g=>{const b=groupBounds(g);return state.playhead>=b.start&&state.playhead<b.end;}) || entry.groups[0];if(group)expandFrameGroup(group);}
 function addStackTools(heading,entry){
-  const title=document.createElement('span');title.className='stack-title';title.textContent=entry.title;heading.replaceChildren(title);if(entry.layer)addLayerSoundControl(heading,entry.layer);
+  const title=document.createElement('span');title.className='stack-title';title.textContent=entry.title;heading.replaceChildren(title);if(entry.layer){addLayerEyeControl(heading,entry.layer);addLayerSoundControl(heading,entry.layer);}
+  else if(entry.groups?.length){const ids=new Set(entry.groups.flatMap(group=>group.clip_ids || []));addLayerEyeControl(heading,layers().filter(layer=>(layer.clips || []).some(clip=>ids.has(clip.id))),entry.title);}
   const button=document.createElement('button');button.type='button';button.className='stack-menu-button';button.textContent='⋮';button.setAttribute('aria-label','Дії доріжки '+entry.title);
   const open=event=>{event.preventDefault();event.stopPropagation();closeStackMenu();const menu=document.createElement('div');menu.className='stack-context-menu';menu.setAttribute('role','menu');
     const items=[['Відкрити властивості',()=>stackOpen(entry)]];

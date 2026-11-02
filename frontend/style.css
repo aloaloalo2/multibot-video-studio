@@ -1116,3 +1116,5 @@ select option{background:#232327;color:#f1f1f2}
 .composition-clip.media-missing::after{content:attr(data-missing);position:absolute;inset:0;display:grid;place-items:center;padding:12px;text-align:center;font:600 clamp(10px,1.4vw,15px)/1.35 system-ui,sans-serif;color:#aeb0b7}
 .composition-clip.media-missing img,.composition-clip.media-missing video{visibility:hidden}
 .composition-clip.media-gone{visibility:hidden}
+/* a picture row switched off with its eye: its clips fade on the timeline */
+.track-row.layer-hidden .track-clip,.track-row.layer-hidden .frame-group-clip{opacity:.35}

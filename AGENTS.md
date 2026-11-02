@@ -277,3 +277,10 @@ commits), puts the «VideoKey Studio» item into a Multi Bot that lacks it (`ext
 and script from `browser-helper/multibot/`, `nativeMessaging`, the version one step up, a commit and a push to the
 folder's own GitHub; the private version keeps its own features), then `browser-helper/install.py`. Chrome reloads the unpacked extension only by hand at chrome://extensions.
 Test: `backend/tests/test_extension.py`.
+
+## A picture row's eye (2 November 2026)
+
+Every timeline row with pictures has an eye beside the sound button (user: «глазик… щоб виключити цю лінію»):
+`set_layer_hidden` marks the layer `hidden`; the preview (`renderUniversalPreview`) and the export manifest
+(`app.py`, the clips loop) leave its pictures out, the timeline fades it. A row of frame groups switches all its layers
+in one batch. Test: `backend/tests/test_layer_eye.py`.

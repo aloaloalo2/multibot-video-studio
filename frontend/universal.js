@@ -12,6 +12,21 @@ function activeLayer(){return layers().find(layer=>layer.id===state.activeLayer)
 function clipKindLabel(kind){return {video:'Відео',image:'Фото',audio:'Аудіо',text:'Текст',animation:'Анімація'}[kind] || 'Кліп';}
 function clipLabel(clip){return clip.title || clip.text || assetById(clip.asset_id)?.name || ({video:'Відео',image:'Фото',audio:'Звук',text:'Текст',animation:'Анімація'}[clip.kind] || 'Кліп');}
 function clipIsMuted(clip){return layers().find(layer=>layer.clips.some(c=>c.id===clip.id))?.muted===true;}
+// The eye of a picture row: switched off, its pictures leave the preview and the export and stay on the timeline. A row
+// of frame groups (each frame on layers of its own) switches all its layers at once, in one undo step.
+function addLayerEyeControl(heading,target,name){
+  const rows=(Array.isArray(target)?target:[target]).filter(layer=>layer?.clips?.some(c=>c.kind!=='audio'));
+  if(!rows.length)return;
+  const hidden=rows.every(layer=>layer.hidden===true),label=name || rows[0].name,button=document.createElement('button');
+  button.type='button';button.className='layer-sound layer-eye'+(hidden?' is-muted':'');button.draggable=false;
+  button.setAttribute('aria-label',(hidden?'Показати':'Сховати')+' доріжку '+label);button.setAttribute('aria-pressed',String(hidden));button.title=hidden?'Доріжку сховано: її немає в перегляді й експорті':'Доріжку видно';
+  button.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>'+(hidden?'<path d="M4 20 20 4"/>':'')+'</svg>';
+  const message=hidden?'Доріжку знову видно.':'Доріжку сховано: її не буде в перегляді й експорті.';
+  button.addEventListener('click',event=>{event.stopPropagation();
+    const edits=rows.map(layer=>({type:'set_layer_hidden',payload:{layer_id:layer.id,hidden:!hidden}}));
+    (edits.length===1?action(edits[0].type,edits[0].payload,message):action('batch',{actions:edits},message)).catch(()=>{});});
+  heading.append(button);heading.closest('.track-row')?.classList.toggle('layer-hidden',hidden);
+}
 function addLayerSoundControl(heading,layer){
   if(!layer?.clips.some(c=>c.kind==='audio'||c.kind==='video'))return;
   const button=document.createElement('button');button.type='button';button.className='layer-sound'+(layer.muted?' is-muted':'');button.draggable=false;button.setAttribute('aria-label',(layer.muted?'Увімкнути':'Вимкнути')+' звук доріжки '+layer.name);button.setAttribute('aria-pressed',String(layer.muted===true));button.title=layer.muted?'Доріжку вимкнено':'Звук доріжки ввімкнено';button.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 4 6 8H3v8h3l5 4z"/>'+(layer.muted?'<path d="m16 9 5 6m0-6-5 6"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>')+'</svg>';button.addEventListener('click',event=>{event.stopPropagation();action('set_layer_mute',{layer_id:layer.id,muted:!layer.muted},layer.muted?'Звук доріжки ввімкнено.':'Звук доріжки вимкнено.').catch(()=>{});});heading.append(button);heading.closest('.track-row')?.classList.toggle('sound-muted',layer.muted===true);
@@ -40,7 +55,7 @@ function renderUniversalTimeline(){
     for(const [symbol,title,run] of [['✎','Перейменувати шар',()=>renameUniversalLayer(layer)],['×','Прибрати шар',()=>removeUniversalLayer(layer)]]){
       const button=document.createElement('button');button.type='button';if(symbol==='×')setTrashButton(button,`${title} ${layer.name}`,true);else button.textContent=symbol;button.title=title;button.setAttribute('aria-label',`${title} ${layer.name}`);button.disabled=(symbol==='↑'&&index===layers().length-1)||(symbol==='↓'&&index===0)||(symbol==='×'&&layers().length===1);button.addEventListener('click',run);controls.append(button);
     }
-    heading.append(name);addLayerSoundControl(heading,layer);heading.append(controls);
+    heading.append(name);addLayerEyeControl(heading,layer);addLayerSoundControl(heading,layer);heading.append(controls);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=width+'px';lane.dataset.layerId=layer.id;
     const occupiedUntil=[];
     for(const clip of [...(layer.clips || [])].sort((a,b)=>seconds(a.start)-seconds(b.start))){
@@ -192,7 +207,7 @@ function renderUniversalPreview(){
   if(!byLayers.has(layers))byLayers.set(layers,(()=>{
     const order=new Map(),spans=[];
     for(const layer of layers())for(const clip of layer.clips || []){
-      if(clip.kind==='audio')continue;
+      if(clip.kind==='audio'||layer.hidden)continue;   // a row switched off with its eye is not drawn, as in the export
       order.set(clip.id,order.size);spans.push({clip,start:clipRenderStart(clip),end:clipRenderEnd(clip)});
     }
     return {order,spans};

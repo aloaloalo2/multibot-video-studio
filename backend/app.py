@@ -281,6 +281,8 @@ def normalize_for_engine(project: dict) -> dict:
             rendered_clips = []
             for clip in layer.get("clips", []):
                 kind = clip.get("kind")
+                if layer.get("hidden") and kind != "audio":
+                    continue   # a row switched off with its eye stays out of the film
                 if kind not in {"video", "image", "text", "animation", "audio"}:
                     raise store.StudioError("Невідомий тип кліпу")
                 source = None

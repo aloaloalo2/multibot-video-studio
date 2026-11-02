@@ -173,6 +173,8 @@ UKRAINIAN = {
     "Invalid frame role": "Невідома роль кадру",
     "Frame group not found": "Кадр не знайдено",
     "Invalid mute state": "Невірний стан звуку",
+    "Invalid visibility state": "Невірний стан видимості доріжки",
+    "This layer has no picture": "На цій доріжці немає зображення",
     "This layer has no sound": "На цьому шарі немає звуку",
     "Stack group not found": "Групу не знайдено",
     "Invalid stack reference": "Невірне посилання на шар",
@@ -1620,6 +1622,15 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         layer=layer_by_id(project,str(payload.get('layer_id')))
         if not any(c['kind'] in {'audio','video'} for c in layer['clips']):raise StudioError('This layer has no sound')
         layer['muted']=payload['muted']
+        return True
+    if action=='set_layer_hidden':
+        # the eye of a picture row (user, 2 November 2026: «глазик… щоб виключити цю лінію»): hidden in the preview and
+        # left out of the export, kept on the timeline; the row's sound goes with its picture
+        if not isinstance(payload.get('hidden'),bool):raise StudioError('Invalid visibility state')
+        layer=layer_by_id(project,str(payload.get('layer_id')))
+        if not any(c['kind']!='audio' for c in layer['clips']):raise StudioError('This layer has no picture')
+        if payload['hidden']:layer['hidden']=True
+        else:layer.pop('hidden',None)
         return True
     if action=='set_project_font':
         try:family=graphics.validate({'font_family':payload.get('font_family')})['font_family']
