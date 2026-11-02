@@ -76,8 +76,9 @@ class LanguagesTest(unittest.TestCase):
     def test_price_counts_characters_or_bytes(self):
         self.assertEqual(languages.price("elevenlabs", "a" * 10000), 1.0)
         # Fish Audio bills UTF-8 bytes: Cyrillic is two a letter
-        self.assertEqual(languages.price("fishaudio", "я" * 100000), 3.0)
-        self.assertEqual(languages.price("fishaudio", "a" * 100000), 1.5)
+        self.assertEqual(languages.price("fishaudio", "я" * 100000, "s1"), 3.0)
+        self.assertEqual(languages.price("fishaudio", "a" * 100000, "s2.1-pro"), 1.5)
+        self.assertEqual(languages.price("fishaudio", "a" * 100000), 0)          # S2.1 Pro Free by default
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Second sentence!\n\nThird paragraph here.", "What If Test"])
@@ -206,6 +207,31 @@ class LanguagesTest(unittest.TestCase):
         store.atomic_json(self.studio / "analysis-state.json", {"job_id": "j1"})
         store.atomic_json(self.studio / "analysis" / "j1" / "result.json", {"engine": {"language": "de"}})
         self.assertEqual(languages.original_language(self.pid, self.project, "Перше речення."), "de")
+
+    def test_fish_clones_inline_from_the_voice_start_and_its_words_without_a_model(self):
+        (self.studio / "analysis" / "j1").mkdir(parents=True)
+        store.atomic_json(self.studio / "analysis-state.json", {"job_id": "j1"})
+        words = [{"text": f"слово{n}", "start": n * 0.5, "end": n * 0.5 + 0.4} for n in range(60)]
+        store.atomic_json(self.studio / "analysis" / "j1" / "result.json", {"aligned_words": words})
+        sent = []
+        def request(url, data, headers, what):
+            sent.append((url, data, headers))
+            return b"\xff" * 2000
+        with patch.object(languages, "REFERENCE_SECONDS", 4), patch.object(languages, "request", side_effect=request), \
+                patch.object(languages, "key", return_value="k"):
+            voice = languages.voice_id(self.pid, "fishaudio")
+            languages.speak("fishaudio", voice, "Hello there.", self.studio / "out.mp3")
+        self.assertEqual(voice["text"], " ".join(f"слово{n}" for n in range(8)))   # the words said in the first 4 s
+        self.assertAlmostEqual(store.media_duration(self.studio / "languages" / "reference.mp3"), 4.05, delta=0.1)
+        url, body, headers = sent[0]
+        self.assertTrue(url.endswith("/v1/tts"))
+        self.assertEqual((headers["Content-Type"], headers["model"]), ("application/msgpack", "s2.1-pro-free"))
+        self.assertIn(voice["audio"][:200], body)
+        self.assertNotIn("clones", languages.load_state(self.pid))
+        languages.set_provider(self.pid, "fishaudio", "s1")
+        self.assertEqual(languages.voice_id(self.pid, "fishaudio")["engine"], "s1")
+        with self.assertRaises(store.StudioError):
+            languages.set_provider(self.pid, "fishaudio", "nope")
 
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))

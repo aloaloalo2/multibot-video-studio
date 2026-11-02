@@ -51,12 +51,19 @@ PROVIDERS = {
     "elevenlabs": {"name": "ElevenLabs", "per_char": 0.10 / 1000, "bytes": False,
                    "note": "Найкраща якість і клон голосу, усі мови. Клон голосу потребує платного тарифу (від Starter)."},
     "fishaudio": {"name": "Fish Audio", "per_char": 15 / 1_000_000, "bytes": True,
-                  "note": "Значно дешевше. Рахує байти тексту: кирилиця коштує вдвічі більше за латиницю."},
+                  "note": "Голос клонується прямо в кожному запиті зі зразка вашої озвучки, без окремої моделі."},
 }
 ELEVEN = "https://api.elevenlabs.io/v1"
 ELEVEN_MODEL = "eleven_multilingual_v2"
 FISH = "https://api.fish.audio"
-FISH_MODEL = "s1"
+# Fish's engines (user, 2 November 2026: «там безкоштовно… є різні рушії в фіші»): S2.1 Pro Free costs nothing under
+# fair use; the paid ones bill UTF-8 bytes. Every one clones the voice inline from a reference in the request
+# (MessagePack), so no voice model is created: a free account's model limit is 0.
+FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "note": "безкоштовно"},
+                "s2.1-pro": {"name": "S2.1 Pro", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"},
+                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"}}
+FISH_ENGINE = "s2.1-pro-free"
+REFERENCE_SECONDS = 22
 TRANSLATE_CHUNK = 5000
 VOICE_CHUNK = 2400
 SAMPLE_CHARS = 320
@@ -174,9 +181,15 @@ def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | N
     return None
 
 
-def price(provider: str, text: str) -> float:
+def price(provider: str, text: str, engine: str | None = None) -> float:
     spec = PROVIDERS[provider]
-    return round(len(text.encode("utf-8") if spec["bytes"] else text) * spec["per_char"], 2)
+    rate = FISH_ENGINES.get(engine or FISH_ENGINE, FISH_ENGINES[FISH_ENGINE])["per_char"] if provider == "fishaudio" else spec["per_char"]
+    return round(len(text.encode("utf-8") if spec["bytes"] else text) * rate, 2)
+
+
+def fish_engine(pid: str) -> str:
+    engine = load_state(pid).get("fish_engine")
+    return engine if engine in FISH_ENGINES else FISH_ENGINE
 
 
 def files(pid: str, code: str, project: dict) -> dict:
@@ -198,22 +211,26 @@ def overview(pid: str) -> dict:
     project = store.load_project(pid)
     data = load_state(pid)
     src = source(project)
+    engine = fish_engine(pid)
     items = []
     for code, item in (data.get("languages") or {}).items():
         if code not in LANGUAGES:
             continue
         text = (work_dir(pid, code) / "text.txt").read_text(encoding="utf-8") if (work_dir(pid, code) / "text.txt").is_file() else ""
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
-                      "chars": len(text), "prices": {key: price(key, text) for key in PROVIDERS} if text else {},
+                      "chars": len(text), "prices": {key: price(key, text, engine) for key in PROVIDERS} if text else {},
                       "files": files(pid, code, project), "voice": item.get("voice") or {}, "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     return {"languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
-            "providers": [{"id": key, "name": spec["name"], "note": spec["note"], "configured": configured.get(key)} for key, spec in PROVIDERS.items()],
+            "providers": [{"id": key, "name": spec["name"], "note": spec["note"], "configured": configured.get(key),
+                           **({"engines": [{"id": eid, **item} for eid, item in FISH_ENGINES.items()], "engine": engine,
+                               "free": FISH_ENGINES[engine]["per_char"] == 0} if key == "fishaudio" else {})}
+                          for key, spec in PROVIDERS.items()],
             "openrouter": configured.get("openrouter"),
             "source": {"chars": len(src["script"]), "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
                        "language": original_language(pid, project, src["script"]),
-                       "estimate": {key: price(key, src["script"]) for key in PROVIDERS}},
+                       "estimate": {key: price(key, src["script"], engine) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             "provider": data.get("provider") or "elevenlabs", "job": data.get("job"),
             "thumbnail": bool(cover(project))}
@@ -359,6 +376,8 @@ def clone_sample(project: dict, work: Path) -> Path:
 
 def voice_id(pid: str, provider: str) -> str:
     """The author's voice cloned once per provider and episode; the id is kept for every language."""
+    if provider == "fishaudio":
+        return reference(pid)
     data = load_state(pid)
     known = (data.get("clones") or {}).get(provider)
     if known:
@@ -371,11 +390,6 @@ def voice_id(pid: str, provider: str) -> str:
                                 "description": "Голос автора, клонований студією VideoKey для перекладів"}, [("files", sample, "audio/mpeg")])
         raw = request(ELEVEN + "/voices/add", body, {"xi-api-key": key(provider), "Content-Type": mime}, "ElevenLabs (клон голосу)")
         found = json.loads(raw).get("voice_id")
-    else:
-        body, mime = multipart({"title": name, "type": "tts", "visibility": "private", "train_mode": "fast",
-                                "enhance_audio_quality": "true"}, [("voices", sample, "audio/mpeg")])
-        raw = request(FISH + "/model", body, {"Authorization": "Bearer " + key(provider), "Content-Type": mime}, "Fish Audio (клон голосу)")
-        found = json.loads(raw).get("_id") or json.loads(raw).get("id")
     if not found:
         raise RuntimeError("Сервіс не повернув клон голосу")
     update(pid, lambda data: data.setdefault("clones", {}).__setitem__(provider, found))
@@ -393,12 +407,92 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
         audio = request(f"{ELEVEN}/text-to-speech/{voice}?output_format=mp3_44100_128", json.dumps(payload, ensure_ascii=False).encode(),
                         {"xi-api-key": key(provider), "Content-Type": "application/json", "Accept": "audio/mpeg"}, "ElevenLabs")
     else:
-        payload = {"text": text, "reference_id": voice, "format": "mp3", "mp3_bitrate": 192, "normalize": True, "latency": "normal"}
-        audio = request(FISH + "/v1/tts", json.dumps(payload, ensure_ascii=False).encode(),
-                        {"Authorization": "Bearer " + key(provider), "Content-Type": "application/json", "model": FISH_MODEL}, "Fish Audio")
+        ref = voice if isinstance(voice, dict) else {}
+        payload = {"text": text, "references": [{"audio": ref["audio"], "text": ref["text"]}], "format": "mp3", "mp3_bitrate": 192,
+                   "normalize": True, "latency": "normal", "chunk_length": 200}
+        audio = request(FISH + "/v1/tts", msgpack(payload),
+                        {"Authorization": "Bearer " + key(provider), "Content-Type": "application/msgpack",
+                         "model": ref.get("engine") or FISH_ENGINE}, "Fish Audio")
     if len(audio) < 1000:
         raise RuntimeError("Сервіс озвучки повернув порожній звук")
     target.write_bytes(audio)
+
+
+def msgpack(value) -> bytes:
+    """MessagePack of dicts, lists, strings, bytes, numbers, booleans and None: what Fish's inline references need."""
+    import struct
+    if value is None:
+        return b"\xc0"
+    if value is True or value is False:
+        return b"\xc3" if value else b"\xc2"
+    if isinstance(value, int):
+        if 0 <= value < 128:
+            return bytes([value])
+        return b"\xd3" + struct.pack(">q", value)
+    if isinstance(value, float):
+        return b"\xcb" + struct.pack(">d", value)
+    if isinstance(value, str):
+        raw = value.encode("utf-8")
+        size = len(raw)
+        head = bytes([0xa0 | size]) if size < 32 else b"\xd9" + bytes([size]) if size < 256 else b"\xda" + struct.pack(">H", size) if size < 65536 else b"\xdb" + struct.pack(">I", size)
+        return head + raw
+    if isinstance(value, (bytes, bytearray)):
+        size = len(value)
+        head = b"\xc4" + bytes([size]) if size < 256 else b"\xc5" + struct.pack(">H", size) if size < 65536 else b"\xc6" + struct.pack(">I", size)
+        return head + bytes(value)
+    if isinstance(value, (list, tuple)):
+        head = bytes([0x90 | len(value)]) if len(value) < 16 else b"\xdc" + struct.pack(">H", len(value))
+        return head + b"".join(msgpack(item) for item in value)
+    if isinstance(value, dict):
+        head = bytes([0x80 | len(value)]) if len(value) < 16 else b"\xde" + struct.pack(">H", len(value))
+        return head + b"".join(msgpack(str(k)) + msgpack(v) for k, v in value.items())
+    raise TypeError(f"msgpack: {type(value).__name__}")
+
+
+def spoken_words(pid: str) -> list[dict]:
+    """The words of the latest recognition with their times (script words with ASR time)."""
+    pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {}) or {}
+    if not pointer.get("job_id"):
+        return []
+    report = store.read_json(store.project_dir(pid) / "analysis" / pointer["job_id"] / "result.json", {}) or {}
+    return [word for word in report.get("aligned_words") or [] if isinstance(word, dict) and "end" in word]
+
+
+def reference(pid: str) -> dict:
+    """About twenty seconds of the author's voice from the start, cut after a whole word, with exactly the words said
+    in it: Fish clones the voice from it in every request. Made once and kept."""
+    work = work_dir(pid)
+    audio_path, text_path = work / "reference.mp3", work / "reference.txt"
+    if not (audio_path.is_file() and text_path.is_file()):
+        project = store.load_project(pid)
+        src = source(project)
+        if not src["voice"]:
+            raise RuntimeError("Не знайдено озвучку випуску, з якої клонувати голос")
+        words = spoken_words(pid)
+        said = [word for word in words if float(word["end"]) <= REFERENCE_SECONDS]
+        if len(said) >= 8:
+            end = float(said[-1]["end"]) + 0.15
+            text = " ".join(str(word["text"]) for word in said)
+        else:
+            # no recognition kept: the script's opening at about fifteen characters a second
+            end = float(REFERENCE_SECONDS)
+            text = sample_text_at(src["script"], int(REFERENCE_SECONDS * 15))
+        if not text.strip():
+            raise RuntimeError("Немає тексту озвучки для зразка голосу")
+        work.mkdir(parents=True, exist_ok=True)
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(src["voice"]), "-t", f"{end:.2f}", "-ac", "1", "-ar", "44100",
+             "-b:a", "160k", str(audio_path)], "вирізати зразок голосу")
+        text_path.write_text(text.strip(), encoding="utf-8")
+    return {"audio": audio_path.read_bytes(), "text": text_path.read_text(encoding="utf-8"), "engine": fish_engine(pid)}
+
+
+def sample_text_at(text: str, size: int) -> str:
+    out = ""
+    for sentence in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        if out and len(out) + len(sentence) > size:
+            break
+        out = (out + " " + sentence).strip()
+    return out
 
 
 def sample_text(text: str) -> str:
@@ -420,7 +514,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
         raise Stop()
     piece = sample_text(text)
     speak(provider, voice, piece, work_dir(pid, code) / "sample.mp3")
-    job["cost"] = price(provider, piece)
+    job["cost"] = price(provider, piece, fish_engine(pid))
     update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).update(sample_provider=provider))
 
 
@@ -468,7 +562,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
             "provider": provider, "made_at": time.time(), "duration": final, "source_duration": target_length, **fit}
     update(pid, keep)
     copy_out(project, code, "voice")
-    job["cost"] = price(provider, text)
+    job["cost"] = price(provider, text, fish_engine(pid))
 
 
 def run(command: list, what: str) -> None:
@@ -742,8 +836,14 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     return overview(pid)
 
 
-def set_provider(pid: str, provider: str) -> dict:
+def set_provider(pid: str, provider: str, engine: str | None = None) -> dict:
     if provider not in PROVIDERS:
         raise store.StudioError("Невідомий сервіс озвучки")
-    update(pid, lambda data: data.__setitem__("provider", provider))
+    if engine is not None and engine not in FISH_ENGINES:
+        raise store.StudioError("Невідомий рушій Fish Audio")
+    def change(data):
+        data["provider"] = provider
+        if engine:
+            data["fish_engine"] = engine
+    update(pid, change)
     return overview(pid)

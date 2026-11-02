@@ -296,8 +296,11 @@ episode from the first 90 s of the plan's voice, `clones` in `languages.json`; a
 the whole text voiced in parts of ≤2400 characters with the neighbours as context, glued, −16 LUFS / −1.5 dBTP, sped up by
 at most `FIT_MAX` when longer than the video, padded with silence when shorter; the price is shown before and asked in
 a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated; the «after» window itself is the button, a magic wand in the middle, over the picture once made). Providers:
-ElevenLabs (`eleven_multilingual_v2`, every language, cloning needs a paid plan) and Fish Audio (`s1`, billed by UTF-8
-bytes); their keys are «Ключі сервісів» (`credentials.DEFAULTS`). Voxtral on OpenRouter has no Ukrainian or Russian.
+ElevenLabs (`eleven_multilingual_v2`, every language, cloning needs a paid plan) and Fish Audio with a choice of
+engine (`FISH_ENGINES`: S2.1 Pro Free by default, free under fair use; S2.1 Pro and S1 billed by UTF-8 bytes). Fish
+clones inline: every request carries, as MessagePack (`languages.msgpack`), about 22 s of the voice's start cut after a
+whole word with exactly the words said in it (`languages.reference`, from the recognition's `aligned_words`), so no
+voice model is made (a free account may make none: «model creation limit reached (0/0)»); their keys are «Ключі сервісів» (`credentials.DEFAULTS`). Voxtral on OpenRouter has no Ukrainian or Russian.
 Work files stay in `data/projects/<id>/languages/<code>`; text, title, voice and thumbnail are copied to
 `<episode>/Мови/<language>/`. One job a project (`languages.ACTIVE`, in the busy list); the tab works during an export.
 A language is added with its select and «Перекласти» (picking alone starts nothing); the voice service is chosen in a
@@ -305,7 +308,7 @@ card's voice step. «Скасувати» on the job's line, which sits in the s
 next part, the thumbnail at once (Codex killed); nothing half made is saved. The «Оригінал» card leads the page: the episode's own voice to listen to, its length and the script's characters
 (its language in brackets, found once: Whisper's `engine.language` of the latest recognition, else `guess_language` from the script, kept as `original_language`; the add select leaves it out) (`languages.original_file`, `voice_file`: the plan's asset, the levelled voice of `audio_gain`, the sound clip that
 starts the film, a path in the timings, the Razgon project's voiceover). Text and title edits save by themselves a
-moment after typing stops (no save button); the tab's messages stand in the step where the button was pressed
+moment after typing stops (no save button, no «translate again»); the tab's messages stand in the step where the button was pressed
 (`langNote`), not in the studio's banner. The video is not changed. API: `GET /api/projects/<id>/languages`, `POST …/languages/provider`, `POST
 …/languages/<code>` (add), `…/<code>/remove`, `…/<code>/text`, `…/<code>/translate|sample|voice|thumbnail`, `POST …/languages/cancel`, `GET …/languages/original`, `GET
 …/<code>/file/sample|voice|thumbnail`. Test: `backend/tests/test_languages.py`.

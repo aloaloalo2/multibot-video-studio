@@ -1238,7 +1238,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(languages.cancel(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
-            return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or "")))
+            return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})(?:/(text|remove|translate|sample|voice|thumbnail))?", path)
         if match and method == "POST":
             pid, code, action = match.groups()

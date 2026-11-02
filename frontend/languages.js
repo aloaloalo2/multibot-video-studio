@@ -6,6 +6,7 @@
 const langDrafts={};
 let langData=null,langPolling=false;
 
+function langCost(spec,value){return spec?.free?'безкоштовно':langMoney(value || 0);}
 function langMoney(value){return value>=0.01?`≈ $${value.toFixed(2).replace('.',',')}`:'менше $0,01';}
 function langUrl(id,code,kind,stamp){return `/api/projects/${encodeURIComponent(id)}/languages/${code}/file/${kind}?v=${stamp || Date.now()}`;}
 
@@ -39,7 +40,8 @@ function drawLangs(id){
     <div class="lang-cards"></div>
     <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
   </div>`;
-  const cards=section.querySelector('.lang-cards');
+  // listeners go on the page's own root, drawn anew each time, so they never pile up on the section
+  const view=section.querySelector('.lang-view'),cards=section.querySelector('.lang-cards');
   if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Перекласти».</p>';
   cards.prepend(langOriginal(id,data.source));
   for(const item of data.items)cards.append(langCard(id,item,spec));
@@ -51,8 +53,12 @@ function drawLangs(id){
       document.querySelector(`#project-langs .lang-card[data-code="${code}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
       if(langData.openrouter===true)langStart(id,'translate',code);else langNote(langPlace(code,'translate'),'Додайте ключ OpenRouter у налаштуваннях студії («Ключі сервісів»), щоб перекласти текст.',true);}catch(error){langNote(go,error.message,true);}
   });
+  view.addEventListener('change',async event=>{
+    const select=event.target.closest('.lang-engine select');if(!select)return;
+    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',engine:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
+  });
   // the voice service is chosen inside each card's voice step and holds for the whole episode
-  section.addEventListener('click',async event=>{
+  view.addEventListener('click',async event=>{
     const button=event.target.closest('.lang-segment button');if(!button || button.dataset.provider===langData.provider)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:button.dataset.provider});drawLangs(id);}catch(error){langNote(button,error.message,true);}
   });
@@ -80,20 +86,20 @@ function langCard(id,item,spec){
   card.innerHTML=`<header><h2>${esc(item.name)}</h2><span>${esc(item.label)}</span><button type="button" class="lang-remove" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">${typeof trashIcon==='string'?trashIcon:'×'}</button></header>
     <section class="lang-step"><h3><em>1</em>Текст</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
-        <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>
-        <div class="lang-actions"><button type="button" class="secondary lang-retranslate">Перекласти заново</button></div>`
+        <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
       ${item.text?`<div class="lang-provider"><div class="lang-segment" role="radiogroup" aria-label="Сервіс озвучки">${langData.providers.map(entry=>`<button type="button" role="radio" data-provider="${entry.id}" aria-checked="${entry.id===spec.id}" class="${entry.id===spec.id?'active':''}">${esc(entry.name)}${entry.configured===true?'':'<i title="Ключ не додано">!</i>'}</button>`).join('')}</div>
+          ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
-        <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langMoney(price || 0)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>. Спершу послухайте зразок, він коштує майже нічого.</p>
+        <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
         <div class="lang-sample">${item.files.sample?'<div class="lang-player" data-kind="sample"></div>':''}<button type="button" class="secondary lang-sample-run">${item.files.sample?'Інший зразок':'Послухати зразок'}</button>${sampleBy?`<small>зразок озвучено через ${esc(sampleBy)}</small>`:''}</div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
           <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
           ${item.folder?`<small class="lang-folder">Файл у папці випуску: ${esc(item.folder)}</small>`:''}
           <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
-        <div class="lang-actions"><button type="button" class="primary lang-voice-run">${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langMoney(price || 0)}</button></div>`
+        <div class="lang-actions"><button type="button" class="primary lang-voice-run">${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langCost(spec,price)}</button></div>`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
@@ -121,7 +127,7 @@ function langCard(id,item,spec){
       const old=card.querySelector('.lang-sample .voice-player');if(old){old.querySelector('audio')?.pause();old.remove();}
       const again=card.querySelector('.lang-sample-run');if(again)again.textContent='Послухати зразок';
       const fresh=langData.items.find(entry=>entry.code===item.code);
-      if(fresh){const cost=langMoney(fresh.prices?.[spec.id] ?? 0),line=card.querySelector('.lang-price');
+      if(fresh){const cost=langCost(spec,fresh.prices?.[spec.id]),line=card.querySelector('.lang-price');
         if(line){line.querySelector('b').textContent=cost;line.querySelector('small').textContent=`(${fresh.chars.toLocaleString('uk-UA')} символів)`;}
         const run=card.querySelector('.lang-voice-run');if(run)run.textContent=run.textContent.replace(/ · .*$/,` · ${cost}`);}
       card.querySelector('.lang-text')?.closest('.lang-step')?.querySelector(':scope > .lang-note.is-error')?.remove();
@@ -139,16 +145,13 @@ function langCard(id,item,spec){
     [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
       try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/remove`,'POST',{});delete langDrafts[`${id}:${item.code}`];drawLangs(id);}catch(error){langNote(card,error.message,true);}}}]));
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
-  card.querySelector('.lang-retranslate')?.addEventListener('click',()=>modal(`Перекласти ${item.name} заново?`,
-    '<p>Новий переклад замінить поточний текст разом із вашими правками.</p>',
-    [{label:'Скасувати',run:closeModal},{label:'Перекласти заново',primary:true,run:()=>{closeModal();delete langDrafts[`${id}:${item.code}`];langStart(id,'translate',item.code);}}]));
   card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code);});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
     if(!(await flush()))return;
     const fresh=langData.items.find(entry=>entry.code===item.code) || item,cost=fresh.prices?.[spec.id] ?? price ?? 0,chars=fresh.chars ?? item.chars;
-    modal(`Озвучити ${item.name}?`,`<p>${esc(spec.name)} озвучить весь текст вашим голосом: ${chars.toLocaleString('uk-UA')} символів, орієнтовно <b>${langMoney(cost)}</b>. Гроші спишуться з вашого рахунку ${esc(spec.name)}.</p>
+    modal(`Озвучити ${item.name}?`,`<p>${esc(spec.name)} озвучить весь текст вашим голосом: ${chars.toLocaleString('uk-UA')} символів, ${spec.free?`<b>безкоштовно</b> (рушій ${esc(spec.engines.find(engine=>engine.id===spec.engine)?.name || '')})`:`орієнтовно <b>${langMoney(cost)}</b>. Гроші спишуться з вашого рахунку ${esc(spec.name)}`}.</p>
       <p>Студія склеїть частини, вирівняє гучність і піджене довжину під ролик. Зазвичай це кілька хвилин.</p>`,
-      [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langMoney(cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
+      [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
   });
   card.querySelector('.lang-thumb-run')?.addEventListener('click',()=>langStart(id,'thumbnail',item.code));
   return card;
