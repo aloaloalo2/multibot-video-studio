@@ -30,29 +30,60 @@ async function loadLangs(id){
 
 function langBusy(){return langData?.job?.status==='running';}
 
+// A flag for each language, shown in its capsule and in the «+» menu.
+const langFlags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
+function langFlag(code){return `<span class="lang-flag" aria-hidden="true">${langFlags[code] || '🌐'}</span>`;}
+// the language open below the capsules, per episode, remembered in the browser
+function langChosen(id){
+  let code=null;try{code=localStorage.getItem(`langTab:${id}`);}catch{}
+  const codes=(langData?.items || []).map(item=>item.code);
+  return codes.includes(code)?code:codes[0] || null;
+}
+function langChoose(id,code){try{localStorage.setItem(`langTab:${id}`,code);}catch{}}
+
+// The languages stand on top as capsules with their flags (user, 2 November 2026: «мови… зверху… капсулами… прапор…
+// плюсик, щоб додати… хрестик… видалити»): a click opens that language's card below, «+» adds one, × removes one.
 function drawLangs(id){
   const section=$('project-langs');if(!section||section.dataset.project!==id)return;
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
   const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
-  const used=new Set(data.items.map(item=>item.code));
+  const used=new Set(data.items.map(item=>item.code)),chosen=langChosen(id);
+  const free=data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language);
   section.innerHTML=`<div class="lang-view">
     <div class="lang-head"><h1>Мови</h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
+    <div class="lang-original-slot"></div>
+    <div class="lang-pills" role="tablist" aria-label="Мови випуску">
+      ${data.items.map(item=>`<div class="lang-pill${item.code===chosen?' active':''}" data-code="${item.code}"><button type="button" class="lang-pill-pick" role="tab" aria-selected="${item.code===chosen}" title="${esc(item.label)}">${langFlag(item.code)}<span>${esc(item.name)}</span><i class="lang-pill-busy" aria-hidden="true"></i></button><button type="button" class="lang-pill-x" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">×</button></div>`).join('')}
+      ${free.length?`<div class="lang-plus-wrap"><button type="button" class="lang-plus" aria-haspopup="true" aria-expanded="false" title="Додати мову" aria-label="Додати мову">+${data.items.length?'':'<span>Додати мову</span>'}</button>
+        <div class="lang-menu" role="menu" hidden>${free.map(item=>`<button type="button" role="menuitem" data-code="${item.code}">${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('')}</div></div>`:''}
+    </div>
     <div class="lang-cards"></div>
-    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Додати</button></div>
   </div>`;
   // listeners go on the page's own root, drawn anew each time, so they never pile up on the section
   const view=section.querySelector('.lang-view'),cards=section.querySelector('.lang-cards');
-  if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Додати».</p>';
-  cards.prepend(langOriginal(id,data.source));
-  for(const item of data.items)cards.append(langCard(id,item,spec));
-  const pick=section.querySelector('.lang-add select'),go=section.querySelector('.lang-add-run');
-  pick.addEventListener('change',()=>{go.disabled=!pick.value;});
-  go.addEventListener('click',async()=>{
-    const code=pick.value;if(!code)return;
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
-      document.querySelector(`#project-langs .lang-card[data-code="${code}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
-    }catch(error){langNote(go,error.message,true);}
+  section.querySelector('.lang-original-slot').replaceWith(langOriginal(id,data.source));
+  const item=data.items.find(entry=>entry.code===chosen);
+  if(item)cards.append(langCard(id,item,spec));
+  else cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Натисніть «+» угорі й оберіть мову.</p>';
+  const plus=view.querySelector('.lang-plus'),menu=view.querySelector('.lang-menu');
+  const closeMenu=()=>{if(menu){menu.hidden=true;plus.setAttribute('aria-expanded','false');}};
+  plus?.addEventListener('click',event=>{event.stopPropagation();menu.hidden=!menu.hidden;plus.setAttribute('aria-expanded',String(!menu.hidden));});
+  view.addEventListener('click',event=>{if(menu&&!menu.hidden&&!event.target.closest('.lang-plus-wrap'))closeMenu();});
+  view.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();});
+  menu?.addEventListener('click',async event=>{
+    const option=event.target.closest('button[data-code]');if(!option)return;closeMenu();
+    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${option.dataset.code}`,'POST',{});langChoose(id,option.dataset.code);drawLangs(id);}
+    catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}
+  });
+  view.querySelectorAll('.lang-pill').forEach(pill=>{
+    const code=pill.dataset.code,entry=data.items.find(entry=>entry.code===code);
+    pill.querySelector('.lang-pill-pick').addEventListener('click',()=>{if(code===langChosen(id))return;langChoose(id,code);drawLangs(id);});
+    pill.querySelector('.lang-pill-x').addEventListener('click',()=>modal(`Прибрати ${entry.name}?`,
+      `<p>Переклад і озвучка цієї мови зникнуть зі студії.${entry.folder?' Файли в папці випуску залишаться.':''}</p>`,
+      [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
+        try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/remove`,'POST',{});delete langDrafts[`${id}:${code}`];drawLangs(id);}
+        catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}}}]));
   });
   view.addEventListener('change',async event=>{
     const select=event.target.closest('.lang-engine select');if(!select)return;
@@ -134,7 +165,7 @@ function langCard(id,item,spec){
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
   const hasSample=(item.files.samples || []).includes(langData.voice_key);
   const fit=voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
-  card.innerHTML=`<header><h2>${esc(item.name)}</h2><span>${esc(item.label)}</span><button type="button" class="lang-remove" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">${typeof trashIcon==='string'?trashIcon:'×'}</button></header>
+  card.innerHTML=`
     <section class="lang-step"><h3><em>1</em>Текст</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
         <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
@@ -197,10 +228,6 @@ function langCard(id,item,spec){
     for(const field of [area,title]){field.addEventListener('input',later);field.addEventListener('blur',()=>{if(timer)flush();});}
     if(area.value!==item.text)later();
   }
-  card.querySelector('.lang-remove').addEventListener('click',()=>modal(`Прибрати ${item.name}?`,
-    `<p>Переклад і озвучка цієї мови зникнуть зі студії.${item.folder?' Файли в папці випуску залишаться.':''}</p>`,
-    [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
-      try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/remove`,'POST',{});delete langDrafts[`${id}:${item.code}`];drawLangs(id);}catch(error){langNote(card,error.message,true);}}}]));
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
   card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code);});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
@@ -227,10 +254,10 @@ function langCard(id,item,spec){
 const langStepOf={translate:0,sample:1,voice:1,thumbnail:2};
 function langPlace(code,kind){
   const card=document.querySelector(`#project-langs .lang-card[data-code="${code}"]`);
-  return card?.querySelectorAll('.lang-step')[langStepOf[kind] ?? 0] || document.querySelector('#project-langs .lang-add');
+  return card?.querySelectorAll('.lang-step')[langStepOf[kind] ?? 0] || document.querySelector('#project-langs .lang-pills');
 }
 function langNote(where,message,error=false){
-  const holder=where?.closest?.('.lang-step, .lang-add, .lang-card') || where;
+  const holder=where?.closest?.('.lang-step, .lang-pills, .lang-card') || where;
   if(!holder){status(message,error);return;}
   holder.querySelector(':scope > .lang-note')?.remove();
   const note=document.createElement('p');note.className='lang-note'+(error?' is-error':'');note.setAttribute('role',error?'alert':'status');note.textContent=message;
@@ -255,6 +282,8 @@ function showLangJob(){
   // the line sits in the step it works on, inside the language's own card (user, 2 November 2026: «не треба розкидати
   // блоки… все в один блок»): the text for a translation, the voice for a sample or the whole, the thumbnail
   const job=langData?.job,busy=langBusy();
+  // the capsule of the language at work shows it, whichever card is open
+  document.querySelectorAll('#project-langs .lang-pill').forEach(pill=>pill.classList.toggle('is-working',busy&&pill.dataset.code===job?.code));
   const step={translate:0,sample:1,voice:1,thumbnail:2}[job?.kind];
   const card=job?.code?document.querySelector(`#project-langs .lang-card[data-code="${job.code}"]`):null;
   const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
