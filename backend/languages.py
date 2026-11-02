@@ -517,8 +517,9 @@ def channel_voice(cid: str | None, code: str | None) -> dict | None:
         return None
 
 
-def voice_for(pid: str, code: str | None) -> dict | None:
-    """The example a language is voiced from: the episode's own, else the channel's."""
+def voice_for(pid: str, code: str | None, original: bool = True) -> dict | None:
+    """The example a language is voiced from: the episode's own, else the channel's, else (user, 2 November 2026: «хай
+    кнопка працює навіть якщо… лише оригінал є») the start of the original voice, with its accent."""
     if not code:
         return None
     own = own_voice(pid, code)
@@ -527,8 +528,49 @@ def voice_for(pid: str, code: str | None) -> dict | None:
     try:
         cid = store.load_project(pid).get("channel_id")
     except store.StudioError:
-        return None
-    return channel_voice(cid, code)
+        cid = None
+    return channel_voice(cid, code) or (original_example(pid) if original else None)
+
+
+REFERENCE_SECONDS = 22
+
+
+def spoken_words(pid: str) -> list[dict]:
+    """The words of the latest recognition with their times (script words with ASR time)."""
+    pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {}) or {}
+    if not pointer.get("job_id"):
+        return []
+    report = store.read_json(store.project_dir(pid) / "analysis" / pointer["job_id"] / "result.json", {}) or {}
+    return [word for word in report.get("aligned_words") or [] if isinstance(word, dict) and "end" in word]
+
+
+def original_example(pid: str) -> dict | None:
+    """About twenty seconds of the original voice from its start, cut after a whole word, with exactly the words said in
+    it; made once and kept. None when the episode has no voice."""
+    work = work_dir(pid)
+    audio_path, text_path = work / "reference.mp3", work / "reference.txt"
+    if not (audio_path.is_file() and text_path.is_file()):
+        try:
+            src = source(store.load_project(pid))
+        except store.StudioError:
+            return None
+        if not src["voice"]:
+            return None
+        said = [word for word in spoken_words(pid) if float(word["end"]) <= REFERENCE_SECONDS]
+        if len(said) >= 8:
+            end, text = float(said[-1]["end"]) + 0.15, " ".join(str(word["text"]) for word in said)
+        else:            # no recognition kept: the script's opening at about fifteen characters a second
+            end, text = float(REFERENCE_SECONDS), sample_text_at(src["script"], int(REFERENCE_SECONDS * 15))
+        if not text.strip():
+            return None
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(src["voice"]), "-t", f"{end:.2f}", "-ac", "1", "-ar", "44100",
+                 "-b:a", "160k", str(audio_path)], "вирізати зразок голосу")
+        except RuntimeError:
+            return None
+        text_path.write_text(text.strip(), encoding="utf-8")
+    return read_example(work, "reference", "original")
 
 
 NO_VOICE = ("Додайте приклад голосу цією мовою: запишіть себе або закиньте запис носія мови, тут чи в налаштуваннях "

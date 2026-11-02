@@ -233,16 +233,16 @@ class LanguagesTest(unittest.TestCase):
         store.atomic_json(self.studio / "analysis" / "j1" / "result.json", {"engine": {"language": "de"}})
         self.assertEqual(languages.original_language(self.pid, self.project, "Перше речення."), "de")
 
-    def test_fish_clones_inline_from_the_example_and_never_from_the_original(self):
+    def test_fish_clones_inline_from_the_example_else_from_the_original(self):
         sent = []
         def request(url, data, headers, what):
             sent.append((url, data, headers))
             return b"\xff" * 2000
         with patch.object(languages, "key", return_value="k"):
-            with self.assertRaises(RuntimeError):
-                languages.voice_id(self.pid, "fishaudio", "uk")          # no example: no fallback to the original
-            with self.assertRaises(store.StudioError):
-                languages.add(self.pid, "uk"); languages.save_text(self.pid, "uk", "Текст."); languages.start(self.pid, "sample", "uk", "fishaudio")
+            # no example yet: the start of the original voice, with the words said in it
+            first = languages.voice_id(self.pid, "fishaudio", "uk")
+            self.assertEqual(first["text"], "Перше речення. Друге речення! Третій абзац тут.")
+            self.assertEqual(languages.voice_for(self.pid, "uk")["from"], "original")
             self.example("uk")
             with patch.object(languages, "request", side_effect=request):
                 voice = languages.voice_id(self.pid, "fishaudio", "uk")
@@ -284,7 +284,8 @@ class LanguagesTest(unittest.TestCase):
         languages.remove_own_voice(self.pid, "de")
         self.assertEqual(languages.voice_for(self.pid, "de")["from"], "channel")
         languages.remove_channel_voice("c" * 16, "de")
-        self.assertIsNone(languages.voice_for(self.pid, "de"))
+        self.assertEqual(languages.voice_for(self.pid, "de")["from"], "original")
+        self.assertIsNone(languages.voice_for(self.pid, "de", original=False))
         with patch("speech.transcribe", side_effect=RuntimeError("no model")), self.assertRaises(store.StudioError):
             languages.save_channel_voice("c" * 16, "de", io.BytesIO(recording), len(recording), "")   # no words, no passage
 
@@ -307,8 +308,7 @@ class LanguagesTest(unittest.TestCase):
         fish = languages.voice_id(self.pid, "fishaudio", "en")
         self.assertEqual(fish["text"], item["passage"])
         self.assertEqual(fish["audio"], (work / "own-voice.mp3").read_bytes())
-        with self.assertRaises(RuntimeError):
-            languages.voice_id(self.pid, "fishaudio", "de")          # another language has no example of its own
+        self.assertEqual(languages.voice_for(self.pid, "de")["from"], "original")   # another language has no example of its own
         added = []
         def request(url, body, headers, what):
             added.append(url)

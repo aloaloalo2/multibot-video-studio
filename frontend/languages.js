@@ -105,7 +105,7 @@ function drawLangs(id){
 // завжди від прикладу ролика на мові… або запис, або закинути приклад носія»): the channel's example serves every
 // episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
-function langHasVoice(item){return !!(item.own_voice || item.channel_voice);}
+function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Студія не змогла розпізнати слова в записі, тому Fish вважає, що прозвучав показаний уривок. Якщо в записі інші слова, голос може звучати дивно: запишіть заново, прочитавши саме уривок.</p>':'';}
 function langAddButtons(primary){
   return `<div class="lang-own-actions"><button type="button" class="${primary?'primary':'secondary'} lang-own-record">${micIcon}Записати себе</button><label class="secondary lang-own-file">Закинути запис<input type="file" accept="audio/*,video/*" hidden></label></div>`;
@@ -118,8 +118,9 @@ function langOwnBlock(item){
   if(shared)return `<div class="lang-own has-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>з налаштувань каналу, для всіх випусків</small></div>
     <div class="lang-player" data-kind="channel"></div>${langHeardWarn(shared)}
     <details class="lang-own-more"><summary>Інший голос лише для цього випуску</summary>${langAddButtons(false)}</details></div>`;
-  return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>потрібен, щоб озвучити</small></div>
-    <p>Додайте приклад голосу цією мовою, 20–60 секунд: запишіть себе (можна прочитати уривок нижче) або закиньте запис носія мови. Озвучка скопіює саме цей голос і вимову. Щоб приклад діяв для всіх випусків, додайте його в налаштуваннях каналу, розділ «Голоси для перекладу».</p>
+  const fromOriginal=!!langData?.source?.voice;
+  return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>${fromOriginal?'зараз з оригіналу, з його акцентом':'потрібен, щоб озвучити'}</small></div>
+    <p>${fromOriginal?'Озвучка візьме голос з початку оригіналу, тож вимова буде як у оригіналі. Щоб звучало як носій мови, додайте':'Додайте'} приклад голосу цією мовою, 20–60 секунд: запишіть себе (можна прочитати уривок нижче) або закиньте запис носія мови. Озвучка скопіює саме цей голос і вимову. Щоб приклад діяв для всіх випусків, додайте його в налаштуваннях каналу, розділ «Голоси для перекладу».</p>
     <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>${langAddButtons(true)}</div>`;
 }
 // a recording from the microphone: the button turns into «Зупинити · 0:12»; the blob goes to `done`
