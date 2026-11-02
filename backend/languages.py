@@ -195,7 +195,7 @@ def price(provider: str, text: str, engine: str | None = None) -> float | None:
 FISH_STYLES = {"exact": {"name": "Точно як приклад", "temperature": 0.5, "top_p": 0.6},
                "normal": {"name": "Звичайно", "temperature": 0.7, "top_p": 0.7},
                "lively": {"name": "Живіше", "temperature": 0.9, "top_p": 0.8}}
-FISH_STYLE = "exact"
+FISH_STYLE = "lively"           # user, 2 November 2026: «живіше варіант краще озвучує… на ру»
 
 
 def fish_style(pid: str) -> str:
