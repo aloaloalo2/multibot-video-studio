@@ -117,7 +117,9 @@ function groupLane(title,groups,ref){
     if(members.every(emptyFrameClip))button.classList.add('group-empty');
     // a Razgon frame drawn as code is grey like every made frame, one already rendered into video green (user, 31 October
     // 2026: «створені кодом кадри сірі, відрендерені вже відео можуть бути зелені»); a frame not drawn yet stays dark
-    else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')))button.classList.add('group-made');
+    // green only while that video is really there: a render whose file went with a deleted episode folder leaves the
+    // frame as code, grey (user, 2 November 2026: «чому кадри зелені, якщо це просто код»)
+    else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')&&!state.assetsLoading&&(state.assets || []).some(asset=>asset.id===c.asset_id)))button.classList.add('group-made');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
     const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
     button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');

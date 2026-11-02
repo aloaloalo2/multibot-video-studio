@@ -270,7 +270,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
       if(!current())return;
       if(state.project.revision!==revision)continue;
       state.assets=library.assets || [];state.assetsLoading=false;
-      buildAudioNodes();renderAssets();renderPreview();return;
+      buildAudioNodes();renderAssets();renderPreview();renderTimeline();return;   // the timeline colours frames by what is really there
     }
     if(current()){state.assetsLoading=false;renderAssets();}
   })().catch(error=>{if(current()){state.assetsLoading=false;renderAssets();status(`Не вдалося завантажити медіатеку: ${error.message}`,true);}});

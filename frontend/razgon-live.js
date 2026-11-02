@@ -26,7 +26,21 @@
   const source = () => `${info().url}?embed=1&scale=${quality.value}`;
   let seekTime = null;   // the Razgon time the picture shows: the playhead, or a frame's last moment while a transition fades out of it
   const post = () => { if (!frame.hidden && frame.contentWindow) frame.contentWindow.postMessage({ razgon: 'seek', t: seekTime ?? state.playhead }, '*'); };
-  addEventListener('message', (event) => { if (event.source === frame.contentWindow && event.data?.razgon === 'ready') post(); });
+  // A live server that went down (the studio restarted, after an update) leaves a black frame: the player says «ready»
+  // when it draws, so one that keeps silent is started again (user, 2 November 2026: «код не відтворюється»).
+  let ready = false, watch = 0; const retried = new Set();   // one fresh start a project a page
+  addEventListener('message', (event) => { if (event.source === frame.contentWindow && event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); post(); } });
+  function watchStart(id) {
+    ready = false; clearTimeout(watch);
+    watch = setTimeout(() => {
+      if (ready || state.project?.id !== id || !active() || retried.has(id)) return;
+      retried.add(id);
+      delete live[id]; frame.removeAttribute('src'); delete frame.dataset.src;
+      // the server says whether its live view runs; a stale one is started again
+      api(`/api/projects/${encodeURIComponent(id)}/razgon-live`, 'POST', {}).then(fresh => { live[id] = fresh; sync(); renderPreview(); })
+        .catch(() => { load(id); });
+    }, 12000);
+  }
 
   async function load(id) {
     if (id in live) return;
@@ -47,7 +61,7 @@
     const on = active();
     tools.hidden = !info()?.available; quality.hidden = !on;
     toggle.setAttribute('aria-pressed', String(on));
-    if (on && frame.dataset.src !== source()) { frame.src = source(); frame.dataset.src = frame.src; }
+    if (on && frame.dataset.src !== source()) { frame.src = source(); frame.dataset.src = frame.src; watchStart(state.project.id); }
     if (!on && frame.dataset.src) { frame.removeAttribute('src'); delete frame.dataset.src; }
     frame.hidden = !on;
   }
