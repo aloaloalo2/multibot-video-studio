@@ -506,6 +506,28 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn("S2.1 Pro Free", str(caught.exception))
         self.assertIn("баланс API", str(caught.exception))
 
+    def test_lines_lost_by_the_translator_are_asked_again_and_then_alone(self):
+        # user, 2 November 2026: «Перекладач двічі повернув не ту кількість фраз»
+        self.assertEqual(languages.line_answers('{"1": "Раз", "3": "Три"}', [1, 2, 3]), {1: "Раз", 3: "Три"})
+        self.assertEqual(languages.line_answers('[{"id": 2, "text": "Два"}]', [1, 2]), {2: "Два"})
+        self.assertEqual(languages.line_answers('["Раз", "Два"]', [1, 2]), {1: "Раз", 2: "Два"})
+        self.assertEqual(languages.line_answers('["Раз. Два"]', [1, 2]), {})
+        lines = [{"start": i * 2.0, "end": i * 2.0 + 1.5, "source": f"Line {i}."} for i in range(4)]
+        asked = []
+        def ask(messages, max_tokens=12000):
+            asked.append(messages[1]["content"])
+            if len(asked) == 1:
+                return '{"1": "Один.", "2": "Два і три.", "4": "Чотири."}', 0.0      # line 3 merged into line 2
+            if len(asked) == 2:
+                return '{}', 0.0                                                 # still missing
+            return "Три.", 0.0                                                   # alone
+        job = {"key": "x"}
+        with patch.object(languages, "ask", side_effect=ask), patch.object(languages, "progress"):
+            texts, _ = languages.translate_lines("uk", lines, 8.0, self.pid, job)
+        self.assertEqual(texts, ["Один.", "Два і три.", "Три.", "Чотири."])
+        self.assertEqual([item["id"] for item in json.loads(asked[1])], [3])
+        self.assertEqual(asked[2], "Line 2.")
+
     def test_the_translation_is_written_to_be_heard(self):
         # user, 2 November 2026: «1999-го — такі речення погані… краще слова тисяча дев'ятсот…»
         self.assertIn("1999-го", languages.translator("uk"))

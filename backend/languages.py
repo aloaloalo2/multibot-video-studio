@@ -496,7 +496,7 @@ def synced_segments(pid: str, code: str) -> list[dict] | None:
 
 
 def translate_lines(code: str, lines: list[dict], total: float | None, pid: str, job: dict) -> tuple[list[str], float]:
-    """Every line translated to fit about the seconds it has; the answer is a JSON array of the same length."""
+    """Every line translated to fit about the seconds it has; the answer is a JSON object of the lines by id."""
     rate = CHARS_PER_SECOND.get(code, 15)
     done, cost = [], 0.0
     batches = [lines[i:i + TRANSLATE_LINES] for i in range(0, len(lines), TRANSLATE_LINES)]
@@ -513,23 +513,37 @@ def translate_lines(code: str, lines: list[dict], total: float | None, pid: str,
         system = translator(code) + (
             "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
             "only `seconds` to be said. Translate every line so a narrator says it naturally within that time: about "
-            "`max_chars` characters or fewer, shorter wording where needed, the meaning kept. Keep the lines one to one: never "
-            "merge, split or move words between them. Answer with a JSON array of strings only, exactly as many as the lines, "
-            "in the same order.") + (f"\n\nThe lines just before, already translated, for context only:\n{before}" if before else "")
+            "`max_chars` characters or fewer, shorter wording where needed, the meaning kept. The rules above apply inside each "
+            "line: a line may hold several short sentences, but it stays one line. Keep the lines one to one: never merge, "
+            "split, drop or move words between them. Answer with a JSON object only: each line's `id` as the key and its "
+            "translation as the value, every id present.") + (f"\n\nThe lines just before, already translated, for context only:\n{before}" if before else "")
+        # each line carries its id, so an answer that lost or merged a line keeps every line it did translate; the rest are
+        # asked again, and a line still missing is translated alone (user, 2 November 2026: «Перекладач двічі повернув не ту
+        # кількість фраз»)
+        got, pending = {}, list(range(len(items)))
         for attempt in range(2):
-            answer, spent = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(items, ensure_ascii=False)}])
+            ask_items = [dict(items[k], id=k + 1) for k in pending]
+            answer, spent = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(ask_items, ensure_ascii=False)}])
             cost += spent
-            try:
-                found = json.loads(answer[answer.index("["):answer.rindex("]") + 1])
-                if isinstance(found, list) and len(found) == len(batch) and all(isinstance(text, str) and text.strip() for text in found):
-                    fixed, spent = speakable(code, [" ".join(text.split()) for text in found])
-                    cost += spent
-                    done += fixed
-                    break
-            except ValueError:
-                pass
-        else:
-            raise RuntimeError("Перекладач двічі повернув не ту кількість фраз. Спробуйте ще раз")
+            for k, text in line_answers(answer, [k + 1 for k in pending]).items():
+                got[k - 1] = text
+            pending = [k for k in pending if k not in got]
+            if not pending:
+                break
+        for k in pending:
+            alone = translator(code) + (
+                f"\n\nThis is one line of a dubbed voice-over; it has {items[k]['seconds']} seconds to be said, about "
+                f"{items[k]['max_chars']} characters or fewer. Answer with its translation only, one line.") + (
+                f"\n\nThe lines just before, for context only:\n{before}" if before else "")
+            answer, spent = ask([{"role": "system", "content": alone}, {"role": "user", "content": items[k]["text"]}], 600)
+            cost += spent
+            text = " ".join(answer.strip().strip('"«»').split())
+            if not text:
+                raise RuntimeError("Перекладач не повернув переклад однієї фрази. Спробуйте ще раз")
+            got[k] = text
+        fixed, spent = speakable(code, [got[k] for k in range(len(items))])
+        cost += spent
+        done += fixed
     return done, cost
 
 
@@ -1062,6 +1076,35 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     update(pid, keep)
     copy_out(project, code, "voice")
     job["cost"] = price(provider, "\n".join(texts), fish_engine(pid))
+
+
+def line_answers(answer: str, ids: list[int]) -> dict[int, str]:
+    """The translated lines found in an answer, by id: a JSON object {id: text}, a list of {id, text}, or a plain list
+    exactly as long as the lines asked."""
+    found = None
+    order = sorted((("{", "}"), ("[", "]")), key=lambda pair: answer.find(pair[0]) if pair[0] in answer else len(answer))
+    for opening, closing in order:
+        try:
+            found = json.loads(answer[answer.index(opening):answer.rindex(closing) + 1])
+            break
+        except ValueError:
+            continue
+    pairs = []
+    if isinstance(found, dict):
+        pairs = list(found.items())
+    elif isinstance(found, list) and found and all(isinstance(item, dict) for item in found):
+        pairs = [(item.get("id"), item.get("text") or item.get("translation")) for item in found]
+    elif isinstance(found, list) and len(found) == len(ids):
+        pairs = list(zip(ids, found))
+    out = {}
+    for key, text in pairs:
+        try:
+            key = int(key)
+        except (TypeError, ValueError):
+            continue
+        if key in ids and isinstance(text, str) and text.strip():
+            out[key] = " ".join(text.split())
+    return out
 
 
 def shorten(code: str, source_text: str, text: str, seconds: float, length: float) -> str | None:
