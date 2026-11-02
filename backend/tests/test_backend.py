@@ -722,7 +722,7 @@ class BackendTest(unittest.TestCase):
         with patch.object(credentials, "_keychain", fake):
             status, result = self.request("/api/service-keys")
             self.assertEqual(status, 200)
-            self.assertEqual({item["id"] for item in result["providers"]}, {"pixabay", "pexels", "unsplash", "openrouter"})
+            self.assertEqual({item["id"] for item in result["providers"]}, {"pixabay", "pexels", "unsplash", "openrouter", "elevenlabs", "fishaudio"})
             status, result = self.request("/api/service-keys", "POST", {"provider_id": "pixabay", "key": example})
             self.assertEqual(status, 200)
             self.assertEqual(fake.entries["pixabay-youtube-api"], example)

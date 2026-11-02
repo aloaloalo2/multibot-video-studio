@@ -35,6 +35,7 @@ import frame_progress
 import space
 import production
 import thumbnail_gen
+import languages
 import agent_runtime
 import agent_storage
 import credentials
@@ -681,7 +682,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | set(agent_runtime.JOBS.copy())
+    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.ACTIVE.copy() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -697,6 +698,7 @@ def project_jobs(pid: str) -> dict:
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
             "прев'ю": status(lambda: thumbnail_gen.state(pid)),
+            "мови": status(lambda: languages.load_state(pid).get("job")),
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
 
 
@@ -908,7 +910,8 @@ class Handler(BaseHTTPRequestHandler):
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
                 # the live preview only starts a viewer of the Razgon code and changes nothing in the project
                 # a still only reads the project, as the live preview does
-                if project_match and not path.endswith(('/export', '/razgon-live', '/still')) and active_export(project_match.group(1)):
+                # the «Мови» tab works beside the montage: a translated voice and thumbnail change nothing in it
+                if project_match and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
                 if project_match and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
@@ -1074,6 +1077,12 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnails/([^/]+\.png)", path)
         if match:
             return self.serve_media(thumbnail_gen.version_file(*match.groups()))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
+        if match:
+            return self.json_response(languages.overview(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/file/(sample|voice|thumbnail)", path)
+        if match:
+            return self.serve_media(languages.file_path(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
             store.load_project(match.group(1))
@@ -1148,7 +1157,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"job": load_job(match.group(1))})
         if path.startswith("/api/"):
             raise store.StudioError("Сторінку не знайдено", 404)
-        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent|preview))?)?/?", path):
+        if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent|preview|languages))?)?/?", path):
             return self.serve_static("/")
         return self.serve_static(path)
 
@@ -1221,6 +1230,19 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
             return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None)}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
+        if match and method == "POST":
+            return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or "")))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})(?:/(text|remove|translate|sample|voice|thumbnail))?", path)
+        if match and method == "POST":
+            pid, code, action = match.groups()
+            if not action:
+                return self.json_response(languages.add(pid, code))
+            if action == "remove":
+                return self.json_response(languages.remove(pid, code))
+            if action == "text":
+                return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
+            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))

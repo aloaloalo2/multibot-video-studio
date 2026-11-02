@@ -7,7 +7,7 @@ import platform
 import store
 
 
-DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}, {"id": "openrouter", "name": "OpenRouter"}]
+DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}, {"id": "openrouter", "name": "OpenRouter"}, {"id": "elevenlabs", "name": "ElevenLabs"}, {"id": "fishaudio", "name": "Fish Audio"}]
 _keychain = None
 
 

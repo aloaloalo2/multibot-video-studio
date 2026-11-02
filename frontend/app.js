@@ -45,7 +45,7 @@ const seconds = value => Number.isFinite(Number(value)) ? Math.max(0, Number(val
 const clock = value => { const n = Math.floor(seconds(value)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
 const projectIcon='<svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4m10-8h4m-4 8h4m-11-5 4 3-4 3z"/></svg>';
 
-function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':'editor'}:null;}
+function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview|languages))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':match[3]==='/languages'?'langs':'editor'}:null;}
 let restoreGeneration=0,restoreTimer=null;
 function cancelLocationRestore(){restoreGeneration++;if(restoreTimer!==null){clearTimeout(restoreTimer);restoreTimer=null;}state.restoringProject=false;$('project-loading').hidden=true;}
 async function restoreCurrentLocation(){
@@ -62,7 +62,7 @@ async function restoreCurrentLocation(){
   }
 }
 function syncRoute(replace=false){
-  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':state.view==='thumb'?thumbRoute:''):''}`:'/';
+  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':state.view==='thumb'?thumbRoute:state.view==='langs'?'/languages':''):''}`:'/';
   if(location.pathname!==path || location.search || location.hash)history[replace?'replaceState':'pushState'](null,'',path);
 }
 
@@ -529,6 +529,7 @@ function renderProject() {
   $('export-open').hidden=state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   renderPlan();
   if(typeof renderThumbView==='function')renderThumbView();
+  if(typeof renderLangView==='function')renderLangView();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
   renderOverview();
   $('view-editor').disabled=!!state.project && !editorUnlocked();

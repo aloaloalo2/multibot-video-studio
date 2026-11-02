@@ -111,16 +111,17 @@ function voiceAssetId(plan,project){
   if((project?.assets || []).some(asset=>asset.id===planned))return planned;
   return Object.keys(project?.audio_gain || {})[0] || planned;
 }
-function voicePlayer(id){
-  const asset=voiceAssetId(state.plan,state.project);
-  if(!asset)return null;
+// src: another sound to play the same way (the «Мови» tab's translated voices)
+function voicePlayer(id,src=null){
+  const asset=src?null:voiceAssetId(state.plan,state.project);
+  if(!asset&&!src)return null;
   const box=document.createElement('div');box.className='voice-player';
-  const audio=document.createElement('audio');audio.preload='metadata';audio.src=`/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
+  const audio=document.createElement('audio');audio.preload='metadata';audio.src=src || `/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
   const play=document.createElement('button');play.type='button';play.className='voice-player-play';play.setAttribute('aria-label','Відтворити озвучку');play.innerHTML=playIcon;
   const now=document.createElement('time');now.className='voice-player-time';now.textContent=clock(0);
   const bar=document.createElement('input');bar.type='range';bar.min='0';bar.step='0.1';bar.value='0';bar.className='voice-player-bar';bar.setAttribute('aria-label','Перемотати озвучку');
   const total=document.createElement('time');total.className='voice-player-time';
-  const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:Number(state.plan?.timing?.audio?.duration) || 0;
+  const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:src?0:Number(state.plan?.timing?.audio?.duration) || 0;
   const paint=()=>{const all=length();bar.max=String(all || 1);if(!bar.matches(':active'))bar.value=String(audio.currentTime);
     now.textContent=clock(audio.currentTime);total.textContent=clock(all);bar.style.setProperty('--fill',`${all?audio.currentTime/all*100:0}%`);};
   play.addEventListener('click',()=>{if(audio.paused){if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
@@ -130,7 +131,7 @@ function voicePlayer(id){
   bar.addEventListener('input',()=>{audio.currentTime=Number(bar.value);paint();});
   // ±5 s with the arrow keys on the bar comes from the range itself; the voice stops when the page changes
   const stop=()=>{if(!box.isConnected){audio.pause();audio.removeAttribute('src');audio.load();observer.disconnect();}};
-  const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan');if(root)observer.observe(root,{childList:true});});
+  const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan, .lang-view');if(root)observer.observe(root,{childList:true});});
   // the volume: a speaker that mutes and a short slider, remembered for the next voice
   const speaker=document.createElement('button');speaker.type='button';speaker.className='voice-player-mute';
   const level=document.createElement('input');level.type='range';level.min='0';level.max='1';level.step='0.05';level.className='voice-player-volume';level.setAttribute('aria-label','Гучність озвучки');

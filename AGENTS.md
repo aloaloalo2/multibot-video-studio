@@ -284,3 +284,22 @@ Every timeline row with pictures has an eye beside the sound button (user: «г�
 `set_layer_hidden` marks the layer `hidden`; the preview (`renderUniversalPreview`) and the export manifest
 (`app.py`, the clips loop) leave its pictures out, the timeline fades it. A row of frame groups switches all its layers
 in one batch. Test: `backend/tests/test_layer_eye.py`.
+
+## The «Мови» tab: the voice and thumbnail in other languages (2 November 2026)
+
+The user: «вкладку в проекті після превью мультиязик… озвучуємо через апі з тим самим голосом… ціну… послухати превью»,
+then «відео ролик перекладати я поки не хочу, лише аудіо і превью можна текст», and a button that translates the
+thumbnail, before and after. `backend/languages.py` and `frontend/languages.js`; the address ends in `/languages`.
+Each language is a card of three steps: the text (script and title translated by DeepSeek through OpenRouter in
+paragraph chunks, editable; saving drops the old sample), the voice (the author's voice cloned once per provider and
+episode from the first 90 s of the plan's voice, `clones` in `languages.json`; a sample of about 320 characters first;
+the whole text voiced in parts of ≤2400 characters with the neighbours as context, glued, −16 LUFS / −1.5 dBTP, sped up by
+at most `FIT_MAX` when longer than the video, padded with silence when shorter; the price is shown before and asked in
+a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated). Providers:
+ElevenLabs (`eleven_multilingual_v2`, every language, cloning needs a paid plan) and Fish Audio (`s1`, billed by UTF-8
+bytes); their keys are «Ключі сервісів» (`credentials.DEFAULTS`). Voxtral on OpenRouter has no Ukrainian or Russian.
+Work files stay in `data/projects/<id>/languages/<code>`; text, title, voice and thumbnail are copied to
+`<episode>/Мови/<language>/`. One job a project (`languages.ACTIVE`, in the busy list); the tab works during an export.
+The video is not changed. API: `GET /api/projects/<id>/languages`, `POST …/languages/provider`, `POST
+…/languages/<code>` (add), `…/<code>/remove`, `…/<code>/text`, `…/<code>/translate|sample|voice|thumbnail`, `GET
+…/<code>/file/sample|voice|thumbnail`. Test: `backend/tests/test_languages.py`.
