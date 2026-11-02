@@ -104,6 +104,7 @@ function drawLangs(id){
 // The voice of a language always comes from an example in that language (user, 2 November 2026: «переклад будемо брати
 // завжди від прикладу ролика на мові… або запис, або закинути приклад носія»): the channel's example serves every
 // episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
+const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Студія не змогла розпізнати слова в записі, тому Fish вважає, що прозвучав показаний уривок. Якщо в записі інші слова, голос може звучати дивно: запишіть заново, прочитавши саме уривок.</p>':'';}
@@ -111,16 +112,18 @@ function langAddButtons(primary){
   return `<div class="lang-own-actions"><button type="button" class="${primary?'primary':'secondary'} lang-own-record">${micIcon}Записати себе</button><label class="secondary lang-own-file">Закинути запис<input type="file" accept="audio/*,video/*" hidden></label></div>`;
 }
 function langOwnBlock(item){
-  const own=item.own_voice,shared=item.channel_voice;
+  const own=item.own_voice,shared=item.channel_voice,fromOriginal=!!langData?.source?.voice;
   // an example in hand is a small line (user, 2 November 2026: «не виділяй її так… просто маленький приклад, основа
-  // акценту на створенні аудіо»): its label, a compact player and quiet links
-  if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>свій для цього випуску</small></span><div class="lang-player" data-kind="own"></div>
-    <div class="lang-own-actions"><button type="button" class="lang-own-link lang-own-record">${micIcon}Записати заново</button><label class="lang-own-link lang-own-file">Закинути інший<input type="file" accept="audio/*,video/*" hidden></label><button type="button" class="lang-own-link lang-own-remove">${shared?'Голос каналу':'Прибрати'}</button></div>${langHeardWarn(own)}</div>`;
-  if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>з налаштувань каналу</small></span><div class="lang-player" data-kind="channel"></div>
-    <details class="lang-own-more"><summary>інший для цього випуску</summary><div class="lang-own-actions"><button type="button" class="lang-own-link lang-own-record">${micIcon}Записати</button><label class="lang-own-link lang-own-file">Закинути запис<input type="file" accept="audio/*,video/*" hidden></label></div></details>${langHeardWarn(shared)}</div>`;
-  return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>${fromOriginal?'зараз з оригіналу, з його акцентом':'потрібен, щоб озвучити'}</small></div>
-    <p>${fromOriginal?'Озвучка візьме голос з початку оригіналу, тож вимова буде як у оригіналі. Щоб звучало як носій мови, додайте':'Додайте'} приклад голосу цією мовою, 20–60 секунд: запишіть себе (можна прочитати уривок нижче) або закиньте запис носія мови. Озвучка скопіює саме цей голос і вимову. Щоб приклад діяв для всіх випусків, додайте його в налаштуваннях каналу, розділ «Голоси для перекладу».</p>
-    <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>${langAddButtons(true)}</div>`;
+  // акценту на створенні аудіо»; «кнопки… просто значки»): its label, a compact player and icons
+  const model=item.fish_model?'<i class="lang-model-mark" title="Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон">✓ модель</i>':'';
+  const add=(again)=>`<button type="button" class="lang-icon lang-own-record" title="${again?'Записати заново':'Записати себе'}" aria-label="${again?'Записати заново':'Записати себе'}">${micIcon}</button><label class="lang-icon lang-own-file" title="Закинути запис" aria-label="Закинути запис">${langIcons.upload}<input type="file" accept="audio/*,video/*" hidden></label>`;
+  if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>свій для цього випуску ${model}</small></span><div class="lang-player" data-kind="own"></div>
+    <div class="lang-own-actions">${add(true)}<button type="button" class="lang-icon lang-own-remove" title="${shared?'Повернути голос каналу':'Прибрати приклад'}" aria-label="${shared?'Повернути голос каналу':'Прибрати приклад'}">${shared?langIcons.back:langIcons.trash}</button></div>${langHeardWarn(own)}</div>`;
+  if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>з налаштувань каналу ${model}</small></span><div class="lang-player" data-kind="channel"></div>
+    <div class="lang-own-actions" title="Інший голос лише для цього випуску">${add(false)}</div>${langHeardWarn(shared)}</div>`;
+  return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Приклад голосу</b><small>${fromOriginal?'немає, тому голос з оригіналу, з його акцентом':'потрібен, щоб озвучити'}</small><span class="lang-own-actions">${add(false)}</span></div>
+    <p>Запишіть себе цією мовою або закиньте запис носія, 20–60 секунд: озвучка скопіює цей голос і вимову. Для всіх випусків каналу приклад додається в налаштуваннях каналу. Можна прочитати:</p>
+    <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote></div>`;
 }
 // a recording from the microphone: the button turns into «Зупинити · 0:12»; the blob goes to `done`
 let langRecorder=null;
@@ -213,19 +216,16 @@ function langCard(id,item,spec){
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
-      ${item.text?`<div class="lang-provider">
-          ${spec.engines?`<div class="lang-engines"><label class="lang-engine"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>
-          <label class="lang-engine"><span>Схожість на приклад</span><select data-field="style">${(spec.styles || []).map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label></div>`:''}
-          <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
+      ${item.text?`<div class="lang-voice-bar">${spec.engines?`<label class="lang-chip-select" title="Рушій Fish Audio"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>
+          <label class="lang-chip-select" title="Наскільки точно триматися прикладу голосу"><span>Схожість</span><select data-field="style">${(spec.styles || []).map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
+          ${spec.configured===true?'':`<span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів»</span>`}</div>
         ${langOwnBlock(item)}
-        ${spec.id==='fishaudio'?`<p class="lang-model-state">${item.fish_model?'✓ Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон.':'Перший зразок створить збережену модель голосу у Fish, якщо на балансі API є кошти. Інакше студія клонує голос швидким способом.'}</p>`:''}
-        <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
-        <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}${hasSample?' hidden':''}>Послухати зразок</button></div>
-        ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
-          <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
-          ${item.folder?`<small class="lang-folder">Файл у папці випуску: ${esc(item.folder)}</small>`:''}
-          <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
-        <div class="lang-actions"><button type="button" class="primary lang-voice-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langCost(spec,price)}</button></div>`
+        <div class="lang-sample-row"><div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div><button type="button" class="lang-icon lang-sample-run" title="Новий зразок" aria-label="Новий зразок">${langIcons.redo}</button>`
+            :`<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${langIcons.play}Послухати зразок<small>~1 хв</small></button>`}</div>
+          <button type="button" class="primary lang-voice-run" title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button></div>
+        ${item.files.voice?`<div class="lang-voice"><div class="lang-voice-head"><b>Готова озвучка</b><small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
+          <a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити MP3${item.folder?' · копія лежить у папці випуску':''}" aria-label="Завантажити MP3">${langDownloadIcon}</a></div>
+          <div class="lang-player" data-kind="voice"></div></div>`:''}`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
@@ -259,11 +259,9 @@ function langCard(id,item,spec){
       item.text=text;item.title=name;if(area.value===text)delete langDrafts[key];
       if(hint)hint.textContent=`${text.length.toLocaleString('uk-UA')} символів · збережено`;
       const old=card.querySelector('.lang-sample .voice-player');if(old){old.querySelector('audio')?.pause();old.remove();}
-      const again=card.querySelector('.lang-sample-run');if(again)again.hidden=false;
+      
       const fresh=langData.items.find(entry=>entry.code===item.code);
-      if(fresh){const cost=langCost(spec,fresh.prices?.[spec.id]),line=card.querySelector('.lang-price');
-        if(line){line.querySelector('b').textContent=cost;line.querySelector('small').textContent=`(${fresh.chars.toLocaleString('uk-UA')} символів)`;}
-        const run=card.querySelector('.lang-voice-run');if(run)run.textContent=run.textContent.replace(/ · .*$/,` · ${cost}`);}
+      if(fresh){const cost=card.querySelector('.lang-voice-cost');if(cost)cost.textContent=langCost(spec,fresh.prices?.[spec.id]);}
       card.querySelector('.lang-text')?.closest('.lang-step')?.querySelector(':scope > .lang-note.is-error')?.remove();
       return true;
     }catch(error){langNote(area,error.message,true);return false;}
