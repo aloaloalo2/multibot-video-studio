@@ -233,7 +233,12 @@ function renderUniversalPreview(){
         for(const word of timedTextUnits(clip)){const span=document.createElement('span');span.textContent=word.text;span.dataset.wordStart=word.start;Object.assign(span.style,{position:'absolute',left:(word.x*100)+'%',top:(word.y*100)+'%',width:(word.width*100)+'%',height:(word.height*100)+'%',transform:'translate(-50%,-50%)',display:'grid',placeItems:'center',whiteSpace:'pre',opacity:'0'});if(clip.word_entrance?.type.includes('blur')){span.replaceChildren();for(const name of ['sharp','blur']){const child=document.createElement('span');child.className='word-'+name;child.textContent=word.text;Object.assign(child.style,{position:'absolute',inset:'0',display:'grid',placeItems:'center'});span.append(child);}}element.append(span);}
       }
       // a picture or video whose file is gone (its episode folder was deleted) says so instead of a blank box
-      if(element.tagName==='IMG'||element.tagName==='VIDEO')element.addEventListener('error',()=>{wrapper.classList.add('media-missing');wrapper.dataset.missing='Файл видалено разом із папкою випуску';},{once:true});
+      // the channel's plate or logo lies over the whole film: a missing one simply goes, it must not cover the picture
+      // (the live Razgon view under it among others)
+      if(element.tagName==='IMG'||element.tagName==='VIDEO')element.addEventListener('error',()=>{
+        const overlay=/Логотип|Плашка/.test(clip.title || '')||sceneGroups().some(group=>group.role==='overlay'&&(group.clip_ids || []).includes(clip.id));
+        if(overlay){wrapper.classList.add('media-gone');return;}
+        wrapper.classList.add('media-missing');wrapper.dataset.missing='Файл видалено разом із папкою випуску';},{once:true});
       wrapper.append(element);composition.append(wrapper);state.previewNodes.set(clip.id,wrapper);
       }
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;
