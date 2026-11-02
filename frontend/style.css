@@ -1197,9 +1197,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-note{margin:0;padding:8px 12px;border-radius:12.5px;background:#1f1f24;color:#c9cad0;font-size:13px;line-height:1.45}
 .lang-note.is-error{background:#241717;color:#ffb3b3}
 .lang-add .lang-note{flex-basis:100%}
-.lang-original-facts{margin:0;color:#9a9ca4;font-size:13px}
-.lang-original-facts b{color:#f2f2f3;font-weight:600}
-.lang-original-facts:empty{display:none}
 .lang-engine{display:flex;align-items:center;gap:8px;font-size:13px;color:#9a9ca4}
 .lang-engine select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:6px 10px}
 .lang-own{display:grid;gap:8px;padding:12px 14px;border-radius:16.5px;border:1px solid #35353a;background:#1a1a1e}
@@ -1216,3 +1213,10 @@ select option{background:#232327;color:#f1f1f2}
 .lang-own-record.is-recording{background:#c0392b;color:#fff}
 .lang-rec-dot{width:9px;height:9px;border-radius:50%;background:#fff;animation:lang-rec 1s ease-in-out infinite}
 @keyframes lang-rec{50%{opacity:.25}}
+.lang-original{border-radius:16.5px;background:#141417}
+.lang-original-row{display:flex;align-items:center;gap:14px;padding:8px 10px 8px 16px;flex-wrap:wrap}
+.lang-original-name{display:grid;gap:2px;min-width:150px}
+.lang-original-name b{font-size:14px;font-weight:600;color:#e6e7ea}
+.lang-original-name small{font-size:12px;color:#8d8f97}
+.lang-original-row .voice-player{flex:1;min-width:260px}
+.lang-original-row .lang-off{flex:1}

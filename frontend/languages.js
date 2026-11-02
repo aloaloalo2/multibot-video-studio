@@ -117,9 +117,11 @@ function langOwnWire(id,card,item){
 function langOriginal(id,src){
   const original=langData.languages.find(item=>item.code===src.language);
   const card=document.createElement('article');card.className='lang-card lang-original';
-  card.innerHTML=`<header><h2>Оригінал${original?` (${esc(original.label)})`:''}</h2><span>ваша озвучка</span></header>
-    <section class="lang-step">${src.voice?'<div class="lang-player"></div>':'<p class="lang-off">Озвучку випуску не знайдено. Додайте її на вкладці «План ролика».</p>'}
-      <p class="lang-original-facts">${src.duration?`<b>${clock(src.duration)}</b> озвучки`:''}${src.duration&&src.chars?' · ':''}${src.chars?`${src.chars.toLocaleString('uk-UA')} символів тексту`:''}</p></section>`;
+  // one compact line (user, 2 November 2026: «компактніше… не хочу, щоб акцент був великий»): the name with the
+  // language and the text's size, the player beside them; its length is in the player
+  card.innerHTML=`<div class="lang-original-row"><div class="lang-original-name"><b>Оригінал${original?` (${esc(original.label)})`:''}</b>
+      <small>${src.chars?`${src.chars.toLocaleString('uk-UA')} символів · `:''}ваша озвучка</small></div>
+    ${src.voice?'<div class="lang-player"></div>':'<p class="lang-off">Озвучку випуску не знайдено. Додайте її на вкладці «План ролика».</p>'}</div>`;
   const slot=card.querySelector('.lang-player');
   if(slot){const player=voicePlayer(id,`/api/projects/${encodeURIComponent(id)}/languages/original`);if(player)slot.replaceWith(player);}
   return card;
