@@ -1125,12 +1125,8 @@ select option{background:#232327;color:#f1f1f2}
 .lang-view{max-width:980px;margin:0 auto;display:grid;gap:16px}
 .lang-head h1{margin:0 0 6px;font-size:24px}
 .lang-lead{margin:0;color:#a6a8b0;line-height:1.5}
-.lang-settings{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media (max-width:760px){.lang-settings{grid-template-columns:1fr}}
-.lang-source,.lang-provider{display:grid;gap:6px;align-content:start;padding:14px 16px;border:1px solid #35353a;border-radius:16.5px;background:#18181b}
-.lang-source b,.lang-provider b{font-size:13px;color:#9a9ca4;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.lang-source span{font-size:16px;color:#f2f2f3}
-.lang-source small,.lang-provider small{color:#9a9ca4;line-height:1.45}
+.lang-provider{display:grid;gap:6px}
+.lang-provider small{color:#9a9ca4;line-height:1.45}
 .lang-warn{color:#f5c24b}
 .lang-segment{display:flex;gap:4px;padding:3px;background:#111113;border:1px solid #35353a;border-radius:12.5px;width:max-content;max-width:100%}
 .lang-segment button{border:0;background:transparent;color:#c9cad0;padding:7px 14px;border-radius:9.5px;font-weight:600;display:flex;gap:6px;align-items:center}
@@ -1176,9 +1172,25 @@ select option{background:#232327;color:#f1f1f2}
 .lang-thumbs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:640px){.lang-thumbs{grid-template-columns:1fr}}
 .lang-thumbs figure{margin:0;display:grid;gap:6px}
-.lang-thumbs img,.lang-thumb-empty{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;background:#111113}
-.lang-thumb-empty{display:grid;place-items:center;color:#6f7179;font-size:13px}
+.lang-thumbs img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;background:#111113}
+/* the «after» window is the button itself: a magic wand in the middle of an empty frame, over the picture once made */
+.lang-thumb-run{position:relative;display:block;width:100%;aspect-ratio:16/9;padding:0;border:1px dashed #4a4a52;border-radius:12.5px;background:#111113;color:#c9cad0;cursor:pointer;overflow:hidden}
+.lang-thumb-run.has-picture{border-style:solid;border-color:#35353a}
+.lang-thumb-run img{position:absolute;inset:0;height:100%;border:0;border-radius:0}
+.lang-thumb-wand{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;transition:background .2s,opacity .2s}
+.lang-thumb-wand svg{width:46px;height:46px;fill:none;stroke:#6bf2ae;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 10px #6bf2ae66);transition:transform .2s}
+.lang-thumb-wand small{font-size:13px;color:#c9cad0}
+.lang-thumb-run:hover:not(:disabled){border-color:#6bf2ae88;box-shadow:0 0 22px #6bf2ae26}
+.lang-thumb-run:hover:not(:disabled) .lang-thumb-wand svg{transform:rotate(-12deg) scale(1.08)}
+.lang-thumb-run.has-picture .lang-thumb-wand{opacity:0;background:#0b0b0dcc}
+.lang-thumb-run.has-picture:hover:not(:disabled) .lang-thumb-wand,.lang-thumb-run.has-picture:focus-visible .lang-thumb-wand{opacity:1}
+.lang-thumb-run:disabled{cursor:default;opacity:.6}
+.lang-thumb-run.is-drawing{opacity:1}
+.lang-thumb-run.is-drawing .lang-thumb-wand{opacity:1}
+.lang-thumb-run.is-drawing .lang-thumb-wand svg{animation:lang-wand 1.4s ease-in-out infinite}
+@keyframes lang-wand{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg) scale(1.1)}}
 .lang-thumbs figcaption{font-size:12px;color:#8d8f97}
 .lang-add{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lang-add label{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .lang-add span{font-weight:600}
 .lang-add select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:9px 12px;min-width:260px}

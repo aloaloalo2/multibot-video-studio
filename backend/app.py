@@ -1230,6 +1230,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
             return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None)}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
+        if match and method == "POST":
+            return self.json_response(languages.cancel(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
             return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or "")))

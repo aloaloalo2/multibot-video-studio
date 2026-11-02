@@ -64,6 +64,8 @@ CLONE_SECONDS = 90
 FIT_MAX = 1.15
 TIMEOUT = 300
 ACTIVE: set[str] = set()
+CANCEL: set[str] = set()      # projects whose running job the author stopped
+PROCS: dict[str, subprocess.Popen] = {}
 LOCK = threading.Lock()
 
 
@@ -282,10 +284,12 @@ def translate(pid: str, code: str, job: dict) -> None:
             raise RuntimeError("Переклад вийшов надто коротким, спробуйте ще раз")
         done.append(text)
         cost += spent
+    progress(pid, job, 95, "Перекладаємо заголовок")
     title, spent = ask([{"role": "system", "content": f"Translate this YouTube video title into {ENGLISH[code]}. Keep it catchy and short, "
                                                        "as a native YouTuber would title it. Answer with the title only, no quotes."},
                         {"role": "user", "content": src["title"]}], 300)
     cost += spent
+    progress(pid, job, 99, "Зберігаємо")
     work = work_dir(pid, code)
     work.mkdir(parents=True, exist_ok=True)
     text = "\n\n".join(done).strip() + "\n"
@@ -375,6 +379,8 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     progress(pid, job, 10, "Клонуємо ваш голос" if not (load_state(pid).get("clones") or {}).get(provider) else "Озвучуємо зразок")
     voice = voice_id(pid, provider)
     progress(pid, job, 50, "Озвучуємо зразок")
+    if pid in CANCEL:
+        raise Stop()
     piece = sample_text(text)
     speak(provider, voice, piece, work_dir(pid, code) / "sample.mp3")
     job["cost"] = price(provider, piece)
@@ -466,7 +472,19 @@ as they are. If there is no text on the picture, return it unchanged.
 Use the built-in image generation tool and make exactly one image. Save it in the current working directory as "{name}"
 and reply only with the saved path."""
     command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base), "-"]
-    result = subprocess.run(command, input=prompt, cwd=work, text=True, capture_output=True, timeout=thumbnail_gen.TIMEOUT)
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=work, text=True,
+                               start_new_session=True)
+    PROCS[pid] = process
+    try:
+        out, err = process.communicate(prompt, timeout=thumbnail_gen.TIMEOUT)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        raise
+    finally:
+        PROCS.pop(pid, None)
+    if pid in CANCEL:
+        raise Stop()
+    result = subprocess.CompletedProcess(command, process.returncode, out, err)
     (work / "thumbnail-log.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
     from PIL import Image, UnidentifiedImageError
     try:
@@ -512,6 +530,8 @@ def file_path(pid: str, code: str, kind: str) -> Path:
 # ---------- jobs ----------
 
 def progress(pid: str, job: dict, value: int, stage: str) -> None:
+    if pid in CANCEL:
+        raise Stop()
     job.update(progress=value, stage=stage)
     update(pid, lambda data: data.__setitem__("job", dict(job)))
 
@@ -527,6 +547,8 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
         else:
             WORK[kind](pid, code, job)
         job.update(status="done", progress=100, stage="Готово", finished_at=time.time())
+    except Stop:
+        job.update(status="cancelled", stage="Скасовано", finished_at=time.time())
     except subprocess.TimeoutExpired:
         job.update(status="failed", error="Не встигло за відведений час", finished_at=time.time())
     except (OSError, RuntimeError, ValueError, store.StudioError) as error:
@@ -537,6 +559,25 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
         finally:
             with LOCK:
                 ACTIVE.discard(pid)
+                CANCEL.discard(pid)
+
+
+def cancel(pid: str) -> dict:
+    """Stop the running job: at the next part of a translation or a voice (the part being made is finished and paid),
+    at once for the thumbnail, whose Codex is killed. Nothing half made is saved."""
+    with LOCK:
+        if pid not in ACTIVE:
+            return overview(pid)
+        CANCEL.add(pid)
+        process = PROCS.get(pid)
+    if process and process.poll() is None:
+        import os, signal
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            pass
+    update(pid, lambda data: (data.get("job") or {}).update(stage="Скасовуємо…"))
+    return overview(pid)
 
 
 def start(pid: str, kind: str, code: str, provider: str | None = None) -> dict:

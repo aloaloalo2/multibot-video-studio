@@ -157,6 +157,23 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue((self.episode / "Мови" / "Español" / "Текст Español.txt").is_file())
         self.assertEqual(languages.overview(self.pid)["items"], [])
 
+    def test_cancel_stops_a_translation_at_the_next_part_and_saves_nothing(self):
+        import threading
+        asked, release = threading.Event(), threading.Event()
+        def ask(messages, max_tokens=12000):
+            asked.set()
+            release.wait(5)
+            return "Translated text long enough to pass.", 0.0
+        with patch.object(languages, "ask", side_effect=ask):
+            languages.start(self.pid, "translate", "en")
+            self.assertTrue(asked.wait(5))
+            languages.cancel(self.pid)
+            release.set()
+            job = self.wait()
+        self.assertEqual(job["status"], "cancelled")
+        self.assertFalse((languages.work_dir(self.pid, "en") / "text.txt").exists())
+        self.assertFalse(languages.CANCEL)
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

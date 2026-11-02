@@ -31,34 +31,30 @@ function langBusy(){return langData?.job?.status==='running';}
 function drawLangs(id){
   const section=$('project-langs');if(!section||section.dataset.project!==id)return;
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
-  const data=langData,src=data.source,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
+  const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
   const used=new Set(data.items.map(item=>item.code));
-  const missingKey=spec.configured!==true;
   section.innerHTML=`<div class="lang-view">
     <div class="lang-head"><h1>Мови</h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
-    <div class="lang-settings">
-      <div class="lang-source"><b>Оригінал</b><span>${src.chars?`${src.chars.toLocaleString('uk-UA')} символів${src.duration?` · ${clock(src.duration)} озвучки`:''}`:'Тексту озвучки ще немає: спершу додайте й розпізнайте озвучку на вкладці «План ролика»'}</span>
-        <small>Орієнтовна ціна озвучки однієї мови: ${data.providers.map(item=>`${esc(item.name)} ${langMoney(src.estimate[item.id] || 0)}`).join(' · ')}. Переклад тексту: кілька центів.</small></div>
-      <div class="lang-provider"><b>Голос</b><div class="lang-segment" role="radiogroup" aria-label="Сервіс озвучки">${data.providers.map(item=>`<button type="button" role="radio" data-provider="${item.id}" aria-checked="${item.id===provider}" class="${item.id===provider?'active':''}">${esc(item.name)}${item.configured===true?'':'<i title="Ключ не додано">!</i>'}</button>`).join('')}</div>
-        <small>${esc(spec.note)}${missingKey?` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`:''}${data.openrouter===true?'':' <span class="lang-warn">Для перекладу потрібен ключ OpenRouter.</span>'}</small></div>
-    </div>
     <div class="lang-job" role="status" aria-live="polite" hidden></div>
     <div class="lang-cards"></div>
-    <label class="lang-add"><span>Додати мову</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label>
+    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
   </div>`;
   const cards=section.querySelector('.lang-cards');
-  if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче, і студія перекладе текст ролика.</p>';
+  if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Перекласти».</p>';
   for(const item of data.items)cards.append(langCard(id,item,spec));
-  section.querySelector('.lang-add select').addEventListener('change',async event=>{
-    const code=event.target.value;if(!code)return;
+  const pick=section.querySelector('.lang-add select'),go=section.querySelector('.lang-add-run');
+  pick.addEventListener('change',()=>{go.disabled=!pick.value || langBusy();});
+  go.addEventListener('click',async()=>{
+    const code=pick.value;if(!code)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
-      if(data.openrouter===true)langStart(id,'translate',code);}catch(error){status(error.message,true);}
+      if(langData.openrouter===true)langStart(id,'translate',code);else status('Додайте ключ OpenRouter у налаштуваннях студії, щоб перекласти текст.',true);}catch(error){status(error.message,true);}
   });
-  section.querySelectorAll('.lang-segment button').forEach(button=>button.addEventListener('click',async()=>{
-    if(button.dataset.provider===langData.provider)return;
+  // the voice service is chosen inside each card's voice step and holds for the whole episode
+  section.addEventListener('click',async event=>{
+    const button=event.target.closest('.lang-segment button');if(!button || button.dataset.provider===langData.provider)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:button.dataset.provider});drawLangs(id);}catch(error){status(error.message,true);}
-  }));
+  });
   showLangJob();
 }
 
@@ -72,10 +68,12 @@ function langCard(id,item,spec){
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
         <label class="lang-text"><span>Текст озвучки <small>${item.chars.toLocaleString('uk-UA')} символів · можна виправити перед озвучкою</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>
         <div class="lang-actions"><button type="button" class="secondary lang-retranslate">Перекласти заново</button><button type="button" class="primary lang-save" disabled>Зберегти правки</button></div>`
-      :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
+      :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     </section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
-      ${item.text?`<p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langMoney(price || 0)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>. Спершу послухайте зразок, він коштує майже нічого.</p>
+      ${item.text?`<div class="lang-provider"><div class="lang-segment" role="radiogroup" aria-label="Сервіс озвучки">${langData.providers.map(entry=>`<button type="button" role="radio" data-provider="${entry.id}" aria-checked="${entry.id===spec.id}" class="${entry.id===spec.id?'active':''}">${esc(entry.name)}${entry.configured===true?'':'<i title="Ключ не додано">!</i>'}</button>`).join('')}</div>
+          <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
+        <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langMoney(price || 0)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>. Спершу послухайте зразок, він коштує майже нічого.</p>
         <div class="lang-sample">${item.files.sample?'<div class="lang-player" data-kind="sample"></div>':''}<button type="button" class="secondary lang-sample-run">${item.files.sample?'Інший зразок':'Послухати зразок'}</button>${sampleBy?`<small>зразок озвучено через ${esc(sampleBy)}</small>`:''}</div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
           <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
@@ -86,8 +84,7 @@ function langCard(id,item,spec){
     </section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
       ${langData.thumbnail?`<div class="lang-thumbs"><figure><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy"><figcaption>До</figcaption></figure>
-        <figure>${item.files.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy">`:'<div class="lang-thumb-empty">Ще не перекладено</div>'}<figcaption>Після · ${esc(item.name)}</figcaption></figure></div>
-        <div class="lang-actions"><p>Codex перемалює обкладинку, змінивши тільки слова на ній.</p><button type="button" class="secondary lang-thumb-run">${item.files.thumbnail?'Перекласти ще раз':'Перекласти прев’ю'}</button></div>`
+        <figure><button type="button" class="lang-thumb-run${item.files.thumbnail?' has-picture':''}" aria-label="${item.files.thumbnail?'Перекласти прев’ю ще раз':'Перекласти прев’ю'}">${item.files.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy">`:''}<span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>${item.files.thumbnail?'Перекласти ще раз':'Натисніть, щоб перекласти'}</small></span></button><figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption></figure></div>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
     </section>`;
   for(const box of card.querySelectorAll('.lang-player')){
@@ -120,6 +117,11 @@ function langCard(id,item,spec){
   return card;
 }
 
+async function langCancel(id){
+  const button=document.querySelector('#project-langs .lang-cancel');if(button){button.disabled=true;button.textContent='Скасовуємо…';}
+  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{});}catch(error){status(error.message,true);}
+}
+
 async function langStart(id,kind,code){
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider});
@@ -132,14 +134,26 @@ function showLangJob(){
   const busy=langBusy();
   document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute), #project-langs .lang-add select').forEach(button=>{
     if(button.classList.contains('lang-save'))return;button.disabled=busy;});
+  const go=document.querySelector('#project-langs .lang-add-run');if(go)go.disabled=busy || !document.querySelector('#project-langs .lang-add select')?.value;
+  // the «after» window of the language being redrawn says so in place of its wand
+  for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){
+    const drawing=busy&&job.kind==='thumbnail'&&tile.closest('.lang-card')?.dataset.code===job.code;
+    tile.classList.toggle('is-drawing',drawing);
+    const label=tile.querySelector('.lang-thumb-wand small');
+    if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex перекладає, 1–3 хвилини…':label.dataset.idle;}
+  }
   const name=job?.code?(langData.languages.find(item=>item.code===job.code)?.name || ''):'';
   const recent=job&&job.status!=='running'&&job.finished_at&&Date.now()/1000-job.finished_at<120;
   box.hidden=!job || (!busy && !recent);
   box.dataset.status=job?.status || '';
   if(box.hidden)return;
-  box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span><b>${esc(name)}: ${esc(job.what || '')}</b> · ${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress>`
+  // the poll redraws this line every 2 s: a cancel already asked for stays shown
+  const asked=box.querySelector('.lang-cancel')?.disabled;
+  box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span><b>${esc(name)}: ${esc(job.what || '')}</b> · ${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${asked||job.stage==='Скасовуємо…'?' disabled':''}>${asked||job.stage==='Скасовуємо…'?'Скасовуємо…':'Скасувати'}</button>`
+    :job.status==='cancelled'?`<span><b>${esc(name)}: ${esc(job.what || '')} скасовано.</b> Нічого не збережено.</span>`
     :job.status==='done'?`<span><b>${esc(name)}: ${esc(job.what || '')} готово.</b>${job.cost?` Витрачено ${langMoney(job.cost)}.`:''}</span>`
     :`<span><b>${esc(name)}: ${esc(job.what || '')} не вдалося.</b> ${esc(job.error || '')}</span>`;
+  box.querySelector('.lang-cancel')?.addEventListener('click',()=>langCancel(state.project.id));
 }
 
 async function pollLangs(id){
