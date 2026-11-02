@@ -213,7 +213,7 @@ function langCard(id,item,spec){
   const readyVoice=item.files.voice&&item.voice_current!==false;
   const fit=voice.synced?[`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`найбільше запізнення ${String(voice.latest).replace('.',',')} с`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
-    <section class="lang-step"><h3><em>1</em>Текст</h3>
+    <section class="lang-step"><h3><em>1</em>Текст${item.text?`<button type="button" class="lang-icon lang-retranslate" title="Перекласти заново" aria-label="Перекласти заново">${langIcons.redo}</button>`:''}</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
         <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small>${item.lines?`<small class="lang-text-lines">Кожен рядок звучить у свій час, як фраза оригіналу (${item.lines} рядків): правте слова, але не об’єднуйте й не розбивайте рядки</small>`:''}</span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
@@ -280,6 +280,11 @@ function langCard(id,item,spec){
     if(area.value!==item.text)later();
   }
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
+  // a fresh translation by the current rules (user, 2 November 2026: «кругла кнопка без тексту — оновити, щоб воно
+  // по-новому переклало, бо правила нові»); it replaces the text and its edits, so it asks first
+  card.querySelector('.lang-retranslate')?.addEventListener('click',()=>modal('Перекласти заново?',
+    '<p>Текст і заголовок цієї мови перекладуться наново за новими правилами, ваші правки в них зникнуть.</p>',
+    [{label:'Скасувати',run:closeModal},{label:'Перекласти заново',run:()=>{closeModal();delete langDrafts[`${id}:${item.code}`];langStart(id,'translate',item.code);}}]));
   card.querySelector('.lang-sample-size select')?.addEventListener('change',event=>{try{localStorage.setItem('langSampleSentences',event.target.value);}catch{}});
   card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code,{sentences:langSampleSize()});});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{

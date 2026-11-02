@@ -1144,6 +1144,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-step{padding:14px 18px;display:grid;gap:10px;border-bottom:1px solid #232327}
 .lang-step:last-child{border-bottom:0}
 .lang-step h3{margin:0;font-size:14px;display:flex;align-items:center;gap:8px;color:#e6e7ea}
+.lang-step h3 .lang-retranslate{margin-left:auto;width:28px;height:28px}
 .lang-step h3 em{font-style:normal;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#2b2b30;color:#6bf2ae;font-size:12px}
 .lang-step.is-off h3{color:#7c7e86}
 .lang-off{margin:0;color:#7c7e86;font-size:13px}
