@@ -253,7 +253,8 @@ class LanguagesTest(unittest.TestCase):
         work = languages.work_dir(self.pid, "en")
         (work / "sample-fishaudio-s2.1-pro-free.mp3").write_bytes(b"x")
         languages.update(self.pid, lambda data: data.setdefault("clones", {}).update({"elevenlabs-en": "old", "elevenlabs": "episode"}))
-        data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"])
+        with patch("speech.transcribe", side_effect=RuntimeError("no model")):
+            data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"])
         own = data["items"][0]["own_voice"]
         self.assertAlmostEqual(own["duration"], 8, delta=0.2)
         self.assertFalse((work / "sample-fishaudio-s2.1-pro-free.mp3").exists())       # the old voice's sample goes
@@ -277,6 +278,16 @@ class LanguagesTest(unittest.TestCase):
             languages.save_own_voice(self.pid, "en", io.BytesIO(short), len(short), item["passage"])
         languages.remove_own_voice(self.pid, "en")
         self.assertIsNone(languages.overview(self.pid)["items"][0]["own_voice"])
+
+    def test_free_speech_in_the_language_is_recognised_for_the_reference(self):
+        import io
+        languages.add(self.pid, "uk")
+        recording = tone(Path(self.tmp.name) / "me.wav", 8).read_bytes()
+        words = [{"text": word} for word in "Привіт це я говорю українською мовою".split()]
+        with patch("speech.transcribe", return_value=(words, {})) as recognise:
+            languages.save_own_voice(self.pid, "uk", io.BytesIO(recording), len(recording), "уривок, який не читали")
+        self.assertEqual(recognise.call_args.kwargs["language"], "uk")
+        self.assertEqual(languages.own_voice(self.pid, "uk")["text"], "Привіт це я говорю українською мовою")
 
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))

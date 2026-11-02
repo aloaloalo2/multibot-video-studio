@@ -69,13 +69,13 @@ function langOwnBlock(item){
   return `<div class="lang-own${own?' has-voice':''}"><div class="lang-own-head"><b>Ваш голос цією мовою</b><small>${own?'клон бере голос і вимову з вашого запису':'щоб не було чужого акценту'}</small></div>
     ${own?`<div class="lang-player" data-kind="own"></div>
       <div class="lang-own-actions"><button type="button" class="secondary lang-own-record">${micIcon}Записати заново</button><button type="button" class="secondary lang-own-remove">Прибрати запис</button></div>`
-    :`<p>Прочитайте вголос цей уривок, спокійно, як у ролику (20–30 секунд). Без запису голос клонується з оригіналу, разом з його акцентом.</p>
+    :`<p>Поговоріть цією мовою 20–30 секунд, спокійно, як у ролику: прочитайте цей уривок або скажіть щось своє, студія сама розпізнає слова. Без запису голос клонується з оригіналу, разом з його акцентом.</p>
       <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>
       <div class="lang-own-actions"><button type="button" class="primary lang-own-record">${micIcon}Записати</button><label class="secondary lang-own-file">Завантажити запис<input type="file" accept="audio/*,video/*" hidden></label></div>`}
 </div>`;
 }
 async function langOwnUpload(id,item,blob,name,holder){
-  langNote(holder,'Зберігаємо запис…');
+  langNote(holder,'Зберігаємо й розпізнаємо запис, кілька секунд…');
   try{
     const response=await fetch(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice`,{method:'POST',
       headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name),'X-Said-Text':encodeURIComponent(item.own_voice?.text || item.passage)},body:blob});

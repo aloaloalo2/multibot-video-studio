@@ -440,9 +440,23 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
     if length < 5:
         target.unlink(missing_ok=True)
         raise store.StudioError("Запис закороткий: прочитайте весь уривок, хоча б 10 секунд")
+    # the author may read the passage or say anything in the language (user, 2 November 2026: «чи можна просто
+    # говорити на українській мові?»): the recording is recognised locally, so Fish gets the words actually said
+    said = heard(target, length, code) or said
     (work / "own-voice.txt").write_text(said + "\n", encoding="utf-8")
     forget_own_clone(pid, code)
     return overview(pid)
+
+
+def heard(path: Path, length: float, code: str) -> str | None:
+    """The words of a short recording, by the studio's own recognition; None when it is not available or hears little."""
+    try:
+        import speech
+        words, _ = speech.transcribe(path, length, lambda *args, **kwargs: None, language=code)
+    except Exception:            # no model on this Mac, a busy GPU: the passage's text stands
+        return None
+    text = " ".join(str(word.get("text") or "").strip() for word in words).strip()
+    return text if len(text.split()) >= 5 else None
 
 
 def remove_own_voice(pid: str, code: str) -> dict:
