@@ -78,6 +78,27 @@ class EpisodeStoreTest(unittest.TestCase):
                 self.assertTrue(kept["kept"] and kept["path"].endswith(".m4a") and Path(kept["path"]).is_file())
 
 
+    def test_a_lost_razgon_bed_plays_from_the_project_and_else_its_music(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            channel = root / "YOUTUBE" / "Канал"
+            channel.mkdir(parents=True)
+            (channel / store.PLAN_CONFIG).write_text("{}", encoding="utf-8")
+            with mock.patch.object(store, "YOUTUBE_ROOT", root / "YOUTUBE"), mock.patch.object(store, "PROJECTS_ROOT", root / "projects"):
+                project = store.create_project(store.channel_id(channel), "Анімація")
+                episode = Path(project["episode_path"])
+                razgon = root / "razgon" / "projects" / "film"
+                (razgon / "build" / "studio").mkdir(parents=True)
+                (episode / "razgon.json").write_text(json.dumps({"razgon_root": str(razgon.parents[1]), "project": str(razgon)}))
+                gone = root / "projects" / project["id"] / "music_sfx-1234abcd.wav"            # the studio's copy, cleaned away
+                project["assets"] = [{"id": "b" * 20, "kind": "audio", "path": str(gone)}]
+                music = razgon / "build" / "music.wav"
+                music.write_bytes(b"RIFF")
+                self.assertEqual(store.resolve_asset(project, "b" * 20)["path"], str(music))          # the music alone
+                bed = razgon / "build" / "studio" / "music_sfx.wav"
+                bed.write_bytes(b"RIFF")
+                self.assertEqual(store.resolve_asset(project, "b" * 20)["path"], str(bed))            # the whole bed first
+
     def test_an_episode_deleted_before_the_link_was_kept_finds_its_razgon_project_and_voice(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

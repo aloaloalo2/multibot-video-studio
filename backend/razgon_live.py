@@ -48,11 +48,39 @@ def status(pid: str) -> dict:
     return {"available": True, "running": running, "url": f"http://127.0.0.1:{info['port']}/live.html"}
 
 
-def start(pid: str) -> dict:
+def _listener(port: int) -> int | None:
+    found = subprocess.run(["lsof", "-tiTCP:%d" % port, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
+    return int(found[0]) if found else None
+
+
+def _log_tail(project: Path) -> str:
+    try:
+        lines = [line.strip() for line in (project / "build" / "live.log").read_text(errors="replace").splitlines() if line.strip()]
+    except OSError:
+        return ""
+    return lines[-1][-300:] if lines else ""
+
+
+def start(pid: str, restart: bool = False) -> dict:
     info = link(store.load_project(pid))
     if not info:
         raise store.StudioError("Для цього випуску немає проєкту Razgon", 404)
     url = f"http://127.0.0.1:{info['port']}/live.html"
+    if restart:
+        # «Перезапустити перегляд»: the live server of this project stops and starts afresh (user, 2 November 2026:
+        # «всеодно сіре, хоча код є»); only a server that answers for this very project is stopped
+        old = _listener(info["port"])
+        health = _health(info["port"])
+        if old and (not health or health.get("project") == str(info["project"])):
+            import os, signal
+            try:
+                os.kill(old, signal.SIGTERM)
+            except OSError:
+                pass
+            for _ in range(30):
+                if not _listener(info["port"]):
+                    break
+                time.sleep(0.1)
     health = _health(info["port"])
     if health and health.get("project") == str(info["project"]):
         return {"available": True, "running": True, "url": url}
@@ -66,7 +94,9 @@ def start(pid: str) -> dict:
         time.sleep(0.15)
         if _health(info["port"]):
             return {"available": True, "running": True, "url": url}
-    raise store.StudioError("Живий перегляд не запустився. Перевірте build/live.log у проєкті Razgon", 500)
+    tail = _log_tail(info["project"])
+    raise store.StudioError("Живий перегляд не запустився." + (f" Останній рядок журналу: {tail}" if tail else
+                            " Перевірте build/live.log у проєкті Razgon"), 500)
 
 
 def clean_build(project: dict) -> None:

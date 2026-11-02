@@ -33,12 +33,16 @@ button:hover{border-color:var(--accent)} #play{min-width:84px;font-weight:700}
 <script type="module">
 const q = new URLSearchParams(location.search);
 const EMBED = q.has('embed'); if (EMBED) document.body.classList.add('embed');
+// embedded, a failure is told to the host app, which shows it over its preview instead of an empty frame
+const tell = (message) => { if (EMBED) parent.postMessage({ razgon: 'error', message: String(message || '').slice(0, 400) }, '*'); };
+addEventListener('error', (e) => tell(e.message || e.error));
+addEventListener('unhandledrejection', (e) => tell(e.reason?.message || e.reason));
 if (!q.has('scale')) { q.set('scale', localStorage.getItem('razgonLiveScale') || '0.5'); history.replaceState(null, '', '?' + q); }
 await import('/engine/player.js');
 const $ = (id) => document.getElementById(id);
 const wait = () => new Promise((r) => { const k = () => (window.READY || window.BOOT_ERROR) ? r() : setTimeout(k, 50); k(); });
 await wait();
-if (window.BOOT_ERROR) { $('msg').textContent = 'Помилка сцен: ' + window.BOOT_ERROR.split('\n')[0]; throw new Error(window.BOOT_ERROR); }
+if (window.BOOT_ERROR) { $('msg').textContent = 'Помилка сцен: ' + window.BOOT_ERROR.split('\n')[0]; tell('Помилка сцен: ' + window.BOOT_ERROR.split('\n')[0]); throw new Error(window.BOOT_ERROR); }
 $('msg').remove();
 const cfg = await (await fetch('/project/config.json')).json(), fps = cfg.fps || 24, dur = window.DURATION;
 let frames = []; try { const r = await fetch('/project/story/studio_frames.json'); if (r.ok) frames = (await r.json()).frames; } catch {}

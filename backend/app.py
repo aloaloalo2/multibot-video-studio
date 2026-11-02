@@ -1203,7 +1203,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"started": True}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
         if match and method == "POST":
-            return self.json_response(razgon_live.start(match.group(1)))
+            return self.json_response(razgon_live.start(match.group(1), bool(body.get("restart"))))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-request", path)
         if match and method == "POST":
             project = store.request_production(match.group(1), body.get("frames"))

@@ -1357,10 +1357,14 @@ def resolve_asset(project: dict, aid: str) -> dict:
             if voice:
                 return {**asset, 'path': str(voice), 'kept': True}
             # Razgon's music and effects bed, as its project keeps it after a render
+            # (user, 2 November 2026: «в деяких проектах не находить доріжку музика й ефекти»): the studio's copy may be gone
+            # with a cleanup, so the project's own bed is taken, else its music alone (the build keeps music.wav, the mix
+            # is made from it); the export renders the whole mix anew either way
             link = razgon_link(project) if not path.is_file() and path.name.startswith('music_sfx') else None
-            bed = Path(link['project']) / 'build' / 'studio' / 'music_sfx.wav' if link else None
-            if bed and bed.is_file():
-                return {**asset, 'path': str(bed), 'kept': True}
+            for bed in ([Path(link['project']) / 'build' / 'studio' / 'music_sfx.wav', Path(link['project']) / 'build' / 'music.wav']
+                        if link else []):
+                if bed.is_file():
+                    return {**asset, 'path': str(bed), 'kept': True}
     # a file new in the folder since the last walk is looked for once more with a fresh one
     found = next((a for a in discovered(project) if a["id"] == aid), None)
     if found is None:

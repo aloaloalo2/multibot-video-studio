@@ -17,8 +17,22 @@
   const frame = document.createElement('iframe');
   frame.id = 'razgon-live-frame'; frame.title = 'Razgon наживо'; frame.hidden = true;
   $('preview-content').append(frame);
+  // what went wrong, over the preview, instead of an empty frame (user, 2 November 2026: «всеодно сіре, хоча код є»)
+  const note = document.createElement('div');
+  note.className = 'razgon-live-note'; note.hidden = true;
+  note.innerHTML = '<p></p><button type="button" class="secondary">Перезапустити перегляд</button>';
+  $('preview-content').append(note);
+  const showNote = (text) => { note.querySelector('p').textContent = text; note.hidden = !text; };
+  note.querySelector('button').addEventListener('click', async () => {
+    const id = state.project?.id; if (!id) return;
+    const button = note.querySelector('button'); button.disabled = true; showNote('Перезапускаємо живий перегляд…');
+    try { live[id] = await api(`/api/projects/${encodeURIComponent(id)}/razgon-live`, 'POST', { restart: true }); retried.delete(id);
+      frame.removeAttribute('src'); delete frame.dataset.src; sync(); renderPreview(); }
+    catch (error) { showNote(error.message); }
+    finally { button.disabled = false; }
+  });
   const style = document.createElement('style');
-  style.textContent = '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
+  style.textContent = '.razgon-live-note{position:absolute;inset:0;z-index:30;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;text-align:center;background:#0a0b0ccc}.razgon-live-note[hidden]{display:none}.razgon-live-note p{margin:0;max-width:520px;color:#e6e7ea;font-size:13.5px;line-height:1.5}' + '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
   document.head.append(style);
 
   const info = () => state.project && live[state.project.id];
@@ -29,11 +43,16 @@
   // A live server that went down (the studio restarted, after an update) leaves a black frame: the player says «ready»
   // when it draws, so one that keeps silent is started again (user, 2 November 2026: «код не відтворюється»).
   let ready = false, watch = 0; const retried = new Set();   // one fresh start a project a page
-  addEventListener('message', (event) => { if (event.source === frame.contentWindow && event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); post(); } });
+  addEventListener('message', (event) => {
+    if (event.source !== frame.contentWindow) return;
+    if (event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); showNote(''); post(); }
+    if (event.data?.razgon === 'error') showNote(`Живий перегляд не може намалювати сцени: ${event.data.message || 'невідома помилка'}. Виправте сцену або натисніть «Перезапустити перегляд».`);
+  });
   function watchStart(id) {
     ready = false; clearTimeout(watch);
     watch = setTimeout(() => {
-      if (ready || state.project?.id !== id || !active() || retried.has(id)) return;
+      if (ready || state.project?.id !== id || !active()) return;
+      if (retried.has(id)) { showNote('Живий перегляд не відповідає. Натисніть «Перезапустити перегляд». Якщо не допоможе, причина в журналі build/live.log проєкту Razgon.'); return; }
       retried.add(id);
       delete live[id]; frame.removeAttribute('src'); delete frame.dataset.src;
       // the server says whether its live view runs; a stale one is started again
@@ -52,7 +71,7 @@
     } catch (error) {
       // the studio was restarting or the live server was busy: try again instead of hiding the live view until a reload.
       // The export's lock (423) is shown on the project itself, so it goes without a banner
-      live[id] = { available: false }; if (error.httpStatus !== 423) status(error.message, true);
+      live[id] = { available: false }; if (error.httpStatus !== 423) { status(error.message, true); showNote(error.message); }
       setTimeout(() => { delete live[id]; if (state.project?.id === id) { load(id); sync(); } }, 4000);
     }
     sync(); if (state.project?.id === id) renderPreview();
@@ -63,7 +82,7 @@
     toggle.setAttribute('aria-pressed', String(on));
     if (on && frame.dataset.src !== source()) { frame.src = source(); frame.dataset.src = frame.src; watchStart(state.project.id); }
     if (!on && frame.dataset.src) { frame.removeAttribute('src'); delete frame.dataset.src; }
-    frame.hidden = !on;
+    frame.hidden = !on; if (!on) showNote('');
   }
   toggle.addEventListener('click', () => { write(KEY, active() ? '0' : '1'); sync(); renderPreview(); });
   quality.addEventListener('change', () => { write(QKEY, quality.value); sync(); });
@@ -88,7 +107,7 @@
     const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < f.end + (tail(f)?.duration || 0));
     seekTime = fading ? fading.end - 1 / (state.project?.fps || 25) : null;
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
-    content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden';
+    content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden'; note.style.visibility = on ? '' : 'hidden';
     if (!on) return baseUniversal.apply(this, args);
     const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
     const keep = new Set(sceneGroups().filter((group) => group.role === 'overlay').flatMap((group) => group.clip_ids)), all = layers;
