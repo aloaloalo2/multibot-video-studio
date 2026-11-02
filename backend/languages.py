@@ -225,6 +225,7 @@ def overview(pid: str) -> dict:
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
                       "chars": len(text), "prices": {key: price(key, text, engine) for key in PROVIDERS} if text else {},
                       "files": files(pid, code, project), "voice": item.get("voice") or {},
+                      "lines": len(synced_segments(pid, code) or []),
                       "passage": passage(text) if text else "",
                       "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"]} if (own := own_voice(pid, code)) else None), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
@@ -333,11 +334,94 @@ def translator(code: str) -> str:
             "Write numbers, units and abbreviations the way they are best read aloud. Answer with the translation only.")
 
 
+# ---------- in time with the original (user, 2 November 2026: «все, що він говорить, говоритиме плюс-мінус в той
+# самий час, коли він говорить в оригіналі… це перше, найважливіше») ----------
+# The voice's sentences with their times (the plan's recognition) are grouped into lines, each spoken at its own moment:
+# the translator gets every line with the seconds it has, Fish voices line by line, and each line is put where its
+# original stands, sped up a little when it is longer than its place.
+SEGMENT_GAP = 0.3          # sentences closer than this run on as one line
+SEGMENT_MAX = 14.0         # seconds a line may take at most
+SYNC_SPEED = 1.25          # how much a line may be sped up to fit its place
+CHARS_PER_SECOND = {"ja": 8, "zh": 6, "ko": 8}
+TRANSLATE_LINES = 30
+
+
+def segments_of(plan: dict) -> list[dict]:
+    """The lines of the original voice: [{start, end, source}], in order, sentences that run on joined."""
+    sentences = ((plan.get("timing") or {}).get("sentences")
+                 or [item for frame in plan.get("frames") or [] for item in frame.get("sentence_timings") or []])
+    lines = []
+    for item in sentences:
+        try:
+            start, end, text = float(item["start"]), float(item["end"]), str(item.get("text") or "").strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not text or end <= start:
+            continue
+        last = lines[-1] if lines else None
+        if last and start - last["end"] < SEGMENT_GAP and end - last["start"] <= SEGMENT_MAX:
+            last.update(end=end, source=last["source"] + " " + text)
+        else:
+            lines.append({"start": round(start, 3), "end": round(end, 3), "source": text})
+    return lines
+
+
+def segments_path(pid: str, code: str) -> Path:
+    return work_dir(pid, code) / "segments.json"
+
+
+def synced_segments(pid: str, code: str) -> list[dict] | None:
+    data = store.read_json(segments_path(pid, code), None)
+    return data if isinstance(data, list) and data else None
+
+
+def translate_lines(code: str, lines: list[dict], total: float | None, pid: str, job: dict) -> tuple[list[str], float]:
+    """Every line translated to fit about the seconds it has; the answer is a JSON array of the same length."""
+    rate = CHARS_PER_SECOND.get(code, 15)
+    done, cost = [], 0.0
+    batches = [lines[i:i + TRANSLATE_LINES] for i in range(0, len(lines), TRANSLATE_LINES)]
+    for number, batch in enumerate(batches):
+        progress(pid, job, round(95 * number / max(1, len(batches))), f"Перекладаємо, частина {number + 1} з {len(batches)}")
+        offset = number * TRANSLATE_LINES
+        items = []
+        for k, line in enumerate(batch):
+            index = offset + k
+            place = (lines[index + 1]["start"] if index + 1 < len(lines) else (total or line["end"] + 1)) - line["start"]
+            seconds = round(max(line["end"] - line["start"], min(place, (line["end"] - line["start"]) * 1.4)), 1)
+            items.append({"text": line["source"], "seconds": seconds, "max_chars": max(12, int(seconds * rate))})
+        before = "\n".join(done[-4:])
+        system = translator(code) + (
+            "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
+            "only `seconds` to be said. Translate every line so a narrator says it naturally within that time: about "
+            "`max_chars` characters or fewer, shorter wording where needed, the meaning kept. Keep the lines one to one: never "
+            "merge, split or move words between them. Answer with a JSON array of strings only, exactly as many as the lines, "
+            "in the same order.") + (f"\n\nThe lines just before, already translated, for context only:\n{before}" if before else "")
+        for attempt in range(2):
+            answer, spent = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(items, ensure_ascii=False)}])
+            cost += spent
+            try:
+                found = json.loads(answer[answer.index("["):answer.rindex("]") + 1])
+                if isinstance(found, list) and len(found) == len(batch) and all(isinstance(text, str) and text.strip() for text in found):
+                    done += [" ".join(text.split()) for text in found]
+                    break
+            except ValueError:
+                pass
+        else:
+            raise RuntimeError("Перекладач двічі повернув не ту кількість фраз. Спробуйте ще раз")
+    return done, cost
+
+
 def translate(pid: str, code: str, job: dict) -> None:
     project = store.load_project(pid)
     src = source(project)
     if not src["script"]:
         raise RuntimeError("У випуску ще немає тексту озвучки")
+    lines = segments_of(store.load_project_plan(pid) or {})
+    if lines:
+        texts, cost = translate_lines(code, lines, src["duration"], pid, job)
+        save_translation(pid, code, project, src, "\n".join(texts), cost, job,
+                         [{"start": line["start"], "end": line["end"], "source": line["source"]} for line in lines])
+        return
     pieces, done, cost = chunks(src["script"], TRANSLATE_CHUNK), [], 0.0
     for number, piece in enumerate(pieces):
         progress(pid, job, round(100 * number / (len(pieces) + 1)), f"Перекладаємо, частина {number + 1} з {len(pieces)}")
@@ -347,7 +431,11 @@ def translate(pid: str, code: str, job: dict) -> None:
             raise RuntimeError("Переклад вийшов надто коротким, спробуйте ще раз")
         done.append(text)
         cost += spent
-    progress(pid, job, 95, "Перекладаємо заголовок")
+    save_translation(pid, code, project, src, "\n\n".join(done), cost, job, None)
+
+
+def save_translation(pid: str, code: str, project: dict, src: dict, text: str, cost: float, job: dict, segments) -> None:
+    progress(pid, job, 96, "Перекладаємо заголовок")
     title, spent = ask([{"role": "system", "content": f"Translate this YouTube video title into {ENGLISH[code]}. Keep it catchy and short, "
                                                        "as a native YouTuber would title it. Answer with the title only, no quotes."},
                         {"role": "user", "content": src["title"]}], 300)
@@ -355,8 +443,11 @@ def translate(pid: str, code: str, job: dict) -> None:
     progress(pid, job, 99, "Зберігаємо")
     work = work_dir(pid, code)
     work.mkdir(parents=True, exist_ok=True)
-    text = "\n\n".join(done).strip() + "\n"
-    (work / "text.txt").write_text(text, encoding="utf-8")
+    (work / "text.txt").write_text(text.strip() + "\n", encoding="utf-8")
+    if segments:
+        store.atomic_json(segments_path(pid, code), segments)
+    else:
+        segments_path(pid, code).unlink(missing_ok=True)
     drop_samples(work)
     def keep(data):
         item = data.setdefault("languages", {}).setdefault(code, {})
@@ -639,7 +730,74 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).update(sample_provider=provider))
 
 
+def line_texts(pid: str, code: str) -> list[str]:
+    return [line.strip() for line in read_text(pid, code).splitlines() if line.strip()]
+
+
+def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[dict]) -> None:
+    """Each line voiced alone and put at its original's moment: sped up (at most SYNC_SPEED) when longer than its
+    place, late only by what is left over, silence where the original is silent."""
+    project = store.load_project(pid)
+    texts = line_texts(pid, code)
+    if len(texts) != len(segments):
+        raise RuntimeError(f"У тексті має бути {len(segments)} рядків, по одному на фразу, а зараз {len(texts)}")
+    voice = voice_id(pid, provider, code)
+    total = source(project)["duration"] or segments[-1]["end"]
+    work = work_dir(pid, code)
+    parts_dir = work / "parts"
+    shutil.rmtree(parts_dir, ignore_errors=True)
+    parts_dir.mkdir(parents=True)
+    pieces, cursor, fastest, latest = [], 0.0, 1.0, 0.0
+    def silence(seconds: float) -> None:
+        if seconds < 0.01:
+            return
+        path = parts_dir / f"{len(pieces):05d}-gap.wav"
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", f"{seconds:.3f}",
+             "-c:a", "pcm_s16le", str(path)], "зробити паузу")
+        pieces.append(path)
+    for number, (line, text) in enumerate(zip(segments, texts)):
+        progress(pid, job, round(90 * number / len(segments)), f"Озвучуємо фразу {number + 1} з {len(segments)}")
+        spoken = parts_dir / f"{number:05d}.mp3"
+        speak(provider, voice, text, spoken, texts[number - 1] if number else "", texts[number + 1] if number + 1 < len(texts) else "")
+        start = max(float(line["start"]), cursor)
+        place = (float(segments[number + 1]["start"]) if number + 1 < len(segments) else max(total, float(line["end"]))) - start - 0.05
+        length = store.media_duration(spoken) or 0
+        speed = min(max(1.0, length / place if place > 0 else SYNC_SPEED), SYNC_SPEED)
+        fitted = parts_dir / f"{len(pieces) + 1:05d}-line.wav"
+        filters = (f"atempo={speed:.4f}," if speed > 1.001 else "") + "aresample=48000"
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(spoken), "-af", filters, "-ac", "1", "-c:a", "pcm_s16le", str(fitted)],
+            "підігнати фразу")
+        silence(start - cursor)
+        pieces.append(fitted)
+        cursor = start + (store.media_duration(fitted) or length / speed)
+        fastest, latest = max(fastest, speed), max(latest, start - float(line["start"]))
+    progress(pid, job, 92, "Склеюємо й вирівнюємо гучність")
+    silence(total - cursor)
+    listing = parts_dir / "list.txt"
+    listing.write_text("".join(f"file '{path.name}'\n" for path in pieces), encoding="utf-8")
+    joined = work / "joined.wav"
+    run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:a", "pcm_s16le", str(joined)],
+        "склеїти фрази")
+    out = work / "voice.mp3"
+    run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(joined), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000",
+         "-b:a", "192k", str(out)], "звести звук")
+    joined.unlink(missing_ok=True)
+    shutil.rmtree(parts_dir, ignore_errors=True)
+    final = store.media_duration(out)
+    def keep(data):
+        data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
+            "provider": provider, "made_at": time.time(), "duration": final, "source_duration": total, "synced": True,
+            "lines": len(segments), "fastest": round(fastest, 2), "latest": round(latest, 1),
+            "longer": round(max(0.0, cursor - total), 1)}
+    update(pid, keep)
+    copy_out(project, code, "voice")
+    job["cost"] = price(provider, "\n".join(texts), fish_engine(pid))
+
+
 def whole(pid: str, code: str, provider: str, job: dict) -> None:
+    segments = synced_segments(pid, code)
+    if segments:
+        return whole_synced(pid, code, provider, job, segments)
     project = store.load_project(pid)
     text = read_text(pid, code)
     voice = voice_id(pid, provider, code)
@@ -954,6 +1112,13 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     with LOCK:
         if pid in ACTIVE and (load_state(pid).get("job") or {}).get("code") == code:
             raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
+    segments = synced_segments(pid, code)
+    if segments:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) != len(segments):
+            raise store.StudioError(f"Кожен рядок звучить у свій час: їх має бути {len(segments)}, а зараз {len(lines)}. "
+                                    "Не об'єднуйте й не розбивайте рядки")
+        text = "\n".join(lines)
     work = work_dir(pid, code)
     work.mkdir(parents=True, exist_ok=True)
     (work / "text.txt").write_text(text.strip() + "\n", encoding="utf-8")

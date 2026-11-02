@@ -32,6 +32,15 @@ function langBusy(){return langData?.job?.status==='running';}
 
 // A flag for each language, shown in its capsule and in the «+» menu.
 const langFlags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
+// what a language already has, as small grey marks in its capsule (user, 2 November 2026: «значок текста… прев'ю…
+// озвучка… сіреньке… означає, що там зроблено»): only the made ones show
+const langMarkIcons={text:'<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6m-6 4h6"/></svg>',
+  thumbnail:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/></svg>',
+  voice:'<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'};
+function langMarks(item){
+  const made=[['text',!!item.text,'Текст перекладено'],['thumbnail',!!item.files?.thumbnail,'Прев’ю перекладено'],['voice',!!item.files?.voice,'Озвучку зроблено']].filter(mark=>mark[1]);
+  return made.length?`<span class="lang-marks">${made.map(([kind,,title])=>`<i class="lang-mark" title="${title}" aria-label="${title}">${langMarkIcons[kind]}</i>`).join('')}</span>`:'';
+}
 function langFlag(code){return `<span class="lang-flag" aria-hidden="true">${langFlags[code] || '🌐'}</span>`;}
 // the language open below the capsules, per episode, remembered in the browser
 function langChosen(id){
@@ -54,7 +63,7 @@ function drawLangs(id){
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
     <div class="lang-original-slot"></div>
     <div class="lang-pills" role="tablist" aria-label="Мови випуску">
-      ${data.items.map(item=>`<div class="lang-pill${item.code===chosen?' active':''}" data-code="${item.code}"><button type="button" class="lang-pill-pick" role="tab" aria-selected="${item.code===chosen}" title="${esc(item.label)}">${langFlag(item.code)}<span>${esc(item.name)}</span><i class="lang-pill-busy" aria-hidden="true"></i></button><button type="button" class="lang-pill-x" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">×</button></div>`).join('')}
+      ${data.items.map(item=>`<div class="lang-pill${item.code===chosen?' active':''}" data-code="${item.code}"><button type="button" class="lang-pill-pick" role="tab" aria-selected="${item.code===chosen}" title="${esc(item.label)}">${langFlag(item.code)}<span>${esc(item.name)}</span>${langMarks(item)}<i class="lang-pill-busy" aria-hidden="true"></i></button><button type="button" class="lang-pill-x" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">×</button></div>`).join('')}
       ${free.length?`<div class="lang-plus-wrap"><button type="button" class="lang-plus" aria-haspopup="true" aria-expanded="false" title="Додати мову" aria-label="Додати мову">+${data.items.length?'':'<span>Додати мову</span>'}</button>
         <div class="lang-menu" role="menu" hidden>${free.map(item=>`<button type="button" role="menuitem" data-code="${item.code}">${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('')}</div></div>`:''}
     </div>
@@ -166,11 +175,11 @@ function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
   const hasSample=(item.files.samples || []).includes(langData.voice_key);
-  const fit=voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
+  const fit=voice.synced?[`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`найбільше запізнення ${String(voice.latest).replace('.',',')} с`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
     <section class="lang-step"><h3><em>1</em>Текст</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
-        <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
+        <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small>${item.lines?`<small class="lang-text-lines">Кожен рядок звучить у свій час, як фраза оригіналу (${item.lines} рядків): правте слова, але не об’єднуйте й не розбивайте рядки</small>`:''}</span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>

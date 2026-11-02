@@ -315,6 +315,47 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue(languages.file_path(self.pid, "de", "thumbnail").is_file())
         self.assertTrue((self.episode / "Мови" / "Deutsch" / "Прев'ю Deutsch.png").is_file())
 
+    def test_lines_are_translated_and_voiced_in_time_with_the_original(self):
+        plan = {"script": "x", "timing": {"audio": {"asset_id": "a" * 20}, "sentences": [
+            {"text": "One.", "start": 0.2, "end": 1.0}, {"text": "Two.", "start": 1.1, "end": 1.8},     # run on: one line
+            {"text": "Three.", "start": 3.0, "end": 3.8}, {"text": "Four.", "start": 4.5, "end": 5.4}]}}
+        self.assertEqual([(line["start"], line["source"]) for line in languages.segments_of(plan)],
+                         [(0.2, "One. Two."), (3.0, "Three."), (4.5, "Four.")])
+        asked = []
+        def ask(messages, max_tokens=12000):
+            if not messages[1]["content"].startswith("["):
+                return "Що якби", 0.0                            # the title
+            asked.append(json.loads(messages[1]["content"]))
+            if len(asked) == 1:
+                return '["Раз. Два."]', 0.0                     # a wrong count is asked again
+            return '["Раз. Два.", "Три.", "Чотири."]', 0.0
+        with patch.object(languages.store, "load_project_plan", return_value=plan), patch.object(languages, "ask", side_effect=ask):
+            languages.add(self.pid, "uk")
+            languages.start(self.pid, "translate", "uk")
+            job = self.wait()
+        self.assertEqual(job["status"], "done", job.get("error"))
+        self.assertEqual(asked[0][1]["seconds"], 1.1)          # 0.8 s said, room for up to 1.4 times that before the next
+        self.assertEqual(asked[0][0]["max_chars"], int(asked[0][0]["seconds"] * 15))
+        item = languages.overview(self.pid)["items"][0]
+        self.assertEqual((item["text"].strip(), item["lines"]), ("Раз. Два.\nТри.\nЧотири.", 3))
+        with self.assertRaises(store.StudioError):
+            languages.save_text(self.pid, "uk", "Раз. Два. Три.\nЧотири.")          # two lines for three places
+        # the second line is far too long for its place: sped up at most 1.25 times, and the third starts late
+        lengths = iter([1.5, 3.0, 0.5])
+        def speak(provider, voice, text, target, before="", after=""):
+            tone(target.with_suffix(".wav"), next(lengths))
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(target.with_suffix(".wav")), str(target)], check=True)
+        languages.update(self.pid, lambda data: data.setdefault("clones", {}).__setitem__("elevenlabs", "v1"))
+        with patch.object(languages, "speak", side_effect=speak):
+            languages.start(self.pid, "voice", "uk", "elevenlabs")
+            job = self.wait()
+        self.assertEqual(job["status"], "done", job.get("error"))
+        voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
+        self.assertTrue(voice["synced"])
+        self.assertEqual(voice["fastest"], 1.25)
+        self.assertAlmostEqual(voice["latest"], 0.95, delta=0.1)       # 3.0 + 3.0/1.25 = 5.4 against 4.5
+        self.assertAlmostEqual(voice["duration"], 6, delta=0.15)       # the video's length: silence after the last line
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")
