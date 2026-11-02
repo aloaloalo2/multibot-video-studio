@@ -80,9 +80,14 @@
     // while a transition fades out of a Razgon frame its last picture stays under the incoming frame, as the export's held tail
     const groupId = (f) => sceneGroups().find((group) => group.title === `Кадр ${f.number}`)?.id;
     const tail = (f) => (state.project?.join_transitions || []).find((join) => join.from_ref === `group:${groupId(f)}` && Math.abs(join.seam - f.end) < .05);
+    // a frame whose row is switched off with its eye is not drawn live either (user, 2 November 2026: «нажав око, але
+    // вони не пропали»): the Razgon blocks under the playhead must sit on a row that is seen
+    const hiddenClip = new Set(layers().filter((layer) => layer.hidden).flatMap((layer) => (layer.clips || []).map((clip) => clip.id)));
+    const blocksAt = (time) => layers().flatMap((layer) => layer.clips || []).filter((clip) => /^Razgon · кадр/.test(clip.title || '') && time >= Number(clip.start) && time < Number(clip.start) + Number(clip.duration));
+    const seen = (time) => { const blocks = blocksAt(time); return !blocks.length || blocks.some((clip) => !hiddenClip.has(clip.id)); };
     const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < f.end + (tail(f)?.duration || 0));
     seekTime = fading ? fading.end - 1 / (state.project?.fps || 25) : null;
-    const on = active() && (!own || !!inside || !!fading);
+    const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
     content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden';
     if (!on) return baseUniversal.apply(this, args);
     const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
