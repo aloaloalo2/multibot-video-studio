@@ -199,7 +199,7 @@ def fish_engine(pid: str) -> str:
 
 def files(pid: str, code: str, project: dict) -> dict:
     work = work_dir(pid, code)
-    return {"sample": (work / "sample.mp3").is_file(), "voice": (work / "voice.mp3").is_file() or bool(final_voice(project, code)),
+    return {"samples": sorted(path.stem[len("sample-"):] for path in work.glob("sample-*.mp3")), "voice": (work / "voice.mp3").is_file() or bool(final_voice(project, code)),
             "thumbnail": (work / "thumbnail.png").is_file()}
 
 
@@ -238,6 +238,7 @@ def overview(pid: str) -> dict:
                        "estimate": {key: price(key, src["script"], engine) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             "provider": data.get("provider") or "elevenlabs", "job": data.get("job"),
+            "voice_key": voice_key(pid, data.get("provider") or "elevenlabs"),
             "thumbnail": bool(cover(project))}
 
 
@@ -353,8 +354,7 @@ def translate(pid: str, code: str, job: dict) -> None:
     work.mkdir(parents=True, exist_ok=True)
     text = "\n\n".join(done).strip() + "\n"
     (work / "text.txt").write_text(text, encoding="utf-8")
-    for stale in ("sample.mp3",):
-        (work / stale).unlink(missing_ok=True)
+    drop_samples(work)
     def keep(data):
         item = data.setdefault("languages", {}).setdefault(code, {})
         item.update(title=title.strip().strip('"«»'), translated_at=time.time(), translate_cost=round(cost, 4))
@@ -500,6 +500,17 @@ def sample_text_at(text: str, size: int) -> str:
     return out
 
 
+def voice_key(pid: str, provider: str) -> str:
+    """Which voice a sample was made with: «elevenlabs», or «fishaudio-<engine>»."""
+    return f"fishaudio-{fish_engine(pid)}" if provider == "fishaudio" else provider
+
+
+def drop_samples(work: Path) -> None:
+    """Samples of an older text (a new translation, the author's edit) are of words no longer there."""
+    for path in [*work.glob("sample-*.mp3"), work / "sample.mp3"]:
+        path.unlink(missing_ok=True)
+
+
 def sample_text(text: str) -> str:
     sentences = re.split(r"(?<=[.!?…])\s+", text.strip())
     out = ""
@@ -518,7 +529,8 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     if pid in CANCEL:
         raise Stop()
     piece = sample_text(text)
-    speak(provider, voice, piece, work_dir(pid, code) / "sample.mp3")
+    # each voice (a provider, and Fish's engine) keeps its own sample, so switching between them compares them
+    speak(provider, voice, piece, work_dir(pid, code) / f"sample-{voice_key(pid, provider)}.mp3")
     job["cost"] = price(provider, piece, fish_engine(pid))
     update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).update(sample_provider=provider))
 
@@ -695,7 +707,9 @@ def original_file(pid: str) -> Path:
 
 def file_path(pid: str, code: str, kind: str) -> Path:
     check_code(code)
-    names = {"sample": "sample.mp3", "voice": "voice.mp3", "thumbnail": "thumbnail.png"}
+    names = {"voice": "voice.mp3", "thumbnail": "thumbnail.png"}
+    if re.fullmatch(r"sample-[a-z0-9.\-]+", kind):
+        names[kind] = kind + ".mp3"
     if kind not in names:
         raise store.StudioError("Файл не знайдено", 404)
     path = work_dir(pid, code) / names[kind]
@@ -834,7 +848,7 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     work = work_dir(pid, code)
     work.mkdir(parents=True, exist_ok=True)
     (work / "text.txt").write_text(text.strip() + "\n", encoding="utf-8")
-    (work / "sample.mp3").unlink(missing_ok=True)
+    drop_samples(work)
     if isinstance(title, str):
         update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).__setitem__("title", title.strip()[:200]))
     copy_out(store.load_project(pid), code, "text")

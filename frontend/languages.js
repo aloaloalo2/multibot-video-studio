@@ -83,7 +83,7 @@ function langOriginal(id,src){
 function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
-  const sampleBy=item.sample_provider&&item.sample_provider!==spec.id?(langData.providers.find(p=>p.id===item.sample_provider)?.name || ''):'';
+  const hasSample=(item.files.samples || []).includes(langData.voice_key);
   const fit=voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`<header><h2>${esc(item.name)}</h2>${langSame(item)?'':`<span>${esc(item.label)}</span>`}<button type="button" class="lang-remove" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">${typeof trashIcon==='string'?trashIcon:'×'}</button></header>
     <section class="lang-step"><h3><em>1</em>Текст</h3>
@@ -96,7 +96,7 @@ function langCard(id,item,spec){
           ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
-        <div class="lang-sample">${item.files.sample?'<div class="lang-player" data-kind="sample"></div>':''}<button type="button" class="secondary lang-sample-run">${item.files.sample?'Інший зразок':'Послухати зразок'}</button>${sampleBy?`<small>зразок озвучено через ${esc(sampleBy)}</small>`:''}</div>
+        <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(langData.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${hasSample?' hidden':''}>Послухати зразок</button></div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
           <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
           ${item.folder?`<small class="lang-folder">Файл у папці випуску: ${esc(item.folder)}</small>`:''}
@@ -127,7 +127,7 @@ function langCard(id,item,spec){
       item.text=text;item.title=name;if(area.value===text)delete langDrafts[key];
       if(hint)hint.textContent=`${text.length.toLocaleString('uk-UA')} символів · збережено`;
       const old=card.querySelector('.lang-sample .voice-player');if(old){old.querySelector('audio')?.pause();old.remove();}
-      const again=card.querySelector('.lang-sample-run');if(again)again.textContent='Послухати зразок';
+      const again=card.querySelector('.lang-sample-run');if(again)again.hidden=false;
       const fresh=langData.items.find(entry=>entry.code===item.code);
       if(fresh){const cost=langCost(spec,fresh.prices?.[spec.id]),line=card.querySelector('.lang-price');
         if(line){line.querySelector('b').textContent=cost;line.querySelector('small').textContent=`(${fresh.chars.toLocaleString('uk-UA')} символів)`;}

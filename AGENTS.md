@@ -292,7 +292,7 @@ then «відео ролик перекладати я поки не хочу, �
 thumbnail, before and after. `backend/languages.py` and `frontend/languages.js`; the address ends in `/languages`.
 Each language is a card of three steps: the text (script and title translated by DeepSeek through OpenRouter in
 paragraph chunks, editable; saving drops the old sample), the voice (the author's voice cloned once per provider and
-episode from the first 90 s of the plan's voice, `clones` in `languages.json`; a sample of about 320 characters first;
+episode from the first 90 s of the plan's voice, `clones` in `languages.json`; a sample of about 320 characters first, one for each voice (`sample-<voice_key>.mp3`: the provider, and Fish's engine), so switching plays that voice's own sample and the button shows only while it has none;
 the whole text voiced in parts of ≤2400 characters with the neighbours as context, glued, −16 LUFS / −1.5 dBTP, sped up by
 at most `FIT_MAX` when longer than the video, padded with silence when shorter; the price is shown before and asked in
 a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated; the «after» window itself is the button, a magic wand in the middle, over the picture once made). Providers:

@@ -117,7 +117,13 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(voice["speed"], languages.FIT_MAX)
         self.assertGreater(voice["longer"], 0)
         self.assertTrue((self.episode / "Мови" / "English" / "Озвучка English.mp3").is_file())
-        self.assertTrue(languages.file_path(self.pid, "en", "sample").is_file())
+        self.assertTrue(languages.file_path(self.pid, "en", "sample-elevenlabs").is_file())
+        self.assertEqual(languages.overview(self.pid)["items"][0]["files"]["samples"], ["elevenlabs"])
+        # Fish's engine keeps a sample of its own: switching engines never plays another one's
+        languages.set_provider(self.pid, "fishaudio", "s1")
+        self.assertEqual(languages.overview(self.pid)["voice_key"], "fishaudio-s1")
+        with self.assertRaises(store.StudioError):
+            languages.file_path(self.pid, "en", "sample-fishaudio-s1")
 
     def test_a_short_voice_is_padded_to_the_video(self):
         work = languages.work_dir(self.pid, "de")
@@ -151,8 +157,10 @@ class LanguagesTest(unittest.TestCase):
         work = languages.work_dir(self.pid, "es")
         work.mkdir(parents=True, exist_ok=True)
         (work / "sample.mp3").write_bytes(b"x")
+        (work / "sample-fishaudio-s1.mp3").write_bytes(b"x")
         languages.save_text(self.pid, "es", "Hola.", "Título")
         self.assertFalse((work / "sample.mp3").exists())
+        self.assertFalse((work / "sample-fishaudio-s1.mp3").exists())
         self.assertEqual(languages.overview(self.pid)["items"][0]["title"], "Título")
         languages.remove(self.pid, "es")
         self.assertFalse(work.exists())
