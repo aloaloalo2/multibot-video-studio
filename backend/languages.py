@@ -62,9 +62,10 @@ FISH = "https://api.fish.audio"
 # (MessagePack), so no voice model is created: a free account's model limit is 0.
 FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "note": "безкоштовно"},
                 "s2.1-pro": {"name": "S2.1 Pro", "per_char": 15 / 1_000_000, "note": "платний, потрібен баланс API Fish"},
-                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "платний, потрібен баланс API Fish"},
-                # the expressive one (user: «чому драма не додав»); Fish's own page gave no price on 2 November 2026
-                "drama-3": {"name": "Drama 3", "per_char": None, "note": "найвиразніший, платний, потрібен баланс API Fish"}}
+                # the expressive one (user: «чому драма не додав»): Fish's docs give $50 per million UTF-8 bytes, and a launch
+                # promotion of $10 until 12 November 2026, 17:00 UTC; S1 left the list as an old model (user, 2 November 2026)
+                "drama-3": {"name": "Drama 3", "per_char": 50 / 1_000_000, "promo": (10 / 1_000_000, 1794502800),
+                            "note": "найвиразніший, $10 за 1 млн байтів до 12 листопада, потім $50"}}
 FISH_ENGINE = "s2.1-pro-free"
 TRANSLATE_CHUNK = 5000
 VOICE_CHUNK = 2400
@@ -185,7 +186,8 @@ def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | N
 def price(provider: str, text: str, engine: str | None = None) -> float | None:
     """What voicing the text costs; None when the provider names no price for the engine."""
     spec = PROVIDERS[provider]
-    rate = FISH_ENGINES.get(engine or FISH_ENGINE, FISH_ENGINES[FISH_ENGINE])["per_char"] if provider == "fishaudio" else spec["per_char"]
+    fish = FISH_ENGINES.get(engine or FISH_ENGINE, FISH_ENGINES[FISH_ENGINE]) if provider == "fishaudio" else None
+    rate = (fish["promo"][0] if fish.get("promo") and time.time() < fish["promo"][1] else fish["per_char"]) if fish else spec["per_char"]
     if rate is None:
         return None
     return round(len(text.encode("utf-8") if spec["bytes"] else text) * rate, 2)

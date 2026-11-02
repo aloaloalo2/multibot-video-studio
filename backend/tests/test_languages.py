@@ -87,10 +87,14 @@ class LanguagesTest(unittest.TestCase):
     def test_price_counts_characters_or_bytes(self):
         self.assertEqual(languages.price("elevenlabs", "a" * 10000), 1.0)
         # Fish Audio bills UTF-8 bytes: Cyrillic is two a letter
-        self.assertEqual(languages.price("fishaudio", "я" * 100000, "s1"), 3.0)
+        self.assertEqual(languages.price("fishaudio", "я" * 100000, "s2.1-pro"), 3.0)
         self.assertEqual(languages.price("fishaudio", "a" * 100000, "s2.1-pro"), 1.5)
         self.assertEqual(languages.price("fishaudio", "a" * 100000), 0)          # S2.1 Pro Free by default
-        self.assertIsNone(languages.price("fishaudio", "a" * 100000, "drama-3"))  # no price named by Fish
+        with patch.object(languages.time, "time", return_value=1794502800 - 60):
+            self.assertEqual(languages.price("fishaudio", "я" * 100000, "drama-3"), 2.0)     # the launch price, $10/M bytes
+        with patch.object(languages.time, "time", return_value=1794502800 + 60):
+            self.assertEqual(languages.price("fishaudio", "я" * 100000, "drama-3"), 10.0)    # $50/M bytes after 12 November
+        self.assertNotIn("s1", languages.FISH_ENGINES)
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Second sentence!\n\nThird paragraph here.", "What If Test"])
@@ -134,9 +138,9 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue(languages.file_path(self.pid, "en", "sample-" + made).is_file())
         self.assertEqual(languages.overview(self.pid)["items"][0]["files"]["samples"], [made])
         # Fish's engine keeps a sample of its own: switching engines never plays another one's
-        languages.set_provider(self.pid, "fishaudio", "s1")
+        languages.set_provider(self.pid, "fishaudio", "s2.1-pro")
         fish = languages.overview(self.pid)["items"][0]["voice_key"]
-        self.assertTrue(fish.startswith("fishaudio-s1-lively-episode"))
+        self.assertTrue(fish.startswith("fishaudio-s2.1-pro-lively-episode"))
         with self.assertRaises(store.StudioError):
             languages.file_path(self.pid, "en", "sample-" + fish)
 
@@ -260,8 +264,8 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn("-exact-", languages.voice_key(self.pid, "fishaudio", "uk"))
         with self.assertRaises(store.StudioError):
             languages.set_provider(self.pid, "fishaudio", style="nope")
-        languages.set_provider(self.pid, "fishaudio", "s1")
-        self.assertEqual(languages.voice_id(self.pid, "fishaudio", "uk")["engine"], "s1")
+        languages.set_provider(self.pid, "fishaudio", "s2.1-pro")
+        self.assertEqual(languages.voice_id(self.pid, "fishaudio", "uk")["engine"], "s2.1-pro")
         with self.assertRaises(store.StudioError):
             languages.set_provider(self.pid, "fishaudio", "nope")
 
@@ -448,7 +452,7 @@ class LanguagesTest(unittest.TestCase):
         voice = languages.load_state(self.pid)["languages"]["de"]["voice"]
         self.assertEqual(voice["made_by"], "Fish Audio · S2.1 Pro Free · Живіше")
         self.assertTrue(current())
-        languages.set_provider(self.pid, "fishaudio", "s1")
+        languages.set_provider(self.pid, "fishaudio", "s2.1-pro")
         self.assertFalse(current())                                   # another engine
         languages.set_provider(self.pid, "fishaudio", "s2.1-pro-free")
         self.assertTrue(current())
