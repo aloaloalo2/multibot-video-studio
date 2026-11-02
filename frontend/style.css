@@ -1129,7 +1129,8 @@ select option{background:#232327;color:#f1f1f2}
 .lang-provider small{color:#9a9ca4;line-height:1.45}
 .lang-warn{color:#f5c24b}
 .lang-job{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;border-radius:12.5px;background:#1f1f24;font-size:13px;color:#c9cad0}
-.lang-job span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;line-height:1.45}
+.lang-job span:not(.export-spinner){flex:1 1 220px;min-width:0;overflow-wrap:anywhere;line-height:1.45}
+.lang-job .export-spinner{flex:none}
 .lang-job button.secondary{padding:5px 10px;font-size:13px}
 /* while a step works its own buttons give way to the line; the thumbnail keeps its window with the swinging wand */
 .lang-step.is-working>.lang-actions{display:none}
@@ -1188,7 +1189,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-engine{display:flex;align-items:center;gap:8px;font-size:13px;color:#9a9ca4}
 .lang-engine select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:6px 10px}
 .lang-own{display:grid;gap:8px;padding:12px 14px;border-radius:16.5px;border:1px solid #35353a;background:#1a1a1e}
-.lang-own.has-voice{border-color:#2f6b4c;background:#16201b}
 .lang-own-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .lang-own-head b{font-size:14px}
 .lang-own-head small{color:#9a9ca4;font-size:12px}
@@ -1270,3 +1270,17 @@ select option{background:#232327;color:#f1f1f2}
 .channel-voice .project-action{flex:none}
 .lang-engines{display:flex;flex-wrap:wrap;gap:8px 18px}
 .lang-model-state{margin:0;font-size:12.5px;color:#8d8f97}
+.lang-own.has-voice{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:0;border:0;background:none}
+.lang-own-label{display:grid;font-size:12.5px;color:#c9cad0;min-width:120px}
+.lang-own-label small{font-size:11.5px;color:#7c7e86}
+.lang-own.has-voice .voice-player{flex:1;min-width:220px;max-width:420px;gap:8px;padding:3px 10px 3px 3px}
+.lang-own.has-voice .voice-player-play{width:24px;height:24px}
+.lang-own.has-voice .voice-player-play svg{width:10px;height:10px}
+.lang-own.has-voice .voice-player-volume,.lang-own.has-voice .voice-player-mute{display:none}
+.lang-own.has-voice .lang-own-actions{gap:2px}
+.lang-own.has-voice .lang-warn{flex-basis:100%;margin:0;font-size:12px}
+.lang-own-link{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:4px 6px;border-radius:8px;color:#8d8f97;font-size:12.5px;cursor:pointer}
+.lang-own-link:hover{color:#e6e7ea;background:#26262b}
+.lang-own-link svg{width:12px;height:12px}
+.lang-own.has-voice .lang-own-more summary{font-size:12px;color:#7c7e86}
+.lang-own.has-voice .lang-own-more[open]{flex-basis:100%}

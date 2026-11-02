@@ -51,7 +51,7 @@ PROVIDERS = {
     "elevenlabs": {"name": "ElevenLabs", "per_char": 0.10 / 1000, "bytes": False,
                    "note": "Найкраща якість і клон голосу, усі мови. Клон голосу потребує платного тарифу (від Starter)."},
     "fishaudio": {"name": "Fish Audio", "per_char": 15 / 1_000_000, "bytes": True,
-                  "note": "Голос клонується прямо в кожному запиті зі зразка вашої озвучки, без окремої моделі."},
+                  "note": "Голос копіюється з прикладу нижче"},
 }
 ELEVEN = "https://api.elevenlabs.io/v1"
 ELEVEN_MODEL = "eleven_multilingual_v2"
@@ -721,6 +721,15 @@ def fish_model(example: dict) -> str | None:
     return found
 
 
+def announce_model(pid: str, provider: str, code: str, job: dict) -> None:
+    """Making a Fish model takes longer than a sample: the line says so, and a cancel waits for Fish's answer."""
+    example = voice_for(pid, code) if provider == "fishaudio" else None
+    if example and not example.get("fish_model"):
+        meta = store.read_json(example["meta"], {}) or {}
+        if not (meta.get("fish_refused_stamp") == example["stamp"] and time.time() - float(meta.get("fish_refused_at") or 0) < FISH_RETRY):
+            progress(pid, job, 5, "Створюємо модель голосу у Fish, один раз для цього прикладу (до кількох хвилин)")
+
+
 def voice_id(pid: str, provider: str, code: str | None = None):
     """The voice for one language, from its example. ElevenLabs keeps a clone id per example; Fish gets the example
     with every request."""
@@ -837,6 +846,7 @@ def sample_text(text: str) -> str:
 def sample(pid: str, code: str, provider: str, job: dict) -> None:
     text = read_text(pid, code)
     progress(pid, job, 10, "Озвучуємо зразок")
+    announce_model(pid, provider, code, job)
     voice = voice_id(pid, provider, code)
     progress(pid, job, 50, "Озвучуємо зразок")
     if pid in CANCEL:
@@ -859,6 +869,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     texts = line_texts(pid, code)
     if len(texts) != len(segments):
         raise RuntimeError(f"У тексті має бути {len(segments)} рядків, по одному на фразу, а зараз {len(texts)}")
+    announce_model(pid, provider, code, job)
     voice = voice_id(pid, provider, code)
     total = source(project)["duration"] or segments[-1]["end"]
     work = work_dir(pid, code)
@@ -918,6 +929,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
         return whole_synced(pid, code, provider, job, segments)
     project = store.load_project(pid)
     text = read_text(pid, code)
+    announce_model(pid, provider, code, job)
     voice = voice_id(pid, provider, code)
     work = work_dir(pid, code)
     parts_dir = work / "parts"

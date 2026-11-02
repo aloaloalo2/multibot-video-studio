@@ -112,13 +112,12 @@ function langAddButtons(primary){
 }
 function langOwnBlock(item){
   const own=item.own_voice,shared=item.channel_voice;
-  if(own)return `<div class="lang-own has-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>свій приклад цього випуску</small></div>
-    <div class="lang-player" data-kind="own"></div>${langHeardWarn(own)}
-    <div class="lang-own-actions"><button type="button" class="secondary lang-own-record">${micIcon}Записати заново</button><label class="secondary lang-own-file">Закинути інший<input type="file" accept="audio/*,video/*" hidden></label><button type="button" class="secondary lang-own-remove">${shared?'Повернути голос каналу':'Прибрати приклад'}</button></div></div>`;
-  if(shared)return `<div class="lang-own has-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>з налаштувань каналу, для всіх випусків</small></div>
-    <div class="lang-player" data-kind="channel"></div>${langHeardWarn(shared)}
-    <details class="lang-own-more"><summary>Інший голос лише для цього випуску</summary>${langAddButtons(false)}</details></div>`;
-  const fromOriginal=!!langData?.source?.voice;
+  // an example in hand is a small line (user, 2 November 2026: «не виділяй її так… просто маленький приклад, основа
+  // акценту на створенні аудіо»): its label, a compact player and quiet links
+  if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>свій для цього випуску</small></span><div class="lang-player" data-kind="own"></div>
+    <div class="lang-own-actions"><button type="button" class="lang-own-link lang-own-record">${micIcon}Записати заново</button><label class="lang-own-link lang-own-file">Закинути інший<input type="file" accept="audio/*,video/*" hidden></label><button type="button" class="lang-own-link lang-own-remove">${shared?'Голос каналу':'Прибрати'}</button></div>${langHeardWarn(own)}</div>`;
+  if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>з налаштувань каналу</small></span><div class="lang-player" data-kind="channel"></div>
+    <details class="lang-own-more"><summary>інший для цього випуску</summary><div class="lang-own-actions"><button type="button" class="lang-own-link lang-own-record">${micIcon}Записати</button><label class="lang-own-link lang-own-file">Закинути запис<input type="file" accept="audio/*,video/*" hidden></label></div></details>${langHeardWarn(shared)}</div>`;
   return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>${fromOriginal?'зараз з оригіналу, з його акцентом':'потрібен, щоб озвучити'}</small></div>
     <p>${fromOriginal?'Озвучка візьме голос з початку оригіналу, тож вимова буде як у оригіналі. Щоб звучало як носій мови, додайте':'Додайте'} приклад голосу цією мовою, 20–60 секунд: запишіть себе (можна прочитати уривок нижче) або закиньте запис носія мови. Озвучка скопіює саме цей голос і вимову. Щоб приклад діяв для всіх випусків, додайте його в налаштуваннях каналу, розділ «Голоси для перекладу».</p>
     <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>${langAddButtons(true)}</div>`;
