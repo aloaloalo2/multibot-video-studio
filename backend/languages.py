@@ -381,18 +381,40 @@ def chunks(text: str, size: int) -> list[str]:
     return [piece for piece in pieces if piece]
 
 
+# The translator answers without thinking first (user, 2 November 2026: «довгувато діпсік працює»; then «Перекладач не
+# повернув переклад однієї фрази»): DeepSeek V4.1 Flash reasons before it answers by default, which made every part slow
+# and spent a small answer's whole budget on the reasoning, leaving its text empty. A model that cannot answer without
+# reasoning is asked again with it, and an empty answer cut by the budget is asked again with a larger one.
+REASONING_OFF = {"enabled": False}
+
+
 def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     import agent_openrouter
-    payload = {"model": agent_openrouter.MODEL, "max_tokens": max_tokens, "usage": {"include": True}, "messages": messages}
-    raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),
-                  {"Authorization": "Bearer " + key("openrouter"), "Content-Type": "application/json"}, "OpenRouter")
-    try:
-        result = json.loads(raw)
-        text = str(result["choices"][0]["message"]["content"] or "").strip()
-    except (ValueError, KeyError, IndexError, TypeError):
-        raise RuntimeError("OpenRouter не повернув переклад") from None
-    cost = (result.get("usage") or {}).get("cost")
-    return re.sub(r"^```\w*\n|\n```$", "", text).strip(), float(cost) if isinstance(cost, (int, float)) else 0.0
+    cost, reasoning = 0.0, REASONING_OFF
+    for attempt in range(3):
+        payload = {"model": agent_openrouter.MODEL, "max_tokens": max_tokens, "usage": {"include": True}, "messages": messages}
+        if reasoning:
+            payload["reasoning"] = reasoning
+        try:
+            raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),
+                          {"Authorization": "Bearer " + key("openrouter"), "Content-Type": "application/json"}, "OpenRouter")
+        except RuntimeError as error:
+            if reasoning and "помилка 400" in str(error):
+                reasoning = None
+                continue
+            raise
+        try:
+            result = json.loads(raw)
+            choice = result["choices"][0]
+            text = str(choice["message"]["content"] or "").strip()
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise RuntimeError("OpenRouter не повернув переклад") from None
+        spent = (result.get("usage") or {}).get("cost")
+        cost += float(spent) if isinstance(spent, (int, float)) else 0.0
+        if text or choice.get("finish_reason") != "length":
+            break
+        max_tokens = max(max_tokens * 4, 4000)
+    return re.sub(r"^```\w*\n|\n```$", "", text).strip(), cost
 
 
 # The translation is written to be heard, not read (user, 2 November 2026: «1999-го — такі речення погані… краще слова
@@ -495,56 +517,78 @@ def synced_segments(pid: str, code: str) -> list[dict] | None:
     return data if isinstance(data, list) and data else None
 
 
+TRANSLATE_AT_ONCE = 4      # parts of a text translated side by side
+
+
 def translate_lines(code: str, lines: list[dict], total: float | None, pid: str, job: dict) -> tuple[list[str], float]:
-    """Every line translated to fit about the seconds it has; the answer is a JSON object of the lines by id."""
+    """Every line translated to fit about the seconds it has; the answer is a JSON object of the lines by id. The parts go
+    to the translator several at a time (`TRANSLATE_AT_ONCE`), each with the original lines before it as context."""
+    from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
     rate = CHARS_PER_SECOND.get(code, 15)
-    done, cost = [], 0.0
-    batches = [lines[i:i + TRANSLATE_LINES] for i in range(0, len(lines), TRANSLATE_LINES)]
-    for number, batch in enumerate(batches):
-        progress(pid, job, round(95 * number / max(1, len(batches))), f"Перекладаємо, частина {number + 1} з {len(batches)}")
-        offset = number * TRANSLATE_LINES
+    starts = list(range(0, len(lines), TRANSLATE_LINES))
+    def items_of(offset):
         items = []
-        for k, line in enumerate(batch):
-            index = offset + k
+        for index in range(offset, min(offset + TRANSLATE_LINES, len(lines))):
+            line = lines[index]
             place = (lines[index + 1]["start"] if index + 1 < len(lines) else (total or line["end"] + 1)) - line["start"]
             seconds = round(max(line["end"] - line["start"], min(place, (line["end"] - line["start"]) * 1.4)), 1)
             items.append({"text": line["source"], "seconds": seconds, "max_chars": max(12, int(seconds * rate))})
-        before = "\n".join(done[-4:])
-        system = translator(code) + (
-            "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
-            "only `seconds` to be said. Translate every line so a narrator says it naturally within that time: about "
-            "`max_chars` characters or fewer, shorter wording where needed, the meaning kept. The rules above apply inside each "
-            "line: a line may hold several short sentences, but it stays one line. Keep the lines one to one: never merge, "
-            "split, drop or move words between them. Answer with a JSON object only: each line's `id` as the key and its "
-            "translation as the value, every id present.") + (f"\n\nThe lines just before, already translated, for context only:\n{before}" if before else "")
-        # each line carries its id, so an answer that lost or merged a line keeps every line it did translate; the rest are
-        # asked again, and a line still missing is translated alone (user, 2 November 2026: «Перекладач двічі повернув не ту
-        # кількість фраз»)
-        got, pending = {}, list(range(len(items)))
-        for attempt in range(2):
-            ask_items = [dict(items[k], id=k + 1) for k in pending]
-            answer, spent = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(ask_items, ensure_ascii=False)}])
-            cost += spent
-            for k, text in line_answers(answer, [k + 1 for k in pending]).items():
-                got[k - 1] = text
-            pending = [k for k in pending if k not in got]
-            if not pending:
-                break
-        for k in pending:
-            alone = translator(code) + (
-                f"\n\nThis is one line of a dubbed voice-over; it has {items[k]['seconds']} seconds to be said, about "
-                f"{items[k]['max_chars']} characters or fewer. Answer with its translation only, one line.") + (
-                f"\n\nThe lines just before, for context only:\n{before}" if before else "")
-            answer, spent = ask([{"role": "system", "content": alone}, {"role": "user", "content": items[k]["text"]}], 600)
-            cost += spent
-            text = " ".join(answer.strip().strip('"«»').split())
-            if not text:
-                raise RuntimeError("Перекладач не повернув переклад однієї фрази. Спробуйте ще раз")
-            got[k] = text
-        fixed, spent = speakable(code, [got[k] for k in range(len(items))])
+        return items
+    results, cost = {}, 0.0
+    progress(pid, job, 0, f"Перекладаємо, частина 1 з {len(starts)}" if len(starts) > 1 else "Перекладаємо")
+    pool = ThreadPoolExecutor(max_workers=TRANSLATE_AT_ONCE)
+    try:
+        running = {pool.submit(translate_part, code, items_of(offset),
+                               "\n".join(line["source"] for line in lines[max(0, offset - 4):offset])): offset for offset in starts}
+        while running:
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in finished:
+                texts, spent = future.result()
+                results[running.pop(future)] = texts
+                cost += spent
+            progress(pid, job, round(95 * len(results) / len(starts)), f"Перекладаємо: готово {len(results)} з {len(starts)} частин")
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return [text for offset in starts for text in results[offset]], cost
+
+
+def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str], float]:
+    """One part of the lines; `before` holds the original lines just before it, for context."""
+    cost = 0.0
+    system = translator(code) + (
+        "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
+        "only `seconds` to be said. Translate every line so a narrator says it naturally within that time: about "
+        "`max_chars` characters or fewer, shorter wording where needed, the meaning kept. The rules above apply inside each "
+        "line: a line may hold several short sentences, but it stays one line. Keep the lines one to one: never merge, "
+        "split, drop or move words between them. Answer with a JSON object only: each line's `id` as the key and its "
+        "translation as the value, every id present.") + (f"\n\nThe original lines just before, for context only (do not translate them):\n{before}" if before else "")
+    # each line carries its id, so an answer that lost or merged a line keeps every line it did translate; the rest are
+    # asked again, and a line still missing is translated alone (user, 2 November 2026: «Перекладач двічі повернув не ту
+    # кількість фраз»)
+    got, pending = {}, list(range(len(items)))
+    for attempt in range(2):
+        ask_items = [dict(items[k], id=k + 1) for k in pending]
+        answer, spent = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(ask_items, ensure_ascii=False)}])
         cost += spent
-        done += fixed
-    return done, cost
+        for k, text in line_answers(answer, [k + 1 for k in pending]).items():
+            got[k - 1] = text
+        pending = [k for k in pending if k not in got]
+        if not pending:
+            break
+    for k in pending:
+        alone = translator(code) + (
+            f"\n\nThis is one line of a dubbed voice-over; it has {items[k]['seconds']} seconds to be said, about "
+            f"{items[k]['max_chars']} characters or fewer. Answer with its translation only, one line.") + (
+            f"\n\nThe original lines just before, for context only (do not translate them):\n{before}" if before else "")
+        answer, spent = ask([{"role": "system", "content": alone}, {"role": "user", "content": items[k]["text"]}], 2000)
+        cost += spent
+        text = " ".join(answer.strip().strip('"«»').split())
+        if not text:
+            raise RuntimeError("Перекладач не повернув переклад однієї фрази. Спробуйте ще раз")
+        got[k] = text
+    fixed, spent = speakable(code, [got[k] for k in range(len(items))])
+    cost += spent
+    return fixed, cost
 
 
 def translate(pid: str, code: str, job: dict) -> None:

@@ -528,6 +528,37 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in json.loads(asked[1])], [3])
         self.assertEqual(asked[2], "Line 2.")
 
+    def test_the_translator_answers_without_reasoning_and_never_empty(self):
+        # user, 2 November 2026: «довгувато діпсік працює»; «Перекладач не повернув переклад однієї фрази»
+        sent = []
+        replies = iter([RuntimeError("OpenRouter: помилка 400. reasoning is mandatory"),
+                        json.dumps({"choices": [{"message": {"content": ""}, "finish_reason": "length"}], "usage": {"cost": 0.001}}),
+                        json.dumps({"choices": [{"message": {"content": "Привіт"}, "finish_reason": "stop"}], "usage": {"cost": 0.002}})])
+        def request(url, body, headers, what):
+            sent.append(json.loads(body))
+            reply = next(replies)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply.encode()
+        with patch.object(languages, "request", side_effect=request):
+            text, cost = languages.ask([{"role": "user", "content": "Hi"}], 600)
+        self.assertEqual((text, round(cost, 4)), ("Привіт", 0.003))
+        self.assertEqual(sent[0]["reasoning"], {"enabled": False})
+        self.assertNotIn("reasoning", sent[1])                   # a model that must reason is asked again with it
+        self.assertEqual((sent[1]["max_tokens"], sent[2]["max_tokens"]), (600, 4000))   # an empty, cut answer gets more room
+
+    def test_parts_of_a_long_text_are_translated_side_by_side_in_order(self):
+        names = [chr(0x430 + i % 32) * (1 + i // 32) for i in range(70)]       # no digits: no speech fix asked
+        lines = [{"start": i * 2.0, "end": i * 2.0 + 1.5, "source": f"Line {name}."} for i, name in enumerate(names)]
+        def ask(messages, max_tokens=12000):
+            items = json.loads(messages[1]["content"])
+            time.sleep(0.05)
+            return json.dumps({str(item["id"]): item["text"].replace("Line", "Рядок") for item in items}), 0.01
+        with patch.object(languages, "ask", side_effect=ask), patch.object(languages, "progress"):
+            texts, cost = languages.translate_lines("uk", lines, 140.0, self.pid, {"key": "x"})
+        self.assertEqual(texts, [f"Рядок {name}." for name in names])
+        self.assertAlmostEqual(cost, 0.03)
+
     def test_the_translation_is_written_to_be_heard(self):
         # user, 2 November 2026: «1999-го — такі речення погані… краще слова тисяча дев'ятсот…»
         self.assertIn("1999-го", languages.translator("uk"))
