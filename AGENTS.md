@@ -301,7 +301,7 @@ bytes); their keys are «Ключі сервісів» (`credentials.DEFAULTS`).
 Work files stay in `data/projects/<id>/languages/<code>`; text, title, voice and thumbnail are copied to
 `<episode>/Мови/<language>/`. One job a project (`languages.ACTIVE`, in the busy list); the tab works during an export.
 A language is added with its select and «Перекласти» (picking alone starts nothing); the voice service is chosen in a
-card's voice step. «Скасувати» on the running line stops a job (`languages.cancel`): a translation or a voice at its
+card's voice step. «Скасувати» on the job's line, which sits in the step it works on inside the language's card, stops it (`languages.cancel`): a translation or a voice at its
 next part, the thumbnail at once (Codex killed); nothing half made is saved. The video is not changed. API: `GET /api/projects/<id>/languages`, `POST …/languages/provider`, `POST
 …/languages/<code>` (add), `…/<code>/remove`, `…/<code>/text`, `…/<code>/translate|sample|voice|thumbnail`, `POST …/languages/cancel`, `GET
 …/<code>/file/sample|voice|thumbnail`. Test: `backend/tests/test_languages.py`.

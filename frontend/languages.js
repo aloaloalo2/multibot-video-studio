@@ -36,7 +36,6 @@ function drawLangs(id){
   section.innerHTML=`<div class="lang-view">
     <div class="lang-head"><h1>Мови</h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
-    <div class="lang-job" role="status" aria-live="polite" hidden></div>
     <div class="lang-cards"></div>
     <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
   </div>`;
@@ -48,6 +47,7 @@ function drawLangs(id){
   go.addEventListener('click',async()=>{
     const code=pick.value;if(!code)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
+      document.querySelector(`#project-langs .lang-card[data-code="${code}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
       if(langData.openrouter===true)langStart(id,'translate',code);else status('Додайте ключ OpenRouter у налаштуваннях студії, щоб перекласти текст.',true);}catch(error){status(error.message,true);}
   });
   // the voice service is chosen inside each card's voice step and holds for the whole episode
@@ -69,7 +69,7 @@ function langCard(id,item,spec){
         <label class="lang-text"><span>Текст озвучки <small>${item.chars.toLocaleString('uk-UA')} символів · можна виправити перед озвучкою</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>
         <div class="lang-actions"><button type="button" class="secondary lang-retranslate">Перекласти заново</button><button type="button" class="primary lang-save" disabled>Зберегти правки</button></div>`
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
-    </section>
+    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
       ${item.text?`<div class="lang-provider"><div class="lang-segment" role="radiogroup" aria-label="Сервіс озвучки">${langData.providers.map(entry=>`<button type="button" role="radio" data-provider="${entry.id}" aria-checked="${entry.id===spec.id}" class="${entry.id===spec.id?'active':''}">${esc(entry.name)}${entry.configured===true?'':'<i title="Ключ не додано">!</i>'}</button>`).join('')}</div>
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
@@ -81,12 +81,12 @@ function langCard(id,item,spec){
           <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
         <div class="lang-actions"><button type="button" class="primary lang-voice-run">${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langMoney(price || 0)}</button></div>`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
-    </section>
+    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
       ${langData.thumbnail?`<div class="lang-thumbs"><figure><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy"><figcaption>До</figcaption></figure>
         <figure><button type="button" class="lang-thumb-run${item.files.thumbnail?' has-picture':''}" aria-label="${item.files.thumbnail?'Перекласти прев’ю ще раз':'Перекласти прев’ю'}">${item.files.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy">`:''}<span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>${item.files.thumbnail?'Перекласти ще раз':'Натисніть, щоб перекласти'}</small></span></button><figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption></figure></div>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
-    </section>`;
+    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
   for(const box of card.querySelectorAll('.lang-player')){
     const player=voicePlayer(id,langUrl(id,item.code,box.dataset.kind,box.dataset.kind==='voice'?voice.made_at:undefined));
     if(player)box.replaceWith(player);
@@ -130,8 +130,13 @@ async function langStart(id,kind,code){
 }
 
 function showLangJob(){
-  const box=document.querySelector('#project-langs .lang-job'),job=langData?.job;if(!box)return;
-  const busy=langBusy();
+  // the line sits in the step it works on, inside the language's own card (user, 2 November 2026: «не треба розкидати
+  // блоки… все в один блок»): the text for a translation, the voice for a sample or the whole, the thumbnail
+  const job=langData?.job,busy=langBusy();
+  const step={translate:0,sample:1,voice:1,thumbnail:2}[job?.kind];
+  const card=job?.code?document.querySelector(`#project-langs .lang-card[data-code="${job.code}"]`):null;
+  const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
+  for(const other of document.querySelectorAll('#project-langs .lang-job'))if(other!==box){other.hidden=true;other.closest('.lang-step')?.classList.remove('is-working');}
   document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute), #project-langs .lang-add select').forEach(button=>{
     if(button.classList.contains('lang-save'))return;button.disabled=busy;});
   const go=document.querySelector('#project-langs .lang-add-run');if(go)go.disabled=busy || !document.querySelector('#project-langs .lang-add select')?.value;
@@ -142,17 +147,18 @@ function showLangJob(){
     const label=tile.querySelector('.lang-thumb-wand small');
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex перекладає, 1–3 хвилини…':label.dataset.idle;}
   }
-  const name=job?.code?(langData.languages.find(item=>item.code===job.code)?.name || ''):'';
+  if(!box)return;
   const recent=job&&job.status!=='running'&&job.finished_at&&Date.now()/1000-job.finished_at<120;
   box.hidden=!job || (!busy && !recent);
   box.dataset.status=job?.status || '';
+  box.closest('.lang-step').classList.toggle('is-working',busy);
   if(box.hidden)return;
   // the poll redraws this line every 2 s: a cancel already asked for stays shown
   const asked=box.querySelector('.lang-cancel')?.disabled;
-  box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span><b>${esc(name)}: ${esc(job.what || '')}</b> · ${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${asked||job.stage==='Скасовуємо…'?' disabled':''}>${asked||job.stage==='Скасовуємо…'?'Скасовуємо…':'Скасувати'}</button>`
-    :job.status==='cancelled'?`<span><b>${esc(name)}: ${esc(job.what || '')} скасовано.</b> Нічого не збережено.</span>`
-    :job.status==='done'?`<span><b>${esc(name)}: ${esc(job.what || '')} готово.</b>${job.cost?` Витрачено ${langMoney(job.cost)}.`:''}</span>`
-    :`<span><b>${esc(name)}: ${esc(job.what || '')} не вдалося.</b> ${esc(job.error || '')}</span>`;
+  box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${asked||job.stage==='Скасовуємо…'?' disabled':''}>${asked||job.stage==='Скасовуємо…'?'Скасовуємо…':'Скасувати'}</button>`
+    :job.status==='cancelled'?`<span>Скасовано, нічого не збережено.</span>`
+    :job.status==='done'?`<span>Готово.${job.cost?` Витрачено ${langMoney(job.cost)}.`:''}</span>`
+    :`<span>Не вдалося: ${esc(job.error || '')}</span>`;
   box.querySelector('.lang-cancel')?.addEventListener('click',()=>langCancel(state.project.id));
 }
 
