@@ -402,6 +402,15 @@ class LanguagesTest(unittest.TestCase):
         self.assertAlmostEqual(voice["latest"], 0.95, delta=0.1)       # 3.0 + 3.0/1.25 = 5.4 against 4.5
         self.assertAlmostEqual(voice["duration"], 6, delta=0.15)       # the video's length: silence after the last line
 
+    def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
+        import io, urllib.error
+        body = b'{"message": "Insufficient API credit for this model. For text-to-speech you can generate for free right now with the model s2.1-pro-free"}'
+        refusal = urllib.error.HTTPError("https://api.fish.audio/v1/tts", 402, "Payment Required", {}, io.BytesIO(body))
+        with patch("urllib.request.urlopen", side_effect=refusal), self.assertRaises(RuntimeError) as caught:
+            languages.request("https://api.fish.audio/v1/tts", b"", {}, "Fish Audio")
+        self.assertIn("S2.1 Pro Free", str(caught.exception))
+        self.assertIn("баланс API", str(caught.exception))
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

@@ -60,10 +60,10 @@ FISH = "https://api.fish.audio"
 # fair use; the paid ones bill UTF-8 bytes. Every one clones the voice inline from a reference in the request
 # (MessagePack), so no voice model is created: a free account's model limit is 0.
 FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "note": "безкоштовно"},
-                "s2.1-pro": {"name": "S2.1 Pro", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"},
-                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"},
+                "s2.1-pro": {"name": "S2.1 Pro", "per_char": 15 / 1_000_000, "note": "платний, потрібен баланс API Fish"},
+                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "платний, потрібен баланс API Fish"},
                 # the expressive one (user: «чому драма не додав»); Fish's own page gave no price on 2 November 2026
-                "drama-3": {"name": "Drama 3", "per_char": None, "note": "найвиразніший, ціна на fish.audio"}}
+                "drama-3": {"name": "Drama 3", "per_char": None, "note": "найвиразніший, платний, потрібен баланс API Fish"}}
 FISH_ENGINE = "s2.1-pro-free"
 TRANSLATE_CHUNK = 5000
 VOICE_CHUNK = 2400
@@ -290,6 +290,9 @@ def request(url: str, data: bytes, headers: dict, what: str) -> bytes:
         except ValueError:
             detail = body
         money = re.search(r"credit|balance|quota|limit|payment|subscription|plan", str(detail), re.I)
+        if money and "free" in str(detail).lower() and "fish" in what.lower():
+            raise RuntimeError("Цей рушій Fish платний, а на рахунку API немає коштів. Поповніть баланс API на fish.audio "
+                               "(окремо від підписки на сайті) або оберіть безкоштовний рушій S2.1 Pro Free.") from None
         # Fish answers 403 «model creation limit reached (0/0). Top up API credit» to a valid key with no API balance
         hint = (" Ключ правильний, але на рахунку API цього сервісу немає коштів або тариф не дозволяє цю дію: поповніть баланс "
                 "API на сайті сервісу (він окремий від звичайної підписки)." if money and error.code in (401, 402, 403, 429)

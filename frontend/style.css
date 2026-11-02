@@ -1129,7 +1129,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-provider small{color:#9a9ca4;line-height:1.45}
 .lang-warn{color:#f5c24b}
 .lang-job{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;border-radius:12.5px;background:#1f1f24;font-size:13px;color:#c9cad0}
-.lang-job span{flex:none}
+.lang-job span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;line-height:1.45}
 .lang-job button.secondary{padding:5px 10px;font-size:13px}
 /* while a step works its own buttons give way to the line; the thumbnail keeps its window with the swinging wand */
 .lang-step.is-working>.lang-actions{display:none}
