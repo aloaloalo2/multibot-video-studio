@@ -95,7 +95,7 @@ function drawLangs(id){
         catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}}}]));
   });
   view.addEventListener('change',async event=>{
-    const select=event.target.closest('.lang-chip-select select, .lang-engine select');if(!select)return;
+    const select=event.target.closest('.lang-chip-select select[data-field], .lang-engine select[data-field]');if(!select)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:'fishaudio',[select.dataset.field || 'engine']:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
   });
   showLangJob();
@@ -106,6 +106,7 @@ function drawLangs(id){
 // episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
 const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+function langSampleSize(){let n=5;try{n=Number(localStorage.getItem('langSampleSentences')) || 5;}catch{}return [3,5,10,20].includes(n)?n:5;}
 function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Студія не змогла розпізнати слова в записі, тому Fish вважає, що прозвучав показаний уривок. Якщо в записі інші слова, голос може звучати дивно: запишіть заново, прочитавши саме уривок.</p>':'';}
 function langAddButtons(primary){
@@ -223,7 +224,8 @@ function langCard(id,item,spec){
           ${spec.configured===true?'':`<span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів»</span>`}</div>
         ${langOwnBlock(item)}
         <div class="lang-sample-row"><div class="lang-sample">${hasSample?`<span class="lang-sample-by" title="Чим зроблено цей зразок">Зразок<small>${esc([spec.engines?.find(engine=>engine.id===spec.engine)?.name,spec.styles?.find(style=>style.id===spec.style)?.name].filter(Boolean).join(' · ') || spec.name)}</small></span><div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div><button type="button" class="lang-icon lang-sample-run" title="Новий зразок" aria-label="Новий зразок">${langIcons.redo}</button>`
-            :`<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${langIcons.play}Послухати зразок<small>~1 хв</small></button>`}</div>
+            :`<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${langIcons.play}Послухати зразок</button>`}</div>
+          <label class="lang-chip-select lang-sample-size" title="Скільки речень озвучити в зразку"><span>Речень</span><select>${[3,5,10,20].map(n=>`<option value="${n}"${n===langSampleSize()?' selected':''}>${n}</option>`).join('')}</select></label>
           <button type="button" class="primary lang-voice-run" title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${readyVoice?'Озвучити заново':'Озвучити весь ролик'} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button></div>
         ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b>Готова озвучка</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
           <a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити MP3${item.folder?' · копія лежить у папці випуску':''}" aria-label="Завантажити MP3">${langDownloadIcon}</a></div>
@@ -278,7 +280,8 @@ function langCard(id,item,spec){
     if(area.value!==item.text)later();
   }
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
-  card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code);});
+  card.querySelector('.lang-sample-size select')?.addEventListener('change',event=>{try{localStorage.setItem('langSampleSentences',event.target.value);}catch{}});
+  card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code,{sentences:langSampleSize()});});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
     if(!(await flush()))return;
     const fresh=langData.items.find(entry=>entry.code===item.code) || item,cost=fresh.prices&&spec.id in fresh.prices?fresh.prices[spec.id]:price,chars=fresh.chars ?? item.chars;

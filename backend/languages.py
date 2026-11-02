@@ -857,7 +857,15 @@ def drop_samples(work: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def sample_text(text: str) -> str:
+SAMPLE_SENTENCES = (3, 5, 10, 20)
+
+
+def sample_text(text: str, sentences: int | None = None) -> str:
+    """The sample's words: the first `sentences` sentences when the author chose how many (user, 2 November 2026: «тест
+    вибирати, скільки речень тестити»), else about a minute of them."""
+    if sentences:
+        found = [part.strip() for part in re.split(r"(?<=[.!?…])\s+|\n+", text.strip()) if part.strip()]
+        return " ".join(found[:sentences])
     sentences = re.split(r"(?<=[.!?…])\s+", text.strip())
     out = ""
     for sentence in sentences:
@@ -875,7 +883,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     progress(pid, job, 50, "Озвучуємо зразок")
     if pid in CANCEL:
         raise Stop()
-    piece = sample_text(text)
+    piece = sample_text(text, job.get("sentences"))
     # each voice (a provider, and Fish's engine) keeps its own sample, so switching between them compares them
     speak(provider, voice, piece, work_dir(pid, code) / f"sample-{voice_key(pid, provider, code)}.mp3")
     job["cost"] = price(provider, piece, fish_engine(pid))
@@ -1193,7 +1201,7 @@ def cancel(pid: str) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None) -> dict:
     check_code(code)
     if kind not in WORK:
         raise store.StudioError("Невідома дія", 404)
@@ -1226,7 +1234,8 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         ACTIVE.add(pid)
         job = {"status": "running", "kind": kind, "code": code, "provider": provider, "progress": 0, "stage": "Починаємо",
                "what": NAMES[kind], "started_at": time.time(),
-               **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {})}
+               **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {}),
+               **({"sentences": int(sentences)} if kind == "sample" and str(sentences or "").isdigit() and int(sentences) in SAMPLE_SENTENCES else {})}
         data = load_state(pid)
         data["job"] = dict(job)
         data.setdefault("languages", {}).setdefault(code, {})

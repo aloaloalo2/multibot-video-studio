@@ -1308,3 +1308,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-voice .voice-player{margin:0}
 .lang-sample-by{display:grid;flex:none;font-size:12.5px;color:#c9cad0;min-width:110px}
 .lang-sample-by small{font-size:11.5px;color:#7c7e86}
+/* the sentence count stands right beside the sample; only a sample with its player takes the row's room */
+.lang-sample-row .lang-sample{flex:0 1 auto;min-width:0}
+.lang-sample-row .lang-sample:has(.voice-player){flex:1;min-width:260px}

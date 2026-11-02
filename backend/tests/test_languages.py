@@ -455,6 +455,12 @@ class LanguagesTest(unittest.TestCase):
         languages.save_text(self.pid, "de", "Ganz anders.")
         self.assertFalse(current())                                   # other words
 
+    def test_the_sample_takes_as_many_sentences_as_chosen(self):
+        text = "Один. Два! Три?\nЧотири. П'ять. Шість."
+        self.assertEqual(languages.sample_text(text, 3), "Один. Два! Три?")
+        self.assertEqual(languages.sample_text(text, 5), "Один. Два! Три? Чотири. П'ять.")
+        self.assertEqual(languages.sample_text(text, 20), "Один. Два! Три? Чотири. П'ять. Шість.")
+
     def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
         import io, urllib.error
         body = b'{"message": "Insufficient API credit for this model. For text-to-speech you can generate for free right now with the model s2.1-pro-free"}'
