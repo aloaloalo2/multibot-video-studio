@@ -97,6 +97,11 @@ class EpisodeStoreTest(unittest.TestCase):
                 project = store.load_project(project["id"])
                 project["assets"] = [{"id": "b" * 20, "kind": "audio", "path": str(root / "gone.wav")}]
                 self.assertEqual(store.resolve_asset(project, "b" * 20)["path"], str(razgon / "input" / "voice.wav"))
+                # a copy of the voice under another id, laid over the whole film, plays the same voice
+                project["duration"] = 60
+                project["assets"].append({"id": "c" * 20, "kind": "audio", "path": str(root / "gone-copy.wav")})
+                project["tracks"][0]["clips"] = [{"id": "v", "kind": "audio", "asset_id": "c" * 20, "start": 0, "duration": 60, "title": "Озвучка"}]
+                self.assertEqual(store.resolve_asset(project, "c" * 20)["path"], str(razgon / "input" / "voice.wav"))
 
 
 if __name__ == "__main__":

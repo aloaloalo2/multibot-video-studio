@@ -96,10 +96,28 @@ def razgon_voice(project: dict, aid: str) -> Path | None:
     razgon = Path(link["project"])
     frames = read_json(razgon / "story" / "studio_frames.json", None)
     config = read_json(razgon / "config.json", None)
-    if not isinstance(frames, dict) or frames.get("voice_asset_id") != aid or not isinstance(config, dict) or not config.get("voiceover"):
+    if not isinstance(config, dict) or not config.get("voiceover"):
         return None
     voice = razgon / config["voiceover"]
-    return voice if voice.is_file() else None
+    if not voice.is_file():
+        return None
+    # the voice by its id (the bridge's record), the plan's voice, or the sound clip that runs the whole film from its
+    # start: a copy put on the timeline under another id is the same voice (user, 2 November 2026: «озвучка пропала»)
+    if isinstance(frames, dict) and frames.get("voice_asset_id") == aid:
+        return voice
+    try:
+        plan_voice = (((load_project_plan(project["id"]) or {}).get("timing") or {}).get("audio") or {}).get("asset_id")
+    except (StudioError, OSError, ValueError, KeyError):
+        plan_voice = None
+    if plan_voice == aid:
+        return voice
+    film = float(project.get("duration") or 0) or float((frames or {}).get("duration") or 0)
+    for track in project.get("tracks", []):
+        for clip in track.get("clips", []):
+            if (clip.get("asset_id") == aid and clip.get("kind") == "audio" and float(clip.get("start") or 0) < 0.5
+                    and film and float(clip.get("duration") or 0) >= 0.9 * film and "музика" not in (clip.get("title") or "").lower()):
+                return voice
+    return None
 
 
 def razgon_rel() -> str:
@@ -1324,6 +1342,11 @@ def resolve_asset(project: dict, aid: str) -> dict:
             voice = razgon_voice(project, aid) if not path.is_file() else None
             if voice:
                 return {**asset, 'path': str(voice), 'kept': True}
+            # Razgon's music and effects bed, as its project keeps it after a render
+            link = razgon_link(project) if not path.is_file() and path.name.startswith('music_sfx') else None
+            bed = Path(link['project']) / 'build' / 'studio' / 'music_sfx.wav' if link else None
+            if bed and bed.is_file():
+                return {**asset, 'path': str(bed), 'kept': True}
     # a file new in the folder since the last walk is looked for once more with a fresh one
     found = next((a for a in discovered(project) if a["id"] == aid), None)
     if found is None:

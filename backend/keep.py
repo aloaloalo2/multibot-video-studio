@@ -39,8 +39,17 @@ def keep_project(pid: str) -> int:
         if asset.get("id") not in used:
             continue
         source, target = Path(asset.get("path") or ""), kept_path(pid, asset["id"])
-        if target.is_file() or not source.is_file():
+        if target.is_file():
             continue
+        if not source.is_file():
+            # gone from the episode folder: copied from where the studio still finds it (Razgon's voice, its bed)
+            try:
+                found = store.resolve_asset(project, asset["id"])
+            except (store.StudioError, OSError):
+                continue
+            source = Path(found["path"])
+            if not source.is_file() or source.suffix == ".m4a" and source.parent.name == "kept":
+                continue
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_name(target.stem + ".tmp.m4a")
         try:
