@@ -1088,9 +1088,15 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/original", path)
         if match:
             return self.serve_media(languages.original_file(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/original/thumbnail", path)
+        if match:
+            cover = languages.cover(store.load_project(match.group(1)))
+            if not cover:
+                raise store.StudioError("Прев'ю ще немає", 404)
+            return self.serve_media(cover, download=(query.get("download") or [None])[0])
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/file/(sample-[a-z0-9.\-]+|voice|thumbnail|own)", path)
         if match:
-            return self.serve_media(languages.file_path(*match.groups()))
+            return self.serve_media(languages.file_path(*match.groups()), download=(query.get("download") or [None])[0])
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
             store.load_project(match.group(1))
@@ -1255,7 +1261,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(languages.remove_own_voice(pid, code))
             if action == "text":
                 return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
-            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"))}, 202)
+            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
@@ -1420,7 +1426,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def serve_media(self, path: Path, cache=False):
+    def serve_media(self, path: Path, cache=False, download: str | None = None):
         size = path.stat().st_size
         start, end, status = 0, size - 1, 200
         range_header = self.headers.get("Range")
@@ -1439,6 +1445,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(end - start + 1))
         self.send_header("Accept-Ranges", "bytes")
         if cache:self.send_header('Cache-Control','private, max-age=31536000, immutable')
+        if download:      # a file the author saves: its own name, Cyrillic kept (RFC 5987)
+            plain = re.sub(r"[^A-Za-z0-9._ -]+", "_", download).strip("_ ") or "file"
+            self.send_header("Content-Disposition", f'attachment; filename="{plain}"; filename*=UTF-8\'\'' + urllib.parse.quote(download))
         self.send_header("X-Content-Type-Options", "nosniff")
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")

@@ -6,6 +6,7 @@
 const langDrafts={};
 let langData=null,langPolling=false;
 
+const langDownloadIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>';
 function langCost(spec,value){return spec?.free?'безкоштовно':value===null?'ціна на fish.audio':langMoney(value || 0);}
 function langMoney(value){return value>=0.01?`≈ $${value.toFixed(2).replace('.',',')}`:'менше $0,01';}
 function langUrl(id,code,kind,stamp){return `/api/projects/${encodeURIComponent(id)}/languages/${code}/file/${kind}?v=${stamp || Date.now()}`;}
@@ -148,13 +149,17 @@ function langCard(id,item,spec){
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
           <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
           ${item.folder?`<small class="lang-folder">Файл у папці випуску: ${esc(item.folder)}</small>`:''}
-          <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
+          <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
         <div class="lang-actions"><button type="button" class="primary lang-voice-run">${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langCost(spec,price)}</button></div>`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
-      ${langData.thumbnail?`<div class="lang-thumbs"><figure><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy"><figcaption>До</figcaption></figure>
-        <figure><button type="button" class="lang-thumb-run${item.files.thumbnail?' has-picture':''}" aria-label="${item.files.thumbnail?'Перекласти прев’ю ще раз':'Перекласти прев’ю'}">${item.files.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy">`:''}<span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>${item.files.thumbnail?'Перекласти ще раз':'Натисніть, щоб перекласти'}</small></span></button><figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption></figure></div>`
+      ${langData.thumbnail?`<div class="lang-thumbs"><figure class="lang-thumb"><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy">
+          <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>До</figcaption></figure>
+        <figure class="lang-thumb">${item.files.thumbnail?`<div class="lang-thumb-run has-picture"><img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Перекласти ще раз</small></span></div>
+          <div class="project-actions lang-thumb-actions"><button type="button" class="project-action thumbnail lang-thumb-redo" title="Перекласти ще раз" aria-label="Перекласти прев’ю ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю ${esc(item.name)}">${langDownloadIcon}</a></div>`
+          :`<button type="button" class="lang-thumb-run" aria-label="Перекласти прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб перекласти</small></span></button>`}<figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption></figure></div>
+        <label class="lang-thumb-wishes"><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
   for(const box of card.querySelectorAll('.lang-player')){
@@ -203,7 +208,9 @@ function langCard(id,item,spec){
       <p>Студія склеїть частини, вирівняє гучність і піджене довжину під ролик. Зазвичай це кілька хвилин.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
   });
-  card.querySelector('.lang-thumb-run')?.addEventListener('click',()=>langStart(id,'thumbnail',item.code));
+  const wishes=card.querySelector('.lang-thumb-wishes input');
+  wishes?.addEventListener('input',()=>{langDrafts[`${id}:${item.code}:wishes`]=wishes.value;});
+  card.querySelectorAll('button.lang-thumb-run, .lang-thumb-redo').forEach(button=>button.addEventListener('click',()=>langStart(id,'thumbnail',item.code,{wishes:wishes?.value || ''})));
   langOwnWire(id,card,item);
   return card;
 }
@@ -229,9 +236,9 @@ async function langCancel(id){
   try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{});}catch(error){langNote(button,error.message,true);}
 }
 
-async function langStart(id,kind,code){
+async function langStart(id,kind,code,extra={}){
   try{
-    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider});
+    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider,...extra});
     langPlace(code,kind)?.querySelector(':scope > .lang-note')?.remove();
     langData.job=job;showLangJob();pollLangs(id);
   }catch(error){langNote(langPlace(code,kind),error.message,true);}

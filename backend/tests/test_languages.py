@@ -289,6 +289,31 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(recognise.call_args.kwargs["language"], "uk")
         self.assertEqual(languages.own_voice(self.pid, "uk")["text"], "Привіт це я говорю українською мовою")
 
+    def test_the_thumbnail_is_translated_with_the_authors_wishes(self):
+        from PIL import Image
+        import thumbnail_gen
+        cover = self.studio / "preview" / "Превью.png"
+        cover.parent.mkdir()
+        Image.new("RGB", (64, 36)).save(cover)
+        prompts = []
+        class Codex:
+            def __init__(self, command, cwd, **kwargs):
+                self.cwd, self.returncode, self.pid = Path(cwd), 0, 0
+            def communicate(self, prompt, timeout=None):
+                prompts.append(prompt)
+                Image.new("RGB", (64, 36), "red").save(self.cwd / "thumbnail-new.png")
+                return "", ""
+            def poll(self):
+                return 0
+        languages.add(self.pid, "de")
+        with patch.object(thumbnail_gen, "CODEX", self.voice), patch.object(languages.subprocess, "Popen", Codex):
+            languages.start(self.pid, "thumbnail", "de", wishes="напис жовтий")
+            self.assertEqual(self.wait()["status"], "done")
+        self.assertIn("into German", prompts[0])
+        self.assertIn("напис жовтий", prompts[0])
+        self.assertTrue(languages.file_path(self.pid, "de", "thumbnail").is_file())
+        self.assertTrue((self.episode / "Мови" / "Deutsch" / "Прев'ю Deutsch.png").is_file())
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

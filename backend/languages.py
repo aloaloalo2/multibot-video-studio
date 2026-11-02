@@ -713,6 +713,10 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
     (work / name).unlink(missing_ok=True)
     title = ((load_state(pid).get("languages") or {}).get(code) or {}).get("title")
     hint = f'\nThe video\'s title in {ENGLISH[code]} is "{title}", if it helps to choose the words.' if title else ""
+    # the author's own wishes for this translation (user, 2 November 2026: «побажання… свої… щоб було додати»)
+    wishes = str(job.get("wishes") or "").strip()
+    if wishes:
+        hint += f"\nThe author's wishes (in Ukrainian or Russian), they come first:\n{wishes[:1500]}"
     prompt = f"""Edit the attached YouTube thumbnail: translate every word written on it into {ENGLISH[code]}.
 Keep the translation as short and punchy as the original, in the same font style, size, colours, outline and position.{hint}
 Change nothing else: the composition, the characters, the faces, the style, the colours and the background stay exactly
@@ -873,7 +877,7 @@ def cancel(pid: str) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None) -> dict:
     check_code(code)
     if kind not in WORK:
         raise store.StudioError("Невідома дія", 404)
@@ -905,7 +909,8 @@ def start(pid: str, kind: str, code: str, provider: str | None = None) -> dict:
             raise store.StudioError("Зачекайте, доки закінчиться попередня дія", 409)
         ACTIVE.add(pid)
         job = {"status": "running", "kind": kind, "code": code, "provider": provider, "progress": 0, "stage": "Починаємо",
-               "what": NAMES[kind], "started_at": time.time()}
+               "what": NAMES[kind], "started_at": time.time(),
+               **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {})}
         data = load_state(pid)
         data["job"] = dict(job)
         data.setdefault("languages", {}).setdefault(code, {})

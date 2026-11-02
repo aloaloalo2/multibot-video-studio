@@ -1175,15 +1175,14 @@ select option{background:#232327;color:#f1f1f2}
 .lang-thumbs img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12.5px;border:1px solid #35353a;background:#111113}
 /* the «after» window is the button itself: a magic wand in the middle of an empty frame, over the picture once made */
 .lang-thumb-run{position:relative;display:block;width:100%;aspect-ratio:16/9;padding:0;border:1px dashed #4a4a52;border-radius:12.5px;background:#111113;color:#c9cad0;cursor:pointer;overflow:hidden}
-.lang-thumb-run.has-picture{border-style:solid;border-color:#35353a}
+.lang-thumb-run.has-picture{border-style:solid;border-color:#35353a;cursor:default}
 .lang-thumb-run img{position:absolute;inset:0;height:100%;border:0;border-radius:0}
 .lang-thumb-wand{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;transition:background .2s,opacity .2s}
 .lang-thumb-wand svg{width:46px;height:46px;fill:none;stroke:#6bf2ae;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 10px #6bf2ae66);transition:transform .2s}
 .lang-thumb-wand small{font-size:13px;color:#c9cad0}
-.lang-thumb-run:hover:not(:disabled){border-color:#6bf2ae88;box-shadow:0 0 22px #6bf2ae26}
-.lang-thumb-run:hover:not(:disabled) .lang-thumb-wand svg{transform:rotate(-12deg) scale(1.08)}
+.lang-thumb-run:not(.has-picture):hover:not(:disabled){border-color:#6bf2ae88;box-shadow:0 0 22px #6bf2ae26}
+.lang-thumb-run:not(.has-picture):hover:not(:disabled) .lang-thumb-wand svg{transform:rotate(-12deg) scale(1.08)}
 .lang-thumb-run.has-picture .lang-thumb-wand{opacity:0;background:#0b0b0dcc}
-.lang-thumb-run.has-picture:hover:not(:disabled) .lang-thumb-wand,.lang-thumb-run.has-picture:focus-visible .lang-thumb-wand{opacity:1}
 .lang-thumb-run:disabled{cursor:default;opacity:.6}
 .lang-thumb-run.is-drawing{opacity:1}
 .lang-thumb-run.is-drawing .lang-thumb-wand{opacity:1}
@@ -1222,3 +1221,13 @@ select option{background:#232327;color:#f1f1f2}
 .lang-original-row .lang-off{flex:1}
 /* the plan page's player keeps a margin for its own box; on «Мови» it sits flush, so it is centred in its row */
 .lang-view .voice-player{margin:0}
+/* a picture's buttons, as on the episode cards: they show over its top right corner when the pointer is on it */
+.lang-thumb{position:relative}
+.lang-thumb-actions{position:absolute;top:8px;right:8px;z-index:2;opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s}
+.lang-thumb:hover .lang-thumb-actions,.lang-thumb:focus-within .lang-thumb-actions{opacity:1;transform:none}
+.lang-thumb-actions .project-action{background:rgba(12,12,16,.62);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:9.5px;text-decoration:none}
+.lang-thumb-actions .project-action.thumbnail svg{stroke:#6bf2ae}
+.lang-thumb-wishes{display:grid;gap:6px}
+.lang-thumb-wishes span{font-size:13px;color:#9a9ca4}
+.lang-thumb-wishes em{font-style:normal;color:#6f7179;font-size:12px;margin-left:4px}
+.lang-thumb-wishes input{width:100%;background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:9px 12px}

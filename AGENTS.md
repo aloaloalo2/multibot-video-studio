@@ -295,7 +295,7 @@ paragraph chunks, editable; saving drops the old sample), the voice (the author'
 episode from the first 90 s of the plan's voice, `clones` in `languages.json`; a sample of about 320 characters first, one for each voice (`sample-<voice_key>.mp3`: the provider, and Fish's engine), so switching plays that voice's own sample and the button shows only while it has none;
 the whole text voiced in parts of ≤2400 characters with the neighbours as context, glued, −16 LUFS / −1.5 dBTP, sped up by
 at most `FIT_MAX` when longer than the video, padded with silence when shorter; the price is shown before and asked in
-a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated; the «after» window itself is the button, a magic wand in the middle, over the picture once made). Providers:
+a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated; the «after» window itself is the button, a magic wand in the middle; once made, both pictures carry the episode cards' round buttons in their corner on hover: «Перекласти ще раз» and «Завантажити» (`?download=` names the file, `Content-Disposition`; the original from `GET …/languages/original/thumbnail`), and an optional «Побажання» line goes to Codex with the translation). Providers:
 ElevenLabs (`eleven_multilingual_v2`, every language, cloning needs a paid plan) and Fish Audio with a choice of
 engine (`FISH_ENGINES`: S2.1 Pro Free by default, free under fair use; S2.1 Pro and S1 billed by UTF-8 bytes; Drama 3, the expressive one, with no price named by Fish yet, shown as «ціна на fish.audio»). Fish
 clones inline: every request carries, as MessagePack (`languages.msgpack`), about 22 s of the voice's start cut after a
