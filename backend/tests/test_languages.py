@@ -195,6 +195,18 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue(data["voice"])
         self.assertAlmostEqual(data["duration"], 6, delta=0.1)
 
+    def test_the_originals_language_is_found_once(self):
+        # the setUp script is Ukrainian; a recognition's language wins and is kept after
+        self.assertEqual(languages.overview(self.pid)["source"]["language"], "uk")
+        self.assertEqual(languages.load_state(self.pid)["original_language"], "uk")
+        self.assertEqual(languages.guess_language("Привет, это тест"), "ru")
+        self.assertEqual(languages.guess_language("Hello there"), "en")
+        languages.update(self.pid, lambda data: data.pop("original_language"))
+        (self.studio / "analysis" / "j1").mkdir(parents=True)
+        store.atomic_json(self.studio / "analysis-state.json", {"job_id": "j1"})
+        store.atomic_json(self.studio / "analysis" / "j1" / "result.json", {"engine": {"language": "de"}})
+        self.assertEqual(languages.original_language(self.pid, self.project, "Перше речення."), "de")
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

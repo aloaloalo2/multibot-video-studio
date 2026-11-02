@@ -37,7 +37,7 @@ function drawLangs(id){
     <div class="lang-head"><h1>Мови</h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
     <div class="lang-cards"></div>
-    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
+    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
   </div>`;
   const cards=section.querySelector('.lang-cards');
   if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Перекласти».</p>';
@@ -62,8 +62,9 @@ function drawLangs(id){
 // The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
 // оригінала, длительність, послухати можна»).
 function langOriginal(id,src){
+  const original=langData.languages.find(item=>item.code===src.language);
   const card=document.createElement('article');card.className='lang-card lang-original';
-  card.innerHTML=`<header><h2>Оригінал</h2><span>ваша озвучка</span></header>
+  card.innerHTML=`<header><h2>Оригінал${original?` (${esc(original.label)})`:''}</h2><span>ваша озвучка</span></header>
     <section class="lang-step">${src.voice?'<div class="lang-player"></div>':'<p class="lang-off">Озвучку випуску не знайдено. Додайте її на вкладці «План ролика».</p>'}
       <p class="lang-original-facts">${src.duration?`<b>${clock(src.duration)}</b> озвучки`:''}${src.duration&&src.chars?' · ':''}${src.chars?`${src.chars.toLocaleString('uk-UA')} символів тексту`:''}</p></section>`;
   const slot=card.querySelector('.lang-player');

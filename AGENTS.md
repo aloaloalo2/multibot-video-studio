@@ -303,7 +303,7 @@ Work files stay in `data/projects/<id>/languages/<code>`; text, title, voice and
 A language is added with its select and «Перекласти» (picking alone starts nothing); the voice service is chosen in a
 card's voice step. «Скасувати» on the job's line, which sits in the step it works on inside the language's card, stops it (`languages.cancel`): a translation or a voice at its
 next part, the thumbnail at once (Codex killed); nothing half made is saved. The «Оригінал» card leads the page: the episode's own voice to listen to, its length and the script's characters
-(`languages.original_file`, `voice_file`: the plan's asset, the levelled voice of `audio_gain`, the sound clip that
+(its language in brackets, found once: Whisper's `engine.language` of the latest recognition, else `guess_language` from the script, kept as `original_language`; the add select leaves it out) (`languages.original_file`, `voice_file`: the plan's asset, the levelled voice of `audio_gain`, the sound clip that
 starts the film, a path in the timings, the Razgon project's voiceover). Text and title edits save by themselves a
 moment after typing stops (no save button); the tab's messages stand in the step where the button was pressed
 (`langNote`), not in the studio's banner. The video is not changed. API: `GET /api/projects/<id>/languages`, `POST …/languages/provider`, `POST

@@ -212,6 +212,7 @@ def overview(pid: str) -> dict:
             "providers": [{"id": key, "name": spec["name"], "note": spec["note"], "configured": configured.get(key)} for key, spec in PROVIDERS.items()],
             "openrouter": configured.get("openrouter"),
             "source": {"chars": len(src["script"]), "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
+                       "language": original_language(pid, project, src["script"]),
                        "estimate": {key: price(key, src["script"]) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             "provider": data.get("provider") or "elevenlabs", "job": data.get("job"),
@@ -246,7 +247,11 @@ def request(url: str, data: bytes, headers: dict, what: str) -> bytes:
                 detail = detail.get("message") or detail.get("status") or json.dumps(detail, ensure_ascii=False)
         except ValueError:
             detail = body
-        hint = " Перевірте ключ." if error.code in (401, 403) else " Перевірте баланс або тариф." if error.code in (402, 429) else ""
+        money = re.search(r"credit|balance|quota|limit|payment|subscription|plan", str(detail), re.I)
+        # Fish answers 403 «model creation limit reached (0/0). Top up API credit» to a valid key with no API balance
+        hint = (" Ключ правильний, але на рахунку API цього сервісу немає коштів або тариф не дозволяє цю дію: поповніть баланс "
+                "API на сайті сервісу (він окремий від звичайної підписки)." if money and error.code in (401, 402, 403, 429)
+                else " Перевірте ключ." if error.code in (401, 403) else " Перевірте баланс або тариф." if error.code in (402, 429) else "")
         raise RuntimeError(f"{what}: помилка {error.code}. {str(detail)[:300]}{hint}") from None
     except OSError as error:
         raise RuntimeError(f"{what} не відповів: {error}") from None
@@ -544,6 +549,41 @@ def copy_out(project: dict, code: str, what: str) -> None:
                 (folder / f"Заголовок {name}.txt").write_text(title + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def guess_language(text: str) -> str | None:
+    """The script's language by its letters, when the recognition did not name it."""
+    sample = text[:20000].lower()
+    if re.search("[іїєґ]", sample):
+        return "uk"
+    if re.search("[ыэъё]", sample):
+        return "ru"
+    if re.search("[а-я]", sample):
+        return "ru"
+    if re.search("[äöüß]", sample):
+        return "de"
+    if re.search("[ñ¿¡]", sample):
+        return "es"
+    if re.search("[a-z]", sample):
+        return "en"
+    return None
+
+
+def original_language(pid: str, project: dict, script: str) -> str | None:
+    """The voice's language, found once and kept (user, 2 November 2026: «один раз має розпізнатися»): the language
+    Whisper heard in the latest recognition, else a guess from the script's letters."""
+    data = load_state(pid)
+    if data.get("original_language") in LANGUAGES:
+        return data["original_language"]
+    found = None
+    pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {}) or {}
+    if pointer.get("job_id"):
+        report = store.read_json(store.project_dir(pid) / "analysis" / pointer["job_id"] / "result.json", {}) or {}
+        found = str(((report.get("engine") or {}).get("language")) or "").lower()[:2] or None
+    found = found if found in LANGUAGES else guess_language(script)
+    if found:
+        update(pid, lambda data: data.__setitem__("original_language", found))
+    return found
 
 
 def original_file(pid: str) -> Path:
