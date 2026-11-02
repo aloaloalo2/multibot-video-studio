@@ -490,6 +490,24 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn("S2.1 Pro Free", str(caught.exception))
         self.assertIn("баланс API", str(caught.exception))
 
+    def test_the_translation_is_written_to_be_heard(self):
+        # user, 2 November 2026: «1999-го — такі речення погані… краще слова тисяча дев'ятсот…»
+        self.assertIn("1999-го", languages.translator("uk"))
+        self.assertIn("in words", languages.translator("uk"))
+        asked = []
+        def ask(messages, max_tokens=12000):
+            asked.append(json.loads(messages[1]["content"]))
+            return json.dumps(["У тисяча дев'ятсот дев'яносто дев'ятому році все змінилось."]), 0.01
+        with patch.object(languages, "ask", side_effect=ask):
+            texts, cost = languages.speakable("uk", ["Все гаразд.", "У 1999-го все змінилось.", "Так."])
+        self.assertEqual(asked, [["У 1999-го все змінилось."]])       # only the line with digits goes back
+        self.assertEqual(texts[1], "У тисяча дев'ятсот дев'яносто дев'ятому році все змінилось.")
+        self.assertEqual((texts[0], texts[2], cost), ("Все гаразд.", "Так.", 0.01))
+        with patch.object(languages, "ask", side_effect=AssertionError):
+            self.assertEqual(languages.speakable("uk", ["Без цифр."]), (["Без цифр."], 0.0))
+        with patch.object(languages, "ask", return_value=("не масив", 0.01)):
+            self.assertEqual(languages.speakable("uk", ["20% людей"])[0], ["20% людей"])
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

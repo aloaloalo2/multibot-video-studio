@@ -395,11 +395,58 @@ def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     return re.sub(r"^```\w*\n|\n```$", "", text).strip(), float(cost) if isinstance(cost, (int, float)) else 0.0
 
 
+# The translation is written to be heard, not read (user, 2 November 2026: «1999-го — такі речення погані… краще слова
+# тисяча дев'ятсот… щоб було плавно, адаптовано на голос і сприймалось не важко на слух»): the rules go to every
+# translation, shortening and fix, and a line that still holds digits or symbols is rewritten once more (`speakable`).
+SPEECH_RULES = """Rules for a text that is read aloud:
+1. Write every number in words, in the grammatical form the sentence needs (case, gender, agreement with the noun), as a
+   native speaker says it. Years too: Ukrainian «у тисяча дев'ятсот дев'яносто дев'ятому році», Russian «в тысяча
+   девятьсот девяносто девятом году», English «in nineteen ninety-nine» — never «1999-го», «1999 року» or «в 1999 г.».
+   Dates, times, ages, percentages, money, fractions, ordinals, ranges and measures the same way: «двадцять відсотків»,
+   «з п'ятого по сьоме березня», «близько трьох тисяч доларів», «два з половиною кілометри».
+2. No digits, symbols or shorthand at all: no %, $, €, №, °, &, +, =, /, ~, «т.д.», «напр.», «км», «кг», «млн», «ст.».
+   Write the full words. Keep an acronym only when it is normally said as a word or as letters (NASA, ВООЗ, США), and
+   write it as it is said.
+3. No brackets, footnotes, quotation asides, lists, emoji, hashtags, markdown or links. Say an aside as part of the
+   sentence or leave it out if the original only explains it in brackets; a website is said simply by its name.
+4. Easy on the ear: one idea a sentence, sentences short enough for one breath, plain spoken words and active verbs;
+   no chains of participles, heavy nominal phrases or officialese. Commas where a speaker pauses.
+5. Avoid words that are hard to say together or read with an unclear stress; prefer a clear synonym. In Russian write ё.
+6. Foreign names and places in the target language's usual spelling and alphabet, not in Latin letters inside Cyrillic.
+7. Natural, living language of a native speaker of this language, with no calques from the original."""
+
+
 def translator(code: str) -> str:
     return (f"You translate the voice-over of a YouTube video into {ENGLISH[code]}. A narrator will read your text aloud "
             "with the author's own voice. Keep the meaning, the facts, the tone and the energy; sound natural and alive, "
             "as a native YouTuber would say it, not word for word. Keep the paragraphs. Do not add, drop or explain anything. "
-            "Write numbers, units and abbreviations the way they are best read aloud. Answer with the translation only.")
+            "Answer with the translation only.\n\n" + SPEECH_RULES)
+
+
+UNSPOKEN = re.compile(r"[0-9%$€£№°&+=~]|\b(?:т\.\s?д|т\.\s?п|напр|etc)\.")
+
+
+def speakable(code: str, texts: list[str]) -> tuple[list[str], float]:
+    """Lines that still hold digits, symbols or shorthand, rewritten once more with everything in words; the rest kept.
+    A failed or odd answer leaves the lines as they were."""
+    wrong = [index for index, text in enumerate(texts) if UNSPOKEN.search(text)]
+    if not wrong:
+        return texts, 0.0
+    system = (f"These lines in {ENGLISH[code]} will be read aloud by a narrator. Rewrite each one so that every number, "
+              "symbol and abbreviation is written in words in its right grammatical form. Change nothing else. Answer with "
+              "a JSON array of strings only, as many as the lines, in the same order.\n\n" + SPEECH_RULES)
+    try:
+        answer, spent = ask([{"role": "system", "content": system},
+                             {"role": "user", "content": json.dumps([texts[i] for i in wrong], ensure_ascii=False)}])
+        found = json.loads(answer[answer.index("["):answer.rindex("]") + 1])
+    except (RuntimeError, ValueError):
+        return texts, 0.0
+    if not isinstance(found, list) or len(found) != len(wrong) or not all(isinstance(text, str) and text.strip() for text in found):
+        return texts, spent
+    texts = list(texts)
+    for index, text in zip(wrong, found):
+        texts[index] = " ".join(text.split()) if "\n" not in texts[index] else text.strip()
+    return texts, spent
 
 
 # ---------- in time with the original (user, 2 November 2026: «все, що він говорить, говоритиме плюс-мінус в той
@@ -475,7 +522,9 @@ def translate_lines(code: str, lines: list[dict], total: float | None, pid: str,
             try:
                 found = json.loads(answer[answer.index("["):answer.rindex("]") + 1])
                 if isinstance(found, list) and len(found) == len(batch) and all(isinstance(text, str) and text.strip() for text in found):
-                    done += [" ".join(text.split()) for text in found]
+                    fixed, spent = speakable(code, [" ".join(text.split()) for text in found])
+                    cost += spent
+                    done += fixed
                     break
             except ValueError:
                 pass
@@ -502,6 +551,8 @@ def translate(pid: str, code: str, job: dict) -> None:
         text, spent = ask([{"role": "system", "content": translator(code) + before}, {"role": "user", "content": piece}])
         if len(text) < len(piece) * 0.3:
             raise RuntimeError("Переклад вийшов надто коротким, спробуйте ще раз")
+        cost += spent
+        (text,), spent = speakable(code, [text])
         done.append(text)
         cost += spent
     save_translation(pid, code, project, src, "\n\n".join(done), cost, job, None)
@@ -1018,6 +1069,7 @@ def shorten(code: str, source_text: str, text: str, seconds: float, length: floa
     except RuntimeError:
         return None
     answer = " ".join(answer.strip().strip('"«»').split())
+    (answer,), _ = speakable(code, [answer])
     return answer if 0 < len(answer) < len(text) else None
 
 
