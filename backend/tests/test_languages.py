@@ -79,6 +79,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.price("fishaudio", "я" * 100000, "s1"), 3.0)
         self.assertEqual(languages.price("fishaudio", "a" * 100000, "s2.1-pro"), 1.5)
         self.assertEqual(languages.price("fishaudio", "a" * 100000), 0)          # S2.1 Pro Free by default
+        self.assertIsNone(languages.price("fishaudio", "a" * 100000, "drama-3"))  # no price named by Fish
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Second sentence!\n\nThird paragraph here.", "What If Test"])

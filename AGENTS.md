@@ -297,7 +297,7 @@ the whole text voiced in parts of ≤2400 characters with the neighbours as cont
 at most `FIT_MAX` when longer than the video, padded with silence when shorter; the price is shown before and asked in
 a confirmation) and the thumbnail (Codex redraws the current cover with only its words translated; the «after» window itself is the button, a magic wand in the middle, over the picture once made). Providers:
 ElevenLabs (`eleven_multilingual_v2`, every language, cloning needs a paid plan) and Fish Audio with a choice of
-engine (`FISH_ENGINES`: S2.1 Pro Free by default, free under fair use; S2.1 Pro and S1 billed by UTF-8 bytes). Fish
+engine (`FISH_ENGINES`: S2.1 Pro Free by default, free under fair use; S2.1 Pro and S1 billed by UTF-8 bytes; Drama 3, the expressive one, with no price named by Fish yet, shown as «ціна на fish.audio»). Fish
 clones inline: every request carries, as MessagePack (`languages.msgpack`), about 22 s of the voice's start cut after a
 whole word with exactly the words said in it (`languages.reference`, from the recognition's `aligned_words`), so no
 voice model is made (a free account may make none: «model creation limit reached (0/0)»); their keys are «Ключі сервісів» (`credentials.DEFAULTS`). Voxtral on OpenRouter has no Ukrainian or Russian.

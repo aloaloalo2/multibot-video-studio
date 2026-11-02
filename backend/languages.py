@@ -61,7 +61,9 @@ FISH = "https://api.fish.audio"
 # (MessagePack), so no voice model is created: a free account's model limit is 0.
 FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "note": "безкоштовно"},
                 "s2.1-pro": {"name": "S2.1 Pro", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"},
-                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"}}
+                "s1": {"name": "S1", "per_char": 15 / 1_000_000, "note": "$15 за 1 млн байтів"},
+                # the expressive one (user: «чому драма не додав»); Fish's own page gave no price on 2 November 2026
+                "drama-3": {"name": "Drama 3", "per_char": None, "note": "найвиразніший, ціна на fish.audio"}}
 FISH_ENGINE = "s2.1-pro-free"
 REFERENCE_SECONDS = 22
 TRANSLATE_CHUNK = 5000
@@ -181,9 +183,12 @@ def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | N
     return None
 
 
-def price(provider: str, text: str, engine: str | None = None) -> float:
+def price(provider: str, text: str, engine: str | None = None) -> float | None:
+    """What voicing the text costs; None when the provider names no price for the engine."""
     spec = PROVIDERS[provider]
     rate = FISH_ENGINES.get(engine or FISH_ENGINE, FISH_ENGINES[FISH_ENGINE])["per_char"] if provider == "fishaudio" else spec["per_char"]
+    if rate is None:
+        return None
     return round(len(text.encode("utf-8") if spec["bytes"] else text) * rate, 2)
 
 
