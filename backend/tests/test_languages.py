@@ -174,6 +174,27 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse((languages.work_dir(self.pid, "en") / "text.txt").exists())
         self.assertFalse(languages.CANCEL)
 
+    def test_the_voice_is_found_when_the_plan_names_it_by_another_id(self):
+        """Timings attached by a path name the voice by an id the project never had: the clip that starts the film is it."""
+        other = tone(Path(self.tmp.name) / "music.wav", 2)
+        project = {**self.project, "assets": [{"id": "b" * 20, "path": str(self.voice)}, {"id": "c" * 20, "path": str(other)}],
+                   "tracks": [{"clips": [{"kind": "audio", "asset_id": "c" * 20, "start": 0, "duration": 2, "title": "Музика"},
+                                         {"kind": "audio", "asset_id": "b" * 20, "start": 0, "duration": 6, "title": "voice"}]}]}
+        def resolve(project, aid):
+            found = next((asset for asset in project["assets"] if asset["id"] == aid), None)
+            if not found:
+                raise store.StudioError("Матеріал не знайдено", 404)
+            return found
+        with patch.object(store, "resolve_asset", side_effect=resolve), patch("audio_level.voice_gains", return_value={}):
+            self.assertEqual(languages.voice_file(project, {"asset_id": "z" * 20}), self.voice)
+            self.assertIsNone(languages.voice_file({**project, "tracks": []}, {"asset_id": "z" * 20}))
+
+    def test_the_original_card_plays_the_episodes_voice(self):
+        self.assertEqual(languages.original_file(self.pid), self.voice)
+        data = languages.overview(self.pid)["source"]
+        self.assertTrue(data["voice"])
+        self.assertAlmostEqual(data["duration"], 6, delta=0.1)
+
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")

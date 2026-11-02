@@ -1080,6 +1080,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/original", path)
+        if match:
+            return self.serve_media(languages.original_file(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/file/(sample|voice|thumbnail)", path)
         if match:
             return self.serve_media(languages.file_path(*match.groups()))

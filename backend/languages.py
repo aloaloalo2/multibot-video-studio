@@ -131,15 +131,47 @@ def source(project: dict) -> dict:
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace").strip()
     title = (store.episode_title(folder) if project.get("episode_path") and folder.is_dir() else None) or project["name"]
     audio = ((plan.get("timing") or {}).get("audio") or {})
-    voice, duration = None, None
-    if audio.get("asset_id"):
-        try:
-            voice = Path(store.resolve_asset(project, audio["asset_id"])["path"])
-            duration = store.media_duration(voice)
-        except store.StudioError:
-            voice = None
-    duration = duration or audio.get("duration")
+    voice = voice_file(project, audio, plan)
+    duration = (store.media_duration(voice) if voice else None) or audio.get("duration")
     return {"script": script, "title": title, "voice": voice, "duration": float(duration) if duration else None}
+
+
+def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | None:
+    """The episode's own voice, looked for the way the plan's player does and further (user, 2 November 2026: «Не
+    знайдено озвучку випуску»): the plan's asset; the recording the studio levels to 100% (`audio_gain`), as timings
+    attached by a path name the voice by an id made before the project had the file; a file path in the timings; the
+    longest sound clip on the timeline that starts the film and is not music."""
+    import audio_level
+    try:
+        gains = project.get("audio_gain") or audio_level.voice_gains(project, plan)
+    except (OSError, ValueError, store.StudioError):
+        gains = {}
+    ids = [audio.get("asset_id"), *gains]
+    clips = sorted((clip for track in project.get("tracks", []) for clip in track.get("clips", [])
+                    if clip.get("kind") == "audio" and float(clip.get("start") or 0) < 1
+                    and "музик" not in (clip.get("title") or "").lower() and "music" not in (clip.get("title") or "").lower()),
+                   key=lambda clip: -float(clip.get("duration") or 0))
+    ids += [clip.get("asset_id") for clip in clips]
+    for aid in dict.fromkeys(item for item in ids if item):
+        try:
+            path = Path(store.resolve_asset(project, aid)["path"])
+        except (store.StudioError, KeyError, OSError):
+            continue
+        if path.is_file():
+            return path
+    for key in ("path", "source_path", "file"):
+        path = Path(str(audio.get(key) or ""))
+        if audio.get(key) and path.is_file():
+            return path
+    # an animated episode: the voice its Razgon project keeps (config.json's voiceover)
+    try:
+        link = store.razgon_link(project)
+        config = store.read_json(Path(link["project"]) / "config.json", None) if link else None
+        if isinstance(config, dict) and config.get("voiceover") and (Path(link["project"]) / config["voiceover"]).is_file():
+            return Path(link["project"]) / config["voiceover"]
+    except (OSError, ValueError, KeyError, TypeError, store.StudioError):
+        pass
+    return None
 
 
 def price(provider: str, text: str) -> float:
@@ -512,6 +544,14 @@ def copy_out(project: dict, code: str, what: str) -> None:
                 (folder / f"Заголовок {name}.txt").write_text(title + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def original_file(pid: str) -> Path:
+    """The episode's own voice, for the «Оригінал» card."""
+    voice = source(store.load_project(pid))["voice"]
+    if not voice or not voice.is_file():
+        raise store.StudioError("Не знайдено озвучку випуску", 404)
+    return voice
 
 
 def file_path(pid: str, code: str, kind: str) -> Path:

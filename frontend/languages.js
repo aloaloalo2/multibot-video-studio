@@ -41,6 +41,7 @@ function drawLangs(id){
   </div>`;
   const cards=section.querySelector('.lang-cards');
   if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Перекласти».</p>';
+  cards.prepend(langOriginal(id,data.source));
   for(const item of data.items)cards.append(langCard(id,item,spec));
   const pick=section.querySelector('.lang-add select'),go=section.querySelector('.lang-add-run');
   pick.addEventListener('change',()=>{go.disabled=!pick.value || langBusy();});
@@ -48,14 +49,26 @@ function drawLangs(id){
     const code=pick.value;if(!code)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
       document.querySelector(`#project-langs .lang-card[data-code="${code}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
-      if(langData.openrouter===true)langStart(id,'translate',code);else status('Додайте ключ OpenRouter у налаштуваннях студії, щоб перекласти текст.',true);}catch(error){status(error.message,true);}
+      if(langData.openrouter===true)langStart(id,'translate',code);else langNote(langPlace(code,'translate'),'Додайте ключ OpenRouter у налаштуваннях студії («Ключі сервісів»), щоб перекласти текст.',true);}catch(error){langNote(go,error.message,true);}
   });
   // the voice service is chosen inside each card's voice step and holds for the whole episode
   section.addEventListener('click',async event=>{
     const button=event.target.closest('.lang-segment button');if(!button || button.dataset.provider===langData.provider)return;
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:button.dataset.provider});drawLangs(id);}catch(error){status(error.message,true);}
+    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',{provider:button.dataset.provider});drawLangs(id);}catch(error){langNote(button,error.message,true);}
   });
   showLangJob();
+}
+
+// The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
+// оригінала, длительність, послухати можна»).
+function langOriginal(id,src){
+  const card=document.createElement('article');card.className='lang-card lang-original';
+  card.innerHTML=`<header><h2>Оригінал</h2><span>ваша озвучка</span></header>
+    <section class="lang-step">${src.voice?'<div class="lang-player"></div>':'<p class="lang-off">Озвучку випуску не знайдено. Додайте її на вкладці «План ролика».</p>'}
+      <p class="lang-original-facts">${src.duration?`<b>${clock(src.duration)}</b> озвучки`:''}${src.duration&&src.chars?' · ':''}${src.chars?`${src.chars.toLocaleString('uk-UA')} символів тексту`:''}</p></section>`;
+  const slot=card.querySelector('.lang-player');
+  if(slot){const player=voicePlayer(id,`/api/projects/${encodeURIComponent(id)}/languages/original`);if(player)slot.replaceWith(player);}
+  return card;
 }
 
 function langCard(id,item,spec){
@@ -66,8 +79,8 @@ function langCard(id,item,spec){
   card.innerHTML=`<header><h2>${esc(item.name)}</h2><span>${esc(item.label)}</span><button type="button" class="lang-remove" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">${typeof trashIcon==='string'?trashIcon:'×'}</button></header>
     <section class="lang-step"><h3><em>1</em>Текст</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
-        <label class="lang-text"><span>Текст озвучки <small>${item.chars.toLocaleString('uk-UA')} символів · можна виправити перед озвучкою</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>
-        <div class="lang-actions"><button type="button" class="secondary lang-retranslate">Перекласти заново</button><button type="button" class="primary lang-save" disabled>Зберегти правки</button></div>`
+        <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small></span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>
+        <div class="lang-actions"><button type="button" class="secondary lang-retranslate">Перекласти заново</button></div>`
       :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step${item.text?'':' is-off'}"><h3><em>2</em>Озвучка вашим голосом</h3>
@@ -91,42 +104,82 @@ function langCard(id,item,spec){
     const player=voicePlayer(id,langUrl(id,item.code,box.dataset.kind,box.dataset.kind==='voice'?voice.made_at:undefined));
     if(player)box.replaceWith(player);
   }
-  const area=card.querySelector('textarea'),title=card.querySelector('.lang-title input'),save=card.querySelector('.lang-save');
-  const dirty=()=>{const changed=area.value!==item.text || title.value!==item.title;save.disabled=!changed;if(area.value!==item.text)langDrafts[`${id}:${item.code}`]=area.value;else delete langDrafts[`${id}:${item.code}`];};
-  if(area){area.addEventListener('input',dirty);title.addEventListener('input',dirty);dirty();
-    save.addEventListener('click',async()=>{
-      try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/text`,'POST',{text:area.value,title:title.value});
-        delete langDrafts[`${id}:${item.code}`];drawLangs(id);status('Правки збережено. Зразок озвучки треба послухати заново.');}catch(error){status(error.message,true);}
-    });}
+  // edits are saved by themselves a moment after typing stops and when the field is left (user, 2 November 2026:
+  // «має зразу змінювати як правку»), without redrawing the card; the old sample was of the old text and goes
+  const area=card.querySelector('textarea'),title=card.querySelector('.lang-title input'),hint=card.querySelector('.lang-text-hint'),key=`${id}:${item.code}`;
+  let timer=null;
+  const flush=async()=>{
+    clearTimeout(timer);timer=null;
+    if(!area || (area.value===item.text&&title.value===item.title))return true;
+    if(!area.value.trim()){langNote(area,'Текст не може бути порожнім.',true);return false;}
+    const text=area.value,name=title.value;
+    try{
+      langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/text`,'POST',{text,title:name});
+      item.text=text;item.title=name;if(area.value===text)delete langDrafts[key];
+      if(hint)hint.textContent=`${text.length.toLocaleString('uk-UA')} символів · збережено`;
+      const old=card.querySelector('.lang-sample .voice-player');if(old){old.querySelector('audio')?.pause();old.remove();}
+      const again=card.querySelector('.lang-sample-run');if(again)again.textContent='Послухати зразок';
+      const fresh=langData.items.find(entry=>entry.code===item.code);
+      if(fresh){const cost=langMoney(fresh.prices?.[spec.id] ?? 0),line=card.querySelector('.lang-price');
+        if(line){line.querySelector('b').textContent=cost;line.querySelector('small').textContent=`(${fresh.chars.toLocaleString('uk-UA')} символів)`;}
+        const run=card.querySelector('.lang-voice-run');if(run)run.textContent=run.textContent.replace(/ · .*$/,` · ${cost}`);}
+      card.querySelector('.lang-text')?.closest('.lang-step')?.querySelector(':scope > .lang-note.is-error')?.remove();
+      return true;
+    }catch(error){langNote(area,error.message,true);return false;}
+  };
+  if(area){
+    const later=()=>{if(area.value!==item.text)langDrafts[key]=area.value;else delete langDrafts[key];
+      if(hint)hint.textContent='зберігаємо…';clearTimeout(timer);timer=setTimeout(flush,1200);};
+    for(const field of [area,title]){field.addEventListener('input',later);field.addEventListener('blur',()=>{if(timer)flush();});}
+    if(area.value!==item.text)later();
+  }
   card.querySelector('.lang-remove').addEventListener('click',()=>modal(`Прибрати ${item.name}?`,
     `<p>Переклад і озвучка цієї мови зникнуть зі студії.${item.folder?' Файли в папці випуску залишаться.':''}</p>`,
     [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
-      try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/remove`,'POST',{});delete langDrafts[`${id}:${item.code}`];drawLangs(id);}catch(error){status(error.message,true);}}}]));
+      try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/remove`,'POST',{});delete langDrafts[`${id}:${item.code}`];drawLangs(id);}catch(error){langNote(card,error.message,true);}}}]));
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
   card.querySelector('.lang-retranslate')?.addEventListener('click',()=>modal(`Перекласти ${item.name} заново?`,
     '<p>Новий переклад замінить поточний текст разом із вашими правками.</p>',
     [{label:'Скасувати',run:closeModal},{label:'Перекласти заново',primary:true,run:()=>{closeModal();delete langDrafts[`${id}:${item.code}`];langStart(id,'translate',item.code);}}]));
-  card.querySelector('.lang-sample-run')?.addEventListener('click',()=>{if(!save?.disabled){status('Спершу збережіть правки тексту.',true);return;}langStart(id,'sample',item.code);});
-  card.querySelector('.lang-voice-run')?.addEventListener('click',()=>{
-    if(!save?.disabled){status('Спершу збережіть правки тексту.',true);return;}
-    modal(`Озвучити ${item.name}?`,`<p>${esc(spec.name)} озвучить весь текст вашим голосом: ${item.chars.toLocaleString('uk-UA')} символів, орієнтовно <b>${langMoney(price || 0)}</b>. Гроші спишуться з вашого рахунку ${esc(spec.name)}.</p>
+  card.querySelector('.lang-sample-run')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'sample',item.code);});
+  card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
+    if(!(await flush()))return;
+    const fresh=langData.items.find(entry=>entry.code===item.code) || item,cost=fresh.prices?.[spec.id] ?? price ?? 0,chars=fresh.chars ?? item.chars;
+    modal(`Озвучити ${item.name}?`,`<p>${esc(spec.name)} озвучить весь текст вашим голосом: ${chars.toLocaleString('uk-UA')} символів, орієнтовно <b>${langMoney(cost)}</b>. Гроші спишуться з вашого рахунку ${esc(spec.name)}.</p>
       <p>Студія склеїть частини, вирівняє гучність і піджене довжину під ролик. Зазвичай це кілька хвилин.</p>`,
-      [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langMoney(price || 0)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
+      [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langMoney(cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
   });
   card.querySelector('.lang-thumb-run')?.addEventListener('click',()=>langStart(id,'thumbnail',item.code));
   return card;
 }
 
+// Messages of this tab stand where the author pressed, not in the studio's banner at the top (user, 2 November 2026:
+// «сповіщення… мають бути там, де я нажимаю кнопку»): a short line at the end of that step, or under «Нова мова».
+const langStepOf={translate:0,sample:1,voice:1,thumbnail:2};
+function langPlace(code,kind){
+  const card=document.querySelector(`#project-langs .lang-card[data-code="${code}"]`);
+  return card?.querySelectorAll('.lang-step')[langStepOf[kind] ?? 0] || document.querySelector('#project-langs .lang-add');
+}
+function langNote(where,message,error=false){
+  const holder=where?.closest?.('.lang-step, .lang-add, .lang-card') || where;
+  if(!holder){status(message,error);return;}
+  holder.querySelector(':scope > .lang-note')?.remove();
+  const note=document.createElement('p');note.className='lang-note'+(error?' is-error':'');note.setAttribute('role',error?'alert':'status');note.textContent=message;
+  const job=holder.querySelector(':scope > .lang-job');if(job)job.before(note);else holder.append(note);
+  if(!error)setTimeout(()=>note.remove(),8000);
+}
+
 async function langCancel(id){
   const button=document.querySelector('#project-langs .lang-cancel');if(button){button.disabled=true;button.textContent='Скасовуємо…';}
-  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{});}catch(error){status(error.message,true);}
+  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{});}catch(error){langNote(button,error.message,true);}
 }
 
 async function langStart(id,kind,code){
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider});
+    langPlace(code,kind)?.querySelector(':scope > .lang-note')?.remove();
     langData.job=job;showLangJob();pollLangs(id);
-  }catch(error){status(error.message,true);}
+  }catch(error){langNote(langPlace(code,kind),error.message,true);}
 }
 
 function showLangJob(){
@@ -138,7 +191,7 @@ function showLangJob(){
   const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
   for(const other of document.querySelectorAll('#project-langs .lang-job'))if(other!==box){other.hidden=true;other.closest('.lang-step')?.classList.remove('is-working');}
   document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute), #project-langs .lang-add select').forEach(button=>{
-    if(button.classList.contains('lang-save'))return;button.disabled=busy;});
+    button.disabled=busy;});
   const go=document.querySelector('#project-langs .lang-add-run');if(go)go.disabled=busy || !document.querySelector('#project-langs .lang-add select')?.value;
   // the «after» window of the language being redrawn says so in place of its wand
   for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){
