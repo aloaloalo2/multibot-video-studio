@@ -219,6 +219,7 @@ function langCard(id,item,spec){
           <label class="lang-engine"><span>Схожість на приклад</span><select data-field="style">${(spec.styles || []).map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label></div>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
         ${langOwnBlock(item)}
+        ${spec.id==='fishaudio'?`<p class="lang-model-state">${item.fish_model?'✓ Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон.':'Перший зразок створить збережену модель голосу у Fish, якщо на балансі API є кошти. Інакше студія клонує голос швидким способом.'}</p>`:''}
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
         <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}${hasSample?' hidden':''}>Послухати зразок</button></div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>

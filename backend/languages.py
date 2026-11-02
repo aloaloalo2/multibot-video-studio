@@ -241,7 +241,8 @@ def overview(pid: str) -> dict:
                       "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
                       "channel_voice": ({"duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
                                         if (shared := channel_voice(project.get("channel_id"), code)) else None),
-                      "voice_key": voice_key(pid, "fishaudio", code), "sample_provider": item.get("sample_provider"),
+                      "voice_key": voice_key(pid, "fishaudio", code),
+                      "fish_model": bool((voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     return {"languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
@@ -502,8 +503,10 @@ def read_example(folder: Path, stem: str, source: str) -> dict | None:
     if not (audio.is_file() and said.is_file()):
         return None
     meta = store.read_json(folder / f"{stem}.json", {}) or {}
+    stamp = int(audio.stat().st_mtime)
     return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio),
-            "heard": meta.get("heard", True), "from": source, "stamp": int(audio.stat().st_mtime)}
+            "heard": meta.get("heard", True), "from": source, "stamp": stamp, "meta": folder / f"{stem}.json",
+            "fish_model": meta.get("fish_model") if meta.get("fish_stamp") == stamp else None}
 
 
 def own_voice(pid: str, code: str | None) -> dict | None:
@@ -682,6 +685,42 @@ def heard(path: Path, length: float, code: str) -> str | None:
     return text if len(text.split()) >= 5 else None
 
 
+# A saved Fish voice model sounds better than the example sent inline with every request (Fish's docs; user,
+# 2 November 2026: «а по апі хіба не можна скопіювати норм голос?… поповнив»). It needs API credit: a free account may
+# create none («model creation limit reached (0/0)»). The model is made once per example and kept in the example's own
+# meta file, so a channel's example serves every episode with one model; when Fish refuses, the inline example stands
+# and the attempt waits FISH_RETRY seconds.
+FISH_RETRY = 600
+
+
+def fish_model(example: dict) -> str | None:
+    if example.get("fish_model"):
+        return example["fish_model"]
+    meta_path = example["meta"]
+    meta = store.read_json(meta_path, {}) or {}
+    if meta.get("fish_refused_stamp") == example["stamp"] and time.time() - float(meta.get("fish_refused_at") or 0) < FISH_RETRY:
+        return None
+    try:
+        body, mime = multipart({"title": f"VideoKey · {example['path'].stem}"[:90], "type": "tts", "visibility": "private",
+                                "train_mode": "fast", "enhance_audio_quality": "true", "texts": example["text"]},
+                               [("voices", example["path"], "audio/mpeg")])
+        raw = request(FISH + "/model", body, {"Authorization": "Bearer " + key("fishaudio"), "Content-Type": mime},
+                      "Fish Audio (модель голосу)")
+        found = json.loads(raw).get("_id") or json.loads(raw).get("id")
+    except (RuntimeError, ValueError, OSError):
+        found = None
+    if found:
+        meta.update(fish_model=found, fish_stamp=example["stamp"])
+        meta.pop("fish_refused_at", None)
+    else:
+        meta.update(fish_refused_at=time.time(), fish_refused_stamp=example["stamp"])
+    try:
+        store.atomic_json(meta_path, meta)
+    except OSError:
+        pass
+    return found
+
+
 def voice_id(pid: str, provider: str, code: str | None = None):
     """The voice for one language, from its example. ElevenLabs keeps a clone id per example; Fish gets the example
     with every request."""
@@ -689,7 +728,8 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     if not example:
         raise RuntimeError(NO_VOICE)
     if provider == "fishaudio":
-        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid), "style": fish_style(pid)}
+        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid), "style": fish_style(pid),
+                "model_id": fish_model(example)}
     slot = f"elevenlabs-{code}-{example['from']}-{example['stamp']}"
     known = (load_state(pid).get("clones") or {}).get(slot)
     if known:
@@ -718,7 +758,8 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
     else:
         ref = voice if isinstance(voice, dict) else {}
         style = FISH_STYLES.get(ref.get("style") or FISH_STYLE, FISH_STYLES[FISH_STYLE])
-        payload = {"text": text, "references": [{"audio": ref["audio"], "text": ref["text"]}], "format": "mp3", "mp3_bitrate": 192,
+        voice_from = {"reference_id": ref["model_id"]} if ref.get("model_id") else {"references": [{"audio": ref["audio"], "text": ref["text"]}]}
+        payload = {"text": text, **voice_from, "format": "mp3", "mp3_bitrate": 192,
                    "normalize": True, "latency": "normal", "chunk_length": 200,
                    "temperature": style["temperature"], "top_p": style["top_p"]}
         audio = request(FISH + "/v1/tts", msgpack(payload),
@@ -773,7 +814,7 @@ def voice_key(pid: str, provider: str, code: str | None = None) -> str:
     """Which voice a sample was made with: the provider (and Fish's engine) and the example it was cloned from, so a
     new example or engine never plays an older one's sample."""
     example = voice_for(pid, code)
-    tail = f"-{example['from']}{example['stamp']}" if example else ""
+    tail = f"-{example['from']}{example['stamp']}{'m' if provider == 'fishaudio' and example.get('fish_model') else ''}" if example else ""
     return (f"fishaudio-{fish_engine(pid)}-{fish_style(pid)}" if provider == "fishaudio" else provider) + tail
 
 

@@ -248,7 +248,8 @@ class LanguagesTest(unittest.TestCase):
                 voice = languages.voice_id(self.pid, "fishaudio", "uk")
                 languages.speak("fishaudio", voice, "Привіт.", self.studio / "out.mp3")
         self.assertEqual(voice["text"], "Це приклад голосу цією мовою для озвучки")
-        url, body, headers = sent[0]
+        self.assertTrue(sent[0][0].endswith("/model"))          # a saved model was tried first; refused here, inline stands
+        url, body, headers = sent[-1]
         self.assertTrue(url.endswith("/v1/tts"))
         self.assertEqual((headers["Content-Type"], headers["model"]), ("application/msgpack", "s2.1-pro-free"))
         self.assertIn(voice["audio"][:200], body)
@@ -401,6 +402,34 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(voice["fastest"], 1.25)
         self.assertAlmostEqual(voice["latest"], 0.95, delta=0.1)       # 3.0 + 3.0/1.25 = 5.4 against 4.5
         self.assertAlmostEqual(voice["duration"], 6, delta=0.15)       # the video's length: silence after the last line
+
+    def test_a_saved_fish_model_is_made_once_per_example_and_used_by_id(self):
+        self.example("ru")
+        sent = []
+        def request(url, data, headers, what):
+            sent.append((url, data))
+            return json.dumps({"_id": "model-1"}).encode() if url.endswith("/model") else b"\xff" * 2000
+        with patch.object(languages, "key", return_value="k"), patch.object(languages, "request", side_effect=request):
+            before = languages.voice_key(self.pid, "fishaudio", "ru")
+            voice = languages.voice_id(self.pid, "fishaudio", "ru")
+            languages.speak("fishaudio", voice, "Привет.", self.studio / "out.mp3")
+            again = languages.voice_id(self.pid, "fishaudio", "ru")
+        self.assertEqual((voice["model_id"], again["model_id"]), ("model-1", "model-1"))
+        self.assertEqual(sum(url.endswith("/model") for url, _ in sent), 1)                 # made once, kept
+        tts = [data for url, data in sent if url.endswith("/v1/tts")][0]
+        self.assertIn(languages.msgpack("reference_id") + languages.msgpack("model-1"), tts)
+        self.assertNotIn(languages.msgpack("references"), tts)
+        self.assertNotEqual(languages.voice_key(self.pid, "fishaudio", "ru"), before)      # the model's samples are its own
+        # a refusal is remembered for a while: no new attempt on every request
+        self.example("de")
+        refused = []
+        def refuse(url, data, headers, what):
+            refused.append(url)
+            raise RuntimeError("Fish Audio (модель голосу): помилка 403")
+        with patch.object(languages, "key", return_value="k"), patch.object(languages, "request", side_effect=refuse):
+            self.assertIsNone(languages.voice_id(self.pid, "fishaudio", "de")["model_id"])
+            self.assertIsNone(languages.voice_id(self.pid, "fishaudio", "de")["model_id"])
+        self.assertEqual(len(refused), 1)
 
     def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
         import io, urllib.error
