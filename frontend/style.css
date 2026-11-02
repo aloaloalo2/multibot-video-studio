@@ -1250,3 +1250,4 @@ select option{background:#232327;color:#f1f1f2}
 .lang-mark{display:grid;place-items:center;width:16px;height:16px;color:#8d8f97}
 .lang-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .lang-text-lines{display:block;margin-top:2px;color:#9a9ca4}
+.lang-from-original{margin:0;padding:8px 12px;border-radius:12.5px;background:#2a2414;color:#f5c24b;font-size:13px;line-height:1.45}

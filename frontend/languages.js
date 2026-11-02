@@ -187,6 +187,7 @@ function langCard(id,item,spec){
           ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
         ${langOwnBlock(item)}
+        ${item.own_voice?'':`<p class="lang-from-original">Зараз голос береться з оригіналу${langData.source?.language&&langData.source.language!==item.code?` (${esc(langData.languages.find(entry=>entry.code===langData.source.language)?.label || '')})`:''}, тож звучатиме як носій тієї мови, що говорить ${esc(item.label)}. Щоб прибрати акцент, запишіть себе вище.</p>`}
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
         <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(langData.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${hasSample?' hidden':''}>Послухати зразок</button></div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
