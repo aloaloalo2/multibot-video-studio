@@ -613,8 +613,6 @@ function visibleAssets() {
   return list.filter(asset=>{
     if(asset.source==='episode'&&!used.has(asset.id)&&/\/Studio\/(QA|sheets|Review|Stock|GeneratedPhotos)\//.test(asset.path || ''))return false;
     const kind=(asset.kind || asset.type || '').toLowerCase();
-    if (state.libraryTab==='video' && !kind.includes('video')) return false;
-    if (state.libraryTab==='photo' && !['image','photo'].some(x=>kind.includes(x))) return false;
     return !query || `${asset.name || ''} ${asset.source || ''}`.toLocaleLowerCase().includes(query);
   });
 }
