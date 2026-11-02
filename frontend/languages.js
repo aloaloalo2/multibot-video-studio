@@ -47,7 +47,7 @@ function drawLangs(id){
   cards.prepend(langOriginal(id,data.source));
   for(const item of data.items)cards.append(langCard(id,item,spec));
   const pick=section.querySelector('.lang-add select'),go=section.querySelector('.lang-add-run');
-  pick.addEventListener('change',()=>{go.disabled=!pick.value || langBusy();});
+  pick.addEventListener('change',()=>{go.disabled=!pick.value;});
   go.addEventListener('click',async()=>{
     const code=pick.value;if(!code)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
@@ -259,9 +259,9 @@ function showLangJob(){
   const card=job?.code?document.querySelector(`#project-langs .lang-card[data-code="${job.code}"]`):null;
   const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
   for(const other of document.querySelectorAll('#project-langs .lang-job'))if(other!==box){other.hidden=true;other.closest('.lang-step')?.classList.remove('is-working');}
-  document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute), #project-langs .lang-add select').forEach(button=>{
+  document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
     button.disabled=busy;});
-  const go=document.querySelector('#project-langs .lang-add-run');if(go)go.disabled=busy || !document.querySelector('#project-langs .lang-add select')?.value;
+  // adding a language touches nothing a running job uses: it stays open (user, 2 November 2026)
   // the «after» window of the language being redrawn says so in place of its wand
   for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){
     const drawing=busy&&job.kind==='thumbnail'&&tile.closest('.lang-card')?.dataset.code===job.code;
