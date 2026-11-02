@@ -162,6 +162,8 @@ def worker(job, script, save_job):
             job.update(status="complete", progress=100, stage="complete", analysis_status=report["status"], applied=report["applied"])
         if report["applied"]:
             try:
+                import keep
+                threading.Thread(target=keep.keep_project, args=(project["id"],), daemon=True).start()
                 director.after_voice(project["id"])
             except Exception:   # the voice is recognised and applied already: a director that cannot start never fails it
                 import traceback

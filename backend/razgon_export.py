@@ -119,7 +119,7 @@ def _layered(project: dict, plate: str | None, logo: str | None) -> str | None:
 
 def export_job(project: dict) -> dict | None:
     """The bridge's part of an export of this project, or None when it exports through the Studio engine."""
-    if not (Path(project.get("episode_path", "")) / "razgon.json").is_file():
+    if not store.razgon_link(project):
         return None
     blocks = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])
               if FRAME_TITLE.fullmatch(clip.get("title", "")) and clip.get("kind") != "video"]

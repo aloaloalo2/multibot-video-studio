@@ -147,8 +147,8 @@ class ThumbnailTest(unittest.TestCase):
         self.made_frames(2)
 
     def test_a_razgon_episode_takes_its_style_from_frames_drawn_as_code(self):
-        (self.episode / "razgon.json").write_text("{}", encoding="utf-8")
         razgon = Path(self.tmp.name) / "razgon" / "projects" / "05-test"
+        (self.episode / "razgon.json").write_text(json.dumps({"razgon_root": str(razgon.parents[1]), "project": str(razgon)}), encoding="utf-8")
         (razgon / "story").mkdir(parents=True)
         (razgon / "story" / "studio_frames.json").write_text(json.dumps({"frames": [
             {"number": n, "start": (n - 1) * 10.0, "end": n * 10.0} for n in (1, 2, 3, 4)]}), encoding="utf-8")

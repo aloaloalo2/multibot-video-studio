@@ -1460,6 +1460,9 @@ def main():
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
     # projects an earlier version hid when their episode folder was gone come back to the list
     threading.Thread(target=store.restore_hidden_projects, daemon=True).start()
+    # every episode's sound gets a copy in the studio, so it still plays after the episode folder is deleted
+    import keep
+    threading.Thread(target=keep.keep_all, daemon=True).start()
     threading.Thread(target=topics.update_all, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:

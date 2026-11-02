@@ -29,6 +29,33 @@ import typography
 YOUTUBE_ROOT = Path(__file__).resolve().parents[2]
 
 
+def razgon_link(project: dict) -> dict | None:
+    """The episode's link to its Razgon project ({"razgon_root", "project"}): the episode folder's razgon.json, kept
+    also in the studio (razgon-link.json) so the animation still plays when the episode folder is deleted (user,
+    2 November 2026: «після видалення папки код не видно на таймлайні»). A link that names Razgon's old home in What If
+    is read at its new home in the studio when it has moved there."""
+    episode = Path(project.get("episode_path") or "")
+    try:
+        kept = project_dir(project["id"]) / "razgon-link.json"
+    except (StudioError, KeyError):
+        kept = None
+    link = read_json(episode / "razgon.json", None) if project.get("episode_path") else None
+    if isinstance(link, dict) and link.get("project"):
+        if kept is not None and read_json(kept, None) != link:
+            try:
+                atomic_json(kept, link)
+            except OSError:
+                pass
+    else:
+        link = read_json(kept, None) if kept is not None else None
+        if not isinstance(link, dict) or not link.get("project"):
+            return None
+    old, home = str(YOUTUBE_ROOT / "What If" / "razgon-2d-studio"), str(APP_ROOT / "razgon-2d-studio")
+    if not Path(link.get("razgon_root") or "").is_dir() and Path(home).is_dir():
+        link = {key: home + value[len(old):] if isinstance(value, str) and value.startswith(old) else value for key, value in link.items()}
+    return link
+
+
 def razgon_rel() -> str:
     """The Razgon working copy as a path from YOUTUBE, for the agents' briefs: in the studio's folder since 1 November
     2026 (tools/razgon_sync.move_home), in What If before the move."""
@@ -485,7 +512,7 @@ def picture_count(project: dict) -> int:
     drawn as code that only the export renders (the thumbnail needs a few)."""
     pictures = sum(clip.get("kind") in {"video", "image"} and not re.search("Логотип|Плашка", clip.get("title") or "")
                    for track in project.get("tracks", []) for clip in track.get("clips", []))
-    if not project.get("episode_path") or not (Path(project["episode_path"]) / "razgon.json").is_file():
+    if not razgon_link(project):
         return pictures
     import frame_progress   # it reads the project through this module
     return max(pictures, len(frame_progress.drawn(project["id"])))
@@ -1243,7 +1270,11 @@ def resolve_asset(project: dict, aid: str) -> dict:
     for asset in project.get('assets',[]):
         if asset.get('id')==aid:
             path=Path(asset['path']).resolve()
-            if path.is_file() and (under(path,Path(project['episode_path'])) or under(path,project_dir(project['id'])/'media')):return asset
+            if path.is_file() and (under(path,Path(project['episode_path'])) or any(under(path, root) for root in media_roots(project))):return asset
+            # the episode folder is gone: its sound plays from the studio's kept copy (backend/keep.py)
+            kept = PROJECTS_ROOT / project['id'] / 'kept' / f"{aid}.m4a"
+            if not path.is_file() and kept.is_file():
+                return {**asset, 'path': str(kept), 'kept': True}
     # a file new in the folder since the last walk is looked for once more with a fresh one
     found = next((a for a in discovered(project) if a["id"] == aid), None)
     if found is None:

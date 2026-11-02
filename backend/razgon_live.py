@@ -19,11 +19,10 @@ import store
 
 
 def link(project: dict) -> dict | None:
-    path = Path(project.get("episode_path", "")) / "razgon.json"
-    if not path.is_file():
+    data = store.razgon_link(project)   # the episode folder's, or the studio's copy when that folder is gone
+    if not data:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
         root, proj = Path(data["razgon_root"]), Path(data["project"])
     except (OSError, ValueError, KeyError, TypeError):
         return None

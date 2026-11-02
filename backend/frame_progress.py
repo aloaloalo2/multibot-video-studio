@@ -29,8 +29,8 @@ def taken(text: str) -> set[str]:
 
 
 def razgon_project(project: dict) -> Path | None:
-    link = store.read_json(Path(project.get("episode_path") or "") / "razgon.json", None)
-    path = Path(link["project"]) if isinstance(link, dict) and link.get("project") else None
+    link = store.razgon_link(project)   # the episode folder's, or the studio's copy when that folder is gone
+    path = Path(link["project"]) if link else None
     return path if path and path.is_dir() else None
 
 
