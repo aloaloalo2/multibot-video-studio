@@ -1250,4 +1250,21 @@ select option{background:#232327;color:#f1f1f2}
 .lang-mark{display:grid;place-items:center;width:16px;height:16px;color:#8d8f97}
 .lang-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .lang-text-lines{display:block;margin-top:2px;color:#9a9ca4}
-.lang-from-original{margin:0;padding:8px 12px;border-radius:12.5px;background:#2a2414;color:#f5c24b;font-size:13px;line-height:1.45}
+.lang-own.needs-voice{border-color:#6b5a2a;background:#1e1b14}
+.lang-own-more summary{cursor:pointer;color:#9a9ca4;font-size:13px}
+.lang-own-more[open] summary{margin-bottom:8px}
+.lang-own-file.is-off{opacity:.5;pointer-events:none}
+.channel-voices-list{display:grid;gap:8px}
+.channel-voice{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.channel-voice-name{min-width:130px;font-weight:600}
+.channel-voice .voice-player{flex:1;min-width:240px;margin:0}
+.channel-voice-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.channel-voice-add select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:8px 10px;min-width:220px}
+/* the settings window styles its inputs as fields: its players and recording buttons keep their own look */
+.modal-body .voice-player input[type=range]{padding:0;border:0;border-radius:0;background:transparent}
+.modal-body .voice-player-bar{width:auto}
+.modal-body .voice-player-volume{width:64px}
+.channel-voice-add .lang-own-record,.channel-voice-add .lang-own-file{display:inline-flex;align-items:center;gap:6px;width:auto;cursor:pointer}
+.channel-voice-add svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.channel-voice-add select{width:auto;flex:1}
+.channel-voice .project-action{flex:none}

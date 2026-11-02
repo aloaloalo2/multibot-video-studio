@@ -915,6 +915,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
                 if project_match and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
+                shared = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})", path)
+                if method == "POST" and shared:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    return self.json_response(languages.save_channel_voice(shared.group(1), shared.group(2), self.rfile, size,
+                                                                           urllib.parse.unquote(self.headers.get("X-Said-Text", ""))))
                 own = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/own-voice", path)
                 if method == "POST" and own:
                     size = int(self.headers.get("Content-Length", "0"))
@@ -1085,6 +1090,12 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1)))
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices", path)
+        if match:
+            return self.json_response(languages.channel_voices(match.group(1)))
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/file", path)
+        if match:
+            return self.serve_media(languages.channel_voice_file(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/original", path)
         if match:
             return self.serve_media(languages.original_file(match.group(1)))
@@ -1247,6 +1258,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
         if match and method == "POST":
             return self.json_response(languages.cancel(match.group(1)))
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/remove", path)
+        if match and method == "POST":
+            return self.json_response(languages.remove_channel_voice(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
             return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None))

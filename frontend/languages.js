@@ -101,57 +101,87 @@ function drawLangs(id){
   showLangJob();
 }
 
-// The author's own voice in this language (user, 2 November 2026: the clone carried the original's accent, and stock
-// voices are not wanted): a passage of the translation to read aloud, recorded here or as a file; the clone takes its
-// voice and the right pronunciation from it.
+// The voice of a language always comes from an example in that language (user, 2 November 2026: «переклад будемо брати
+// завжди від прикладу ролика на мові… або запис, або закинути приклад носія»): the channel's example serves every
+// episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+function langHasVoice(item){return !!(item.own_voice || item.channel_voice);}
+function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Студія не змогла розпізнати слова в записі, тому Fish вважає, що прозвучав показаний уривок. Якщо в записі інші слова, голос може звучати дивно: запишіть заново, прочитавши саме уривок.</p>':'';}
+function langAddButtons(primary){
+  return `<div class="lang-own-actions"><button type="button" class="${primary?'primary':'secondary'} lang-own-record">${micIcon}Записати себе</button><label class="secondary lang-own-file">Закинути запис<input type="file" accept="audio/*,video/*" hidden></label></div>`;
+}
 function langOwnBlock(item){
-  const own=item.own_voice;
-  return `<div class="lang-own${own?' has-voice':''}"><div class="lang-own-head"><b>Ваш голос цією мовою</b><small>${own?'клон бере голос і вимову з вашого запису':'щоб не було чужого акценту'}</small></div>
-    ${own?`<div class="lang-player" data-kind="own"></div>
-      ${own.heard===false?'<p class="lang-warn">Студія не змогла розпізнати слова в записі, тому Fish вважає, що ви прочитали уривок. Якщо ви казали щось інше, голос може звучати дивно: запишіть заново, прочитавши саме уривок.</p>':''}
-      <div class="lang-own-actions"><button type="button" class="secondary lang-own-record">${micIcon}Записати заново</button><button type="button" class="secondary lang-own-remove">Прибрати запис</button></div>`
-    :`<p>Поговоріть цією мовою 20–30 секунд, спокійно, як у ролику: прочитайте цей уривок або скажіть щось своє, студія сама розпізнає слова. Без запису голос клонується з оригіналу, разом з його акцентом.</p>
-      <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>
-      <div class="lang-own-actions"><button type="button" class="primary lang-own-record">${micIcon}Записати</button><label class="secondary lang-own-file">Завантажити запис<input type="file" accept="audio/*,video/*" hidden></label></div>`}
-</div>`;
+  const own=item.own_voice,shared=item.channel_voice;
+  if(own)return `<div class="lang-own has-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>свій приклад цього випуску</small></div>
+    <div class="lang-player" data-kind="own"></div>${langHeardWarn(own)}
+    <div class="lang-own-actions"><button type="button" class="secondary lang-own-record">${micIcon}Записати заново</button><label class="secondary lang-own-file">Закинути інший<input type="file" accept="audio/*,video/*" hidden></label><button type="button" class="secondary lang-own-remove">${shared?'Повернути голос каналу':'Прибрати приклад'}</button></div></div>`;
+  if(shared)return `<div class="lang-own has-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>з налаштувань каналу, для всіх випусків</small></div>
+    <div class="lang-player" data-kind="channel"></div>${langHeardWarn(shared)}
+    <details class="lang-own-more"><summary>Інший голос лише для цього випуску</summary>${langAddButtons(false)}</details></div>`;
+  return `<div class="lang-own needs-voice"><div class="lang-own-head"><b>Голос цією мовою</b><small>потрібен, щоб озвучити</small></div>
+    <p>Додайте приклад голосу цією мовою, 20–60 секунд: запишіть себе (можна прочитати уривок нижче) або закиньте запис носія мови. Озвучка скопіює саме цей голос і вимову. Щоб приклад діяв для всіх випусків, додайте його в налаштуваннях каналу, розділ «Голоси для перекладу».</p>
+    <blockquote class="lang-own-passage">${esc(item.passage)}</blockquote>${langAddButtons(true)}</div>`;
 }
-async function langOwnUpload(id,item,blob,name,holder){
-  langNote(holder,'Зберігаємо й розпізнаємо запис, кілька секунд…');
-  try{
-    const response=await fetch(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice`,{method:'POST',
-      headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name),'X-Said-Text':encodeURIComponent(item.own_voice?.text || item.passage)},body:blob});
-    const data=await response.json();if(!response.ok)throw new Error(data.error || 'Не вдалося зберегти запис');
-    langData=data;drawLangs(id);
-  }catch(error){langNote(holder,error.message,true);}
-}
+// a recording from the microphone: the button turns into «Зупинити · 0:12»; the blob goes to `done`
 let langRecorder=null;
+async function langRecord(button,holder,done){
+  if(langRecorder){langRecorder.stop();return;}
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});}
+  catch{langNote(holder,'Браузер не дав доступ до мікрофона. Дозвольте його в адресному рядку або закиньте запис файлом.',true);return;}
+  const chunks=[],recorder=new MediaRecorder(stream),idle=button.innerHTML;langRecorder=recorder;
+  const started=Date.now(),label=()=>{const s=Math.floor((Date.now()-started)/1000);button.innerHTML=`<span class="lang-rec-dot"></span>Зупинити · ${clock(s)}`;};
+  button.classList.add('is-recording');label();const tick=setInterval(label,500);
+  recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+  recorder.onstop=()=>{clearInterval(tick);stream.getTracks().forEach(track=>track.stop());langRecorder=null;
+    button.classList.remove('is-recording');button.innerHTML=idle;
+    if(Date.now()-started<8000){langNote(holder,'Запис закороткий: говоріть хоча б 10 секунд.',true);return;}
+    done(new Blob(chunks,{type:recorder.mimeType || 'audio/webm'}),'Голос.webm');};
+  recorder.start(1000);
+}
+async function langSendExample(url,blob,name,said,holder){
+  langNote(holder,'Зберігаємо й розпізнаємо запис, кілька секунд…');
+  const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name),'X-Said-Text':encodeURIComponent(said || '')},body:blob});
+  const data=await response.json();if(!response.ok)throw new Error(data.error || 'Не вдалося зберегти запис');
+  return data;
+}
 function langOwnWire(id,card,item){
   const box=card.querySelector('.lang-own');if(!box)return;
-  const record=box.querySelector('.lang-own-record'),file=box.querySelector('.lang-own-file input');
-  file?.addEventListener('change',()=>{const chosen=file.files[0];if(chosen)langOwnUpload(id,item,chosen,chosen.name,box);});
+  const send=async(blob,name)=>{
+    try{langData=await langSendExample(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice`,blob,name,item.passage,box);drawLangs(id);}
+    catch(error){langNote(box,error.message,true);}
+  };
+  box.querySelectorAll('.lang-own-file input').forEach(file=>file.addEventListener('change',()=>{const chosen=file.files[0];if(chosen)send(chosen,chosen.name);}));
+  box.querySelector('.lang-own-record')?.addEventListener('click',event=>langRecord(event.currentTarget,box,send));
   box.querySelector('.lang-own-remove')?.addEventListener('click',async()=>{
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/own-voice/remove`,'POST',{});drawLangs(id);}catch(error){langNote(box,error.message,true);}
   });
-  record?.addEventListener('click',async()=>{
-    if(langRecorder){langRecorder.stop();return;}
-    if(item.own_voice){
-      // recording again shows the passage once more: the same words as before
-      const quote=document.createElement('blockquote');quote.className='lang-own-passage';quote.textContent=item.own_voice.text;box.querySelector('.lang-own-actions').before(quote);
+}
+
+// «Голоси для перекладу» in the channel's settings: one example a language for every episode of the channel.
+async function bindChannelVoices(channel){
+  const section=document.getElementById('channel-voices');if(!section)return;
+  const base=`/api/channels/${encodeURIComponent(channel.id)}/voices`;
+  const draw=data=>{
+    if(!section.isConnected)return;
+    section.querySelectorAll('audio').forEach(audio=>audio.pause());
+    const have=new Set(data.voices.map(item=>item.code));
+    section.innerHTML=`<h3>Голоси для перекладу</h3><p>Приклад голосу для кожної мови, 20–60 секунд: ваш запис цією мовою або запис носія мови. Вкладка «Мови» кожного випуску озвучує переклад саме цим голосом і вимовою. У випуску можна закинути інший.</p>
+      <div class="channel-voices-list">${data.voices.map(item=>`<div class="channel-voice" data-code="${item.code}"><span class="channel-voice-name">${langFlag(item.code)} ${esc(item.name)}</span><div class="lang-player"></div><button type="button" class="project-action delete channel-voice-remove" title="Прибрати приклад" aria-label="Прибрати приклад ${esc(item.name)}">×</button></div>`).join('') || '<p class="lang-off">Ще немає жодного прикладу.</p>'}</div>
+      <div class="channel-voice-add"><select aria-label="Мова прикладу"><option value="">Мова прикладу…</option>${data.languages.filter(item=>!have.has(item.code)).map(item=>`<option value="${item.code}">${langFlags[item.code] || ''} ${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select>
+        <button type="button" class="secondary lang-own-record" disabled>${micIcon}Записати себе</button><label class="secondary lang-own-file is-off">Закинути запис<input type="file" accept="audio/*,video/*" hidden disabled></label></div>`;
+    for(const row of section.querySelectorAll('.channel-voice')){
+      const item=data.voices.find(entry=>entry.code===row.dataset.code);
+      const player=voicePlayer(null,`${base}/${item.code}/file?v=${item.stamp}`);if(player)row.querySelector('.lang-player').replaceWith(player);
+      row.querySelector('.channel-voice-remove').addEventListener('click',async()=>{try{draw(await api(`${base}/${item.code}/remove`,'POST',{}));}catch(error){langNote(section,error.message,true);}});
     }
-    let stream;
-    try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:true}});}
-    catch{langNote(box,'Браузер не дав доступ до мікрофона. Дозвольте його в адресному рядку або завантажте запис файлом.',true);return;}
-    const chunks=[],recorder=new MediaRecorder(stream);langRecorder=recorder;
-    const started=Date.now(),label=()=>{const s=Math.floor((Date.now()-started)/1000);record.innerHTML=`<span class="lang-rec-dot"></span>Зупинити · ${clock(s)}`;};
-    record.classList.add('is-recording');label();const tick=setInterval(label,500);
-    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
-    recorder.onstop=()=>{clearInterval(tick);stream.getTracks().forEach(track=>track.stop());langRecorder=null;
-      const blob=new Blob(chunks,{type:recorder.mimeType || 'audio/webm'});
-      if(Date.now()-started<5000){record.classList.remove('is-recording');record.innerHTML=`${micIcon}Записати`;langNote(box,'Запис закороткий: прочитайте весь уривок.',true);return;}
-      langOwnUpload(id,item,blob,'Мій голос.webm',box);};
-    recorder.start(1000);
-  });
+    const pick=section.querySelector('.channel-voice-add select'),record=section.querySelector('.channel-voice-add .lang-own-record'),fileLabel=section.querySelector('.channel-voice-add .lang-own-file'),file=fileLabel.querySelector('input');
+    pick.addEventListener('change',()=>{const off=!pick.value;record.disabled=off;file.disabled=off;fileLabel.classList.toggle('is-off',off);});
+    const send=async(blob,name)=>{try{draw(await langSendExample(`${base}/${pick.value}`,blob,name,'',section));}catch(error){langNote(section,error.message,true);}};
+    record.addEventListener('click',()=>langRecord(record,section,send));
+    file.addEventListener('change',()=>{const chosen=file.files[0];if(chosen&&pick.value)send(chosen,chosen.name);});
+  };
+  try{draw(await api(base));}catch(error){section.innerHTML=`<h3>Голоси для перекладу</h3><p>${esc(error.message)}</p>`;}
 }
 
 // The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
@@ -174,7 +204,7 @@ function langOriginal(id,src){
 function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
-  const hasSample=(item.files.samples || []).includes(langData.voice_key);
+  const hasSample=(item.files.samples || []).includes(item.voice_key);
   const fit=voice.synced?[`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`найбільше запізнення ${String(voice.latest).replace('.',',')} с`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
     <section class="lang-step"><h3><em>1</em>Текст</h3>
@@ -187,14 +217,13 @@ function langCard(id,item,spec){
           ${spec.engines?`<label class="lang-engine"><span>Рушій</span><select>${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)} · ${esc(engine.note)}</option>`).join('')}</select></label>`:''}
           <small>${esc(spec.note)}${spec.configured===true?'':` <span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів».</span>`}</small></div>
         ${langOwnBlock(item)}
-        ${item.own_voice?'':`<p class="lang-from-original">Зараз голос береться з оригіналу${langData.source?.language&&langData.source.language!==item.code?` (${esc(langData.languages.find(entry=>entry.code===langData.source.language)?.label || '')})`:''}, тож звучатиме як носій тієї мови, що говорить ${esc(item.label)}. Щоб прибрати акцент, запишіть себе вище.</p>`}
         <p class="lang-price">Весь текст через ${esc(spec.name)}: <b>${langCost(spec,price)}</b> <small>(${item.chars.toLocaleString('uk-UA')} символів)</small>.${spec.free?'':' Спершу послухайте зразок, він коштує майже нічого.'}</p>
-        <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(langData.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${hasSample?' hidden':''}>Послухати зразок</button></div>
+        <div class="lang-sample">${hasSample?`<div class="lang-player" data-kind="sample-${esc(item.voice_key)}"></div>`:''}<button type="button" class="secondary lang-sample-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}${hasSample?' hidden':''}>Послухати зразок</button></div>
         ${item.files.voice?`<div class="lang-voice"><b>Готова озвучка</b><div class="lang-player" data-kind="voice"></div>
           <small>${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша за ролик на ${String(voice.longer).replace('.',',')} с`:''}</small>
           ${item.folder?`<small class="lang-folder">Файл у папці випуску: ${esc(item.folder)}</small>`:''}
           <a class="lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3">Завантажити MP3</a></div>`:''}
-        <div class="lang-actions"><button type="button" class="primary lang-voice-run">${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langCost(spec,price)}</button></div>`
+        <div class="lang-actions"><button type="button" class="primary lang-voice-run"${langHasVoice(item)?'':' data-blocked="1" disabled title="Спершу додайте приклад голосу цією мовою"'}>${item.files.voice?'Озвучити заново':'Озвучити весь ролик'} · ${langCost(spec,price)}</button></div>`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
@@ -208,7 +237,10 @@ function langCard(id,item,spec){
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
   for(const box of card.querySelectorAll('.lang-player')){
-    const player=voicePlayer(id,langUrl(id,item.code,box.dataset.kind,box.dataset.kind==='voice'?voice.made_at:undefined));
+    const kind=box.dataset.kind;
+    const url=kind==='channel'?`/api/channels/${encodeURIComponent(langData.channel_id)}/voices/${item.code}/file?v=${item.channel_voice.stamp}`
+      :langUrl(id,item.code,kind,kind==='voice'?voice.made_at:kind==='own'?item.own_voice.stamp:undefined);
+    const player=voicePlayer(id,url);
     if(player)box.replaceWith(player);
   }
   // edits are saved by themselves a moment after typing stops and when the field is left (user, 2 November 2026:
@@ -301,7 +333,7 @@ function showLangJob(){
   const box=card&&step!==undefined?card.querySelectorAll('.lang-step')[step]?.querySelector('.lang-job'):null;
   for(const other of document.querySelectorAll('#project-langs .lang-job'))if(other!==box){other.hidden=true;other.closest('.lang-step')?.classList.remove('is-working');}
   document.querySelectorAll('#project-langs .lang-card button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
-    button.disabled=busy;});
+    button.disabled=busy || button.dataset.blocked==='1';});
   // adding a language touches nothing a running job uses: it stays open (user, 2 November 2026)
   // the «after» window of the language being redrawn says so in place of its wand
   for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){

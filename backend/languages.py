@@ -65,11 +65,9 @@ FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "not
                 # the expressive one (user: «чому драма не додав»); Fish's own page gave no price on 2 November 2026
                 "drama-3": {"name": "Drama 3", "per_char": None, "note": "найвиразніший, ціна на fish.audio"}}
 FISH_ENGINE = "s2.1-pro-free"
-REFERENCE_SECONDS = 22
 TRANSLATE_CHUNK = 5000
 VOICE_CHUNK = 2400
 SAMPLE_CHARS = 320
-CLONE_SECONDS = 90
 FIT_MAX = 1.15
 TIMEOUT = 300
 ACTIVE: set[str] = set()
@@ -227,7 +225,10 @@ def overview(pid: str) -> dict:
                       "files": files(pid, code, project), "voice": item.get("voice") or {},
                       "lines": len(synced_segments(pid, code) or []),
                       "passage": passage(text) if text else "",
-                      "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"]} if (own := own_voice(pid, code)) else None), "sample_provider": item.get("sample_provider"),
+                      "own_voice": ({"text": own["text"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
+                      "channel_voice": ({"duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
+                                        if (shared := channel_voice(project.get("channel_id"), code)) else None),
+                      "voice_key": voice_key(pid, "fishaudio", code), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     return {"languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
@@ -242,7 +243,7 @@ def overview(pid: str) -> dict:
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             # Fish Audio only for now (user, 2 November 2026: «будемо працювати лише з фіш-аудіо»); ElevenLabs stays in code
             "provider": "fishaudio", "job": data.get("job"),
-            "voice_key": voice_key(pid, "fishaudio"),
+            "channel_id": project.get("channel_id"),
             "thumbnail": bool(cover(project))}
 
 
@@ -459,60 +460,73 @@ def save_translation(pid: str, code: str, project: dict, src: dict, text: str, c
 
 # ---------- voice ----------
 
-def clone_sample(project: dict, work: Path) -> Path:
-    """A minute and a half of the episode's own voice, the clone's reference."""
-    voice = source(project)["voice"]
-    if not voice or not voice.is_file():
-        raise RuntimeError("Не знайдено озвучку випуску, з якої клонувати голос")
-    target = work / "clone-sample.mp3"
-    if not target.is_file():
-        done = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(voice), "-t", str(CLONE_SECONDS), "-ac", "1",
-                               "-ar", "44100", "-b:a", "192k", str(target)], capture_output=True, timeout=120)
-        if done.returncode or not target.is_file():
-            raise RuntimeError("Не вдалося вирізати зразок голосу: " + done.stderr.decode(errors="replace")[-200:])
-    return target
-
-
-# The author's own voice in the language of the translation (user, 2 November 2026: the clone took the original's
-# accent along, «дуже англійський акцент перенісся», and stock voices are not wanted). A clone copies the pronunciation
-# of its reference with the timbre, so a reference in the target language carries no foreign accent: the author reads
-# a passage of the translation aloud (recorded in the page or a file) and that recording is the clone's reference for
-# this language. Without one, the episode's own voice is used, as before.
+# The voice of a translation always comes from an example in that very language (user, 2 November 2026: «переклад
+# будемо брати завжди від прикладу ролика на мові… або запис, або закинути приклад носія»): a clone copies the
+# pronunciation of its example with the timbre, so an example in the language carries no foreign accent. The channel
+# keeps one example a language for all its episodes («в настройках каналу»), and an episode may have its own instead
+# («якщо ні, то можна закинути свій»), which wins. Either is the author's own voice recorded in the page or a file of any
+# speaker. There is no fallback to the original's voice: it brought its accent along.
 OWN_SECONDS = 45
 PASSAGE_CHARS = 380
+CHANNEL_VOICES = "Голоси для перекладу"
 
 
 def passage(text: str) -> str:
-    """The passage of the translation the author reads aloud: about twenty-five seconds of whole sentences."""
+    """The passage of the translation the author may read aloud: about twenty-five seconds of whole sentences."""
     return sample_text_at(text, PASSAGE_CHARS)
 
 
+def channel_voice_dir(cid: str) -> Path:
+    return store.get_channel_folder(cid) / CHANNEL_VOICES
+
+
+def read_example(folder: Path, stem: str, source: str) -> dict | None:
+    audio, said = folder / f"{stem}.mp3", folder / f"{stem}.txt"
+    if not (audio.is_file() and said.is_file()):
+        return None
+    meta = store.read_json(folder / f"{stem}.json", {}) or {}
+    return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio),
+            "heard": meta.get("heard", True), "from": source, "stamp": int(audio.stat().st_mtime)}
+
+
 def own_voice(pid: str, code: str | None) -> dict | None:
+    """The episode's own example for a language, if the author dropped one in."""
+    return read_example(work_dir(pid, code), "own-voice", "episode") if code else None
+
+
+def channel_voice(cid: str | None, code: str | None) -> dict | None:
+    if not cid or not code or code not in LANGUAGES:
+        return None
+    try:
+        return read_example(channel_voice_dir(cid), LANGUAGES[code][0], "channel")
+    except store.StudioError:
+        return None
+
+
+def voice_for(pid: str, code: str | None) -> dict | None:
+    """The example a language is voiced from: the episode's own, else the channel's."""
     if not code:
         return None
-    work = work_dir(pid, code)
-    audio, said = work / "own-voice.mp3", work / "own-voice.txt"
-    if audio.is_file() and said.is_file():
-        meta = store.read_json(work / "own-voice.json", {}) or {}
-        return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio),
-                "heard": meta.get("heard", True)}
-    return None
+    own = own_voice(pid, code)
+    if own:
+        return own
+    try:
+        cid = store.load_project(pid).get("channel_id")
+    except store.StudioError:
+        return None
+    return channel_voice(cid, code)
 
 
-def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
-    check_code(code)
-    store.load_project(pid)
-    said = str(said or "").strip()
-    if not said:
-        raise store.StudioError("Немає тексту уривка, який ви читали")
-    if not 0 < size <= 60 * 1024 * 1024:
+NO_VOICE = ("Додайте приклад голосу цією мовою: запишіть себе або закиньте запис носія мови, тут чи в налаштуваннях "
+            "каналу. Озвучка скопіює саме цей голос і вимову")
+
+
+def store_example(folder: Path, stem: str, code: str, stream, size: int, said: str) -> None:
+    """A recording or a file turned into the example: mono MP3 of at most OWN_SECONDS, its words recognised."""
+    if not 0 < size <= 200 * 1024 * 1024:
         raise store.StudioError("Запис завеликий або порожній", 413)
-    with LOCK:
-        if pid in ACTIVE and (load_state(pid).get("job") or {}).get("code") == code:
-            raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
-    work = work_dir(pid, code)
-    work.mkdir(parents=True, exist_ok=True)
-    raw = work / "own-voice.upload"
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = folder / f"{stem}.upload"
     with raw.open("wb") as out:
         left = size
         while left > 0:
@@ -521,9 +535,9 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
                 break
             out.write(chunk)
             left -= len(chunk)
-    target = work / "own-voice.mp3"
+    target = folder / f"{stem}.mp3"
     try:
-        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(raw), "-t", str(OWN_SECONDS), "-ac", "1", "-ar", "44100",
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(raw), "-vn", "-t", str(OWN_SECONDS), "-ac", "1", "-ar", "44100",
              "-b:a", "160k", str(target)], "прочитати запис")
     except RuntimeError as error:
         raise store.StudioError(str(error)) from None
@@ -532,15 +546,70 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
     length = store.media_duration(target) or 0
     if length < 5:
         target.unlink(missing_ok=True)
-        raise store.StudioError("Запис закороткий: прочитайте весь уривок, хоча б 10 секунд")
-    # the author may read the passage or say anything in the language (user, 2 November 2026: «чи можна просто
-    # говорити на українській мові?»): the recording is recognised locally, so Fish gets the words actually said
+        raise store.StudioError("Запис закороткий: потрібно хоча б 10 секунд мови")
+    # the speaker may say anything in the language: the recording is recognised locally, so Fish gets its own words
     found = heard(target, length, code)
-    (work / "own-voice.txt").write_text((found or said) + "\n", encoding="utf-8")
+    if not found and not str(said or "").strip():
+        target.unlink(missing_ok=True)
+        raise store.StudioError("Студія не змогла розпізнати слова в записі. Спробуйте чистіший запис без музики")
+    (folder / f"{stem}.txt").write_text((found or str(said).strip()) + "\n", encoding="utf-8")
     # whether the words came from the recording itself: when not, Fish gets the passage, right only if it was read
-    store.atomic_json(work / "own-voice.json", {"heard": bool(found)})
-    forget_own_clone(pid, code)
+    store.atomic_json(folder / f"{stem}.json", {"heard": bool(found)})
+
+
+def drop_example(folder: Path, stem: str) -> None:
+    for suffix in (".mp3", ".txt", ".json"):
+        (folder / f"{stem}{suffix}").unlink(missing_ok=True)
+
+
+def save_own_voice(pid: str, code: str, stream, size: int, said: str) -> dict:
+    check_code(code)
+    store.load_project(pid)
+    with LOCK:
+        if pid in ACTIVE and (load_state(pid).get("job") or {}).get("code") == code:
+            raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
+    store_example(work_dir(pid, code), "own-voice", code, stream, size, said)
+    drop_samples(work_dir(pid, code))
     return overview(pid)
+
+
+def remove_own_voice(pid: str, code: str) -> dict:
+    check_code(code)
+    drop_example(work_dir(pid, code), "own-voice")
+    drop_samples(work_dir(pid, code))
+    return overview(pid)
+
+
+def channel_voices(cid: str) -> dict:
+    store.get_channel_folder(cid)
+    found = []
+    for code in LANGUAGES:
+        example = channel_voice(cid, code)
+        if example:
+            found.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "duration": example["duration"],
+                          "heard": example["heard"], "stamp": example["stamp"]})
+    return {"voices": found, "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
+            "folder": str(channel_voice_dir(cid))}
+
+
+def save_channel_voice(cid: str, code: str, stream, size: int, said: str) -> dict:
+    check_code(code)
+    store_example(channel_voice_dir(cid), LANGUAGES[code][0], code, stream, size, said)
+    return channel_voices(cid)
+
+
+def remove_channel_voice(cid: str, code: str) -> dict:
+    check_code(code)
+    drop_example(channel_voice_dir(cid), LANGUAGES[code][0])
+    return channel_voices(cid)
+
+
+def channel_voice_file(cid: str, code: str) -> Path:
+    check_code(code)
+    example = channel_voice(cid, code)
+    if not example:
+        raise store.StudioError("Прикладу голосу немає", 404)
+    return example["path"]
 
 
 def heard(path: Path, length: float, code: str) -> str | None:
@@ -554,42 +623,23 @@ def heard(path: Path, length: float, code: str) -> str | None:
     return text if len(text.split()) >= 5 else None
 
 
-def remove_own_voice(pid: str, code: str) -> dict:
-    check_code(code)
-    work = work_dir(pid, code)
-    for name in ("own-voice.mp3", "own-voice.txt", "own-voice.json"):
-        (work / name).unlink(missing_ok=True)
-    forget_own_clone(pid, code)
-    return overview(pid)
-
-
-def forget_own_clone(pid: str, code: str) -> None:
-    """A new or removed recording: the samples were of the other voice, and a clone made from the old one is stale."""
-    drop_samples(work_dir(pid, code))
-    update(pid, lambda data: (data.get("clones") or {}).pop(f"elevenlabs-{code}", None))
-
-
 def voice_id(pid: str, provider: str, code: str | None = None):
-    """The author's voice for one language: from the author's own recording in that language when there is one, else
-    from the episode's voice. ElevenLabs keeps a clone id per source; Fish gets the reference with every request."""
-    own = own_voice(pid, code)
+    """The voice for one language, from its example. ElevenLabs keeps a clone id per example; Fish gets the example
+    with every request."""
+    example = voice_for(pid, code)
+    if not example:
+        raise RuntimeError(NO_VOICE)
     if provider == "fishaudio":
-        if own:
-            return {"audio": own["path"].read_bytes(), "text": own["text"], "engine": fish_engine(pid)}
-        return reference(pid)
-    slot = f"elevenlabs-{code}" if own else provider
-    data = load_state(pid)
-    known = (data.get("clones") or {}).get(slot)
+        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid)}
+    slot = f"elevenlabs-{code}-{example['from']}-{example['stamp']}"
+    known = (load_state(pid).get("clones") or {}).get(slot)
     if known:
         return known
     project = store.load_project(pid)
-    sample = own["path"] if own else clone_sample(project, work_dir(pid))
-    name = f"VideoKey · {project['name']}{' · ' + code if own else ''}"[:90]
-    if provider == "elevenlabs":
-        body, mime = multipart({"name": name, "remove_background_noise": "false",
-                                "description": "Голос автора, клонований студією VideoKey для перекладів"}, [("files", sample, "audio/mpeg")])
-        raw = request(ELEVEN + "/voices/add", body, {"xi-api-key": key(provider), "Content-Type": mime}, "ElevenLabs (клон голосу)")
-        found = json.loads(raw).get("voice_id")
+    body, mime = multipart({"name": f"VideoKey · {project['name']} · {code}"[:90], "remove_background_noise": "false",
+                            "description": "Голос для перекладів студії VideoKey"}, [("files", example["path"], "audio/mpeg")])
+    raw = request(ELEVEN + "/voices/add", body, {"xi-api-key": key(provider), "Content-Type": mime}, "ElevenLabs (клон голосу)")
+    found = json.loads(raw).get("voice_id")
     if not found:
         raise RuntimeError("Сервіс не повернув клон голосу")
     update(pid, lambda data: data.setdefault("clones", {}).__setitem__(slot, found))
@@ -649,43 +699,6 @@ def msgpack(value) -> bytes:
     raise TypeError(f"msgpack: {type(value).__name__}")
 
 
-def spoken_words(pid: str) -> list[dict]:
-    """The words of the latest recognition with their times (script words with ASR time)."""
-    pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {}) or {}
-    if not pointer.get("job_id"):
-        return []
-    report = store.read_json(store.project_dir(pid) / "analysis" / pointer["job_id"] / "result.json", {}) or {}
-    return [word for word in report.get("aligned_words") or [] if isinstance(word, dict) and "end" in word]
-
-
-def reference(pid: str) -> dict:
-    """About twenty seconds of the author's voice from the start, cut after a whole word, with exactly the words said
-    in it: Fish clones the voice from it in every request. Made once and kept."""
-    work = work_dir(pid)
-    audio_path, text_path = work / "reference.mp3", work / "reference.txt"
-    if not (audio_path.is_file() and text_path.is_file()):
-        project = store.load_project(pid)
-        src = source(project)
-        if not src["voice"]:
-            raise RuntimeError("Не знайдено озвучку випуску, з якої клонувати голос")
-        words = spoken_words(pid)
-        said = [word for word in words if float(word["end"]) <= REFERENCE_SECONDS]
-        if len(said) >= 8:
-            end = float(said[-1]["end"]) + 0.15
-            text = " ".join(str(word["text"]) for word in said)
-        else:
-            # no recognition kept: the script's opening at about fifteen characters a second
-            end = float(REFERENCE_SECONDS)
-            text = sample_text_at(src["script"], int(REFERENCE_SECONDS * 15))
-        if not text.strip():
-            raise RuntimeError("Немає тексту озвучки для зразка голосу")
-        work.mkdir(parents=True, exist_ok=True)
-        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(src["voice"]), "-t", f"{end:.2f}", "-ac", "1", "-ar", "44100",
-             "-b:a", "160k", str(audio_path)], "вирізати зразок голосу")
-        text_path.write_text(text.strip(), encoding="utf-8")
-    return {"audio": audio_path.read_bytes(), "text": text_path.read_text(encoding="utf-8"), "engine": fish_engine(pid)}
-
-
 def sample_text_at(text: str, size: int) -> str:
     out = ""
     for sentence in re.split(r"(?<=[.!?…])\s+", text.strip()):
@@ -695,9 +708,12 @@ def sample_text_at(text: str, size: int) -> str:
     return out
 
 
-def voice_key(pid: str, provider: str) -> str:
-    """Which voice a sample was made with: «elevenlabs», or «fishaudio-<engine>»."""
-    return f"fishaudio-{fish_engine(pid)}" if provider == "fishaudio" else provider
+def voice_key(pid: str, provider: str, code: str | None = None) -> str:
+    """Which voice a sample was made with: the provider (and Fish's engine) and the example it was cloned from, so a
+    new example or engine never plays an older one's sample."""
+    example = voice_for(pid, code)
+    tail = f"-{example['from']}{example['stamp']}" if example else ""
+    return (f"fishaudio-{fish_engine(pid)}" if provider == "fishaudio" else provider) + tail
 
 
 def drop_samples(work: Path) -> None:
@@ -718,14 +734,14 @@ def sample_text(text: str) -> str:
 
 def sample(pid: str, code: str, provider: str, job: dict) -> None:
     text = read_text(pid, code)
-    progress(pid, job, 10, "Клонуємо ваш голос" if not (load_state(pid).get("clones") or {}).get(provider) else "Озвучуємо зразок")
+    progress(pid, job, 10, "Озвучуємо зразок")
     voice = voice_id(pid, provider, code)
     progress(pid, job, 50, "Озвучуємо зразок")
     if pid in CANCEL:
         raise Stop()
     piece = sample_text(text)
     # each voice (a provider, and Fish's engine) keeps its own sample, so switching between them compares them
-    speak(provider, voice, piece, work_dir(pid, code) / f"sample-{voice_key(pid, provider)}.mp3")
+    speak(provider, voice, piece, work_dir(pid, code) / f"sample-{voice_key(pid, provider, code)}.mp3")
     job["cost"] = price(provider, piece, fish_engine(pid))
     update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).update(sample_provider=provider))
 
@@ -1051,8 +1067,8 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
             key(provider)
         except RuntimeError as error:
             raise store.StudioError(str(error), 409) from None
-        if not source(project)["voice"]:
-            raise store.StudioError("Не знайдено озвучку випуску, з якої клонувати голос", 409)
+        if not voice_for(pid, code):
+            raise store.StudioError(NO_VOICE, 409)
         try:
             read_text(pid, code)
         except RuntimeError as error:
