@@ -158,8 +158,9 @@ function langCard(id,item,spec){
           <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>До</figcaption></figure>
         <figure class="lang-thumb">${item.files.thumbnail?`<div class="lang-thumb-run has-picture"><img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Перекласти ще раз</small></span></div>
           <div class="project-actions lang-thumb-actions"><button type="button" class="project-action thumbnail lang-thumb-redo" title="Перекласти ще раз" aria-label="Перекласти прев’ю ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю ${esc(item.name)}">${langDownloadIcon}</a></div>`
-          :`<button type="button" class="lang-thumb-run" aria-label="Перекласти прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб перекласти</small></span></button>`}<figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption></figure></div>
-        <label class="lang-thumb-wishes"><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>`
+          :`<button type="button" class="lang-thumb-run" aria-label="Перекласти прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб перекласти</small></span></button>`}<figcaption>Після · ${esc(item.name)} · Codex змінить тільки слова на картинці</figcaption>
+          <div class="lang-thumb-ask" hidden><label><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>
+            <div class="lang-thumb-ask-actions"><button type="button" class="secondary lang-thumb-ask-cancel">Скасувати</button><button type="button" class="primary lang-thumb-ask-go">Перекласти</button></div></div></figure></div>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
   for(const box of card.querySelectorAll('.lang-player')){
@@ -208,9 +209,14 @@ function langCard(id,item,spec){
       <p>Студія склеїть частини, вирівняє гучність і піджене довжину під ролик. Зазвичай це кілька хвилин.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`Озвучити · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
   });
-  const wishes=card.querySelector('.lang-thumb-wishes input');
+  // the wand opens the wishes under the translated picture; «Перекласти» there starts Codex (user, 2 November 2026:
+  // «побажання мають проявлятися тоді, коли нажимаєте… перекласти»)
+  const ask=card.querySelector('.lang-thumb-ask'),wishes=ask?.querySelector('input');
   wishes?.addEventListener('input',()=>{langDrafts[`${id}:${item.code}:wishes`]=wishes.value;});
-  card.querySelectorAll('button.lang-thumb-run, .lang-thumb-redo').forEach(button=>button.addEventListener('click',()=>langStart(id,'thumbnail',item.code,{wishes:wishes?.value || ''})));
+  wishes?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();ask.querySelector('.lang-thumb-ask-go').click();}});
+  card.querySelectorAll('button.lang-thumb-run, .lang-thumb-redo').forEach(button=>button.addEventListener('click',()=>{if(!ask)return;ask.hidden=false;wishes.focus();}));
+  ask?.querySelector('.lang-thumb-ask-cancel').addEventListener('click',()=>{ask.hidden=true;});
+  ask?.querySelector('.lang-thumb-ask-go').addEventListener('click',()=>{ask.hidden=true;langStart(id,'thumbnail',item.code,{wishes:wishes.value || ''});});
   langOwnWire(id,card,item);
   return card;
 }
