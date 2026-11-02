@@ -38,11 +38,11 @@ function drawLangs(id){
     <div class="lang-head"><h1>Мови</h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
     <div class="lang-cards"></div>
-    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Перекласти</button></div>
+    <div class="lang-add"><label><span>Нова мова</span><select><option value="">Оберіть мову…</option>${data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language).map(item=>`<option value="${item.code}">${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select></label><button type="button" class="primary lang-add-run" disabled>Додати</button></div>
   </div>`;
   // listeners go on the page's own root, drawn anew each time, so they never pile up on the section
   const view=section.querySelector('.lang-view'),cards=section.querySelector('.lang-cards');
-  if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Перекласти».</p>';
+  if(!data.items.length)cards.innerHTML='<p class="lang-empty">Ще немає жодної мови. Оберіть мову нижче й натисніть «Додати».</p>';
   cards.prepend(langOriginal(id,data.source));
   for(const item of data.items)cards.append(langCard(id,item,spec));
   const pick=section.querySelector('.lang-add select'),go=section.querySelector('.lang-add-run');
@@ -51,7 +51,7 @@ function drawLangs(id){
     const code=pick.value;if(!code)return;
     try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}`,'POST',{});drawLangs(id);
       document.querySelector(`#project-langs .lang-card[data-code="${code}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
-      if(langData.openrouter===true)langStart(id,'translate',code);else langNote(langPlace(code,'translate'),'Додайте ключ OpenRouter у налаштуваннях студії («Ключі сервісів»), щоб перекласти текст.',true);}catch(error){langNote(go,error.message,true);}
+    }catch(error){langNote(go,error.message,true);}
   });
   view.addEventListener('change',async event=>{
     const select=event.target.closest('.lang-engine select');if(!select)return;
