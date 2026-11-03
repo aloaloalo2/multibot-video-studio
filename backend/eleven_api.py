@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import threading
 import time
 import urllib.error
@@ -14,6 +15,7 @@ import urllib.parse
 import urllib.request
 
 import credentials
+import store
 
 BASE = "https://api.elevenlabs.io/v1"
 # Public ElevenAPI list prices, checked 2026-11-03. These are estimates, not account debits.
@@ -35,6 +37,14 @@ _cache = {}
 _lock = threading.Lock()
 _balances = {}
 _balance_lock = threading.Lock()
+_credit_rates = {}
+_credit_scopes = {}
+CREDIT_RATE_TTL = 86400
+HISTORY_PAGES = 3
+
+
+def finite_number(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 def balance(refresh: bool = False) -> dict:
@@ -93,9 +103,11 @@ def normalize_models(raw: list) -> list[dict]:
         if mid not in PRIORITY or item.get("is_deprecated"):
             continue
         rates = item.get("model_rates") or {}
+        if not isinstance(rates,dict):rates={}
         rate = rates.get("character_cost_multiplier")
         discount = rates.get("cost_discount_multiplier", 1)
-        rate = float(rate) * float(discount) if isinstance(rate, (int, float)) and isinstance(discount, (int, float)) else None
+        rate = float(rate) * float(discount) if finite_number(rate) and finite_number(discount) and rate > 0 and discount > 0 else None
+        if not finite_number(rate):rate=None
         dialogue = mid.startswith(("eleven_v3", "eleven_v4"))
         result.append({"id": mid, "name": item.get("name") or mid,
                        "note": "потрібен доступ до моделі" if item.get("requires_alpha_access") else "діалогова озвучка" if dialogue else "озвучка",
@@ -109,25 +121,153 @@ def normalize_models(raw: list) -> list[dict]:
 
 def observed_credit_rate(history: list, mid: str) -> float | None:
     """Estimate current per-character debits from individual history records, never sum incomplete streams as a bill."""
-    points=[]
-    for item in history:
-        if item.get("model_id")!=mid:continue
-        dialogue=item.get("dialogue") or []
-        if isinstance(dialogue,dict):dialogue=dialogue.get("inputs",[])
-        text=item.get("text") or "".join(str(x.get("text") or "") for x in dialogue if isinstance(x,dict))
-        count=len(text)
-        before,after=item.get("character_count_change_from"),item.get("character_count_change_to")
-        if count<20 or not isinstance(before,(int,float)) or not isinstance(after,(int,float)):continue
-        credits=after-before
-        if 0<credits<=count*5:points.append((count,credits))
+    points = credit_points(history, mid)
     # Streaming history contains short chunks rounded to whole credits. Regressing
     # their rounded debit directly biases the rate upwards (0.2 becomes 0.25).
     if len(points)<5 or sum(n for n,_ in points)<250:return None
-    # Do not guess when short, rounded chunks support several tariffs equally.
-    # A whole-credit residual also covers the provider's per-chunk separator.
+    # This tariff-grid inference is an estimate, not an exact billing rate. A small
+    # rounding tolerance allows historical separator chunks, but the newest eligible
+    # debit has a veto so an older majority cannot override a changed tariff.
+    eligible=[item for item in history if credit_points([item],mid)]
+    dated=[item for item in eligible if finite_number(item.get('date_unix'))]
+    latest_stamp=max(item['date_unix'] for item in dated) if dated else None
+    newest=[item for item in dated if item['date_unix']==latest_stamp] if dated else eligible[:1]
+    latest_points=credit_points(newest,mid)
     rates=[step/20 for step in range(1,101)
-           if sum(abs(n*step/20-c)<=1.01 for n,c in points)/len(points)>=.9]
+           if all(abs(n*step/20-c)<=1.01 for n,c in latest_points)
+           and sum(abs(n*step/20-c)<=1.01 for n,c in points)/len(points)>=.9]
     return rates[0] if len(rates)==1 else None
+
+
+def credit_points(history: list, mid: str) -> list[tuple[int, float]]:
+    points = []
+    for item in history:
+        if not isinstance(item,dict):continue
+        if item.get("model_id")!=mid:continue
+        dialogue=item.get("dialogue") or []
+        if isinstance(dialogue,dict):dialogue=dialogue.get("inputs",[])
+        if not isinstance(dialogue,list):dialogue=[]
+        text=item.get("text") or "".join(str(x.get("text") or "") for x in dialogue if isinstance(x,dict))
+        if not isinstance(text,str):continue
+        count=len(text)
+        before,after=item.get("character_count_change_from"),item.get("character_count_change_to")
+        if count<20 or not finite_number(before) or not finite_number(after):continue
+        credits=after-before
+        if 0<credits<=count*5:points.append((count,credits))
+    return points
+
+
+def recent_history(secret: str, mid: str, now: float, evidence_after: float | None = None) -> list:
+    """Read a bounded number of pages, without synthesis or storing account text."""
+    cutoff = max(now-CREDIT_RATE_TTL,evidence_after if evidence_after is not None else now-CREDIT_RATE_TTL)
+    query = {"page_size":100,"source":"TTS","model_id":mid,"date_after_unix":int(cutoff)}
+    rows, seen_ids, cursors = [], set(), set()
+    for _ in range(HISTORY_PAGES):
+        try:
+            page = get('/history?'+urllib.parse.urlencode(query), secret)
+        except (RuntimeError, TypeError, ValueError):
+            break
+        if not isinstance(page,dict) or not isinstance(page.get('history'),list):break
+        cursor = page.get('last_history_item_id')
+        if isinstance(cursor,str) and cursor in cursors:break
+        for item in page['history']:
+            if not isinstance(item,dict):continue
+            stamp, item_id = item.get('date_unix'), item.get('history_item_id')
+            if not finite_number(stamp) or not cutoff <= stamp <= now:continue
+            if item.get('source') not in (None,'TTS') or not credit_points([item],mid):continue
+            if not isinstance(item_id,str) or not item_id or item_id in seen_ids:continue
+            seen_ids.add(item_id)
+            rows.append(item)
+        if observed_credit_rate(rows,mid) is not None:break
+        if not page.get('has_more') or not isinstance(cursor,str) or not cursor:break
+        cursors.add(cursor)
+        query['start_after_history_item_id'] = cursor
+    return rows
+
+
+def subscription_signature(account: dict | None) -> str | None:
+    if not isinstance(account,dict) or not isinstance(account.get('tier'),str) or not account['tier']:return None
+    fields = {key:account.get(key) for key in ('tier','status','currency')}
+    if any(value is not None and not isinstance(value,str) for value in fields.values()):return None
+    return hashlib.sha256(json.dumps(fields,sort_keys=True).encode()).hexdigest()
+
+
+def credit_rate_path(signature: str, mid: str):
+    # store.DATA_ROOT respects MULTIBOT_STUDIO_DATA; the default backend/data is ignored by Git.
+    return store.DATA_ROOT / 'eleven-credit-rates' / signature / (mid+'.json')
+
+
+def credit_scope(signature, mid, baseline, subscription, now) -> float:
+    """Old debits cannot be relabelled as evidence for a newly observed plan/rate."""
+    if not subscription or not finite_number(baseline) or baseline <= 0:
+        return now  # An account-read outage is not evidence that its tariff changed.
+    fields = {'key_signature':signature,'model':mid,'subscription_signature':subscription,
+              'catalog_credits_per_char':baseline}
+    path = credit_rate_path(signature,mid).with_suffix('.scope.json')
+    previous = _credit_scopes.get((signature,mid))
+    unreadable = False
+    if previous is None:
+        try:
+            with path.open(encoding='utf-8') as handle:previous=json.loads(handle.read(16384))
+        except FileNotFoundError:pass
+        except (OSError,ValueError,TypeError):unreadable=True
+    valid = (isinstance(previous,dict) and previous.get('schema')==1
+             and finite_number(previous.get('evidence_after')) and finite_number(previous.get('checked_at'))
+             and previous['evidence_after'] <= previous['checked_at'] <= now)
+    changed = previous is not None and (not valid or previous.get('fields') != fields)
+    cutoff = now if unreadable or changed else previous['evidence_after'] if valid else now-CREDIT_RATE_TTL
+    current = {'schema':1,'fields':fields,'evidence_after':cutoff,'checked_at':now}
+    _credit_scopes[(signature,mid)] = current
+    try:store.atomic_json(path,current)
+    except (OSError,ValueError,TypeError):pass
+    return cutoff
+
+
+def valid_credit_record(record, signature, mid, baseline, subscription, now) -> bool:
+    if not isinstance(record,dict) or type(record.get('schema')) is not int or record['schema'] != 1 or not subscription:return False
+    if (record.get('key_signature'),record.get('model'),record.get('subscription_signature')) != (signature,mid,subscription):return False
+    if not finite_number(baseline) or baseline <= 0 or not finite_number(record.get('catalog_credits_per_char')) or record['catalog_credits_per_char'] != baseline:return False
+    rate = record.get('rate')
+    if not finite_number(rate) or not 0 < rate <= 5:return False
+    dates = [record.get(key) for key in ('observed_at','evidence_latest_at','checked_at')]
+    if not all(finite_number(value) for value in dates):return False
+    oldest, latest, checked = dates
+    if not 0 <= now-oldest <= CREDIT_RATE_TTL or not oldest <= latest <= checked <= now:return False
+    samples, chars = record.get('samples'), record.get('characters')
+    return type(samples) is int and samples >= 5 and type(chars) is int and chars >= 250
+
+
+def retained_credit_rate(signature, mid, baseline, subscription, now, evidence_after=None):
+    record = _credit_rates.get((signature,mid))
+    if record is False:return None
+    def valid(value):
+        return (valid_credit_record(value,signature,mid,baseline,subscription,now)
+                and (evidence_after is None or value['observed_at'] >= evidence_after))
+    if valid(record):return record
+    try:
+        with credit_rate_path(signature,mid).open(encoding='utf-8') as handle:
+            record = json.loads(handle.read(16384))
+    except (OSError,ValueError,TypeError):
+        return None
+    return record if valid(record) else None
+
+
+def keep_credit_rate(record) -> None:
+    _credit_rates[(record['key_signature'],record['model'])] = dict(record)
+    try:
+        store.atomic_json(credit_rate_path(record['key_signature'],record['model']),record)
+    except (OSError,ValueError,TypeError):
+        pass  # A read-only/full disk must not break discovery or discard the current observation.
+
+
+def invalidate_credit_rate(signature: str, mid: str, now: float) -> None:
+    _credit_rates[(signature,mid)] = False
+    try:
+        # Replace instead of unlinking: the reason remains explicit and another process
+        # cannot revive an older valid record after this one observed conflicting debits.
+        store.atomic_json(credit_rate_path(signature,mid),{'invalidated_at':now,'reason':'conflicting_debit'})
+    except (OSError,ValueError,TypeError):
+        pass
 
 
 def catalog(refresh: bool = False) -> dict:
@@ -145,33 +285,48 @@ def catalog(refresh: bool = False) -> dict:
             if not models:
                 raise RuntimeError("ElevenLabs не повернув моделей озвучення")
             result = {"models": models, "verified": True}
+            account = None
             try:
                 account = get("/user/subscription", secret)
                 result["remaining_credits"] = max(0, int(account["character_limit"]) - int(account["character_count"]))
             except (RuntimeError, KeyError, TypeError, ValueError):
                 pass
+            subscription = subscription_signature(account)
             for spec in models:
-                rate=None
-                old=next((m for m in cached[1]['models'] if m['id']==spec['id']),{}) if cached else {}
-                try:
-                    query=urllib.parse.urlencode({"page_size":100,"source":"TTS","model_id":spec["id"],"date_after_unix":int(time.time()-7*86400)})
-                    history=get("/history?"+query,secret)
-                    rate=observed_credit_rate(history.get("history",[]),spec["id"])
-                except (RuntimeError,KeyError,TypeError,ValueError):
-                    pass
-                observed_at=time.time()
-                if rate is None and old.get('credit_rate_source')=='recent_history' \
-                        and observed_at-old.get('credit_rate_observed_at',0)<86400 \
-                        and old.get('catalog_credits_per_char')==spec.get('credits_per_char'):
-                    rate=old['credits_per_char']
-                    observed_at=old['credit_rate_observed_at']
+                now, baseline = time.time(), spec.get('credits_per_char')
+                cutoff = credit_scope(signature,spec['id'],baseline,subscription,now)
+                history = recent_history(secret,spec['id'],now,cutoff)
+                points = credit_points(history,spec['id'])
+                rate = observed_credit_rate(history,spec['id'])
+                record = retained_credit_rate(signature,spec['id'],baseline,subscription,now,cutoff)
                 if rate is not None:
-                    spec["catalog_credits_per_char"]=spec.get("credits_per_char")
-                    spec["credits_per_char"]=rate
-                    spec["credit_rate_source"]="recent_history"
-                    spec["credit_rate_observed_at"]=observed_at
+                    dates = [item['date_unix'] for item in history]
+                    record = {'schema':1,'key_signature':signature,'model':spec['id'],
+                              'subscription_signature':subscription,'catalog_credits_per_char':baseline,
+                              'rate':rate,'observed_at':min(dates),'evidence_latest_at':max(dates),
+                              'checked_at':now,'samples':len(points),'characters':sum(n for n,_ in points)}
+                    if valid_credit_record(record,signature,spec['id'],baseline,subscription,now):
+                        keep_credit_rate(record)
+                    else:
+                        record = None
+                elif record and any(abs(n*record['rate']-c)>1.01 for n,c in points):
+                    invalidate_credit_rate(signature,spec['id'],now)
+                    record = None  # A new conflicting debit must veto even a warm/disk cached rate.
+                if record:
+                    spec.update(catalog_credits_per_char=baseline,credits_per_char=record['rate'],
+                                credit_rate_source='recent_history',credit_rate_estimate=True,
+                                credit_rate_observed_at=record['observed_at'],
+                                credit_rate_evidence_latest_at=record['evidence_latest_at'])
         except (RuntimeError, TypeError, ValueError) as error:
-            result = {"models": cached[1]["models"] if cached else FALLBACK, "verified": False, "error": str(error)}
+            fallback = [dict(spec) for spec in (cached[1]['models'] if cached else FALLBACK)]
+            for spec in fallback:
+                observed_at = spec.get('credit_rate_observed_at')
+                if spec.get('credit_rate_source')=='recent_history' and (
+                        not finite_number(observed_at) or not 0 <= time.time()-observed_at <= CREDIT_RATE_TTL):
+                    spec['credits_per_char'] = spec.pop('catalog_credits_per_char',None)
+                    for field in ('credit_rate_source','credit_rate_estimate','credit_rate_observed_at','credit_rate_evidence_latest_at'):
+                        spec.pop(field,None)
+            result = {"models": fallback, "verified": False, "error": str(error)}
         _cache[signature] = (time.monotonic(), result)
         return result
 

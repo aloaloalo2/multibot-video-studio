@@ -1,7 +1,9 @@
 import base64
+import hashlib
 import json
 import sys
 import tempfile
+import urllib.parse
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,6 +14,167 @@ import languages
 
 
 class ElevenModelsTest(unittest.TestCase):
+    NOW = 1793715000
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        for mocked in (patch.object(eleven_api.store,'DATA_ROOT',Path(self.temp.name)),
+                       patch.object(eleven_api.time,'time',return_value=self.NOW)):
+            mocked.start();self.addCleanup(mocked.stop)
+        for state in (eleven_api._cache,eleven_api._credit_rates,eleven_api._credit_scopes,eleven_api._balances):
+            state.clear();self.addCleanup(state.clear)
+
+    def history_rows(self, rate=.2, count=5, stamp=None):
+        return [{'history_item_id':f'row-{number}','model_id':'eleven_v4_turbo','source':'TTS',
+                 'text':'x'*100,'character_count_change_from':0,'character_count_change_to':100*rate,
+                 'date_unix':self.NOW-10 if stamp is None else stamp} for number in range(count)]
+
+    def metadata(self, rate=.5):
+        return [{'model_id':'eleven_v4_turbo','model_rates':{'character_cost_multiplier':rate}}]
+
+    def account(self, tier='creator'):
+        return {'tier':tier,'status':'active','currency':'usd','character_limit':40000,'character_count':1000}
+
+    def discovery(self, history, secret='test-account', metadata=None, account=None):
+        vault=MagicMock();vault.read.return_value=secret
+        with patch.object(eleven_api.credentials,'vault',return_value=vault),patch.object(eleven_api,'get') as get:
+            get.side_effect=[metadata or self.metadata(),self.account() if account is None else account,history]
+            return eleven_api.catalog(True)['models'][0]
+
+    def reset_memory(self):
+        eleven_api._cache.clear();eleven_api._credit_rates.clear();eleven_api._credit_scopes.clear()
+
+    def rate_path(self, secret='test-account'):
+        return eleven_api.credit_rate_path(hashlib.sha256(secret.encode()).hexdigest(),'eleven_v4_turbo')
+
+    def test_observed_rate_survives_a_process_cache_reset_with_short_or_forbidden_history(self):
+        first=self.discovery({'history':self.history_rows()})
+        self.assertEqual(first['credits_per_char'],.2)
+        self.assertTrue(first['credit_rate_estimate'])
+        self.assertTrue(self.rate_path().is_file())
+        self.assertNotIn('test-account',self.rate_path().read_text())
+        self.assertNotIn('xxxxx',self.rate_path().read_text())
+        for history in ({'history':[]},RuntimeError('history permission denied')):
+            self.reset_memory()
+            observed=self.discovery(history)
+            self.assertEqual(observed['credits_per_char'],.2)
+            self.assertEqual(observed['credit_rate_observed_at'],self.NOW-10)
+
+    def test_retained_rate_is_scoped_to_key_model_catalog_and_subscription(self):
+        self.discovery({'history':self.history_rows()})
+        self.reset_memory()
+        self.assertEqual(self.discovery({'history':[]},secret='different-account')['credits_per_char'],.5)
+        self.reset_memory()
+        # The same old history must not be stamped as evidence for a newly seen tier.
+        self.assertEqual(self.discovery({'history':self.history_rows()},account=self.account('pro'))['credits_per_char'],.5)
+        self.reset_memory()
+        self.assertEqual(self.discovery({'history':self.history_rows()},metadata=self.metadata(.6),account=self.account('pro'))['credits_per_char'],.6)
+        with patch.object(eleven_api.time,'time',return_value=self.NOW+2):
+            self.assertEqual(self.discovery({'history':self.history_rows(stamp=self.NOW+1)},metadata=self.metadata(.6),account=self.account('pro'))['credits_per_char'],.2)
+
+    def test_subscription_failure_cannot_reuse_or_persist_an_unscoped_rate(self):
+        self.discovery({'history':self.history_rows()})
+        self.reset_memory()
+        self.assertEqual(self.discovery({'history':self.history_rows()},account=RuntimeError('no user permission'))['credits_per_char'],.5)
+        self.reset_memory()
+        restored=self.discovery({'history':[]})
+        self.assertEqual(restored['credits_per_char'],.2)
+        self.assertEqual(restored['credit_rate_observed_at'],self.NOW-10)
+
+    def test_old_evidence_is_not_refreshed_by_reading_the_same_records_again(self):
+        rows=self.history_rows(stamp=self.NOW-50)
+        self.discovery({'history':rows})
+        with patch.object(eleven_api.time,'time',return_value=self.NOW+100):
+            self.assertEqual(self.discovery({'history':rows})['credit_rate_observed_at'],self.NOW-50)
+        self.reset_memory()
+        with patch.object(eleven_api.time,'time',return_value=self.NOW+eleven_api.CREDIT_RATE_TTL):
+            self.assertEqual(self.discovery({'history':rows})['credits_per_char'],.5)
+
+    def test_new_conflicting_debit_invalidates_disk_and_memory_even_when_history_then_fails(self):
+        self.discovery({'history':self.history_rows()})
+        mixed=self.history_rows(count=10)
+        mixed[-1].update(character_count_change_to=50,date_unix=self.NOW)
+        self.assertIsNone(eleven_api.observed_credit_rate(mixed,'eleven_v4_turbo'))
+        self.assertEqual(self.discovery({'history':[mixed[-1]]})['credits_per_char'],.5)
+        self.assertEqual(self.discovery(RuntimeError('offline'))['credits_per_char'],.5)
+        self.reset_memory()
+        self.assertEqual(self.discovery({'history':[]})['credits_per_char'],.5)
+        self.assertEqual(json.loads(self.rate_path().read_text())['reason'],'conflicting_debit')
+
+    def test_all_debits_in_the_newest_second_can_veto_regardless_of_row_order(self):
+        rows=self.history_rows(count=10)
+        rows[-1].update(date_unix=self.NOW,character_count_change_to=50)
+        rows[-2]['date_unix']=self.NOW
+        self.assertIsNone(eleven_api.observed_credit_rate(rows,'eleven_v4_turbo'))
+        self.assertIsNone(eleven_api.observed_credit_rate(list(reversed(rows)),'eleven_v4_turbo'))
+
+    def test_expired_future_mismatched_and_malformed_cache_is_rejected(self):
+        self.discovery({'history':self.history_rows()})
+        good=json.loads(self.rate_path().read_text())
+        invalid=[{'rate':True},{'rate':float('nan')},{'rate':float('inf')},{'rate':0},
+                 {'observed_at':self.NOW+1},{'observed_at':self.NOW-eleven_api.CREDIT_RATE_TTL-1},
+                 {'checked_at':self.NOW+1},{'evidence_latest_at':self.NOW+1},{'schema':2},
+                 {'key_signature':'other'},{'model':'eleven_v4'},{'samples':True},{'characters':10},
+                 {'subscription_signature':'other'},{'catalog_credits_per_char':.7}]
+        for change in invalid:
+            with self.subTest(change=change):
+                self.reset_memory();self.rate_path().write_text(json.dumps({**good,**change}))
+                self.assertEqual(self.discovery({'history':[]})['credits_per_char'],.5)
+        for raw in ('{broken','null','[]'):
+            self.reset_memory();self.rate_path().write_text(raw)
+            self.assertEqual(self.discovery({'history':[]})['credits_per_char'],.5)
+
+    def test_history_pages_find_longer_records_and_stop_once_rate_is_unambiguous(self):
+        short=self.history_rows()
+        for row in short:row['text']='short';row['character_count_change_to']=1
+        pages=[{'history':short,'has_more':True,'last_history_item_id':'cursor-1'},
+               {'history':self.history_rows(),'has_more':True,'last_history_item_id':'cursor-2'}]
+        with patch.object(eleven_api,'get',side_effect=pages) as get:
+            rows=eleven_api.recent_history('secret','eleven_v4_turbo',self.NOW)
+        self.assertEqual(eleven_api.observed_credit_rate(rows,'eleven_v4_turbo'),.2)
+        self.assertEqual(get.call_count,2)
+        query=urllib.parse.parse_qs(urllib.parse.urlsplit(get.call_args_list[1].args[0]).query)
+        self.assertEqual(query['start_after_history_item_id'],['cursor-1'])
+
+    def test_history_page_limit_repeated_cursor_duplicate_and_missing_ids(self):
+        single=self.history_rows(count=1)
+        repeat={'history':single*8,'has_more':True,'last_history_item_id':'same'}
+        with patch.object(eleven_api,'get',return_value=repeat) as get:
+            rows=eleven_api.recent_history('secret','eleven_v4_turbo',self.NOW)
+        self.assertEqual((get.call_count,len(rows)),(2,1))
+        pages=[{'history':[],'has_more':True,'last_history_item_id':str(index)} for index in range(10)]
+        with patch.object(eleven_api,'get',side_effect=pages) as get:
+            self.assertEqual(eleven_api.recent_history('secret','eleven_v4_turbo',self.NOW),[])
+            self.assertEqual(get.call_count,3)
+        anonymous=self.history_rows()
+        for row in anonymous:row.pop('history_item_id')
+        with patch.object(eleven_api,'get',return_value={'history':anonymous}):
+            self.assertEqual(eleven_api.recent_history('secret','eleven_v4_turbo',self.NOW),[])
+
+    def test_history_ignores_old_future_wrong_source_and_invalid_debits(self):
+        rows=self.history_rows(count=7)
+        rows[0]['date_unix']=self.NOW-eleven_api.CREDIT_RATE_TTL-1
+        rows[1]['date_unix']=self.NOW+1
+        rows[2]['source']='voice_changer'
+        rows[3]['character_count_change_to']=True
+        rows[4]['character_count_change_to']=float('nan')
+        rows[5]['date_unix']=True
+        rows[6]['character_count_change_to']=float('inf')
+        with patch.object(eleven_api,'get',return_value={'history':rows}):
+            self.assertEqual(eleven_api.recent_history('secret','eleven_v4_turbo',self.NOW),[])
+        for rate in (True,float('inf'),float('nan')):
+            self.assertIsNone(eleven_api.normalize_models(self.metadata(rate))[0]['credits_per_char'])
+
+    def test_cache_io_failure_does_not_break_current_discovery(self):
+        with patch.object(eleven_api.store,'atomic_json',side_effect=OSError('read-only disk')):
+            self.assertEqual(self.discovery({'history':self.history_rows()})['credits_per_char'],.2)
+            self.assertEqual(self.discovery(RuntimeError('history permission denied'))['credits_per_char'],.2)
+        self.reset_memory()
+        self.rate_path().parent.mkdir(parents=True,exist_ok=True)
+        self.rate_path().mkdir()
+        self.assertEqual(self.discovery({'history':[]})['credits_per_char'],.5)
+
     def test_balance_is_read_only_cached_and_refreshes_after_a_voice_job(self):
         eleven_api._balances.clear();self.addCleanup(eleven_api._balances.clear)
         vault=MagicMock();vault.read.return_value='account-one'
@@ -98,9 +261,8 @@ class ElevenModelsTest(unittest.TestCase):
         eleven_api._cache.clear();self.addCleanup(eleven_api._cache.clear)
         vault=MagicMock();vault.read.return_value='test-account'
         metadata=[{'model_id':'eleven_v4_turbo','model_rates':{'character_cost_multiplier':.5}}]
-        rows=[{'model_id':'eleven_v4_turbo','text':'x'*100,'character_count_change_from':0,
-               'character_count_change_to':20} for _ in range(5)]
-        account={'character_limit':40000,'character_count':1000}
+        rows=self.history_rows()
+        account=self.account()
         with patch.object(eleven_api.credentials,'vault',return_value=vault),patch.object(eleven_api,'get') as get:
             get.side_effect=[metadata,account,{'history':rows}]
             first=eleven_api.catalog(True)['models'][0]
