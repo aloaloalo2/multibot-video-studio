@@ -2,6 +2,51 @@ import unittest
 from preview_js import run
 
 class LanguageControlsTest(unittest.TestCase):
+    def test_ready_sample_plays_directly_updates_time_and_pauses_without_generating(self):
+        result=run(['langBindSamplePlayback'], """
+(async()=>{
+const toggle=langBindSamplePlayback(audio,button,label);
+const before=label.textContent;await toggle();audio.currentTime=12;audio.emit('timeupdate');
+const playing={label:label.textContent,icon:button.innerHTML,pressed:button.attrs['aria-pressed']};
+await toggle();const paused=button.innerHTML;
+audio.ended=true;audio.currentTime=60;audio.emit('ended');await toggle();
+console.log(JSON.stringify({before,playing,paused,restartedAt:audio.currentTime,plays,otherPaused,errors}));
+})();
+""", prelude="""
+const playIcon='play',pauseIcon='pause';let plays=0,otherPaused=0,errors=[];
+const button={attrs:{},setAttribute(k,v){this.attrs[k]=v;}},label={};
+const audio={paused:true,ended:false,duration:60,currentTime:0,events:{},
+ addEventListener(n,f){(this.events[n]??=[]).push(f);},emit(n){for(const f of this.events[n]||[])f();},
+ async play(){plays++;this.paused=false;this.ended=false;this.emit('play');this.emit('playing');},
+ pause(){this.paused=true;this.emit('pause');}};
+const document={querySelectorAll:()=>[audio,{pause(){otherPaused++;}}]};
+function clock(s){return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;}
+function langNote(b,s){errors.push(s);}
+""")
+        self.assertEqual(result['before'],'0:00 / 1:00')
+        self.assertEqual(result['playing'],{'label':'0:12 / 1:00','icon':'pause','pressed':'true'})
+        self.assertEqual(result['paused'],'play')
+        self.assertEqual(result['restartedAt'],0)
+        self.assertEqual((result['plays'],result['otherPaused']),(2,2))
+        self.assertEqual(result['errors'],[])
+
+    def test_sample_playback_failure_is_visible_and_loading_is_cleared(self):
+        result=run(['langBindSamplePlayback'], """
+(async()=>{
+await langBindSamplePlayback(audio,button,label)();
+console.log(JSON.stringify({label:label.textContent,busy:button.attrs['aria-busy'],icon:button.innerHTML,errors}));
+})();
+""",prelude="""
+const playIcon='play',pauseIcon='pause',errors=[];
+const button={attrs:{},setAttribute(k,v){this.attrs[k]=v;}},label={};
+const audio={paused:true,ended:false,currentTime:0,duration:NaN,addEventListener(){},async play(){this.error={code:4};throw Error('Audio unavailable');}};
+const document={querySelectorAll:()=>[]};function clock(){return '00:00';}function langNote(b,s){errors.push(s);}
+""")
+        self.assertEqual(result['busy'],'false')
+        self.assertEqual(result['icon'],'play')
+        self.assertEqual(result['label'],'Помилка відтворення')
+        self.assertIn('Audio unavailable',result['errors'][0])
+
     def test_ready_current_audio_shows_status_and_stale_audio_still_offers_rebuild(self):
         result=run(['langVoiceStatus'], """
 const voice={files:{voice:true},voice_current:true,voice:{provider:'elevenlabs'},saved_mix:{state:'saved'}};
@@ -75,7 +120,7 @@ console.log(JSON.stringify(langFitReview({review:[
         self.assertIn('data-start="20"',html)
         self.assertIn('Зміщено на 1,0 с пізніше',html)
     def test_voice_reference_and_model_are_visible_before_translation(self):
-        result=run(['langCard'], """
+        result=run(['langCard','langTranslationInfo'], """
 const card=langCard('project',{code:'ru',text:'',prices:{},files:{samples:[],voice:false,thumbnail:false}},
  {id:'elevenlabs',name:'ElevenLabs',configured:true,engines:[{id:'eleven_v4_turbo',name:'Eleven v4 Turbo'}],engine:'eleven_v4_turbo'});
 console.log(JSON.stringify({reference:card.innerHTML.includes('lang-reference-panel'),model:card.innerHTML.includes('Eleven v4 Turbo'),synthesize:card.innerHTML.includes('lang-voice-run'),off:card.innerHTML.includes('lang-step is-off')}));

@@ -868,6 +868,43 @@ class LanguagesTest(unittest.TestCase):
             estimate=languages.voice_estimate(self.pid,code,'elevenlabs','\n'.join(lines))
             self.assertEqual((estimate['reused'],estimate['generate']),(1,2))
 
+    def test_shorter_sample_reuses_whole_cached_phrase_without_paid_speech(self):
+        code='en';self.example(code);work=languages.work_dir(self.pid,code)
+        lines=['This is the first sentence. Here is the second sentence. We hear the third sentence.',
+               'This is the fourth sentence. Here is the fifth sentence. This last sentence finishes the phrase.']
+        text='\n'.join(lines);(work/'text.txt').write_text(text)
+        identity,_=languages.voice_cache_context(self.pid,code,'elevenlabs')
+        for n,line in enumerate(lines):
+            languages.voice_cache.remember(work,identity,line,tone(work/f'paid-{n}.mp3',1))
+        with patch.object(languages,'synced_segments',return_value=[{}]*2),patch.object(languages,'progress'), \
+             patch.object(languages,'speak',side_effect=AssertionError('Must not buy an already cached phrase')), \
+             patch.object(languages,'voice_id',side_effect=AssertionError('No clone needed')), \
+             patch.object(eleven_api,'model',return_value={'credits_per_char':.5}):
+            options=languages.sample_options(self.pid,code,'elevenlabs',text)
+            self.assertEqual([option['price'] for option in options.values()],[0,0,0,0])
+            self.assertEqual(options['5']['sentences'],6)
+            job={'sentences':5};languages.sample(self.pid,code,'elevenlabs',job)
+        self.assertEqual((job['takes'],job['reused'],job['cost']),(0,2,0))
+        sample_key=languages.voice_key(self.pid,'elevenlabs',code)
+        self.assertTrue((work/f'sample-{sample_key}.mp3').is_file())
+        meta=languages.load_state(self.pid)['languages'][code]['samples'][sample_key]
+        self.assertEqual((meta['requested_sentences'],meta['sentences']),(5,6))
+        self.assertGreater(meta['duration'],1.9)
+        request=next((work/'sample-parts').glob('*/request.json'))
+        self.assertEqual(store.read_json(request,{})['texts'],lines)
+
+    def test_sample_keeps_exact_cached_prefix_and_never_buys_extra_sentences(self):
+        code='en';self.example(code);work=languages.work_dir(self.pid,code)
+        lines=['First sentence. Second sentence. Third sentence.',
+               'Fourth sentence. Fifth sentence. Sixth sentence.']
+        text='\n'.join(lines);(work/'text.txt').write_text(text)
+        prefix='Fourth sentence. Fifth sentence.'
+        with patch.object(languages,'synced_segments',return_value=[{}]*2):
+            # No cached full unit: request only the selected words.
+            self.assertEqual(languages.sample_pieces(self.pid,code,text,5,{}),[lines[0],prefix])
+            # A cached exact prefix wins even when a longer take is also available.
+            self.assertEqual(languages.sample_pieces(self.pid,code,text,5,{prefix:Path('short'),lines[1]:Path('long')}),[lines[0],prefix])
+
     def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
         import io, urllib.error
         body = b'{"message": "Insufficient API credit for this model. For text-to-speech you can generate for free right now with the model s2.1-pro-free"}'

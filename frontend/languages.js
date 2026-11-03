@@ -77,6 +77,7 @@ function langChoose(id,code){try{localStorage.setItem(`langTab:${id}`,code);}cat
 // плюсик, щоб додати… хрестик… видалити»): a click opens that language's card below, «+» adds one, × removes one.
 function drawLangs(id){
   const section=$('project-langs');if(!section||section.dataset.project!==id)return;
+  langCloseSampleMenu();
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
   const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
   const used=new Set(data.items.map(item=>item.code)),chosen=langChosen(id);
@@ -347,9 +348,10 @@ function langCard(id,item,spec){
           ${spec.engines?`<label class="lang-chip-select" title="Модель ${esc(spec.name)}"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)}${spec.id!=='elevenlabs'&&engine.note?' · '+esc(engine.note):''}</option>`).join('')}</select></label>`:''}
           ${spec.styles?`<label class="lang-chip-select" title="Варіативність подачі голосу. Кожен рушій зберігає свій вибір."><span>Подача</span><select data-field="style">${spec.styles.map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
           ${item.text&&(!readyVoice||langSamplePreview.has(`${id}:${item.code}`))?`<div class="lang-inline-sample">
-            <button type="button" class="lang-sample-run lang-sample-round" title="Зразок: оберіть кількість речень" aria-label="Послухати зразок" aria-haspopup="menu" aria-expanded="false"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${playIcon}</button>
-            <span class="lang-inline-sample-label">Зразок<small class="lang-sample-cost">${hasSample?'Готовий до прослуховування':esc(langSamplePrice(item,spec))}</small></span>
-            ${hasSample?`<audio class="lang-sample-audio" preload="none" src="${langUrl(id,item.code,'sample-'+item.voice_key)}"></audio>`:''}
+            <button type="button" class="lang-sample-run lang-sample-round" title="${hasSample?'Відтворити готовий зразок безкоштовно':'Зразок: оберіть кількість речень'}" aria-label="Послухати зразок"${hasSample?'':' aria-haspopup="menu" aria-expanded="false"'}${langHasVoice(item)?'':' data-blocked="1" disabled'}>${playIcon}</button>
+            <span class="lang-inline-sample-label">Зразок<small class="lang-sample-cost">${hasSample?`${clock(0)} / ${clock(item.sample?.duration || 0)}`:esc(langSamplePrice(item,spec))}</small></span>
+            <button type="button" class="lang-sample-choose" title="Інша кількість речень" aria-label="Обрати інший зразок" aria-haspopup="menu" aria-expanded="false"${hasSample?'':' hidden'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+            ${hasSample?`<audio class="lang-sample-audio" preload="metadata" src="${langUrl(id,item.code,'sample-'+item.voice_key,item.sample?.made_at)}"></audio>`:''}
           </div>`:''}
           ${spec.configured===true?'':`<span class="lang-warn">Додайте ключ ${esc(spec.name)}: налаштування студії → «Ключі сервісів»</span>`}
           ${spec.id==='elevenlabs'&&spec.configured===true&&spec.connection_error?`<span class="lang-warn">${esc(spec.connection_error)}. Список моделей поки з документації.</span>`:''}
@@ -399,7 +401,7 @@ function langCard(id,item,spec){
       if(state.project?.id!==id||state.view!=='langs')return false;
       langData=data;
       if(hint)hint.textContent=`${text.length.toLocaleString('uk-UA')} символів · збережено`;
-      if(textChanged&&sampleAudio){sampleAudio.pause();sampleAudio.remove();sampleAudio=null;samplePlay.innerHTML=playIcon;samplePlay.setAttribute('aria-label','Послухати зразок');samplePlay.title='Зразок: оберіть кількість речень';}
+      if(textChanged&&sampleAudio){sampleAudio.dataset.stale='1';sampleAudio.pause();sampleAudio.remove();sampleAudio=null;playSample=null;sampleChoose.hidden=true;samplePlay.innerHTML=playIcon;samplePlay.setAttribute('aria-label','Послухати зразок');samplePlay.setAttribute('aria-haspopup','menu');samplePlay.removeAttribute('aria-pressed');samplePlay.removeAttribute('aria-busy');samplePlay.title='Зразок: оберіть кількість речень';}
       const old=card.querySelector('.lang-sample .voice-player');if(old&&textChanged){old.querySelector('audio')?.pause();old.remove();}
       // the voicing was of the old words: it leaves the card, and the button voices anew
       const made=card.querySelector('.lang-voice');if(made&&textChanged){made.querySelectorAll('audio').forEach(audio=>audio.pause());made.remove();}
@@ -408,7 +410,7 @@ function langCard(id,item,spec){
       if(fresh){Object.assign(item,fresh);langApplyQuality(card,item);const cost=card.querySelector('.lang-voice-cost');if(cost)cost.textContent=langCost(spec,fresh.prices?.[spec.id]);const note=card.querySelector('.lang-cache-note');if(note)note.textContent=langCacheNote(fresh,spec);const marks=document.querySelector(`.lang-pill[data-code="${item.code}"] .lang-marks`);if(marks)marks.outerHTML=langMarks(fresh);}
       const voiceStatus=langVoiceStatus(item,spec),savedLabel=card.querySelector('.lang-voice-saved');if(savedLabel){savedLabel.textContent=voiceStatus;savedLabel.hidden=!voiceStatus;}const cacheNote=card.querySelector('.lang-cache-note');if(cacheNote)cacheNote.hidden=!!voiceStatus;
       const voiceRun=card.querySelector('.lang-voice-run');if(voiceRun){voiceRun.hidden=!!voiceStatus;voiceRun.classList.toggle('secondary',item.voice_current===true);voiceRun.classList.toggle('primary',item.voice_current!==true);if(voiceRun.firstChild?.nodeType===3)voiceRun.firstChild.textContent=langVoiceAction(item,spec)+' · ';}
-      if(fresh){const cost=card.querySelector('.lang-sample-cost');if(cost)cost.textContent=langSamplePrice(fresh,spec);}
+      if(fresh&&!sampleAudio){const cost=card.querySelector('.lang-sample-cost');if(cost)cost.textContent=langSamplePrice(fresh,spec);}
       card.querySelector('.lang-text')?.closest('.lang-step')?.querySelector(':scope > .lang-note.is-error')?.remove();
       return true;
     }catch(error){langNote(area,error.message,true);return false;}
@@ -441,19 +443,19 @@ function langCard(id,item,spec){
       [{label:'Скасувати',run:closeModal},{label:'Перекласти заново',run:()=>{closeModal();delete langDrafts[`${id}:${item.code}`];langStart(id,'translate',item.code);}}]);
   });
   let sampleAudio=card.querySelector('.lang-sample-audio'),samplePlay=card.querySelector('.lang-sample-run');
-  const playSample=async()=>{
-    if(!sampleAudio)return;
-    if(sampleAudio.ended)sampleAudio.currentTime=0;
-    document.querySelectorAll('.voice-player audio,.lang-sample-audio').forEach(audio=>{if(audio!==sampleAudio)audio.pause();});
-    try{await sampleAudio.play();}catch(error){langNote(samplePlay,'Не вдалося відтворити зразок: '+error.message,true);}
+  const sampleChoose=card.querySelector('.lang-sample-choose');
+  let playSample=sampleAudio?langBindSamplePlayback(sampleAudio,samplePlay,card.querySelector('.lang-sample-cost'),item.sample?.duration || 0):null;
+  const chooseSample=async button=>{
+    if(!(await flush()))return;
+    langOpenSampleMenu(button,item,spec,async count=>{if(!(await flush()))return;try{localStorage.setItem('langSampleSentences',String(count));}catch{}sampleAudio?.pause();langStart(id,'sample',item.code,{sentences:count});},playSample?async()=>{if(sampleAudio?.paused)await playSample();}:null);
   };
   samplePlay?.addEventListener('click',async()=>{
+    langCloseSampleMenu();
     if(sampleAudio&&!sampleAudio.paused){sampleAudio.pause();return;}
     if(!(await flush()))return;
-    langOpenSampleMenu(samplePlay,item,spec,async count=>{if(!(await flush()))return;try{localStorage.setItem('langSampleSentences',String(count));}catch{}sampleAudio?.pause();langStart(id,'sample',item.code,{sentences:count});},sampleAudio?playSample:null);
+    if(playSample)await playSample();else await chooseSample(samplePlay);
   });
-  const sampleState=()=>{const playing=sampleAudio&&!sampleAudio.paused&&!sampleAudio.ended;if(!samplePlay)return;samplePlay.innerHTML=playing?pauseIcon:playIcon;samplePlay.setAttribute('aria-label',playing?'Призупинити зразок':'Послухати зразок');samplePlay.title=playing?'Призупинити зразок':'Зразок: оберіть кількість речень';};
-  for(const event of ['play','pause','ended'])sampleAudio?.addEventListener(event,sampleState);
+  sampleChoose?.addEventListener('click',()=>chooseSample(sampleChoose));
   card.querySelector('.lang-defaults')?.addEventListener('click',async event=>{const button=event.currentTarget;button.dataset.saving='1';button.disabled=true;button.setAttribute('aria-busy','true');try{const defaults=await api(`/api/projects/${encodeURIComponent(id)}/languages/defaults`,'POST',{});if(state.project?.id===id&&state.view==='langs'){langData.defaults=defaults;drawLangs(id);}}catch(error){langNote(button,error.message,true);}finally{delete button.dataset.saving;button.removeAttribute('aria-busy');showLangJob();}});
   card.querySelector('.lang-save-audio')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'save-audio',item.code);});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
@@ -667,7 +669,35 @@ function addLayerDubControl(heading,layer){
 }
 
 
-function langCloseSampleMenu(){document.querySelector('.lang-sample-menu')?.remove();document.querySelectorAll('.lang-sample-run[aria-expanded="true"]').forEach(button=>button.setAttribute('aria-expanded','false'));}
+function langBindSamplePlayback(audio,button,label,duration=0){
+  let waiting=false;
+  const paint=()=>{
+    if(audio.dataset?.stale==='1')return;
+    const playing=!audio.paused&&!audio.ended;
+    button.innerHTML=playing?pauseIcon:playIcon;
+    button.setAttribute('aria-label',playing?'Призупинити зразок':'Послухати зразок');
+    button.setAttribute('aria-pressed',String(playing));
+    button.setAttribute('aria-busy',String(waiting));
+    button.title=playing?'Призупинити зразок':'Відтворити готовий зразок безкоштовно';
+    label.textContent=audio.error?'Помилка відтворення':waiting?'Завантажуємо…':`${clock(audio.currentTime)} / ${clock(Number.isFinite(audio.duration)?audio.duration:duration)}`;
+  };
+  for(const name of ['loadedmetadata','timeupdate','play'])audio.addEventListener(name,paint);
+  for(const name of ['playing','pause','ended','error'])audio.addEventListener(name,()=>{waiting=false;paint();});
+  audio.addEventListener('waiting',()=>{waiting=true;paint();});
+  paint();
+  return async()=>{
+    if(!audio.paused){audio.pause();return;}
+    if(audio.ended)audio.currentTime=0;
+    document.querySelectorAll('.voice-player audio,.lang-sample-audio').forEach(other=>{if(other!==audio)other.pause();});
+    if(typeof stopPlayback==='function')stopPlayback();
+    waiting=true;paint();
+    try{await audio.play();}
+    catch(error){if(error.name!=='AbortError')langNote(button,'Не вдалося відтворити зразок: '+error.message,true);}
+    finally{waiting=false;paint();}
+  };
+}
+
+function langCloseSampleMenu(){document.querySelector('.lang-sample-menu')?.remove();document.querySelectorAll('.lang-inline-sample [aria-expanded="true"]').forEach(button=>button.setAttribute('aria-expanded','false'));}
 function langOpenSampleMenu(button,item,spec,choose,playExisting=null){
   const opened=button.getAttribute('aria-expanded')==='true';langCloseSampleMenu();if(opened)return;
   const menu=document.createElement('div');menu.className='lang-sample-menu';menu.setAttribute('role','menu');menu.setAttribute('aria-label','Кількість речень для зразка');
@@ -680,7 +710,9 @@ function langOpenSampleMenu(button,item,spec,choose,playExisting=null){
   for(const count of [3,5,10,20]){
     const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');
     const price=langCost(spec,item.sample_prices?.[spec.id]?.[String(count)]);
-    option.innerHTML=`<span>${count} ${count===3?'речення':'речень'}</span><small>${esc(price)}</small>`;
+    const actual=item.sample_options?.[spec.id]?.[String(count)]?.sentences || count;
+    option.innerHTML=`<span>${count}${actual>count?'+':''} ${count===3?'речення':'речень'}</span><small>${esc(price)}</small>`;
+    if(actual>count)option.title=`Збережена фраза прозвучить повністю: у зразку ${actual} речень.`;
     option.addEventListener('click',()=>{langCloseSampleMenu();button.focus();choose(count);});menu.append(option);
   }
   menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp'].includes(event.key))return;event.preventDefault();const options=[...menu.querySelectorAll('button')],index=options.indexOf(document.activeElement);options[(index+(event.key==='ArrowDown'?1:options.length-1))%options.length].focus();});
@@ -689,5 +721,5 @@ function langOpenSampleMenu(button,item,spec,choose,playExisting=null){
   menu.style.top=(rect.bottom+menu.offsetHeight+6<window.innerHeight?rect.bottom+6:Math.max(8,rect.top-menu.offsetHeight-6))+'px';
   menu.querySelector('button').focus();
 }
-document.addEventListener('pointerdown',event=>{if(!event.target.closest('.lang-sample-menu,.lang-sample-run'))langCloseSampleMenu();},true);
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){const button=document.querySelector('.lang-sample-run[aria-expanded="true"]');langCloseSampleMenu();button?.focus();}});
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.lang-sample-menu,.lang-inline-sample'))langCloseSampleMenu();},true);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){const button=document.querySelector('.lang-inline-sample [aria-expanded="true"]');langCloseSampleMenu();button?.focus();}});

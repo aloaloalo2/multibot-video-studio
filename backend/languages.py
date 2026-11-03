@@ -387,6 +387,7 @@ def overview(pid: str) -> dict:
             continue
         text = (work_dir(pid, code) / "text.txt").read_text(encoding="utf-8") if (work_dir(pid, code) / "text.txt").is_file() else ""
         estimates={key:voice_estimate(pid,code,key,text) for key in PROVIDERS} if text else {}
+        samples={key:sample_options(pid,code,key,text) for key in PROVIDERS} if text else {}
         voice=dict(item.get('voice') or {})
         if voice and 'review' not in voice:
             voice['review']=dubbing_fit.review_items(store.read_json(work_dir(pid,code)/'parts/manifest.json',[]) or [])
@@ -401,7 +402,9 @@ def overview(pid: str) -> dict:
                       "flag_country":THUMBNAIL_FLAGS.get(code),
                       "chars": len(text), "prices": {key:value["base"] for key,value in estimates.items()},
                       "voice_estimates": estimates,
-                      "sample_prices": {key: sample_prices(pid,code,key,text) for key in PROVIDERS} if text else {},
+                      "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
+                      "sample_options": samples,
+                      "sample": (item.get('samples') or {}).get(voice_key(pid,provider,code)),
                       "files": files(pid, code, project), "voice": voice,
                       "voice_current": voice_current(pid, code, item.get("voice") or {}),
                       "voice_matches_text": voice_matches_text(pid,code,item.get('voice') or {}),
@@ -1678,7 +1681,7 @@ def sample_text(text: str, sentences: int | None = None) -> str:
     return out[: SAMPLE_CHARS * 2]
 
 
-def sample_pieces(pid: str, code: str, text: str, sentences: int | None) -> list[str]:
+def sample_pieces(pid: str, code: str, text: str, sentences: int | None, cached: dict | None = None) -> list[str]:
     """Use the same paid units as full narration, without buying beyond the chosen sample."""
     remaining=sample_text(text,sentences)
     units=line_texts(pid,code) if synced_segments(pid,code) else chunks(text,VOICE_CHUNK)
@@ -1690,35 +1693,46 @@ def sample_pieces(pid: str, code: str, text: str, sentences: int | None) -> list
             pieces.append(unit)
             remaining=remaining[len(unit):].lstrip()
         elif unit.startswith(remaining):
-            # A sample may stop inside a multi-sentence paid unit. Cache the exact
-            # partial words separately; never substitute them for the complete line.
-            pieces.append(remaining)
+            # Finish an already-paid phrase rather than buy its prefix again.
+            # Keep the real spoken words and report the resulting sentence count.
+            # A new paid take still stops at the requested sample boundary.
+            pieces.append(unit if cached and unit in cached and remaining not in cached else remaining)
             remaining=''
         else:
             return [sample_text(text,sentences)]
     return pieces if not remaining else [sample_text(text,sentences)]
 
 
-def sample_prices(pid: str, code: str, provider: str, text: str) -> dict:
+def sample_options(pid: str, code: str, provider: str, text: str) -> dict:
     identity,aliases=voice_cache_context(pid,code,provider)
     cached=voice_cache.candidates(work_dir(pid,code),identity,aliases)
     engine=provider_engine(pid,provider)
     estimate_price=fixed_price(provider,engine)
     result={}
     for count in SAMPLE_SENTENCES:
-        costs=[estimate_price(piece) for piece in dict.fromkeys(sample_pieces(pid,code,text,count)) if piece not in cached]
-        result[str(count)]=round(sum(costs),2) if all(cost is not None for cost in costs) else None
+        pieces=sample_pieces(pid,code,text,count,cached)
+        costs=[estimate_price(piece) for piece in dict.fromkeys(pieces) if piece not in cached]
+        result[str(count)]={'price':round(sum(costs),2) if all(cost is not None for cost in costs) else None,
+                            'sentences':sample_sentence_count(pieces)}
     return result
+
+
+def sample_prices(pid: str, code: str, provider: str, text: str) -> dict:
+    return {count:option['price'] for count,option in sample_options(pid,code,provider,text).items()}
+
+
+def sample_sentence_count(pieces: list[str]) -> int:
+    return sum(len([part for part in re.split(r"(?<=[.!?…])\s+|\n+",piece.strip()) if part.strip()]) for piece in pieces)
 
 
 def sample(pid: str, code: str, provider: str, job: dict) -> None:
     text=read_text(pid,code)
     language_quality.require(code,text)
     work=work_dir(pid,code)
-    pieces=sample_pieces(pid,code,text,job.get('sentences'))
-    if not pieces:raise RuntimeError('У зразку немає тексту для озвучення.')
     identity,aliases=voice_cache_context(pid,code,provider)
     cached=voice_cache.candidates(work,identity,aliases)
+    pieces=sample_pieces(pid,code,text,job.get('sentences'),cached)
+    if not pieces:raise RuntimeError('У зразку немає тексту для озвучення.')
     folder=work/'sample-parts'/str(time.time_ns())
     folder.mkdir(parents=True)
     store.atomic_json(folder/'request.json',{'identity':identity,'provider':provider,'texts':pieces})
@@ -1758,11 +1772,18 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
         listing=folder/'list.txt'
         listing.write_text(''.join(f"file '{path.name}'\n" for path in parts),encoding='utf-8')
         run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c:a','copy',str(staged)],'зібрати зразок')
-    if not store.media_duration(staged):raise RuntimeError('Не вдалося зібрати зразок. Готові фрази збережено.')
+    duration=store.media_duration(staged)
+    if not duration:raise RuntimeError('Не вдалося зібрати зразок. Готові фрази збережено.')
     if read_text(pid,code)!=text or voice_cache_context(pid,code,provider)[0]!=identity:
         raise store.StudioError('Налаштування змінилися під час озвучення. Готові фрази збережено.',409)
-    staged.replace(work/f'sample-{voice_key(pid,provider,code)}.mp3')
-    update(pid,lambda data:data.setdefault('languages',{}).setdefault(code,{}).update(sample_provider=provider))
+    sample_key=voice_key(pid,provider,code)
+    staged.replace(work/f'sample-{sample_key}.mp3')
+    def publish(data):
+        item=data.setdefault('languages',{}).setdefault(code,{})
+        item['sample_provider']=provider
+        item.setdefault('samples',{})[sample_key]={'requested_sentences':job.get('sentences'),
+            'sentences':sample_sentence_count(pieces),'duration':duration,'made_at':time.time()}
+    update(pid,publish)
 
 
 def line_texts(pid: str, code: str) -> list[str]:

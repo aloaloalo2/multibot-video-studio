@@ -130,7 +130,7 @@ function voicePlayer(id,src=null,options={}){
   const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:src?Number(options.duration)||0:Number(state.plan?.timing?.audio?.duration) || 0;
   const paint=()=>{const all=length();bar.max=String(all || 1);if(!bar.matches(':active'))bar.value=String(audio.currentTime);
     now.textContent=clock(audio.currentTime);total.textContent=clock(all);bar.style.setProperty('--fill',`${all?audio.currentTime/all*100:0}%`);};
-  play.addEventListener('click',()=>{if(audio.paused){document.querySelectorAll('.voice-player audio').forEach(other=>{if(other!==audio)other.pause();});if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
+  play.addEventListener('click',()=>{if(audio.paused){document.querySelectorAll('.voice-player audio,.lang-sample-audio').forEach(other=>{if(other!==audio)other.pause();});if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
   audio.addEventListener('play',()=>{play.innerHTML=pauseIcon;play.setAttribute('aria-label','Пауза');box.classList.add('playing');});
   audio.addEventListener('pause',()=>{play.innerHTML=playIcon;play.setAttribute('aria-label',playLabel);box.classList.remove('playing');});
   for(const name of ['timeupdate','loadedmetadata','ended'])audio.addEventListener(name,paint);
