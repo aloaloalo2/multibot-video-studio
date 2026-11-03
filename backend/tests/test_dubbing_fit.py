@@ -10,6 +10,58 @@ import dubbing_fit
 import languages
 
 class DubbingFitTest(unittest.TestCase):
+    def test_join_padding_counts_native_silence_with_tempo_and_edge_guards(self):
+        edge={'leading':.035,'trailing':.035,'speed':.93}
+        extra=dubbing_fit.join_gaps([{'edge_silence':edge},{'edge_silence':edge}])[0]
+        self.assertAlmostEqual(extra,.05-2*(.035*.93/1.07-.01))
+        self.assertEqual(dubbing_fit.join_gaps([{},{}]),[.05])
+        for value in [None,-1,float('nan'),float('inf'),'1']:
+            bad={'leading':value,'trailing':value,'speed':1.}
+            self.assertEqual(dubbing_fit.join_gaps([{'edge_silence':bad}]*2),[.05])
+
+    def test_boundary_measurement_preserves_signal_and_does_not_trust_silent_takes(self):
+        import numpy as np
+        signal=np.r_[np.zeros(50),np.full(800,.2),np.zeros(150)]
+        original=signal.copy()
+        self.assertEqual(dubbing_fit.quiet_edges(signal,1000),{'leading':.05,'trailing':.15,'speed':1.})
+        self.assertTrue(np.array_equal(signal,original))
+        for signal in [np.zeros(1000),np.array([]),np.array([float('nan')])]:
+            self.assertEqual(dubbing_fit.quiet_edges(signal,1000)['trailing'],0.)
+
+    @unittest.skipUnless(shutil.which('ffmpeg'),'ffmpeg needed')
+    def test_real_cached_rebuild_avoids_double_pauses_and_keeps_every_complete_take(self):
+        import hashlib
+        import numpy as np
+        import wave
+        with tempfile.TemporaryDirectory() as d:
+            folder=Path(d);rate=48000;items=[];hashes=[]
+            for n in range(4):
+                signal=np.r_[np.zeros(round(.06*rate)),
+                             .2*np.sin(2*np.pi*(220+n*100)*np.arange(rate)/rate),
+                             np.zeros(round(.06*rate))]
+                path=folder/f'{n}.wav'
+                with wave.open(str(path),'wb') as audio:
+                    audio.setparams((1,2,rate,0,'NONE','not compressed'))
+                    audio.writeframes((signal*32767).astype('<i2').tobytes())
+                hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
+                items.append({'index':n,'file':path.name,'length':len(signal)/rate,
+                              'start':n,'original_start':n,'original_end':n+1})
+            total=4.33
+            # Adding 50 ms again would reject this film even at the speed limit.
+            with self.assertRaisesRegex(RuntimeError,'при межі 7%'):
+                dubbing_fit.fitting_speeds(items,total)
+            report=dubbing_fit.rebuild(folder,items,folder/'joined.mp3',total)
+            fitted=report['phrases']
+            self.assertEqual(len(fitted),4)
+            self.assertAlmostEqual(languages.store.media_duration(folder/'joined.mp3'),total,delta=.05)
+            self.assertLessEqual(fitted[-1]['end'],total)
+            self.assertTrue(all(.93<=x['speed']<=1.07 for x in fitted))
+            for a,b in zip(fitted,fitted[1:]):
+                self.assertLessEqual(a['end'],b['start'])
+                breath=a['edge_silence']['trailing']+b['edge_silence']['leading']+b['start']-a['end']
+                self.assertGreaterEqual(breath,.05)
+            self.assertEqual(hashes,[hashlib.sha256((folder/x['file']).read_bytes()).hexdigest() for x in items])
+
     def test_centres_free_time_and_borrows_neighbouring_gaps_without_overlap(self):
         solo=dubbing_fit.centered_schedule([{'start':0,'fitted_length':4}],10,gap=0)[0]
         self.assertEqual((solo['start'],10-solo['end']),(3,3))
@@ -55,6 +107,10 @@ class DubbingFitTest(unittest.TestCase):
         self.assertLessEqual(sum(x['length']/s for x,s in zip(items,speeds))+.05,10.1)
         with self.assertRaisesRegex(RuntimeError,'Усі аудіофрагменти збережені'):
             dubbing_fit.fitting_speeds(items,9)
+
+    def test_forecast_safety_margin_does_not_reject_an_exact_fit(self):
+        items=[{'start':0,'original_start':0,'original_end':10,'length':10.7}]
+        self.assertEqual(dubbing_fit.fitting_speeds(items,10),[1.07])
 
     @unittest.skipUnless(shutil.which('ffmpeg'),'ffmpeg needed')
     def test_recovery_and_refit_keep_anchors_and_reduce_artificial_gap(self):

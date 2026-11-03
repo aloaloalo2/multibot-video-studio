@@ -32,6 +32,16 @@ class NarrationPacingTest(unittest.TestCase):
             pacing.plan(['a'*100]*20,{i:8 for i in range(20)},140,0)
         self.assertEqual(pacing.MAX_SPEED,1.07)
 
+    def test_all_cached_takes_are_not_rejected_for_unmeasured_extra_pause_padding(self):
+        # The takes include pauses already. Their 0.93 s difference from the old
+        # forecast must reach measured assembly rather than trigger a false stop.
+        texts=['a'*100]*100
+        known={i:10. for i in range(100)}
+        self.assertGreater(sum(known.values())/1.07+.05*99,938.)
+        self.assertEqual(pacing.plan(texts,known,938.,0)['measured_phrases'],100)
+        with self.assertRaisesRegex(RuntimeError,'Збережені фрази вже перевищують'):
+            pacing.plan(texts,known,930.,0)
+
     def test_severe_required_shortening_requests_review(self):
         with self.assertRaisesRegex(RuntimeError,'Для решти 95 фраз.*бракує'):
             pacing.plan(['a'*100]*100,{i:15 for i in range(5)},700,5)

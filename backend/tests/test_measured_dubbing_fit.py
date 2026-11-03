@@ -12,6 +12,20 @@ import dubbing_fit
 
 
 class MeasuredFitTest(unittest.TestCase):
+    def test_rechecks_padding_after_render_changes_boundary_silence(self):
+        items=[{'index':n,'start':n*5,'speed':1.,'fitted_length':5.,
+                'edge_silence':{'leading':.1,'trailing':.1,'speed':1.}} for n in range(2)]
+        original=copy.deepcopy(items);calls=[]
+        def render(item,speed):
+            calls.append((item['index'],speed))
+            item['edge_silence']={'leading':0.,'trailing':0.,'speed':speed}
+            return 5/speed+.04
+        result=dubbing_fit.fit_measured(items,9.9,render)
+        self.assertLessEqual(sum(x['fitted_length'] for x in result)+.05,9.9)
+        self.assertGreater(len(calls),2)
+        self.assertLessEqual(dubbing_fit.centered_schedule(result,9.9)[-1]['end'],9.9)
+        self.assertEqual(items,original)
+
     def test_corrects_atempo_discrepancy_using_actual_output_and_only_available_headroom(self):
         # The inverse-duration estimate fits, while the encoded local takes do not.
         items = [

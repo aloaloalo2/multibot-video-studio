@@ -29,7 +29,9 @@ def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | 
 def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -> dict:
     gaps=GAP*max(0,len(texts)-1)
     measured=sum(known.values())
-    minimum=measured/MAX_SPEED+gaps
+    # Recorded takes already include their boundary pauses. Extra join padding is
+    # a forecast reserve, not a measured impossibility; the assembler measures it.
+    minimum=measured/MAX_SPEED
     if minimum>total+.05:
         raise RuntimeError(f'Збережені фрази вже перевищують тривалість ролика щонайменше на {minimum-total:.1f} с '
                            'при прискоренні до 7%. Нові платні запити зупинено. Усі записи збережені.')
@@ -43,7 +45,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
     # All saved takes can use the same bounded fitting as the remaining takes.
     # The forecasting reserve applies only to unknown audio, not to the film's
     # tempo allowance or the duration of recordings we have already measured.
-    budget=max(0,(total-gaps)*MAX_SPEED-measured)
+    budget=max(0,total*MAX_SPEED-measured)
     result['predicted_seconds']=round(measured+rate*chars/FORECAST_RESERVE+gaps,3)
     result['predicted_minimum_seconds']=round((measured+rate*chars)/MAX_SPEED+gaps,3)
     result['expected_minimum_seconds']=round((measured+rate*chars/FORECAST_RESERVE)/MAX_SPEED+gaps,3)
@@ -53,7 +55,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
     factor=min(1.,budget/(rate*chars)) if chars else 1.
     if factor>=.97:return result
     if factor<.65:
-        excess=result['predicted_minimum_seconds']-total
+        excess=(measured+rate*chars)/MAX_SPEED-total
         raise RuntimeError(f'Для решти {len(pending)} фраз за виміряним темпом прогнозовано бракує {excess:.1f} с '
                            'навіть із прискоренням до 7%. Нові платні запити зупинено. '
                            f'Збережено {len(known)} із {len(texts)} записів; повторна оплата за них не потрібна. '

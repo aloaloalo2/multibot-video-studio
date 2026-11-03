@@ -11,6 +11,51 @@ MAX_SPEED = 1.07
 LONG_GAP = 1.5
 
 
+def quiet_edges(samples, rate: int, speed: float = 1.) -> dict:
+    """Measure existing boundary silence without removing any audio samples."""
+    import numpy as np
+    active = np.flatnonzero(np.abs(samples) >= 10 ** (-50 / 20))
+    # A wholly silent/invalid take is not evidence of a safe speech boundary.
+    if not len(active) or not np.isfinite(samples).all():
+        return {'leading': 0., 'trailing': 0., 'speed': speed}
+    return {'leading': int(active[0]) / rate,
+            'trailing': (len(samples) - int(active[-1]) - 1) / rate, 'speed': speed}
+
+
+def measure_edges(path: Path, speed: float = 1.) -> dict:
+    import numpy as np
+    import wave
+    if path.suffix.lower() == '.wav':
+        try:
+            with wave.open(str(path), 'rb') as audio:
+                if audio.getsampwidth() == 2 and audio.getcomptype() == 'NONE':
+                    samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype='<i2')
+                    samples = np.max(np.abs(samples.astype(np.float32).reshape(-1, audio.getnchannels())), axis=1) / 32768
+                    return quiet_edges(samples, audio.getframerate(), speed)
+        except wave.Error:
+            pass  # Decode float/other WAV formats with ffmpeg below.
+    raw = command(['-i', path, '-vn', '-ac', 1, '-ar', 48000, '-f', 'f32le', 'pipe:1'])
+    return quiet_edges(np.frombuffer(raw, dtype='<f4'), 48000, speed)
+
+
+def join_gaps(items: list[dict], gap: float = .05) -> list[float]:
+    """Top up a breath only when the recordings do not already contain it.
+
+    Reserve 10 ms at each measured edge and allow for the fastest permitted tempo.
+    Missing measurements keep the original full gap. Never trim or overlap takes.
+    """
+    def quiet(item, side):
+        edge = item.get('edge_silence') or {}
+        value, speed = edge.get(side), edge.get('speed')
+        if (not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
+                or not isinstance(speed, (int, float)) or not math.isfinite(speed)
+                or not MIN_SPEED <= speed <= MAX_SPEED):
+            return 0.
+        return max(0., value * speed / MAX_SPEED - .01)
+    return [max(0., gap - quiet(a, 'trailing') - quiet(b, 'leading'))
+            for a, b in zip(items, items[1:])]
+
+
 def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list[dict]:
     """Balance spare time around phrases, borrowing neighbouring silence without overlap.
 
@@ -18,7 +63,8 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     Durations must already be measured after local fitting. No word is cut to meet the deadline.
     """
     lengths=[float(x['fitted_length']) for x in items]
-    occupied=sum(lengths)+gap*max(0,len(items)-1)
+    gaps=join_gaps(items,gap)+[0.]
+    occupied=sum(lengths)+sum(gaps)
     slack=total-occupied
     if slack<-.001:
         raise RuntimeError(f'Озвучка довша за ролик на {-slack:.1f} с навіть після локальної підгонки. '
@@ -27,13 +73,13 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     for n,item in enumerate(items):
         left=float(item.get('original_start',item['start']))
         right=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
-        target=left+max(0,right-left-gap-lengths[n])/2
+        target=left+max(0,right-left-gaps[n]-lengths[n])/2
         targets.append(target)
         blocks.append([target-prefix,1,n,n+1])
         while len(blocks)>1 and blocks[-2][0]>blocks[-1][0]:
             b=blocks.pop();a=blocks.pop();weight=a[1]+b[1]
             blocks.append([(a[0]*a[1]+b[0]*b[1])/weight,weight,a[2],b[3]])
-        prefix+=lengths[n]+gap
+        prefix+=lengths[n]+gaps[n]
     shifts=[0.]*len(items)
     for value,_,a,b in blocks:
         shifts[a:b]=[max(0.,min(max(0.,slack),value))]*(b-a)
@@ -41,7 +87,7 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     for n,item in enumerate(items):
         start=prefix+shifts[n]
         result.append({**item,'start':start,'end':start+lengths[n],'center_target':targets[n]})
-        prefix+=lengths[n]+gap
+        prefix+=lengths[n]+gaps[n]
     return result
 
 
@@ -74,17 +120,20 @@ def fit_speed(length: float, place: float, speech_span: float) -> float:
 def fitting_speeds(items: list[dict], total: float) -> list[float]:
     """Use spare time across the whole film before declaring a bounded fit impossible."""
     speeds=[]
+    gaps=join_gaps(items)+[0.]
     for n,item in enumerate(items):
         start=float(item.get('original_start',item['start']))
         end=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
-        speeds.append(fit_speed(item['length'],end-start-.05,float(item['original_end'])-start))
-    budget=total-.05*max(0,len(items)-1)-.1
+        speeds.append(fit_speed(item['length'],end-start-gaps[n],float(item['original_end'])-start))
+    available=total-sum(gaps)
+    minimum=sum(x['length']/MAX_SPEED for x in items)
+    budget=max(minimum,available-.1)
     def occupied(delta):return sum(x['length']/min(MAX_SPEED,s+delta) for x,s in zip(items,speeds))
-    if occupied(0)<=budget:return speeds
-    if sum(x['length']/MAX_SPEED for x in items)>budget:
-        excess=sum(x['length']/MAX_SPEED for x in items)-budget
+    if minimum>available:
+        excess=minimum-available
         raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі 7%. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
+    if occupied(0)<=budget:return speeds
     lo,hi=0.,MAX_SPEED-MIN_SPEED
     for _ in range(40):
         mid=(lo+hi)/2
@@ -98,7 +147,8 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     """Correct local tempo against measured output, retaining every original take.
 
     ``render(item, speed)`` must render from the preserved source (never from an
-    already stretched output) and return its actual duration in seconds. Only
+    already stretched output) and return its actual duration in seconds. It may
+    replace the copied item's edge_silence with measured output boundaries. Only
     changed speeds are rendered. The caller owns any output files; input manifest
     dictionaries are copied. No text changes, synthesis or audio cuts occur here.
     """
@@ -114,20 +164,21 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
                 or not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0):
             raise RuntimeError('Не вдалося перевірити тривалість локальних аудіофрагментів. '
                                'Усі записи фраз збережені.')
-    budget = total - gap * max(0, len(result) - 1)
+    def budget():
+        return total - sum(join_gaps(result, gap))
 
     def occupied():
         return sum(item['fitted_length'] for item in result)
 
     for _ in range(max_passes):
-        if occupied() <= budget + 1e-6:
+        if occupied() <= budget() + 1e-6:
             return result
         movable = [item for item in result if item['speed'] < MAX_SPEED - 1e-7]
         if not movable:
             break
         # Inverse duration is an estimate only. Leave a small margin, then measure
         # again: atempo's windowing/padding need not equal raw_length / speed.
-        target = max(0., budget - .1)
+        target = max(0., budget() - .1)
         def predicted(delta):
             return sum(item['fitted_length'] * item['speed'] /
                        min(MAX_SPEED, item['speed'] + delta) for item in result)
@@ -144,14 +195,17 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
             speed = min(MAX_SPEED, math.ceil((item['speed'] + hi) * 1e6) / 1e6)
             if speed <= item['speed']:
                 continue
-            length = render(dict(item), speed)
+            rendered = dict(item)
+            length = render(rendered, speed)
             if (not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0):
                 raise RuntimeError('Не вдалося перевірити тривалість після локальної підгонки. '
                                    'Усі записи фраз збережені.')
             item.update(speed=speed, fitted_length=float(length))
-    if occupied() <= budget + 1e-6:
+            if 'edge_silence' in rendered:
+                item['edge_silence'] = rendered['edge_silence']
+    if occupied() <= budget() + 1e-6:
         return result
-    excess = max(0., occupied() - budget)
+    excess = max(0., occupied() - budget())
     raise RuntimeError(f'Озвучка довша за ролик на {excess:.1f} с після перевірки фактичної тривалості '
                        'при межі 7%. Усі аудіофрагменти збережені. '
                        'Автоматичної платної перегенерації не буде.')
@@ -212,6 +266,8 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
     mix = np.zeros(round(total*rate), dtype='<f4')
     report = []
     fitted=[None]*len(manifest)
+    # Read the preserved sources so legacy manifests also account for native pauses.
+    manifest=[{**item,'edge_silence':measure_edges(parts/item['file'])} for item in manifest]
     speeds=fitting_speeds(manifest,total)
     def render(item, speed):
         pcm = command(['-i', parts/item['file'], '-af', f'atempo={speed:.6f}', '-ar', rate,
@@ -219,6 +275,7 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
             ['-i', parts/item['file'], '-ar', rate, '-ac', '1', '-f', 'f32le', 'pipe:1'])
         audio = np.frombuffer(pcm, dtype='<f4')
         fitted[item['_rebuild_position']] = audio
+        item['edge_silence'] = quiet_edges(audio,rate,speed)
         return len(audio)/rate
     for n, item in enumerate(manifest):
         if progress:progress(n,len(manifest))

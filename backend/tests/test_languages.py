@@ -1086,13 +1086,39 @@ class LanguagesTest(unittest.TestCase):
             for n in (0,2):self.assertEqual((work/'parts'/f'{n:05d}.mp3').read_bytes(),original[n])
             self.assertTrue(list((work/'voice-history').rglob('voice.mp3')))
             languages.save_text(self.pid,'uk','\n'.join(texts))
-            calls.clear();clone.reset_mock();job={}
+            calls.clear();clone.reset_mock();job={'cache_only':True}
             languages.whole_synced(self.pid,'uk','elevenlabs',job,segments)
             self.assertEqual(calls,[]);clone.assert_not_called()
             self.assertEqual((job['cost'],job['takes'],job['reused']),(0,0,3))
             self.assertTrue(languages.overview(self.pid)['items'][0]['voice_current'])
             languages.set_provider(self.pid,'elevenlabs','eleven_v4')
             self.assertEqual(languages.voice_estimate(self.pid,'uk','elevenlabs','\n'.join(texts))['generate'],3)
+
+    def test_cache_only_rebuild_refuses_missing_take_before_archiving_or_payment(self):
+        work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
+        (work/'text.txt').write_text('Це перше речення.\nЦе друге речення.\n')
+        (work/'voice.mp3').write_bytes(b'previous accepted voice')
+        parts=work/'parts';parts.mkdir();(parts/'keep.txt').write_text('previous takes')
+        segments=[{'start':n*3,'end':n*3+2,'source':'Original.'} for n in range(2)]
+        self.example('uk')
+        with patch.object(languages,'speak',side_effect=AssertionError('No paid synthesis')), \
+             patch.object(languages,'voice_id',side_effect=AssertionError('No paid cloning')), \
+             patch.object(languages,'archive_voice_parts') as archive:
+            with self.assertRaisesRegex(store.StudioError,'бракує готових записів'):
+                languages.whole_synced(self.pid,'uk','elevenlabs',{'cache_only':True},segments)
+        archive.assert_not_called()
+        self.assertEqual((work/'voice.mp3').read_bytes(),b'previous accepted voice')
+        self.assertEqual((parts/'keep.txt').read_text(),'previous takes')
+
+    def test_cache_only_requires_boolean_and_timed_voice_job(self):
+        for kind,value in [('voice','true'),('sample',True),('translate',True)]:
+            with self.subTest(kind=kind,value=value),self.assertRaises(store.StudioError):
+                languages.start(self.pid,kind,'uk','elevenlabs',cache_only=value)
+        with patch.object(languages,'read_text',return_value='Це український текст.'), \
+             patch.object(languages,'synced_segments',return_value=[]), \
+             patch.object(languages,'voice_id',side_effect=AssertionError('No cloning')):
+            with self.assertRaisesRegex(store.StudioError,'збережених таймінгів'):
+                languages.whole(self.pid,'uk','elevenlabs',{'cache_only':True})
 
     def test_interrupted_run_reuses_successful_take_without_repeating_payment(self):
         work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)

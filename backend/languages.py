@@ -1905,6 +1905,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     cached_lengths={text:store.media_duration(path) for text,path in cached.items()}
     known={i:cached_lengths[text] for i,text in enumerate(texts) if text in cached_lengths}
     known={i:t for i,t in known.items() if t and t>0}
+    if job.get('cache_only') and len(known)!=len(texts):
+        raise store.StudioError('Для локального збирання бракує готових записів. Нових платних запитів не виконано.',409)
     # Saved wording is final for every voice run, including older callers sending
     # preserve_text=False. Pacing may warn or stop; it never rewrites accepted text.
     narration_pacing.plan(texts,known,total,0)
@@ -1919,6 +1921,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     take_price=fixed_price(provider,engine)
     unit="credits" if provider=="elevenlabs" else "usd"
     def take(index: int, kind: str, words: str, target: Path, around: tuple, speed: float = 1.0) -> None:
+        if job.get('cache_only'):
+            raise RuntimeError('Локальне збирання не може запускати платну озвучку.')
         entry={"index":index,"kind":kind,"text":words,"chars":len(words),"file":target.name,
                "estimated_cost":take_price(words),"cost_unit":unit,
                "started_at":time.time(),"status":"started","selected":False}
@@ -1943,11 +1947,14 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     timing_issues=[]
     texts = list(texts)
     def silence(seconds: float) -> None:
-        if seconds < 0.01:
+        import wave
+        frames=round(seconds*48000)
+        if frames <= 0:
             return
         path = parts_dir / f"{len(pieces):05d}-gap.wav"
-        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", f"{seconds:.3f}",
-             "-c:a", "pcm_s16le", str(path)], "зробити паузу")
+        with wave.open(str(path),'wb') as audio:
+            audio.setparams((1,2,48000,0,'NONE','not compressed'))
+            audio.writeframes(b'\0\0'*frames)
         pieces.append(path)
     next_check=0
     for number, line in enumerate(segments):
@@ -1959,7 +1966,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             next_check=number+(narration_pacing.BLOCK if forecast['seconds_per_character'] else narration_pacing.CALIBRATION)
             job['pacing_review'] = forecast.get('requires_review', False)
         text=texts[number]
-        progress(pid, job, round(90 * number / len(segments)), f"Озвучуємо фразу {number + 1} з {len(segments)}")
+        stage='Збираємо збережену фразу' if job.get('cache_only') else 'Озвучуємо фразу'
+        progress(pid, job, round(90 * number / len(segments)), f"{stage} {number + 1} з {len(segments)}")
         spoken = parts_dir / f"{number:05d}.mp3"
         around = (texts[number - 1] if number else "", texts[number + 1] if number + 1 < len(texts) else "")
         reused=text in cached
@@ -1967,6 +1975,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             shutil.copy2(cached[text],spoken)
             job['reused']+=1
         else:
+            if job.get('cache_only'):
+                raise RuntimeError('Бракує готового запису. Локальне збирання зупинено без витрат кредитів.')
             if voice is None:
                 announce_model(pid,provider,code,job)
                 voice=voice_id(pid,provider,code)
@@ -1988,7 +1998,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         manifest.append({"index": number, "file": spoken.name, "fitted": fitted.name, "text": text,
                          "reused":reused,"cache_key":voice_cache.take_key(identity,text),
                          "source": line["source"], "original_start": line["start"], "original_end": line["end"],
-                         "start": start,"fitted_length":fitted_length,"length": length, "speed": speed})
+                         "start": start,"fitted_length":fitted_length,"length": length, "speed": speed,
+                         "edge_silence":dubbing_fit.measure_edges(fitted,speed)})
         store.atomic_json(parts_dir / "manifest.json", manifest)
         for entry in requests:
             if entry["index"]==number:entry["selected"]=entry["file"]==spoken.name
@@ -1999,13 +2010,15 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
              '-af',f'atempo={speed:.6f},aresample=48000','-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
             'збалансувати темп у межах 7%')
-        item.update(speed=speed,fitted_length=store.media_duration(parts_dir/item['fitted']))
+        item.update(speed=speed,fitted_length=store.media_duration(parts_dir/item['fitted']),
+                    edge_silence=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed))
         fastest=max(fastest,speed)
     def render_measured(item,speed):
         progress(pid,job,92,'Уточнюємо тривалість готових фраз без нових витрат')
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
              '-af',f'atempo={speed:.6f},aresample=48000','-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
             'уточнити фактичний темп у межах 7%')
+        item['edge_silence']=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed)
         return store.media_duration(parts_dir/item['fitted'])
     manifest=dubbing_fit.fit_measured(manifest,total,render_measured)
     fastest=max(item['speed'] for item in manifest)
@@ -2123,6 +2136,8 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     segments = synced_segments(pid, code)
     if segments:
         return whole_synced(pid, code, provider, job, segments)
+    if job.get('cache_only'):
+        raise store.StudioError('Локальне збирання потребує збережених таймінгів фраз. Нових витрат немає.',409)
     project = store.load_project(pid)
     text = read_text(pid, code)
     work = work_dir(pid, code)
@@ -2508,9 +2523,11 @@ def cancel(pid: str, slot: str | None = None) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False) -> dict:
     if not isinstance(preserve_text,bool):
         raise store.StudioError('Оберіть, чи зберігати перевірені формулювання.',400)
+    if not isinstance(cache_only,bool) or (cache_only and kind!='voice'):
+        raise store.StudioError('Локальне збирання доступне лише для готових фраз озвучки.',400)
     check_code(code)
     if kind not in WORK:
         raise store.StudioError("Невідома дія", 404)
@@ -2565,6 +2582,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         job = {"status": "running", "kind": kind, "code": code, "provider": provider, "progress": 0, "stage": "Починаємо","owner_pid":os.getpid(),
                "translation_model": selected_translation_model,
                **({'preserve_text': True} if kind=='voice' and preserve_text else {}),
+               **({'cache_only':True} if cache_only else {}),
                "slot": f"{code}|{group}", "key": job_key(pid, code, group),
                "what": NAMES[kind], "started_at": time.time(),
                **({'add_flag':flag} if kind=='thumbnail' else {}),
