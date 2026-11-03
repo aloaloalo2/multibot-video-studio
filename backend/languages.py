@@ -621,6 +621,8 @@ LOCALIZATION_RULES = """Localization for the target language:
    would choose. Do not keep a source-language construction merely to match its word order or character count.
 8. Film/book titles, brands and proper names are named entities, not phrases to translate literally. Use an established
    localized title only when known reliably; otherwise keep the original title. Never invent a localized title.
+   In spoken text, expand digits inside an original title into words in that title's original language;
+   retain the other title words. This is its pronunciation, not an invented translated title.
 9. Audit every year, age, quantity and unit against the source. Pounds remain pounds and kilograms remain kilograms;
    preserve both values and both units when the original gives a conversion. Never change a date or a person's gender.
 10. Character counts and timing hints do not justify dropping facts, adding filler, padding, inventing details or
@@ -1012,6 +1014,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         'target-language number words express the same value. Years, ages, ranges, decimals, '
                         'percentages and conversions must retain their exact meaning and units. Do not flag '
                         'a translation merely because spelling numbers out increases its character count. '
+                        "For an original proper title containing digits, spelling its number in the title's original language "
+                        "while retaining the other words preserves the title identity; do not demand digits or a translated title. "
                         'Raw character length is not a quality failure. '
                         'Numbers must be written in natural target-language words. Return JSON '
                         '{"ok":true,"ids":[every requested id]} if all pass. Otherwise return '
@@ -2589,9 +2593,14 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     (work / "text.txt").write_text(text.strip() + "\n", encoding="utf-8")
     drop_samples(work)
-    if isinstance(title, str):
-        update(pid, lambda data: data.setdefault("languages", {}).setdefault(code, {}).__setitem__("title", title.strip()[:200]))
-    copy_out(store.load_project(pid), code, "text")
+    project = store.load_project(pid)
+    def keep(data):
+        item = data.setdefault("languages", {}).setdefault(code, {})
+        item["translation_length"] = translation_budget.assessment(source(project)["script"], text)
+        if isinstance(title, str):
+            item["title"] = title.strip()[:200]
+    update(pid, keep)
+    copy_out(project, code, "text")
     return overview(pid)
 
 

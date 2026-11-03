@@ -233,6 +233,9 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse((work / "sample.mp3").exists())
         self.assertFalse((work / "sample-fishaudio-s1.mp3").exists())
         self.assertEqual(languages.overview(self.pid)["items"][0]["title"], "Título")
+        report = languages.load_state(self.pid)["languages"]["es"]["translation_length"]
+        self.assertEqual(report["translated_chars"], len("Hola."))
+        self.assertTrue(report["advisory_only"])
         languages.remove(self.pid, "es")
         self.assertFalse(work.exists())
         self.assertTrue((self.episode / "Мови" / "Español" / "Текст Español.txt").is_file())
