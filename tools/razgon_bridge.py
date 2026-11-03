@@ -557,6 +557,7 @@ def render_bed(razgon: Path) -> Path | None:
     if np.abs(bed).max() < 1e-5:
         return None
     path = razgon / "build" / "studio" / "music_sfx.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
     MIX.write_wav(str(path), bed.astype(np.float32))
     return path
 

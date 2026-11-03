@@ -112,21 +112,22 @@ function voiceAssetId(plan,project){
   return Object.keys(project?.audio_gain || {})[0] || planned;
 }
 // src: another sound to play the same way (the «Мови» tab's translated voices)
-function voicePlayer(id,src=null){
+function voicePlayer(id,src=null,options={}){
   const asset=src?null:voiceAssetId(state.plan,state.project);
   if(!asset&&!src)return null;
   const box=document.createElement('div');box.className='voice-player';
   const audio=document.createElement('audio');audio.preload='metadata';audio.src=src || `/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
-  const play=document.createElement('button');play.type='button';play.className='voice-player-play';play.setAttribute('aria-label','Відтворити озвучку');play.innerHTML=playIcon;
+  const playLabel=options.filename?'Відтворити приклад голосу':'Відтворити озвучку';
+  const play=document.createElement('button');play.type='button';play.className='voice-player-play';play.setAttribute('aria-label',playLabel);play.innerHTML=playIcon;
   const now=document.createElement('time');now.className='voice-player-time';now.textContent=clock(0);
   const bar=document.createElement('input');bar.type='range';bar.min='0';bar.step='0.1';bar.value='0';bar.className='voice-player-bar';bar.setAttribute('aria-label','Перемотати озвучку');
   const total=document.createElement('time');total.className='voice-player-time';
-  const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:src?0:Number(state.plan?.timing?.audio?.duration) || 0;
+  const length=()=>Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:src?Number(options.duration)||0:Number(state.plan?.timing?.audio?.duration) || 0;
   const paint=()=>{const all=length();bar.max=String(all || 1);if(!bar.matches(':active'))bar.value=String(audio.currentTime);
     now.textContent=clock(audio.currentTime);total.textContent=clock(all);bar.style.setProperty('--fill',`${all?audio.currentTime/all*100:0}%`);};
-  play.addEventListener('click',()=>{if(audio.paused){if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
+  play.addEventListener('click',()=>{if(audio.paused){document.querySelectorAll('.voice-player audio').forEach(other=>{if(other!==audio)other.pause();});if(typeof stopPlayback==='function')stopPlayback();audio.play().catch(error=>status(`Не вдалося відтворити озвучку: ${error.message}`,true));}else audio.pause();});
   audio.addEventListener('play',()=>{play.innerHTML=pauseIcon;play.setAttribute('aria-label','Пауза');box.classList.add('playing');});
-  audio.addEventListener('pause',()=>{play.innerHTML=playIcon;play.setAttribute('aria-label','Відтворити озвучку');box.classList.remove('playing');});
+  audio.addEventListener('pause',()=>{play.innerHTML=playIcon;play.setAttribute('aria-label',playLabel);box.classList.remove('playing');});
   for(const name of ['timeupdate','loadedmetadata','ended'])audio.addEventListener(name,paint);
   bar.addEventListener('input',()=>{audio.currentTime=Number(bar.value);paint();});
   // ±5 s with the arrow keys on the bar comes from the range itself; the voice stops when the page changes
@@ -141,7 +142,12 @@ function voicePlayer(id,src=null){
     speaker.innerHTML=value===0?muteIcon:speakerIcon;speaker.setAttribute('aria-label',value===0?'Увімкнути звук':'Вимкнути звук');};
   level.addEventListener('input',()=>{audio.volume=Number(level.value);audio.muted=audio.volume===0;try{localStorage.setItem('voicePlayerVolume',String(audio.volume));}catch{}showVolume();});
   speaker.addEventListener('click',()=>{if(audio.muted||audio.volume===0){audio.muted=false;if(audio.volume===0)audio.volume=1;}else audio.muted=true;showVolume();});
-  box.append(audio,play,now,bar,total,speaker,level);paint();showVolume();
+  if(options.filename){
+    box.classList.add('voice-player-reference');
+    const name=document.createElement('span');name.className='voice-player-filename';name.textContent=options.filename;name.title=options.filename;
+    box.append(audio,play,name,total);
+  }else box.append(audio,play,now,bar,total,speaker,level);
+  paint();showVolume();
   return box;
 }
 

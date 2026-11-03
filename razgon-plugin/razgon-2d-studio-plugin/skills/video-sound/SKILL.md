@@ -23,6 +23,11 @@ Work inside `razgon-2d-studio/` on the active project. Read `../make-2d-video/re
 - Place cues on actions and graphics: `whoosh`/`swish` on whips and fast moves, `pop`/`blip` when graphics appear, `counter` under ticking numbers, `riser` then `impact`/`stinger` on reveals, `slowmo`/`freeze` for time effects, `hit`/`kick`/`footstep` on contact. Never stack more than ~2 cues at the same instant.
 
 ## 3. Mix and mux
+For a VideoKey Studio episode, regenerate only its soundtrack with `tools/razgon_bridge.py`'s `render_bed(project_path)` and replace the existing music/effects clip through the Studio API. This also works after cache cleanup: the helper must create `build/studio` before writing its bed. Preserve a backup of the old configuration, cue plan and audio. Do not call `push` or render/export video for a sound-only request. Verify the returned bed exists and has the full episode duration before importing it. Keep narration and visual clips intact.
+
 Run `python audio/mix.py --project projects/<slug>`. It ducks the music −9 dB and ambience −5 dB under the voice, normalises to `config.loudness` (−14 LUFS default), writes `build/mix.wav`, and, when `build/video_silent.mp4` exists, writes `out/<title>.mp4`.
 - Levels: `config.music.gainDb` (default −17 relative to the voice) and `config.sfx.gainDb` (default −6). Change them by 2–3 dB per iteration.
 - QC: listen points or `ffmpeg -i out/<file>.mp4 -af ebur128=framelog=quiet -f null -` (integrated loudness about −14 LUFS) and check that the duration matches the video.
+
+
+For a new Studio soundtrack, create its own universal layer so the narrator and music can be muted independently. Measure against the Studio's levelled narration; a very quiet source recording can otherwise make the generated bed inaudible. Import a 192 kbit/s AAC/M4A delivery for a long episode instead of an extra uncompressed WAV copy. Keep the editable source and report decode/level checks separately from actual listening.

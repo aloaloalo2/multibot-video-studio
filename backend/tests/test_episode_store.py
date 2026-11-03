@@ -11,7 +11,55 @@ import store
 
 
 class EpisodeStoreTest(unittest.TestCase):
-    def test_pictures_go_to_the_episode_folder_and_frame_renders_stay_in_the_studio(self):
+    def test_missing_branding_uses_only_the_linked_projects_overlay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            razgon = root / 'animation'
+            (razgon / 'input').mkdir(parents=True)
+            overlay = razgon / 'input' / 'plate.png'
+            overlay.write_bytes(b'png')
+            config = razgon / 'config.json'
+            config.write_text(json.dumps({'overlay': 'input/plate.png'}))
+            project = {'id': 'a' * 24, 'episode_path': str(root / 'gone'),
+                       'assets': [{'id': 'b' * 20, 'kind': 'image', 'path': str(root / 'gone.png')}],
+                       'tracks': [{'clips': [{'id': 'plate', 'asset_id': 'b' * 20, 'title': 'Плашка каналу'}]}]}
+            with mock.patch.object(store, 'PROJECTS_ROOT', root / 'cache'), \
+                    mock.patch.object(store, 'razgon_link', return_value={'project': str(razgon)}), \
+                    mock.patch.object(store, 'razgon_voice', return_value=None), \
+                    mock.patch.object(store, 'discovered', return_value=[]):
+                self.assertEqual(store.resolve_asset(project, 'b' * 20)['path'], str(overlay.resolve()))
+                project['tracks'][0]['clips'][0]['title'] = 'Звичайне фото'
+                with self.assertRaises(store.StudioError):
+                    store.resolve_asset(project, 'b' * 20)
+                project['scene_groups'] = [{'role': 'overlay', 'clip_ids': ['plate']}]
+                self.assertEqual(store.resolve_asset(project, 'b' * 20)['path'], str(overlay.resolve()))
+                config.write_text(json.dumps({'overlay': '../outside.png'}))
+                (root / 'outside.png').write_bytes(b'png')
+                with self.assertRaises(store.StudioError):
+                    store.resolve_asset(project, 'b' * 20)
+
+    def test_relocate_preserves_ids_timeline_and_unknown_files_without_duplicate_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);episode=root/'episode';legacy=episode/'VideoKey'/'Матеріали';legacy.mkdir(parents=True)
+            audio=legacy/'music.wav';audio.write_bytes(b'generated audio');(legacy/'notes.txt').write_text('keep')
+            pid='a'*24;project={'id':pid,'schema_version':2,'layer_mode':'item','revision':3,'episode_path':str(episode),
+                'assets':[{'id':'oldid','path':str(audio),'kind':'audio'},{'id':'alias','path':str(audio),'kind':'audio'}],
+                'tracks':[{'clips':[{'asset_id':'oldid','kind':'audio','start':0,'duration':3}]}]}
+            with mock.patch.object(store,'PROJECTS_ROOT',root/'projects'):
+                (root/'projects'/pid).mkdir(parents=True);store.save_project(project)
+                with self.assertRaises(store.StudioError):store.relocate_media(pid,2)
+                result=store.relocate_media(pid,3);updated=result['project']
+                self.assertEqual(result['moved'],1)
+                self.assertEqual(updated['tracks'],project['tracks'])
+                self.assertEqual([a['id'] for a in updated['assets']],['oldid','alias'])
+                self.assertTrue(all(Path(a['path']).is_file() for a in updated['assets']))
+                self.assertEqual(updated['assets'][0]['path'],updated['assets'][1]['path'])
+                self.assertEqual(len(store.discover_assets(updated)),2)
+                self.assertTrue((legacy/'notes.txt').exists())
+                self.assertFalse(audio.exists())
+                self.assertTrue((Path(result['journal'])/'project-before.json').exists())
+
+    def test_pictures_and_frame_renders_stay_inside_the_studio(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             channel = root / "YOUTUBE" / "Канал"
@@ -26,7 +74,8 @@ class EpisodeStoreTest(unittest.TestCase):
                 with mock.patch.object(store, "media_kind", return_value="image"):
                     first = store.import_asset_file(project, picture)
                     second = store.import_asset_file(project, render)
-                self.assertEqual(Path(first["path"]).parent, episode / "VideoKey" / "Матеріали")   # goes with the folder
+                self.assertEqual(Path(first["path"]).parent, store.project_dir(project["id"]) / "media")
+                self.assertFalse((episode / "VideoKey").exists())
                 self.assertEqual(Path(second["path"]).parent, store.project_dir(project["id"]) / "media")   # the studio's cache
                 # deleting the episode in the studio takes the VideoKey folder, the author's files stay
                 (episode / "Сценарій.txt").write_text("текст", encoding="utf-8")
@@ -118,6 +167,11 @@ class EpisodeStoreTest(unittest.TestCase):
                 project = store.load_project(project["id"])
                 project["assets"] = [{"id": "b" * 20, "kind": "audio", "path": str(root / "gone.wav")}]
                 self.assertEqual(store.resolve_asset(project, "b" * 20)["path"], str(razgon / "input" / "voice.wav"))
+                # An unknown full-length sound must never become narration just because its file is gone.
+                project['duration'] = 60
+                project['assets'].append({'id': 'd' * 20, 'kind': 'audio', 'path': str(root / 'music_sfx.wav')})
+                project['tracks'][0]['clips'] = [{'id': 'bed', 'kind': 'audio', 'asset_id': 'd' * 20, 'start': 0, 'duration': 60, 'title': 'music_sfx.wav'}]
+                self.assertIsNone(store.razgon_voice(project, 'd' * 20))
                 # a copy of the voice under another id, laid over the whole film, plays the same voice
                 project["duration"] = 60
                 project["assets"].append({"id": "c" * 20, "kind": "audio", "path": str(root / "gone-copy.wav")})

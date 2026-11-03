@@ -23,7 +23,7 @@ sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "tools")]
 APPLE_ = sys.platform == "darwin" and platform.machine() == "arm64"
 # huggingface_hub fetches the speech model for the Mac's GPU; reportlab only draws the plan as a PDF
 PACKAGES = [("PIL", "Pillow", True), ("numpy", "numpy", True), ("huggingface_hub", "huggingface_hub", APPLE_),
-            ("reportlab", "reportlab", False)]
+            ("reportlab", "reportlab", False), ("websockets", "websockets", True), ("langid", "langid==1.1.6", True)]
 APPLE = sys.platform == "darwin" and platform.machine() == "arm64"
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 
@@ -58,7 +58,7 @@ def main(argv=None) -> int:
         absent.append("mlx-whisper" if APPLE else "faster-whisper")
     if absent and args.install:
         run([sys.executable, "-m", "pip", "install", "--user", "-r", str(ROOT / "requirements.txt")], timeout=1800)
-        absent = [name for name in absent if importlib.util.find_spec(name.replace("-", "_").replace("Pillow", "PIL")) is None]
+        absent = [name for name in absent if importlib.util.find_spec(name.split("==")[0].replace("-", "_").replace("Pillow", "PIL")) is None]
     for module, pip, needed in PACKAGES + [(speech, speech.replace("_", "-"), True)]:
         ok = pip not in absent and importlib.util.find_spec(module) is not None
         report.line(ok, pip, f"{sys.executable} -m pip install --user {pip}", needed)

@@ -33,7 +33,7 @@ function addLayerSoundControl(heading,layer){
 }
 function layerTime(event,lane){const rect=lane.getBoundingClientRect();return timelineOrigin()+Math.max(0,Math.round(((event.clientX-rect.left)/rect.width)*timelineSpan()*10)/10);}
 
-function selectUniversalClip(id){const chosen=universalClips().find(clip=>clip.id===id);if(!chosen)return;state.selectedTransition=null;state.selectedStack=null;state.selected=id;state.activeLayer=layers().find(layer=>(layer.clips || []).some(clip=>clip.id===id))?.id || state.activeLayer;state.replaceMode=false;state.playhead=seconds(chosen.start);renderTimeline();renderInspector();renderPreview();status(`Вибрано кліп «${clipLabel(chosen)}».`);}
+function selectUniversalClip(id,seek=true){const chosen=universalClips().find(clip=>clip.id===id);if(!chosen)return;state.selectedTransition=null;state.selectedStack=null;state.selected=id;state.activeLayer=layers().find(layer=>(layer.clips || []).some(clip=>clip.id===id))?.id || state.activeLayer;state.replaceMode=false;if(seek)state.playhead=seconds(chosen.start);renderTimeline();renderInspector();renderPreview();status(`Вибрано кліп «${clipLabel(chosen)}».`);}
 
 function renderUniversalTimeline(){
   renderGroupingControls();
@@ -239,8 +239,8 @@ function renderUniversalPreview(){
       let element;
       const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
       if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
-      else if(mediaKind==='image'&&url){element=document.createElement('img');element.decoding='async';element.src=url;element.alt='';element.decode().catch(()=>{});}
-      else if(mediaKind==='video'&&url){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});element.src=url;}
+      else if(mediaKind==='image'){element=document.createElement('img');element.decoding='async';element.alt='';}
+      else if(mediaKind==='video'){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});}
       else if(mediaKind==='text'){element=document.createElement('div');element.className='composition-text';element.textContent=clip.text || clip.title || '';element.style.color=clip.color || '#ffffff';}
       else {element=document.createElement('div');element.className='composition-shape';element.style.background=clip.color || '#f0b429';}
       if(mediaKind==='text' && clip.text_words?.length){
@@ -250,10 +250,14 @@ function renderUniversalPreview(){
       // a picture or video whose file is gone (its episode folder was deleted) says so instead of a blank box
       // the channel's plate or logo lies over the whole film: a missing one simply goes, it must not cover the picture
       // (the live Razgon view under it among others)
-      if(element.tagName==='IMG'||element.tagName==='VIDEO')element.addEventListener('error',()=>{
+      if(element.tagName==='IMG'||element.tagName==='VIDEO'){
+        const missing=()=>{
         const overlay=/Логотип|Плашка/.test(clip.title || '')||sceneGroups().some(group=>group.role==='overlay'&&(group.clip_ids || []).includes(clip.id));
         if(overlay){wrapper.classList.add('media-gone');return;}
-        wrapper.classList.add('media-missing');wrapper.dataset.missing='Файл видалено разом із папкою випуску';},{once:true});
+        wrapper.classList.add('media-missing');wrapper.dataset.missing='Файл видалено разом із папкою випуску';};
+        element.addEventListener('error',missing,{once:true});
+        if(url){element.src=url;if(element.tagName==='IMG')element.decode().catch(()=>{});}else missing();
+      }
       wrapper.append(element);composition.append(wrapper);state.previewNodes.set(clip.id,wrapper);
       }
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;

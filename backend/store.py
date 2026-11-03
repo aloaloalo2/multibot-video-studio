@@ -115,7 +115,8 @@ def razgon_voice(project: dict, aid: str) -> Path | None:
     for track in project.get("tracks", []):
         for clip in track.get("clips", []):
             if (clip.get("asset_id") == aid and clip.get("kind") == "audio" and float(clip.get("start") or 0) < 0.5
-                    and film and float(clip.get("duration") or 0) >= 0.9 * film and "музика" not in (clip.get("title") or "").lower()):
+                    and film and float(clip.get("duration") or 0) >= 0.9 * film
+                    and (clip.get("title") or "").strip().lower() in {"озвучка", "voiceover", "narration"}):
                 return voice
     return None
 
@@ -805,6 +806,8 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         atomic_json(folder / "project.json", project)
+        import language_defaults
+        language_defaults.apply(project)
     note_topics(channel)
     return project
 
@@ -1242,20 +1245,13 @@ def media_duration(path: Path) -> float | None:
         return None
 
 
-# Pictures, videos and sounds of an episode live in its own folder in YOUTUBE, «VideoKey/Матеріали», so deleting that
-# folder takes them with it (user, 1 November 2026: «картинки згенеровані, відео викачені… має бути в папці YouTube»).
-# What can always be made again stays in the studio as its cache (user: «код, який відрендерений, анімація… в папці
-# VideoKey Studio… це як кеш»): Razgon frame renders, export chunks, stills, stock sheets, the engine's render cache.
-# The project and its cache stay in the studio when the episode folder is deleted; «Звільнити місце» frees the cache. The episode's own media list
-# leaves the VideoKey folder out (discover_assets).
+# Studio-managed imports and generated assets stay in the application's project data.
+# Old episode-local stores remain readable until explicitly relocated.
 EPISODE_STORE = "VideoKey"
 
 
 def media_dir(project: dict) -> Path:
-    """Where an episode's pictures, videos and sounds go; the studio's data only for a project without an episode."""
-    episode = Path(project.get("episode_path") or "")
-    if project.get("episode_path") and episode.parent.is_dir():
-        return episode / EPISODE_STORE / "Матеріали"   # made with the first file, the episode folder too if it is new
+    """Persistent imported/generated media, separate from disposable rendering caches."""
     return project_dir(project["id"]) / "media"
 
 
@@ -1265,8 +1261,51 @@ def cache_dir(project: dict) -> Path:
 
 
 def media_roots(project: dict) -> list[Path]:
-    """The studio's own media folders of a project: the episode store, and the old one in the studio's data."""
-    return list(dict.fromkeys([media_dir(project), project_dir(project["id"]) / "media"]))
+    """Internal media plus the legacy episode folder for compatibility."""
+    roots=[media_dir(project)]
+    if project.get("episode_path"):
+        roots.append(Path(project["episode_path"]) / EPISODE_STORE / "Матеріали")
+    return list(dict.fromkeys(roots))
+
+
+def relocate_media(pid: str, expected_revision: int | None = None) -> dict:
+    """Move tracked legacy imports into Studio while retaining asset ids and a rollback journal."""
+    with LOCK:
+        project=load_project(pid)
+        if expected_revision is not None and project["revision"]!=expected_revision:
+            raise StudioError("Проєкт змінився. Оновіть його перед перенесенням матеріалів.",409)
+        legacy=Path(project.get("episode_path") or "")/EPISODE_STORE/"Матеріали"
+        if not project.get("episode_path") or not legacy.is_dir():return {"project":project,"moved":0}
+        target=media_dir(project);target.mkdir(parents=True,exist_ok=True)
+        journal_dir=project_dir(pid)/"migrations"/str(time.time_ns());journal_dir.mkdir(parents=True)
+        atomic_json(journal_dir/"project-before.json",project)
+        moves={}
+        try:
+            for asset in project.get("assets",[]):
+                source=Path(asset.get("path") or "").resolve()
+                if str(source) in moves:
+                    asset["path"]=moves[str(source)];continue
+                if not source.is_file() or not under(source,legacy):continue
+                if str(source) not in moves:
+                    dest=claim_media_name(target,source.name)
+                    shutil.move(str(source),str(dest));moves[str(source)]=str(dest.resolve())
+                asset["path"]=moves[str(source)]
+            atomic_json(journal_dir/"paths.json",moves)
+            if moves:
+                if read_json(project_path(pid),{}).get("revision")!=project["revision"]:
+                    raise StudioError("Проєкт змінився під час перенесення. Матеріали повернуто на попереднє місце.",409)
+                project["revision"]+=1;save_project(project)
+                _DISCOVERED.pop(pid,None)
+        except Exception:
+            for source,dest in reversed(list(moves.items())):
+                Path(source).parent.mkdir(parents=True,exist_ok=True)
+                shutil.move(dest,source)
+            raise
+        # Remove only empty managed folders. Untracked files and the episode itself are preserved.
+        for folder in [*sorted((x for x in legacy.rglob('*') if x.is_dir()),key=lambda x:len(x.parts),reverse=True),legacy,legacy.parent]:
+            try:folder.rmdir()
+            except OSError:pass
+        return {"project":project,"moved":len(moves),"journal":str(journal_dir)}
 
 
 def asset_record(path: Path, project_id: str, source="local") -> dict:
@@ -1283,6 +1322,7 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
     episode = Path(project["episode_path"])
     own = media_roots(project)
     existing = {asset["id"]: asset for asset in project.get("assets", []) if isinstance(asset, dict) and "id" in asset}
+    known_paths={Path(asset["path"]).resolve() for asset in existing.values() if asset.get("path")}
     # A file imported from the episode folder exists twice, as the Studio copy and as the original; the library shows
     # the copy only, unless the timeline uses the original itself. An import may add -xxxxxxxx to the name on a clash.
     used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", [])}
@@ -1306,6 +1346,7 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
                     break
                 path = Path(current) / name
                 if path.is_file() and media_kind(path) and under(path, root):
+                    if path.resolve() in known_paths:continue
                     asset = asset_record(path, project["id"], "project" if root in own else "episode")
                     if root == episode and asset["id"] not in used and (path.stem, path.suffix.lower(), path.stat().st_size) in copies:
                         continue
@@ -1356,6 +1397,18 @@ def resolve_asset(project: dict, aid: str) -> dict:
             voice = razgon_voice(project, aid) if not path.is_file() else None
             if voice:
                 return {**asset, 'path': str(voice), 'kept': True}
+            # The linked animation keeps its full-frame branding PNG even when the imported copy was cleaned.
+            if not path.is_file() and asset.get('kind') == 'image':
+                overlay_ids = {cid for group in project.get('scene_groups', []) if group.get('role') == 'overlay' for cid in group.get('clip_ids', [])}
+                is_overlay = any(clip.get('asset_id') == aid and (clip.get('id') in overlay_ids or clip.get('title') in ('Плашка каналу', 'Логотип'))
+                                 for track in project.get('tracks', []) for clip in track.get('clips', []))
+                link = razgon_link(project) if is_overlay else None
+                if link:
+                    root = Path(link['project']).resolve()
+                    config = read_json(root / 'config.json', {}) or {}
+                    overlay = (root / config.get('overlay', '')).resolve()
+                    if under(overlay, root) and overlay.is_file():
+                        return {**asset, 'path': str(overlay), 'kept': True}
             # Razgon's music and effects bed, as its project keeps it after a render
             # (user, 2 November 2026: «в деяких проектах не находить доріжку музика й ефекти»): the studio's copy may be gone
             # with a cleanup, so the project's own bed is taken, else its music alone (the build keeps music.wav, the mix
@@ -1411,7 +1464,7 @@ def import_asset_file(project: dict, source: Path, source_name="local") -> dict:
         raise StudioError("Підтримуються тільки фото, відео й аудіо")
     if source.stat().st_size > 10 * 1024 ** 3:
         raise StudioError("Файл завеликий для імпорту")
-    # a Razgon frame render is cache: it stays in the studio, the episode folder gets the pictures and sounds
+    # Imports stay inside Studio, including generated sound and frame renders.
     folder = project_dir(project["id"]) / "media" if RAZGON_RENDER.fullmatch(source.name) else media_dir(project)
     folder.mkdir(parents=True, exist_ok=True)
     base = re.sub(r"[^\w. -]", "_", source.name).strip(". ") or "asset"

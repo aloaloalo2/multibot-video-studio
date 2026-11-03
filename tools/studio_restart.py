@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
@@ -70,11 +71,28 @@ def listener() -> int | None:
     return int(out[0]) if out else None
 
 
+def prepare() -> bool:
+    request=urllib.request.Request(STUDIO+'/api/studio/restart/prepare',data=b'{}',headers={'Content-Type':'application/json'},method='POST')
+    try:
+        with urllib.request.urlopen(request,timeout=15) as response:data=json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code==404:return False  # compatibility with a server predating the restart gate
+        try:reason=json.loads(error.read()).get('error') or 'Студія зайнята.'
+        except (ValueError,OSError):reason='Студія зайнята.'
+        sys.exit(reason+' Перезапуск не виконано.')
+    except (OSError,ValueError):sys.exit('Не вдалося підготувати студію до перезапуску. Перезапуск не виконано.')
+    if data.get('prepared') is not True:sys.exit('Студія не підтвердила готовність. Перезапуск не виконано.')
+    return True
+
+
 def stop(pid: int) -> bool:
     os.kill(pid, signal.SIGTERM)
     for _ in range(40):
-        if listener() is None:
-            return True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            if listener() is None:
+                return True
         time.sleep(0.25)
     return False
 
@@ -110,6 +128,10 @@ def main():
         sys.exit("Перезапуск обірве це. Дочекайтеся завершення або запустіть з --force, якщо користувач погодив.")
 
     old = listener()
+    if old and running and not args.force:
+        if not prepare():
+            again=busy_work()
+            if again:sys.exit('Перезапуск не виконано: '+', '.join(again))
     if old and not stop(old):
         sys.exit(f"Стара студія (pid {old}) не зупинилася за 10 с, нову не запускаю")
     pid = start()

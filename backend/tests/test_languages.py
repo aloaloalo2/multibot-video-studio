@@ -1,4 +1,6 @@
 import json
+import io
+import os
 import shutil
 import subprocess
 import sys
@@ -11,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import credentials  # noqa: E402
+import eleven_api  # noqa: E402
 import languages  # noqa: E402
 import store  # noqa: E402
 
@@ -37,6 +40,9 @@ class Vault:
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
 class LanguagesTest(unittest.TestCase):
     def setUp(self):
+        catalogue = patch.object(eleven_api, "catalog", return_value={"models": eleven_api.FALLBACK, "verified": False})
+        catalogue.start()
+        self.addCleanup(catalogue.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)
@@ -53,6 +59,7 @@ class LanguagesTest(unittest.TestCase):
         for item in (patch.object(store, "load_project", return_value=self.project),
                      patch.object(store, "load_project_plan", return_value=plan),
                      patch.object(store, "project_dir", return_value=self.studio),
+                     patch.object(store, "DATA_ROOT", self.studio / "data"),
                      patch.object(store, "resolve_asset", return_value=self.project["assets"][0]),
                      patch.object(store, "get_channel_folder", return_value=self.channel),
                      patch.object(credentials, "vault", return_value=Vault(keys))):
@@ -79,6 +86,38 @@ class LanguagesTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail("the job did not finish")
 
+    def test_thumbnail_gallery_only_lists_existing_translated_images_without_voicing(self):
+        languages.update(self.pid,lambda d:d.update(languages={"uk":{},"es":{},"invalid":{}},original_language="en"))
+        work=languages.work_dir(self.pid,"uk");work.mkdir(parents=True);(work/"thumbnail.png").write_bytes(b"png")
+        with patch.object(languages,"voice_for",side_effect=AssertionError("gallery must not prepare voices")):
+            result=languages.thumbnail_gallery(self.pid)
+        self.assertEqual(result["original_language"],"en")
+        self.assertEqual([x["code"] for x in result["translated_thumbnails"]],["uk"])
+
+    def test_external_state_reader_preserves_work_owned_by_the_running_server(self):
+        job={'status':'running','kind':'thumbnail','code':'pl','owner_pid':os.getpid()+1000}
+        store.atomic_json(languages.state_path(self.pid),{'jobs':{'pl|thumbnail':job}})
+        with patch.object(languages.os,'kill'):
+            self.assertEqual(languages.load_state(self.pid)['jobs']['pl|thumbnail']['status'],'running')
+            languages.update(self.pid,lambda d:d.update(other_setting=True))
+        self.assertEqual(store.read_json(languages.state_path(self.pid))['jobs']['pl|thumbnail']['status'],'running')
+
+    def test_completed_thumbnail_surviving_restart_can_be_recovered_without_generation(self):
+        from PIL import Image
+        import os
+        work=languages.work_dir(self.pid,'pl');work.mkdir(parents=True)
+        Image.new('RGB',(64,36),'red').save(work/'thumbnail.png')
+        Image.new('RGB',(64,36),'blue').save(work/'thumbnail-new.png')
+        (work/'thumbnail-prompt.txt').write_text('Add Poland flag')
+        started=(work/'thumbnail-new.png').stat().st_mtime-1
+        languages.save_state(self.pid,{'languages':{'pl':{}},'jobs':{'pl|thumbnail':{'kind':'thumbnail','code':'pl','status':'failed','started_at':started,'add_flag':True}}})
+        with patch.object(languages,'overview',return_value={}),patch.object(languages.subprocess,'Popen',side_effect=AssertionError('no generation')):
+            languages.recover_thumbnail(self.pid,'pl')
+        job=languages.load_state(self.pid)['jobs']['pl|thumbnail']
+        self.assertEqual((job['status'],job['version'],job['recovered']),('done',2,True))
+        self.assertEqual(languages.file_path(self.pid,'pl','thumbnail').name,'v2.png')
+        self.assertEqual([x['number'] for x in languages.thumbnail_gallery(self.pid)['translated_thumbnails']],[2,1])
+
     def test_chunks_cut_at_paragraphs_and_sentences_and_keep_every_word(self):
         text = "Один. Два три.\n\n" + " ".join(f"Речення номер {n}." for n in range(60))
         pieces = languages.chunks(text, 200)
@@ -87,7 +126,11 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.chunks("Коротко.", 200), ["Коротко."])
 
     def test_price_counts_characters_or_bytes(self):
-        self.assertEqual(languages.price("elevenlabs", "a" * 10000), 1.0)
+        with patch.object(eleven_api, "model", return_value={"credits_per_char": .2}):
+            self.assertEqual(languages.price("elevenlabs", "a" * 10000, "eleven_v4_turbo"), 2000)
+            self.assertEqual(languages.price("elevenlabs", "я я", "eleven_v4_turbo"), .6)
+        with patch.object(eleven_api, "model", return_value={}):
+            self.assertIsNone(languages.price("elevenlabs", "a" * 10000, "unknown"))
         # Fish Audio bills UTF-8 bytes: Cyrillic is two a letter
         self.assertEqual(languages.price("fishaudio", "я" * 100000, "s2.1-pro"), 3.0)
         self.assertEqual(languages.price("fishaudio", "a" * 100000, "s2.1-pro"), 1.5)
@@ -134,9 +177,11 @@ class LanguagesTest(unittest.TestCase):
         # 3+ parts of 4 s against a 6 s video: sped up by at most FIT_MAX, the rest stays longer
         self.assertEqual(voice["speed"], languages.FIT_MAX)
         self.assertGreater(voice["longer"], 0)
-        self.assertTrue((self.episode / "Мови" / "English" / "Озвучка English.mp3").is_file())
+        self.assertFalse((self.episode / "Мови" / "English" / "Озвучка English.mp3").exists())
+        self.assertTrue(languages.file_path(self.pid, "en", "voice").is_file())
+        self.assertTrue((languages.work_dir(self.pid, "en") / "parts").is_dir())
         made = languages.voice_key(self.pid, "elevenlabs", "en")
-        self.assertTrue(made.startswith("elevenlabs-episode"))
+        self.assertTrue(made.startswith("elevenlabs-eleven_v4-episode"))
         self.assertTrue(languages.file_path(self.pid, "en", "sample-" + made).is_file())
         self.assertEqual(languages.overview(self.pid)["items"][0]["files"]["samples"], [made])
         # Fish's engine keeps a sample of its own: switching engines never plays another one's
@@ -293,7 +338,8 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.voice_for(self.pid, "de")["from"], "episode")
         self.assertEqual(languages.voice_id(self.pid, "fishaudio", "de")["text"], "Eigene Worte dieser Folge hier")
         languages.remove_own_voice(self.pid, "de")
-        self.assertEqual(languages.voice_for(self.pid, "de")["from"], "channel")
+        self.assertEqual(languages.voice_for(self.pid, "de")["from"], "original")
+        self.assertIsNone(languages.voice_for(self.pid, "de", original=False))
         languages.remove_channel_voice("c" * 16, "de")
         self.assertEqual(languages.voice_for(self.pid, "de")["from"], "original")
         self.assertIsNone(languages.voice_for(self.pid, "de", original=False))
@@ -316,6 +362,84 @@ class LanguagesTest(unittest.TestCase):
         peak = float(out.split("Peak level dB:")[-1].split()[0])
         self.assertLess(peak, -1.0)
 
+    def test_uploaded_voice_keeps_its_full_duration_and_the_content_after_45_seconds(self):
+        import numpy as np
+        source = self.studio / "long-example.wav"
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=45",
+                        "-f", "lavfi", "-i", "sine=frequency=1000:duration=20", "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1",
+                        str(source)], check=True)
+        raw = source.read_bytes()
+        work = self.studio / "full-example"
+        with patch.object(languages, "heard", return_value="Це повний запис до самого кінця") as heard:
+            languages.store_example(work, "own-voice", "uk", io.BytesIO(raw), len(raw), "")
+        voice = languages.read_example(work, "own-voice", "episode")
+        self.assertAlmostEqual(voice["duration"], 65, delta=0.15)
+        self.assertAlmostEqual(heard.call_args.args[1], 65, delta=0.15)
+        tail = subprocess.run(["ffmpeg", "-v", "error", "-ss", "60", "-i", str(voice["path"]), "-t", "2",
+                               "-ar", "8000", "-f", "f32le", "-"], capture_output=True, check=True).stdout
+        samples = np.frombuffer(tail, dtype=np.float32)
+        self.assertGreater(len(samples), 8000)
+        peak = np.argmax(np.abs(np.fft.rfft(samples))) * 8000 / len(samples)
+        self.assertAlmostEqual(peak, 1000, delta=3)
+
+    def test_truncated_legacy_normalized_copy_is_restored_from_the_preserved_full_source(self):
+        work = languages.work_dir(self.pid, "en")
+        work.mkdir(parents=True)
+        raw = tone(work / "own-voice.mp3", 65)
+        copy = work / "own-voice-normalized.mp3"
+        subprocess.run(["ffmpeg", "-v", "error", "-i", str(raw), "-t", "45", str(copy)], check=True)
+        (work / "own-voice.txt").write_text("All words including the end.")
+        store.atomic_json(work / "own-voice.json", {"heard": True, "example_level_version": 1,
+                          "example_source_stamp": languages.example_source_stamp(raw), "example_normalized_copy": True,
+                          "fish_model": "short-clone", "fish_stamp": copy.stat().st_mtime_ns})
+        with patch.object(languages, "run", wraps=languages.run) as convert:
+            first = languages.read_example(work, "own-voice", "episode")
+            second = languages.read_example(work, "own-voice", "episode")
+        self.assertAlmostEqual(first["duration"], 65, delta=0.15)
+        self.assertIsNone(first["fish_model"])
+        self.assertEqual(first["stamp"], second["stamp"])
+        self.assertEqual(convert.call_count, 1)
+
+    def test_full_v1_reference_keeps_its_saved_clone_without_reencoding(self):
+        work = languages.work_dir(self.pid, "en")
+        work.mkdir(parents=True)
+        raw = tone(work / "own-voice.mp3", 8)
+        (work / "own-voice.txt").write_text("All the words.")
+        store.atomic_json(work / "own-voice.json", {"heard": True, "example_level_version": 1,
+                          "example_source_stamp": languages.example_source_stamp(raw), "example_normalized_copy": False,
+                          "fish_model": "keep-clone", "fish_stamp": raw.stat().st_mtime_ns})
+        with patch.object(languages, "run") as convert:
+            voice = languages.read_example(work, "own-voice", "episode")
+        self.assertEqual(voice["fish_model"], "keep-clone")
+        convert.assert_not_called()
+
+    def test_legacy_clone_example_is_leveled_once_and_old_model_is_invalidated(self):
+        work = languages.work_dir(self.pid, "en")
+        work.mkdir(parents=True)
+        raw = work / "own-voice.mp3"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        "aevalsrc=0.97*sin(2*PI*220*t)|0.97*sin(2*PI*220*t):s=48000:d=8", str(raw)], check=True)
+        original = raw.read_bytes()
+        (work / "own-voice.txt").write_text("An example of the speaker.")
+        store.atomic_json(work / "own-voice.json", {"heard": True, "fish_model": "old-loud-model", "fish_stamp": int(raw.stat().st_mtime)})
+        with patch.object(languages, "run", wraps=languages.run) as convert:
+            first = languages.own_voice(self.pid, "en")
+            second = languages.own_voice(self.pid, "en")
+            self.assertEqual(convert.call_count, 1)
+        self.assertEqual(raw.read_bytes(), original)
+        self.assertNotEqual(first["path"], raw)
+        self.assertEqual(first["stamp"], second["stamp"])
+        self.assertIsNone(first["fish_model"])
+        self.assertTrue(first["heard"])
+        from audio_level import measure
+        with patch("audio_level.CACHE", work / "levels.json"):
+            level = measure(first["path"])
+        self.assertIsNotNone(level)
+        self.assertLessEqual(level["peak"], -1.5)
+        self.assertAlmostEqual(level["lufs"], -18, delta=1)
+        languages.drop_example(work, "own-voice")
+        self.assertFalse(first["path"].exists())
+
     def test_the_authors_recording_in_the_language_is_the_clones_reference(self):
         import io
         languages.add(self.pid, "en")
@@ -327,8 +451,9 @@ class LanguagesTest(unittest.TestCase):
         work = languages.work_dir(self.pid, "en")
         (work / "sample-fishaudio-s2.1-pro-free.mp3").write_bytes(b"x")
         with patch("speech.transcribe", side_effect=RuntimeError("no model")):
-            data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"])
+            data = languages.save_own_voice(self.pid, "en", io.BytesIO(recording), len(recording), item["passage"], "C:\\Samples\\Мій голос.wav")
         own = data["items"][0]["own_voice"]
+        self.assertEqual(own["filename"], "Мій голос.wav")
         self.assertFalse(own["heard"])                   # no recognition: the passage stands, and the page says so
         self.assertAlmostEqual(own["duration"], 8, delta=0.2)
         self.assertFalse((work / "sample-fishaudio-s2.1-pro-free.mp3").exists())       # the old voice's sample goes
@@ -341,8 +466,8 @@ class LanguagesTest(unittest.TestCase):
             added.append(url)
             return json.dumps({"voice_id": "mine-en"}).encode()
         with patch.object(languages, "request", side_effect=request):
-            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "en"), "mine-en")
-            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "en"), "mine-en")     # kept for the same example
+            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "en")["id"], "mine-en")
+            self.assertEqual(languages.voice_id(self.pid, "elevenlabs", "en")["id"], "mine-en")     # kept for the same example
         self.assertEqual(len(added), 1)
         with self.assertRaises(store.StudioError):
             languages.save_own_voice(self.pid, "en", io.BytesIO(b"x" * 10), 10, item["passage"])     # not audio
@@ -390,6 +515,67 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn("напис жовтий", prompts[0])
         self.assertTrue(languages.file_path(self.pid, "de", "thumbnail").is_file())
         self.assertTrue((self.episode / "Мови" / "Deutsch" / "Прев'ю Deutsch.png").is_file())
+        with patch.object(thumbnail_gen,"CODEX",self.voice),patch.object(languages.subprocess,"Popen",Codex):
+            languages.start(self.pid,'thumbnail','pl',wishes='невеликий прапор на кепці',add_flag=True)
+            self.assertEqual(self.wait('pl|thumbnail')['status'],'done')
+        self.assertIn('translate every word written on it into Polish',prompts[-1])
+        self.assertIn('national flag of Poland (PL)',prompts[-1])
+        self.assertIn('clothing patch',prompts[-1])
+        self.assertIn('small round flag badge',prompts[-1])
+        self.assertNotIn('If there is no text on the picture, return it unchanged',prompts[-1])
+        self.assertEqual(languages.load_state(self.pid)['languages']['pl']['thumbnail_settings_used']['country'],'PL')
+        self.assertEqual(languages.thumbnail_options(self.pid),{'add_flag':True})
+        self.assertEqual((languages.work_dir(self.pid,'pl')/'thumbnail-prompt.txt').read_text(),prompts[-1])
+
+    def test_thumbnail_flag_choice_is_channel_scoped_and_shared_languages_never_inherit_a_flag(self):
+        self.assertEqual(languages.thumbnail_options(self.pid),{'add_flag':False})
+        languages.save_thumbnail_options(self.pid,True)
+        with patch.object(languages,'cover',return_value=self.voice),patch.object(languages.threading,'Thread'):
+            try:
+                polish=languages.start(self.pid,'thumbnail','pl')
+                ukrainian=languages.start(self.pid,'thumbnail','uk')
+                spanish=languages.start(self.pid,'thumbnail','es')
+                english=languages.start(self.pid,'thumbnail','en')
+                self.assertTrue(polish['add_flag'])
+                self.assertTrue(ukrainian['add_flag'])
+                self.assertFalse(spanish['add_flag'])
+                self.assertFalse(english['add_flag'])
+                self.assertTrue(languages.thumbnail_options(self.pid)['add_flag'])
+                with self.assertRaisesRegex(store.StudioError,'однозначного прапора'):
+                    languages.start(self.pid,'thumbnail','de',add_flag=True)
+            finally:languages.ACTIVE.clear()
+        with patch.object(store,'load_project',return_value={**self.project,'id':'other'}):
+            self.assertTrue(languages.thumbnail_options('other')['add_flag'])
+        with patch.object(store,'load_project',return_value={**self.project,'id':'other','channel_id':'d'*16}):
+            self.assertFalse(languages.thumbnail_options('other')['add_flag'])
+        languages.save_thumbnail_options(self.pid,False)
+        self.assertFalse(languages.thumbnail_options(self.pid)['add_flag'])
+        with self.assertRaises(store.StudioError):languages.save_thumbnail_options(self.pid,'false')
+
+    def test_thumbnail_flag_availability_is_returned_to_the_ui(self):
+        languages.update(self.pid,lambda d:d.update(languages={'pl':{},'uk':{},'es':{},'en':{}}))
+        languages.save_thumbnail_options(self.pid,True)
+        data=languages.overview(self.pid)
+        countries={x['code']:x['flag_country'] for x in data['items']}
+        self.assertEqual(countries['pl']['code'],'PL')
+        self.assertEqual(countries['uk']['code'],'UA')
+        self.assertIsNone(countries['es'])
+        self.assertIsNone(countries['en'])
+        self.assertTrue(data['thumbnail_options']['add_flag'])
+
+    def test_eleven_clone_has_channel_language_labels_and_survives_a_file_timestamp_change(self):
+        self.example('es')
+        with patch.object(languages,'request',return_value=b'{"voice_id":"existing-spanish"}') as send:
+            first=languages.voice_id(self.pid,'elevenlabs','es')
+            example=languages.own_voice(self.pid,'es')
+            example['path'].touch()
+            again=languages.voice_id(self.pid,'elevenlabs','es')
+        self.assertEqual(first['id'],again['id'])
+        self.assertEqual(send.call_count,1)
+        fields=send.call_args.args[1].decode('utf-8',errors='replace')
+        self.assertIn('What If · Іспанська',fields)
+        self.assertIn('{"language": "es"}',fields)
+        self.assertNotIn('VideoKey · 05 Test',fields)
 
     def test_lines_are_translated_and_voiced_in_time_with_the_original(self):
         plan = {"script": "x", "timing": {"audio": {"asset_id": "a" * 20}, "sentences": [
@@ -416,28 +602,118 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual((item["text"].strip(), item["lines"]), ("Раз. Два.\nТри.\nЧотири.", 3))
         with self.assertRaises(store.StudioError):
             languages.save_text(self.pid, "uk", "Раз. Два. Три.\nЧотири.")          # two lines for three places
-        # the second line is far too long for its place: sped up at most 1.25 times, and the third starts late
-        # the second line (3.0 s for 1.45 s): translated shorter (2.2 s), asked of the voice faster (1.9 s), then sped up 1.1×
-        lengths, calls = iter([1.5, 3.0, 2.2, 1.9, 0.5]), []
+        # Even an overlong phrase gets one paid take. Local fitting stays bounded and reports the issue.
+        lengths, calls = iter([1.5, 3.0, 0.5]), []
         def speak(provider, voice, text, target, before="", after="", speed=1.0):
             calls.append((text, speed))
             tone(target.with_suffix(".wav"), next(lengths))
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(target.with_suffix(".wav")), str(target)], check=True)
         self.example("uk")
-        with patch.object(languages, "speak", side_effect=speak), patch.object(languages, "shorten", return_value="Три!") as shorter, \
+        languages.update(self.pid, lambda data: data.update(eleven_engine="eleven_flash_v2_5"))  # historical model with service-side speed
+        with patch.object(eleven_api, "model", return_value={"name": "Legacy", "languages": [],"credits_per_char":.2}), \
+                patch.object(languages, "speak", side_effect=speak), patch.object(languages, "shorten", return_value="Три!") as shorter, \
                 patch.object(languages, "request", return_value=json.dumps({"voice_id": "v1"}).encode()):
             languages.start(self.pid, "voice", "uk", "elevenlabs")
             job = self.wait()
         self.assertEqual(job["status"], "done", job.get("error"))
-        self.assertEqual(shorter.call_count, 1)
-        self.assertEqual(calls[1:4], [("Три.", 1.0), ("Три!", 1.0), ("Три!", 1.15)])
+        shorter.assert_not_called()
+        self.assertEqual(calls, [("Раз. Два.", 1.0), ("Три.", 1.0), ("Чотири.", 1.0)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (1, 1.15, 1.1))
-        self.assertAlmostEqual(voice["latest"], 0.23, delta=0.1)       # 3.0 + 1.9/1.1 = 4.73 against 4.5
-        self.assertAlmostEqual(voice["duration"], 6, delta=0.15)       # the video's length: silence after the last line
-        self.assertEqual(languages.line_texts(self.pid, "uk"), ["Раз. Два.", "Три!", "Чотири."])   # the text says what is voiced
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.07))
+        self.assertGreater(voice["latest"],0)
+        self.assertGreater(len(voice["timing_issues"]),0)
+        self.assertFalse(voice["paid_timing_retries"])
+        self.assertEqual(languages.line_texts(self.pid, "uk"), ["Раз. Два.", "Три.", "Чотири."])
+        requests=store.read_json(languages.work_dir(self.pid,"uk")/"parts/requests.json",[])
+        self.assertEqual(len(requests),3)
+        self.assertTrue(all(item["status"]=="complete" and item["selected"] for item in requests))
+        self.assertEqual([x["text"] for x in requests],["Раз. Два.", "Три.", "Чотири."])
+        self.assertEqual(job["takes"],3)
+        self.assertEqual(job["cost"],4.0)
+        self.assertTrue(job["cost_estimated"])
         self.assertTrue(languages.overview(self.pid)["items"][0]["voice_current"])
+        self.assertTrue(voice['review'])
+        for a,b in zip(voice['review'],voice['review'][1:]):self.assertLessEqual(a['start'],b['start'])
+        with patch.object(languages,'speak',side_effect=AssertionError('refit must use saved audio')), \
+                patch.object(languages,'request',side_effect=AssertionError('no network during refit')), \
+                patch.object(languages,'ask',side_effect=AssertionError('no translation during refit')):
+            languages.start(self.pid,'refit','uk')
+            repaired=self.wait()
+        self.assertEqual(repaired['status'],'done',repaired.get('error'))
+        self.assertEqual((repaired['cost'],repaired['takes']),(0,0))
+        work=languages.work_dir(self.pid,'uk')
+        self.assertTrue(list((work/'recovery').rglob('voice.mp3')))
+
+    def test_fish_engines_keep_sampling_separate_and_drama_starts_at_api_defaults(self):
+        languages.update(self.pid, lambda data: data.update(fish_engine="s2.1-pro-free", fish_style="lively"))
+        self.assertEqual(languages.fish_style(self.pid), "lively")
+        languages.set_provider(self.pid, "fishaudio", engine="drama-3")
+        self.assertEqual(languages.fish_style(self.pid), "normal")
+        sent = []
+        with patch.object(languages, "key", return_value="k"), patch.object(languages, "request", side_effect=lambda url, body, headers, what: sent.append((body, headers)) or b"x" * 2000):
+            languages.speak("fishaudio", {"model_id": "saved-voice", "engine": languages.fish_engine(self.pid),
+                                        "style": languages.fish_style(self.pid)}, "Привіт.", self.studio / "test.mp3")
+        body, headers = sent[0]
+        self.assertEqual(headers["model"], "drama-3")
+        for name in ("temperature", "top_p"):
+            self.assertIn(languages.msgpack(name) + languages.msgpack(0.7), body)
+        self.assertIn(languages.msgpack("reference_id") + languages.msgpack("saved-voice"), body)
+        with patch.object(languages, "key", return_value="k"), patch.object(languages, "request", side_effect=lambda url, body, headers, what: sent.append((body, headers)) or b"x" * 2000):
+            languages.speak("fishaudio", {"model_id": "saved-voice", "engine": "drama-3"}, "Привіт.", self.studio / "test.mp3")
+        for name in ("temperature", "top_p"):
+            self.assertIn(languages.msgpack(name) + languages.msgpack(0.7), sent[-1][0])
+        languages.set_provider(self.pid, "fishaudio", style="exact")
+        languages.set_provider(self.pid, "fishaudio", engine="s2.1-pro-free")
+        self.assertEqual(languages.fish_style(self.pid), "lively")
+        languages.set_provider(self.pid, "fishaudio", engine="drama-3")
+        self.assertEqual(languages.fish_style(self.pid), "exact")
+
+    def test_legacy_drama_sampling_survives_migration_and_a_new_drama_uses_normal(self):
+        languages.update(self.pid, lambda data: data.update(fish_engine="drama-3"))
+        self.assertEqual(languages.fish_style(self.pid), "normal")
+        languages.update(self.pid, lambda data: data.update(fish_style="exact"))
+        self.assertEqual(languages.fish_style(self.pid), "exact")
+        languages.set_provider(self.pid, "fishaudio", engine="s2.1-pro-free")
+        self.assertEqual(languages.fish_style(self.pid), "lively")
+        languages.set_provider(self.pid, "fishaudio", engine="drama-3")
+        self.assertEqual(languages.fish_style(self.pid), "exact")
+
+    def test_eleven_model_selection_has_its_own_cache_and_keeps_fish_settings(self):
+        languages.add(self.pid, "ru")
+        languages.set_provider(self.pid, "fishaudio", "drama-3", "normal")
+        before = languages.voice_key(self.pid, "fishaudio", "ru")
+        data = languages.set_provider(self.pid, "elevenlabs", "eleven_v4")
+        self.assertEqual(data["provider"], "elevenlabs")
+        first = languages.voice_key(self.pid, "elevenlabs", "ru")
+        languages.set_provider(self.pid, "elevenlabs", "eleven_v4_turbo")
+        self.assertNotEqual(languages.voice_key(self.pid, "elevenlabs", "ru"), first)
+        self.assertEqual(languages.voice_key(self.pid, "fishaudio", "ru"), before)
+        self.assertEqual(languages.fish_style(self.pid), "normal")
+        self.assertEqual(languages.fish_engine(self.pid), "drama-3")
+        with self.assertRaises(store.StudioError):
+            languages.set_provider(self.pid, "elevenlabs", "not-a-model")
+        with self.assertRaises(store.StudioError):
+            languages.file_path(self.pid, "ru", "sample-../../secret")
+
+    def test_unsupported_eleven_language_is_refused_before_cloning_or_spending(self):
+        with patch.object(eleven_api, "model", return_value={"name": "English only", "languages": ["en"]}), \
+                patch.object(languages, "request") as request:
+            with self.assertRaisesRegex(store.StudioError, "не підтримує"):
+                languages.start(self.pid, "sample", "uk", "elevenlabs")
+            request.assert_not_called()
+
+    def test_sample_estimates_match_the_selected_sentence_count_and_model(self):
+        languages.add(self.pid, "ru")
+        text = " ".join(f"Это предложение номер {n}." for n in range(1, 22))
+        work = languages.work_dir(self.pid, "ru")
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "text.txt").write_text(text)
+        with patch.object(eleven_api, "model", return_value={"credits_per_char": 0.5}):
+            item = next(x for x in languages.overview(self.pid)["items"] if x["code"] == "ru")
+        for count in (3, 5, 10, 20):
+            self.assertEqual(item["sample_prices"]["elevenlabs"][str(count)], round(len(languages.sample_text(text, count)) * .5, 2))
+        self.assertLess(item["sample_prices"]["elevenlabs"]["3"], item["sample_prices"]["elevenlabs"]["20"])
 
     def test_a_saved_fish_model_is_made_once_per_example_and_used_by_id(self):
         self.example("ru")
@@ -496,6 +772,46 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.sample_text(text, 3), "Один. Два! Три?")
         self.assertEqual(languages.sample_text(text, 5), "Один. Два! Три? Чотири. П'ять.")
         self.assertEqual(languages.sample_text(text, 20), "Один. Два! Три? Чотири. П'ять. Шість.")
+
+    def test_sample_takes_are_reused_by_full_narration_and_the_estimate(self):
+        code='en';self.example(code)
+        work=languages.work_dir(self.pid,code)
+        lines=['The first sentence is here.','This is the second sentence.','We now hear the third sentence.','Here is the final sentence.']
+        (work/'text.txt').write_text('\n'.join(lines))
+        segments=[{'source':line,'start':n*1.5,'end':n*1.5+1} for n,line in enumerate(lines)]
+        spoken=[]
+        def speak(provider,voice,text,target,*args,**kwargs):
+            spoken.append(text);tone(target,.5)
+        with patch.object(languages,'synced_segments',return_value=segments),patch.object(languages,'progress'), \
+             patch.object(languages,'speak',side_effect=speak),patch.object(languages,'voice_id',return_value={'id':'existing'}) as clone, \
+             patch.object(eleven_api,'model',return_value={'credits_per_char':.5}):
+            sample_job={'sentences':3};languages.sample(self.pid,code,'elevenlabs',sample_job)
+            self.assertEqual(spoken,lines[:3]);self.assertEqual(sample_job['takes'],3)
+            estimate=languages.voice_estimate(self.pid,code,'elevenlabs','\n'.join(lines))
+            self.assertEqual((estimate['reused'],estimate['generate']),(3,1))
+            self.assertEqual(languages.sample_prices(self.pid,code,'elevenlabs','\n'.join(lines))['3'],0)
+            clone.reset_mock();spoken.clear()
+            repeated={'sentences':3};languages.sample(self.pid,code,'elevenlabs',repeated)
+            self.assertEqual((repeated['takes'],repeated['reused'],repeated['cost']),(0,3,0))
+            clone.assert_not_called();self.assertEqual(spoken,[])
+            job={};languages.whole_synced(self.pid,code,'elevenlabs',job,segments)
+            self.assertEqual(spoken,[lines[3]])
+            self.assertEqual((job['takes'],job['reused']),(1,3))
+            self.assertTrue((work/'voice.mp3').is_file())
+
+    def test_interrupted_sample_preserves_completed_paid_phrases(self):
+        code='en';self.example(code);work=languages.work_dir(self.pid,code)
+        lines=['Here is the first sentence.','This is the second sentence.','Here is the final sentence.']
+        (work/'text.txt').write_text('\n'.join(lines))
+        def speak(provider,voice,text,target,*args):
+            if text==lines[1]:raise RuntimeError('connection lost')
+            tone(target,.5)
+        with patch.object(languages,'synced_segments',return_value=[{}]*3),patch.object(languages,'progress'), \
+             patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'speak',side_effect=speak):
+            with self.assertRaisesRegex(RuntimeError,'connection lost'):
+                languages.sample(self.pid,code,'elevenlabs',{'sentences':3})
+            estimate=languages.voice_estimate(self.pid,code,'elevenlabs','\n'.join(lines))
+            self.assertEqual((estimate['reused'],estimate['generate']),(1,2))
 
     def test_a_paid_fish_engine_without_credit_says_what_to_do(self):
         import io, urllib.error
@@ -561,7 +877,7 @@ class LanguagesTest(unittest.TestCase):
 
     def test_the_translation_is_written_to_be_heard(self):
         # user, 2 November 2026: «1999-го — такі речення погані… краще слова тисяча дев'ятсот…»
-        self.assertIn("1999-го", languages.translator("uk"))
+        self.assertIn("1999 року", languages.translator("uk"))
         self.assertIn("in words", languages.translator("uk"))
         asked = []
         def ask(messages, max_tokens=12000):
@@ -580,6 +896,192 @@ class LanguagesTest(unittest.TestCase):
     def test_a_job_left_running_by_a_restart_reads_failed(self):
         languages.update(self.pid, lambda data: data.__setitem__("job", {"status": "running"}))
         self.assertEqual(languages.load_state(self.pid)["job"]["status"], "failed")
+
+    def test_wrong_language_never_reaches_clone_or_paid_speech(self):
+        work=languages.work_dir(self.pid,'es');work.mkdir(parents=True)
+        bad='Во время грозы мы ищем укрытие внутри закрытого здания, чтобы защититься от удара молнии.'
+        (work/'text.txt').write_text(bad)
+        with patch.object(languages,'voice_for',return_value={'path':self.voice}), patch.object(languages,'voice_id') as clone, patch.object(languages,'speak') as speech:
+            for kind in ['sample','voice']:
+                with self.assertRaisesRegex(store.StudioError,'іншу мову'):
+                    languages.start(self.pid,kind,'es','elevenlabs')
+            with self.assertRaises(store.StudioError):
+                languages.sample(self.pid,'es','elevenlabs',{})
+            with self.assertRaises(store.StudioError):
+                languages.whole_synced(self.pid,'es','elevenlabs',{},[{'start':0,'end':3}])
+            clone.assert_not_called();speech.assert_not_called()
+        self.assertEqual((work/'text.txt').read_text(),bad)
+
+    def test_correcting_text_does_not_hide_wrong_language_in_paid_takes(self):
+        work=languages.work_dir(self.pid,'es');work.mkdir(parents=True)
+        (work/'text.txt').write_text('Durante la tormenta buscamos refugio dentro de un edificio cerrado para protegernos de los rayos.')
+        store.atomic_json(work/'parts/manifest.json',[{'text':'Во время грозы мы ищем укрытие внутри закрытого здания, чтобы защититься от удара молнии.','start':12,'end':17}])
+        self.assertEqual(languages.translation_check(self.pid,'es')['state'],'ok')
+        self.assertEqual(languages.voice_language_check(self.pid,'es')['state'],'blocked')
+        self.assertFalse(languages.voice_current(self.pid,'es',{}))
+        with self.assertRaisesRegex(store.StudioError,'іншу мову'):
+            languages.language_mix.snapshot(self.project,'es')
+
+    def test_foreign_model_batch_is_retried_before_it_can_be_saved(self):
+        correct='Durante la tormenta buscamos refugio dentro de un edificio cerrado para protegernos de los rayos.'
+        wrong='Во время грозы мы ищем укрытие внутри закрытого здания, чтобы защититься от удара молнии.'
+        answers=[(json.dumps({'1':wrong}),.01),(json.dumps({'1':correct}),.01)]
+        with patch.object(languages,'ask',side_effect=answers) as ask:
+            result,cost=languages.translate_part('es',[{'text':'During the storm.','seconds':8,'max_chars':150}],'')
+        self.assertEqual(result,[correct]);self.assertEqual(ask.call_count,2)
+        with patch.object(languages,'ask',return_value=(json.dumps({'1':wrong}),.01)):
+            with self.assertRaises(store.StudioError):
+                languages.translate_part('es',[{'text':'During the storm.','seconds':8,'max_chars':150}],'')
+
+    def test_number_cleanup_cannot_switch_to_russian(self):
+        with patch.object(languages,'ask',return_value=(json.dumps(['Это произошло в две тысячи десятом году, когда учёные начали исследование.']),.01)):
+            with self.assertRaises(store.StudioError):
+                languages.speakable('es',['Esto ocurrió en 2010.'])
+        for code in ['es','pl','de','fr']:
+            self.assertNotRegex(languages.translator(code),r'[а-яА-ЯёЁ]')
+            self.assertIn('ISO '+code,languages.translator(code))
+
+    def test_parallel_language_batches_retain_their_own_target_and_order(self):
+        from concurrent.futures import ThreadPoolExecutor
+        phrases={'es':'Durante la tormenta buscamos refugio dentro de un edificio cerrado para protegernos de los rayos.',
+                 'pl':'Podczas burzy szukamy schronienia wewnątrz zamkniętego budynku, aby ochronić się przed uderzeniem pioruna.'}
+        def ask(messages,max_tokens=12000):
+            code='es' if 'ISO es' in messages[0]['content'] else 'pl'
+            items=json.loads(messages[1]['content'])
+            time.sleep(.02 if code=='es' else .005)
+            return json.dumps({str(item['id']):phrases[code] for item in items}),.01
+        lines=[{'start':i*9,'end':i*9+8,'source':'Find shelter from the storm.'} for i in range(65)]
+        with patch.object(languages,'ask',side_effect=ask),patch.object(languages,'progress'),ThreadPoolExecutor(max_workers=2) as pool:
+            futures={code:pool.submit(languages.translate_lines,code,lines,585,self.pid,{'key':code}) for code in phrases}
+            for code,future in futures.items():self.assertEqual(future.result()[0],[phrases[code]]*65)
+
+    def test_trace_keeps_the_exact_model_output_and_target_without_keys(self):
+        raw={'id':'generation-test','model':'returned-model','choices':[{'message':{'content':'Texto en español.'},'finish_reason':'stop'}],'usage':{'cost':.01}}
+        with languages.translation_trace(self.pid,'es',{'key':'run'},30),patch.object(languages,'request',return_value=json.dumps(raw).encode()):
+            languages.ask([{'role':'user','content':'Translate.'}])
+        paths=list((languages.work_dir(self.pid,'es')/'translation-attempts').rglob('*.json'))
+        self.assertEqual(len(paths),1)
+        entry=json.loads(paths[0].read_text());self.assertEqual((entry['target'],entry['offset'],entry['request_id']),('es',30,'generation-test'))
+        self.assertEqual(entry['choices'],raw['choices']);self.assertNotIn('Authorization',paths[0].read_text())
+
+
+    def test_changed_phrase_reuses_paid_neighbours_and_returning_to_old_words_costs_nothing(self):
+        work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
+        texts=['Перша фраза.','Друга фраза.','Третя фраза.']
+        (work/'text.txt').write_text('\n'.join(texts)+'\n')
+        segments=[{'start':n*2,'end':n*2+1.5,'source':t} for n,t in enumerate(texts)]
+        store.atomic_json(languages.segments_path(self.pid,'uk'),segments)
+        languages.update(self.pid,lambda d:d.update(provider='elevenlabs',languages={'uk':{}},eleven_engine='eleven_v4_turbo'))
+        self.example('uk')
+        sample=tone(work/'test.mp3',.6)
+        calls=[]
+        def speak(provider,voice,text,target,*args,**kwargs):
+            calls.append(text);shutil.copy2(sample,target)
+        with patch.object(languages,'speak',side_effect=speak),patch.object(languages,'voice_id',return_value={'id':'known'}) as clone,patch.object(languages,'announce_model'),patch.object(languages,'progress'):
+            languages.whole_synced(self.pid,'uk','elevenlabs',{},segments)
+            self.assertEqual(calls,texts)
+            original=[(work/'parts'/f'{n:05d}.mp3').read_bytes() for n in range(3)]
+            languages.save_text(self.pid,'uk','\n'.join([texts[0],'Змінена друга фраза.',texts[2]]))
+            item=languages.overview(self.pid)['items'][0]
+            self.assertFalse(item['voice_current']);self.assertFalse(item['voice_matches_text'])
+            estimate=item['voice_estimates']['elevenlabs']
+            self.assertEqual((estimate['generate'],estimate['reused']),(1,2))
+            self.assertEqual(estimate['base'],languages.price('elevenlabs','Змінена друга фраза.','eleven_v4_turbo'))
+            calls.clear();job={}
+            languages.whole_synced(self.pid,'uk','elevenlabs',job,segments)
+            self.assertEqual(calls,['Змінена друга фраза.'])
+            self.assertEqual((job['takes'],job['reused']),(1,2))
+            for n in (0,2):self.assertEqual((work/'parts'/f'{n:05d}.mp3').read_bytes(),original[n])
+            self.assertTrue(list((work/'voice-history').rglob('voice.mp3')))
+            languages.save_text(self.pid,'uk','\n'.join(texts))
+            calls.clear();clone.reset_mock();job={}
+            languages.whole_synced(self.pid,'uk','elevenlabs',job,segments)
+            self.assertEqual(calls,[]);clone.assert_not_called()
+            self.assertEqual((job['cost'],job['takes'],job['reused']),(0,0,3))
+            self.assertTrue(languages.overview(self.pid)['items'][0]['voice_current'])
+            languages.set_provider(self.pid,'elevenlabs','eleven_v4')
+            self.assertEqual(languages.voice_estimate(self.pid,'uk','elevenlabs','\n'.join(texts))['generate'],3)
+
+    def test_interrupted_run_reuses_successful_take_without_repeating_payment(self):
+        work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
+        texts=['Перша фраза.','Друга фраза.']
+        (work/'text.txt').write_text('\n'.join(texts)+'\n')
+        segments=[{'start':n*3,'end':n*3+2,'source':t} for n,t in enumerate(texts)]
+        store.atomic_json(languages.segments_path(self.pid,'uk'),segments)
+        languages.update(self.pid,lambda d:d.update(provider='elevenlabs',languages={'uk':{}}))
+        self.example('uk');sample=tone(work/'test.mp3',.5);calls=[]
+        def speak(provider,voice,text,target,*args,**kwargs):
+            calls.append(text)
+            if len(calls)==2:raise languages.Stop()
+            shutil.copy2(sample,target)
+        with patch.object(languages,'speak',side_effect=speak),patch.object(languages,'voice_id',return_value={'id':'known'}),patch.object(languages,'announce_model'),patch.object(languages,'progress'):
+            with self.assertRaises(languages.Stop):languages.whole_synced(self.pid,'uk','elevenlabs',{},segments)
+            ledger=store.read_json(work/'parts/requests.json')
+            self.assertEqual([r['status'] for r in ledger],['complete','uncertain'])
+            self.assertEqual(languages.voice_estimate(self.pid,'uk','elevenlabs','\n'.join(texts))['reused'],1)
+            languages.whole_synced(self.pid,'uk','elevenlabs',{},segments)
+            self.assertEqual(calls,[texts[0],texts[1],texts[1]])
+            self.assertTrue(list((work/'voice-history').rglob('requests.json')))
+
+    def test_cache_context_isolated_by_language_voice_model_and_sampling(self):
+        self.example('uk');self.example('pl')
+        identities=[languages.voice_cache_context(self.pid,code,provider)[0] for code,provider in [('uk','elevenlabs'),('pl','elevenlabs'),('uk','fishaudio')]]
+        self.assertEqual(len({languages.voice_cache.digest(i) for i in identities}),3)
+        old=identities[2]
+        languages.set_provider(self.pid,'fishaudio',style='exact')
+        self.assertNotEqual(languages.voice_cache_context(self.pid,'uk','fishaudio')[0],old)
+        old=languages.voice_cache_context(self.pid,'uk','elevenlabs')[0]
+        path=languages.voice_for(self.pid,'uk')['path']
+        # Copying the same audio to a new timestamp does not invalidate the paid takes.
+        os.utime(path,None)
+        with patch.object(languages,'prepared_example',return_value=(path,{})):
+            self.assertEqual(languages.voice_cache_context(self.pid,'uk','elevenlabs')[0],old)
+
+    def test_pacing_changes_only_future_unpaid_phrases_and_keeps_one_take_each(self):
+        code='en';work=languages.work_dir(self.pid,code);work.mkdir(parents=True)
+        ordinals=['first','second','third','fourth','fifth','sixth','seventh','eighth']
+        texts=[f'The {word} report explains how the changing weather affects people in the local park.' for word in ordinals]
+        (work/'text.txt').write_text('\n'.join(texts)+'\n')
+        total=46.;segments=[{'start':i*total/8,'end':(i+1)*total/8-.3,'source':text} for i,text in enumerate(texts)]
+        store.atomic_json(languages.segments_path(self.pid,code),segments)
+        languages.update(self.pid,lambda d:d.update(provider='elevenlabs',languages={code:{}},eleven_engine='eleven_v4_turbo'))
+        self.example(code,'This is the voice used to tell the whole story.')
+        long=tone(work/'long.mp3',6);short=tone(work/'short.mp3',5);spoken=[];adapted=[]
+        def speak(provider,voice,text,target,*args,**kwargs):
+            spoken.append(text);shutil.copy2(long if len(spoken)<=5 else short,target)
+        def prepare(pid,code,words,source,targets,job):
+            self.assertEqual(len(spoken),5)
+            self.assertTrue(all(i>=5 for i in targets))
+            adapted.extend(targets)
+            return {i:f"The weather affects the park's visitors, says the {ordinals[i]} report." for i in targets}
+        with patch.object(languages,'source',return_value={'duration':total}),patch.object(languages,'speak',side_effect=speak), \
+                patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'announce_model'), \
+                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced',side_effect=prepare), \
+                patch.object(languages,'copy_out'):
+            job={};languages.whole_synced(self.pid,code,'elevenlabs',job,segments)
+        self.assertEqual(len(spoken),8)
+        self.assertEqual(spoken[:5],texts[:5])
+        self.assertEqual(adapted,[5,6,7])
+        self.assertEqual(languages.line_texts(self.pid,code),spoken)
+        self.assertEqual(len(store.read_json(work/'parts/requests.json')),8)
+        manifest=store.read_json(work/'parts/manifest.json')
+        self.assertTrue(all(.93<=x['speed']<=1.07 for x in manifest))
+        self.assertLessEqual(manifest[-1]['end'],total)
+        self.assertTrue(languages.voice_matches_text(self.pid,code,languages.load_state(self.pid)['languages'][code]['voice']))
+
+    def test_pacing_requires_meaning_check_before_any_new_speech(self):
+        texts=['The weather affects everyone who visits the park during the course of the afternoon.']
+        compact='The weather affects everyone visiting the park in the afternoon.'
+        segments=[{'source':texts[0]}]
+        for verdict in ({'ok':False},{'ok':True,'ids':[]},{'ok':True,'ids':[0]}):
+            with patch.object(languages,'ask',side_effect=[(json.dumps({'0':compact}),.001),(json.dumps(verdict),.001)]), \
+                    patch.object(languages,'speak') as speak:
+                if verdict=={'ok':True,'ids':[0]}:
+                    self.assertEqual(languages.prepare_unvoiced(self.pid,'en',texts,segments,{0:70},{}),{0:compact})
+                else:
+                    with self.assertRaisesRegex(RuntimeError,'перевірку змісту'):
+                        languages.prepare_unvoiced(self.pid,'en',texts,segments,{0:70},{})
+                speak.assert_not_called()
 
 
 if __name__ == "__main__":

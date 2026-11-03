@@ -90,6 +90,23 @@ def busy_words(busy: list[str]) -> str:
     return "Зараз працює " + " і ".join(names[:2])
 
 
+def prepare_local_restart():
+    """Close the mutation gate atomically with the final busy check."""
+    global UPDATE_RESTARTING
+    with UPDATE_MUTEX:
+        if UPDATE_RESTARTING:raise store.StudioError('Студія вже готується до перезапуску.',409)
+        if IN_FLIGHT>1:raise store.StudioError('Студія зараз зберігає зміни. Дочекайтеся завершення.',409)
+        with JOBS_LOCK:exports=[dict(x['job']) for x in ACTIVE_EXPORTS.values()]
+        busy=agent_view.studio_status(exports,project_jobs,busy_candidates())['busy']
+        if busy:raise store.StudioError('Перезапуск перерве поточну роботу. '+busy_words(busy),409)
+        UPDATE_RESTARTING=True
+        def expire():
+            global UPDATE_RESTARTING
+            with UPDATE_MUTEX:UPDATE_RESTARTING=False
+        timer=threading.Timer(30,expire);timer.daemon=True;timer.start()
+        return {'prepared':True,'pid':os.getpid()}
+
+
 def begin_update():
     global UPDATE_RESTARTING
     with UPDATE_MUTEX:
@@ -698,7 +715,7 @@ def project_jobs(pid: str) -> dict:
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
             "прев'ю": status(lambda: thumbnail_gen.state(pid)),
-            "мови": status(lambda: next((job for job in (languages.load_state(pid).get("jobs") or {}).values() if job.get("status") == "running"),
+            "мови": 'running' if languages.busy(pid) else status(lambda: next((job for job in (languages.load_state(pid).get("jobs") or {}).values() if job.get("status") == "running"),
                                         languages.load_state(pid).get("job"))),
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
 
@@ -920,12 +937,14 @@ class Handler(BaseHTTPRequestHandler):
                 if method == "POST" and shared:
                     size = int(self.headers.get("Content-Length", "0"))
                     return self.json_response(languages.save_channel_voice(shared.group(1), shared.group(2), self.rfile, size,
-                                                                           urllib.parse.unquote(self.headers.get("X-Said-Text", ""))))
+                                                                           urllib.parse.unquote(self.headers.get("X-Said-Text", "")),
+                                                                           urllib.parse.unquote(self.headers.get("X-File-Name", ""))))
                 own = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/own-voice", path)
                 if method == "POST" and own:
                     size = int(self.headers.get("Content-Length", "0"))
                     said = urllib.parse.unquote(self.headers.get("X-Said-Text", ""))
-                    return self.json_response(languages.save_own_voice(own.group(1), own.group(2), self.rfile, size, said))
+                    return self.json_response(languages.save_own_voice(own.group(1), own.group(2), self.rfile, size, said,
+                                                                     urllib.parse.unquote(self.headers.get("X-File-Name", ""))))
                 upload = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/upload", path)
                 if method == "POST" and upload:
                     return self.route_upload(upload.group(1))
@@ -985,6 +1004,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"settings": store.global_settings()})
         if path == "/api/service-keys":
             return self.json_response({"providers": credentials.providers()})
+        if path == '/api/elevenlabs/balance':
+            return self.json_response(languages.eleven_api.balance(refresh=(query.get('refresh') or [''])[0]=='1'))
         if path == "/api/projects":
             projects = store.list_projects((query.get("channel") or [None])[0])
             for item in projects:
@@ -1084,7 +1105,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"styles": style_copy.load(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
-            return self.json_response(thumbnail_gen.defaults(match.group(1)))
+            return self.json_response({**thumbnail_gen.defaults(match.group(1)), **languages.thumbnail_gallery(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnails/([^/]+\.png)", path)
         if match:
             return self.serve_media(thumbnail_gen.version_file(*match.groups()))
@@ -1106,9 +1127,28 @@ class Handler(BaseHTTPRequestHandler):
             if not cover:
                 raise store.StudioError("Прев'ю ще немає", 404)
             return self.serve_media(cover, download=(query.get("download") or [None])[0])
-        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/file/(sample-[a-z0-9.\-]+|voice|thumbnail|own)", path)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/waveform", path)
         if match:
+            pid, code = match.groups()
+            voice=(languages.load_state(pid).get('languages',{}).get(code) or {}).get('voice') or {}
+            if not languages.voice_matches_text(pid,code,voice):
+                raise store.StudioError('Текст змінено. Спершу оновіть озвучку.',409)
+            return self.json_response(waveforms.read_peaks(languages.file_path(pid, code, 'voice'), store.project_dir(pid) / 'waveforms'))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/file/(sample-[a-z0-9_.\-]+|voice|thumbnail|own)", path)
+        if match:
+            if match.group(3)=='voice':
+                pid,code=match.groups()[:2]
+                voice=(languages.load_state(pid).get('languages',{}).get(code) or {}).get('voice') or {}
+                if not languages.voice_matches_text(pid,code,voice):
+                    raise store.StudioError('Текст змінено. Попередню озвучку збережено в кеші; спершу оновіть її.',409)
+            if match.group(3) == 'voice' and query.get('download'):
+                for report in (languages.translation_check(*match.groups()[:2]), languages.voice_language_check(*match.groups()[:2])):
+                    if report['state'] != 'ok':
+                        raise store.StudioError(languages.language_quality.message(report), 409)
             return self.serve_media(languages.file_path(*match.groups()), download=(query.get("download") or [None])[0])
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnails/(v[1-9][0-9]*\.png)",path)
+        if match:
+            return self.serve_media(languages.language_thumbnails.version_file(*match.groups()),download=(query.get('download') or [None])[0],cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
             store.load_project(match.group(1))
@@ -1188,6 +1228,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        if method=='POST' and path=='/api/studio/restart/prepare':
+            return self.json_response(prepare_local_restart())
         if method == 'POST' and path == '/api/update/apply':
             try:
                 begin_update()
@@ -1262,10 +1304,22 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/remove", path)
         if match and method == "POST":
             return self.json_response(languages.remove_channel_voice(*match.groups()))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/defaults/apply", path)
+        if match and method == "POST":
+            return self.json_response(languages.language_defaults.apply_existing(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/defaults", path)
+        if match and method == "POST":
+            return self.json_response(languages.language_defaults.save(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
             return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None, body.get("style") or None))
-        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})(?:/(text|remove|translate|sample|voice|thumbnail|own-voice/remove))?", path)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/thumbnail-options", path)
+        if match and method == "POST":
+            return self.json_response(languages.save_thumbnail_options(match.group(1),body.get('add_flag')))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnail/recover",path)
+        if match and method=='POST':
+            return self.json_response(languages.recover_thumbnail(*match.groups()))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})(?:/(text|remove|translate|sample|voice|thumbnail|save-audio|refit|own-voice/remove))?", path)
         if match and method == "POST":
             pid, code, action = match.groups()
             if not action:
@@ -1276,7 +1330,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(languages.remove_own_voice(pid, code))
             if action == "text":
                 return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
-            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"))}, 202)
+            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
@@ -1396,6 +1450,14 @@ class Handler(BaseHTTPRequestHandler):
             if store.prune_razgon_renders(match.group(1))["removed"]:
                 project = store.load_project(match.group(1))
             return self.json_response({"project": project})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/relocate", path)
+        if match and method == "POST":
+            if active_export(match.group(1)):
+                raise store.StudioError("Дочекайтеся завершення експорту перед перенесенням матеріалів.",409)
+            result=store.relocate_media(match.group(1),body.get("expected_revision"))
+            if result.get("moved"):
+                languages.language_mix.rebase_saved_after_move(match.group(1),store.read_json(Path(result["journal"])/"paths.json",{}))
+            return self.json_response(result)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/pick", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))

@@ -20,10 +20,10 @@ def function_source(name: str) -> str:
     """The text of `function name(...){...}` from the frontend, found by matching its braces outside strings."""
     for path in sorted(FRONTEND.glob("*.js")):
         text = path.read_text(encoding="utf-8")
-        match = re.search(r"(?m)^function " + re.escape(name) + r"\(", text)
+        match = re.search(r"(?m)^(?:async )?function " + re.escape(name) + r"\(", text)
         if not match:
             continue
-        depth, index, quote = 0, text.index("{", match.end()), None
+        depth, index, quote = 0, text.index("{", text.index(")", match.end())), None
         start = match.start()
         while index < len(text):
             char = text[index]

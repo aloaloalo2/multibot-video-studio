@@ -1,11 +1,16 @@
 const waveformRequests=new Map();
+function audioWaveformUrl(clip){
+  const dubbed=typeof dubbedVoiceUrl==='function'?dubbedVoiceUrl(clip):null;
+  return dubbed?dubbed.replace('/file/voice','/waveform'):`/api/projects/${state.project.id}/assets/${clip.asset_id}/waveform`;
+}
 function drawAudioWaveform(button,clip){
   if(!clip.asset_id)return;
-  const url=`/api/projects/${state.project.id}/assets/${clip.asset_id}/waveform`;
+  const url=audioWaveformUrl(clip);
+  button.dataset.waveformSource=url;
   // a failed request is forgotten, so the next drawing asks again
   if(!waveformRequests.has(url))waveformRequests.set(url,fetch(url).then(r=>{if(!r.ok)throw new Error('Waveform unavailable');return r.json();}).catch(error=>{waveformRequests.delete(url);throw error;}));
   waveformRequests.get(url).then(data=>{
-    if(!button.isConnected || !data.peaks?.length)return;
+    if(!button.isConnected || button.dataset.waveformSource!==url || !data.peaks?.length)return;
     const first=Math.max(0,Math.floor(Number(clip.trim_start || 0)/data.duration*data.peaks.length)),last=Math.min(data.peaks.length,Math.ceil((Number(clip.trim_start || 0)+Number(clip.duration))/data.duration*data.peaks.length));
     const peaks=data.peaks.slice(first,last),gain=Number(clip.volume ?? 1);if(!peaks.length)return;
     const upper=peaks.map((p,i)=>`${i/(Math.max(1,peaks.length-1))*1000},${20-Math.min(1,Math.max(0,p[1]*gain))*18}`);
