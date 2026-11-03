@@ -50,8 +50,11 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.speak.assert_not_called()
 
     def test_semantic_failure_preserves_the_previous_translation(self):
-        self.ask.side_effect = [(json.dumps({'0': 't'*100}), .02),
-                                (json.dumps({'ok': False}), .01)]
+        def rejected(messages, max_tokens=12000):
+            if 'Independently compare' in messages[0]['content']:
+                return json.dumps({'ok': False, 'ids': [0], 'issues': [{'id': 0, 'reason': 'Lost fact.'}]}), .01
+            return json.dumps({'0': 't'*100}), .02
+        self.ask.side_effect = rejected
         with self.assertRaisesRegex(RuntimeError, 'змісту'):
             languages._translate('test', 'es', self.job)
         self.save.assert_not_called()
@@ -62,7 +65,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.ask.return_value = json.dumps({'0': 't'*120}), .02
         with self.assertRaisesRegex(RuntimeError, 'межа 3%'):
             languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 2)
+        self.assertEqual(self.ask.call_count, 9)
         self.save.assert_not_called()
         self.speak.assert_not_called()
 
@@ -79,13 +82,70 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertIsNone(saved[7])
         self.assertEqual(self.ask.call_count, 3)
 
-    def test_within_budget_translation_still_needs_source_meaning_and_proper_name_audit(self):
-        self.initial.return_value = (['t'*100], .1)
-        self.ask.return_value = json.dumps({'ok': False}), .001
-        with self.assertRaisesRegex(RuntimeError, 'змісту'):
+    def test_unsynced_interrupted_chunks_resume_without_repeating_completed_request(self):
+        pieces = ['s'*50, 'q'*49]
+        with patch.object(languages, 'segments_of', return_value=[]), \
+                patch.object(languages, 'chunks', return_value=pieces), \
+                patch.object(languages, 'speakable', side_effect=lambda code, texts: (texts, 0)):
+            self.ask.side_effect = [('a'*50, .01), RuntimeError('Provider unavailable')]
+            with self.assertRaisesRegex(RuntimeError, 'Provider unavailable'):
+                languages._translate('test', 'es', self.job)
+            checkpoint = json.loads((self.work/'translation-draft.json').read_text())
+            self.assertEqual(checkpoint['initial_parts'], {'0': ['a'*50]})
+            self.assertAlmostEqual(checkpoint['cost_usd'], .01)
+            self.save.assert_not_called()
+            self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
+            self.ask.reset_mock()
+            self.ask.side_effect = [('b'*49, .02), (json.dumps({'ok': True, 'ids': [0, 1]}), .001)]
+            languages._translate('test', 'es', self.job)
+        self.assertEqual(self.ask.call_count, 2)
+        self.assertEqual(self.ask.call_args_list[0].args[0][1]['content'], pieces[1])
+        self.assertEqual(self.job['translation_resumed'], 1)
+        self.assertEqual(self.save.call_args.args[4], 'a'*50+'\n'+'b'*49)
+        self.assertAlmostEqual(self.save.call_args.args[5], .031)
+        self.assertIsNotNone(self.save.call_args.kwargs.get('draft'))
+        self.assertTrue(json.loads((self.work/'translation-draft.json').read_text())['completed'])
+
+    def test_unsynced_seed_resumes_full_draft_and_preserves_recorded_cost(self):
+        pieces = ['s'*50, 'q'*49]
+        with patch.object(languages, 'segments_of', return_value=[]), \
+                patch.object(languages, 'chunks', return_value=pieces):
+            model = languages.DEFAULT_TRANSLATION_MODEL
+            languages.seed_translation_draft('test', 'es', ['a'*50, 'b'*49], model,
+                source_script=self.source['script'], source_units=pieces, source_segments=[], cost_usd=.15)
+            self.ask.side_effect = [(json.dumps({'ok': True, 'ids': [0, 1]}), .001)]
             languages._translate('test', 'es', self.job)
         self.assertEqual(self.ask.call_count, 1)
-        prompt = self.ask.call_args.args[0][0]['content']
+        self.assertIn('Independently compare', self.ask.call_args.args[0][0]['content'])
+        self.assertEqual(self.job['translation_resumed'], 2)
+        self.assertAlmostEqual(self.save.call_args.args[5], .151)
+
+    def test_unsynced_stale_source_restarts_instead_of_reusing_unrelated_chunks(self):
+        old_pieces, new_pieces = ['old'*10, 'old'*10], ['s'*50, 'q'*49]
+        old_src = {**self.source, 'script': 'old'*20}
+        draft = languages.translation_draft('test', 'es', old_src, old_pieces, self.job)
+        draft.save(initial_parts={'0': ['outdated text']}, cost_usd=.5)
+        with patch.object(languages, 'segments_of', return_value=[]), \
+                patch.object(languages, 'chunks', return_value=new_pieces), \
+                patch.object(languages, 'speakable', side_effect=lambda code, texts: (texts, 0)):
+            self.ask.side_effect = [('a'*50, .01), ('b'*49, .02),
+                                    (json.dumps({'ok': True, 'ids': [0, 1]}), .001)]
+            languages._translate('test', 'es', self.job)
+        self.assertEqual(self.ask.call_count, 3)
+        self.assertAlmostEqual(self.save.call_args.args[5], .031)
+        self.assertNotIn('outdated', self.save.call_args.args[4])
+
+    def test_within_budget_translation_still_needs_source_meaning_and_proper_name_audit(self):
+        self.initial.return_value = (['t'*100], .1)
+        def rejected(messages, max_tokens=12000):
+            if 'Independently compare' in messages[0]['content']:
+                return json.dumps({'ok': False, 'ids': [0], 'issues': [{'id': 0, 'reason': 'Wrong name.'}]}), .001
+            return json.dumps({'0': 't'*100}), .001
+        self.ask.side_effect = rejected
+        with self.assertRaisesRegex(RuntimeError, 'змісту'):
+            languages._translate('test', 'es', self.job)
+        self.assertEqual(self.ask.call_count, 6)
+        prompt = self.ask.call_args_list[0].args[0][0]['content']
         self.assertIn('proper names', prompt)
         self.assertIn('pounds becoming kilograms', prompt)
         self.save.assert_not_called()
@@ -103,9 +163,10 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
             return json.dumps({item['id']: 't'*10 for item in items}), .001
         self.ask.side_effect = ask
         result, cost = languages.before_translate('test', 'es', src, translated, originals, self.job)
-        self.assertEqual(result, ['t'*10]*45)
-        self.assertEqual(sizes, [20, 20, 5])
-        self.assertAlmostEqual(cost, .006)
+        self.assertEqual(result, ['t'*10]*40+['t'*12]*5)
+        self.assertEqual(sizes, [20, 20])
+        self.assertTrue(languages.translation_budget.report(src['script'], '\n'.join(result))['within_budget'])
+        self.assertAlmostEqual(cost, .005)
         self.assertEqual(translated, ['t'*12]*45)
         self.speak.assert_not_called()
 
