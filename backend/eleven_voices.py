@@ -13,10 +13,20 @@ LOCK=threading.RLock()
 # Stay below even the strictest reported per-file upload limit. All MP3 packets
 # are sent in the same clone request; splitting is transport only, never a trim.
 UPLOAD_BYTES=900_000
+UPLOAD_FILES=25
+
+
+def upload_limit_error() -> RuntimeError:
+    return RuntimeError(
+        'Повний приклад голосу перевищує ліміт нового клону ElevenLabs: '
+        'до 25 аудіофрагментів по 1 МБ. Запис збережено повністю. '
+        'Використайте вже створений голос або завантажте коротший приклад.')
 
 
 def upload_files(source: Path, folder: Path, max_bytes: int = UPLOAD_BYTES) -> list[Path]:
     """Split a prepared MP3 without re-encoding, retaining the entire recording."""
+    if max_bytes <= 0:
+        raise ValueError('max_bytes must be positive')
     if source.suffix.lower() != '.mp3':
         raise RuntimeError('Приклад голосу спершу потрібно перетворити на MP3.')
     size=source.stat().st_size
@@ -25,8 +35,14 @@ def upload_files(source: Path, folder: Path, max_bytes: int = UPLOAD_BYTES) -> l
         raise RuntimeError('Не вдалося прочитати MP3 прикладу голосу.')
     if size <= max_bytes:
         return [source]
+    # The provider limits both each file and the total sample count. A long
+    # recording must never produce an invalid multipart request, lose its tail,
+    # or silently be re-encoded at a lower quality to fit. resolve() checks the
+    # shared clone registry before this transport preparation is even called.
+    if size > max_bytes*UPLOAD_FILES:
+        raise upload_limit_error()
     folder.mkdir(parents=True,exist_ok=True)
-    count=max(2,math.ceil(size/(max_bytes*.90)))
+    count=min(UPLOAD_FILES,max(2,math.ceil(size/(max_bytes*.90))))
     for attempt in range(3):
         for path in folder.glob('reference-*.mp3'):
             path.unlink()
@@ -40,9 +56,13 @@ def upload_files(source: Path, folder: Path, max_bytes: int = UPLOAD_BYTES) -> l
         parts=sorted(folder.glob('reference-*.mp3'))
         if not parts:
             raise RuntimeError('Не вдалося підготувати частини прикладу голосу.')
+        if len(parts) > UPLOAD_FILES:
+            raise upload_limit_error()
         largest=max(path.stat().st_size for path in parts)
         if largest > max_bytes:
-            count=math.ceil(count*largest/max_bytes*1.1)
+            if count >= UPLOAD_FILES:
+                raise upload_limit_error()
+            count=min(UPLOAD_FILES,math.ceil(count*largest/max_bytes*1.1))
             continue
         lengths=[store.media_duration(path) or 0 for path in parts]
         if any(length <= 0 for length in lengths) or abs(sum(lengths)-duration)>max(.1,len(parts)*.06):

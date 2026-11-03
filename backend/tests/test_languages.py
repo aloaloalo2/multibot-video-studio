@@ -602,6 +602,34 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn('{"language": "es"}',fields)
         self.assertNotIn('VideoKey · 05 Test',fields)
 
+    def test_reuploading_the_same_recording_in_another_project_reuses_its_clone(self):
+        raw=self.voice.read_bytes()
+        work=languages.work_dir(self.pid,'uk')
+        with patch.object(languages,'heard',return_value='Той самий приклад голосу для різних випусків'), \
+             patch.object(languages,'request',return_value=b'{"voice_id":"shared-uk"}') as upload:
+            languages.store_example(work,'own-voice','uk',io.BytesIO(raw),len(raw),'','first.wav')
+            first=languages.voice_id(self.pid,'elevenlabs','uk')
+            original_bytes=languages.own_voice(self.pid,'uk')['path'].read_bytes()
+            second={**self.project,'id':'e'*24,'name':'Another episode'}
+            with patch.object(store,'load_project',return_value=second), \
+                 patch.object(store,'project_dir',return_value=self.studio/'another-project'):
+                languages.store_example(languages.work_dir(second['id'],'uk'),'own-voice','uk',
+                                        io.BytesIO(raw),len(raw),'','renamed.wav')
+                self.assertEqual(languages.own_voice(second['id'],'uk')['path'].read_bytes(),original_bytes)
+                with patch.object(languages.eleven_voices,'upload_files',side_effect=AssertionError('must reuse before splitting')):
+                    self.assertEqual(languages.voice_id(second['id'],'elevenlabs','uk')['id'],first['id'])
+            upload.assert_called_once()
+
+    def test_over_limit_new_reference_never_sends_a_clone_request(self):
+        self.example('uk')
+        prepare=languages.eleven_voices.upload_files
+        with patch.object(languages.eleven_voices,'upload_files',side_effect=lambda source,folder:prepare(source,folder,max_bytes=1000)), \
+             patch.object(languages,'request') as upload:
+            with self.assertRaisesRegex(RuntimeError,'до 25 аудіофрагментів'):
+                languages.voice_id(self.pid,'elevenlabs','uk')
+            upload.assert_not_called()
+        self.assertTrue(languages.own_voice(self.pid,'uk')['path'].is_file())
+
     def test_lines_are_translated_and_voiced_in_time_with_the_original(self):
         plan = {"script": "One. Two. Three. Four.", "timing": {"audio": {"asset_id": "a" * 20}, "sentences": [
             {"text": "One.", "start": 0.2, "end": 1.0}, {"text": "Two.", "start": 1.1, "end": 1.8},     # run on: one line
