@@ -1,11 +1,13 @@
-"""Whole-translation character budgets, including spaces and stored line separators.
+"""Informational translation counts and legacy explicit character-budget utilities.
 
-This module never synthesizes audio or publishes text. The caller supplies a text
-rewrite callback and checks language and meaning before accepting the result.
+The automatic translation pipeline uses assessment(), never the legacy fitter.
+Raw character counts do not measure spoken duration or translation quality.
+This module never synthesizes audio or publishes text.
 """
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
@@ -36,6 +38,27 @@ def report(source_text: str, translated_text: str, tolerance: float = TOLERANCE)
             'difference_chars': difference,
             'difference_percent': round(100*difference/source_chars, 3) if source_chars else None,
             'over_by': max(0, translated_chars-upper), 'under_by': max(0, lower-translated_chars)}
+
+
+
+def assessment(source_text: str, translated_text: str) -> dict:
+    """Informational counts only: spelling out source digits can lengthen speech text.
+
+    Character differences are neither a fidelity verdict nor a duration estimate.
+    Source and target grammar, number words and units can differ in length; the
+    semantic audit checks their meaning and measured audio governs pacing.
+    """
+    source_chars, translated_chars = count(source_text), count(translated_text)
+    numeric = re.compile(r"\d+(?:[.,:/-]\d+)*")
+    source_numbers = len(numeric.findall(source_text))
+    target_numbers = len(numeric.findall(translated_text))
+    return {'source_chars': source_chars, 'translated_chars': translated_chars,
+            'difference_chars': translated_chars-source_chars,
+            'difference_percent': round(100*(translated_chars-source_chars)/source_chars, 3) if source_chars else None,
+            'advisory_only': True, 'duration_estimate': False,
+            'source_numeric_tokens': source_numbers, 'translated_numeric_tokens': target_numbers,
+            'numeric_forms_differ': source_numbers != target_numbers,
+            'comparison_basis': 'raw_characters_with_spaces'}
 
 
 def allocate_targets(lines: list[str], target_chars: int) -> dict[int, int]:

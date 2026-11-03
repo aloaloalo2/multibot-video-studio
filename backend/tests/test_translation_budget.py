@@ -279,5 +279,24 @@ class TranslationBudgetTest(unittest.TestCase):
         rewrite.assert_not_called()
 
 
+class InformationalAssessmentTest(unittest.TestCase):
+    def test_spelled_numbers_do_not_create_a_length_failure(self):
+        state = budget.assessment('In 2004, he gained 25 pounds in 30 days.',
+            'En dos mil cuatro ganó veinticinco libras en treinta días.')
+        self.assertTrue(state['advisory_only'])
+        self.assertFalse(state['duration_estimate'])
+        self.assertEqual(state['source_numeric_tokens'], 3)
+        self.assertEqual(state['translated_numeric_tokens'], 0)
+        self.assertTrue(state['numeric_forms_differ'])
+        self.assertNotIn('within_budget', state)
+
+    def test_counts_remain_exact_for_costs_without_quality_threshold(self):
+        state = budget.assessment('abc', 'un texto mucho más largo')
+        self.assertEqual(state['source_chars'], 3)
+        self.assertEqual(state['translated_chars'], 24)
+        self.assertTrue(state['advisory_only'])
+        self.assertNotIn('max_chars', state)
+
+
 if __name__ == '__main__':
     unittest.main()

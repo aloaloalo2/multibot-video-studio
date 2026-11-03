@@ -599,7 +599,7 @@ class LanguagesTest(unittest.TestCase):
             job = self.wait()
         self.assertEqual(job["status"], "done", job.get("error"))
         self.assertEqual(asked[0][1]["seconds"], 1.1)          # 0.8 s said, room for up to 1.4 times that before the next
-        self.assertEqual(asked[0][0]["max_chars"], int(asked[0][0]["seconds"] * 15))
+        self.assertNotIn("max_chars", asked[0][0])  # timing is context; character count never limits natural translation
         item = languages.overview(self.pid)["items"][0]
         self.assertEqual((item["text"].strip(), item["lines"]), ("Раз. Два.\nТри.\nЧотири.", 3))
         with self.assertRaises(store.StudioError):
@@ -1039,32 +1039,29 @@ class LanguagesTest(unittest.TestCase):
         with patch.object(languages,'prepared_example',return_value=(path,{})):
             self.assertEqual(languages.voice_cache_context(self.pid,'uk','elevenlabs')[0],old)
 
-    def test_pacing_changes_only_future_unpaid_phrases_and_keeps_one_take_each(self):
+    def test_normal_narration_preserves_saved_words_and_never_calls_text_model(self):
         code='en';work=languages.work_dir(self.pid,code);work.mkdir(parents=True)
         ordinals=['first','second','third','fourth','fifth','sixth','seventh','eighth']
         texts=[f'The {word} report explains how the changing weather affects people in the local park.' for word in ordinals]
-        (work/'text.txt').write_text('\n'.join(texts)+'\n')
+        saved='\n'.join(texts)+'\n';(work/'text.txt').write_text(saved)
         total=46.;segments=[{'start':i*total/8,'end':(i+1)*total/8-.3,'source':text} for i,text in enumerate(texts)]
         store.atomic_json(languages.segments_path(self.pid,code),segments)
         languages.update(self.pid,lambda d:d.update(provider='elevenlabs',languages={code:{}},eleven_engine='eleven_v4_turbo'))
         self.example(code,'This is the voice used to tell the whole story.')
-        long=tone(work/'long.mp3',6);short=tone(work/'short.mp3',5);spoken=[];adapted=[]
+        audio=tone(work/'fixture.mp3',6);spoken=[]
         def speak(provider,voice,text,target,*args,**kwargs):
-            spoken.append(text);shutil.copy2(long if len(spoken)<=5 else short,target)
-        def prepare(pid,code,words,source,targets,job):
-            self.assertEqual(len(spoken),5)
-            self.assertTrue(all(i>=5 for i in targets))
-            adapted.extend(targets)
-            return {i:f"The weather affects the park's visitors, says the {ordinals[i]} report." for i in targets}
+            spoken.append(text);shutil.copy2(audio,target)
         with patch.object(languages,'source',return_value={'duration':total}),patch.object(languages,'speak',side_effect=speak), \
                 patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'announce_model'), \
-                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced',side_effect=prepare), \
+                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced') as prepare, \
+                patch.object(languages,'ask',side_effect=AssertionError('No text model during narration')), \
                 patch.object(languages,'copy_out'):
-            job={};languages.whole_synced(self.pid,code,'elevenlabs',job,segments)
-        self.assertEqual(len(spoken),8)
-        self.assertEqual(spoken[:5],texts[:5])
-        self.assertEqual(adapted,[5,6,7])
-        self.assertEqual(languages.line_texts(self.pid,code),spoken)
+            languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':False},segments)
+            prepare.assert_not_called()
+        self.assertEqual(spoken,texts)
+        self.assertEqual((work/'text.txt').read_text(),saved)
+        self.assertFalse((work/'text-pacing.tmp').exists())
+        self.assertFalse(list((work/'parts').glob('adaptation-*.json')))
         self.assertEqual(len(store.read_json(work/'parts/requests.json')),8)
         manifest=store.read_json(work/'parts/manifest.json')
         self.assertTrue(all(.93<=x['speed']<=1.07 for x in manifest))

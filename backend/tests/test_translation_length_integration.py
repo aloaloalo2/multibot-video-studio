@@ -1,4 +1,4 @@
-"""Translation publication waits for the global text budget and meaning checks."""
+"""Natural faithful translation is audited; character counts never force a rewrite."""
 import contextlib
 import json
 import sys
@@ -37,16 +37,17 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.save = self.stack.enter_context(patch.object(languages, 'save_translation'))
         self.speak = self.stack.enter_context(patch.object(languages, 'speak'))
 
-    def test_timed_translation_fits_before_publication_and_counts_refinement_cost(self):
-        self.ask.side_effect = [(json.dumps({'0': 't'*100}), .02),
-                                (json.dumps({'ok': True, 'ids': [0]}), .01)]
-        languages._translate('test', 'es', self.job)
+    def test_long_natural_translation_is_audited_without_character_compression(self):
+        self.ask.return_value = json.dumps({'ok': True, 'ids': [0]}), .01
+        with patch.object(languages.translation_budget, 'fit', side_effect=AssertionError('No character fitting')):
+            languages._translate('test', 'es', self.job)
         saved = self.save.call_args.args
-        self.assertEqual(saved[4], 't'*100)
-        self.assertAlmostEqual(saved[5], .13)
+        self.assertEqual(saved[4], 't'*120)
+        self.assertAlmostEqual(saved[5], .11)
         self.assertEqual(saved[7], self.lines)
-        self.assertTrue(self.job['translation_length']['within_budget'])
-        self.assertEqual(self.ask.call_count, 2)
+        self.assertTrue(self.job['translation_length']['advisory_only'])
+        self.assertNotIn('within_budget', self.job['translation_length'])
+        self.assertEqual(self.ask.call_count, 1)
         self.speak.assert_not_called()
 
     def test_semantic_failure_preserves_the_previous_translation(self):
@@ -61,12 +62,12 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
         self.speak.assert_not_called()
 
-    def test_unchanged_drafts_stop_without_publication_or_tts(self):
-        self.ask.return_value = json.dumps({'0': 't'*120}), .02
-        with self.assertRaisesRegex(RuntimeError, 'межа 3%'):
-            languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 9)
-        self.save.assert_not_called()
+    def test_short_natural_translation_is_not_padded(self):
+        self.initial.return_value = (['t'*50], .1)
+        self.ask.return_value = json.dumps({'ok': True, 'ids': [0]}), .01
+        languages._translate('test', 'es', self.job)
+        self.assertEqual(self.save.call_args.args[4], 't'*50)
+        self.assertEqual(self.ask.call_count, 1)
         self.speak.assert_not_called()
 
     def test_unsynced_paragraph_units_are_flattened_and_kept_in_order(self):
@@ -148,30 +149,35 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         prompt = self.ask.call_args_list[0].args[0][0]['content']
         self.assertIn('proper names', prompt)
         self.assertIn('pounds becoming kilograms', prompt)
+        self.assertIn('source digits and equivalent', prompt)
+        self.assertIn('Compare numeric VALUES and UNITS', prompt)
+        self.assertIn('Raw character length is not a quality failure', prompt)
         self.save.assert_not_called()
         self.speak.assert_not_called()
 
-    def test_large_translation_uses_batches_of_twenty_and_audits_every_changed_batch(self):
+    def test_large_translation_audits_every_batch_without_length_rewrites(self):
         originals, translated = ['s'*10]*45, ['t'*12]*45
         src = {'script': '\n'.join(originals)}
         sizes = []
         def ask(messages, max_tokens=12000):
+            self.assertIn('Independently compare', messages[0]['content'])
             items = json.loads(messages[1]['content'])
-            if 'Independently compare' in messages[0]['content']:
-                return json.dumps({'ok': True, 'ids': [item['id'] for item in items]}), .001
             sizes.append(len(items))
-            return json.dumps({item['id']: 't'*10 for item in items}), .001
+            return json.dumps({'ok': True, 'ids': [item['id'] for item in items]}), .001
         self.ask.side_effect = ask
         result, cost = languages.before_translate('test', 'es', src, translated, originals, self.job)
-        self.assertEqual(result, ['t'*10]*40+['t'*12]*5)
-        self.assertEqual(sizes, [20, 20])
-        self.assertTrue(languages.translation_budget.report(src['script'], '\n'.join(result))['within_budget'])
-        self.assertAlmostEqual(cost, .005)
-        self.assertEqual(translated, ['t'*12]*45)
+        self.assertEqual(result, translated)
+        self.assertEqual(sizes, [20, 20, 5])
+        self.assertAlmostEqual(cost, .003)
         self.speak.assert_not_called()
 
     def test_revised_numbers_must_remain_spoken_words(self):
-        self.ask.return_value = json.dumps({'0': 't'*97+' 13'}), .02
+        self.initial.return_value = (['t'*97+' 13'], .1)
+        def invalid_number(messages, max_tokens=12000):
+            if 'Independently compare' in messages[0]['content']:
+                return json.dumps({'ok': True, 'ids': [0]}), .01
+            return json.dumps({'0': 't'*97+' 13'}), .02
+        self.ask.side_effect = invalid_number
         with self.assertRaisesRegex(RuntimeError, 'числа'):
             languages._translate('test', 'es', self.job)
         self.save.assert_not_called()

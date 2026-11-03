@@ -1,4 +1,4 @@
-"""Plan unvoiced wording from measured takes. Never pay for a timing retake."""
+"""Forecast immutable narration from measured takes. Never rewrite accepted words."""
 from __future__ import annotations
 
 import math
@@ -35,20 +35,21 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
     rate=seconds_per_character(texts,known)
     pending=[i for i in range(offset,len(texts)) if i not in known]
     result={'measured_phrases':len(known),'measured_seconds':round(measured,3),
-            'seconds_per_character':rate,'predicted_seconds':None,'targets':{}}
+            'seconds_per_character':rate,'predicted_seconds':None,'predicted_minimum_seconds':None,
+            'requires_review':False,'targets':{}}
     if rate is None or not pending:return result
     chars=sum(len(texts[i]) for i in pending)
-    # Use 3% for planning and retain the rest of the 7% bound for model variation.
+    # Smooth the forecast separately from the hard 7% limit on actual audio.
     budget=max(0,(total-gaps-min(5,total*.005))*1.03-measured)
     result['predicted_seconds']=round((measured+rate*chars)/1.03+gaps,3)
+    result['predicted_minimum_seconds']=round((measured+rate*chars)/MAX_SPEED+gaps,3)
+    result['requires_review']=result['predicted_minimum_seconds']>total+.05
     factor=min(1.,budget/(rate*chars)) if chars else 1.
     if factor>=.97:return result
     if factor<.65:
-        raise RuntimeError('Виміряний темп потребує надто сильного скорочення решти тексту. '
-                           'Озвучення зупинено до нових витрат. Готові фрази збережені; потрібна перевірка тексту.')
-    for i in range(offset,min(len(texts),offset+BLOCK)):
-        if i not in known:
-            result['targets'][i]=max(8,math.floor(len(texts[i])*factor))
+        raise RuntimeError('За виміряним темпом прогнозована озвучка значно довша за ролик навіть із прискоренням до 7%. '
+                           'Озвучення зупинено до нових витрат. Текст не змінено, готові записи збережені; '
+                           'потрібно перевірити прогноз і монтаж.')
     return result
 
 

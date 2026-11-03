@@ -87,11 +87,14 @@ class ContinuationTest(unittest.TestCase):
         self.job = {'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
 
     def test_missing_id_retry_does_not_repeat_good_neighbour(self):
-        requests = []
+        requests, audits = [], []
         def ask(messages, max_tokens=12000):
             items = json.loads(messages[1]['content'])
             ids = [x['id'] for x in items]
             if 'Independently compare' in messages[0]['content']:
+                audits.append(ids)
+                if len(audits) == 1:
+                    return json.dumps({'ok': False, 'ids': ids, 'issues': [{'id': i, 'reason': 'Wrong fact.'} for i in ids]}), 0
                 return json.dumps({'ok': True, 'ids': ids}), 0
             requests.append(ids)
             return json.dumps({ids[0]: 't'*49}), 0
@@ -101,7 +104,7 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(requests, [[0, 1], [1]])
         self.assertEqual(lines, ['t'*49]*2)
 
-    def test_semantic_repair_calls_only_failed_id_and_rechecks_budget(self):
+    def test_semantic_repair_calls_only_failed_id_and_allows_natural_expansion(self):
         requests, audits = [], []
         def ask(messages, max_tokens=12000):
             items = json.loads(messages[1]['content']);ids = [x['id'] for x in items]
@@ -111,40 +114,41 @@ class ContinuationTest(unittest.TestCase):
                     return json.dumps({'ok': False, 'ids': ids, 'issues': [{'id': 1, 'reason': 'Wrong unit.'}]}), 0
                 return json.dumps({'ok': True, 'ids': ids}), 0
             requests.append(ids)
-            return json.dumps({'1': 'c'*49}), 0
+            return json.dumps({'1': 'c'*90}), 0
         with patch.object(languages, 'ask', side_effect=ask):
             lines, _ = languages.before_translate('p', 'es', {'script': 's'*99},
                 ['a'*49, 'b'*49], ['s'*49]*2, self.job)
         self.assertEqual(requests, [[1]])
         self.assertEqual(audits, [[0, 1], [1]])
-        self.assertEqual(lines, ['a'*49, 'c'*49])
+        self.assertEqual(lines, ['a'*49, 'c'*90])
 
-    def test_saved_partial_rewrite_resumes_without_paid_repeat(self):
+    def test_saved_partial_semantic_repair_resumes_without_paid_repeat(self):
         src, units, lines = {'script': 's'*99}, ['s'*49]*2, ['t'*60]*2
-        calls = []
+        def audit(ids):
+            return json.dumps({'ok': False, 'ids': ids, 'issues': [{'id': i, 'reason': 'Wrong fact.'} for i in ids]}), 0
+        repairs = []
         def interrupted(messages, max_tokens=12000):
             ids = [x['id'] for x in json.loads(messages[1]['content'])]
-            calls.append(ids)
-            if len(calls) == 1:
+            if 'Independently compare' in messages[0]['content']:
+                return audit(ids)
+            repairs.append(ids)
+            if len(repairs) == 1:
                 return json.dumps({'0': 'a'*49}), .01
             raise RuntimeError('Provider unavailable')
         with patch.object(languages, 'ask', side_effect=interrupted):
             with self.assertRaisesRegex(RuntimeError, 'Provider unavailable'):
                 languages.before_translate('p', 'es', src, lines, units, self.job)
-        resumed = []
+        resumed, audits = [], []
         def resume(messages, max_tokens=12000):
             ids = [x['id'] for x in json.loads(messages[1]['content'])]
             if 'Independently compare' in messages[0]['content']:
-                return json.dumps({'ok': True, 'ids': ids}), 0
+                audits.append(ids)
+                return audit(ids) if len(audits) == 1 else (json.dumps({'ok': True, 'ids': ids}), 0)
             resumed.append(ids)
             return json.dumps({'1': 'b'*49}), .01
-        real_fit = languages.translation_budget.fit
-        def changed_feedback(source, current, rewrite, **kwargs):
-            return real_fit(source, current, lambda values, feedback:
-                rewrite(values, {**feedback, 'last_issue': 'Different feedback after a restart.'}), **kwargs)
-        with patch.object(languages, 'ask', side_effect=resume), \
-             patch.object(languages.translation_budget, 'fit', side_effect=changed_feedback):
+        with patch.object(languages, 'ask', side_effect=resume):
             result, _ = languages.before_translate('p', 'es', src, lines, units, self.job)
+        self.assertEqual(repairs, [[0, 1], [1]])
         self.assertEqual(resumed, [[1]])
         self.assertEqual(result, ['a'*49, 'b'*49])
 
@@ -164,6 +168,37 @@ class ContinuationTest(unittest.TestCase):
             languages._translate('p', 'es', self.job)
         initial.assert_not_called()
         self.assertEqual(publish.call_args.args[4], 't'*100)
+
+    def test_naturally_long_translation_can_be_saved_without_count_gate(self):
+        src = {'script': 'In 1999.', 'title': 'Title', 'duration': 10}
+        text = 'En mil novecientos noventa y nueve.'
+        with patch.object(languages, 'ask', return_value=('Título', .01)), \
+             patch.object(languages, 'update') as update, \
+             patch.object(languages, 'copy_out'), patch.object(languages, 'drop_samples'):
+            languages.save_translation('p', 'es', {'id': 'p'}, src, text, 0, self.job, None)
+        self.assertEqual((self.folder/'text.txt').read_text().strip(), text)
+        state = {}
+        update.call_args.args[1](state)
+        report = state['languages']['es']['translation_length']
+        self.assertTrue(report['advisory_only'])
+        self.assertTrue(report['numeric_forms_differ'])
+        self.assertNotIn('within_budget', report)
+
+    def test_decreasing_semantic_issues_continue_beyond_three_repairs(self):
+        current = ['wrong']*5
+        repairs = []
+        def ask(messages, max_tokens=12000):
+            items = json.loads(messages[1]['content'])
+            ids = [item['id'] for item in items]
+            if 'Independently compare' in messages[0]['content']:
+                failed = [{'id': item['id'], 'reason': 'Wrong fact.'} for item in items if item['translation'] == 'wrong']
+                return json.dumps({'ok': not failed, 'ids': ids, 'issues': failed}), 0
+            repairs.append(ids)
+            return json.dumps({i: ('correct' if i == ids[0] else 'wrong') for i in ids}), 0
+        with patch.object(languages, 'ask', side_effect=ask):
+            result, _ = languages.before_translate('p', 'es', {'script': 'source'}, current, ['source']*5, self.job)
+        self.assertEqual(result, ['correct']*5)
+        self.assertEqual(len(repairs), 5)
 
     def test_source_changed_during_title_request_cannot_replace_published_text(self):
         src = {'script': 's'*100, 'title': 'Title', 'duration': 10}

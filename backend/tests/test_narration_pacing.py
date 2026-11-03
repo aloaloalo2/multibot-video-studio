@@ -9,12 +9,13 @@ import languages
 
 
 class NarrationPacingTest(unittest.TestCase):
-    def test_uses_measured_same_voice_pace_and_only_edits_unpaid_lines(self):
+    def test_uses_measured_voice_pace_without_rewriting_future_words(self):
         texts=['a'*100]*100;known={i:8.0 for i in range(5)}
         plan=pacing.plan(texts,known,700,5)
         self.assertGreater(plan['predicted_seconds'],700)
-        self.assertEqual(set(plan['targets']),set(range(5,15)))
-        self.assertTrue(all(65<=n<100 for n in plan['targets'].values()))
+        self.assertEqual(plan['targets'],{})
+        self.assertTrue(plan['requires_review'])
+        self.assertGreater(plan['predicted_minimum_seconds'],700)
         self.assertEqual(texts,['a'*100]*100)
 
     def test_shorter_lines_and_small_calibration_do_not_trigger_rewrites(self):
@@ -32,7 +33,7 @@ class NarrationPacingTest(unittest.TestCase):
         self.assertEqual(pacing.MAX_SPEED,1.07)
 
     def test_severe_required_shortening_requests_review(self):
-        with self.assertRaisesRegex(RuntimeError,'надто сильного скорочення'):
+        with self.assertRaisesRegex(RuntimeError,'прогнозована озвучка'):
             pacing.plan(['a'*100]*100,{i:15 for i in range(5)},700,5)
 
     def test_does_not_accept_missing_lines_or_a_summary(self):
