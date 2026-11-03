@@ -216,6 +216,10 @@ function langOwnWire(id,card,item){
 }
 
 // «Голоси для перекладу» in the channel's settings: one example a language for every episode of the channel.
+function channelVoiceDefaults(settings){
+  if(!settings)return '';
+  return `<div class="channel-voice-defaults"><span class="channel-voice-defaults-label">Збережені налаштування ✓</span><div class="channel-voice-defaults-values"><span>Сервіс <strong>${esc(settings.provider_name)}</strong></span><span>Модель <strong>${esc(settings.engine_name)}</strong></span>${settings.style_name?`<span>Подача <strong>${esc(settings.style_name)}</strong></span>`:''}</div></div>`;
+}
 async function bindChannelVoices(channel){
   const section=document.getElementById('channel-voices');if(!section)return;
   const base=`/api/channels/${encodeURIComponent(channel.id)}/voices`;
@@ -223,7 +227,8 @@ async function bindChannelVoices(channel){
     if(!section.isConnected)return;
     section.querySelectorAll('audio').forEach(audio=>audio.pause());
     const have=new Set(data.voices.map(item=>item.code));
-    section.innerHTML=`<h3>Голоси для перекладу</h3><p>Приклад голосу для кожної мови, 20–60 секунд: ваш запис цією мовою або запис носія мови. Вкладка «Мови» кожного випуску озвучує переклад саме цим голосом і вимовою. У випуску можна закинути інший.</p>
+    section.innerHTML=`<h3>Голоси для перекладу</h3><p>Ці голоси й налаштування автоматично використовуються в нових випусках. У кожному випуску їх можна змінити.</p>
+      ${channelVoiceDefaults(data.narration_defaults)}
       <div class="channel-voices-list">${data.voices.map(item=>`<div class="channel-voice" data-code="${item.code}"><span class="channel-voice-name">${langFlag(item.code)} ${esc(item.name)}</span><div class="lang-player"></div><button type="button" class="project-action delete channel-voice-remove" title="Прибрати приклад" aria-label="Прибрати приклад ${esc(item.name)}">×</button></div>`).join('') || '<p class="lang-off">Ще немає жодного прикладу.</p>'}</div>
       <div class="channel-voice-add"><select aria-label="Мова прикладу"><option value="">Мова прикладу…</option>${data.languages.filter(item=>!have.has(item.code)).map(item=>`<option value="${item.code}">${langFlags[item.code] || ''} ${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select>
         <button type="button" class="secondary lang-own-record" disabled>${micIcon}Записати себе</button><label class="secondary lang-own-file is-off">Закинути запис<input type="file" accept="audio/*,video/*" hidden disabled></label></div>`;
@@ -342,7 +347,7 @@ function langCard(id,item,spec){
         <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small>${item.lines?`<small class="lang-text-lines">Кожен рядок звучить у свій час, як фраза оригіналу (${item.lines} рядків): правте слова, але не об’єднуйте й не розбивайте рядки</small>`:''}</span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
       :`<div class="lang-actions"><p>Переклад тексту й заголовка вибраною моделлю.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">${item.translation_resumable?'Продовжити переклад':'Перекласти'}</button></div>`}
     <small class="lang-translation-info"${item.translated_model?'':' hidden'}>${esc(langTranslationInfo(item))}</small><div class="lang-text-quality"></div><div class="lang-job" role="status" aria-live="polite" hidden></div></section>
-    <section class="lang-step"><h3 class="lang-voice-heading"><em>2</em>Озвучка вашим голосом${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти поточні голоси й налаштування для нових випусків цього каналу" aria-label="Зберегти налаштування"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span>Зберегти налаштування</span></button>`}</h3>
+    <section class="lang-step"><h3 class="lang-voice-heading"><em>2</em>Озвучка вашим голосом${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти голос і налаштування цієї мови для нових випусків каналу" aria-label="Зберегти налаштування"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span>Зберегти налаштування</span></button>`}</h3>
       <div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
         <div class="lang-voice-panel lang-voice-bar"><span class="lang-panel-title">Налаштування озвучення</span><label class="lang-chip-select" title="Сервіс озвучення"><span>Сервіс</span><select data-field="provider">${langData.providers.map(service=>`<option value="${service.id}"${service.id===spec.id?' selected':''}>${esc(service.name)}</option>`).join('')}</select></label>
           ${spec.engines?`<label class="lang-chip-select" title="Модель ${esc(spec.name)}"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)}${spec.id!=='elevenlabs'&&engine.note?' · '+esc(engine.note):''}</option>`).join('')}</select></label>`:''}
@@ -456,7 +461,7 @@ function langCard(id,item,spec){
     if(playSample)await playSample();else await chooseSample(samplePlay);
   });
   sampleChoose?.addEventListener('click',()=>chooseSample(sampleChoose));
-  card.querySelector('.lang-defaults')?.addEventListener('click',async event=>{const button=event.currentTarget;button.dataset.saving='1';button.disabled=true;button.setAttribute('aria-busy','true');try{const defaults=await api(`/api/projects/${encodeURIComponent(id)}/languages/defaults`,'POST',{});if(state.project?.id===id&&state.view==='langs'){langData.defaults=defaults;drawLangs(id);}}catch(error){langNote(button,error.message,true);}finally{delete button.dataset.saving;button.removeAttribute('aria-busy');showLangJob();}});
+  card.querySelector('.lang-defaults')?.addEventListener('click',event=>langSaveDefaults(id,item.code,event.currentTarget));
   card.querySelector('.lang-save-audio')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'save-audio',item.code);});
   card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
     if(!(await flush()))return;
@@ -668,6 +673,15 @@ function addLayerDubControl(heading,layer){
   heading.append(button);
 }
 
+
+async function langSaveDefaults(id,code,button){
+  button.dataset.saving='1';button.disabled=true;button.setAttribute('aria-busy','true');
+  try{
+    const defaults=await api(`/api/projects/${encodeURIComponent(id)}/languages/defaults`,'POST',{code});
+    if(state.project?.id===id&&state.view==='langs'){langData.defaults=defaults;drawLangs(id);}
+  }catch(error){langNote(button,error.message,true);}
+  finally{delete button.dataset.saving;button.removeAttribute('aria-busy');showLangJob();}
+}
 
 function langBindSamplePlayback(audio,button,label,duration=0){
   let waiting=false;

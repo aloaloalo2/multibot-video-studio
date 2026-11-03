@@ -1319,7 +1319,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(languages.language_defaults.apply_existing(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/defaults", path)
         if match and method == "POST":
-            return self.json_response(languages.language_defaults.save(match.group(1)))
+            return self.json_response(languages.language_defaults.save(match.group(1),body.get('code')))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
             return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None, body.get("style") or None))

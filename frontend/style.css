@@ -1262,6 +1262,11 @@ select option{background:#232327;color:#f1f1f2}
 .lang-own-more[open] summary{margin-bottom:8px}
 .lang-own-file.is-off{opacity:.5;pointer-events:none}
 .channel-voices-list{display:grid;gap:8px}
+.channel-voice-defaults{display:grid;gap:8px;margin:0 0 16px;padding:12px 14px;border:1px solid #414148;border-radius:14px;background:#202024}
+.channel-voice-defaults-label{color:#a9abb3;font-size:12px}
+.channel-voice-defaults-values{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px}
+.channel-voice-defaults-values>span{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:5px 8px;color:#9a9ca4;font-size:13px}
+.channel-voice-defaults-values strong{font-weight:600;color:#eeeef1}
 .channel-voice{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .channel-voice-name{min-width:130px;font-weight:600}
 .channel-voice .voice-player{flex:1;min-width:240px;margin:0}

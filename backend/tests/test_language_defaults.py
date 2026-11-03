@@ -2,7 +2,7 @@ import sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import store,languages,language_defaults
+import store,languages,language_defaults,eleven_api
 
 class LanguageDefaultsTest(unittest.TestCase):
     def setUp(self):
@@ -22,6 +22,21 @@ class LanguageDefaultsTest(unittest.TestCase):
         languages.save_state(self.pid,{'provider':'elevenlabs','eleven_engine':'eleven_v4_turbo',
             'languages':{'uk':{},'es':{}},'clones':{f'elevenlabs-uk-episode-{stamp}':'known-clone'},
             'fish_engine':'drama-3','fish_styles':{'drama-3':'normal'}})
+
+    def test_channel_voices_expose_saved_provider_model_without_remote_requests(self):
+        cid='c'*16
+        with patch.object(languages,'channel_voice',return_value=None),patch.object(eleven_api,'get',side_effect=AssertionError('metadata must stay local')):
+            self.assertIsNone(languages.channel_voices(cid)['narration_defaults'])
+            language_defaults.save(self.pid)
+            self.assertEqual(languages.channel_voices(cid)['narration_defaults'],{
+                'provider':'elevenlabs','provider_name':'ElevenLabs','engine':'eleven_v4_turbo',
+                'engine_name':'Eleven v4 Turbo','style':None,'style_name':None})
+            languages.update(self.pid,lambda data:data.update(provider='fishaudio'))
+            # An unsaved episode choice must not appear as a saved channel default.
+            self.assertEqual(languages.channel_voices(cid)['narration_defaults']['provider'],'elevenlabs')
+            language_defaults.save(self.pid,'uk')
+            saved=languages.channel_voices(cid)['narration_defaults']
+            self.assertEqual((saved['provider_name'],saved['engine_name'],saved['style_name']),('Fish Audio','Drama 3','Звичайно'))
 
     def test_new_project_inherits_choices_and_voice_without_paid_generation(self):
         self.assertFalse(language_defaults.status(self.pid)['saved'])
@@ -156,3 +171,58 @@ class LanguageDefaultsTest(unittest.TestCase):
         languages.save_state(pid,{'languages':{'uk':{}},'provider':'elevenlabs','eleven_engine':'eleven_v4'})
         language_defaults.save(pid)
         self.assertEqual(language_defaults.saved_clone('c'*16,'uk'),'known-clone')
+
+    def reference(self,pid,code,audio,clone):
+        folder=languages.work_dir(pid,code);folder.mkdir(parents=True,exist_ok=True)
+        path=folder/'own-voice.mp3';path.write_bytes(audio)
+        (folder/'own-voice.txt').write_text('Saved reference')
+        store.atomic_json(folder/'own-voice.json',{'filename':f'{code}.mp4',
+            'example_level_version':languages.EXAMPLE_LEVEL_VERSION,
+            'example_source_stamp':languages.example_source_stamp(path),'example_normalized_copy':False})
+        languages.update(pid,lambda data:data.setdefault('clones',{}).update({f'elevenlabs-{code}-episode-{path.stat().st_mtime_ns}':clone}))
+
+    def test_language_save_preserves_other_voices_across_old_and_new_projects(self):
+        self.reference(self.pid,'es',b'spanish original','es-original')
+        language_defaults.save(self.pid)
+        second=store.create_project('c'*16,'Second')['id']
+        self.reference(second,'uk',b'ukrainian full reference','uk-full')
+        with patch.object(languages,'request',side_effect=AssertionError('no paid requests')):
+            language_defaults.save(second,'uk')
+            first_status=language_defaults.status(self.pid)['by_language']
+            self.assertTrue(first_status['es'])
+            self.assertFalse(first_status['uk'])
+            self.assertEqual(language_defaults.saved_clone('c'*16,'es'),'es-original')
+            self.assertEqual(language_defaults.reference('c'*16,'es')['path'].read_bytes(),b'spanish original')
+            # Saving Spanish from an older project must not restore its obsolete Ukrainian voice.
+            self.reference(self.pid,'es',b'spanish new reference','es-new')
+            language_defaults.save(self.pid,'es')
+            third=store.create_project('c'*16,'Third')['id']
+            self.assertEqual(languages.own_voice(third,'uk')['path'].read_bytes(),b'ukrainian full reference')
+            self.assertEqual(languages.own_voice(third,'es')['path'].read_bytes(),b'spanish new reference')
+            self.assertEqual(languages.voice_id(third,'elevenlabs','uk')['id'],'uk-full')
+            self.assertEqual(languages.voice_id(third,'elevenlabs','es')['id'],'es-new')
+            self.assertTrue(language_defaults.status(third)['saved'])
+            # Re-saving unchanged Spanish is idempotent despite the old project's other voice.
+            saved=language_defaults.root('c'*16)/'current.json';before=saved.read_bytes()
+            self.assertTrue(language_defaults.save(self.pid,'es')['by_language']['es'])
+            self.assertEqual(saved.read_bytes(),before)
+
+    def test_legacy_save_keeps_languages_missing_from_the_project(self):
+        self.reference(self.pid,'es',b'spanish reference','es-clone')
+        language_defaults.save(self.pid)
+        second=store.create_project('c'*16,'Only Ukrainian')['id']
+        languages.update(second,lambda data:data.update(languages={'uk':{}}))
+        self.reference(second,'uk',b'new ukrainian reference','uk-new')
+        language_defaults.save(second)
+        self.assertTrue(language_defaults.status(self.pid)['by_language']['es'])
+        self.assertEqual(language_defaults.reference('c'*16,'es')['path'].read_bytes(),b'spanish reference')
+        self.assertEqual(language_defaults.saved_clone('c'*16,'es'),'es-clone')
+
+    def test_scoped_save_does_not_publish_other_new_languages_or_invalid_codes(self):
+        language_defaults.save(self.pid,'uk')
+        saved=language_defaults.root('c'*16)/'current.json'
+        self.assertEqual(store.read_json(saved,{})['payload']['languages'],['uk'])
+        before=saved.read_bytes()
+        for code in ('pl','invalid',[]):
+            with self.assertRaises(store.StudioError):language_defaults.save(self.pid,code)
+            self.assertEqual(saved.read_bytes(),before)

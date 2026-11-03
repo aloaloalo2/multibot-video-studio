@@ -71,19 +71,48 @@ def status(pid: str) -> dict:
         return {'saved':False,'exists':False}
 
 
-def save(pid: str) -> dict:
+def save(pid: str, code: str | None = None) -> dict:
+    """Update the requested language, preserving other channel references and their clone IDs."""
     import languages
     with LOCK,languages.LOCK:
         selected,examples=selection(pid)
         previous=store.read_json(root(selected['channel_id'])/'current.json',{}) or {}
-        if previous and signature(previous.get('payload') or {})==selected['signature']:
-            return status(pid)
         if not selected['payload']['languages']:
             raise store.StudioError('Спершу додайте хоча б одну мову.',409)
+        if code is not None:
+            if not isinstance(code,str):raise store.StudioError('Вкажіть мову налаштувань.')
+            languages.check_code(code)
+            if code not in selected['payload']['languages']:
+                raise store.StudioError('Цю мову ще не додано до проєкту.',409)
+        affected=[code] if code is not None else selected['payload']['languages']
+        old=previous.get('payload') or {}
+        payload=copy.deepcopy(old)
+        payload['settings']=selected['payload']['settings']
+        payload['languages']=list(dict.fromkeys([*(old.get('languages') or []),*affected]))
+        voices=payload.setdefault('voices',{})
+        for language in affected:
+            voice=copy.deepcopy(selected['payload']['voices'][language])
+            earlier=voices.get(language) or {}
+            if voice and not voice.get('clone') and voice.get('sha256')==earlier.get('sha256'):
+                voice['clone']=earlier.get('clone')
+            voices[language]=voice
+        selected.update(payload=payload,signature=signature(payload))
+        if previous and signature(old)==selected['signature']:
+            return status(pid)
         base=root(selected['channel_id']);version=uuid.uuid4().hex;folder=base/version
         folder.mkdir(parents=True)
-        for code,example in examples.items():
-            dest=folder/code;dest.mkdir()
+        for language,voice in voices.items():
+            if not voice:continue
+            dest=folder/language;dest.mkdir()
+            if language not in affected:
+                source=base/previous['version']/language
+                for name in ('own-voice.mp3','own-voice.txt','own-voice.json'):
+                    path=source/name
+                    if path.is_file():shutil.copy2(path,dest/name)
+                    elif name!='own-voice.json':
+                        raise store.StudioError('Не знайдено збережений приклад голосу. Налаштування каналу не змінено.',409)
+                continue
+            example=examples[language]
             shutil.copy2(example['path'],dest/'own-voice.mp3')
             (dest/'own-voice.txt').write_text(example['text'],encoding='utf-8')
             # Retain normalization and Fish's existing model metadata, never API keys.

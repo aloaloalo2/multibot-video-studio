@@ -2,6 +2,24 @@ import unittest
 from preview_js import run
 
 class LanguageControlsTest(unittest.TestCase):
+    def test_default_save_is_scoped_to_the_open_language(self):
+        result=run(['langSaveDefaults'], """
+(async()=>{
+await langSaveDefaults('project','es',button);
+console.log(JSON.stringify({sent,defaults:langData.defaults,drawn,busy:button.attrs['aria-busy'],saving:button.dataset.saving}));
+})();
+""", prelude="""
+const state={project:{id:'project'},view:'langs'},langData={},sent=[];let drawn=0;
+const button={dataset:{},attrs:{},setAttribute(k,v){this.attrs[k]=v;},removeAttribute(k){delete this.attrs[k];}};
+async function api(url,method,body){sent.push({url,method,body});return {by_language:{es:true,uk:false}};}
+function drawLangs(){drawn++;}function showLangJob(){}function langNote(){throw Error('unexpected failure');}
+""")
+        self.assertEqual(result['sent'],[{'url':'/api/projects/project/languages/defaults','method':'POST','body':{'code':'es'}}])
+        self.assertEqual(result['defaults']['by_language'],{'es':True,'uk':False})
+        self.assertEqual(result['drawn'],1)
+        self.assertNotIn('busy',result)
+        self.assertNotIn('saving',result)
+
     def test_ready_sample_plays_directly_updates_time_and_pauses_without_generating(self):
         result=run(['langBindSamplePlayback'], """
 (async()=>{

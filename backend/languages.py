@@ -1405,13 +1405,24 @@ def remove_own_voice(pid: str, code: str) -> dict:
 
 def channel_voices(cid: str) -> dict:
     store.get_channel_folder(cid)
+    saved = language_defaults.settings(cid)
+    narration = None
+    if saved:
+        provider = saved.get("provider") if saved.get("provider") in PROVIDERS else "fishaudio"
+        engine = (saved.get("eleven_engine") or ELEVEN_MODEL) if provider == "elevenlabs" else (saved.get("fish_engine") or FISH_ENGINE)
+        models = {item["id"]: item for item in eleven_api.FALLBACK} if provider == "elevenlabs" else FISH_ENGINES
+        style = (saved.get("fish_styles") or {}).get(engine, saved.get("fish_style")) if provider == "fishaudio" else None
+        narration = {"provider": provider, "provider_name": PROVIDERS[provider]["name"],
+                     "engine": engine, "engine_name": models.get(engine, {}).get("name") or engine,
+                     "style": style, "style_name": FISH_STYLES.get(style, {}).get("name")}
     found = []
     for code in LANGUAGES:
         example = channel_voice(cid, code)
         if example:
             found.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "duration": example["duration"],
                           "heard": example["heard"], "stamp": example["stamp"], "filename": example["filename"]})
-    return {"voices": found, "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
+    return {"voices": found, "narration_defaults": narration,
+            "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
             "folder": str(channel_voice_dir(cid))}
 
 
