@@ -123,8 +123,8 @@ def choose(pid: str, name: str) -> dict:
 def defaults(pid: str) -> dict:
     project = store.load_project(pid)
     folder = Path(project.get("episode_path") or "")
-    plan = store.load_project_plan(pid) or {}
-    script = plan.get("spoken_script") or plan.get("script") or ""
+    plan = store.load_project_narration(pid) or {}
+    script = plan.get("spoken_script") or plan.get("script") or (project.get("voice_script") or {}).get("text") or ""
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),

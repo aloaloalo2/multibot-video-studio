@@ -4,6 +4,12 @@
 
 Before planning or editing a video with this Studio, read [docs/AI_VIDEO_WORKFLOW.md](docs/AI_VIDEO_WORKFLOW.md) and the applicable channel instructions. Use the Studio's saved channel settings and verify the plan and project through its local API.
 
+## Optional frame planning (3 November 2026)
+
+Read the current channel's `plan_mode` before starting work. `director` is the default and follows the voice-first planning rules below. `direct` is the author's «Без плану» mode: open the ordinary editable montage immediately, including an empty project. Keep the «Озвучка» tab with source audio, script, transcription and measured phrase timings. Store those in `source-timing.json`, without inventing a frame plan; use `store.load_project_narration` for narration consumers. `GET /api/projects/<id>/plan` returns this source in `source`. Never launch the director or require plan proportions, opening formats, a frame table or plan approval in this mode. Channel proportions and visual preferences remain useful guidance.
+
+For direct montage, agents use the normal asset and timeline action APIs, including scene groups, clip timing, motion, text and transitions. Source audio is optional for editing and export; a valid visible film timeline is required for export. Keep ordinary media validation, export locks and output checks. The numbered-frame `place`, `frames` and legacy Razgon bridge workflows still require a director frame plan; do not fabricate one to use them in direct mode. Existing Razgon projects and prior frame plans stay intact when changing a channel's mode. The mode switch must not erase or rebuild any montage, source, translation or paid media. Returning to `director` restores that workflow's plan as the active source. An explicit episode restart archives both plan and source metadata.
+
 ## Native timeline regression checks
 
 Visual clip times must quantize their absolute start and end with the same deterministic frame-index function. Never independently round duration and start, as that creates one-frame gaps or overlaps at touching boundaries. Keep spoken audio and ASR times unchanged. Check every decoded frame in a fractional-boundary render.

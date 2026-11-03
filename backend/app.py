@@ -792,6 +792,11 @@ def _derived_key(project: dict) -> tuple:
         plan_key = store.plan_file_key(plan) if plan else None
     except (store.StudioError, OSError):
         plan_key = "unreadable"
+    try:
+        source_path = store.project_dir(project["id"]) / "source-timing.json"
+        source_key = store.plan_file_key(source_path) if source_path.is_file() else None
+    except (store.StudioError, OSError, KeyError):
+        source_key = None
     paths = {asset.get("id"): asset.get("path") for asset in project.get("assets", [])}
     audio = []
     for track in project.get("tracks", []):
@@ -805,7 +810,7 @@ def _derived_key(project: dict) -> tuple:
                 stat = None
             audio.append((clip.get("asset_id"), path, stat and (stat.st_size, stat.st_mtime_ns), clip.get("start"), clip.get("duration"),
                           clip.get("trim_start"), clip.get("volume"), bool(track.get("muted"))))
-    return (project.get("revision"), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, tuple(audio))
+    return (project.get("revision"), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, source_key, tuple(audio), store.project_plan_mode(project))
 
 
 def razgon_kit_at_start() -> None:
@@ -869,6 +874,7 @@ class Handler(BaseHTTPRequestHandler):
             project.update(store.history_state(project["id"]))
             # the preview plays the voice at the export's level (audio_gain)
             project["production"], project["audio_gain"] = derived_state(project)
+            project["plan_mode"] = project["production"].get("plan_mode", store.project_plan_mode(project))
             project["video_bitrates"] = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
                                                              int(project.get("fps") or 25))
             value = {**value, "project": project}
@@ -1082,8 +1088,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"project": store.load_project(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan", path)
         if match:
-            plan = store.load_project_plan(match.group(1))
-            return self.json_response({"plan": plan, "settings_match": store.plan_settings_match(match.group(1), plan)})
+            pid = match.group(1)
+            project = store.load_project(pid)
+            if store.project_plan_mode(project) == "direct":
+                return self.json_response({"plan": None, "source": store.load_project_narration(pid), "settings_match": None})
+            plan = store.load_project_plan(pid)
+            return self.json_response({"plan": plan, "source": None, "settings_match": store.plan_settings_match(pid, plan)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets", path)
         if match:
             project = store.load_project(match.group(1))

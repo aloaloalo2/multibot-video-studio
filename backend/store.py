@@ -106,7 +106,7 @@ def razgon_voice(project: dict, aid: str) -> Path | None:
     if isinstance(frames, dict) and frames.get("voice_asset_id") == aid:
         return voice
     try:
-        plan_voice = (((load_project_plan(project["id"]) or {}).get("timing") or {}).get("audio") or {}).get("asset_id")
+        plan_voice = (((load_project_narration(project["id"]) or {}).get("timing") or {}).get("audio") or {}).get("asset_id")
     except (StudioError, OSError, ValueError, KeyError):
         plan_voice = None
     if plan_voice == aid:
@@ -303,6 +303,8 @@ def validate_settings(value: dict) -> dict:
     name = value.get("display_name")
     if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 80):
         raise StudioError("Назва каналу має містити від 1 до 80 символів")
+    if value.get("plan_mode", "director") not in {"director", "direct"}:
+        raise StudioError("Невідомий режим створення ролика")
     if value.get("motion_easing", "ease_in_out") not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
         raise StudioError("Невідомий тип руху")
     if 'typography' in value:
@@ -597,6 +599,15 @@ def channel_animated(channel: Path) -> bool:
     return (read_json(channel / PLAN_CONFIG, {}) or {}).get("channel_kind") == "animated"
 
 
+def project_plan_mode(project: dict) -> str:
+    """The current channel setting governs every project, including ones opened before it changed."""
+    try:
+        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {}) or {}
+    except (StudioError, KeyError):
+        settings = project.get("settings") or {}
+    return "direct" if settings.get("plan_mode") == "direct" else "director"
+
+
 def project_animated(project: dict) -> bool:
     try:
         return channel_animated(get_channel_folder(project["channel_id"], include_disabled=True))
@@ -721,12 +732,14 @@ def list_projects(cid: str | None = None) -> list[dict]:
             if not item.get("deleted_at") and (cid is None or item.get("channel_id") == cid):
                 cover_asset_id = project_cover_asset(item)
                 result.append({"id": item["id"], "name": item["name"], "channel_id": item["channel_id"], "duration": item.get("duration", 0), "revision": item.get("revision", 0), "episode_path": item.get("episode_path"), "status": "draft", "has_plan": bool(item.get("plan_source")), "plan_stage": plan_readiness(item, stage_only=True)["stage"] if item.get("plan_source") else None, "scene_count": sum(len(track.get("clips", [])) for track in item.get("tracks", [])), "pictures": picture_count(item), "created_at": project_created_at(item, folder), "updated_at": round(path.stat().st_mtime * 1000)})
+                result[-1]["plan_mode"] = project_plan_mode(item)
                 result[-1]["cover_asset_id"] = cover_asset_id
                 # the film's length is its voice's, not how far the timeline is filled (a 30-minute film with four frames
                 # placed read «00:04» on its card)
-                if item.get("plan_source"):
+                if item.get("plan_source") or result[-1]["plan_mode"] == "direct":
                     try:
-                        audio = ((listed_plan(item) or {}).get("timing") or {}).get("audio") or {}
+                        source = load_project_narration(item["id"]) if result[-1]["plan_mode"] == "direct" else listed_plan(item)
+                        audio = ((source or {}).get("timing") or {}).get("audio") or {}
                         if audio.get("duration"):
                             result[-1]["voice_duration"] = float(audio["duration"])
                     except (StudioError, OSError, ValueError, TypeError):
@@ -906,6 +919,85 @@ def load_project_plan(pid: str) -> dict | None:
     return cached_plan(path)[0] if path else None
 
 
+def load_project_source(pid: str) -> dict | None:
+    """Real narration/transcription metadata, separate from any director's frame plan."""
+    project = load_project(pid)
+    source = read_json(project_dir(pid) / "source-timing.json")
+    return source if isinstance(source, dict) else None
+
+
+def load_project_narration(pid: str) -> dict | None:
+    """The active workflow's narration; a preserved source cannot override a director-mode plan."""
+    project = load_project(pid)
+    if project_plan_mode(project) == "direct":
+        source = load_project_source(pid)
+        if source is not None:
+            return source
+        try:
+            return load_project_plan(pid)
+        except (StudioError, OSError, ValueError, TypeError, KeyError):
+            # A legacy frame plan is optional in direct montage. A broken old attachment cannot hide source controls.
+            return None
+    return load_project_plan(pid)
+
+
+def save_project_source(project: dict, script: str, *, narration=None, timings=None) -> dict:
+    """Keep narration and measured phrases without inventing frames or changing the editable montage."""
+    if not isinstance(script, str) or not script.strip():
+        raise StudioError("Додайте сценарій випуску")
+    if narration is not None and timings is not None:
+        raise StudioError("Передайте один файл таймінгів")
+    script = script.strip()
+    source = {"schema_version": 1, "script": script,
+              "script_sha256": hashlib.sha256(script.encode()).hexdigest(),
+              "timing": {"status": "awaiting_voice"}, "updated_at": time.time()}
+    audio = None
+    if narration is not None:
+        audio = narration_data(Path(project["episode_path"]), narration, project["id"])
+        sentences = narration.get("sentences")
+    elif timings is not None:
+        if not isinstance(timings, dict):
+            raise StudioError("Додайте таймінги фраз")
+        audio = {"duration": timings.get("duration")}
+        if timings.get("audio_sha256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", str(timings["audio_sha256"])):
+                raise StudioError("Некоректний відбиток аудіо у файлі таймінгів")
+            audio["sha256"] = timings["audio_sha256"]
+        if timings.get("asset_id"):
+            asset = resolve_asset(project, timings["asset_id"])
+            if asset.get("kind") != "audio":
+                raise StudioError("Виберіть аудіофайл озвучки")
+            path = Path(asset["path"])
+            measured = media_duration(path)
+            if not measured or abs(measured - float(audio.get("duration") or 0)) > .002:
+                raise StudioError("Тривалість озвучки не відповідає таймінгам")
+            digest = audio_fingerprint(path)
+            if audio.get("sha256") and audio["sha256"] != digest:
+                raise StudioError("Файл озвучки змінився. Додайте нові таймінги фраз")
+            audio.update(asset_id=asset["id"], name=asset["name"], sha256=digest)
+        sentences = timings.get("sentences")
+    if audio is not None:
+        try:
+            sentences = planner.validate_sentence_timings(script, sentences, audio.get("duration"))
+        except (ValueError, TypeError) as error:
+            raise StudioError(str(error)) from None
+        source["timing"] = {"status": "audio_synced", "audio": audio, "sentences": sentences}
+        source["spoken_script"] = script
+        source["spoken_script_sha256"] = source["script_sha256"]
+    with LOCK:
+        current = load_project(project["id"])
+        old = load_project_source(project["id"])
+        if audio is None and old and old.get("script_sha256") == source["script_sha256"]:
+            source = old
+        atomic_json(project_dir(project["id"]) / "source-timing.json", source)
+        current["voice_script"] = {"text": script, "sha256": source["script_sha256"], "saved_at": time.time()}
+        current["revision"] = current.get("revision", 0) + 1
+        save_project(current)
+    return {"project": current, "plan": None, "source": source,
+            "plan_url": f"/channels/{current['channel_id']}/projects/{current['id']}/plan",
+            "awaiting_voice": source["timing"]["status"] != "audio_synced", "settings_match": None}
+
+
 def project_from_plan(cid: str, name: str, episode_path: str, plan: dict) -> dict:
     plan = validate_plan(plan)
     channel = get_channel_folder(cid)
@@ -965,8 +1057,19 @@ def narration_data(episode, narration, project_id=None):
 
 def plan_readiness(project, plan=None, stage_only=False):
     """Derive readiness from the audio bytes and complete phrase timings, never a label."""
-    result = {"stage": "draft", "plan_ready": False, "export_ready": False,
+    mode = project_plan_mode(project)
+    result = {"plan_mode": mode, "editor_ready": mode == "direct",
+              "stage": "draft", "plan_ready": False, "export_ready": False,
               "reason": "Це чернетка. Додайте таймінги фраз із готової озвучки"}
+    if mode == "direct":
+        film_ids = {clip.get("id") for clip in film_clips(project)}
+        visible = [clip for track in project.get("tracks", []) if not track.get("hidden")
+                   for clip in track.get("clips", []) if clip.get("id") in film_ids
+                   and float(clip.get("opacity", 1)) > 0 and float(clip.get("duration", 0)) > 0]
+        ready = bool(visible) and float(project.get("duration") or 0) > 0
+        result.update(stage="direct", export_ready=ready,
+                      reason="" if ready else "Додайте кадри на таймлайн у вкладці «Монтаж»")
+        return result
     try:
         key = None
         if plan is None:
@@ -994,7 +1097,7 @@ def plan_readiness(project, plan=None, stage_only=False):
                 _SYNCED_PLAN_CACHE[(key, duration)] = verdict
             if verdict is not None:
                 raise ValueError(verdict)
-        result.update(stage="audio_synced", plan_ready=True, reason="Додайте повну озвучку на таймлайн для експорту")
+        result.update(stage="audio_synced", plan_ready=True, editor_ready=bool(film_clips(project)), reason="Додайте повну озвучку на таймлайн для експорту")
         if stage_only:
             return result
         # a muted layer plays nothing in the export (app.normalize_for_engine): its voice does not count
@@ -1087,6 +1190,13 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if not path.is_file() or path.suffix.lower() != ".txt" or not under(path, episode):
             raise StudioError("Сценарій має бути TXT-файлом у папці випуску")
         script = path.read_text(encoding="utf-8-sig")
+    if (read_json(channel / PLAN_CONFIG, {}) or {}).get("plan_mode") == "direct":
+        with LOCK:
+            existing = load_project(project_id) if project_id else project_for_episode(cid, episode)
+            if existing and (existing["channel_id"] != cid or Path(existing["episode_path"]).resolve() != episode):
+                raise StudioError("Проєкт належить іншому випуску")
+            project = existing or create_project(cid, name, str(episode))
+            return save_project_source(project, script, narration=narration, timings=timings)
     # No channel gets a plan split from the script alone: it waits for the voice, and the director makes the frames
     # (user, 31 October 2026: «без озвучки план не може бути згенерований. І план завжди робить клод-код»).
     if narration is None and timings is None:
@@ -1963,7 +2073,7 @@ def apply_text_binding(project,clip,source):
     if clip.get('text_role') not in (None,'full_frame','caption','label'):raise StudioError('Invalid text role')
     if clip.get('text_role')!='full_frame':return
     expected=clip.get('source_text')
-    if project.get('plan_source'):
+    if project.get('plan_source') and project_plan_mode(project) != 'direct':
         plan=load_project_plan(project['id'])
         frame=next((f for f in (plan or {}).get('frames',[]) if f['number']==clip.get('source_frame')),None)
         if not frame or frame['format']!='text':raise StudioError('Text frame is missing from the approved plan')
@@ -2304,6 +2414,8 @@ def request_production(pid: str, frames) -> dict:
     """
     with LOCK:
         project = load_project(pid)
+        if project_plan_mode(project) == "direct":
+            raise StudioError("Режим «Без плану»: створюйте ролик у вкладці «Монтаж» або через API", 409)
         plan = load_project_plan(pid)
         if not plan or plan.get("timing", {}).get("status") != "audio_synced":
             raise StudioError("Спершу додайте озвучку, щоб план став «За озвучкою»")

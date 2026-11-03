@@ -86,6 +86,28 @@ class LanguagesTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail("the job did not finish")
 
+    def test_direct_montage_language_source_uses_transcript_without_a_frame_plan(self):
+        document = {"script": "First sentence. Second sentence.", "timing": {
+            "status": "audio_synced", "audio": {"asset_id": "a" * 20, "duration": 6},
+            "sentences": [{"start": 0, "end": 1, "text": "First sentence."},
+                          {"start": 4, "end": 6, "text": "Second sentence."}]}}
+        translated = ["Primera frase.", "Segunda frase."]
+        with patch.object(store, "project_plan_mode", return_value="direct"), \
+             patch.object(store, "load_project_source", return_value=document), \
+             patch.object(store, "load_project_plan", side_effect=AssertionError("No frame plan required")), \
+             patch.object(languages, "progress"), \
+             patch.object(languages, "translate_lines", return_value=(translated, .01)) as initial, \
+             patch.object(languages, "before_translate", return_value=(translated, 0)), \
+             patch.object(languages, "save_translation") as publish, \
+             patch.object(languages, "speak", side_effect=AssertionError("No paid speech")):
+            source = languages.source(self.project)
+            self.assertEqual(source["script"], document["script"])
+            self.assertEqual(source["voice"], self.voice)
+            languages._translate(self.pid, "es", {"translation_model": languages.DEFAULT_TRANSLATION_MODEL})
+        self.assertEqual([x["source"] for x in initial.call_args.args[1]],
+                         ["First sentence.", "Second sentence."])
+        self.assertEqual(publish.call_args.args[4], "\n".join(translated))
+
     def test_thumbnail_gallery_only_lists_existing_translated_images_without_voicing(self):
         languages.update(self.pid,lambda d:d.update(languages={"uk":{},"es":{},"invalid":{}},original_language="en"))
         work=languages.work_dir(self.pid,"uk");work.mkdir(parents=True);(work/"thumbnail.png").write_bytes(b"png")

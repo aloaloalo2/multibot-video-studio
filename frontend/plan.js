@@ -4,8 +4,15 @@ function filmClips(project=state.project){
   const overlay=new Set((project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
   return (project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>clip.kind!=='audio'&&!overlay.has(clip.id)&&!/Логотип|Плашка/.test(clip.title || ''));
 }
-// «Монтаж» opens with the first frame of the film on the timeline; until then the plan is the episode's page.
-function editorUnlocked(project=state.project){return !!project && filmClips(project).length>0;}
+function projectPlanMode(project=state.project){
+  const channel=state.channels?.find(item=>item.id===project?.channel_id) || (state.channel?.id===project?.channel_id?state.channel:null);
+  const mode=project?.plan_mode || project?.production?.plan_mode || channel?.settings?.plan_mode;
+  return mode==='direct'?'direct':'director';
+}
+function directMontage(project=state.project){return projectPlanMode(project)==='direct';}
+function sourceForProject(result,project=state.project){return directMontage(project)?result.source || result.plan:result.plan;}
+// Direct montage starts on an empty timeline; planned episodes keep their existing frame gate.
+function editorUnlocked(project=state.project){return !!project && (directMontage(project) || filmClips(project).length>0);}
 const editorLockedHint='Монтаж відкриється з першими кадрами ролика';
 
 async function setProjectView(view){
@@ -17,7 +24,7 @@ async function setProjectView(view){
     try{
       const [result,analysis]=await Promise.all([api(`/api/projects/${encodeURIComponent(id)}/plan`),api(`/api/projects/${encodeURIComponent(id)}/analysis`)]);
       if(state.project?.id!==id)return;
-      state.plan=result.plan;state.planSettingsMatch=result.settings_match ?? null;state.analysis=analysis;
+      state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;state.analysis=analysis;
     }catch(error){status(error.message,true);return;}
   }
   stopPlayback();state.view=view;syncRoute();renderProject();
@@ -57,20 +64,20 @@ function planFrameWord(count){
 
 const voiceScriptDraft={};
 function renderVoiceStart(panel){
-  const project=state.project;
+  const project=state.project,direct=directMontage();
   const section=document.createElement('section');section.className='voice-start';
-  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.</p></div>
+  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>${direct?'Студія розпізнає озвучку й збереже текст із таймінгами. Монтаж уже доступний.':'Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.'}</p></div>
     <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
       <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
     <label class="voice-script"><span>Текст озвучки <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
-      <small>Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.</small></label>
+      <small>${direct?'Сценарій допоможе точніше розпізнати озвучку й звірити текст.':'Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.'}</small></label>
     <div class="voice-start-actions"><div class="voice-progress" aria-live="polite"></div><button type="button" class="primary" disabled>Розпізнати озвучку</button></div>`;
   panel.append(section);
   const drop=section.querySelector('.voice-drop'),input=drop.querySelector('input'),fileLabel=drop.querySelector('.voice-drop-file');
   const text=section.querySelector('textarea'),start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
   let file=null,busy=false;
-  text.value=voiceScriptDraft[project.id] || project.voice_script?.text || '';
+  text.value=voiceScriptDraft[project.id] || project.voice_script?.text || (direct?state.plan?.script:'') || '';
   text.addEventListener('input',()=>{voiceScriptDraft[project.id]=text.value;});
   function choose(next){
     if(busy || !next)return;
@@ -102,7 +109,7 @@ function renderVoiceStart(panel){
     const job=result.job;if(!job || !section.isConnected)return;
     if(job.status==='failed'){lock(false);show(job.error || 'Обробку зупинено');return;}
     if(job.status==='complete'){
-      if(result.report?.applied){delete voiceScriptDraft[project.id];status('Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
+      if(result.report?.applied){delete voiceScriptDraft[project.id];status(direct?'Озвучку й розпізнаний текст збережено.':'Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
       lock(false);show('Озвучку розпізнано, але текст не збігся з озвученим. Перевірте звіт нижче.');if(result.report)appendSpeechReport(section,result.report);return;
     }
     lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
@@ -115,6 +122,9 @@ function renderVoiceStart(panel){
 }
 
 function renderPlan(){
+  const direct=directMontage();
+  $('view-plan-label').textContent=direct?'Озвучка':'План ролика';
+  $('project-plan').setAttribute('aria-label',direct?'Озвучка, сценарій і розпізнаний текст':'Карта ролика');
   $('view-plan').classList.toggle('active',state.view==='plan');
   $('view-editor').classList.toggle('active',state.view==='editor');
   $('view-agent').classList.toggle('active',state.view==='agent');
@@ -123,6 +133,11 @@ function renderPlan(){
   $('view-agent').setAttribute('aria-pressed',String(state.view==='agent'));
   const panel=$('project-plan');panel.replaceChildren();
   if(!state.project || state.view!=='plan')return;
+  if(direct){
+    if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced')renderEpisode(panel);
+    else renderVoiceStart(panel);
+    return;
+  }
   if(!state.plan?.frames?.length){renderVoiceStart(panel);return;}
   // one page for photo and animated channels (director.js)
   renderEpisode(panel);

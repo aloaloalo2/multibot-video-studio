@@ -196,7 +196,7 @@ def episode_dir(project: dict, code: str) -> Path | None:
 
 def source(project: dict) -> dict:
     """The episode's script, title, voice and its length."""
-    plan = store.load_project_plan(project["id"]) or {}
+    plan = store.load_project_narration(project["id"]) or {}
     script = (plan.get("script") or plan.get("spoken_script") or "").strip()
     folder = Path(project.get("episode_path") or "")
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
@@ -381,7 +381,7 @@ def overview(pid: str) -> dict:
     resume_segments = None
     if any((work_dir(pid, code)/'translation-draft.json').is_file()
            for code in (data.get('languages') or {}) if code in LANGUAGES):
-        resume_segments = segments_of(store.load_project_plan(pid) or {})
+        resume_segments = segments_of(store.load_project_narration(pid) or {})
     for code, item in (data.get("languages") or {}).items():
         if code not in LANGUAGES:
             continue
@@ -889,7 +889,7 @@ def seed_translation_draft(pid, code, texts, model, *, source_script=None, sourc
         raise ValueError('Invalid recovered translation cost.')
     project = store.load_project(pid)
     src = source(project)
-    segments = segments_of(store.load_project_plan(pid) or {})
+    segments = segments_of(store.load_project_narration(pid) or {})
     units = [x['source'] for x in segments] if segments else chunks(src['script'], TRANSLATE_CHUNK)
     if source_script is not None and source_script != src['script']:
         raise ValueError('Source script changed since the recovery artifact.')
@@ -1072,7 +1072,7 @@ def _translate(pid: str, code: str, job: dict) -> None:
     src = source(project)
     if not src["script"]:
         raise RuntimeError("У випуску ще немає тексту озвучки")
-    lines = segments_of(store.load_project_plan(pid) or {})
+    lines = segments_of(store.load_project_narration(pid) or {})
     if lines:
         units = [line['source'] for line in lines]
         draft = translation_draft(pid, code, src, units, job, lines)
@@ -1147,7 +1147,7 @@ def save_translation(pid: str, code: str, project: dict, src: dict, text: str, c
     progress(pid, job, 99, "Зберігаємо")
     if draft:
         latest_src = source(store.load_project(pid))
-        latest_segments = segments_of(store.load_project_plan(pid) or {})
+        latest_segments = segments_of(store.load_project_narration(pid) or {})
         latest_units = [line['source'] for line in latest_segments] if latest_segments else chunks(latest_src['script'], TRANSLATE_CHUNK)
         latest = translation_draft(pid, code, latest_src, latest_units, job, latest_segments)
         if latest.identity != draft.identity:

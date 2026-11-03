@@ -54,11 +54,12 @@ def start(project, asset_id, save_job, load_job, script=None):
     if project["id"] in director.ACTIVE or project["id"] in production.ACTIVE:
         # a new voice rebuilds the plan: not under the director or the frame agent at work
         raise store.StudioError("Над випуском зараз працює режисер або агент кадрів. Дочекайтеся, поки він закінчить", 409)
-    plan = store.load_project_plan(project["id"])
+    source_data = store.load_project_source(project["id"]) if store.project_plan_mode(project) == "direct" else None
+    plan = store.load_project_narration(project["id"])
     if isinstance(script, str) and script.strip():
         script, script_from = script.strip(), "request"
     elif plan and isinstance(plan.get("script"), str) and plan["script"].strip():
-        script, script_from = plan["script"], "plan"
+        script, script_from = plan["script"], "source" if source_data else "plan"
     elif isinstance(project.get("voice_script"), dict) and str(project["voice_script"].get("text") or "").strip():
         # An episode waits for its voice with the author's script saved on the project.
         script, script_from = project["voice_script"]["text"], "project"
@@ -147,16 +148,21 @@ def worker(job, script, save_job):
             if store.audio_fingerprint(original) != original_hash or store.audio_fingerprint(path) != audio_hash:
                 report["status"] = "source_changed"
             with store.LOCK:
-                current = store.load_project_plan(project["id"])
-                if job.get("script_from", "plan") == "plan" and (not current or current.get("script") != script):
+                current = store.load_project_narration(project["id"])
+                snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current
+                if job.get("script_from", "plan") in {"plan", "source"} and (not snapshot or snapshot.get("script") != script):
                     report["status"] = "script_changed"
+                if job.get("script_from") == "project":
+                    current_script = (store.load_project(project["id"]).get("voice_script") or {}).get("text")
+                    if current_script != script:
+                        report["status"] = "script_changed"
                 if report["status"] == "matched":
-                    timings = {**report["timings"], "audio_sha256": audio_hash}
+                    timings = {**report["timings"], "audio_sha256": audio_hash, "asset_id": audio["id"]}
                     project = store.load_project(project["id"])
                     generated = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],
                         script=script, hints=(current or {}).get("hints") if job.get("script_from", "plan") == "plan" else None,
                         project_id=project["id"], timings=timings)
-                    report["studio_script_sha256"] = generated["plan"]["script_sha256"]
+                    report["studio_script_sha256"] = (generated.get("source") or generated["plan"])["script_sha256"]
                     report["applied"] = True
             store.atomic_json(work / "result.json", report)
             job.update(status="complete", progress=100, stage="complete", analysis_status=report["status"], applied=report["applied"])

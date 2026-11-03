@@ -79,6 +79,8 @@ one project (`"Горбунов 23"`).
 
 Prefer the API and scripts to clicking. The main calls:
 
+First read the current project's `plan_mode`. With `direct` («Без плану»), assemble the film through ordinary asset imports and timeline actions. `GET /api/projects/<id>/plan` provides `source` with the narration, script and measured phrase timings, when present. The source tab remains available; an empty montage opens immediately. Group each scene's elements and check timing and media as usual. Frame-plan proportions and opening rules are guidance here. Do not request a director or create a dummy plan. Frame-number commands such as `place`, `frames`, and the legacy Razgon bridge require a frame plan and belong to the `director` workflow. Keep existing code animations and plans when switching modes.
+
 - `GET /api/channels`, `GET /api/projects/<id>` (the project with `tracks`, `scene_groups`, `join_transitions`,
   `production`, `audio_gain`), `GET /api/projects/<id>/plan`, `GET /api/projects/<id>/analysis` (`aligned_words`).
 - `POST /api/projects/<id>/actions` with `{"type", "payload", "expected_revision"}`; `"type": "batch"` takes up to 1800

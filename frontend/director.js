@@ -13,7 +13,7 @@ function directorAnimated(){return state.channel?.settings?.channel_kind==='anim
 // An episode has no frames until the director writes them: the Studio's own split by sentences is only the timing
 // behind them. Every channel goes this way (user, 31 October 2026: «план завжди робить клод-код, тобто режисер»); a
 // photo episode already cut on an older plan keeps that plan.
-function directorAwaited(){return state.plan?.frame_source!=='razgon-direction' && (directorAnimated() || !montageStarted());}
+function directorAwaited(){return !directMontage() && state.plan?.frame_source!=='razgon-direction' && (directorAnimated() || !montageStarted());}
 // a picture, video or text of the film is on the timeline (the channel's plate and logo do not count): director.montage_started
 function montageStarted(){
   const overlay=new Set((state.project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
@@ -45,13 +45,13 @@ const makeCount={},stripZoom={};
 function renderEpisode(panel){
   if(!state.project)return;
   const id=state.project.id;
-  const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML='<div class="plan-heading-label"><h1>План ролика</h1></div>';
+  const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML=`<div class="plan-heading-label"><h1>${directMontage()?'Озвучка':'План ролика'}</h1></div>`;
   // the director makes every plan from the voice (user, 31 October 2026), so there is no plan to rebuild by hand here
   panel.append(heading);
   const episode=document.createElement('div');episode.className='episode';episode.dataset.project=id;
   panel.append(episode);
   arrangeEpisode(episode);
-  if(!directorRuns[id])loadDirector(id).then(()=>{if(state.project?.id===id)refreshEpisode(episode);});   // the director works on every channel
+  if(!directMontage()&&!directorRuns[id])loadDirector(id).then(()=>{if(state.project?.id===id)refreshEpisode(episode);});   // the director works on every channel
   refreshEpisode(episode);
 }
 
@@ -61,19 +61,23 @@ function renderEpisode(panel){
 // stands open under it.
 const voiceOpen={};
 function arrangeEpisode(episode){
-  const id=state.project.id;
+  const id=state.project.id,direct=directMontage();
+  if(direct && !(id in voiceOpen))voiceOpen[id]=true;
   const stage=document.createElement('section');stage.className='episode-voice-block';stage.classList.toggle('open',!!voiceOpen[id]);
   const voice=document.createElement('div');voice.className='episode-voice';voice.setAttribute('aria-live','polite');
   const body=document.createElement('div');body.className='episode-voice-body';body.id=`episode-voice-body-${id}`;body.hidden=!voiceOpen[id];
   const player=voicePlayer(id);
   stage.append(voice,...(player?[player]:[]),body);
-  const director=document.createElement('section');director.className='episode-director';director.hidden=true;
-  const make=document.createElement('section');make.className='episode-make';buildMake(make);
-  episode.append(stage,director,make);
+  episode.append(stage);
+  if(!direct){
+    const director=document.createElement('section');director.className='episode-director';director.hidden=true;
+    const make=document.createElement('section');make.className='episode-make';buildMake(make);
+    episode.append(director,make);
+  }
   // The author's script, then what the recognition heard in the voice with its report (user, 31 October 2026).
   const frames=state.plan?.frames || [];
   const scriptFold=episodeFold('Ваш сценарій');
-  const script=typeof state.plan?.script==='string'?state.plan.script:frames.map(frame=>(frame.sentences || []).join(' ')).join('\n\n');
+  const script=typeof state.plan?.script==='string'?state.plan.script:state.project.voice_script?.text || frames.map(frame=>(frame.sentences || []).join(' ')).join('\n\n');
   if(script.trim()){const text=document.createElement('div');text.className='plan-script-text';text.textContent=script;scriptFold.append(text);}
   const heard=episodeFold('Розпізнаний текст');
   const heardText=document.createElement('div');heardText.className='plan-script-text episode-heard';
@@ -93,6 +97,7 @@ function arrangeEpisode(episode){
       refreshEpisode(episode);
     }).catch(error=>{if(reportSlot.isConnected)heardText.textContent=`Не вдалося завантажити розпізнаний текст: ${error.message}`;});
   }
+  if(direct){body.append(scriptFold,heard);return;}
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready,madeSet(frames)));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';
   body.append(scriptFold,heard,table,directorReport);
@@ -156,7 +161,7 @@ function voiceToggle(stage,id){
   const button=document.createElement('button');button.type='button';button.className='episode-voice-toggle';
   const body=stage.querySelector('.episode-voice-body'),open=!body.hidden;
   button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-controls',body.id);
-  button.innerHTML=`<span>${open?'Згорнути':'Сценарій, розпізнаний текст і кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  button.innerHTML=`<span>${open?'Згорнути':directMontage()?'Сценарій і розпізнаний текст':'Сценарій, розпізнаний текст і кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
   button.addEventListener('click',event=>{event.stopPropagation();setVoiceOpen(stage,id,body.hidden);});
   return button;
 }
@@ -170,6 +175,7 @@ function episodeAnalysis(){return state.analysis?.job?.project_id===state.projec
 function refreshEpisode(episode=document.querySelector('.episode')){
   if(!episode?.isConnected||episode.dataset.project!==state.project?.id)return;
   fillVoiceLine(episode.querySelector('.episode-voice'));
+  if(directMontage())return;
   fillDirectorLine(episode.querySelector('.episode-director'));
   fillMake(episode.querySelector('.episode-make'));
   fillReports(episode);
@@ -178,7 +184,7 @@ function refreshEpisode(episode=document.querySelector('.episode')){
 const voiceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>';
 // One line: the voice file, its length, how it was recognised, and the bin that starts the episode over.
 function fillVoiceLine(box){
-  const id=state.project.id,analysis=episodeAnalysis(),report=analysis?.report,job=analysis?.job,synced=!!state.project.production?.plan_ready;
+  const id=state.project.id,analysis=episodeAnalysis(),report=analysis?.report,job=analysis?.job,synced=!!state.project.production?.plan_ready || (directMontage() && state.plan?.timing?.status==='audio_synced');
   const audio=state.plan?.timing?.audio || {},frames=state.plan?.frames || [];
   const name=report?.source?.name || audio.name || (audio.path?String(audio.path).split('/').pop():'') || 'Озвучка';
   const length=Number(audio.duration) || Number(frames[frames.length-1]?.end) || 0;
@@ -214,7 +220,8 @@ function restartButton(id){
 }
 
 function confirmRestart(id){
-  modal('Почати випуск заново?','<p>Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну. Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії випуску, а створені файли лишаться в папці випуску.</p>',
+  const action=directMontage()?'Студія прибере озвучку, розпізнаний текст і монтаж.':'Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну.';
+  modal('Почати випуск заново?',`<p>${action} Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії випуску, а створені файли лишаться в папці випуску.</p>`,
     [{label:'Скасувати',run:closeModal},{label:'Почати заново',icon:'trash',danger:true,run:async()=>{
       const button=$('modal-actions').querySelector('.danger');button.disabled=true;
       try{

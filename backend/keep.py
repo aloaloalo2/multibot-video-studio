@@ -31,7 +31,7 @@ def keep_project(pid: str) -> int:
         return 0
     used = {clip.get("asset_id") for track in project.get("tracks", []) for clip in track.get("clips", []) if clip.get("kind") == "audio"}
     try:   # the voice of the plan too: the plan page plays it before any frame is on the timeline
-        used.add((((store.load_project_plan(pid) or {}).get("timing") or {}).get("audio") or {}).get("asset_id"))
+        used.add((((store.load_project_narration(pid) or {}).get("timing") or {}).get("audio") or {}).get("asset_id"))
     except (store.StudioError, OSError, ValueError):
         pass
     made = 0

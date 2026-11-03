@@ -24,6 +24,7 @@ def tool(name, description, properties, required=()):
 
 TOOLS = [
     tool("get_project", "Get the project revision, layers, frame groups and available media.", {}),
+    tool("get_source", "Read a page of actual narration phrase timings. Direct montage does not require a frame plan.", {"offset": {"type": "integer"}}, ("offset",)),
     tool("get_plan", "Read a page of the saved video plan.", {"offset": {"type": "integer"}}, ("offset",)),
     tool("search_stock", "Search Pixabay for stock images or video.", {"query": {"type": "string"}, "kind": {"type": "string", "enum": ["image", "video"]}}, ("query", "kind")),
     tool("import_stock", "Import a chosen Pixabay result into this project's library.", {"pixabay_id": {"type": "integer"}, "kind": {"type": "string", "enum": ["image", "video"]}}, ("pixabay_id", "kind")),
@@ -98,8 +99,16 @@ def execute(project_id, name, args, callbacks, allow_images):
     if name == "get_project":
         assets = store.discover_assets(project)
         settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {})
-        setting_keys = ("weights", "first_clip_format", "first_clip_count", "first_clip_seconds", "motion_easing", "typography")
-        return {"revision": project.get("revision", 0), "production": store.plan_readiness(project), "channel_settings": {key: settings[key] for key in setting_keys if key in settings}, "layers": [{"id": layer["id"], "name": layer.get("name"), "clips": [{"id": c["id"], "kind": c.get("kind"), "start": c.get("start"), "duration": c.get("duration")} for c in layer.get("clips", [])]} for layer in project.get("tracks", [])][:500], "groups": [{key: group.get(key) for key in ("id", "title", "role", "clip_ids")} for group in project.get("scene_groups", [])], "assets": [{key: a.get(key) for key in ("id", "name", "kind", "duration", "source")} for a in assets[:500]]}
+        setting_keys = ("plan_mode", "weights", "first_clip_format", "first_clip_count", "first_clip_seconds", "motion_easing", "typography")
+        return {"plan_mode": store.project_plan_mode(project), "revision": project.get("revision", 0), "production": store.plan_readiness(project), "channel_settings": {key: settings[key] for key in setting_keys if key in settings}, "layers": [{"id": layer["id"], "name": layer.get("name"), "clips": [{"id": c["id"], "kind": c.get("kind"), "start": c.get("start"), "duration": c.get("duration")} for c in layer.get("clips", [])]} for layer in project.get("tracks", [])][:500], "groups": [{key: group.get(key) for key in ("id", "title", "role", "clip_ids")} for group in project.get("scene_groups", [])], "assets": [{key: a.get(key) for key in ("id", "name", "kind", "duration", "source")} for a in assets[:500]]}
+    if name == "get_source":
+        source = store.load_project_narration(project_id) or {}
+        sentences = source.get("timing", {}).get("sentences") or []
+        offset = args.get("offset", 0)
+        if type(offset) is not int or not 0 <= offset <= len(sentences):
+            raise store.StudioError("Невірна позиція в розшифровці")
+        return {"offset": offset, "total": len(sentences), "sentences": sentences[offset:offset + 30],
+                "audio": source.get("timing", {}).get("audio"), "script_sha256": source.get("script_sha256")}
     if name == "get_plan":
         plan = store.load_project_plan(project_id) or {}
         frames = plan.get("frames") or []
@@ -148,7 +157,8 @@ def execute(project_id, name, args, callbacks, allow_images):
         asset = (agent_image.generate_transparent_asset(project_id, args.get("prompt", "")) if name == "generate_transparent_png" else agent_image.generate_image_asset(project_id, args.get("prompt", ""), aspect_ratio=args.get("aspect_ratio", "3:2")))
         return {"asset": {key: asset.get(key) for key in ("id", "name", "kind")}, "revision": store.load_project(project_id)["revision"]}
     if name in EDIT_ACTIONS:
-        if not store.plan_readiness(project)["plan_ready"]:
+        readiness = store.plan_readiness(project)
+        if not (readiness.get("editor_ready") if readiness.get("plan_mode") == "direct" else readiness.get("plan_ready")):
             raise store.StudioError("Для монтажу потрібні перевірені таймінги озвучки", 409)
         expected = args.get("expected_revision")
         if type(expected) is not int:
@@ -176,10 +186,15 @@ def worker(project_id, text, callbacks, allow_images, guard, reasoning_effort):
         conversation = agent_storage.get_conversation(project_id)
         project = store.load_project(project_id)
         memory = agent_storage.get_memory(project["channel_id"])
-        system = ("Ти монтажер Video Studio. Працюй лише в поточному проєкті. Читай карту по частинах, перевіряй зміст і таймінги кадрів. "
-                  "Використовуй збережений план і актуальні налаштування каналу. Підбирай матеріал за змістом відповідної фрази та часовими межами кадру. "
-                  "Один кадр плану - одна група сцени: об'єднуй у ній усі елементи, які стосуються цього кадру. "
-                  "Розташовуй групи кадрів послідовно на спільній лінії кадрів за таймінгами плану; перевіряй стики. "
+        workflow = ("Режим каналу «Без плану». Самостійно організовуй сцени без створення кадрового плану. "
+                    "Через get_source прочитай наявну озвучку й розшифровку, через get_project наявні матеріали. "
+                    "Частки форматів є орієнтиром; обирай доречні фото, відео, текст чи анімацію за змістом. "
+                    "Зберігай звичайний редагований монтаж. Кожну сцену об'єднуй у групу, групи став послідовно, перевіряй стики. "
+                    if store.project_plan_mode(project) == "direct" else
+                    "Читай карту по частинах, використовуй збережений план і актуальні налаштування каналу. "
+                    "Підбирай матеріал за змістом фрази та часовими межами кадру. Один кадр плану - одна група сцени. "
+                    "Розташовуй групи послідовно за таймінгами плану; перевіряй стики. ")
+        system = ("Ти монтажер Video Studio. Працюй лише в поточному проєкті. " + workflow +
                   "Створи групу через group_clips, навіть якщо кадр поки містить один елемент; інші елементи кадру додавай з group_id. "
                   "Озвучку та інші матеріали, що тривають через декілька кадрів, залишай окремо. "
                   "Перед роботою перевір наявні групи і шари через get_project, щоб не дублювати їх. Застосовуй лише доступні інструменти. "

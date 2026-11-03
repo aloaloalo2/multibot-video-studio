@@ -5,10 +5,10 @@ Local Python standard-library server. It binds only to `127.0.0.1`, serves `fron
 Run:
 
 ```bash
-/usr/bin/python3 backend/app.py --host 127.0.0.1 --port 8770
+python3 tools/studio_restart.py
 ```
 
-After backend edits, restart each active Studio server before verifying new frontend code. Old processes retain their imported Python modules while serving updated frontend files. The frontend checks API version 2 and item-layer mode to detect incompatible instances. The canonical persistent data folder is `backend/data`; the user's projects from the earlier integration server have been copied there with their source retained.
+After backend edits, use the same guarded restart before verifying new frontend code. It refuses while jobs are active; never force a restart over running work. Old processes retain their imported Python modules while serving updated frontend files. The frontend checks API version 2 and item-layer mode to detect incompatible instances. The canonical persistent data folder is `backend/data`; the user's projects from the earlier integration server have been copied there with their source retained.
 
 `MULTIBOT_STUDIO_DATA` can redirect managed data for development. The project renderer is invoked as:
 
@@ -43,7 +43,7 @@ All mutations use `Content-Type: application/json`, local `Host`, and same-origi
 | PATCH | `/api/projects/<id>` | Rename with `{name,expected_revision?}` |
 | DELETE | `/api/projects/<id>` | Reversible removal from the list; preserves project and episode files |
 | POST | `/api/projects/<id>/restore` | Restore a removed project |
-| GET | `/api/projects/<id>/plan` | Read the scene map attached to the project |
+| GET | `/api/projects/<id>/plan` | `{plan,source,settings_match}`: the active scene plan, or narration source in direct mode |
 | POST | `/api/projects/<id>/plan` | Attach or update `{plan}` without changing montage clips |
 | POST | `/api/projects/from-plan` | Upsert by `{channel_id,name,episode_path,plan}`, returning `plan_url` |
 | POST | `/api/projects/<id>/actions` | `{type,payload,expected_revision}` applies one edit; `{project}` |
@@ -73,6 +73,12 @@ The managed `project.json` contains `{id,name,channel_id,episode_path,schema_ver
 `expected_revision` guards against editing stale state. Undo and redo snapshots are kept beside the manifest. The renderer receives a converted manifest with the engine's ordered scenes, layers, transitions, and audio tracks.
 
 ## Drafts and phrase timings
+
+These planning gates apply to the default channel setting `plan_mode: "director"`. To use direct editing, PATCH `/api/channels/<id>` with `{"settings":{"plan_mode":"direct"}}`. The current channel setting governs its existing and new projects. Switching modes preserves all project data.
+
+In direct mode, project responses include `plan_mode: "direct"` and `production: {plan_mode:"direct",stage:"direct",editor_ready:true,plan_ready:false,export_ready,reason}`. An empty timeline is editable. Export requires a valid visible film timeline, with the normal media validation and export lock, without a mandatory narration or scene plan. Use ordinary asset imports and `/actions` to assemble clips and scene groups. Plan-number operations still require a frame plan.
+
+The source tab keeps narration and transcription separately. In direct mode `/plan/generate` saves a script and optional validated `timings` or `narration` into private `source-timing.json`; no frames are generated and an older plan is preserved. `/plan/analyze` applies the same source contract after speech recognition and does not start the director. `GET /plan` returns `{plan:null,source,settings_match:null}`; `source` contains `script`, its hash, and `timing: {status,audio?,sentences?}`. The backend helper `store.load_project_narration` selects this source in direct mode and the scene plan in director mode, with a compatible fallback for old projects.
 
 The planner creates a draft even when a total duration is supplied. A synchronized plan requires a timing file with the complete voiceover duration and every script sentence in order. POST `/api/projects/<id>/plan/generate` accepts `timings: {duration, sentences: [{text,start,end}], audio_sha256?}` alongside `script`. The text must match the script, intervals must be finite, positive, ordered, non-overlapping, and within the full duration. Frame boundaries are derived from those phrase times. When first_clip_seconds is positive, the opening ends at that exact time; a sentence crossing the boundary remains unchanged and its original interval is also shown as continuation in the next frame. Original phrase intervals remain available in the plan. The optional audio fingerprint binds export to a particular file. Existing automation may alternatively submit `narration: {audio_path|asset_id, sentences}` to measure and fingerprint the source locally.
 

@@ -86,7 +86,7 @@ def voice_gains(project: dict, plan: dict | None = None) -> dict:
     """{asset id: gain} for the audio clips that carry the project's timed voice; {} when the voice is unknown."""
     if plan is None:
         try:
-            plan = store.load_project_plan(project["id"])
+            plan = store.load_project_narration(project["id"])
         except (store.StudioError, OSError, ValueError):
             return {}
     audio = ((plan or {}).get("timing") or {}).get("audio") or {}

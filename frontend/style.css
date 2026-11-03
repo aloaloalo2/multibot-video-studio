@@ -1462,3 +1462,7 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:850px){.lang-inline-sample{margin-left:0}}
 
 .lang-voice-saved{color:var(--muted);font-weight:600;padding:10px 0}.lang-voice-saved[hidden],.lang-voice-run[hidden],.lang-cache-note[hidden]{display:none!important}
+
+/* Direct montage retains channel preferences and hides frame-planning controls. */
+.modal-backdrop[data-plan-mode="direct"] .planned-only{display:none}
+.settings-workflow select{max-width:320px;width:100%}

@@ -346,6 +346,8 @@ def _run(pid: str, cli: Path) -> None:
 def start(pid: str, reason: str = "voice") -> dict:
     """Start the director for a project; a second start while one runs returns the running one."""
     project = store.load_project(pid)
+    if store.project_plan_mode(project) == "direct":
+        raise store.StudioError("У каналі вибрано «Без плану». Монтуйте ролик без запуску режисера", 409)
     if not project.get("episode_path"):
         raise store.StudioError("У випуску немає папки")
     import production
@@ -369,6 +371,8 @@ def start(pid: str, reason: str = "voice") -> dict:
 def after_voice(pid: str) -> None:
     """Called when a voice analysis has been applied to the plan: the episode goes on to direction by itself."""
     try:
+        if store.project_plan_mode(store.load_project(pid)) == "direct":
+            return
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):

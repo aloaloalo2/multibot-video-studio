@@ -52,7 +52,7 @@ def snapshot(project: dict, code: str) -> dict:
         raise store.StudioError('Озвучка не відповідає поточному тексту або голосу. Спершу оновіть її.',409)
     translated=languages.file_path(pid,code,'voice')
     target=destination(project,code)
-    plan=store.load_project_plan(pid) or {}
+    plan=store.load_project_narration(pid) or {}
     planned_id=((plan.get('timing') or {}).get('audio') or {}).get('asset_id')
     assets={a['id']:a for a in project.get('assets',[])}
     tracks=[];found_voice=False
