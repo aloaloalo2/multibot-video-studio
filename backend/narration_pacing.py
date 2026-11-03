@@ -9,6 +9,7 @@ from dubbing_fit import MAX_SPEED
 CALIBRATION = 5
 BLOCK = 10
 GAP = .05
+FORECAST_RESERVE = 1.03
 
 
 def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | None:
@@ -22,7 +23,7 @@ def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | 
     recent=stable[-20:]
     # Smooth changes over a group, with a small reserve. One unusually slow line
     # must not make the following line race or change the selected voice.
-    return (.7*overall+.3*sum(t for _,t in recent)/sum(n for n,_ in recent))*1.03
+    return (.7*overall+.3*sum(t for _,t in recent)/sum(n for n,_ in recent))*FORECAST_RESERVE
 
 
 def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -> dict:
@@ -39,17 +40,24 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
             'requires_review':False,'targets':{}}
     if rate is None or not pending:return result
     chars=sum(len(texts[i]) for i in pending)
-    # Smooth the forecast separately from the hard 7% limit on actual audio.
-    budget=max(0,(total-gaps-min(5,total*.005))*1.03-measured)
-    result['predicted_seconds']=round((measured+rate*chars)/1.03+gaps,3)
+    # All saved takes can use the same bounded fitting as the remaining takes.
+    # The forecasting reserve applies only to unknown audio, not to the film's
+    # tempo allowance or the duration of recordings we have already measured.
+    budget=max(0,(total-gaps)*MAX_SPEED-measured)
+    result['predicted_seconds']=round(measured+rate*chars/FORECAST_RESERVE+gaps,3)
     result['predicted_minimum_seconds']=round((measured+rate*chars)/MAX_SPEED+gaps,3)
+    result['expected_minimum_seconds']=round((measured+rate*chars/FORECAST_RESERVE)/MAX_SPEED+gaps,3)
+    result['remaining_phrases']=len(pending)
+    result['remaining_budget_seconds']=round(budget/MAX_SPEED,3)
     result['requires_review']=result['predicted_minimum_seconds']>total+.05
     factor=min(1.,budget/(rate*chars)) if chars else 1.
     if factor>=.97:return result
     if factor<.65:
-        raise RuntimeError('За виміряним темпом прогнозована озвучка значно довша за ролик навіть із прискоренням до 7%. '
-                           'Озвучення зупинено до нових витрат. Текст не змінено, готові записи збережені; '
-                           'потрібно перевірити прогноз і монтаж.')
+        excess=result['predicted_minimum_seconds']-total
+        raise RuntimeError(f'Для решти {len(pending)} фраз за виміряним темпом прогнозовано бракує {excess:.1f} с '
+                           'навіть із прискоренням до 7%. Нові платні запити зупинено. '
+                           f'Збережено {len(known)} із {len(texts)} записів; повторна оплата за них не потрібна. '
+                           'Потрібно перевірити тривалість озвучки або монтажу.')
     return result
 
 

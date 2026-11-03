@@ -33,8 +33,26 @@ class NarrationPacingTest(unittest.TestCase):
         self.assertEqual(pacing.MAX_SPEED,1.07)
 
     def test_severe_required_shortening_requests_review(self):
-        with self.assertRaisesRegex(RuntimeError,'прогнозована озвучка'):
+        with self.assertRaisesRegex(RuntimeError,'Для решти 95 фраз.*бракує'):
             pacing.plan(['a'*100]*100,{i:15 for i in range(5)},700,5)
+
+    def test_fit_forecast_uses_all_seven_percent_even_near_completion(self):
+        # The old 1.03 budget subtracted already measured raw takes and wrongly
+        # stopped after 95 phrases, although the complete voice fits at 1.07.
+        texts=['a'*100]*100
+        for count in (5,55,95,99):
+            forecast=pacing.plan(texts,{i:10. for i in range(count)},940.,count)
+            self.assertAlmostEqual(forecast['predicted_seconds'],1004.95,places=3)
+            self.assertLess(forecast['expected_minimum_seconds'],940.)
+            self.assertEqual(forecast['remaining_phrases'],100-count)
+            self.assertEqual(forecast['targets'],{})
+        self.assertEqual(pacing.MAX_SPEED,1.07)
+
+    def test_reserved_future_duration_does_not_discount_already_measured_audio(self):
+        forecast=pacing.plan(['a'*100]*100,{i:8. for i in range(90)},760.,90)
+        self.assertAlmostEqual(forecast['predicted_seconds'],804.95,places=3)
+        self.assertAlmostEqual(forecast['expected_minimum_seconds'],800/1.07+4.95,places=3)
+        self.assertAlmostEqual(forecast['predicted_minimum_seconds'],(720+80*1.03)/1.07+4.95,places=3)
 
     def test_does_not_accept_missing_lines_or_a_summary(self):
         for value in [{},{0:'too short'},{0:'a'*91}]:
