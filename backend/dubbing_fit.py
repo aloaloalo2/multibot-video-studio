@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from pathlib import Path
 
@@ -92,6 +93,70 @@ def fitting_speeds(items: list[dict], total: float) -> list[float]:
     return [min(MAX_SPEED,s+hi) for s in speeds]
 
 
+def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
+                 max_passes: int = 3) -> list[dict]:
+    """Correct local tempo against measured output, retaining every original take.
+
+    ``render(item, speed)`` must render from the preserved source (never from an
+    already stretched output) and return its actual duration in seconds. Only
+    changed speeds are rendered. The caller owns any output files; input manifest
+    dictionaries are copied. No text changes, synthesis or audio cuts occur here.
+    """
+    if not math.isfinite(total) or total <= 0 or not math.isfinite(gap) or gap < 0:
+        raise ValueError('Invalid narration duration or gap')
+    if not isinstance(max_passes, int) or not 1 <= max_passes <= 3:
+        raise ValueError('Measured fitting allows one to three local passes')
+    result = [dict(item) for item in items]
+    for item in result:
+        speed, length = item.get('speed'), item.get('fitted_length')
+        if (not isinstance(speed, (int, float)) or not math.isfinite(speed)
+                or not MIN_SPEED <= speed <= MAX_SPEED
+                or not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0):
+            raise RuntimeError('Не вдалося перевірити тривалість локальних аудіофрагментів. '
+                               'Усі записи фраз збережені.')
+    budget = total - gap * max(0, len(result) - 1)
+
+    def occupied():
+        return sum(item['fitted_length'] for item in result)
+
+    for _ in range(max_passes):
+        if occupied() <= budget + 1e-6:
+            return result
+        movable = [item for item in result if item['speed'] < MAX_SPEED - 1e-7]
+        if not movable:
+            break
+        # Inverse duration is an estimate only. Leave a small margin, then measure
+        # again: atempo's windowing/padding need not equal raw_length / speed.
+        target = max(0., budget - .1)
+        def predicted(delta):
+            return sum(item['fitted_length'] * item['speed'] /
+                       min(MAX_SPEED, item['speed'] + delta) for item in result)
+        lo, hi = 0., MAX_SPEED - MIN_SPEED
+        if predicted(hi) <= target:
+            for _ in range(40):
+                mid = (lo + hi) / 2
+                if predicted(mid) > target:
+                    lo = mid
+                else:
+                    hi = mid
+        # Round upwards to the same precision as ffmpeg's atempo argument.
+        for item in movable:
+            speed = min(MAX_SPEED, math.ceil((item['speed'] + hi) * 1e6) / 1e6)
+            if speed <= item['speed']:
+                continue
+            length = render(dict(item), speed)
+            if (not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0):
+                raise RuntimeError('Не вдалося перевірити тривалість після локальної підгонки. '
+                                   'Усі записи фраз збережені.')
+            item.update(speed=speed, fitted_length=float(length))
+    if occupied() <= budget + 1e-6:
+        return result
+    excess = max(0., occupied() - budget)
+    raise RuntimeError(f'Озвучка довша за ролик на {excess:.1f} с після перевірки фактичної тривалості '
+                       'при межі 7%. Усі аудіофрагменти збережені. '
+                       'Автоматичної платної перегенерації не буде.')
+
+
 def command(args):
     result = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', *map(str, args)],
                             capture_output=True, timeout=600)
@@ -146,22 +211,25 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
     rate = 48000
     mix = np.zeros(round(total*rate), dtype='<f4')
     report = []
-    fitted=[]
+    fitted=[None]*len(manifest)
     speeds=fitting_speeds(manifest,total)
-    for n, item in enumerate(manifest):
-        if progress:progress(n,len(manifest))
-        start = item.get('original_start',item['start'])
-        next_start = manifest[n+1].get('original_start',manifest[n+1]['start']) if n+1 < len(manifest) else total
-        place = next_start - start - .05
-        speed = speeds[n]
+    def render(item, speed):
         pcm = command(['-i', parts/item['file'], '-af', f'atempo={speed:.6f}', '-ar', rate,
                        '-ac', '1', '-f', 'f32le', 'pipe:1']) if speed != 1 else command(
             ['-i', parts/item['file'], '-ar', rate, '-ac', '1', '-f', 'f32le', 'pipe:1'])
         audio = np.frombuffer(pcm, dtype='<f4')
-        fitted.append(audio)
-        report.append({**item,'speed':speed,'fitted_length':len(audio)/rate})
+        fitted[item['_rebuild_position']] = audio
+        return len(audio)/rate
+    for n, item in enumerate(manifest):
+        if progress:progress(n,len(manifest))
+        speed = speeds[n]
+        measured={**item,'_rebuild_position':n,'speed':speed}
+        measured['fitted_length']=render(measured,speed)
+        report.append(measured)
+    report=fit_measured(report,total,render)
     report=centered_schedule(report,total)
-    for n,(item,audio) in enumerate(zip(report,fitted)):
+    for n,item in enumerate(report):
+        audio=fitted[item.pop('_rebuild_position')]
         a=round(item['start']*rate)
         mix[a:a+len(audio)]=audio
         next_start=report[n+1]['start'] if n+1<len(report) else total

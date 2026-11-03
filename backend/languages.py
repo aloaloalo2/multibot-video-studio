@@ -1829,6 +1829,15 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             'збалансувати темп у межах 7%')
         item.update(speed=speed,fitted_length=store.media_duration(parts_dir/item['fitted']))
         fastest=max(fastest,speed)
+    def render_measured(item,speed):
+        progress(pid,job,92,'Уточнюємо тривалість готових фраз без нових витрат')
+        run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
+             '-af',f'atempo={speed:.6f},aresample=48000','-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
+            'уточнити фактичний темп у межах 7%')
+        return store.media_duration(parts_dir/item['fitted'])
+    manifest=dubbing_fit.fit_measured(manifest,total,render_measured)
+    fastest=max(item['speed'] for item in manifest)
+    store.atomic_json(parts_dir/'manifest.json',manifest)
     manifest=dubbing_fit.centered_schedule(manifest,total)
     for item in manifest:
         silence(item['start']-cursor)
