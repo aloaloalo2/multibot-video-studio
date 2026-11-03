@@ -1319,6 +1319,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnail/recover",path)
         if match and method=='POST':
             return self.json_response(languages.recover_thumbnail(*match.groups()))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/translation-model", path)
+        if match and method == "POST":
+            return self.json_response(languages.set_translation_model(*match.groups(), body.get("model")))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})(?:/(text|remove|translate|sample|voice|thumbnail|save-audio|refit|own-voice/remove))?", path)
         if match and method == "POST":
             pid, code, action = match.groups()
@@ -1330,7 +1333,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(languages.remove_own_voice(pid, code))
             if action == "text":
                 return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
-            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'))}, 202)
+            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))

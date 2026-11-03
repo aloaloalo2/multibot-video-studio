@@ -142,7 +142,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertNotIn("s1", languages.FISH_ENGINES)
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
-        answers = iter(["First sentence. Second sentence!\n\nThird paragraph here.", "What If Test"])
+        answers = iter(["First sentence. Next sentence! Third part here.", '{"ok":true,"ids":[0]}', "What If Test"])
         with patch.object(languages, "ask", side_effect=lambda messages, max_tokens=12000: (next(answers), 0.01)):
             languages.add(self.pid, "en")
             languages.start(self.pid, "translate", "en")
@@ -578,13 +578,15 @@ class LanguagesTest(unittest.TestCase):
         self.assertNotIn('VideoKey · 05 Test',fields)
 
     def test_lines_are_translated_and_voiced_in_time_with_the_original(self):
-        plan = {"script": "x", "timing": {"audio": {"asset_id": "a" * 20}, "sentences": [
+        plan = {"script": "One. Two. Three. Four.", "timing": {"audio": {"asset_id": "a" * 20}, "sentences": [
             {"text": "One.", "start": 0.2, "end": 1.0}, {"text": "Two.", "start": 1.1, "end": 1.8},     # run on: one line
             {"text": "Three.", "start": 3.0, "end": 3.8}, {"text": "Four.", "start": 4.5, "end": 5.4}]}}
         self.assertEqual([(line["start"], line["source"]) for line in languages.segments_of(plan)],
                          [(0.2, "One. Two."), (3.0, "Three."), (4.5, "Four.")])
         asked = []
         def ask(messages, max_tokens=12000):
+            if 'Independently compare EVERY translation' in messages[0]['content']:
+                return '{"ok":true,"ids":[0,1,2]}', 0.0
             if not messages[1]["content"].startswith("["):
                 return "Що якби", 0.0                            # the title
             asked.append(json.loads(messages[1]["content"]))
@@ -1082,6 +1084,32 @@ class LanguagesTest(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError,'перевірку змісту'):
                         languages.prepare_unvoiced(self.pid,'en',texts,segments,{0:70},{})
                 speak.assert_not_called()
+
+    def test_reviewed_repair_keeps_text_without_buying_cached_takes_again(self):
+        code='en';work=languages.work_dir(self.pid,code);work.mkdir(parents=True)
+        texts=[f'The report number {word} explains the weather in the park.' for word in
+               ['one','two','three','four','five','six','seven','eight']]
+        (work/'text.txt').write_text('\n'.join(texts)+'\n')
+        total=46.;segments=[{'start':i*total/8,'end':(i+1)*total/8-.3,'source':text} for i,text in enumerate(texts)]
+        store.atomic_json(languages.segments_path(self.pid,code),segments)
+        languages.update(self.pid,lambda d:d.update(provider='elevenlabs',languages={code:{}},eleven_engine='eleven_v4_turbo'))
+        self.example(code,'This is the voice used to tell the whole story.')
+        audio=tone(work/'fixture.mp3',6)
+        def speak(provider,voice,text,target,*args,**kwargs):shutil.copy2(audio,target)
+        with patch.object(languages,'source',return_value={'duration':total,'script':'\n'.join(texts)}), \
+                patch.object(languages,'speak',side_effect=speak) as speech, \
+                patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'announce_model'), \
+                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced') as prepare, \
+                patch.object(languages,'copy_out'):
+            languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':True},segments)
+            self.assertEqual(speech.call_count,8)
+            self.assertEqual(languages.line_texts(self.pid,code),texts)
+            languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':True},segments)
+            self.assertEqual(speech.call_count,8)
+            prepare.assert_not_called()
+        manifest=store.read_json(work/'parts/manifest.json')
+        self.assertTrue(all(.93<=x['speed']<=1.07 and x['reused'] for x in manifest))
+        self.assertLessEqual(manifest[-1]['end'],total)
 
 
 if __name__ == "__main__":

@@ -36,9 +36,8 @@ async function loadLangs(id){
 function langPaintBalance(){
   document.querySelectorAll('#project-langs .lang-balance').forEach(box=>{
     const known=Number.isFinite(langBalance?.remaining_credits),stale=langBalance?.state==='stale';
-    box.innerHTML=`<div><small>Баланс ElevenLabs</small><strong>${known?`${langBalance.remaining_credits.toLocaleString('uk-UA')} кредитів`:langBalanceLoading?'Перевіряємо…':'Недоступний'}</strong>${stale?'<small>Останній відомий баланс</small>':''}</div><button type="button" class="lang-icon lang-balance-refresh" title="${esc(langBalance?.error || 'Оновити баланс')}" aria-label="Оновити баланс ElevenLabs"${langBalanceLoading?' disabled':''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.5 7a8 8 0 0 1 13-1L20 8M4 16l1.5 2a8 8 0 0 0 13-1"/></svg></button>`;
+    box.innerHTML=`<div><small>Баланс ElevenLabs</small><strong>${known?`${langBalance.remaining_credits.toLocaleString('uk-UA')} кредитів`:langBalanceLoading?'Перевіряємо…':'Недоступний'}</strong>${stale?'<small>Останній відомий баланс</small>':''}</div>`;
     box.setAttribute('aria-busy',String(langBalanceLoading));
-    box.querySelector('button').addEventListener('click',()=>langRefreshBalance(true));
   });
 }
 
@@ -316,6 +315,13 @@ function langVoiceStatus(item,spec){
   return item.saved_mix?.state==='saved'?'Озвучку збережено ✓':'Озвучка готова ✓';
 }
 
+function langTranslationInfo(item){
+  if(!item.translated_model)return '';
+  const model=langData.translation_models?.find(entry=>entry.id===item.translated_model);
+  const price=Number.isFinite(item.translate_cost)?` · $${item.translate_cost.toLocaleString('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:4})}`:'';
+  return `Переклад: ${model?.name || item.translated_model}${price}`;
+}
+
 function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
@@ -329,11 +335,11 @@ function langCard(id,item,spec){
   const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';
   const fit=voice.synced?[voice.centered?`паузи розподілено навколо фраз`:`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`${voice.centered?'зміщення для підгонки':'найбільше запізнення'} ${String(voice.latest).replace('.',',')} с`:'',voice.slowest<.99?`темп до ${Math.round(voice.slowest*100)}%`:'',voice.long_gaps?.length?`паузи понад 1,5 с: ${voice.long_gaps.length}, потребують перевірки`:'',voice.timing_issues?.length?`перевірте таймінги ${voice.timing_issues.length} фраз`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
-    <section class="lang-step"><h3><em>1</em>Текст${item.text?`<button type="button" class="lang-icon lang-retranslate" title="Перекласти заново" aria-label="Перекласти заново">${langIcons.redo}</button>`:''}</h3>
+    <section class="lang-step"><h3 class="lang-text-heading"><em>1</em>Текст<label class="lang-translation-select"><span>Модель</span><select aria-label="Модель перекладу">${(langData.translation_models || []).map(model=>`<option value="${esc(model.id)}"${model.id===item.translation_model?' selected':''}>${esc(model.name)}</option>`).join('')}</select></label>${item.text?`<button type="button" class="lang-icon lang-retranslate" title="Перекласти заново" aria-label="Перекласти заново">${langIcons.redo}</button>`:''}</h3>
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
         <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small>${item.lines?`<small class="lang-text-lines">Кожен рядок звучить у свій час, як фраза оригіналу (${item.lines} рядків): правте слова, але не об’єднуйте й не розбивайте рядки</small>`:''}</span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
-      :`<div class="lang-actions"><p>Студія перекладе текст і заголовок ролика: кілька центів, зазвичай до хвилини.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
-    <div class="lang-text-quality"></div><div class="lang-job" role="status" aria-live="polite" hidden></div></section>
+      :`<div class="lang-actions"><p>Переклад тексту й заголовка вибраною моделлю.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">Перекласти</button></div>`}
+    <small class="lang-translation-info"${item.translated_model?'':' hidden'}>${esc(langTranslationInfo(item))}</small><div class="lang-text-quality"></div><div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3 class="lang-voice-heading"><em>2</em>Озвучка вашим голосом${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти поточні голоси й налаштування для нових випусків цього каналу" aria-label="Зберегти налаштування"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span>Зберегти налаштування</span></button>`}</h3>
       <div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
         <div class="lang-voice-panel lang-voice-bar"><span class="lang-panel-title">Налаштування озвучення</span><label class="lang-chip-select" title="Сервіс озвучення"><span>Сервіс</span><select data-field="provider">${langData.providers.map(service=>`<option value="${service.id}"${service.id===spec.id?' selected':''}>${esc(service.name)}</option>`).join('')}</select></label>
@@ -412,6 +418,18 @@ function langCard(id,item,spec){
     for(const field of [area,title]){field.addEventListener('input',later);field.addEventListener('blur',()=>{if(timer)flush();});}
     if(area.value!==item.text)later();
   }
+  card.querySelector('.lang-translation-select select')?.addEventListener('change',async event=>{
+    const select=event.currentTarget,previous=item.translation_model;
+    select.dataset.saving='1';select.disabled=true;showLangJob();
+    try{
+      const data=await api(`/api/projects/${encodeURIComponent(id)}/languages/${item.code}/translation-model`,'POST',{model:select.value});
+      if(state.project?.id===id&&state.view==='langs'){
+        const fresh=data.items.find(entry=>entry.code===item.code);
+        if(fresh){item.translation_model=fresh.translation_model;const current=langData.items.find(entry=>entry.code===item.code);if(current)current.translation_model=fresh.translation_model;}
+      }
+    }catch(error){select.value=previous;langNote(select,error.message,true);}
+    finally{delete select.dataset.saving;showLangJob();}
+  });
   card.querySelector('.lang-translate')?.addEventListener('click',()=>langStart(id,'translate',item.code));
   // a fresh translation by the current rules (user, 2 November 2026: «кругла кнопка без тексту — оновити, щоб воно
   // по-новому переклало, бо правила нові»); it replaces the text and its edits, so it asks first
@@ -529,11 +547,11 @@ function showLangJob(){
     card.querySelectorAll('button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
       if(button.classList.contains('lang-cancel'))return;
       if(button.classList.contains('lang-defaults')){button.disabled=button.dataset.saving==='1'||uploading;return;}
-      if(button.classList.contains('lang-balance-refresh')){button.disabled=langBalanceLoading;return;}
       const index=steps.findIndex(step=>step.contains(button));
       const locked=index<0?langRunning(code):langRunning(code,index===2?'thumbnail':'voice');
-      button.disabled=locked || (uploading&&index===1) || button.dataset.blocked==='1';});
+      button.disabled=locked || (uploading&&index===1) || (index===0&&card.querySelector('.lang-translation-select select')?.dataset.saving==='1') || button.dataset.blocked==='1';});
     card.querySelectorAll('.lang-voice-bar select').forEach(select=>{select.disabled=langRunning(null,'voice');});
+    card.querySelectorAll('.lang-translation-select select').forEach(select=>{select.disabled=select.dataset.saving==='1'||langRunning(code,'voice');});
     steps.forEach((step,index)=>{
       const box=step.querySelector(':scope > .lang-job');if(!box)return;
       const own=jobs.filter(job=>job.code===code&&langStepOf[job.kind]===index);

@@ -1145,6 +1145,12 @@ select option{background:#232327;color:#f1f1f2}
 .lang-step:last-child{border-bottom:0}
 .lang-step h3{margin:0;font-size:14px;display:flex;align-items:center;gap:8px;color:#e6e7ea}
 .lang-step h3 .lang-retranslate{margin-left:auto;width:28px;height:28px}
+.lang-step h3.lang-text-heading{flex-wrap:wrap}
+.lang-translation-select{margin-left:auto;display:flex;align-items:center;gap:7px;color:#999ba4;font-size:12px;font-weight:400;min-width:0}
+.lang-translation-select select{max-width:100%;padding:6px 27px 6px 10px;background:#242429;border:1px solid #3c3c43;border-radius:10px;color:#d9dae0;font:inherit;cursor:pointer}
+.lang-translation-select select:disabled{opacity:.5;cursor:default}
+.lang-text-heading .lang-translation-select+.lang-retranslate{margin-left:0}
+.lang-translation-info{color:#9698a1;font-size:12px}
 .lang-step h3 em{font-style:normal;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#2b2b30;color:#6bf2ae;font-size:12px}
 .lang-step.is-off h3{color:#7c7e86}
 .lang-off{margin:0;color:#7c7e86;font-size:13px}
@@ -1426,8 +1432,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-balance{display:flex;align-items:center;gap:10px;color:#c9cad0;min-height:44px}
 .lang-balance div{display:grid;gap:3px}.lang-balance small{color:#93969f;font-size:12px}
 .lang-balance strong{font-size:15px;font-weight:550;font-variant-numeric:tabular-nums}
-.lang-balance .lang-balance-refresh{width:30px;height:30px;color:#93969f}
-.lang-balance .lang-balance-refresh:hover{color:#e4e5ea;background:#303138}
 
 .lang-fit-review{border:1px solid #655536;border-radius:12px;background:#242118;color:#e2cc9e;font-size:12px}
 .lang-fit-review summary{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;list-style:none;font-weight:600}

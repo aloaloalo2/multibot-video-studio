@@ -52,10 +52,26 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
     return result
 
 
-def validate_edits(texts: list[str], targets: dict[int,int], replacements: dict[int,str]) -> None:
+def edit_issues(texts: list[str], targets: dict[int,int], replacements: dict[int,str]) -> list[dict]:
+    """Check the whole block's budget; dense lines may borrow unused space."""
+    issues=[]
     if set(replacements)!=set(targets):
-        raise RuntimeError('Не вдалося підготувати всі фрази до озвучення. Нових платних запитів не зроблено.')
+        issues.append({'missing_ids':sorted(set(targets)-set(replacements)),
+                       'unexpected_ids':sorted(set(replacements)-set(targets))})
     for i,limit in targets.items():
-        value=replacements[i]
-        if not isinstance(value,str) or '\n' in value or not value.strip() or not len(texts[i])*.6<=len(value)<=limit:
-            raise RuntimeError(f'Фраза {i+1} потребує перевірки довжини перед озвученням. Готові записи збережені.')
+        value=replacements.get(i)
+        minimum=math.ceil(len(texts[i])*.6)
+        maximum=max(limit,len(texts[i]))
+        if not isinstance(value,str) or '\n' in value or not value.strip() or not minimum<=len(value)<=maximum:
+            issues.append({'id':i,'actual_chars':len(value) if isinstance(value,str) else None,
+                           'min_chars':minimum,'max_chars':maximum,'target_chars':limit})
+    if not issues:
+        actual=sum(len(replacements[i]) for i in targets)
+        budget=sum(targets.values())
+        if actual>budget:issues.append({'block_chars':actual,'block_budget':budget,'reduce_by':actual-budget})
+    return issues
+
+
+def validate_edits(texts: list[str], targets: dict[int,int], replacements: dict[int,str]) -> None:
+    if edit_issues(texts,targets,replacements):
+        raise RuntimeError('Не вдалося підготувати фрази потрібної довжини до озвучення. Готові записи збережені.')

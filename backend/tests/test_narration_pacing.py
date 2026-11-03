@@ -40,6 +40,12 @@ class NarrationPacingTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):pacing.validate_edits(['a'*100],{0:90},value)
         pacing.validate_edits(['a'*100],{0:90},{0:'a'*85})
 
+    def test_dense_line_can_borrow_budget_without_expanding_or_losing_meaning_checks(self):
+        texts=['a'*100,'b'*100]
+        pacing.validate_edits(texts,{0:90,1:90},{0:'a'*100,1:'b'*80})
+        for replacements in [{0:'a'*100,1:'b'*81},{0:'a'*110,1:'b'*70}]:
+            with self.assertRaises(RuntimeError):pacing.validate_edits(texts,{0:90,1:90},replacements)
+
     def test_price_is_frozen_for_the_run(self):
         with patch.object(languages,'price',side_effect=[200,500]) as prices:
             price=languages.fixed_price('elevenlabs','eleven_v4_turbo')
