@@ -328,6 +328,14 @@ function langTranslationInfo(item){
   return `Переклад: ${model?.name || item.translated_model}${price}`;
 }
 
+function langNumberComparison(item){
+  const value=item.translation_length?.number_comparison;
+  if(!value?.available || !Number.isFinite(value.difference_percent))return '';
+  const number=n=>n.toLocaleString('uk-UA',{maximumFractionDigits:2});
+  const percent=(value.difference_percent>0?'+':'')+number(value.difference_percent);
+  return `З урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів`;
+}
+
 function langCard(id,item,spec){
   const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
   const text=langDrafts[`${id}:${item.code}`] ?? item.text,price=item.prices[spec.id],voice=item.voice || {};
@@ -346,6 +354,7 @@ function langCard(id,item,spec){
       ${item.text?`<label class="lang-title"><span>Заголовок</span><input type="text" maxlength="200" value="${esc(item.title)}"></label>
         <label class="lang-text"><span>Текст озвучки <small class="lang-text-hint">${item.chars.toLocaleString('uk-UA')} символів · правки зберігаються самі</small>${item.lines?`<small class="lang-text-lines">Кожен рядок звучить у свій час, як фраза оригіналу (${item.lines} рядків): правте слова, але не об’єднуйте й не розбивайте рядки</small>`:''}</span><textarea rows="9" spellcheck="false">${esc(text)}</textarea></label>`
       :`<div class="lang-actions"><p>Переклад тексту й заголовка вибраною моделлю.${langData.openrouter===true?'':' <span class="lang-warn">Потрібен ключ OpenRouter у налаштуваннях студії.</span>'}</p><button type="button" class="primary lang-translate">${item.translation_resumable?'Продовжити переклад':'Перекласти'}</button></div>`}
+    <small class="lang-number-comparison"${langNumberComparison(item)?'':' hidden'} title="Розпізнані числа в обох текстах пораховано цифрами. Сам текст і підрахунок вартості озвучення не змінюються.">${esc(langNumberComparison(item))}</small>
     <small class="lang-translation-info"${item.translated_model?'':' hidden'}>${esc(langTranslationInfo(item))}</small><div class="lang-text-quality"></div><div class="lang-job" role="status" aria-live="polite" hidden></div></section>
     <section class="lang-step"><h3 class="lang-voice-heading"><em>2</em>Озвучка вашим голосом${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти голос і налаштування цієї мови для нових випусків каналу" aria-label="Зберегти налаштування"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span>Зберегти налаштування</span></button>`}</h3>
       <div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
@@ -412,6 +421,7 @@ function langCard(id,item,spec){
       const made=card.querySelector('.lang-voice');if(made&&textChanged){made.querySelectorAll('audio').forEach(audio=>audio.pause());made.remove();}
       
       const fresh=langData.items.find(entry=>entry.code===item.code);
+      const comparison=card.querySelector('.lang-number-comparison');if(comparison&&fresh){comparison.textContent=langNumberComparison(fresh);comparison.hidden=!comparison.textContent;}
       if(fresh){Object.assign(item,fresh);langApplyQuality(card,item);const cost=card.querySelector('.lang-voice-cost');if(cost)cost.textContent=langCost(spec,fresh.prices?.[spec.id]);const note=card.querySelector('.lang-cache-note');if(note)note.textContent=langCacheNote(fresh,spec);const marks=document.querySelector(`.lang-pill[data-code="${item.code}"] .lang-marks`);if(marks)marks.outerHTML=langMarks(fresh);}
       const voiceStatus=langVoiceStatus(item,spec),savedLabel=card.querySelector('.lang-voice-saved');if(savedLabel){savedLabel.textContent=voiceStatus;savedLabel.hidden=!voiceStatus;}const cacheNote=card.querySelector('.lang-cache-note');if(cacheNote)cacheNote.hidden=!!voiceStatus;
       const voiceRun=card.querySelector('.lang-voice-run');if(voiceRun){voiceRun.hidden=!!voiceStatus;voiceRun.classList.toggle('secondary',item.voice_current===true);voiceRun.classList.toggle('primary',item.voice_current!==true);if(voiceRun.firstChild?.nodeType===3)voiceRun.firstChild.textContent=langVoiceAction(item,spec)+' · ';}
@@ -422,6 +432,7 @@ function langCard(id,item,spec){
   };
   if(area){
     const later=()=>{if(area.value!==item.text)langDrafts[key]=area.value;else delete langDrafts[key];
+      const comparison=card.querySelector('.lang-number-comparison');if(comparison)comparison.hidden=area.value!==item.text || !langNumberComparison(item);
       if(hint)hint.textContent='зберігаємо…';clearTimeout(timer);timer=setTimeout(flush,1200);};
     for(const field of [area,title]){field.addEventListener('input',later);field.addEventListener('blur',()=>{if(timer)flush();});}
     if(area.value!==item.text)later();

@@ -1258,6 +1258,8 @@ select option{background:#232327;color:#f1f1f2}
 .lang-mark{display:grid;place-items:center;width:16px;height:16px;color:#8d8f97}
 .lang-mark svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .lang-text-lines{display:block;margin-top:2px;color:#9a9ca4}
+.lang-number-comparison{display:block;margin-top:10px;color:#b9c4c0;font-variant-numeric:tabular-nums;line-height:1.5;overflow-wrap:anywhere}
+.lang-number-comparison[hidden]{display:none}
 .lang-own-more summary{cursor:pointer;color:#9a9ca4;font-size:13px}
 .lang-own-more[open] summary{margin-bottom:8px}
 .lang-own-file.is-off{opacity:.5;pointer-events:none}

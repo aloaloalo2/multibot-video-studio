@@ -373,6 +373,7 @@ def overview(pid: str) -> dict:
     project = store.load_project(pid)
     data = load_state(pid)
     src = source(project)
+    source_language=original_language(pid,project,src['script'])
     engine = fish_engine(pid)
     settings=narration_settings(pid)
     provider = settings.get("provider") if settings.get("provider") in PROVIDERS else "fishaudio"
@@ -401,6 +402,7 @@ def overview(pid: str) -> dict:
                       "voice_language_check": voice_language_check(pid, code),
                       "flag_country":THUMBNAIL_FLAGS.get(code),
                       "chars": len(text), "prices": {key:value["base"] for key,value in estimates.items()},
+                      "translation_length":translation_budget.assessment(src['script'],text,source_language,code) if text else None,
                       "voice_estimates": estimates,
                       "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
                       "sample_options": samples,
@@ -431,7 +433,7 @@ def overview(pid: str) -> dict:
             "openrouter": configured.get("openrouter"),
             "translation_models": [{"id": model_id, "name": spec["name"]} for model_id, spec in TRANSLATION_MODELS.items()],
             "source": {"chars": len(src["script"]), "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
-                       "language": original_language(pid, project, src["script"]),
+                       "language": source_language,
                        "estimate": {key: price(key, src["script"], provider_engine(pid, key)) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
             "provider": provider, "job": data.get("job"), "jobs": list((data.get("jobs") or {}).values()),

@@ -3,6 +3,8 @@ Pillow
 numpy
 # Offline target-language verification before any paid narration request.
 langid==1.1.6
+# Offline display-only comparison of written and spelled-out numerals.
+text2num==3.1.0
 huggingface_hub
 # speech recognition: on the GPU of an Apple Silicon Mac, otherwise on the processor
 mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"

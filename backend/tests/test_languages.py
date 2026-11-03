@@ -163,6 +163,26 @@ class LanguagesTest(unittest.TestCase):
             self.assertEqual(languages.price("fishaudio", "я" * 100000, "drama-3"), 10.0)    # $50/M bytes after 12 November
         self.assertNotIn("s1", languages.FISH_ENGINES)
 
+    def test_saved_translation_gets_number_comparison_without_rewriting_or_spending(self):
+        source='In 2017 he gained 25 pounds.'
+        translated='En dos mil diecisiete ganó veinticinco libras.'
+        languages.update(self.pid,lambda d:d.update(languages={'es':{}},original_language='en'))
+        work=languages.work_dir(self.pid,'es');work.mkdir(parents=True,exist_ok=True)
+        text_path=work/'text.txt';text_path.write_text(translated,encoding='utf-8')
+        before=text_path.read_bytes()
+        with patch.object(store,'load_project_plan',return_value={'script':source}), \
+             patch.object(languages,'ask',side_effect=AssertionError('No paid translation')), \
+             patch.object(languages,'speak',side_effect=AssertionError('No paid speech')):
+            item=languages.overview(self.pid)['items'][0]
+        self.assertEqual(text_path.read_bytes(),before)
+        self.assertEqual(item['text'],translated)
+        self.assertEqual(item['chars'],len(translated))
+        compared=item['translation_length']['number_comparison']
+        self.assertTrue(compared['available'])
+        self.assertEqual(compared['source_chars'],len(source))
+        self.assertEqual(compared['translated_chars'],len('En 2017 ganó 25 libras.'))
+        self.assertEqual(item['prices']['fishaudio'],languages.price('fishaudio',translated,languages.fish_engine(self.pid)))
+
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Next sentence! Third part here.", '{"ok":true,"ids":[0]}', "What If Test"])
         with patch.object(languages, "ask", side_effect=lambda messages, max_tokens=12000: (next(answers), 0.01)):

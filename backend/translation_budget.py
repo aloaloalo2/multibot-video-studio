@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+import numeric_comparison
 from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
@@ -41,7 +42,8 @@ def report(source_text: str, translated_text: str, tolerance: float = TOLERANCE)
 
 
 
-def assessment(source_text: str, translated_text: str) -> dict:
+def assessment(source_text: str, translated_text: str, source_language: str | None = None,
+               target_language: str | None = None) -> dict:
     """Informational counts only: spelling out source digits can lengthen speech text.
 
     Character differences are neither a fidelity verdict nor a duration estimate.
@@ -58,7 +60,8 @@ def assessment(source_text: str, translated_text: str) -> dict:
             'advisory_only': True, 'duration_estimate': False,
             'source_numeric_tokens': source_numbers, 'translated_numeric_tokens': target_numbers,
             'numeric_forms_differ': source_numbers != target_numbers,
-            'comparison_basis': 'raw_characters_with_spaces'}
+            'comparison_basis': 'raw_characters_with_spaces',
+            'number_comparison': numeric_comparison.comparison(source_text,translated_text,source_language,target_language)}
 
 
 def allocate_targets(lines: list[str], target_chars: int) -> dict[int, int]:

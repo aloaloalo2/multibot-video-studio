@@ -23,7 +23,8 @@ sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "tools")]
 APPLE_ = sys.platform == "darwin" and platform.machine() == "arm64"
 # huggingface_hub fetches the speech model for the Mac's GPU; reportlab only draws the plan as a PDF
 PACKAGES = [("PIL", "Pillow", True), ("numpy", "numpy", True), ("huggingface_hub", "huggingface_hub", APPLE_),
-            ("reportlab", "reportlab", False), ("websockets", "websockets", True), ("langid", "langid==1.1.6", True)]
+            ("reportlab", "reportlab", False), ("websockets", "websockets", True), ("langid", "langid==1.1.6", True),
+            ("text_to_num", "text2num==3.1.0", True)]
 APPLE = sys.platform == "darwin" and platform.machine() == "arm64"
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 
