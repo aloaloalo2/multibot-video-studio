@@ -57,7 +57,7 @@ class MeasuredFitTest(unittest.TestCase):
 
     def test_no_speed_headroom_fails_without_render_or_cut(self):
         render = Mock()
-        with self.assertRaisesRegex(RuntimeError, 'при межі 10%'):
+        with self.assertRaisesRegex(RuntimeError, 'при межі 12%'):
             dubbing_fit.fit_measured([{'speed': dubbing_fit.MAX_SPEED, 'fitted_length': 5.1}], 5, render)
         render.assert_not_called()
 

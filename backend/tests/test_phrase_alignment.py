@@ -115,14 +115,14 @@ class PhraseAlignmentTest(unittest.TestCase):
             fit.require_valid_alignment(manifest)
 
     def test_translation_refinement_catches_cumulative_block_drift(self):
-        texts=['a'*53]*40+['b'*44]*40
+        texts=['a'*56]*40+['b'*44]*40
         segments=[{'start':i*5,'end':(i+1)*5} for i in range(80)]
         profile={'seconds_per_character':.107,'observations':80}
         result=narration_profile.refinement(texts,segments,400,profile)
         proposed={i:result['targets'].get(i,len(text))*.107/fit.MAX_SPEED for i,text in enumerate(texts)}
         self.assertTrue(pacing.alignment_check(segments,proposed,400)['within_limit'])
         self.assertTrue(any(i<40 for i in result['ids']))
-        self.assertEqual(texts[0],'a'*53)
+        self.assertEqual(texts[0],'a'*56)
 
 
 if __name__ == '__main__':unittest.main()

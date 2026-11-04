@@ -39,13 +39,13 @@ class NarrationPacingTest(unittest.TestCase):
         self.assertTrue(report['requires_review'])
         self.assertAlmostEqual(report['measured_excess_seconds'],160/pacing.MAX_SPEED-140,places=3)
         self.assertEqual(report['targets'],{})
-        self.assertEqual(pacing.MAX_SPEED,1.1)
+        self.assertEqual(pacing.MAX_SPEED,1.12)
 
     def test_all_cached_takes_are_not_rejected_for_unmeasured_extra_pause_padding(self):
         # The takes include pauses already. Unmeasured extra padding must reach
         # measured assembly rather than trigger a false stop.
         texts=['a'*100]*100
-        known={i:10.2 for i in range(100)}
+        known={i:10.4 for i in range(100)}
         self.assertGreater(sum(known.values())/pacing.MAX_SPEED+.05*99,930.)
         self.assertEqual(pacing.plan(texts,known,930.,0)['measured_phrases'],100)
         self.assertTrue(pacing.plan(texts,known,920.,0)['requires_review'])
@@ -66,7 +66,7 @@ class NarrationPacingTest(unittest.TestCase):
             self.assertLess(forecast['expected_minimum_seconds'],940.)
             self.assertEqual(forecast['remaining_phrases'],100-count)
             self.assertEqual(forecast['targets'],{})
-        self.assertEqual(pacing.MAX_SPEED,1.1)
+        self.assertEqual(pacing.MAX_SPEED,1.12)
 
     def test_reserved_future_duration_does_not_discount_already_measured_audio(self):
         forecast=pacing.plan(['a'*100]*100,{i:8. for i in range(90)},760.,90)

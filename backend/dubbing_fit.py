@@ -8,7 +8,7 @@ from pathlib import Path
 
 import narration_audio
 
-TEMPO_PERCENT = 10
+TEMPO_PERCENT = 12
 MIN_SPEED = 1 - TEMPO_PERCENT / 100
 MAX_SPEED = 1 + TEMPO_PERCENT / 100
 MAX_SHIFT = 7.0
