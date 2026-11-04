@@ -29,6 +29,7 @@ import channel_branding
 import style_lab
 import style_copy
 import director
+import spend_report
 import director_plan
 import episode_restart
 import frame_progress
@@ -1174,6 +1175,15 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnails/(v[1-9][0-9]*\.png)",path)
         if match:
             return self.serve_media(languages.language_thumbnails.version_file(*match.groups()),download=(query.get('download') or [None])[0],cache=True)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/spend", path)
+        if match:
+            # where the director's and frame agent's runs spent the Claude limits (backend/spend_report.py)
+            data = spend_report.reports(match.group(1))
+            if (query.get("format") or [""])[0] == "text":
+                shown = data["reports"][:int((query.get("limit") or ["0"])[0] or 0) or None]
+                body = "\n\n".join(spend_report.text(r) for r in shown) or "Звітів про витрати ще немає"
+                return self.text_response(body + f"\n\nУсього за випуск: ${data['total_usd']} у {len(data['reports'])} запусках")
+            return self.json_response(data)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
             store.load_project(match.group(1))
@@ -1618,6 +1628,8 @@ def main():
     import keep
     threading.Thread(target=keep.keep_all, daemon=True).start()
     threading.Thread(target=topics.update_all, daemon=True).start()
+    # a run that ended while an older version was running (or the studio was down) still gets its spend report
+    threading.Thread(target=spend_report.backfill_all, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

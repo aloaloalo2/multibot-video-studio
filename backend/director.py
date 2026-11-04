@@ -230,6 +230,8 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     finally:
         watchdog.cancel()
         RUNNING.pop(str(activity), None)
+        import spend_report   # where this run spent the limits, saved beside the project once the log is complete
+        spend_report.record_later(log)
     if expired.is_set():
         raise subprocess.TimeoutExpired(command, timeout)
     return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}

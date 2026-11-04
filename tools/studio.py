@@ -204,6 +204,9 @@ def main(argv=None) -> int:
     plan.add_argument("project")
     plan.add_argument("--frames", help="діапазон номерів, напр. 10-20")
     plan.add_argument("--todo", action="store_true", help="лише ще не зроблені кадри")
+    spend = commands.add_parser("spend", help="куди запуски режисера й агента кадрів витратили ліміти Claude")
+    spend.add_argument("project")
+    spend.add_argument("--all", action="store_true", help="усі звіти, а не лише останній")
     for name, text in (("undo", "скасувати останню зміну монтажу"), ("redo", "повторити скасовану зміну")):
         commands.add_parser(name, help=text).add_argument("project")
     remove = commands.add_parser("remove", help="прибрати кадр з таймлайну разом з його групою")
@@ -328,6 +331,9 @@ def main(argv=None) -> int:
             spec = {"op": "replace", "path": str(Path(args.file).expanduser().resolve())}
             spec.update({"clip": args.clip} if args.clip else {"frame": int(args.frame) if args.frame.isdigit() else args.frame})
             run_ops(project, [spec], args.dry_run)
+            return 0
+        if args.command == "spend":
+            print(call("GET", f"/api/projects/{pid}/spend?format=text" + ("" if args.all else "&limit=1"), raw=True))
             return 0
         if args.command == "plan":
             data, made = call("GET", f"/api/projects/{pid}/plan"), set(call("GET", f"/api/projects/{pid}/frames-drawn").get("made", []))
