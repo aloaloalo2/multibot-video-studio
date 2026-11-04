@@ -21,7 +21,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         (self.work/'text.txt').write_text('Accepted previous translation\n')
         self.source = {'script': 's'*100, 'duration': 20, 'title': 'Source title'}
         self.lines = [{'start': 0, 'end': 20, 'source': 's'*100}]
-        self.job = {'key': 'length-test'}
+        self.job = {'key': 'length-test', 'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
         self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'test'}))
         self.stack.enter_context(patch.object(languages.store, 'load_project_plan', return_value={}))
         self.stack.enter_context(patch.object(languages, 'source', return_value=self.source))

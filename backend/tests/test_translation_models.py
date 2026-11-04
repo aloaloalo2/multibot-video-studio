@@ -45,6 +45,20 @@ class TranslationModelsTest(unittest.TestCase):
         self.assertEqual(languages.translation_model(self.pid, 'es'), languages.DEFAULT_TRANSLATION_MODEL)
         self.assertEqual(languages.translation_model('b' * 24, 'uk'), languages.DEFAULT_TRANSLATION_MODEL)
 
+    def test_minimax_is_default_without_overriding_explicit_deepseek_or_history(self):
+        historical = {'translation_model': languages.DEEPSEEK_TRANSLATION_MODEL,
+                      'translated_model': languages.DEEPSEEK_TRANSLATION_MODEL, 'translate_cost': .02}
+        languages.save_state(self.pid, {'languages': {'uk': historical}})
+        with patch.object(languages, 'request') as request:
+            self.assertEqual(languages.translation_model(self.pid, 'es'), 'minimax/minimax-m3.1-flash')
+            self.assertEqual(languages.translation_model(self.pid, 'uk'), languages.DEEPSEEK_TRANSLATION_MODEL)
+            self.assertEqual(languages.load_state(self.pid)['languages']['uk'], historical)
+            request.assert_not_called()
+
+    def test_legacy_job_without_model_keeps_deepseek(self):
+        with languages.translation_trace(self.pid, 'uk', {}):
+            self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], languages.DEEPSEEK_TRANSLATION_MODEL)
+
     def test_retired_glm_selection_resolves_to_minimax_without_rewriting_history(self):
         historical = {'translation_model': 'z-ai/glm-5.3-flash',
                       'translated_model': 'z-ai/glm-5.3-flash', 'translate_cost': .07}
@@ -88,7 +102,7 @@ class TranslationModelsTest(unittest.TestCase):
         self.assertEqual(job['translation_model'], selected)
         self.assertEqual(thread.call_args.kwargs['args'][-1]['translation_model'], selected)
         # Even if a later version of the setting differs, this saved run keeps its original model.
-        languages.update(self.pid, lambda data: data['languages']['uk'].update(translation_model=languages.DEFAULT_TRANSLATION_MODEL))
+        languages.update(self.pid, lambda data: data['languages']['uk'].update(translation_model=languages.DEEPSEEK_TRANSLATION_MODEL))
         self.assertEqual(job['translation_model'], selected)
 
     def test_parallel_models_use_their_own_reasoning_and_return_actual_cost(self):
@@ -111,7 +125,7 @@ class TranslationModelsTest(unittest.TestCase):
                 self.assertEqual(future.result(timeout=10), (model, .0123))
         for call in calls:
             self.assertEqual(call['reasoning'], languages.TRANSLATION_MODELS[call['model']]['reasoning'])
-            self.assertEqual(call['max_tokens'], 300 if call['model'] == languages.DEFAULT_TRANSLATION_MODEL else 4096)
+            self.assertEqual(call['max_tokens'], 300 if call['model'] == languages.DEEPSEEK_TRANSLATION_MODEL else 4096)
             self.assertEqual(call['messages'][0]['content'], call['model'])
 
     def test_mandatory_reasoning_error_does_not_retry_without_effort_or_switch_model(self):

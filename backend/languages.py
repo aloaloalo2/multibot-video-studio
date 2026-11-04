@@ -94,11 +94,12 @@ FISH_ENGINES = {"s2.1-pro-free": {"name": "S2.1 Pro Free", "per_char": 0.0, "not
                             "note": "найвиразніший, $10 за 1 млн байтів до 12 листопада, потім $50"}}
 FISH_ENGINE = "s2.1-pro-free"
 TRANSLATE_CHUNK = 5000
-DEFAULT_TRANSLATION_MODEL = "deepseek/deepseek-v4.1-flash-1017"
+DEEPSEEK_TRANSLATION_MODEL = "deepseek/deepseek-v4.1-flash-1017"
+DEFAULT_TRANSLATION_MODEL = "minimax/minimax-m3.1-flash"
 # Reasoning support checked against OpenRouter's public model catalog, 3 November 2026.
 TRANSLATION_MODELS = {
-    DEFAULT_TRANSLATION_MODEL: {"name": "DeepSeek V4.1 Flash", "reasoning": {"enabled": False}},
-    "minimax/minimax-m3.1-flash": {"name": "MiniMax M3.1 Flash", "reasoning": {"effort": "low"}},
+    DEFAULT_TRANSLATION_MODEL: {"name": "MiniMax M3.1 Flash", "reasoning": {"effort": "low"}},
+    DEEPSEEK_TRANSLATION_MODEL: {"name": "DeepSeek V4.1 Flash", "reasoning": {"enabled": False}},
 }
 VOICE_CHUNK = 2400
 SAMPLE_CHARS = 900           # about a minute (user, 2 November 2026: «дозволь слухати більше»)
@@ -396,7 +397,7 @@ def overview(pid: str) -> dict:
                       "translation_model": translation_model(pid, code, data),
                       "translation_resumable": translation_resumable(pid, code, src,
                           translation_model(pid, code, data), resume_segments),
-                      "translated_model": item.get("translated_model") or (DEFAULT_TRANSLATION_MODEL if item.get("translated_at") else None),
+                      "translated_model": item.get("translated_model") or (DEEPSEEK_TRANSLATION_MODEL if item.get("translated_at") else None),
                       "translate_cost": item.get("translate_cost"),
                       "language_check": translation_check(pid, code, text),
                       "voice_language_check": voice_language_check(pid, code),
@@ -545,7 +546,7 @@ def set_translation_model(pid: str, code: str, model: str) -> dict:
 @contextmanager
 def translation_trace(pid, code, job, offset=None):
     previous = getattr(TRANSLATION_CONTEXT, 'value', None)
-    model = job.get('translation_model') or DEFAULT_TRANSLATION_MODEL
+    model = job.get('translation_model') or DEEPSEEK_TRANSLATION_MODEL
     if model not in TRANSLATION_MODELS:
         raise store.StudioError("Невідома модель перекладу. Оберіть модель зі списку.", 400)
     run = str(job.get('started_at') or job.get('key') or time.time_ns()).replace('/', '_').replace('|', '_')
@@ -585,7 +586,7 @@ def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
             raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),
                           {"Authorization": "Bearer " + key("openrouter"), "Content-Type": "application/json"}, "OpenRouter")
         except RuntimeError as error:
-            if model == DEFAULT_TRANSLATION_MODEL and reasoning and "помилка 400" in str(error):
+            if model == DEEPSEEK_TRANSLATION_MODEL and reasoning and "помилка 400" in str(error):
                 reasoning = None
                 continue
             raise
@@ -868,7 +869,7 @@ def translate(pid: str, code: str, job: dict) -> None:
 
 def translation_draft(pid, code, src, source_units, job, segments=None):
     return translation_recovery.Draft(work_dir(pid, code), {
-        'project': pid, 'code': code, 'model': job.get('translation_model') or DEFAULT_TRANSLATION_MODEL,
+        'project': pid, 'code': code, 'model': job.get('translation_model') or DEEPSEEK_TRANSLATION_MODEL,
         'script': src['script'], 'source_units': source_units,
         'timing': [{'start': x['start'], 'end': x['end']} for x in segments] if segments else None})
 
@@ -1170,7 +1171,7 @@ def save_translation(pid: str, code: str, project: dict, src: dict, text: str, c
         item = data.setdefault("languages", {}).setdefault(code, {})
         item.update(title=title.strip().strip('"«»'), translated_at=time.time(), translate_cost=round(cost, 4),
                     translation_length=length_report,
-                    translated_model=job.get('translation_model') or DEFAULT_TRANSLATION_MODEL)
+                    translated_model=job.get('translation_model') or DEEPSEEK_TRANSLATION_MODEL)
     update(pid, keep)
     copy_out(project, code, "text")
     job["cost"] = round(cost, 4)
