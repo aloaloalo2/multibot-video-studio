@@ -249,13 +249,15 @@ falls back to it. Pictures and videos are not kept: the preview marks a clip who
 
 ## The thumbnail library (1 November 2026)
 
-The thumbnail window and the «Прев'ю» tab show every thumbnail made for the episode (`thumbnail_gen.versions`, served by
+The «Прев'ю» tab shows every thumbnail made for the episode (`thumbnail_gen.versions`, served by
 `GET /api/projects/<id>/thumbnails/<name>`), newest first, the cover marked and the prompt's author tagged (DeepSeek, or
 «Правка vN» for an edit). A click on another one makes it the cover (`POST /thumbnail/choose`); «Згенерувати ще одне»
 adds a new version and keeps the others. «Правка» on a version sends the author's remark to Codex with that picture
 attached (`POST /thumbnail` with `base`; `thumbnail_gen.editing`), and the result is the next version. The window closes
 once a run starts, so the card shows «Малюємо прев'ю». «Згенерувати з DeepSeek» is a trial: DeepSeek (OpenRouter)
 writes the prompt from the same brief, the frames attached as pictures (`thumbnail_gen.write_prompt_deepseek`).
+
+The project-card creation dialog says «Створити нове прев’ю» and contains only the optional idea field, creation actions and any active/error status. Do not show the current cover, version library or explanatory library paragraph in this dialog: those make a new-image request look like an edit. Keep existing images in the Preview tab. A creation request sends wishes without a `base` image; its textarea is separate from the tab's own field.
 
 ## Razgon lives in the studio's folder (1 November 2026)
 
