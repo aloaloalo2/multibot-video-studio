@@ -10,7 +10,19 @@ function langShortCharacters(count){
 }
 function langScriptCharacters(item){
   const count=item.display_chars;
-  return Number.isInteger(count)&&count>0?`<span class="lang-script-characters" title="${count.toLocaleString('uk-UA')} літер без пробілів, цифр і пунктуації">${langCharactersIcon}${langShortCharacters(count)}</span>`:'';
+  return Number.isInteger(count)&&count>0?`<span class="lang-script-characters" title="${count.toLocaleString('uk-UA')} порівняльних літер: без пробілів і пунктуації, з урахуванням чисел">${langCharactersIcon}${langShortCharacters(count)}${langScriptDifferenceMarkup(item)}</span>`:'';
+}
+
+function langScriptDifference(item){
+  const value=item.translation_length?.number_comparison;
+  if(!value?.available||!Number.isFinite(value.difference_percent))return null;
+  const percent=value.difference_percent,limit=item.translation_length?.script_comparison?.tolerance_percent||7;
+  return {label:`${percent>0?'+':''}${percent.toLocaleString('uk-UA',{maximumFractionDigits:2})}%`,over:Math.abs(percent)>limit,
+    title:`З урахуванням чисел: ${value.translated_chars.toLocaleString('uk-UA')} проти ${value.source_chars.toLocaleString('uk-UA')} літер оригіналу. Орієнтир ±${limit}%.`};
+}
+function langScriptDifferenceMarkup(item){
+  const value=langScriptDifference(item);
+  return value?`<span class="lang-script-difference${value.over?' is-over':''}" title="${esc(value.title)}">(${esc(value.label)})</span>`:'';
 }
 
 function langScriptJob(code){
@@ -77,16 +89,21 @@ function langScriptStatus(item){
 }
 
 function langScriptLibrary(id,holder,data){
-  holder.innerHTML=`<div class="lang-script-grid">${data.items.map(item=>{
+  holder.innerHTML=`<div class="lang-language-board"><div class="lang-original-slot"></div><div class="lang-translations-carousel"><div class="lang-script-grid">${data.items.map(item=>{
     const status=langScriptStatus(item);
     return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><div class="lang-script-entry"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити переклад: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
       <span class="lang-script-file-head">${langTranslateIcon}<strong>Переклад</strong><span class="lang-script-fold" aria-hidden="true"></span></span>
       <span class="lang-script-file-title">${esc(item.title||(status.kind==='working'?'Створюємо переклад сценарію…':'Сценарій ролика'))}</span>
       <span class="lang-script-metrics">${langScriptCharacters(item)}<span class="lang-script-job-detail" title="Фрази, узгоджені за довжиною"${status.kind==='working'?'':' hidden'}>${esc(status.compact||'')}</span></span>
-      <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span>${langScriptWarningMarkup(item)}<span class="lang-script-cost"${status.kind!=='working'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
+      <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span>${langScriptWarningMarkup(item)}<span class="lang-script-cost" role="button" tabindex="0" aria-label="Вартість перекладу: ${esc(item.name)}"${status.kind!=='working'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
       <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><div class="lang-script-controls" data-script-controls="${item.code}"></div></div><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
-  }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div>`;
-  holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
+  }).join('')}</div></div></div>`;
+  holder.querySelectorAll('[data-script-code]').forEach(button=>{
+    button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode));
+    const cost=button.querySelector('.lang-script-cost');
+    const open=event=>{event.preventDefault();event.stopPropagation();langOpenTranslationCost(id,button.dataset.scriptCode);};
+    cost.addEventListener('click',open);cost.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key))open(event);});
+  });
   holder.querySelectorAll('[data-language]').forEach(column=>{
     const item=data.items.find(entry=>entry.code===column.dataset.language);
     column.querySelector('.lang-setup-slot').replaceWith(langVoiceSummary(id,item));
@@ -94,10 +111,9 @@ function langScriptLibrary(id,holder,data){
     column.append(langThumbnailTile(id,item));
     column.querySelector('.lang-language-remove').onclick=()=>langRemoveLanguage(id,item.code);
   });
-  holder.querySelector('.lang-script-grid').prepend(langOriginalColumn(id,data));
-  const free=langScriptAvailable(data);
-  holder.querySelector('.lang-script-add').hidden=!free.length;
-  holder.querySelector('.lang-script-add').addEventListener('click',()=>langOpenScriptPicker(id));
+  holder.querySelector('.lang-original-slot').replaceWith(langOriginalColumn(id,data));
+
+  langWireColumnScroll(holder.querySelector('.lang-translations-carousel'));
 }
 
 function langScriptAvailable(data){
@@ -171,6 +187,7 @@ function langPaintScriptJobs(){
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
     button.querySelector('.lang-script-status-label').textContent=status.label;
     button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';
+    button.querySelector('.lang-script-metrics').innerHTML=`${langScriptCharacters(item)}<span class="lang-script-job-detail"></span>`;
     const detail=button.querySelector('.lang-script-job-detail');
     detail.textContent=status.compact||'';detail.hidden=status.kind!=='working';
     button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
@@ -215,9 +232,9 @@ function langOpenScript(id,code){
   const dirty=()=>text.value!==baseline.text||title.value!==baseline.title;
   const keepDraft=()=>{if(dirty())langScriptDrafts.set(key,{text:text.value,title:title.value});else langScriptDrafts.delete(key);};
   function metrics(){
-    dialog.querySelector('.lang-script-chars').textContent=`${langLetters(text.value).toLocaleString('uk-UA')} літер`;
+    dialog.querySelector('.lang-script-chars').textContent=dirty()?'Оновлюємо підрахунок…':`${(item.display_chars??langLetters(text.value)).toLocaleString('uk-UA')} літер з урахуванням чисел`;
     const comparison=dialog.querySelector('.lang-number-comparison');comparison.textContent=langNumberComparison(item);comparison.hidden=dirty()||!comparison.textContent;
-    const info=dialog.querySelector('.lang-translation-info');info.textContent=langTranslationInfo(item);info.hidden=!info.textContent;
+    const info=dialog.querySelector('.lang-translation-info');info.textContent=langTranslationInfo(item);info.hidden=!info.textContent;info.setAttribute('role','button');info.tabIndex=0;info.onclick=()=>langOpenTranslationCost(id,code);
     const lines=dialog.querySelector('.lang-text-lines');lines.textContent=item.lines?`${item.lines} рядків у таймінгах оригіналу. Змінюйте слова, зберігаючи кількість рядків.`:'';
   }
   function sync(){
@@ -230,7 +247,8 @@ function langOpenScript(id,code){
     text.readOnly=busy;title.readOnly=busy;action.disabled=busy||starting;
     action.hidden=busy||starting;
     action.classList.toggle('primary',!item.text);action.classList.toggle('secondary',!!item.text);
-    action.querySelector('span').textContent=item.translation_resumable?'Продовжити переклад':item.text?'Перекласти заново':'Перекласти';
+    action.title=item.translation_resumable?'Продовжує автоматичну перевірку й точкові виправлення. Це не схвалення тексту й не запуск озвучення.':'';
+    action.querySelector('span').textContent=item.translation_resumable?'Продовжити перевірку':item.text?'Перекласти заново':'Перекласти';
     dialog.querySelector('.lang-script-dialog-status span').textContent=status.label;
     dialog.querySelector('.lang-script-dialog-status').hidden=status.kind==='ready';
     dialog.querySelector('.lang-script-fields').hidden=!item.text&&!draft;
@@ -284,4 +302,31 @@ function langOpenScript(id,code){
   dialog.addEventListener('close',()=>{clearTimeout(timer);closed=true;dialog.remove();if(langScriptDialog?.element===dialog)langScriptDialog=null;},{once:true});
   langScriptDialog={project:id,code,element:dialog,flush,sync,error:error=>{message.textContent=error;message.classList.add('is-error');}};
   document.body.append(dialog);sync();dialog.showModal();dialog.querySelector('.lang-script-close').focus();
+}
+
+let langColumnResize=null;
+function langWireColumnScroll(holder){
+  langColumnResize?.disconnect();
+  const grid=holder.querySelector('.lang-script-grid');
+  const update=()=>{holder.classList.toggle('has-before',grid.scrollLeft>1);holder.classList.toggle('has-after',grid.scrollLeft+grid.clientWidth<grid.scrollWidth-2);};
+  grid.addEventListener('scroll',update,{passive:true});
+  langColumnResize=new ResizeObserver(update);langColumnResize.observe(grid);requestAnimationFrame(update);
+}
+
+async function langOpenTranslationCost(id,code){
+  if(state.project?.id!==id)return;
+  const item=langData.items.find(entry=>entry.code===code);if(!item)return;
+  try{
+    const cost=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/cost`);
+    if(state.project?.id!==id)return;
+    const money=value=>`$${Number(value).toFixed(4)}`;
+    const names={translation:'Переклад',title:'Заголовок',checks:'Перевірки',repairs:'Виправлення',unattributed:'Інші збережені витрати'};
+    const rows=Object.entries(cost.categories).map(([key,value])=>`<div><span>${names[key]||esc(key)}</span><b>${money(value)}</b></div>`).join('');
+    const models=Object.entries(cost.models).map(([key,value])=>`<div><span>${esc(key.toLowerCase().includes('deepseek')?'DeepSeek':key.toLowerCase().includes('minimax')?'MiniMax':key)}</span><b>${money(value)}</b></div>`).join('');
+    document.querySelector('.lang-cost-dialog')?.close();
+    const dialog=document.createElement('dialog');dialog.className='lang-script-dialog lang-cost-dialog';
+    dialog.setAttribute('aria-label',`Вартість перекладу: ${item.name}`);
+    dialog.innerHTML=`<div class="lang-script-dialog-head"><h2>Переклад · ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити вартість">×</button></div><div class="lang-script-dialog-body"><div class="lang-cost-breakdown">${rows}<hr>${models}<hr><div class="lang-cost-total"><strong>Усього за цю мову</strong><b>${money(cost.total_usd)}</b></div></div></div>`;
+    dialog.querySelector('button').onclick=()=>dialog.close();dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+  }catch(error){modal('Вартість перекладу',`<p>${esc(error.message)}</p>`,[{label:'Закрити',run:closeModal}]);}
 }

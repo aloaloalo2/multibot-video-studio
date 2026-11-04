@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 function load(api,running=()=>false){
-  const context=vm.createContext({api,langRunning:running});
+  const context=vm.createContext({api,langRunning:running,esc:value=>String(value)});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../language-scripts.js'),'utf8'),context);
   return context;
 }
@@ -103,4 +103,15 @@ test('wrong-language phrase warning identifies exact lines and permits ordinary 
   assert.match(context.langScriptLanguageWarning(bad),/17, 24/);
   assert.match(context.langScriptLanguageWarning(bad),/Озвучення заблоковано/);
   assert.equal(context.langScriptLanguageWarning({language_check:{state:'ok'}}),'');
+});
+
+
+test('card percentage uses the same number-aware letter basis as its count',()=>{
+  const context=load(()=>assert.fail('Local metric needs no request'));
+  const result=context.langScriptDifference({translation_length:{number_comparison:{available:true,source_chars:41477,translated_chars:43254,difference_percent:4.28},script_comparison:{tolerance_percent:7}}});
+  assert.equal(result.label,'+4,28%');assert.equal(result.over,false);assert.match(result.title,/43.*254.*41.*477/);
+  assert.equal(context.langScriptDifference({}),null);
+  const markup=context.langScriptCharacters({display_chars:43254,translation_length:{number_comparison:{available:true,source_chars:41453,translated_chars:43254,difference_percent:4.34}}});
+  assert.match(markup,/43,3K.*\(\+4,34%\)/);
+  assert.doesNotMatch(markup,/<small>/);
 });

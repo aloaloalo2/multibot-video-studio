@@ -1131,6 +1131,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/cost", path)
+        if match:
+            return self.json_response(languages.cost_breakdown(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/alignment", path)
         if match:
             return self.json_response(languages.alignment_timeline(*match.groups()))

@@ -28,7 +28,8 @@ function langAlignmentTempoIcon(tempo){
 
 function langAlignmentCharacters(line,comparison,row){
   const raw=langLetters(line.text||''),normalized=comparison?.available===true;
-  const count=normalized?comparison[row===0?'source_chars':'translated_chars']:raw;
+  if(!normalized)return {label:'Підрахунок недоступний',title:'Порівняння літер з урахуванням чисел недоступне. Непорівнянний сирий підрахунок не показується.'};
+  const count=comparison[row===0?'source_chars':'translated_chars'];
   const difference=normalized?comparison.difference_percent:null;
   const change=row>0&&difference!==null?` (${difference>0?'+':difference<0?'−':''}${Math.abs(difference).toLocaleString('uk-UA',{maximumFractionDigits:1})}%)`:'';
   return {label:`${count.toLocaleString('uk-UA')} літер${change}`,
@@ -164,7 +165,7 @@ function langAlignment(id,item){
         details.innerHTML=[0,compareRow].map(row=>{
           const line=row===0?original:translated;
           const chars=line?langAlignmentCharacters(line,comparison,row):null;
-          return `<div class="lang-alignment-detail"><div><b>${names[row]}</b>${chars?`<small class="lang-alignment-chars" title="${esc(chars.title)}">${chars.label}</small>`:''}<small>${line?`${fmt(line.start)} → ${fmt(line.end)}`:''}</small><button type="button" data-play-row="${row}"${line&&available[row]?'':' disabled'} aria-label="Прослухати фразу ${selected+1}">${playSvg}</button></div>${line?`<div class="lang-alignment-detail-meta"><span>Тривалість ${seconds(line.end-line.start)}</span><span title="${row===0?'Оригінальний запис':'Локальна зміна швидкості згенерованого запису'}">${langAlignmentTempo(line,row).description}</span></div>`:''}<p>${line?esc(line.text):esc(messages[rowData[row]?.status]||'Озвучка ще не готова.')}</p></div>`;
+          return `<div class="lang-alignment-detail"><div><b>${names[row]}</b>${chars?`<small class="lang-alignment-chars" title="${esc(chars.title)}">${chars.label}</small>`:''}<button type="button" data-play-row="${row}"${line&&available[row]?'':' disabled'} aria-label="Прослухати фразу ${selected+1}">${playSvg}</button></div>${line?`<div class="lang-alignment-detail-meta"><span>Тривалість ${seconds(line.end-line.start)}</span><span title="${row===0?'Оригінальний запис':'Локальна зміна швидкості згенерованого запису'}">${langAlignmentTempo(line,row).description}</span></div>`:''}<p>${line?esc(line.text):esc(messages[rowData[row]?.status]||'Озвучка ще не готова.')}</p></div>`;
         }).join('');
         if(move)keepVisible(Math.min(original.start,translated?.start??original.start),Math.max(original.end,translated?.end??original.end));
         remember();playbackButtons();

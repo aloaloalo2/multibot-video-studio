@@ -207,6 +207,7 @@ def paired_forms(source: str, translated: str, source_language: str, target_lang
     _, target_spans, target_ok = normalized(translated, target_language)
     available = source_ok and target_ok
     selected_source, selected_target = [], []
+    source_digits=[span for span in source_spans if any(c.isdecimal() for c in source[span[0]:span[1]])]
     if available:
         digits = defaultdict(deque)
         for span in source_spans:
@@ -221,7 +222,7 @@ def paired_forms(source: str, translated: str, source_language: str, target_lang
         for a, b, value in sorted(spans, reverse=True):
             text = text[:a] + value + text[b:]
         return text
-    return ((render(source, selected_source), tuple(sorted(selected_source)), available),
+    return ((render(source, source_digits), tuple(sorted(selected_source)), available),
             (render(translated, selected_target), tuple(selected_target), available))
 
 
@@ -232,6 +233,15 @@ def comparison_chars(text: str) -> int:
     this linguistic length metric for provider billing or API payload limits.
     """
     return sum(unicodedata.category(char).startswith('L') and char not in '\u02bc\u02bb' for char in text)
+
+
+def source_comparison_chars(text, language, units=None):
+    """Stable source letter basis independent of the selected target language."""
+    def reduced(value):
+        _,spans,ready=normalized(value,language)
+        if not ready:return 0
+        return sum(comparison_chars(value[a:b]) for a,b,_ in spans if any(c.isdecimal() for c in value[a:b]))
+    return comparison_chars(text)-sum(reduced(value) for value in units) if units is not None else comparison_chars(text)-reduced(text)
 
 
 def comparison(source: str, translated: str, source_language: str, target_language: str,

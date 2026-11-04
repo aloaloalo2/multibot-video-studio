@@ -105,6 +105,28 @@ def audit(answer, ids, *, strict=False):
         return invalid_reply()
 
 
+def audit_evidence(answer, ids):
+    """Preserve explicit partial evidence without approving omitted neighbours."""
+    try:
+        value=json.loads(answer,object_pairs_hook=_unique_object)
+        checked=value.get('ids');entries=value.get('issues',[]);ok=value.get('ok')
+        if (type(ok) is not bool or not isinstance(checked,list) or not checked
+                or any(type(i) is not int or i not in ids for i in checked)
+                or len(set(checked))!=len(checked) or not isinstance(entries,list)
+                or (ok and entries) or (not ok and not entries)):
+            raise ValueError('Invalid audit coverage')
+        failed={}
+        for issue in entries:
+            i=issue.get('id');reason=issue.get('reason')
+            if (type(i) is not int or i not in checked or i in failed
+                    or not isinstance(reason,str) or not reason.strip()):
+                raise ValueError('Invalid audit issue')
+            failed[i]=reason
+        return failed,list(checked)
+    except (ValueError,TypeError,AttributeError):
+        raise InvalidAudit('Модель не повернула придатну перевірку змісту.') from None
+
+
 class Draft:
     """Only an exact source/model/language/timing match may resume a draft."""
     def __init__(self, folder, identity):
@@ -143,6 +165,11 @@ class Draft:
                 for key in ('origin', 'issue', 'repair_model'):
                     if isinstance(saved.get(key), str):
                         self.data[key] = saved[key]
+                peers=saved.get('audit_peers')
+                if isinstance(peers,dict):
+                    self.data['audit_peers']={k:v for k,v in peers.items() if isinstance(k,str) and k.isdecimal()
+                        and int(k)<self.size and isinstance(v,dict) and isinstance(v.get('fingerprint'),str)
+                        and type(v.get('passed')) is bool}
                 ledger = saved.get('single_pass_repairs')
                 if isinstance(ledger, dict):
                     self.data['single_pass_repairs'] = {k:v for k,v in ledger.items()
@@ -174,7 +201,7 @@ class Draft:
         if not self.valid_lines(lines):
             raise ValueError('The recovery draft must retain every nonempty source phrase in order.')
         self.save(lines=list(lines), initial_parts={}, audited={}, rewrite={}, rejected={}, completed=False,
-                  origin=origin, issue=None, single_pass_repairs={})
+                  origin=origin, issue=None, single_pass_repairs={}, audit_peers={})
 
     def charge(self, cost):
         if not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:

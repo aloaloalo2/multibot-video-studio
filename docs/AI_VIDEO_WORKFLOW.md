@@ -117,3 +117,11 @@ API працює локально. Не передавайте токени, к�
 ## Letters-only linguistic counts (4 November 2026)
 
 The author defines every displayed or compared linguistic character count as letters only in every language. Use `numeric_comparison.comparison_chars` for script cards including the original, editable counters, whole/phrase comparison, translation targets, synchronization details and measured speech-rate observations. Exclude spaces, line breaks, digits, punctuation, apostrophes (including modifier apostrophes), symbols and emoji. Match exact source digit values to target number words before counting the normalized pair; factual numeric validation remains separate. Do not use obsolete punctuation/space-inclusive voice-rate observations with letter counts: profile version 2 uses measured seconds per letter. Keep raw provider-billed characters and request size limits separate in `billing_chars` fields. Never change spoken text, paid cache identity or regenerate accepted text/audio merely to refresh these read-only metrics.
+
+
+На картках мов показуйте порівняльну кількість літер після зіставлення чисел та відсоток на тій самій основі в одному рядку, наприклад «T 43,3K (+4,34%)». Пояснення про врахування чисел залишайте в підказці. Буквальний підрахунок до врахування чисел зберігається окремо. У деталях синхронізації використовуйте ту саму основу й не показуйте окремий рядок часових меж на кшталт «16:52.8 → 17:01.1».
+
+Натискання на ціну відкриває розбивку витрат на переклад, заголовок, перевірки й виправлення, окремі підсумки моделей та загальну суму за цю мову в проєкті. Усі стовпчики мов розташовані одним горизонтальним рядом зі свайпом без стрілок. Генерація озвучки заблокована, доки переклад сценарію не завершено.
+
+Оригінал залишається зліва; лише перекладені мови гортайте горизонтально без стрілок. Між ними ледь помітна роздільна лінія. Додавання мови відкривається круглим плюсом біля заголовка «Мови».
+Кнопка «Продовжити перевірку» запускає автоматичну роботу зі збереженого місця. Натискання не є схваленням тексту користувачем. Спірне рішення остаточно перевіряється іншою моделлю лише для конкретних фраз, зі збереженням кешу та без другого замовлення переробки.

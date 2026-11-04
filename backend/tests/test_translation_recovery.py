@@ -42,6 +42,16 @@ class StrictReplyTest(unittest.TestCase):
                 self.assertEqual(set(recovery.audit(text, [0])), {0})
         self.assertEqual(recovery.audit('{"ok":true,"ids":[0]}', [0]), {})
 
+    def test_partial_audit_keeps_reported_error_without_approving_missing_neighbours(self):
+        answer='{"ok":false,"ids":[43],"issues":[{"id":43,"reason":"Wrong meaning"}]}'
+        failed,covered=recovery.audit_evidence(answer,[40,41,42,43,44])
+        self.assertEqual(failed,{43:'Wrong meaning'})
+        self.assertEqual(covered,[43])
+        self.assertEqual(set([40,41,42,43,44])-set(covered),{40,41,42,44})
+        for invalid in ['{"ok":true,"ids":[43],"issues":[{"id":43,"reason":"Wrong"}]}',
+                        '{"ok":true,"ids":[43,43]}','{"ok":true,"ids":[999]}']:
+            with self.assertRaises(recovery.InvalidAudit):recovery.audit_evidence(invalid,[43])
+
 
 class DraftTest(unittest.TestCase):
     def test_exact_source_model_target_and_timing_identity_required(self):
@@ -159,6 +169,21 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(draft['lines'][0],'a'*49)
         self.assertEqual(draft['single_pass_repairs']['1']['status'],'requested')
         self.assertTrue(calls)
+
+
+    def test_partial_checker_response_sends_only_unchecked_neighbours_to_deepseek(self):
+        calls=[]
+        def reply(messages,max_tokens=12000):
+            items=json.loads(messages[1]['content']);ids=[x['id'] for x in items];calls.append(ids)
+            if len(calls)==1:return '{"ok":false,"ids":[1],"issues":[{"id":1,"reason":"Wrong fact"}]}',.001
+            if len(calls)==2:return '{"ok":true,"ids":[0]}',.001
+            if len(calls)==3:return '{"1":"Correct words"}',.001
+            return '{"ok":true,"ids":[1]}',.001
+        with patch.object(languages,'ask',side_effect=reply):
+            result,_=languages.before_translate('p','es',{'script':'A B'},['Good words','Wrong words'],['A','B'],self.job)
+        self.assertEqual(result,['Good words','Correct words'])
+        self.assertEqual(calls,[[0,1],[0],[1],[1]])
+        self.assertEqual(self.trace.call_args_list[1].kwargs['request_model'],languages.TRANSLATION_REPAIR_MODEL)
 
     def test_seeded_translation_skips_original_generation(self):
         src = {'script': 's'*100, 'title': 'Title', 'duration': 10}

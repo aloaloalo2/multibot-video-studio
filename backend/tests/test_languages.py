@@ -176,8 +176,9 @@ class LanguagesTest(unittest.TestCase):
             item=languages.overview(self.pid)['items'][0]
         self.assertEqual(text_path.read_bytes(),before)
         self.assertEqual(item['text'],translated)
-        self.assertEqual(item['chars'],sum(c.isalpha() for c in translated))
-        self.assertEqual(item['display_chars'],sum(c.isalpha() for c in translated))
+        self.assertEqual(item['chars'],sum(c.isalpha() for c in 'En ganó libras'))
+        self.assertEqual(item['literal_letter_chars'],sum(c.isalpha() for c in translated))
+        self.assertEqual(item['display_chars'],item['chars'])
         compared=item['translation_length']['number_comparison']
         self.assertTrue(compared['available'])
         self.assertEqual(compared['source_chars'],sum(c.isalpha() for c in source))

@@ -171,6 +171,19 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.ask.assert_not_called()
         self.assertFalse(self.job['translation_length_approval']['script_within_budget'])
 
+    def test_one_independent_verdict_resolves_a_false_positive_without_second_rewrite(self):
+        replies=[('{"ok":false,"ids":[0],"issues":[{"id":0,"reason":"Wrong fact"}]}',.001),
+            ('{"0":"'+ 'u'*100 +'"}',.001),
+            ('{"ok":false,"ids":[0],"issues":[{"id":0,"reason":"Acceptable wording, no factual error"}]}',.001),
+            ('{"ok":true,"ids":[0]}',.001)]
+        self.ask.side_effect=replies
+        result,_=languages.before_translate('test','es',self.source,['t'*100],['s'*100],self.job)
+        self.assertEqual(result,['u'*100])
+        self.assertEqual(self.ask.call_count,4)
+        rewrites=[call for call in self.ask.call_args_list if 'Revise only this ONE' in call.args[0][0]['content']]
+        self.assertEqual(len(rewrites),1)
+        self.speak.assert_not_called()
+
     def test_bad_semantic_length_repair_restores_good_text_without_another_attempt(self):
         self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),('{"0":"'+ 't'*100 +'"}',.01),
             ('{"ok":false,"ids":[0],"issues":[{"id":0,"reason":"Lost source fact"}]}',.01)]
@@ -333,7 +346,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.ask.side_effect = rejected
         with self.assertRaisesRegex(RuntimeError, 'змісту'):
             languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 2)
+        self.assertEqual(self.ask.call_count, 3)
         prompt = self.ask.call_args_list[0].args[0][0]['content']
         for evidence in ('proper names','quantities','units','negation','Equivalent digit','Character length is not a meaning error'):
             self.assertIn(evidence,prompt)

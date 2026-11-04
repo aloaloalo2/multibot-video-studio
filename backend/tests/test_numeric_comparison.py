@@ -149,6 +149,14 @@ class NumericComparisonTest(unittest.TestCase):
         self.assertEqual(raw['translated_chars'],sum(c.isalpha() for c in target))
         self.assertEqual(raw['translated_billing_chars'],len(target))
 
+    def test_original_letter_basis_is_stable_across_translations(self):
+        source='He won 1.5 million dollars.'
+        expected=numbers.source_comparison_chars(source,'en')
+        self.assertEqual(expected,12)
+        for target,code in [('Ganó un millón y medio de dólares.','es'),('Il a gagné deux millions de dollars.','fr')]:
+            report=numbers.comparison(source,target,'en',code)
+            self.assertEqual(report['source_chars'],expected)
+
     def test_only_letters_count_in_every_supported_alphabet(self):
         self.assertEqual(numbers.comparison_chars(" Hello 123, world! "),10)
         self.assertEqual(numbers.comparison_chars("¿Hola, qué tal? ¡Sí! 25%"),12)

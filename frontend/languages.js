@@ -83,12 +83,13 @@ function drawLangs(id){
   const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
   const chosen=langChosen(id);
   section.innerHTML=`<div class="lang-view">
-    <div class="lang-head"><h1>${langTranslateIcon}Мови</h1>
+    <div class="lang-head"><h1>${langTranslateIcon}Мови<button type="button" class="lang-add-language" aria-label="Додати мову перекладу" title="Додати мову">+</button></h1>
       <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом.</p></div>
     <div class="lang-cards"></div>
   </div>`;
   // listeners go on the page's own root, drawn anew each time, so they never pile up on the section
   const view=section.querySelector('.lang-view'),cards=section.querySelector('.lang-cards');
+  const addLanguage=section.querySelector('.lang-add-language');addLanguage.hidden=!langScriptAvailable(data).length;addLanguage.onclick=()=>langOpenScriptPicker(id);
   const item=data.items.find(entry=>entry.code===chosen);
   if(item)cards.append(langCard(id,item,langSpec(item)));
   else {cards.innerHTML='<section class="lang-script-step lang-step"><div class="lang-script-library"></div></section>';langScriptLibrary(id,cards.querySelector('.lang-script-library'),data);}
@@ -466,6 +467,7 @@ function langVoiceTileState(item){
   const spec=langSpec(item),jobs=langJobs().filter(job=>job.code===item.code&&['voice','refit','save-audio'].includes(job.kind));
   const job=jobs.find(entry=>entry.status==='running')||jobs.sort((a,b)=>(b.started_at||b.finished_at||0)-(a.started_at||a.finished_at||0))[0];
   if(job?.status==='running')return {kind:'working',label:job.kind==='voice'?'Створюємо озвучку':job.kind==='refit'?'Вирівнюємо озвучку':'Зберігаємо озвучку',detail:`${Math.round(job.progress||0)}%`,progress:job.progress||0,job};
+  if(!item.text||item.translation_resumable)return {kind:'blocked',blocked:true,label:'Спершу завершіть переклад',detail:''};
   if(job?.status==='failed')return {kind:'attention',label:'Перевірити озвучку',detail:'',job};
   const status=langVoiceStatus(item,spec);
   if(status){
@@ -481,7 +483,8 @@ function langVoiceTile(id,item){
   card.querySelector('button').onclick=()=>{
     const current=langData?.items.find(entry=>entry.code===item.code);if(!current)return;
     const status=langVoiceTileState(current);
-    if(status.kind==='action'&&!status.blocked)langConfirmVoice(id,item.code);else langOpenVoiceResult(id,item.code);
+    if(status.blocked)return;
+    if(status.kind==='action')langConfirmVoice(id,item.code);else langOpenVoiceResult(id,item.code);
   };
   return card;
 }
@@ -490,7 +493,7 @@ function langPaintVoiceTiles(){
   document.querySelectorAll('#project-langs .lang-voice-tile').forEach(card=>{
     const item=langData?.items.find(entry=>entry.code===card.dataset.code);if(!item)return;
     const status=langVoiceTileState(item),button=card.querySelector('button');
-    card.dataset.status=status.kind;
+    card.dataset.status=status.kind;button.disabled=status.kind==='blocked'||(status.kind==='action'&&status.blocked);
     const icon=status.kind==='working'?exportSpinner:status.kind==='attention'||status.review?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':langMagicVoiceIcon;
     const score=status.kind==='ready'?langVoiceScores.get(langVoiceScoreKey(state.project?.id,item)):null;
     button.innerHTML=`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
@@ -566,7 +569,7 @@ async function langConfirmVoice(id,code){
     if(state.project?.id!==id||!(await langFlushScript(id,code)))return;
     const fresh=langData.items.find(entry=>entry.code===code);
     if(!fresh||langRunning(code,'voice')||!langHasVoice(fresh))return;
-    if(fresh.language_check&&fresh.language_check.state!=='ok')return;
+    if(!fresh.text||fresh.translation_resumable||(fresh.language_check&&fresh.language_check.state!=='ok'))return;
     const spec=langSpec(fresh),cost=fresh.prices?.[spec.id],chars=fresh.chars;
     langResultDialog?.dialog.close();
     const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;

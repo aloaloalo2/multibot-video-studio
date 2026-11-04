@@ -63,8 +63,10 @@ class AlignmentTimelineTest(unittest.TestCase):
             data=languages.alignment_timeline('p','pl')
         report=data['character_comparisons'][0]
         self.assertTrue(report['available'])
-        self.assertEqual(report['source_chars'],len(original))
-        self.assertEqual(report['translated_chars'],len('4 października 2021 roku coś takiego spotkało Facebooka.'))
+        self.assertEqual(report['source_chars'],44)
+        self.assertEqual(report['translated_chars'],43)
+        self.assertEqual(report['difference_percent'],-2.27)
+        self.assertTrue(report['letters_only']);self.assertFalse(report['spaces_included'])
         self.assertEqual(report['source_numbers'],2);self.assertEqual(report['translated_numbers'],2)
         self.assertLess(report['difference_percent'],0)
         self.assertEqual(data['translated'][0]['text'],translated)

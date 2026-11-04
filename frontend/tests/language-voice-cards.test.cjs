@@ -71,6 +71,9 @@ test('all translated rows show number-normalized character differences',()=>{
   assert.match(result.label,/12 літер \(\+20%\)/);
   const raw=env.run("langAlignmentCharacters({text:'twenty three'},{available:false},4)");
   assert.doesNotMatch(raw.label,/%/);
+  assert.equal(raw.label,'Підрахунок недоступний');
+  const original=env.run("langAlignmentCharacters({text:'On October 4, 2021, something like that happened to Facebook.'},{available:true,source_chars:44,translated_chars:40,difference_percent:-9.09},0)");
+  assert.equal(original.label,'44 літер');
 });
 
 test('a completed voice with timing issues remains playable and clearly needs review',()=>{
@@ -129,4 +132,13 @@ test('only Unicode letters count in source, translated and alignment displays',(
   assert.equal(env.run(`langLetters("Hello 123, world! — 🙂")`),10);
   assert.equal(env.run(`langLetters("пʼять п’ять п'ять")`),12);
   assert.equal(env.run(`langLetters("¿Hola? ¡Sí!")`),6);
+});
+
+
+test('unfinished scripts keep narration inactive even with a saved narrator voice',async()=>{
+  const env=runtime();env.run("langData.items[0].text='';langData.items[0].translation_resumable={available:true}");
+  const status=env.run('langVoiceTileState(langData.items[0])');
+  assert.equal(status.kind,'blocked');assert.equal(status.blocked,true);assert.match(status.label,/завершіть переклад/);
+  await env.run("langConfirmVoice('project-a','uk')");
+  assert.equal(env.requests.length,0);assert.equal(env.confirmations.length,0);
 });
