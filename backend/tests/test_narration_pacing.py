@@ -9,6 +9,13 @@ import languages
 
 
 class NarrationPacingTest(unittest.TestCase):
+    def test_forecast_uses_measured_join_silence_and_reserves_only_missing_edges(self):
+        texts=['a'*100]*10;known={i:8. for i in range(9)}
+        edge={'leading':.06,'trailing':.06,'speed':1.}
+        forecast=pacing.plan(texts,known,80.,9,{i:edge for i in known})
+        self.assertLess(forecast['join_seconds'],.01)
+        self.assertLess(forecast['predicted_seconds'],80.01)
+
     def test_uses_measured_voice_pace_without_rewriting_future_words(self):
         texts=['a'*100]*100;known={i:8.0 for i in range(5)}
         plan=pacing.plan(texts,known,700,5)

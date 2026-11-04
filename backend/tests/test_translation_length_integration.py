@@ -12,6 +12,19 @@ import languages
 
 
 class TranslationLengthIntegrationTest(unittest.TestCase):
+    def test_explicit_translation_uses_voice_pace_and_reaudits_without_synthesizing(self):
+        self.ask.side_effect = [(json.dumps({'ok':True,'ids':[0]}), .01),
+                                (json.dumps({'0':'t'*90}), .01),
+                                (json.dumps({'ok':True,'ids':[0]}), .01)]
+        with patch.object(languages,'load_state',return_value={'provider':'elevenlabs'}), \
+             patch.object(languages,'voice_cache_context',return_value=({'model':'test'},set())), \
+             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.22,'observations':30}):
+            languages._translate('test','es',self.job)
+        self.assertEqual(self.save.call_args.args[4],'t'*90)
+        self.assertEqual(self.ask.call_count,3)
+        self.assertIn('Measured narration pacing',self.ask.call_args_list[1].args[0][1]['content'])
+        self.speak.assert_not_called()
+
     def setUp(self):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)

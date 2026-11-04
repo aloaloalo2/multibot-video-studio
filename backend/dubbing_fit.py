@@ -6,6 +6,8 @@ import math
 import subprocess
 from pathlib import Path
 
+import narration_audio
+
 MIN_SPEED = 0.93
 MAX_SPEED = 1.07
 LONG_GAP = 1.5
@@ -267,12 +269,17 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
     report = []
     fitted=[None]*len(manifest)
     # Read the preserved sources so legacy manifests also account for native pauses.
-    manifest=[{**item,'edge_silence':measure_edges(parts/item['file'])} for item in manifest]
+    prepared=[]
+    for n,item in enumerate(manifest):
+        if progress:progress(n,len(manifest))
+        trim=narration_audio.inspect(parts/item['file'],parts.parent/'audio-measurements')
+        prepared.append({**item,'trim':trim,'length':trim['length'],'raw_length':trim['raw_length'],
+                         'edge_silence':trim['edge_silence']})
+    manifest=prepared
     speeds=fitting_speeds(manifest,total)
     def render(item, speed):
-        pcm = command(['-i', parts/item['file'], '-af', f'atempo={speed:.6f}', '-ar', rate,
-                       '-ac', '1', '-f', 'f32le', 'pipe:1']) if speed != 1 else command(
-            ['-i', parts/item['file'], '-ar', rate, '-ac', '1', '-f', 'f32le', 'pipe:1'])
+        pcm = command(['-i', parts/item['file'], '-af', narration_audio.filters(item,speed), '-ar', rate,
+                       '-ac', '1', '-f', 'f32le', 'pipe:1'])
         audio = np.frombuffer(pcm, dtype='<f4')
         fitted[item['_rebuild_position']] = audio
         item['edge_silence'] = quiet_edges(audio,rate,speed)

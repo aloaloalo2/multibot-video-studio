@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from statistics import median
 
-from dubbing_fit import MAX_SPEED
+from dubbing_fit import MAX_SPEED, join_gaps
 
 CALIBRATION = 5
 BLOCK = 10
@@ -26,8 +26,11 @@ def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | 
     return (.7*overall+.3*sum(t for _,t in recent)/sum(n for n,_ in recent))*FORECAST_RESERVE
 
 
-def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -> dict:
-    gaps=GAP*max(0,len(texts)-1)
+def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
+         edges: dict[int,dict] | None = None) -> dict:
+    # Use the assembler's boundary measurements when present. Reserve a full
+    # breath only for joins whose audio has not yet been generated.
+    gaps=sum(join_gaps([{'edge_silence':(edges or {}).get(i)} for i in range(len(texts))]))
     measured=sum(known.values())
     # Recorded takes already include their boundary pauses. Extra join padding is
     # a forecast reserve, not a measured impossibility; the assembler measures it.
@@ -37,7 +40,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int) -
                            'при прискоренні до 7%. Нові платні запити зупинено. Усі записи збережені.')
     rate=seconds_per_character(texts,known)
     pending=[i for i in range(offset,len(texts)) if i not in known]
-    result={'measured_phrases':len(known),'measured_seconds':round(measured,3),
+    result={'measured_phrases':len(known),'measured_seconds':round(measured,3),'join_seconds':round(gaps,3),
             'seconds_per_character':rate,'predicted_seconds':None,'predicted_minimum_seconds':None,
             'requires_review':False,'targets':{}}
     if rate is None or not pending:return result

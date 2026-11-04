@@ -44,6 +44,8 @@ import eleven_api
 import eleven_voices
 import voice_cache
 import narration_pacing
+import narration_audio
+import narration_profile
 import translation_budget
 import translation_recovery
 import store
@@ -922,6 +924,16 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         draft.save(lines=texts)
     spent = 0.0
     source_language = src.get('language') or original_language(pid, store.load_project(pid), src['script'])
+    # Only an explicit translation action may adapt wording to the selected
+    # voice's real pace. Opening a page or starting narration never does this.
+    state=load_state(pid)
+    provider=state.get('provider')
+    profile=None
+    if provider in PROVIDERS:
+        identity,_=voice_cache_context(pid,code,provider)
+        profile=narration_profile.read(store.DATA_ROOT/'narration-profiles',identity)
+    timed=segments_of(store.load_project_narration(pid) or {}) if profile else []
+    pacing_attempts=0
 
     def charge(cost):
         nonlocal spent
@@ -1069,6 +1081,24 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         draft.save(lines=current, length=state)
         checked = validate_final(current)
         if isinstance(checked, list):
+            timing=narration_profile.refinement(checked,timed,src.get('duration') or 0,profile)
+            if timing['ids']:
+                if pacing_attempts>=3:
+                    pause('Потрібна перевірка стислого перекладу для вибраного голосу. Готовий текст збережено, озвучення не запускалось.')
+                pacing_attempts+=1
+                baseline=sum(map(len,checked))
+                progress(pid,job,95,'Узгоджуємо переклад із виміряним темпом голосу')
+                reasons={i:f"Measured narration pacing: about {timing['targets'][i]} spoken-text characters "
+                    f"for this unit (currently {len(checked[i])}). Use concise natural wording with EVERY source fact. "
+                    'Keep number words, complete grammar and the original meaning. This is a speech-duration budget, '
+                    'not the number-normalized comparison.' for i in timing['ids']}
+                fixed=replacements(checked,timing['ids'],reasons)
+                candidate=[fixed.get(i,text) for i,text in enumerate(checked)]
+                if sum(map(len,candidate))>=baseline:
+                    pause('Переклад потребує стислого формулювання для вибраного голосу. Модель не скоротила текст зі збереженням змісту.')
+                current=candidate
+                draft.save(lines=current,issue='Перевіряємо зміст після узгодження з темпом голосу.')
+                continue
             plan = translation_budget.number_refinement_plan(src['script'], checked, source_units, source_language, code)
             job['translation_length']['target_tolerance_percent'] = 5 if plan['available'] else None
             if not plan['available']:
@@ -1076,7 +1106,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 # translations, or pretend a raw count meets a normalized goal.
                 draft.save(lines=checked, length=state, issue=None, rewrite={}, semantic_issues={})
                 return checked, spent
-            if plan['ids']:
+            # Do not add filler to match a count when measured speech has used
+            # its time budget. The source-meaning audit above remains mandatory.
+            if plan['ids'] and not (profile and plan['direction']=='expand'):
                 baseline = plan['report']['over_by'] + plan['report']['under_by']
                 improved = False
                 for attempt in range(3):
@@ -1838,6 +1870,8 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
                 store.atomic_json(folder/'requests.json',requests)
                 record_voice_cost(job, requests)
         parts.append(target)
+        measured=narration_audio.inspect(target,work/'audio-measurements')
+        narration_profile.remember(store.DATA_ROOT/'narration-profiles',identity,[(piece,measured)])
     progress(pid,job,95,'Збираємо зразок із збережених фраз')
     staged=folder/'sample.mp3'
     if len(parts)==1:
@@ -1965,14 +1999,20 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     cached=voice_cache.candidates(work,identity,aliases)
     # Persist eligible legacy takes before moving their old parts folder into history.
     cached={text:voice_cache.remember(work,identity,text,cached[text]) for text in dict.fromkeys(texts) if text in cached}
-    cached_lengths={text:store.media_duration(path) for text,path in cached.items()}
+    prepared={}
+    for n,(text,path) in enumerate(cached.items()):
+        progress(pid,job,0,f'Перевіряємо збережені фрази {n+1} з {len(cached)}')
+        prepared[text]=narration_audio.inspect(path,work/'audio-measurements')
+    cached_lengths={text:item['length'] for text,item in prepared.items()}
+    narration_profile.remember(store.DATA_ROOT/'narration-profiles',identity,list(prepared.items()))
     known={i:cached_lengths[text] for i,text in enumerate(texts) if text in cached_lengths}
     known={i:t for i,t in known.items() if t and t>0}
     if job.get('cache_only') and len(known)!=len(texts):
         raise store.StudioError('Для локального збирання бракує готових записів. Нових платних запитів не виконано.',409)
     # Saved wording is final for every voice run, including older callers sending
     # preserve_text=False. Pacing may warn or stop; it never rewrites accepted text.
-    narration_pacing.plan(texts,known,total,0)
+    narration_pacing.plan(texts,known,total,0,{i:prepared[text]['edge_silence']
+                                            for i,text in enumerate(texts) if text in prepared})
     voice=None
     stamp=made_with(pid,provider,code)
     job.update(cost=0,cost_unit='credits' if provider=='elevenlabs' else 'usd',takes=0,reused=0)
@@ -2023,7 +2063,8 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         if number>=next_check:
             known.update({i:cached_lengths[value] for i,value in enumerate(texts)
                           if value in cached_lengths and cached_lengths[value]})
-            forecast=narration_pacing.plan(texts,known,total,number)
+            forecast=narration_pacing.plan(texts,known,total,number,{i:prepared[text]['edge_silence']
+                                                                  for i,text in enumerate(texts) if text in prepared})
             store.atomic_json(parts_dir/'pacing.json',forecast)
             next_check=number+(narration_pacing.BLOCK if forecast['seconds_per_character'] else narration_pacing.CALIBRATION)
             job['pacing_review'] = forecast.get('requires_review', False)
@@ -2046,13 +2087,16 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             cached[text]=voice_cache.remember(work,identity,text,spoken)
         start = float(line["start"])
         place = (float(segments[number + 1]["start"]) if number + 1 < len(segments) else max(total, float(line["end"]))) - start - 0.05
-        length = store.media_duration(spoken) or 0
+        trim=prepared.get(text) or narration_audio.inspect(spoken,work/'audio-measurements')
+        prepared[text]=trim
+        narration_profile.remember(store.DATA_ROOT/'narration-profiles',identity,[(text,trim)])
+        length=trim['length']
         known[number]=length
         cached_lengths[text]=length
         # Each phrase is paid once. Fit the saved take locally; never silently buy timing retries.
         speed = dubbing_fit.fit_speed(length, place, float(line["end"]) - start)
         fitted = parts_dir / f"{number:05d}-line.wav"
-        filters = (f"atempo={speed:.6f}," if abs(speed - 1) > .001 else "") + "aresample=48000"
+        filters = narration_audio.filters({'trim':trim},speed)
         run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(spoken), "-af", filters, "-ac", "1", "-c:a", "pcm_s16le", str(fitted)],
             "підігнати фразу")
         fitted_length=store.media_duration(fitted) or length/speed
@@ -2061,6 +2105,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
                          "reused":reused,"cache_key":voice_cache.take_key(identity,text),
                          "source": line["source"], "original_start": line["start"], "original_end": line["end"],
                          "start": start,"fitted_length":fitted_length,"length": length, "speed": speed,
+                         "raw_length":trim['raw_length'],"trim":trim,
                          "edge_silence":dubbing_fit.measure_edges(fitted,speed)})
         store.atomic_json(parts_dir / "manifest.json", manifest)
         for entry in requests:
@@ -2070,7 +2115,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     for item,speed in zip(manifest,dubbing_fit.fitting_speeds(manifest,total)):
         if abs(speed-item['speed'])<.0001:continue
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
-             '-af',f'atempo={speed:.6f},aresample=48000','-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
+             '-af',narration_audio.filters(item,speed),'-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
             'збалансувати темп у межах 7%')
         item.update(speed=speed,fitted_length=store.media_duration(parts_dir/item['fitted']),
                     edge_silence=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed))
@@ -2078,7 +2123,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     def render_measured(item,speed):
         progress(pid,job,92,'Уточнюємо тривалість готових фраз без нових витрат')
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
-             '-af',f'atempo={speed:.6f},aresample=48000','-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
+             '-af',narration_audio.filters(item,speed),'-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
             'уточнити фактичний темп у межах 7%')
         item['edge_silence']=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed)
         return store.media_duration(parts_dir/item['fitted'])
