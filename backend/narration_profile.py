@@ -82,17 +82,36 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
         return {'ids': []}
     available = max(0., total - .05*max(0, len(texts)-1) - max(1., total*.003))
     limit = math.floor(available * narration_pacing.MAX_SPEED / rate)
-    excess = sum(map(len, texts)) - limit
-    if excess <= 0:
-        return {'ids': [], 'max_chars': limit, 'observations': profile['observations']}
-    order = sorted(range(len(texts)), key=lambda i: (
-        -(len(texts[i])*rate - max(0., segments[i]['end']-segments[i]['start'])), -len(texts[i])))
-    targets = {}
-    for i in order:
-        reduction = min(excess, max(1, math.floor(len(texts[i])*.12)))
-        targets[i] = len(texts[i]) - reduction
-        excess -= reduction
-        if excess <= 0:
-            break
-    return {'ids': sorted(targets), 'targets': targets, 'max_chars': limit,
+    targets = {i: len(text) for i, text in enumerate(texts)}
+
+    def reduce(indexes, excess):
+        order = sorted(indexes, key=lambda i: (
+            -(targets[i]*rate - max(0., segments[i]['end']-segments[i]['start'])), -targets[i]))
+        for i in order:
+            if excess <= 0:
+                break
+            # At most twelve percent per pass, even if both a block and the
+            # film need room. Re-audit all wording before any further pass.
+            capacity = min(len(texts[i])-1, max(1, math.floor(len(texts[i])*.12)))
+            used = len(texts[i])-targets[i]
+            reduction = min(excess, max(0, capacity-used))
+            targets[i] -= reduction
+            excess -= reduction
+
+    reduce(range(len(texts)), sum(targets.values())-limit)
+    windows = []
+    for start in range(0, len(texts), 10):
+        end = min(len(texts), start+10)
+        # Adjacent blocks can borrow two seconds on each side. The whole-film
+        # constraint above still applies, so this cannot extend the final audio.
+        left = max(0., float(segments[start]['start'])-2) if start else 0.
+        right = min(total, float(segments[end]['start'])+2) if end<len(texts) else total
+        seconds = max(0., right-left-.05*(end-start))
+        block_limit = math.floor(seconds*narration_pacing.MAX_SPEED/rate)
+        excess = sum(targets[i] for i in range(start,end))-block_limit
+        if excess > 0:
+            windows.append({'start_index':start,'end_index':end-1,'max_chars':block_limit})
+            reduce(range(start,end),excess)
+    changed = {i:value for i,value in targets.items() if value<len(texts[i])}
+    return {'ids': sorted(changed), 'targets': changed, 'max_chars': limit,'windows':windows,
             'over_by': max(0, sum(map(len, texts))-limit), 'observations': profile['observations']}

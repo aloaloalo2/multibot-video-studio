@@ -89,6 +89,17 @@ class NarrationAudioTest(unittest.TestCase):
 
 
 class NarrationProfileTest(unittest.TestCase):
+    def test_an_oversized_block_is_refined_even_when_the_whole_film_fits(self):
+        texts=['a'*100]*20
+        segments=[{'start':i*5.,'end':(i+1)*5.} for i in range(10)]
+        segments += [{'start':50+(i-10)*15.,'end':50+(i-9)*15.} for i in range(10,20)]
+        plan=profile.refinement(texts,segments,200.,{'seconds_per_character':.08,'observations':30})
+        self.assertEqual(plan['over_by'],0)
+        self.assertTrue(plan['ids'])
+        self.assertTrue(all(i<10 for i in plan['ids']))
+        self.assertTrue(all(value>=88 for value in plan['targets'].values()))
+        self.assertEqual(plan['windows'][0]['start_index'],0)
+
     def test_profile_isolated_by_voice_model_language_and_reused_only_once(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);identity={'model':'v4','voice':'one','language':'uk'}
