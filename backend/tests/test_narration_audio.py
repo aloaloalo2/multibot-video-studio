@@ -87,7 +87,7 @@ class NarrationAudioTest(unittest.TestCase):
         path,_=self.fixture();digest=hashlib.sha256(path.read_bytes()).hexdigest()
         items=[{'index':i,'file':path.name,'start':i*2.5,'original_start':i*2.5,
                 'original_end':i*2.5+2.3,'length':3.29} for i in range(4)]
-        with self.assertRaisesRegex(RuntimeError,'при межі 12%'):
+        with self.assertRaisesRegex(RuntimeError,'при межі 13%'):
             dubbing_fit.fitting_speeds(items,10.)
         result=dubbing_fit.rebuild(self.folder,items,self.folder/'full.mp3',10.)
         self.assertEqual(len(result['phrases']),4)

@@ -730,7 +730,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(calls, [("Раз. Два.", 1.0), ("Три.", 1.0), ("Чотири.", 1.0)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.12))
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.13))
         self.assertGreater(voice["latest"],0)
         self.assertGreater(len(voice["timing_issues"]),0)
         self.assertFalse(voice["paid_timing_retries"])
