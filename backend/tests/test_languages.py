@@ -177,10 +177,12 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(text_path.read_bytes(),before)
         self.assertEqual(item['text'],translated)
         self.assertEqual(item['chars'],len(translated))
+        self.assertEqual(item['display_chars'],len(translated)-1)
         compared=item['translation_length']['number_comparison']
         self.assertTrue(compared['available'])
-        self.assertEqual(compared['source_chars'],len(source))
-        self.assertEqual(compared['translated_chars'],len('En 2017 ganó 25 libras.'))
+        self.assertEqual(compared['source_chars'],len(source)-1)
+        self.assertEqual(compared['translated_chars'],len('En 2017 ganó 25 libras'))
+        self.assertTrue(compared['punctuation_excluded'])
         self.assertEqual(item['prices']['fishaudio'],languages.price('fishaudio',translated,languages.fish_engine(self.pid)))
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):

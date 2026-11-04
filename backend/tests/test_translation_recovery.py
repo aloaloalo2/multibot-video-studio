@@ -79,7 +79,7 @@ class ContinuationTest(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.folder = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         self.stack.enter_context(patch.object(languages, 'work_dir', return_value=self.folder))
-        self.stack.enter_context(patch.object(languages, 'translation_trace', return_value=contextlib.nullcontext()))
+        self.trace=self.stack.enter_context(patch.object(languages, 'translation_trace', side_effect=lambda *a,**kw:contextlib.nullcontext()))
         self.stack.enter_context(patch.object(languages, 'progress'))
         self.stack.enter_context(patch.object(languages.language_quality, 'require'))
         self.stack.enter_context(patch.object(languages, 'translator', return_value='Translate naturally.'))
@@ -128,6 +128,9 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(requests, [[1]])
         self.assertEqual(audits, [[0, 1], [1]])
         self.assertEqual(lines, ['a'*49, 'c'*90])
+        models=[call.kwargs.get('request_model') for call in self.trace.call_args_list]
+        self.assertEqual(models,[languages.DEFAULT_TRANSLATION_MODEL,
+            languages.TRANSLATION_REPAIR_MODEL,languages.TRANSLATION_REPAIR_MODEL])
 
     def test_saved_partial_semantic_repair_resumes_without_paid_repeat(self):
         src, units, lines = {'script': 's'*99}, ['s'*49]*2, ['t'*60]*2

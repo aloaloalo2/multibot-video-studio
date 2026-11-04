@@ -149,6 +149,24 @@ class TranslationModelsTest(unittest.TestCase):
             self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], first)
         self.assertIsNone(getattr(languages.TRANSLATION_CONTEXT, 'value', None))
 
+    def test_corrective_request_uses_deepseek_without_exposing_it_as_primary_translation_choice(self):
+        calls=[]
+        def request(url,body,headers,what):
+            calls.append(json.loads(body))
+            return json.dumps({'choices':[{'message':{'content':'Corrected.'}}],'usage':{'cost':.001}}).encode()
+        job={'translation_model':languages.DEFAULT_TRANSLATION_MODEL}
+        with patch.object(languages,'request',side_effect=request),patch.object(languages,'record_translation'):
+            with languages.translation_trace(self.pid,'uk',job):
+                languages.ask([],300)
+                with languages.translation_trace(self.pid,'uk',job,request_model=languages.TRANSLATION_REPAIR_MODEL):
+                    self.assertEqual(languages.ask([],300),('Corrected.',.001))
+                languages.ask([],300)
+        self.assertEqual([x['model'] for x in calls],[languages.DEFAULT_TRANSLATION_MODEL,
+            languages.DEEPSEEK_TRANSLATION_MODEL,languages.DEFAULT_TRANSLATION_MODEL])
+        self.assertEqual(calls[1]['reasoning'],{'enabled':False})
+        self.assertEqual(calls[1]['max_tokens'],300)
+        self.assertNotIn(languages.DEEPSEEK_TRANSLATION_MODEL,languages.TRANSLATION_MODELS)
+
     def test_api_route_saves_only_the_requested_project_language_model(self):
         import app
         handler = object.__new__(app.Handler)

@@ -63,6 +63,16 @@ test('translation cost is rounded to three dollars decimals and unknown cost sta
   }
 });
 
+test('script size uses compact K formatting without changing exact counts',()=>{
+  const context=load(()=>assert.fail('A count must not start a request'));
+  assert.equal(context.langShortCharacters(5600),'5,6K');
+  assert.equal(context.langShortCharacters(2300),'2,3K');
+  assert.equal(context.langShortCharacters(2002),'2K');
+  assert.equal(context.langShortCharacters(999),'999');
+  assert.equal(context.langShortCharacters(1000),'1K');
+  assert.equal(context.langScriptCharacters({display_chars:0}),'');
+});
+
 test('review shows measured total progress and provider wait without a fake completion percentage',()=>{
   const context=load(()=>assert.fail('Display must not call the API'));
   const job={status:'running',progress:95,stage:'Legacy stage',
@@ -73,6 +83,11 @@ test('review shows measured total progress and provider wait without a fake comp
   assert.match(status.detail,/301 з 341/);
   assert.match(status.detail,/20 фраз/);
   assert.match(status.detail,/MiniMax.*1:15/);
+  assert.equal(status.compact,'301/341');
+  assert.equal(status.label,'Узгодження');
+  const audit=context.langTranslationProgress({...job,translation_review:{...job.translation_review,phase:'audit',audited:320}},175);
+  assert.equal(audit.compact,status.compact);
+  assert.equal(audit.label,'Перевірка');
   const legacy=context.langTranslationProgress({status:'running',progress:95,
     stage:'Уточнюємо переклад: готово 0 з 20 фраз'});
   assert.equal(legacy.indeterminate,true);

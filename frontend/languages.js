@@ -307,7 +307,7 @@ function langTranslationInfo(item){
   if(!item.translated_model)return '';
   const model=langData.translation_models?.find(entry=>entry.id===item.translated_model);
   const price=Number.isFinite(item.translate_cost)?` · $${item.translate_cost.toLocaleString('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:4})}`:'';
-  return `Переклад: ${model?.name || item.translated_model}${price}`;
+  return `Переклад: ${model?.name || item.translated_model}${item.translation_repair_model?' · уточнення: DeepSeek':''}${price}`;
 }
 
 function langNumberComparison(item){
@@ -316,7 +316,7 @@ function langNumberComparison(item){
   const number=n=>n.toLocaleString('uk-UA',{maximumFractionDigits:2});
   const percent=(value.difference_percent>0?'+':'')+number(value.difference_percent);
   const limit=item.translation_length?.script_comparison?.tolerance_percent;
-  return `З урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів${limit?` · межа ±${limit}%`:''}`;
+  return `З урахуванням чисел${value.punctuation_excluded?', без пунктуації':''}: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів${limit?` · межа ±${limit}%`:''}`;
 }
 
 function langSpec(item){
@@ -618,9 +618,11 @@ function langThumbnailResult(id,item){
 let langThumbnailDialog=null;
 function langThumbnailTile(id,item){
   const tile=document.createElement('div');tile.className='lang-thumbnail-tile';tile.dataset.code=item.code;
-  tile.innerHTML=`<strong>${langFlag(item.code)}Прев’ю</strong><button type="button" aria-label="Прев’ю: ${esc(item.name)}">${item.files?.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю ${esc(item.name)}" loading="lazy">`:''}<span>${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>${item.files?.thumbnail?'Переглянути':'Згенерувати'}</small></span></button>`;
+  const ready=!!item.files?.thumbnail;
+  tile.innerHTML=`<strong>${langFlag(item.code)}Прев’ю</strong><div class="lang-thumbnail-preview"><button type="button" class="lang-thumbnail-image" aria-label="Прев’ю: ${esc(item.name)}">${ready?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю ${esc(item.name)}" loading="lazy">`:''}<span class="lang-thumbnail-status"${ready?' hidden':''}>${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати</small></span></button>${ready?`<div class="lang-thumbnail-actions"><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" aria-label="Завантажити прев’ю: ${esc(item.name)}" title="Завантажити">${langDownloadIcon}</a><button type="button" class="project-action lang-thumbnail-redo" aria-label="Згенерувати прев’ю ще раз: ${esc(item.name)}" title="Згенерувати ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button></div>`:''}</div>`;
   tile.classList.toggle('has-picture',!!item.files?.thumbnail);
-  tile.querySelector('button').onclick=()=>langOpenThumbnail(id,item.code);return tile;
+  tile.querySelector('.lang-thumbnail-image').onclick=()=>langOpenThumbnail(id,item.code);
+  tile.querySelector('.lang-thumbnail-redo')?.addEventListener('click',()=>langOpenThumbnail(id,item.code,true));return tile;
 }
 function langRefreshThumbnailDialog(){
   if(!langThumbnailDialog)return;
@@ -628,14 +630,14 @@ function langRefreshThumbnailDialog(){
   if(state.project?.id!==id||!item){dialog.close();return;}
   dialog.querySelector('.lang-thumbnail-dialog-body').replaceChildren(langThumbnailResult(id,item));
 }
-function langOpenThumbnail(id,code){
+function langOpenThumbnail(id,code,showWishes=false){
   if(state.project?.id!==id)return;
   const item=langData?.items.find(entry=>entry.code===code);if(!item)return;
   langThumbnailDialog?.dialog.close();
   const dialog=document.createElement('dialog');dialog.className='lang-thumbnail-dialog';dialog.setAttribute('aria-labelledby','lang-thumbnail-title');
   dialog.innerHTML=`<div class="lang-script-dialog-head"><h2 id="lang-thumbnail-title">${langFlag(code)} Прев’ю · ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити прев’ю">×</button></div><div class="lang-thumbnail-dialog-body"></div>`;
   langThumbnailDialog={id,code,dialog};langRefreshThumbnailDialog();
-  const ask=dialog.querySelector('.lang-thumb-ask');if(ask&&!item.files?.thumbnail)ask.hidden=false;
+  const ask=dialog.querySelector('.lang-thumb-ask');if(ask&&(!item.files?.thumbnail||showWishes))ask.hidden=false;
   dialog.querySelector('.lang-script-close').onclick=()=>dialog.close();
   dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
   dialog.addEventListener('close',()=>{if(langThumbnailDialog?.dialog===dialog)langThumbnailDialog=null;dialog.remove();},{once:true});
@@ -792,7 +794,9 @@ function showLangJob(){
   }
   document.querySelectorAll('#project-langs .lang-thumbnail-tile[data-code]').forEach(tile=>{
     const busy=langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);
-    tile.querySelector('small').textContent=busy?'Створюємо…':tile.classList.contains('has-picture')?'Переглянути':'Згенерувати';
+    const status=tile.querySelector('.lang-thumbnail-status');status.hidden=tile.classList.contains('has-picture')&&!busy;
+    status.querySelector('small').textContent=busy?'Створюємо…':'Згенерувати';
+    const redo=tile.querySelector('.lang-thumbnail-redo');if(redo)redo.disabled=busy;
   });
   document.querySelectorAll('.lang-language-remove').forEach(button=>button.disabled=langRunning(button.dataset.code));
 }

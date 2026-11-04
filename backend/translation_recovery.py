@@ -140,7 +140,7 @@ class Draft:
                 cost = saved.get('cost_usd')
                 if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0:
                     self.data['cost_usd'] = float(cost)
-                for key in ('origin', 'issue'):
+                for key in ('origin', 'issue', 'repair_model'):
                     if isinstance(saved.get(key), str):
                         self.data[key] = saved[key]
                 rejected = saved.get('rejected')

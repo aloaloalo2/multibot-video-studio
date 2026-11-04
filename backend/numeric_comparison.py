@@ -5,6 +5,7 @@ No source text, narration cache key, price or timing is changed here.
 from __future__ import annotations
 
 import re
+import unicodedata
 from decimal import Decimal
 from functools import lru_cache
 
@@ -224,6 +225,15 @@ def paired_forms(source: str, translated: str, source_language: str, target_lang
             (render(translated, selected_target), tuple(selected_target), available))
 
 
+def comparison_chars(text: str) -> int:
+    """Count letters, digits and spaces without Unicode punctuation.
+
+    Apply after value matching so decimal marks, thousands separators and
+    apostrophes cannot change which quantities are paired. Never use for billing.
+    """
+    return sum(char != '\u02bc' and not unicodedata.category(char).startswith('P') for char in text)
+
+
 def comparison(source: str, translated: str, source_language: str, target_language: str,
                *, source_units=None, translated_units=None) -> dict:
     if (source_units is not None and translated_units is not None
@@ -234,16 +244,16 @@ def comparison(source: str, translated: str, source_language: str, target_langua
         pairs = [paired_forms(a, b, source_language, target_language)
                  for a, b in zip(source_units, translated_units)]
         ready = source_language in SUPPORTED and target_language in SUPPORTED and all(a[2] and b[2] for a, b in pairs)
-        source_reduction = sum(len(text)-len(pair[0][0]) for text, pair in zip(source_units, pairs))
-        target_reduction = sum(len(text)-len(pair[1][0]) for text, pair in zip(translated_units, pairs))
-        left_count, right_count = len(source)-source_reduction, len(translated)-target_reduction
+        source_reduction = sum(comparison_chars(text)-comparison_chars(pair[0][0]) for text, pair in zip(source_units, pairs))
+        target_reduction = sum(comparison_chars(text)-comparison_chars(pair[1][0]) for text, pair in zip(translated_units, pairs))
+        left_count, right_count = comparison_chars(source)-source_reduction, comparison_chars(translated)-target_reduction
         source_count = sum(len(a[1]) for a, _ in pairs)
         target_count = sum(len(b[1]) for _, b in pairs)
     else:
         (left, left_spans, ready), (right, right_spans, _) = paired_forms(source, translated, source_language, target_language)
-        left_count, right_count = len(left), len(right)
+        left_count, right_count = comparison_chars(left), comparison_chars(right)
         source_count, target_count = len(left_spans), len(right_spans)
-        source_reduction, target_reduction = len(source)-left_count, len(translated)-right_count
+        source_reduction, target_reduction = comparison_chars(source)-left_count, comparison_chars(translated)-right_count
     difference = right_count-left_count
     return {'available':ready,'source_language':source_language,'target_language':target_language,
             'source_chars':left_count if ready else None,'translated_chars':right_count if ready else None,
@@ -251,4 +261,5 @@ def comparison(source: str, translated: str, source_language: str, target_langua
             'difference_percent':round(100*difference/left_count,2) if ready and left_count else None,
             'source_numbers':source_count,'translated_numbers':target_count,
             'source_reduction':source_reduction,'translated_reduction':target_reduction,
-            'basis':'source_digits_matched_to_target_words','advisory_only':True}
+            'basis':'source_digits_matched_to_target_words','punctuation_excluded':True,
+            'spaces_included':True,'advisory_only':True}

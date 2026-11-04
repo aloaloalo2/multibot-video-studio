@@ -54,7 +54,8 @@ def number_refinement_plan(source_text, lines, source_units, source_language, ta
         source_units=source_units, translated_units=spoken)
     # report() owns the same integer length bounds used for every phrase.
     state = report_counts(summary['source_chars'], summary['translated_chars'], SCRIPT_TOLERANCE)
-    phrases = [dict(report(left, right, NUMBER_AWARE_TOLERANCE), id=i)
+    phrases = [dict(report_counts(numeric_comparison.comparison_chars(left),
+                                 numeric_comparison.comparison_chars(right), NUMBER_AWARE_TOLERANCE), id=i)
                for i, (left, right) in enumerate(zip(originals, values))]
     pending = [row['id'] for row in phrases if not row['within_budget']]
     ranked = sorted(pending, key=lambda i: (-abs(phrases[i]['difference_percent'] or 0),

@@ -18,7 +18,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
                                 (json.dumps({'ok':True,'ids':[0]}), .01)]
         with patch.object(languages,'load_state',return_value={'provider':'elevenlabs'}), \
              patch.object(languages,'voice_cache_context',return_value=({'model':'test'},set())), \
-             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.21,'observations':30}):
+             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.22,'observations':30}):
             languages._translate('test','es',self.job)
         self.assertEqual(self.save.call_args.args[4],'t'*96)
         self.assertEqual(self.ask.call_count,3)

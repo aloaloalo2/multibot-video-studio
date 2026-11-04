@@ -3,6 +3,15 @@ const langScriptDrafts=new Map();
 let langScriptDialog=null;
 const langTranslateIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 9 10M13 5c-1 5-4 8-9 10M13 21l4-10 4 10m-6.7-3h5.4"/></svg>';
 const langScriptCheck='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';
+const langCharactersIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M12 5v14M9 19h6"/></svg>';
+
+function langShortCharacters(count){
+  return count>=1000?`${(count/1000).toLocaleString('uk-UA',{maximumFractionDigits:1})}K`:String(count);
+}
+function langScriptCharacters(item){
+  const count=item.display_chars;
+  return Number.isInteger(count)&&count>0?`<span class="lang-script-characters" title="${count.toLocaleString('uk-UA')} символів без пунктуації, з пробілами">${langCharactersIcon}${langShortCharacters(count)}</span>`:'';
+}
 
 function langScriptJob(code){
   return langJobs().filter(job=>job.code===code&&job.kind==='translate')
@@ -20,7 +29,7 @@ function langTranslationProgress(job,now=Date.now()/1000){
   const reviewing=job.status==='running'&&Number(job.progress)===95;
   let label='Перекладаємо',detail=job.stage||'Перекладаємо…';
   if(reviewing){
-    label=({audit:'Перевіряємо зміст',meaning:'Виправляємо зміст',length:'Уточнюємо довжину',pacing:'Узгоджуємо темп'})[review?.phase]||'Уточнюємо переклад';
+    label=({audit:'Перевірка',meaning:'Уточнення',length:'Узгодження',pacing:'Темп голосу'})[review?.phase]||'Уточнення';
     const parts=[];
     if(comparison?.available&&Number.isInteger(comparison.total)&&Number.isInteger(comparison.outside_count)){
       parts.push(`Довжина узгоджена: ${comparison.total-comparison.outside_count} з ${comparison.total} фраз`);
@@ -36,11 +45,16 @@ function langTranslationProgress(job,now=Date.now()/1000){
     }
     if(review?.waiting){
       const elapsed=Math.max(0,Math.floor(now-review.request_started_at));
-      parts.push(`Очікуємо відповідь MiniMax · ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`);
+      parts.push(`Очікуємо відповідь ${review.model_name||'MiniMax'} · ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`);
     }else if(!review)parts.push('Очікуємо відповідь MiniMax');
     detail=parts.join(' · ');
   }
-  return {label,detail,progress:job.progress||0,indeterminate:reviewing};
+  // Keep one metric while audit/rewriting phases alternate. Switching to the
+  // audit counter here made the same job appear to jump backwards repeatedly.
+  const counted=comparison?.available?comparison.total-comparison.outside_count:null;
+  const compact=reviewing&&Number.isInteger(counted)?`${counted}/${comparison.total}`:
+    reviewing?'Очікуємо відповідь':`${Math.round(job.progress||0)}%`;
+  return {label,detail,compact,progress:job.progress||0,indeterminate:reviewing};
 }
 
 function langScriptStatus(item){
@@ -52,14 +66,15 @@ function langScriptStatus(item){
 }
 
 function langScriptLibrary(id,holder,data){
-  holder.innerHTML=`<div class="lang-script-grid">${data.items.filter(item=>item.text).map(item=>{
+  holder.innerHTML=`<div class="lang-script-grid">${data.items.map(item=>{
     const status=langScriptStatus(item);
-    return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити переклад: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
+    return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><div class="lang-script-entry"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити переклад: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
       <span class="lang-script-file-head">${langTranslateIcon}<strong>Переклад</strong><span class="lang-script-fold" aria-hidden="true"></span></span>
-      <span class="lang-script-file-title">${esc(item.title||'Сценарій ролика')}</span>
+      <span class="lang-script-file-title">${esc(item.title||(status.kind==='working'?'Створюємо переклад сценарію…':'Сценарій ролика'))}</span>
+      <span class="lang-script-metrics">${langScriptCharacters(item)}<span class="lang-script-job-detail" title="Фрази, узгоджені за довжиною"${status.kind==='working'?'':' hidden'}>${esc(status.compact||'')}</span></span>
       <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span><span class="lang-script-cost"${status.kind==='ready'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
-      <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
-  }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div><div class="lang-script-queue" aria-live="polite"></div>`;
+      <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><div class="lang-script-controls" data-script-controls="${item.code}"></div></div><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
+  }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
   holder.querySelectorAll('[data-language]').forEach(column=>{
     const item=data.items.find(entry=>entry.code===column.dataset.language);
@@ -138,17 +153,6 @@ function langOpenScriptPicker(id){
   document.body.append(dialog);dialog.showModal();inputs[0]?.focus();
 }
 
-function langPaintScriptQueue(){
-  const queue=document.querySelector('#project-langs .lang-script-queue');if(!queue)return;
-  queue.innerHTML=(langData?.items||[]).filter(item=>!item.text).map(item=>{
-    const job=langScriptJob(item.code),busy=job?.status==='running',status=busy?langTranslationProgress(job):null;
-    return `<div class="lang-script-pending">${langFlag(item.code)}<strong>${esc(item.name)}</strong><span>${esc(busy?status.detail:job?.error||'Переклад ще не завершено')}</span>
-      ${busy?`<progress max="100"${status.indeterminate?'':` value="${status.progress}"`}></progress>${langCancelButton(job)}`:`<button type="button" class="secondary" data-open-script="${item.code}">Відкрити</button>`}</div>`;
-  }).join('');
-  queue.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>langCancel(state.project.id,button.dataset.slot,button));
-  queue.querySelectorAll('[data-open-script]').forEach(button=>button.onclick=()=>langOpenScript(state.project.id,button.dataset.openScript));
-}
-
 function langPaintScriptJobs(){
   document.querySelectorAll('#project-langs [data-script-code]').forEach(button=>{
     const item=langData?.items.find(entry=>entry.code===button.dataset.scriptCode);if(!item)return;
@@ -156,13 +160,22 @@ function langPaintScriptJobs(){
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
     button.querySelector('.lang-script-status-label').textContent=status.label;
     button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';
+    const detail=button.querySelector('.lang-script-job-detail');
+    detail.textContent=status.compact||'';detail.hidden=status.kind!=='working';
     button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
     const cost=button.querySelector('.lang-script-cost');cost.textContent=langScriptCost(item);cost.hidden=status.kind!=='ready'||!cost.textContent;
     const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';
     if(status.indeterminate)progress.removeAttribute('value');else progress.value=status.progress||0;
     button.title=`${item.name}: ${status.label}${status.detail?' · '+status.detail:''}`;
   });
-  langPaintScriptQueue();langScriptDialog?.sync();
+  document.querySelectorAll('#project-langs [data-script-controls]').forEach(controls=>{
+    const job=langScriptJob(controls.dataset.scriptControls);
+    controls.innerHTML=job?.status==='running'?langCancelButton(job):'';
+    const cancel=controls.querySelector('button');
+    if(cancel){cancel.title=cancel.disabled?'Скасовуємо переклад':'Скасувати переклад';cancel.setAttribute('aria-label',cancel.title);cancel.textContent='×';
+      cancel.addEventListener('click',event=>langCancel(state.project.id,job.slot,event.currentTarget));}
+  });
+  langScriptDialog?.sync();
 }
 
 function langFlushScript(id,code){

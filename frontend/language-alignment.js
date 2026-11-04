@@ -32,7 +32,7 @@ function langAlignmentCharacters(line,comparison,row){
   const difference=normalized?comparison.difference_percent:null;
   const change=row>0&&difference!==null?` (${difference>0?'+':difference<0?'−':''}${Math.abs(difference).toLocaleString('uk-UA',{maximumFractionDigits:1})}%)`:'';
   return {label:`${count.toLocaleString('uk-UA')} символів${change}`,
-    title:normalized?`Враховано лише цифри оригіналу та відповідні числа словами в цій фразі перекладу. У тексті: ${raw.toLocaleString('uk-UA')} символів.`:'Символи з пробілами та пунктуацією. Порівняння з урахуванням чисел недоступне.'};
+    title:normalized?`Враховано лише цифри оригіналу та відповідні числа словами в цій фразі перекладу.${comparison.punctuation_excluded?' Пунктуацію не враховано, пробіли враховано.':''} У тексті: ${raw.toLocaleString('uk-UA')} символів.`:'Символи з пробілами та пунктуацією. Порівняння з урахуванням чисел недоступне.'};
 }
 
 function langAlignmentPlayingPhrase(lines,audio){

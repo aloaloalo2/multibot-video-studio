@@ -31,14 +31,15 @@ class TranslationBudgetTest(unittest.TestCase):
             self.assertTrue(result['report']['within_budget'])
             self.assertTrue(all(p['within_budget'] for p in result['phrases']))
 
-    def test_spanish_phrase_298_fits_its_phrase_band_and_still_checks_the_whole_script(self):
+    def test_spanish_phrase_band_uses_punctuation_free_counts(self):
         source='Luckily, regular phone calls still work.'
         translated='Por suerte las llamadas normales funcionan.'
         plan=budget.number_refinement_plan(source,[translated],[source],'en','es')
-        self.assertTrue(plan['phrases'][0]['within_budget'])
+        self.assertEqual((plan['phrases'][0]['source_chars'],plan['phrases'][0]['translated_chars']),(38,42))
+        self.assertFalse(plan['phrases'][0]['within_budget'])
         self.assertFalse(plan['within_budget'])
-        self.assertEqual(plan['mode'],'whole')
-        self.assertEqual(plan['pending_ids'],[])
+        self.assertEqual(plan['mode'],'phrase')
+        self.assertEqual(plan['pending_ids'],[0])
 
     def test_phrase_overruns_do_not_cancel_even_when_whole_script_matches(self):
         sources = ['s'*200, 's'*200, 's'*100]

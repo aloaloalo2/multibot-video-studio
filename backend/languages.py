@@ -103,6 +103,9 @@ DEFAULT_TRANSLATION_MODEL = "minimax/minimax-m3.1-flash"
 TRANSLATION_MODELS = {
     DEFAULT_TRANSLATION_MODEL: {"name": "MiniMax M3.1 Flash", "reasoning": {"effort": "low"}},
 }
+TRANSLATION_REPAIR_MODEL = DEEPSEEK_TRANSLATION_MODEL
+TRANSLATION_REQUEST_MODELS = {**TRANSLATION_MODELS,
+    TRANSLATION_REPAIR_MODEL: {"name": "DeepSeek V4.1 Flash", "reasoning": {"enabled": False}}}
 VOICE_CHUNK = 2400
 SAMPLE_CHARS = 900           # about a minute (user, 2 November 2026: «дозволь слухати більше»)
 FIT_MAX = dubbing_fit.MAX_SPEED
@@ -466,11 +469,13 @@ def overview(pid: str) -> dict:
         comparison_units=([unit['source'] for unit in comparison_segments]
                           if comparison_segments and len(comparison_segments)==len(comparison_lines) else None)
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
+                      "display_chars": numeric_comparison.comparison_chars(text),
                       "translation_model": translation_model(pid, code, data),
                       "translation_resumable": translation_resumable(pid, code, src,
                           translation_model(pid, code, data), resume_segments),
                       "translated_model": item.get("translated_model") or (DEEPSEEK_TRANSLATION_MODEL if item.get("translated_at") else None),
                       "translate_cost": item.get("translate_cost"),
+                      "translation_repair_model": item.get("translation_repair_model"),
                       "language_check": translation_check(pid, code, text),
                       "voice_language_check": voice_language_check(pid, code),
                       "flag_country":THUMBNAIL_FLAGS.get(code),
@@ -508,7 +513,8 @@ def overview(pid: str) -> dict:
                           for key, spec in PROVIDERS.items()],
             "openrouter": configured.get("openrouter"),
             "translation_models": [{"id": model_id, "name": spec["name"]} for model_id, spec in TRANSLATION_MODELS.items()],
-            "source": {"chars": len(src["script"]), "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
+            "source": {"chars": len(src["script"]), "display_chars":numeric_comparison.comparison_chars(src['script']),
+                       "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
                        "filename": src["voice"].name if src["voice"] else None,
                        "language": source_language,
                        "estimate": {key: price(key, src["script"], provider_engine(pid, key)) for key in PROVIDERS}},
@@ -624,9 +630,11 @@ def set_translation_model(pid: str, code: str, model: str) -> dict:
 
 
 @contextmanager
-def translation_trace(pid, code, job, offset=None):
+def translation_trace(pid, code, job, offset=None, *, request_model=None):
     previous = getattr(TRANSLATION_CONTEXT, 'value', None)
-    model = resolved_translation_model(job.get('translation_model'))
+    model = request_model or resolved_translation_model(job.get('translation_model'))
+    if model not in TRANSLATION_REQUEST_MODELS:
+        raise store.StudioError('Невідома модель перевірки перекладу.',400)
     run = str(job.get('started_at') or job.get('key') or time.time_ns()).replace('/', '_').replace('|', '_')
     TRANSLATION_CONTEXT.value = {'path': work_dir(pid, code)/'translation-attempts'/run,
                                  'target': code, 'offset': offset, 'model': model, 'key': job.get('key')}
@@ -650,8 +658,10 @@ def record_translation(payload, result):
 def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     import agent_openrouter
     context = getattr(TRANSLATION_CONTEXT, 'value', None) or {}
-    model = resolved_translation_model(context.get('model'))
-    reasoning = dict(TRANSLATION_MODELS[model]['reasoning'])
+    model = context.get('model') or DEFAULT_TRANSLATION_MODEL
+    if model not in TRANSLATION_REQUEST_MODELS:
+        raise store.StudioError('Невідома модель запиту перекладу.',400)
+    reasoning = dict(TRANSLATION_REQUEST_MODELS[model]['reasoning'])
     if reasoning.get('effort'):
         max_tokens = max(max_tokens, 4096)  # Includes reasoning before short titles or single-line answers.
     if context.get('key') in CANCEL:
@@ -715,6 +725,9 @@ LOCALIZATION_RULES = """Localization for the target language:
 CONCISION_RULES = """Authorized concise adaptation:
 When a translated phrase is too long, remove redundant introductions, repetition, verbal padding and optional
 audience-facing explanations that add no essential story information. Rephrase opaque or awkward wording clearly.
+Translate the meaning naturally, not every source word. Under length pressure, optional praise and descriptive
+adjectives such as 'so wonderful, so beautiful' may be omitted when they add no essential information. Replace
+wordy phrases with simpler idiomatic expressions. Do not require the checker to restore permitted omissions.
 For example, after 'This helps YouTube show the video to more people', the optional 'so they know what awaits them
 tomorrow morning' can be omitted. Keep the call to action and its main purpose. Retain factual claims, names, exact
 numbers and units, dates, causal and chronological links, negation, uncertainty and essential context. An unfamiliar
@@ -1082,18 +1095,20 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             return False
 
     @contextmanager
-    def review_request(phase, values, group):
+    def review_request(phase, values, group, model=None):
+        model=model or resolved_translation_model(job.get('translation_model'))
+        model_name=TRANSLATION_REQUEST_MODELS[model]['name']
         previous = job.get('translation_review') or {}
         review = {'phase': phase, 'total': len(values), 'batch_size': len(group),
                   'phrases': [i+1 for i in group], 'request_number': previous.get('request_number', 0)+1,
-                  'request_started_at': time.time(), 'waiting': True,
+                  'request_started_at': time.time(), 'waiting': True,'model':model,'model_name':model_name,
                   'audited': sum((draft.data.get('audited') or {}).get(str(i)) == audit_key(i, value)
                                  for i, value in enumerate(values))}
         job['translation_review'] = review
         labels = {'meaning': 'Виправляємо зміст', 'length': 'Уточнюємо довжину',
                   'audit': 'Перевіряємо зміст', 'pacing': 'Узгоджуємо темп'}
         try:
-            progress(pid, job, 95, f"{labels[phase]}: опрацьовуємо {len(group)} фраз. Очікуємо відповідь MiniMax.")
+            progress(pid, job, 95, f"{labels[phase]}: опрацьовуємо {len(group)} фраз. Очікуємо відповідь {model_name}.")
             yield
         finally:
             review['waiting'] = False
@@ -1119,7 +1134,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     left,right=numeric_comparison.paired_forms(item['source'],item['translation'],source_language,code)
                     item['comparison_source'] = left[0]
                     item['comparison_translation'] = right[0]
-            with review_request(phase, current, group), translation_trace(pid, code, job, group[0]):
+            job['translation_repair_model']=TRANSLATION_REPAIR_MODEL
+            draft.save(repair_model=TRANSLATION_REPAIR_MODEL)
+            with review_request(phase, current, group,TRANSLATION_REPAIR_MODEL), translation_trace(pid, code, job, group[0],request_model=TRANSLATION_REPAIR_MODEL):
                 answer, cost = ask([{'role': 'system', 'content': translator(code)+
                     '\nRefine these translation units in the target language. Preserve EVERY original fact, name, '
                     'quantity, unit, comparison, negation, uncertainty and complete grammatical meaning. '
@@ -1170,10 +1187,19 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             if not pending:
                 return values
             issues = {}
-            audit_queue = [(group, 0) for group in batches_for(values, pending)]
+            # A phrase already rejected by MiniMax gets an independent DeepSeek
+            # check. Keep cached good neighbours out of these corrective calls.
+            prior=draft.data.get('rejected') or {}
+            ordinary=[i for i in pending if not prior.get(str(i))]
+            disputed=[i for i in pending if prior.get(str(i))]
+            audit_queue = [(group,0,model) for ids,model in
+                ((ordinary,resolved_translation_model(job.get('translation_model'))),
+                 (disputed,TRANSLATION_REPAIR_MODEL)) for group in batches_for(values,ids)]
             while audit_queue:
-                group, attempt = audit_queue.pop(0)
-                with review_request('audit', values, group), translation_trace(pid, code, job, group[0]):
+                group, attempt,model = audit_queue.pop(0)
+                if model==TRANSLATION_REPAIR_MODEL:
+                    job['translation_repair_model']=model;draft.save(repair_model=model)
+                with review_request('audit', values, group,model), translation_trace(pid, code, job, group[0],request_model=model):
                     answer, cost = ask([{'role': 'system', 'content': target_rule(code)+
                         '\nIndependently compare EVERY translation with its ORIGINAL SOURCE. Check every fact, '
                         'proper names, full names, number and unit, comparison, qualification, negation and natural '
@@ -1203,7 +1229,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     if len(group) == 1 and attempt >= 2:
                         pause(f'Фраза №{group[0]+1}: модель не повернула повну перевірку змісту. Текст збережено без змін.')
                     size = max(1, len(group)//2)
-                    audit_queue[:0] = [(group[n:n+size], attempt+1) for n in range(0, len(group), size)]
+                    audit_queue[:0] = [(group[n:n+size], attempt+1,model) for n in range(0, len(group), size)]
                     continue
                 failed.update({i: 'Запишіть числа словами й збережіть потрібну мову.' for i in group if not valid_line(values[i])})
                 for i in group:
@@ -1275,7 +1301,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         f"Узгоджуємо весь сценарій до ±{state['target_tolerance_percent']}%" if plan.get('mode')=='whole' else
                         f"Оптимізуємо фрази: {len(plan['pending_ids'])} поза ±{tolerance}% із {len(checked)}")
                     reasons = {i: f"NUMBER-NORMALIZED length: source {plan['source_lengths'][i]}, current "
-                        f"{plan['current_lengths'][i]}, target about {plan['line_targets'][i]} characters including spaces. "
+                        f"{plan['current_lengths'][i]}, target about {plan['line_targets'][i]} characters including spaces, excluding punctuation. "
                         f"This phrase's own accepted range is {plan['phrases'][i]['min_chars']} to "
                         f"{plan['phrases'][i]['max_chars']}; another phrase cannot compensate for it. "
                         f"{'Use concise idiomatic phrasing; remove only optional filler and repetition.' if plan['directions'][i]=='shorten' else 'Check for omitted nuance and use complete idiomatic phrasing without adding filler or new facts.'} "
@@ -1452,7 +1478,8 @@ def save_translation(pid: str, code: str, project: dict, src: dict, text: str, c
         item = data.setdefault("languages", {}).setdefault(code, {})
         item.update(title=title.strip().strip('"«»'), translated_at=time.time(), translate_cost=round(cost, 4),
                     translation_length=length_report,
-                    translated_model=resolved_translation_model(job.get('translation_model')))
+                    translated_model=resolved_translation_model(job.get('translation_model')),
+                    translation_repair_model=job.get('translation_repair_model') or (draft.data.get('repair_model') if draft else None))
     update(pid, keep)
     copy_out(project, code, "text")
     job["cost"] = round(cost, 4)
