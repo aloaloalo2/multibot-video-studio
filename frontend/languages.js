@@ -132,8 +132,6 @@ function drawLangs(id){
 // episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
 const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
-function langSampleSize(){let n=5;try{n=Number(localStorage.getItem('langSampleSentences')) || 5;}catch{}return [3,5,10,20].includes(n)?n:5;}
-function langSamplePrice(item,spec){return langCost(spec,item.sample_prices?.[spec.id]?.[String(langSampleSize())]);}
 function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Не вдалося розпізнати слова в прикладі. Для точнішого голосу запишіть або завантажте чіткіший запис без фонового шуму.</p>':'';}
 function langAddButtons(primary){
@@ -371,7 +369,7 @@ function langCard(id,item,spec){
           ${spec.styles?`<label class="lang-chip-select" title="Варіативність подачі голосу. Кожен рушій зберігає свій вибір."><span>Подача</span><select data-field="style">${spec.styles.map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
           ${item.text&&(!readyVoice||langSamplePreview.has(`${id}:${item.code}`))?`<div class="lang-inline-sample">
             <button type="button" class="lang-sample-run lang-sample-round" title="${hasSample?'Відтворити готовий зразок безкоштовно':'Зразок: оберіть кількість речень'}" aria-label="Послухати зразок"${hasSample?'':' aria-haspopup="menu" aria-expanded="false"'}${langHasVoice(item)?'':' data-blocked="1" disabled'}>${playIcon}</button>
-            <span class="lang-inline-sample-label">Зразок<small class="lang-sample-cost">${hasSample?`${clock(0)} / ${clock(item.sample?.duration || 0)}`:esc(langSamplePrice(item,spec))}</small></span>
+            <span class="lang-inline-sample-label">Зразок<small class="lang-sample-time"${hasSample?'':' hidden'}>${hasSample?`${clock(0)} / ${clock(item.sample?.duration || 0)}`:''}</small></span>
             <button type="button" class="lang-sample-choose" title="Інша кількість речень" aria-label="Обрати інший зразок" aria-haspopup="menu" aria-expanded="false"${hasSample?'':' hidden'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             ${hasSample?`<audio class="lang-sample-audio" preload="metadata" src="${langUrl(id,item.code,'sample-'+item.voice_key,item.sample?.made_at)}"></audio>`:''}
           </div>`:''}
@@ -433,7 +431,7 @@ function langCard(id,item,spec){
       if(fresh){Object.assign(item,fresh);langApplyQuality(card,item);const cost=card.querySelector('.lang-voice-cost');if(cost)cost.textContent=langCost(spec,fresh.prices?.[spec.id]);const note=card.querySelector('.lang-cache-note');if(note)note.textContent=langCacheNote(fresh,spec);const marks=document.querySelector(`.lang-pill[data-code="${item.code}"] .lang-marks`);if(marks)marks.outerHTML=langMarks(fresh);}
       const voiceStatus=langVoiceStatus(item,spec),savedLabel=card.querySelector('.lang-voice-saved');if(savedLabel){savedLabel.textContent=voiceStatus;savedLabel.hidden=!voiceStatus;}const cacheNote=card.querySelector('.lang-cache-note');if(cacheNote)cacheNote.hidden=!!voiceStatus;
       const voiceRun=card.querySelector('.lang-voice-run');if(voiceRun){voiceRun.hidden=!!voiceStatus;voiceRun.classList.toggle('secondary',item.voice_current===true);voiceRun.classList.toggle('primary',item.voice_current!==true);if(voiceRun.firstChild?.nodeType===3)voiceRun.firstChild.textContent=langVoiceAction(item,spec)+' · ';}
-      if(fresh&&!sampleAudio){const cost=card.querySelector('.lang-sample-cost');if(cost)cost.textContent=langSamplePrice(fresh,spec);}
+      if(!sampleAudio){const time=card.querySelector('.lang-sample-time');if(time){time.textContent='';time.hidden=true;}}
       card.querySelector('.lang-text')?.closest('.lang-step')?.querySelector(':scope > .lang-note.is-error')?.remove();
       return true;
     }catch(error){langNote(area,error.message,true);return false;}
@@ -468,7 +466,7 @@ function langCard(id,item,spec){
   });
   let sampleAudio=card.querySelector('.lang-sample-audio'),samplePlay=card.querySelector('.lang-sample-run');
   const sampleChoose=card.querySelector('.lang-sample-choose');
-  let playSample=sampleAudio?langBindSamplePlayback(sampleAudio,samplePlay,card.querySelector('.lang-sample-cost'),item.sample?.duration || 0):null;
+  let playSample=sampleAudio?langBindSamplePlayback(sampleAudio,samplePlay,card.querySelector('.lang-sample-time'),item.sample?.duration || 0):null;
   const chooseSample=async button=>{
     if(!(await flush()))return;
     langOpenSampleMenu(button,item,spec,async count=>{if(!(await flush()))return;try{localStorage.setItem('langSampleSentences',String(count));}catch{}sampleAudio?.pause();langStart(id,'sample',item.code,{sentences:count});},playSample?async()=>{if(sampleAudio?.paused)await playSample();}:null);
@@ -712,6 +710,7 @@ function langBindSamplePlayback(audio,button,label,duration=0){
     button.setAttribute('aria-pressed',String(playing));
     button.setAttribute('aria-busy',String(waiting));
     button.title=playing?'Призупинити зразок':'Відтворити готовий зразок безкоштовно';
+    label.hidden=false;
     label.textContent=audio.error?'Помилка відтворення':waiting?'Завантажуємо…':`${clock(audio.currentTime)} / ${clock(Number.isFinite(audio.duration)?audio.duration:duration)}`;
   };
   for(const name of ['loadedmetadata','timeupdate','play'])audio.addEventListener(name,paint);

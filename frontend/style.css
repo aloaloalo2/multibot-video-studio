@@ -1466,7 +1466,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-original .voice-player-play svg,.lang-own.has-voice .voice-player-reference .voice-player-play svg,.lang-sample-round svg{width:14px;height:14px;fill:currentColor;stroke:none}
 .lang-inline-sample-label{display:grid;gap:2px;font-size:12px;color:#d5d6dc}
 .lang-inline-sample-label small{font-size:10px;color:#989ba5;font-weight:400}
-.lang-sample-cost{font-variant-numeric:tabular-nums;white-space:nowrap}
+.lang-sample-time{font-variant-numeric:tabular-nums;white-space:nowrap}
 .lang-sample-choose{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent;color:#989ba5}
 .lang-sample-choose[hidden]{display:none}
 .lang-sample-choose:not(:disabled):hover,.lang-sample-choose[aria-expanded="true"]{background:#303138;color:#e5e6e9}
