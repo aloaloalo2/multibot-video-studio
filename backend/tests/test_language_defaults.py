@@ -97,6 +97,21 @@ class LanguageDefaultsTest(unittest.TestCase):
         self.assertFalse(language_defaults.status(self.pid)['saved'])
         self.assertIsNone(languages.voice_for(self.pid,'uk',original=False))
 
+    def test_legacy_excerpt_matches_full_recording_only_in_defaults_status(self):
+        import numpy as np,subprocess
+        from unittest.mock import Mock
+        short=self.root/'short.mp3';full=self.root/'full.mp3'
+        short.write_bytes(b'short');full.write_bytes(b'full')
+        rng=np.random.default_rng(23);a=(rng.standard_normal(45*8000)*.1).astype('<f4')
+        decoded={str(short):a.tobytes(),str(full):(a*.8).astype('<f4').tobytes()}
+        def decode(command,**kw):return Mock(stdout=decoded[command[command.index('-i')+1]])
+        with patch.object(store,'media_duration',side_effect=lambda p:45 if p==short else 1600),patch.object(subprocess,'run',side_effect=decode):
+            self.assertTrue(language_defaults.same_reference(full,short))
+            # Equal lengths/names do not qualify; a changed recording must compare anew.
+            full.write_bytes(b'other recording')
+            decoded[str(full)]=(rng.standard_normal(45*8000)*.1).astype('<f4').tobytes()
+            self.assertFalse(language_defaults.same_reference(full,short))
+
     def test_defaults_are_isolated_per_channel(self):
         language_defaults.save(self.pid)
         other=store.create_project('d'*16,'Other channel')

@@ -14,13 +14,13 @@ import languages
 class TranslationLengthIntegrationTest(unittest.TestCase):
     def test_explicit_translation_uses_voice_pace_and_reaudits_without_synthesizing(self):
         self.ask.side_effect = [(json.dumps({'ok':True,'ids':[0]}), .01),
-                                (json.dumps({'0':'t'*90}), .01),
+                                (json.dumps({'0':'t'*96}), .01),
                                 (json.dumps({'ok':True,'ids':[0]}), .01)]
         with patch.object(languages,'load_state',return_value={'provider':'elevenlabs'}), \
              patch.object(languages,'voice_cache_context',return_value=({'model':'test'},set())), \
-             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.22,'observations':30}):
+             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.21,'observations':30}):
             languages._translate('test','es',self.job)
-        self.assertEqual(self.save.call_args.args[4],'t'*90)
+        self.assertEqual(self.save.call_args.args[4],'t'*96)
         self.assertEqual(self.ask.call_count,3)
         self.assertIn('Measured narration pacing',self.ask.call_args_list[1].args[0][1]['content'])
         self.speak.assert_not_called()
@@ -65,6 +65,67 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertTrue(self.job['translation_length']['advisory_only'])
         self.assertNotIn('within_budget', self.job['translation_length'])
         self.assertEqual(self.ask.call_count, 3)
+        self.speak.assert_not_called()
+
+    def test_matching_total_still_refines_each_outlying_phrase_and_reaudits_only_changes(self):
+        originals = ['s'*200, 's'*200, 's'*100]
+        texts = ['a'*236, 'b'*164, 'c'*102]
+        self.ask.side_effect = [
+            (json.dumps({'ok': True, 'ids': [0, 1, 2]}), .01),
+            (json.dumps({'0': 'a'*208, '1': 'b'*192}), .01),
+            (json.dumps({'ok': True, 'ids': [0, 1]}), .01)]
+        result, _ = languages.before_translate('test', 'uk',
+            {'script': '\n'.join(originals), 'language': 'en'}, texts, originals, self.job)
+        self.assertEqual(list(map(len, result)), [208, 192, 102])
+        items = json.loads(self.ask.call_args_list[1].args[0][1]['content'])
+        self.assertEqual([item['id'] for item in items], [0, 1])
+        self.assertIn('remove only optional filler', items[0]['issue'])
+        self.assertEqual(self.job['translation_length']['phrase_comparison']['outside_count'], 0)
+        self.speak.assert_not_called()
+
+    def test_one_improvement_cannot_hide_a_regression_in_another_phrase(self):
+        originals = ['s'*100]*2
+        self.ask.side_effect = [
+            (json.dumps({'ok': True, 'ids': [0, 1]}), .01),
+            (json.dumps({'0': 'a'*100, '1': 'b'*70}), .01),
+            (json.dumps({'ok': True, 'ids': [0]}), .01),
+            (json.dumps({'1': 'b'*100}), .01),
+            (json.dumps({'ok': True, 'ids': [1]}), .01)]
+        result, _ = languages.before_translate('test', 'uk',
+            {'script': '\n'.join(originals), 'language': 'en'}, ['a'*120, 'b'*80], originals, self.job)
+        retry = json.loads(self.ask.call_args_list[3].args[0][1]['content'])
+        self.assertEqual([(item['id'], len(item['translation'])) for item in retry], [(1, 80)])
+        self.assertEqual(list(map(len, result)), [100, 100])
+        self.speak.assert_not_called()
+
+    def test_failed_phrase_refinement_retains_old_publication_and_paid_cache(self):
+        cache = self.work/'voice-cache'
+        cache.mkdir()
+        paid = cache/'existing.mp3'
+        paid.write_bytes(b'existing paid take')
+        self.initial.return_value = (['t'*118], .1)
+        self.ask.side_effect = [(json.dumps({'ok': True, 'ids': [0]}), .01)] + [
+            (json.dumps({'0': 't'*118}), .01)]*3
+        with self.assertRaisesRegex(RuntimeError, 'Фрази 1.*±5%'):
+            languages._translate('test', 'uk', self.job)
+        self.save.assert_not_called()
+        self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
+        self.assertEqual(paid.read_bytes(), b'existing paid take')
+        saved = json.loads((self.work/'translation-draft.json').read_text())
+        self.assertEqual(saved['lines'], ['t'*118])
+        self.assertTrue(saved['resumable'])
+        self.speak.assert_not_called()
+
+    def test_incompatible_pace_does_not_oscillate_outside_phrase_band_or_buy_voice(self):
+        self.initial.return_value = (['t'*95], .1)
+        self.ask.return_value = (json.dumps({'ok': True, 'ids': [0]}), .01)
+        with patch.object(languages, 'load_state', return_value={'provider':'elevenlabs'}), \
+             patch.object(languages, 'voice_cache_context', return_value=({'model':'test'},set())), \
+             patch.object(languages.narration_profile, 'read', return_value={'seconds_per_character':.24,'observations':30}):
+            with self.assertRaisesRegex(RuntimeError, 'в межах ±5%.*прогноз голосу'):
+                languages._translate('test', 'es', self.job)
+        self.assertEqual(self.ask.call_count, 1)
+        self.save.assert_not_called()
         self.speak.assert_not_called()
 
     def test_semantic_failure_preserves_the_previous_translation(self):

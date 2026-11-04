@@ -388,7 +388,7 @@ function fillMake(make){
   make.dataset.floor=String(floor);
   const working=['requested','in_progress'].includes(request?.status);
   // a run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up
-  const paused=request?.status==='failed'&&(request.limit||/hit your \w+ limit/i.test(request.error || ''));
+  const paused=request?.status==='failed'&&(request.paused||request.limit||/hit your \w+ limit/i.test(request.error || ''));
   // Why the button can not start yet, in the author's words; empty when it can.
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
@@ -414,19 +414,22 @@ function fillMake(make){
   fillLegend(legend,frames,made.size);
   hint.textContent=blocked;hint.hidden=!blocked||working||paused;
   feed.replaceChildren();
+  make.querySelector('.production-control')?.remove();
   // While the agent works the button turns into its progress; the steps of the work read in the feed below.
   start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked;
   if(working){
     const done=[...made].filter(index=>index>=first-1&&index<request.frames).length,total=request.frames-first+1;
     start.disabled=true;start.classList.add('loading');
     start.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо кадри · ${done} з ${total}</span>`;
+    start.after(productionControl(id,true));
     renderTeam(feed,'production',id,true);
     productionTimer=setTimeout(()=>pollProduction(id),8000);
   }else if(paused){
     start.disabled=false;start.classList.add('glow-action');
     start.textContent=`Продовжити кадри ${Math.min(floor+1,request.frames)}–${request.frames}`;
+    start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
-    const note=document.createElement('p');note.className='plan-note';note.textContent=`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
+    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
   }else{
     start.textContent='Почати створення ролика';
     if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();

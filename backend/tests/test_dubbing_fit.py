@@ -11,9 +11,9 @@ import languages
 
 class DubbingFitTest(unittest.TestCase):
     def test_join_padding_counts_native_silence_with_tempo_and_edge_guards(self):
-        edge={'leading':.035,'trailing':.035,'speed':.93}
+        edge={'leading':.035,'trailing':.035,'speed':.92}
         extra=dubbing_fit.join_gaps([{'edge_silence':edge},{'edge_silence':edge}])[0]
-        self.assertAlmostEqual(extra,.05-2*(.035*.93/1.07-.01))
+        self.assertAlmostEqual(extra,.05-2*(.035*.92/1.08-.01))
         self.assertEqual(dubbing_fit.join_gaps([{},{}]),[.05])
         for value in [None,-1,float('nan'),float('inf'),'1']:
             bad={'leading':value,'trailing':value,'speed':1.}
@@ -46,16 +46,16 @@ class DubbingFitTest(unittest.TestCase):
                 hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
                 items.append({'index':n,'file':path.name,'length':len(signal)/rate,
                               'start':n,'original_start':n,'original_end':n+1})
-            total=4.33
+            total=4.28
             # Adding 50 ms again would reject this film even at the speed limit.
-            with self.assertRaisesRegex(RuntimeError,'при межі 7%'):
+            with self.assertRaisesRegex(RuntimeError,'при межі 8%'):
                 dubbing_fit.fitting_speeds(items,total)
             report=dubbing_fit.rebuild(folder,items,folder/'joined.mp3',total)
             fitted=report['phrases']
             self.assertEqual(len(fitted),4)
             self.assertAlmostEqual(languages.store.media_duration(folder/'joined.mp3'),total,delta=.05)
             self.assertLessEqual(fitted[-1]['end'],total)
-            self.assertTrue(all(.93<=x['speed']<=1.07 for x in fitted))
+            self.assertTrue(all(.92<=x['speed']<=1.08 for x in fitted))
             for a,b in zip(fitted,fitted[1:]):
                 self.assertLessEqual(a['end'],b['start'])
                 breath=a['edge_silence']['trailing']+b['edge_silence']['leading']+b['start']-a['end']
@@ -83,10 +83,10 @@ class DubbingFitTest(unittest.TestCase):
             {'index':2,'start':9,'end':10,'original_start':9,'speed':1,'text':'Third'}])
         self.assertEqual([(x['index'],x['start'],x['speed'],x['shift']) for x in result],[(0,2,1.1,1),(1,5,.9,0)])
     def test_bounded_fit_preserves_short_breath_and_does_not_stretch_into_next_line(self):
-        self.assertEqual(dubbing_fit.fit_speed(5, 9, 8), .93)
+        self.assertEqual(dubbing_fit.fit_speed(5, 9, 8), .92)
         self.assertEqual(dubbing_fit.fit_speed(5, 9, 5.3), 1)
-        self.assertEqual(dubbing_fit.fit_speed(5, 5.8, 8), .93)
-        self.assertEqual(dubbing_fit.fit_speed(8, 5, 5), 1.07)
+        self.assertEqual(dubbing_fit.fit_speed(5, 5.8, 8), .92)
+        self.assertEqual(dubbing_fit.fit_speed(8, 5, 5), 1.08)
 
     def test_paid_takes_and_previous_voice_are_archived(self):
         with tempfile.TemporaryDirectory() as d:
@@ -99,18 +99,18 @@ class DubbingFitTest(unittest.TestCase):
             self.assertEqual((p/'voice.mp3').read_bytes(),b'accepted')
             self.assertEqual((p/'text.txt').read_text(),'words')
 
-    def test_uses_global_spare_time_without_exceeding_seven_percent(self):
+    def test_uses_global_spare_time_without_exceeding_eight_percent(self):
         items=[{'start':0,'original_start':0,'original_end':6,'length':5.2},
                {'start':6,'original_start':6,'original_end':10,'length':5.2}]
         speeds=dubbing_fit.fitting_speeds(items,10.1)
-        self.assertTrue(all(.93<=s<=1.07 for s in speeds))
+        self.assertTrue(all(.92<=s<=1.08 for s in speeds))
         self.assertLessEqual(sum(x['length']/s for x,s in zip(items,speeds))+.05,10.1)
         with self.assertRaisesRegex(RuntimeError,'Усі аудіофрагменти збережені'):
             dubbing_fit.fitting_speeds(items,9)
 
     def test_forecast_safety_margin_does_not_reject_an_exact_fit(self):
-        items=[{'start':0,'original_start':0,'original_end':10,'length':10.7}]
-        self.assertEqual(dubbing_fit.fitting_speeds(items,10),[1.07])
+        items=[{'start':0,'original_start':0,'original_end':10,'length':10.8}]
+        self.assertEqual(dubbing_fit.fitting_speeds(items,10),[1.08])
 
     @unittest.skipUnless(shutil.which('ffmpeg'),'ffmpeg needed')
     def test_recovery_and_refit_keep_anchors_and_reduce_artificial_gap(self):
@@ -127,8 +127,8 @@ class DubbingFitTest(unittest.TestCase):
             self.assertGreater(r['phrases'][0]['start'],0)
             self.assertGreaterEqual(r['phrases'][1]['start'],5)
             self.assertLess(r['phrases'][0]['gap_after'],5-m[0]['length'])
-            self.assertGreaterEqual(r['phrases'][0]['speed'],.93)
-            self.assertLessEqual(r['phrases'][0]['speed'],1.07)
+            self.assertGreaterEqual(r['phrases'][0]['speed'],.92)
+            self.assertLessEqual(r['phrases'][0]['speed'],1.08)
             self.assertLess(r['phrases'][0]['end'],5)
             self.assertTrue((p/'parts/00000.wav').exists())
             self.assertAlmostEqual(languages.store.media_duration(p/'new.mp3'),8,delta=.05)

@@ -7,6 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import voice_cache
 import store
+import languages
 
 
 class VoiceCacheTest(unittest.TestCase):
@@ -48,3 +49,32 @@ class VoiceCacheTest(unittest.TestCase):
         key=voice_cache.take_key(self.identity,'Video.')
         for update in ({'language':'es'},{'engine':'turbo'},{'reference':'different'},{'settings':{'stability':.7}}):
             self.assertNotEqual(voice_cache.take_key({**self.identity,**update},'Video.'),key)
+
+    def test_publishing_retranslation_reuses_unchanged_takes_and_prices_only_changed_words(self):
+        original = self.work/'paid.mp3'
+        original.write_bytes(b'paid recording'*200)
+        with patch.object(store, 'media_duration', return_value=2):
+            cached = voice_cache.remember(self.work, self.identity, 'Pierwsza.', original)
+        before = cached.read_bytes()
+        (self.work/'sample.mp3').write_bytes(b'old assembled sample')
+        (self.work/'voice.mp3').write_bytes(b'previous completed voice')
+        text = 'Pierwsza.\nNowe zdanie.'
+        segments = [{'start': 0, 'end': 2, 'source': 'First.'},
+                    {'start': 2, 'end': 4, 'source': 'New sentence.'}]
+        with patch.object(languages, 'work_dir', return_value=self.work), \
+             patch.object(languages, 'ask', return_value=('Nowy tytuł', 0)), \
+             patch.object(languages, 'progress'), patch.object(languages, 'update'), \
+             patch.object(languages, 'copy_out'), patch.object(languages.language_quality, 'require'), \
+             patch.object(languages, 'provider_engine', return_value='eleven_v4_turbo'), \
+             patch.object(languages, 'voice_cache_context', return_value=(self.identity, set())), \
+             patch.object(languages, 'fixed_price', return_value=lambda value: len(value)*.26), \
+             patch.object(languages, 'speak') as speak:
+            languages.save_translation('p', 'pl', {'id':'p'},
+                {'script':'First.\nNew sentence.', 'language':'en', 'title':'Title'}, text, 0, {}, segments)
+            estimate = languages.voice_estimate('p', 'pl', 'elevenlabs', text)
+        self.assertEqual((estimate['reused'], estimate['generate']), (1, 1))
+        self.assertEqual(estimate['characters'], len('Nowe zdanie.'))
+        self.assertEqual(estimate['base'], round(len('Nowe zdanie.')*.26, 2))
+        self.assertEqual(cached.read_bytes(), before)
+        self.assertEqual((self.work/'voice.mp3').read_bytes(), b'previous completed voice')
+        speak.assert_not_called()

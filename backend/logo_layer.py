@@ -1,64 +1,90 @@
-"""The channel logo from the channel settings as the top layer of a project's timeline, over the whole video.
-
-The logo is drawn into a transparent full-frame PNG with the same placement rule as everywhere else
-(channel_branding.box), imported into the project and laid on its own top layer «Логотип каналу» as an overlay group,
-so it is seen in the editor and in exports. A logo that changed, or a video that got longer, replaces the old clip; a
-logo switched off or removed in the settings takes the layer away.
-"""
+"""Channel logos are live references to channel settings, with immutable render snapshots."""
 from __future__ import annotations
-
+import hashlib
+import json
+import os
+import threading
+import uuid
 from pathlib import Path
-
 import channel_branding
 import store
 
 LOGO_TITLE = "Логотип каналу"
+LOCK = threading.RLock()
 
 
 def clips(project: dict):
-    return [(track, clip) for track in project.get("tracks", []) for clip in track.get("clips", []) if clip.get("title") == LOGO_TITLE]
+    assets={a.get('id'):a for a in project.get('assets',[])}
+    def managed(clip):
+        asset=assets.get(clip.get('asset_id'),{})
+        return (clip.get('channel_logo') is True or clip.get('title')==LOGO_TITLE
+                or asset.get('source')=='channel-logo'
+                or (clip.get('title')=='Плашка каналу' and Path(asset.get('path','')).name=='channel_logo.png'))
+    return [(track,clip) for track in project.get('tracks',[]) for clip in track.get('clips',[]) if managed(clip)]
 
 
-def remove(pid: str) -> None:
-    for track, clip in clips(store.load_project(pid)):
-        store.apply_action(pid, "delete_clip", {"clip_id": clip["id"]})
-        if len(track.get("clips", [])) == 1:
-            store.apply_action(pid, "remove_layer", {"layer_id": track["id"]})
+def bind(project: dict) -> dict:
+    """Resolve the latest channel logo without writing project history or changing a running export.
+
+    A prepared export already holds an immutable PNG path. A fresh project read
+    resolves the current source and placement, including old copied channel_logo.png layers.
+    """
+    cid=project.get('channel_id')
+    if not cid:return project
+    try:
+        folder=store.get_channel_folder(cid,include_disabled=True)
+    except store.StudioError:
+        return project
+    spec=channel_branding.placement((store.read_json(folder/store.PLAN_CONFIG,{}) or {}).get('logo'))
+    source=channel_branding.logo_path(cid)
+    current=clips(project)
+    duration=float(project.get('duration') or 0)
+    visible=spec['enabled'] and source.is_file() and duration>0 and bool(current or store.film_clips(project))
+    stamp=None
+    if visible:
+        stat=source.stat()
+        width,height=int(project.get('width') or 1920),int(project.get('height') or 1080)
+        stamp=hashlib.sha256(json.dumps([stat.st_mtime_ns,stat.st_size,spec,width,height],sort_keys=True).encode()).hexdigest()[:24]
+        target=store.DATA_ROOT/'channels'/cid/'overlays'/f'{stamp}.png'
+        with LOCK:
+            if not target.is_file():
+                temp=target.with_name(f'.{uuid.uuid4().hex}.png')
+                try:
+                    channel_branding.overlay_png(cid,spec,(width,height),temp)
+                    os.replace(temp,target)
+                finally:
+                    temp.unlink(missing_ok=True)
+    project['branding_version']=stamp or 'off'
+    if not current and not visible:return project
+    # Keep one stable clip/row identity so selection and saved references survive replacement.
+    track,clip=current[0] if current else ({'id':'channel-logo-layer','name':LOGO_TITLE,'type':'universal','clips':[]},
+        {'id':'channel-logo-clip','kind':'image','start':0,'duration':duration,'trim_start':0,'volume':1,
+         'x':.5,'y':.5,'width':1,'height':1,'scale':1,'opacity':1,'keyframes':[],
+         'transition':{'type':'cut','duration':0}})
+    removed={c['id'] for _,c in current}
+    for row in project.get('tracks',[]):
+        row['clips']=[c for c in row.get('clips',[]) if c['id'] not in removed]
+    project['tracks']=[row for row in project.get('tracks',[]) if row.get('clips') or row not in [t for t,_ in current]]
+    if visible:
+        asset=store.asset_record(target,project['id'],'channel-logo')
+        asset['name']=LOGO_TITLE+'.png'
+        # Old assets stay available for historical export snapshots; live clips use this version.
+        if not any(a['id']==asset['id'] for a in project.get('assets',[])):
+            project.setdefault('assets',[]).append(asset)
+        clip.update(asset_id=asset['id'],title=LOGO_TITLE,channel_logo=True,start=0,duration=duration)
+        if track.get('clips'):
+            track={'id':'channel-logo-layer','name':LOGO_TITLE,'type':'universal','clips':[]}
+        track['clips']=[clip]
+        project['tracks'].append(track)
+        groups=project.setdefault('scene_groups',[])
+        found=next((g for g in groups if clip['id'] in g.get('clip_ids',[])),None)
+        if found:found['role']='overlay'
+        else:groups.append({'id':'channel-logo-group','title':LOGO_TITLE,'role':'overlay','clip_ids':[clip['id']]})
+    store.reconcile_scene_groups(project)
+    for index,row in enumerate(project['tracks']):row['z_index']=index
+    return project
 
 
 def place(pid: str) -> bool:
-    """Put (or refresh) the channel logo layer on top of the project's timeline; False when the channel has no logo on."""
-    project = store.load_project(pid)
-    channel = next((c for c in store.list_channels() if c["id"] == project.get("channel_id")), None)
-    logo = channel_branding.placement((channel or {}).get("settings", {}).get("logo"))
-    source = channel_branding.logo_path(project.get("channel_id", ""))
-    duration = float(project.get("duration") or 0)
-    if not channel or not logo["enabled"] or not source.is_file() or duration <= 0:
-        remove(pid)
-        return False
-    width, height = int(project.get("width") or 1920), int(project.get("height") or 1080)
-    stamp = f"{source.stat().st_mtime_ns}-{logo['position']}-{logo['size']}-{logo['margin']}-{logo['opacity']}-{width}x{height}"
-    name = f"Логотип каналу {stamp}.png"
-    current = clips(project)
-    if len(current) == 1:
-        track, clip = current[0]
-        asset = next((a for a in project.get("assets", []) if a.get("id") == clip.get("asset_id")), {})
-        whole = abs(float(clip.get("start", 0))) < 1e-3 and abs(float(clip["start"]) + float(clip["duration"]) - duration) < 1e-3
-        if whole and Path(asset.get("path", "")).name == name:
-            # frames added later get layers above it: keep the logo the very top layer
-            top = len(project["tracks"]) - 1
-            if project["tracks"].index(track) != top:
-                store.apply_action(pid, "move_layer", {"layer_id": track["id"], "to_index": top})
-            return True
-    remove(pid)
-    target = store.project_dir(pid) / "branding" / name
-    if not target.is_file():
-        channel_branding.overlay_png(project["channel_id"], logo, (width, height), target)
-    asset = store.import_asset_file(store.load_project(pid), target, "channel-logo")
-    project = store.apply_action(pid, "add_layer", {"name": LOGO_TITLE, "to_index": len(store.load_project(pid)["tracks"])})
-    layer = [track for track in project["tracks"] if track.get("name") == LOGO_TITLE and not track.get("clips")][-1]
-    project = store.apply_action(pid, "add_clip", {"layer_id": layer["id"], "kind": "image", "asset_id": asset["id"],
-                                                   "start": 0, "duration": duration, "title": LOGO_TITLE})
-    clip = clips(project)[0][1]
-    store.apply_action(pid, "group_clips", {"clip_ids": [clip["id"]], "title": LOGO_TITLE, "role": "overlay"})
-    return True
+    project=store.load_project(pid)
+    return bool(clips(project))

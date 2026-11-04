@@ -278,7 +278,23 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
     state.analysis=analysis;
     if(state.view==='plan' && typeof renderSpeechReport==='function')renderSpeechReport($('project-plan'));
   }).catch(error=>console.warn('Не вдалося завантажити аналіз озвучки',error));
-  state.exportWatch=setInterval(async()=>{if(!state.project || state.project.id!==id || exportIsActive())return;try{const result=await api(`/api/projects/${encodeURIComponent(id)}/export/active`);if(state.project?.id===id && result.job){state.job=result.job;updateExportLock();pollJob();}}catch(error){console.warn('Не вдалося перевірити експорт',error);}},10000);
+  state.exportWatch=setInterval(async()=>{
+    if(!state.project || state.project.id!==id || exportIsActive())return;
+    try{
+      const result=await api(`/api/projects/${encodeURIComponent(id)}/export/active`);
+      if(state.project?.id!==id)return;
+      if(result.job){state.job=result.job;updateExportLock();pollJob();return;}
+      const revision=state.project.revision;
+      const branding=await api(`/api/projects/${encodeURIComponent(id)}/branding?version=${encodeURIComponent(state.project.branding_version||'')}`);
+      if(!branding.project || state.project?.id!==id || state.project.revision!==revision || exportIsActive())return;
+      // A logo refresh preserves playback position and the current selection.
+      state.project=branding.project;
+      const refreshed=new Map(state.project.assets.map(asset=>[asset.id,asset]));
+      state.assets=state.assets.map(asset=>refreshed.get(asset.id)||asset);
+      for(const asset of refreshed.values())if(!state.assets.some(item=>item.id===asset.id))state.assets.push(asset);
+      renderPreview();renderTimeline();
+    }catch(error){console.warn('Не вдалося оновити стан проєкту',error);}
+  },10000);
   return true;
 }
 
@@ -350,7 +366,7 @@ function renderOverview() {
     if(stopped){
       const total=(Number(making.frames) || 0)-(Number(making.first) || 1)+1,done=Math.min(total,Number(making.made) || 0);
       const box=document.createElement('div');box.className='project-making stopped';
-      box.innerHTML=`<span class="project-export-label"><span>${making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
+      box.innerHTML=`<span class="project-export-label"><span>${making.paused?'На паузі':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
       box.title='Відкрийте випуск, щоб продовжити або почати ще раз';
       open.insertBefore(box,open.querySelector('.project-meta'));card.classList.add('production-stopped');
     }
@@ -362,10 +378,28 @@ function renderOverview() {
       card.classList.add('producing');card.setAttribute('aria-busy','true');open.setAttribute('aria-disabled','true');
     }
     card.append(open,projectActions(project));
+    if(producing||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))){
+      const control=productionControl(project.id,producing);control.classList.add('project-production-control');card.append(control);
+    }
     container.append(card);
   }
   updateOverviewExports();pollOverviewExports(true);
   if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
+}
+
+function productionControl(id,working){
+  const button=document.createElement('button');button.type='button';button.className='production-control';
+  const label=working?'Призупинити створення кадрів':'Продовжити створення кадрів';button.title=label;button.setAttribute('aria-label',label);
+  button.innerHTML=working?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="4"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
+  button.addEventListener('click',async event=>{
+    event.stopPropagation();button.disabled=true;button.setAttribute('aria-busy','true');
+    try{
+      const result=await api(`/api/projects/${encodeURIComponent(id)}/production-${working?'pause':'resume'}`,'POST',{});
+      if(state.project?.id===id){state.project=result.project;if(state.view==='plan')renderPlan();}
+      else if(!state.project)await refreshProjects();
+    }catch(error){status(error.message,true);button.disabled=false;button.removeAttribute('aria-busy');}
+  });
+  return button;
 }
 
 function updateOverviewExports(){

@@ -75,7 +75,7 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
     The rate already includes uncertainty. Leave modest room for measured DSP
     duration and breaths. Dense sentences may borrow from their neighbours.
     """
-    if not profile or total <= 0 or len(texts) != len(segments):
+    if not profile or not texts or total <= 0 or len(texts) != len(segments):
         return {'ids': []}
     rate = profile['seconds_per_character']
     if not math.isfinite(rate) or rate <= 0:
@@ -112,6 +112,20 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
         if excess > 0:
             windows.append({'start_index':start,'end_index':end-1,'max_chars':block_limit})
             reduce(range(start,end),excess)
+    # Fixed-size blocks can each borrow a little and still accumulate a long
+    # delay. Check the complete chain against every original sentence boundary.
+    for _ in range(len(texts)):
+        alignment = narration_pacing.alignment_check(segments,
+            {i:targets[i]*rate/narration_pacing.MAX_SPEED for i in targets},total)
+        if alignment['within_limit']:
+            break
+        issue = max(alignment['issues'],key=lambda value:value['excess'])
+        previous = sum(targets.values())
+        reduce(range(issue['first_index'],issue['index']+1),
+               math.ceil((issue['excess']+.1)*narration_pacing.MAX_SPEED/rate))
+        if sum(targets.values()) == previous:
+            break
     changed = {i:value for i,value in targets.items() if value<len(texts[i])}
     return {'ids': sorted(changed), 'targets': changed, 'max_chars': limit,'windows':windows,
-            'over_by': max(0, sum(map(len, texts))-limit), 'observations': profile['observations']}
+            'over_by': max(0, sum(map(len, texts))-limit), 'observations': profile['observations'],
+            'alignment':alignment}

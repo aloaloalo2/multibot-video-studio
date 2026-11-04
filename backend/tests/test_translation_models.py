@@ -45,19 +45,19 @@ class TranslationModelsTest(unittest.TestCase):
         self.assertEqual(languages.translation_model(self.pid, 'es'), languages.DEFAULT_TRANSLATION_MODEL)
         self.assertEqual(languages.translation_model('b' * 24, 'uk'), languages.DEFAULT_TRANSLATION_MODEL)
 
-    def test_minimax_is_default_without_overriding_explicit_deepseek_or_history(self):
+    def test_minimax_replaces_explicit_deepseek_without_rewriting_history(self):
         historical = {'translation_model': languages.DEEPSEEK_TRANSLATION_MODEL,
                       'translated_model': languages.DEEPSEEK_TRANSLATION_MODEL, 'translate_cost': .02}
         languages.save_state(self.pid, {'languages': {'uk': historical}})
         with patch.object(languages, 'request') as request:
             self.assertEqual(languages.translation_model(self.pid, 'es'), 'minimax/minimax-m3.1-flash')
-            self.assertEqual(languages.translation_model(self.pid, 'uk'), languages.DEEPSEEK_TRANSLATION_MODEL)
+            self.assertEqual(languages.translation_model(self.pid, 'uk'), languages.DEFAULT_TRANSLATION_MODEL)
             self.assertEqual(languages.load_state(self.pid)['languages']['uk'], historical)
             request.assert_not_called()
 
-    def test_legacy_job_without_model_keeps_deepseek(self):
+    def test_legacy_job_without_model_uses_minimax(self):
         with languages.translation_trace(self.pid, 'uk', {}):
-            self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], languages.DEEPSEEK_TRANSLATION_MODEL)
+            self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], languages.DEFAULT_TRANSLATION_MODEL)
 
     def test_retired_glm_selection_resolves_to_minimax_without_rewriting_history(self):
         historical = {'translation_model': 'z-ai/glm-5.3-flash',
@@ -72,7 +72,10 @@ class TranslationModelsTest(unittest.TestCase):
         self.assertIn('digits in the source become longer spoken words', prompt)
         self.assertIn('natural spoken rhythm', prompt)
         self.assertNotIn('three percent', prompt)
-        self.assertNotIn('five percent', prompt)
+        self.assertIn('five percent for EACH phrase independently', prompt)
+        self.assertIn('optional', prompt)
+        self.assertIn('An unfamiliar', prompt)
+        self.assertIn('causal and chronological links', prompt)
         self.assertNotIn('report failure', prompt)
         self.assertNotIn('fit its allotted time', prompt)
 
@@ -85,7 +88,7 @@ class TranslationModelsTest(unittest.TestCase):
             languages.set_translation_model(self.pid, 'uk', languages.DEFAULT_TRANSLATION_MODEL)
 
     def test_unknown_model_fails_before_request(self):
-        for value in ('other/model', 'z-ai/glm-5.3-flash', '', None, ['bad']):
+        for value in ('other/model', languages.DEEPSEEK_TRANSLATION_MODEL, 'z-ai/glm-5.3-flash', '', None, ['bad']):
             with self.subTest(value=value), self.assertRaises(store.StudioError):
                 languages.set_translation_model(self.pid, 'uk', value)
         with patch.object(languages, 'request') as request:
@@ -137,10 +140,12 @@ class TranslationModelsTest(unittest.TestCase):
                     self.assertEqual(request.call_count, 1)
 
     def test_nested_trace_restores_outer_model(self):
-        first, second = list(languages.TRANSLATION_MODELS)[:2]
+        first = languages.DEFAULT_TRANSLATION_MODEL
+        second = languages.DEEPSEEK_TRANSLATION_MODEL
         with languages.translation_trace(self.pid, 'uk', {'translation_model': first}):
             with languages.translation_trace(self.pid, 'es', {'translation_model': second}):
-                self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], second)
+                self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], first)
+                self.assertEqual(languages.TRANSLATION_CONTEXT.value['target'], 'es')
             self.assertEqual(languages.TRANSLATION_CONTEXT.value['model'], first)
         self.assertIsNone(getattr(languages.TRANSLATION_CONTEXT, 'value', None))
 

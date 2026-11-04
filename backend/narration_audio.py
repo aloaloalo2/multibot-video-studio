@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
 import uuid
@@ -77,3 +78,36 @@ def filters(item: dict, speed: float) -> str:
     if abs(speed - 1) > 1e-7:
         parts.append(f'atempo={speed:.6f}')
     return ','.join(parts)
+
+
+def fastest(path: Path, cache: Path, trim: dict) -> dict:
+    """Measure the actual fastest legal take before any further paid requests."""
+    import numpy as np
+    from dubbing_fit import MAX_SPEED, quiet_edges
+
+    record = cache / f"{trim['fingerprint']}-v{VERSION}-tempo-{MAX_SPEED}.json"
+    try:
+        value = json.loads(record.read_text())
+        if (value['fingerprint'] == trim['fingerprint'] and value['version'] == VERSION
+                and value['speed'] == MAX_SPEED and math.isfinite(value['length']) and value['length'] > 0):
+            return value
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    result = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(path), '-vn',
+                             '-af', filters({'trim': trim}, MAX_SPEED), '-f', 'f32le', 'pipe:1'],
+                            capture_output=True, timeout=180)
+    if result.returncode:
+        raise RuntimeError('Не вдалося перевірити темп збереженої фрази. Оригінал збережено.')
+    samples = np.frombuffer(result.stdout, dtype='<f4')
+    if not len(samples) or not np.isfinite(samples).all():
+        raise RuntimeError('Не вдалося перевірити звук збереженої фрази. Оригінал збережено.')
+    value = {'version': VERSION, 'fingerprint': trim['fingerprint'], 'speed': MAX_SPEED,
+             'length': len(samples)/RATE, 'edge_silence': quiet_edges(samples, RATE, MAX_SPEED)}
+    cache.mkdir(parents=True, exist_ok=True)
+    temporary = record.with_name(f'.{record.name}.{uuid.uuid4().hex}.tmp')
+    try:
+        temporary.write_text(json.dumps(value))
+        os.replace(temporary, record)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return value

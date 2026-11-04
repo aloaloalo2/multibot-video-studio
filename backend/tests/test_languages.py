@@ -696,7 +696,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(calls, [("Раз. Два.", 1.0), ("Три.", 1.0), ("Чотири.", 1.0)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.07))
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.08))
         self.assertGreater(voice["latest"],0)
         self.assertGreater(len(voice["timing_issues"]),0)
         self.assertFalse(voice["paid_timing_retries"])
@@ -957,25 +957,20 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in json.loads(asked[1])], [3])
         self.assertEqual(asked[2], "Line 2.")
 
-    def test_the_translator_answers_without_reasoning_and_never_empty(self):
-        # user, 2 November 2026: «довгувато діпсік працює»; «Перекладач не повернув переклад однієї фрази»
+    def test_minimax_keeps_reasoning_and_retries_only_an_empty_truncated_response(self):
         sent = []
-        replies = iter([RuntimeError("OpenRouter: помилка 400. reasoning is mandatory"),
-                        json.dumps({"choices": [{"message": {"content": ""}, "finish_reason": "length"}], "usage": {"cost": 0.001}}),
-                        json.dumps({"choices": [{"message": {"content": "Привіт"}, "finish_reason": "stop"}], "usage": {"cost": 0.002}})])
+        replies = iter([
+            {"choices": [{"message": {"content": ""}, "finish_reason": "length"}], "usage": {"cost": .001}},
+            {"choices": [{"message": {"content": "Привіт"}, "finish_reason": "stop"}], "usage": {"cost": .002}}])
         def request(url, body, headers, what):
             sent.append(json.loads(body))
-            reply = next(replies)
-            if isinstance(reply, Exception):
-                raise reply
-            return reply.encode()
-        with patch.object(languages, "request", side_effect=request), \
-             patch.object(languages, "DEFAULT_TRANSLATION_MODEL", languages.DEEPSEEK_TRANSLATION_MODEL):
+            return json.dumps(next(replies)).encode()
+        with patch.object(languages, "request", side_effect=request):
             text, cost = languages.ask([{"role": "user", "content": "Hi"}], 600)
-        self.assertEqual((text, round(cost, 4)), ("Привіт", 0.003))
-        self.assertEqual(sent[0]["reasoning"], {"enabled": False})
-        self.assertNotIn("reasoning", sent[1])                   # a model that must reason is asked again with it
-        self.assertEqual((sent[1]["max_tokens"], sent[2]["max_tokens"]), (600, 4000))   # an empty, cut answer gets more room
+        self.assertEqual((text, round(cost,4)), ("Привіт", .003))
+        self.assertTrue(all(call['model']==languages.DEFAULT_TRANSLATION_MODEL for call in sent))
+        self.assertTrue(all(call['reasoning']=={'effort':'low'} for call in sent))
+        self.assertEqual([call['max_tokens'] for call in sent], [4096,16384])
 
     def test_parts_of_a_long_text_are_translated_side_by_side_in_order(self):
         names = [chr(0x430 + i % 32) * (1 + i // 32) for i in range(70)]       # no digits: no speech fix asked
@@ -1142,6 +1137,25 @@ class LanguagesTest(unittest.TestCase):
             with self.assertRaisesRegex(store.StudioError,'збережених таймінгів'):
                 languages.whole(self.pid,'uk','elevenlabs',{'cache_only':True})
 
+    def test_cached_local_drift_blocks_new_paid_requests_before_archive_or_clone(self):
+        work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
+        texts=[f'Це збережена фраза номер {n} для перевірки.' for n in range(6)]
+        (work/'text.txt').write_text('\n'.join(texts))
+        (work/'voice.mp3').write_bytes(b'previous accepted voice')
+        self.example('uk')
+        audio=tone(work/'cached.mp3',3.8)
+        segments=[{'start':i*1.5,'end':i*1.5+1.5,'source':text} for i,text in enumerate(texts)]
+        segments[-1].update(start=40,end=45)
+        with patch.object(languages,'source',return_value={'duration':50}), \
+             patch.object(languages.voice_cache,'candidates',return_value={text:audio for text in texts[:5]}), \
+             patch.object(languages,'progress'),patch.object(languages,'archive_voice_parts') as archive, \
+             patch.object(languages,'voice_id') as clone,patch.object(languages,'speak') as speak:
+            with self.assertRaisesRegex(RuntimeError,'для зміщення до 7 с'):
+                languages.whole_synced(self.pid,'uk','elevenlabs',{},segments)
+        archive.assert_not_called();clone.assert_not_called();speak.assert_not_called()
+        self.assertEqual((work/'voice.mp3').read_bytes(),b'previous accepted voice')
+        self.assertFalse(json.loads((work/'alignment-preflight.json').read_text())['within_limit'])
+
     def test_interrupted_run_reuses_successful_take_without_repeating_payment(self):
         work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
         texts=['Перша фраза.','Друга фраза.']
@@ -1202,7 +1216,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse(list((work/'parts').glob('adaptation-*.json')))
         self.assertEqual(len(store.read_json(work/'parts/requests.json')),8)
         manifest=store.read_json(work/'parts/manifest.json')
-        self.assertTrue(all(.93<=x['speed']<=1.07 for x in manifest))
+        self.assertTrue(all(.92<=x['speed']<=1.08 for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)
         self.assertTrue(languages.voice_matches_text(self.pid,code,languages.load_state(self.pid)['languages'][code]['voice']))
 
@@ -1243,7 +1257,7 @@ class LanguagesTest(unittest.TestCase):
             self.assertEqual(speech.call_count,8)
             prepare.assert_not_called()
         manifest=store.read_json(work/'parts/manifest.json')
-        self.assertTrue(all(.93<=x['speed']<=1.07 and x['reused'] for x in manifest))
+        self.assertTrue(all(.92<=x['speed']<=1.08 and x['reused'] for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)
 
 

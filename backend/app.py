@@ -285,7 +285,10 @@ def from_pixabay(project: dict, kind: str, asset_id: int, quality: str | None = 
 
 
 def valid_local_source(path: Path, project: dict) -> bool:
-    return path.is_file() and (any(store.under(path, root) for root in store.media_roots(project)) or store.under(path, Path(project["episode_path"])))
+    branding=(store.under(path,store.DATA_ROOT/'channels'/project['channel_id']/'overlays')
+              and any(a.get('source')=='channel-logo' and Path(a.get('path','')).resolve()==path
+                      for a in project.get('assets',[])))
+    return path.is_file() and (branding or any(store.under(path, root) for root in store.media_roots(project)) or store.under(path, Path(project["episode_path"])))
 
 
 def normalize_for_engine(project: dict) -> dict:
@@ -810,7 +813,7 @@ def _derived_key(project: dict) -> tuple:
                 stat = None
             audio.append((clip.get("asset_id"), path, stat and (stat.st_size, stat.st_mtime_ns), clip.get("start"), clip.get("duration"),
                           clip.get("trim_start"), clip.get("volume"), bool(track.get("muted"))))
-    return (project.get("revision"), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, source_key, tuple(audio), store.project_plan_mode(project))
+    return (project.get("revision"), project.get('branding_version'), project.get("duration"), project.get("fps"), project.get("episode_path"), plan_key, source_key, tuple(audio), store.project_plan_mode(project))
 
 
 def razgon_kit_at_start() -> None:
@@ -1029,6 +1032,12 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
         if match:
             return self.json_response({'job': active_export(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/branding", path)
+        if match:
+            project=store.load_project(match.group(1))
+            if (query.get('version') or [''])[0]==project.get('branding_version','off'):
+                return self.json_response({'unchanged':True})
+            return self.json_response({'project':project})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/exports", path)
         if match:
             store.load_project(match.group(1))
@@ -1122,6 +1131,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/alignment", path)
+        if match:
+            return self.json_response(languages.alignment_timeline(*match.groups()))
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices", path)
         if match:
             return self.json_response(languages.channel_voices(match.group(1)))
@@ -1350,6 +1362,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
             return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
+        if match and method == "POST":
+            return self.json_response({"project": production.pause(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
             return self.json_response({"project": production.resume(match.group(1))})

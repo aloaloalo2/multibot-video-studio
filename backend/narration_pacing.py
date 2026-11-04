@@ -4,12 +4,49 @@ from __future__ import annotations
 import math
 from statistics import median
 
-from dubbing_fit import MAX_SPEED, join_gaps
+from dubbing_fit import MAX_SPEED, MAX_SHIFT, TEMPO_PERCENT, join_gaps
 
 CALIBRATION = 5
 BLOCK = 10
 GAP = .05
 FORECAST_RESERVE = 1.03
+
+
+def alignment_check(segments: list[dict], fastest: dict[int, float], total: float) -> dict:
+    """An optimistic check of immutable, already-paid audio before buying more.
+
+    Unknown takes occupy no time, and added breath gaps are omitted here. Thus a
+    failure cannot be blamed on a character-rate forecast or unknown padding.
+    Decoded durations at the allowed maximum tempo are required, never raw/speed.
+    The final fitter additionally verifies minimum end times and actual breaths.
+    """
+    cursor, owner = 0., 0
+    issues = []
+    for index, length in sorted(fastest.items()):
+        if not 0 <= index < len(segments) or not math.isfinite(length) or length <= 0:
+            raise ValueError('Invalid measured phrase for alignment')
+        source = segments[index]
+        earliest = max(0., float(source['start'])-MAX_SHIFT)
+        if earliest > cursor:
+            cursor, owner = earliest, index
+        latest = min(total-length, float(source['start'])+MAX_SHIFT,
+                     float(source['end'])+MAX_SHIFT-length)
+        if cursor > latest+1e-6:
+            issues.append({'index':index, 'first_index':owner, 'excess':round(cursor-latest,3)})
+        cursor += length
+    return {'limit_seconds':MAX_SHIFT, 'measured_phrases':len(fastest),
+            'within_limit':not issues, 'issues':issues}
+
+
+def require_alignment(segments: list[dict], fastest: dict[int,float], total: float) -> dict:
+    report = alignment_check(segments,fastest,total)
+    if report['issues']:
+        issue = max(report['issues'],key=lambda x:x['excess'])
+        raise RuntimeError(f"Збережені фрази {issue['first_index']+1}–{issue['index']+1} потребують скорочення "
+                           f"мовлення щонайменше на {issue['excess']:.1f} с для зміщення до 7 с. "
+                           'Нові платні запити зупинено до виправлення синхронізації. '
+                           'Текст і всі готові записи збережені; автоматичної платної перегенерації не буде.')
+    return report
 
 
 def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | None:
@@ -37,7 +74,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     minimum=measured/MAX_SPEED
     if minimum>total+.05:
         raise RuntimeError(f'Збережені фрази вже перевищують тривалість ролика щонайменше на {minimum-total:.1f} с '
-                           'при прискоренні до 7%. Нові платні запити зупинено. Усі записи збережені.')
+                           f'при прискоренні до {TEMPO_PERCENT}%. Нові платні запити зупинено. Усі записи збережені.')
     rate=seconds_per_character(texts,known)
     pending=[i for i in range(offset,len(texts)) if i not in known]
     result={'measured_phrases':len(known),'measured_seconds':round(measured,3),'join_seconds':round(gaps,3),
@@ -60,7 +97,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     if factor<.65:
         excess=(measured+rate*chars)/MAX_SPEED-total
         raise RuntimeError(f'Для решти {len(pending)} фраз за виміряним темпом прогнозовано бракує {excess:.1f} с '
-                           'навіть із прискоренням до 7%. Нові платні запити зупинено. '
+                           f'навіть із прискоренням до {TEMPO_PERCENT}%. Нові платні запити зупинено. '
                            f'Збережено {len(known)} із {len(texts)} записів; повторна оплата за них не потрібна. '
                            'Потрібно перевірити тривалість озвучки або монтажу.')
     return result

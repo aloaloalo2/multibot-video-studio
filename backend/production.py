@@ -15,7 +15,7 @@ those frames has its scene written and stands on the timeline as a code block. I
 """
 from __future__ import annotations
 
-import subprocess, threading, time
+import json, subprocess, threading, time
 from pathlib import Path
 
 import director
@@ -217,12 +217,16 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
 
 def _run(pid: str, cli: Path, notes: str = "") -> None:
     fields = {}
+    started = None
     try:
-        project = store.load_project(pid)
-        request = project["production_request"]
-        log = store.project_dir(pid) / f"production-{request['id']}.log"
-        started = time.time()
-        set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False)
+        with store.LOCK:
+            project = store.load_project(pid)
+            request = project["production_request"]
+            if request.get('paused'):
+                return
+            log = store.project_dir(pid) / f"production-{request['id']}.log"
+            started = time.time()
+            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False, paused=False)
         # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
         text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
@@ -253,7 +257,8 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         traceback.print_exc()
         fields.update(status="failed", error="Створення кадрів зупинилося через помилку студії. Спробуйте ще раз")
     finally:
-        if not director.cancelled(pid, "production"):
+        was_cancelled = director.cancelled(pid, "production")
+        if started is not None and not was_cancelled:
             try:
                 set_request(pid, finished_at=time.time(), **fields)
             except (OSError, store.StudioError):
@@ -269,7 +274,7 @@ def fix(pid: str, notes: str) -> dict:
     request = project.get("production_request") or {}
     if request.get("status") not in {"done", "failed"}:
         raise store.StudioError("Агент ще працює над цими кадрами")
-    set_request(pid, status="requested", created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
+    set_request(pid, status="requested", paused=False, created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
     start(pid, notes)
     return store.load_project(pid)
 
@@ -280,11 +285,46 @@ RESUME = ("Ліміт підписки оновився. Продовж робо
 
 def resume(pid: str) -> dict:
     """Go on with frames a run left when the subscription limit ran out, in that run's own session."""
+    with LOCK:
+        if pid in ACTIVE:
+            raise store.StudioError('Ще зупиняємо попередню роботу. Спробуйте за кілька секунд.',409)
     request = store.load_project(pid).get("production_request") or {}
     # a run stopped before the limit was marked keeps only the CLI's English note
-    if request.get("status") != "failed" or not (request.get("limit") or director.limit_stop({"result": request.get("error")})):
-        raise store.StudioError("Агент не стоїть на паузі через ліміт")
-    return fix(pid, RESUME)
+    if request.get("status") != "failed" or not (request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
+        raise store.StudioError("Агент не стоїть на паузі")
+    notes=("Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
+           "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else RESUME
+    return fix(pid, notes)
+
+
+def pause(pid: str) -> dict:
+    """Keep the project and the saved CLI session; stop only its active frame job."""
+    project=store.load_project(pid)
+    request=project.get('production_request') or {}
+    if request.get('status') not in {'requested','in_progress'}:
+        return project
+    # A first run may not have returned its result yet. Its initial event already
+    # identifies the persistent conversation that Resume must continue.
+    session=request.get('session_id')
+    log=store.project_dir(pid)/f"production-{request['id']}.log"
+    if log.is_file():
+        with log.open() as stream:
+            for _,line in zip(range(20),stream):
+                try:
+                    event=json.loads(line)
+                    if event.get('session_id'):
+                        session=event['session_id'];break
+                except ValueError:
+                    continue
+    director.stop(pid,'production')
+    set_request(pid,status='failed',paused=True,limit=False,finished_at=time.time(),session_id=session,
+                error='Призупинено на ваше прохання. Готові кадри збережені.')
+    # Usually SIGTERM finishes immediately. Never let a quick Play silently lose
+    # the request while the old worker still owns the project's active slot.
+    until=time.monotonic()+2
+    while pid in ACTIVE and time.monotonic()<until:
+        time.sleep(.05)
+    return store.load_project(pid)
 
 
 def start(pid: str, notes: str = "") -> None:

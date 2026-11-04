@@ -32,6 +32,46 @@ class ProductionTest(unittest.TestCase):
         self.animated = True
         production.ACTIVE.clear()
 
+    def test_pause_preserves_session_montage_and_can_resume(self):
+        pid=self.project['id'];before=json.loads(json.dumps(self.project['tracks']))
+        self.project['production_request']['status']='in_progress'
+        (Path(self.tmp.name)/'production-r1.log').write_text('{"session_id":"existing-session"}\n')
+        with patch.object(production.director,'stop') as stop:
+            result=production.pause(pid)
+        stop.assert_called_once_with(pid,'production')
+        self.assertEqual(result['tracks'],before)
+        self.assertTrue(result['production_request']['paused'])
+        self.assertEqual(result['production_request']['session_id'],'existing-session')
+        with patch.object(production,'start') as start:
+            production.resume(pid)
+        start.assert_called_once()
+        self.assertIn('Збережи готові',start.call_args.args[1])
+        self.assertEqual(self.project['production_request']['session_id'],'existing-session')
+        self.assertFalse(self.project['production_request']['paused'])
+
+    def test_paused_queued_worker_never_launches_or_changes_state(self):
+        pid=self.project['id'];self.project['production_request'].update(paused=True,status='failed')
+        before=json.loads(json.dumps(self.project))
+        with patch.object(production.director,'claude') as claude:
+            production.run(pid,Path('claude'))
+        claude.assert_not_called()
+        self.assertEqual(self.project,before)
+
+    def test_resume_waits_for_old_worker(self):
+        self.project['production_request'].update(paused=True,status='failed')
+        production.ACTIVE.add(self.project['id'])
+        with patch.object(production,'start') as start,self.assertRaisesRegex(store.StudioError,'Ще зупиняємо'):
+            production.resume(self.project['id'])
+        start.assert_not_called();production.ACTIVE.clear()
+
+    def test_project_list_keeps_pause_flag_for_resume_control(self):
+        self.project['production_request'].update(paused=True,status='failed')
+        with patch.object(store,'listed_plan',return_value={}),patch.object(store,'made_frames',return_value=[1,2]):
+            state=store.production_state(self.project)
+        self.assertTrue(state['paused'])
+        self.assertFalse(state['limit'])
+        self.assertEqual(state['made'],2)
+
     def test_brief_names_the_frames_and_the_limits(self):
         text = production.brief(self.project, REQUEST)
         for part in ("кадри студії 1–3 з 73", "slots --razgon <проєкт> --frames 1,2,3", "codex_image.py", '"assets": false',

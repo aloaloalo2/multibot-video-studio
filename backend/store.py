@@ -456,7 +456,8 @@ def load_project(pid: str) -> dict:
     if data.get("deleted_at"):
         raise StudioError("Проєкт видалено зі списку", 404)
     data["created_at"] = project_created_at(data, project_dir(pid))
-    return upgrade_legacy_project(data)
+    import logo_layer
+    return logo_layer.bind(upgrade_legacy_project(data))
 
 
 def item_layers(project: dict) -> dict:
@@ -668,7 +669,7 @@ def production_state(project: dict) -> dict | None:
     if not request.get("status"):
         return None
     state = {"status": request["status"], "frames": int(request.get("frames") or 0), "first": int(request.get("first") or 1),
-             "limit": bool(request.get("limit"))}
+             "limit": bool(request.get("limit")), "paused": bool(request.get("paused"))}
     if request["status"] in {"requested", "in_progress", "failed"}:
         try:
             plan = listed_plan(project)
@@ -1476,10 +1477,11 @@ def discovered(project: dict) -> list[dict]:
     used to walk the whole episode folder again. A walk is reused for 5 seconds while the project stays the same."""
     now = time.monotonic()
     hit = _DISCOVERED.get(project["id"])
-    if hit and now - hit[0] < 5 and hit[1] == project.get("revision", 0):
+    version=(project.get('revision',0),project.get('branding_version'))
+    if hit and now - hit[0] < 5 and hit[1] == version:
         return hit[2]
     found = discover_assets(project)
-    _DISCOVERED[project["id"]] = (now, project.get("revision", 0), found)
+    _DISCOVERED[project["id"]] = (now, version, found)
     return found
 
 
@@ -1499,6 +1501,9 @@ def resolve_asset(project: dict, aid: str) -> dict:
     for asset in project.get('assets',[]):
         if asset.get('id')==aid:
             path=Path(asset['path']).resolve()
+            if (asset.get('source')=='channel-logo' and path.is_file()
+                    and under(path,DATA_ROOT/'channels'/project['channel_id']/'overlays')):
+                return asset
             if path.is_file() and (under(path,Path(project['episode_path'])) or any(under(path, root) for root in media_roots(project))):return asset
             # the episode folder is gone: its sound plays from the studio's kept copy (backend/keep.py)
             kept = PROJECTS_ROOT / project['id'] / 'kept' / f"{aid}.m4a"

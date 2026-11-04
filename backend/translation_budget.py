@@ -31,18 +31,49 @@ def missing_source_years(source_text, translated_text, target_language):
 
 
 def number_refinement_plan(source_text, lines, source_units, source_language, target_language):
-    """Rank expanded phrases after equivalent number words have been normalized."""
+    """Check each phrase independently after normalizing equivalent number words.
+
+    Opposite deviations cannot cancel each other through the script total. Work
+    on at most twenty of the worst outliers per pass, leaving in-range phrases
+    untouched. The targets are wording hints, never permission to cut facts or
+    add filler; callers re-audit meaning and measure audio independently.
+    """
+    values = _ordered(lines, len(lines)) if lines else []
+    if (len(source_units) != len(values)
+            or any(not isinstance(line, str) or not line.strip() for line in source_units)):
+        raise ValueError('Source units must match every nonempty translation phrase.')
     source, _, available = numeric_comparison.normalized(source_text, source_language)
-    normalized = [numeric_comparison.normalized(line, target_language) for line in lines]
-    if not available or any(not item[2] for item in normalized):
+    normalized = [numeric_comparison.normalized(line, target_language) for line in values]
+    original_forms = [numeric_comparison.normalized(line, source_language) for line in source_units]
+    if not available or any(not item[2] for item in normalized + original_forms):
         return {'available': False, 'ids': []}
     values = [item[0] for item in normalized]
-    originals = [numeric_comparison.normalized(line, source_language)[0] for line in source_units]
+    originals = [item[0] for item in original_forms]
     state = report(source, join_lines(values), NUMBER_AWARE_TOLERANCE)
-    plan = refinement_plan(source, values, originals, NUMBER_AWARE_TOLERANCE)
-    return {**plan, 'available': True, 'report': state,
-            'source_lengths': {i: len(originals[i]) for i in plan['ids']},
-            'current_lengths': {i: len(values[i]) for i in plan['ids']}}
+    phrases = [dict(report(left, right, NUMBER_AWARE_TOLERANCE), id=i)
+               for i, (left, right) in enumerate(zip(originals, values))]
+    pending = [row['id'] for row in phrases if not row['within_budget']]
+    ranked = sorted(pending, key=lambda i: (-abs(phrases[i]['difference_percent'] or 0),
+                                           -(phrases[i]['over_by'] + phrases[i]['under_by']), i))
+    ids = sorted(ranked[:20])
+    directions = {i: 'shorten' if phrases[i]['over_by'] else 'expand' for i in ids}
+    targets = {}
+    for i in ids:
+        row = phrases[i]
+        reserve = min(math.ceil(row['source_chars'] * .005),
+                      (row['max_chars'] - row['min_chars']) // 2)
+        capacity = max(1, math.floor(row['translated_chars'] * .12))
+        targets[i] = (max(row['max_chars'] - reserve, row['translated_chars'] - capacity)
+                      if directions[i] == 'shorten' else
+                      min(row['min_chars'] + reserve, row['translated_chars'] + capacity))
+    kinds = set(directions.values())
+    return {'available': True, 'report': state, 'phrases': phrases, 'ids': ids,
+            'pending_ids': pending, 'within_budget': not pending,
+            'distance': sum(row['over_by'] + row['under_by'] for row in phrases),
+            'direction': next(iter(kinds)) if len(kinds) == 1 else 'mixed' if kinds else 'none',
+            'directions': directions, 'line_targets': targets,
+            'source_lengths': {i: phrases[i]['source_chars'] for i in ids},
+            'current_lengths': {i: phrases[i]['translated_chars'] for i in ids}}
 
 
 def count(text: str) -> int:

@@ -8,6 +8,42 @@ import translation_budget as budget
 
 
 class TranslationBudgetTest(unittest.TestCase):
+    def test_phrase_overruns_do_not_cancel_even_when_whole_script_matches(self):
+        sources = ['s'*200, 's'*200, 's'*100]
+        texts = ['a'*236, 'b'*164, 'c'*102]
+        plan = budget.number_refinement_plan('\n'.join(sources), texts, sources, 'en', 'uk')
+        self.assertTrue(plan['report']['within_budget'])
+        self.assertFalse(plan['within_budget'])
+        self.assertEqual(plan['pending_ids'], [0, 1])
+        self.assertEqual(plan['directions'], {0: 'shorten', 1: 'expand'})
+        self.assertEqual(plan['phrases'][0]['difference_percent'], 18)
+        self.assertNotIn(2, plan['line_targets'])
+
+    def test_phrase_boundaries_are_inclusive_and_number_expansion_is_discounted(self):
+        sources = ['s'*100]*4 + ['In 2017.']
+        texts = ['t'*n for n in (94, 95, 105, 106)] + ['In dos mil diecisiete.']
+        plan = budget.number_refinement_plan('\n'.join(sources), texts, sources, 'en', 'es')
+        self.assertEqual(plan['pending_ids'], [0, 3])
+        self.assertEqual(plan['phrases'][4]['difference_percent'], 0)
+        self.assertEqual(texts[-1], 'In dos mil diecisiete.')
+
+    def test_phrase_batches_prioritize_worst_outliers_and_preserve_short_line_bounds(self):
+        sources = ['s'*100]*23 + ['abc']
+        texts = ['t'*(110+i) for i in range(23)] + ['xy']
+        plan = budget.number_refinement_plan('\n'.join(sources), texts, sources, 'en', 'uk')
+        self.assertEqual(len(plan['ids']), 20)
+        self.assertIn(23, plan['ids'])
+        self.assertNotIn(0, plan['ids'])
+        self.assertEqual((plan['phrases'][23]['min_chars'], plan['phrases'][23]['max_chars']), (3, 3))
+        self.assertEqual(plan['line_targets'][23], 3)
+
+    def test_phrase_plan_rejects_missing_mapping_and_marks_unsupported_grammar(self):
+        with self.assertRaises(ValueError):
+            budget.number_refinement_plan('abc', ['def'], [], 'en', 'uk')
+        plan = budget.number_refinement_plan('abc', ['def'], ['abc'], 'en', 'ja')
+        self.assertFalse(plan['available'])
+        self.assertEqual(plan['ids'], [])
+
     def test_inclusive_three_percent_boundaries(self):
         for length, valid in [(96, False), (97, True), (100, True), (103, True), (104, False)]:
             with self.subTest(length=length):

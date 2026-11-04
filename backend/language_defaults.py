@@ -11,6 +11,38 @@ from pathlib import Path
 import store
 
 LOCK=threading.RLock()
+_REFERENCE_EQUIVALENCE={}
+
+
+def same_reference(current: Path, saved: Path) -> bool:
+    """Recognize the old 45-second excerpt of a full reference in the defaults UI.
+
+    This never changes clone IDs or paid-speech cache identity. Compare the whole
+    legacy excerpt's decoded samples, not its filename, speaker or transcript.
+    """
+    import subprocess
+    import numpy as np
+    try:
+        key=tuple((str(p),p.stat().st_mtime_ns,p.stat().st_size) for p in (current,saved))
+        if key in _REFERENCE_EQUIVALENCE:return _REFERENCE_EQUIVALENCE[key]
+        lengths=[store.media_duration(p) or 0 for p in (current,saved)]
+        short,long=sorted(zip(lengths,(current,saved)),key=lambda pair:pair[0])
+        result=False
+        if 44.9<=short[0]<=45.1 and long[0]>46:
+            def decode(path):
+                raw=subprocess.run(['ffmpeg','-v','error','-nostdin','-i',str(path),'-t','45',
+                    '-ac','1','-ar','8000','-f','f32le','pipe:1'],capture_output=True,timeout=12,check=True).stdout
+                return np.frombuffer(raw,dtype='<f4').astype(np.float64)
+            a,b=decode(short[1]),decode(long[1])
+            if len(a)==len(b) and len(a)>=44*8000 and np.isfinite(a).all() and np.isfinite(b).all():
+                power=float(np.dot(b,b));gain=float(np.dot(a,b))/power if power else 0
+                error=float(np.linalg.norm(a-gain*b))/max(float(np.linalg.norm(a)),1e-9)
+                result=bool(power/len(b)>1e-6 and .1<gain<10 and error<.002)
+        if len(_REFERENCE_EQUIVALENCE)>256:_REFERENCE_EQUIVALENCE.clear()
+        _REFERENCE_EQUIVALENCE[key]=result
+        return result
+    except (OSError,ValueError,subprocess.SubprocessError):
+        return False
 
 
 def signature(payload: dict) -> str:
@@ -51,7 +83,7 @@ def selection(pid: str) -> tuple[dict,dict]:
 
 def status(pid: str) -> dict:
     try:
-        selected,_=selection(pid)
+        selected,examples=selection(pid)
         saved=store.read_json(root(selected['channel_id'])/'current.json',{}) or {}
         payload=selected['payload'];previous=saved.get('payload') or {}
         def effective(settings):
@@ -63,9 +95,15 @@ def status(pid: str) -> dict:
         settings_match=bool(saved) and effective(previous.get('settings') or {})==effective(payload['settings'])
         # The button belongs to the open language. Extra language tabs and dormant engine preferences
         # do not change its selected voice or active synthesis parameters.
-        by_language={code:settings_match and code in (previous.get('languages') or [])
-                     and (voice or {}).get('sha256')==((previous.get('voices') or {}).get(code) or {}).get('sha256')
-                     for code,voice in payload['voices'].items()}
+        by_language={}
+        for code,voice in payload['voices'].items():
+            earlier=(previous.get('voices') or {}).get(code) or {}
+            matches=(voice or {}).get('sha256')==earlier.get('sha256')
+            if not matches and settings_match and voice and earlier and code in examples:
+                version=saved.get('version','')
+                if __import__('re').fullmatch(r'[0-9a-f]{32}',version):
+                    matches=same_reference(examples[code]['path'],root(selected['channel_id'])/version/code/'own-voice.mp3')
+            by_language[code]=settings_match and code in (previous.get('languages') or []) and matches
         return {'saved':bool(by_language) and all(by_language.values()),'by_language':by_language,'exists':bool(saved)}
     except (OSError,RuntimeError,ValueError,store.StudioError):
         return {'saved':False,'exists':False}

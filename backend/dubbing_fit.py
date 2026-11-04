@@ -8,8 +8,10 @@ from pathlib import Path
 
 import narration_audio
 
-MIN_SPEED = 0.93
-MAX_SPEED = 1.07
+TEMPO_PERCENT = 8
+MIN_SPEED = 1 - TEMPO_PERCENT / 100
+MAX_SPEED = 1 + TEMPO_PERCENT / 100
+MAX_SHIFT = 7.0
 LONG_GAP = 1.5
 
 
@@ -58,10 +60,89 @@ def join_gaps(items: list[dict], gap: float = .05) -> list[float]:
             for a, b in zip(items, items[1:])]
 
 
+class AlignmentError(RuntimeError):
+    def __init__(self, issue: dict):
+        self.issue = issue
+        super().__init__(f"Фрази {issue['first_index']+1}–{issue['index']+1} не вкладаються у зміщення до 7 с "
+                         f"від оригіналу: бракує {issue['excess']:.1f} с. "
+                         'Готові записи збережені. Потрібне локальне вирівнювання або окреме редагування тексту; '
+                         'автоматичної платної перегенерації не буде.')
+
+
+def alignment_windows(items: list[dict], total: float, gap: float = .05) -> dict:
+    """Feasible start intervals for fixed measured takes, with both anchors within seven seconds.
+
+    Subtracting the occupied prefix turns non-overlap into monotone start offsets.
+    Propagated bounds make a late phrase unable to push every later phrase away
+    from its original scene. Missing legacy anchors retain only film boundaries.
+    """
+    if not math.isfinite(total) or total <= 0 or not math.isfinite(gap) or gap < 0:
+        raise ValueError('Invalid narration duration or gap')
+    gaps = join_gaps(items, gap) + [0.]
+    prefixes, lower, upper, issues = [], [], [], []
+    prefix, floor, owner = 0., 0., 0
+    for n, item in enumerate(items):
+        length = float(item['fitted_length'])
+        if not math.isfinite(length) or length < 0:
+            raise ValueError('Invalid fitted phrase duration')
+        left, right = 0., total-length
+        start = item.get('original_start', item.get('start'))
+        end = item.get('original_end')
+        if start is not None:
+            start = float(start)
+            if not math.isfinite(start) or start < 0:
+                raise ValueError('Invalid source phrase start')
+            left, right = max(left, start-MAX_SHIFT), min(right, start+MAX_SHIFT)
+        if end is not None:
+            end = float(end)
+            if not math.isfinite(end) or end < float(start or 0):
+                raise ValueError('Invalid source phrase end')
+            left, right = max(left, end-MAX_SHIFT-length), min(right, end+MAX_SHIFT-length)
+        if left-prefix > floor:
+            floor, owner = left-prefix, n
+        if prefix+floor > right+1e-6:
+            issues.append({'position': n, 'first_position': owner,
+                           'index': int(item.get('index', n)),
+                           'first_index': int(items[owner].get('index', owner)),
+                           'excess': prefix+floor-right,
+                           'earliest': prefix+floor, 'latest': right})
+        prefixes.append(prefix)
+        lower.append(floor)
+        upper.append(right-prefix)
+        prefix += length+gaps[n]
+    ceiling = total-prefix
+    for n in range(len(items)-1, -1, -1):
+        ceiling = min(ceiling, upper[n])
+        upper[n] = ceiling
+    return {'prefixes': prefixes, 'lower': lower, 'upper': upper,
+            'gaps': gaps, 'issues': issues, 'slack': total-prefix}
+
+
+def alignment_report(items: list[dict]) -> dict:
+    """Audit actual placement, independently of total film duration."""
+    issues, maximum = [], 0.
+    for n, item in enumerate(items):
+        shifts = {}
+        for edge in ('start', 'end'):
+            original = item.get(f'original_{edge}')
+            actual = item.get(edge)
+            if original is not None and actual is not None:
+                shift = float(actual)-float(original)
+                if not math.isfinite(shift):
+                    raise ValueError('Invalid phrase alignment')
+                shifts[edge] = shift
+                maximum = max(maximum, abs(shift))
+        if any(abs(value) > MAX_SHIFT+2/narration_audio.RATE for value in shifts.values()):
+            issues.append({'index': int(item.get('index', n)),
+                           **{f'{edge}_shift': round(value, 3) for edge, value in shifts.items()}})
+    return {'limit_seconds': MAX_SHIFT, 'max_shift_seconds': round(maximum, 3),
+            'within_limit': not issues, 'issues': issues}
+
+
 def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list[dict]:
     """Balance spare time around phrases, borrowing neighbouring silence without overlap.
 
-    Isotonic projection keeps starts nearest their source-window centres while preserving order.
+    Bounded isotonic projection keeps both source anchors within seven seconds.
     Durations must already be measured after local fitting. No word is cut to meet the deadline.
     """
     lengths=[float(x['fitted_length']) for x in items]
@@ -71,6 +152,9 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     if slack<-.001:
         raise RuntimeError(f'Озвучка довша за ролик на {-slack:.1f} с навіть після локальної підгонки. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
+    windows = alignment_windows(items, total, gap)
+    if windows['issues']:
+        raise AlignmentError(max(windows['issues'], key=lambda issue: issue['excess']))
     prefix=0.;blocks=[];targets=[]
     for n,item in enumerate(items):
         left=float(item.get('original_start',item['start']))
@@ -84,13 +168,56 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
         prefix+=lengths[n]+gaps[n]
     shifts=[0.]*len(items)
     for value,_,a,b in blocks:
-        shifts[a:b]=[max(0.,min(max(0.,slack),value))]*(b-a)
+        for n in range(a,b):
+            shifts[n]=max(windows['lower'][n],min(windows['upper'][n],value))
     result=[];prefix=0.
     for n,item in enumerate(items):
         start=prefix+shifts[n]
         result.append({**item,'start':start,'end':start+lengths[n],'center_target':targets[n]})
         prefix+=lengths[n]+gaps[n]
+    report=alignment_report(result)
+    if not report['within_limit']:
+        raise RuntimeError('Не вдалося перевірити межу зміщення 7 с. Готові записи збережені.')
     return result
+
+
+def synchronization_score(original: list[dict], translated: list[dict]) -> dict | None:
+    """A timing-only score from both boundaries of every matching phrase.
+
+    Each phrase contributes 100 * max(0, 1 - worst_boundary_drift / 7)**2.
+    Every phrase has equal weight. Early and late speech are penalized equally;
+    reaching the displacement limit gives that phrase zero. This is not a
+    semantic-quality score or a percentage of phrases inside the allowed limit.
+    Missing, invalid or mismatched timings have no score.
+    """
+    if not original or len(original) != len(translated):
+        return None
+    drifts = []
+    for n, (source, target) in enumerate(zip(original, translated)):
+        if source.get('index', n) != n or target.get('index', n) != n:
+            return None
+        try:
+            start, end = float(source['start']), float(source['end'])
+            left, right = float(target['start']), float(target['end'])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if (not all(math.isfinite(value) for value in (start, end, left, right))
+                or min(start, left) < 0 or end <= start or right <= left):
+            return None
+        drifts.append(max(abs(left-start), abs(right-end)))
+    return {'percent': round(100 * sum(max(0., 1-d/MAX_SHIFT)**2 for d in drifts) / len(drifts), 1),
+            'phrases': len(drifts), 'outside_limit': sum(d > MAX_SHIFT+1e-6 for d in drifts),
+            'max_shift_seconds': round(max(drifts), 3),
+            'mean_shift_seconds': round(sum(drifts)/len(drifts), 3),
+            'limit_seconds': MAX_SHIFT, 'method': 'quadratic_boundary_drift_v1', 'timing_only': True}
+
+
+def require_valid_alignment(items: list[dict]) -> dict:
+    report = alignment_report(items)
+    if not report['within_limit']:
+        raise RuntimeError('Озвучку не збережено як готову: зміщення фраз перевищує 7 с. '
+                           'Попередній файл і всі записи фраз збережені.')
+    return report
 
 
 def review_items(manifest: list[dict]) -> list[dict]:
@@ -119,6 +246,44 @@ def fit_speed(length: float, place: float, speech_span: float) -> float:
     return max(MIN_SPEED, length / target)
 
 
+def _speed_caps(items: list[dict], lengths: list[float]) -> list[float]:
+    # Shortening must not pull the end more than seven seconds ahead while the
+    # start is already seven seconds late. Longer source phrases can need a pause.
+    caps = []
+    for item, length in zip(items, lengths):
+        span = float(item.get('original_end') or 0)-float(item.get('original_start') or 0)
+        cap = min(MAX_SPEED, length/(span-2*MAX_SHIFT)) if span > 2*MAX_SHIFT else MAX_SPEED
+        caps.append(max(MIN_SPEED, cap))
+    return caps
+
+
+def _aligned_speeds(items: list[dict], total: float, speeds: list[float],
+                    lengths: list[float], gap: float = .05) -> list[float]:
+    """Raise only local tempo, within each phrase's two anchor limits."""
+    caps = _speed_caps(items, lengths)
+    base = [min(speed, cap) for speed, cap in zip(speeds, caps)]
+    def candidate(delta):
+        selected = [min(cap, speed+delta) for speed, cap in zip(base, caps)]
+        windows = alignment_windows([{**item, 'fitted_length': length/speed}
+                                     for item, length, speed in zip(items, lengths, selected)], total, gap)
+        return selected, windows
+    selected, windows = candidate(0.)
+    if not windows['issues'] and windows['slack'] >= -1e-6:
+        return selected
+    selected, windows = candidate(MAX_SPEED-MIN_SPEED)
+    if windows['issues']:
+        raise AlignmentError(max(windows['issues'], key=lambda issue: issue['excess']))
+    lo, hi = 0., MAX_SPEED-MIN_SPEED
+    for _ in range(40):
+        mid = (lo+hi)/2
+        _, windows = candidate(mid)
+        if windows['issues'] or windows['slack'] < -1e-6:
+            lo = mid
+        else:
+            hi = mid
+    return candidate(hi)[0]
+
+
 def fitting_speeds(items: list[dict], total: float) -> list[float]:
     """Use spare time across the whole film before declaring a bounded fit impossible."""
     speeds=[]
@@ -133,15 +298,23 @@ def fitting_speeds(items: list[dict], total: float) -> list[float]:
     def occupied(delta):return sum(x['length']/min(MAX_SPEED,s+delta) for x,s in zip(items,speeds))
     if minimum>available:
         excess=minimum-available
-        raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі 7%. '
+        raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі {TEMPO_PERCENT}%. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
-    if occupied(0)<=budget:return speeds
+    def align(selected):
+        try:
+            return _aligned_speeds(items,total,selected,[x['length'] for x in items])
+        except AlignmentError:
+            # Actual atempo output can differ from the estimate. Measure the
+            # fastest legal candidates before deciding that local repair fails.
+            return _speed_caps(items,[x['length'] for x in items])
+    if occupied(0)<=budget:
+        return align(speeds)
     lo,hi=0.,MAX_SPEED-MIN_SPEED
     for _ in range(40):
         mid=(lo+hi)/2
         if occupied(mid)>budget:lo=mid
         else:hi=mid
-    return [min(MAX_SPEED,s+hi) for s in speeds]
+    return align([min(MAX_SPEED,s+hi) for s in speeds])
 
 
 def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
@@ -173,8 +346,35 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
         return sum(item['fitted_length'] for item in result)
 
     for _ in range(max_passes):
-        if occupied() <= budget() + 1e-6:
+        windows = alignment_windows(result,total,gap)
+        if occupied() <= budget() + 1e-6 and not windows['issues']:
             return result
+        if occupied() <= budget() + 1e-6:
+            # The whole film fits but a local run may still have drifted. Test the
+            # same source windows against measured takes, then render afresh.
+            try:
+                selected = _aligned_speeds(result,total,[x['speed'] for x in result],
+                                           [x['fitted_length']*x['speed'] for x in result],gap)
+            except AlignmentError:
+                # The inverse-duration estimate is not proof. Measure maximum
+                # permitted acceleration once before rejecting the saved audio.
+                selected = _speed_caps(result,[x['fitted_length']*x['speed'] for x in result])
+            changed = False
+            for item, speed in zip(result,selected):
+                speed = min(MAX_SPEED,max(MIN_SPEED,math.ceil(speed*1e6)/1e6))
+                if abs(speed-item['speed']) < 1e-7:
+                    continue
+                rendered = dict(item)
+                length = render(rendered,speed)
+                if not isinstance(length,(int,float)) or not math.isfinite(length) or length <= 0:
+                    raise RuntimeError('Не вдалося перевірити тривалість локальних аудіофрагментів. Усі записи фраз збережені.')
+                item.update(speed=speed,fitted_length=float(length))
+                if 'edge_silence' in rendered:
+                    item['edge_silence']=rendered['edge_silence']
+                changed = True
+            if not changed:
+                break
+            continue
         movable = [item for item in result if item['speed'] < MAX_SPEED - 1e-7]
         if not movable:
             break
@@ -205,11 +405,14 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
             item.update(speed=speed, fitted_length=float(length))
             if 'edge_silence' in rendered:
                 item['edge_silence'] = rendered['edge_silence']
-    if occupied() <= budget() + 1e-6:
+    windows = alignment_windows(result,total,gap)
+    if occupied() <= budget() + 1e-6 and not windows['issues']:
         return result
+    if windows['issues'] and occupied() <= budget() + 1e-6:
+        raise AlignmentError(max(windows['issues'],key=lambda issue:issue['excess']))
     excess = max(0., occupied() - budget())
     raise RuntimeError(f'Озвучка довша за ролик на {excess:.1f} с після перевірки фактичної тривалості '
-                       'при межі 7%. Усі аудіофрагменти збережені. '
+                       f'при межі {TEMPO_PERCENT}%. Усі аудіофрагменти збережені. '
                        'Автоматичної платної перегенерації не буде.')
 
 
@@ -296,8 +499,10 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
         audio=fitted[item.pop('_rebuild_position')]
         a=round(item['start']*rate)
         mix[a:a+len(audio)]=audio
+        item.update(start=a/rate,end=(a+len(audio))/rate)
         next_start=report[n+1]['start'] if n+1<len(report) else total
         item['gap_after']=max(0,next_start-item['end'])
+    require_valid_alignment(report)
     raw = target.with_suffix('.f32')
     try:
         mix.tofile(raw)

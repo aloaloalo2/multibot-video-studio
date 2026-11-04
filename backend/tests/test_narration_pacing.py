@@ -34,28 +34,28 @@ class NarrationPacingTest(unittest.TestCase):
         targets=pacing.plan(texts,known,700,5)['targets']
         self.assertNotIn(6,targets);self.assertNotIn(9,targets)
 
-    def test_impossible_cache_stops_before_payment_and_preserves_seven_percent(self):
+    def test_impossible_cache_stops_before_payment_and_preserves_eight_percent(self):
         with self.assertRaisesRegex(RuntimeError,'Нові платні запити зупинено'):
             pacing.plan(['a'*100]*20,{i:8 for i in range(20)},140,0)
-        self.assertEqual(pacing.MAX_SPEED,1.07)
+        self.assertEqual(pacing.MAX_SPEED,1.08)
 
     def test_all_cached_takes_are_not_rejected_for_unmeasured_extra_pause_padding(self):
-        # The takes include pauses already. Their 0.93 s difference from the old
-        # forecast must reach measured assembly rather than trigger a false stop.
+        # The takes include pauses already. Unmeasured extra padding must reach
+        # measured assembly rather than trigger a false stop.
         texts=['a'*100]*100
         known={i:10. for i in range(100)}
-        self.assertGreater(sum(known.values())/1.07+.05*99,938.)
-        self.assertEqual(pacing.plan(texts,known,938.,0)['measured_phrases'],100)
+        self.assertGreater(sum(known.values())/1.08+.05*99,930.)
+        self.assertEqual(pacing.plan(texts,known,930.,0)['measured_phrases'],100)
         with self.assertRaisesRegex(RuntimeError,'Збережені фрази вже перевищують'):
-            pacing.plan(texts,known,930.,0)
+            pacing.plan(texts,known,920.,0)
 
     def test_severe_required_shortening_requests_review(self):
         with self.assertRaisesRegex(RuntimeError,'Для решти 95 фраз.*бракує'):
             pacing.plan(['a'*100]*100,{i:15 for i in range(5)},700,5)
 
-    def test_fit_forecast_uses_all_seven_percent_even_near_completion(self):
+    def test_fit_forecast_uses_all_eight_percent_even_near_completion(self):
         # The old 1.03 budget subtracted already measured raw takes and wrongly
-        # stopped after 95 phrases, although the complete voice fits at 1.07.
+        # stopped after 95 phrases, although the complete voice fits at 1.08.
         texts=['a'*100]*100
         for count in (5,55,95,99):
             forecast=pacing.plan(texts,{i:10. for i in range(count)},940.,count)
@@ -63,13 +63,13 @@ class NarrationPacingTest(unittest.TestCase):
             self.assertLess(forecast['expected_minimum_seconds'],940.)
             self.assertEqual(forecast['remaining_phrases'],100-count)
             self.assertEqual(forecast['targets'],{})
-        self.assertEqual(pacing.MAX_SPEED,1.07)
+        self.assertEqual(pacing.MAX_SPEED,1.08)
 
     def test_reserved_future_duration_does_not_discount_already_measured_audio(self):
         forecast=pacing.plan(['a'*100]*100,{i:8. for i in range(90)},760.,90)
         self.assertAlmostEqual(forecast['predicted_seconds'],804.95,places=3)
-        self.assertAlmostEqual(forecast['expected_minimum_seconds'],800/1.07+4.95,places=3)
-        self.assertAlmostEqual(forecast['predicted_minimum_seconds'],(720+80*1.03)/1.07+4.95,places=3)
+        self.assertAlmostEqual(forecast['expected_minimum_seconds'],800/1.08+4.95,places=3)
+        self.assertAlmostEqual(forecast['predicted_minimum_seconds'],(720+80*1.03)/1.08+4.95,places=3)
 
     def test_does_not_accept_missing_lines_or_a_summary(self):
         for value in [{},{0:'too short'},{0:'a'*91}]:
