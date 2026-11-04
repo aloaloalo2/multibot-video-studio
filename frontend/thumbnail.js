@@ -1,6 +1,6 @@
 // thumbnail.js — the magic button on a project card: a YouTube thumbnail (backend/thumbnail_gen.py) from the project's
 // title and script, stills of the video's made frames and the author's optional wishes, the only field of the window:
-// Claude writes the prompt, Codex draws it. The button stays grey until a couple of frames are made. The run goes on
+// Claude writes the prompt, Codex draws it. The card button appears once a couple of frames are made. The run goes on
 // after the window closes; the card picks up the new picture as its cover when it is ready.
 const thumbnailIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.6 3.6-1.2-1.2a1.2 1.2 0 0 0-1.7 0L2.4 18.6a1.2 1.2 0 0 0 0 1.7l1.2 1.2a1.2 1.2 0 0 0 1.7 0L21.6 5.4a1.2 1.2 0 0 0 0-1.8M14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9"/></svg>';
 const thumbnailRuns=new Map(),thumbnailSources=new Map();
@@ -9,11 +9,6 @@ const thumbnailFrames=2;
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
 // a server from before the count knows nothing about frames: the button stays as it was
 function thumbnailReady(project){return project.pictures===undefined || project.pictures>=thumbnailFrames;}
-function thumbnailWaits(button){
-  const note=`Прев’ю можна створити, коли готові хоча б ${thumbnailFrames} кадри ролика: з них береться стиль.`;
-  button.classList.add('is-off');button.setAttribute('aria-disabled','true');button.title=note;
-  button.addEventListener('click',event=>{event.stopImmediatePropagation();status(note);},{capture:true});
-}
 
 // Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що

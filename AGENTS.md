@@ -259,6 +259,8 @@ writes the prompt from the same brief, the frames attached as pictures (`thumbna
 
 The project-card creation dialog says «Створити нове прев’ю» and contains only the optional idea field, creation actions and any active/error status. Do not show the current cover, version library or explanatory library paragraph in this dialog: those make a new-image request look like an edit. Keep existing images in the Preview tab. A creation request sends wishes without a `base` image; its textarea is separate from the tab's own field.
 
+On project cards, omit the thumbnail creation action until the episode has enough made frames for `thumbnailReady`. Do not render a grey unavailable button. Once ready, show the normal creation action; keep export locks unchanged.
+
 ## Razgon lives in the studio's folder (1 November 2026)
 
 The user: «цю папку з What If прибрати й засунути саме в VideoKey Studio». The working copy is
