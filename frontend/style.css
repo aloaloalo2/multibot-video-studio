@@ -1133,8 +1133,8 @@ select option{background:#232327;color:#f1f1f2}
 .lang-provider small{color:#9a9ca4;line-height:1.45}
 .lang-warn{color:#f5c24b}
 .lang-script-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,156px));gap:10px;padding:2px 0 4px}
-.lang-script-file{position:relative;min-width:0;min-height:138px;display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px;border:1px solid #3a3b42;border-radius:12px;background:#202126;color:#ecedf1;transition:background .15s,border-color .15s,transform .15s;overflow:hidden}
-.lang-script-file:hover,.lang-script-file:focus-visible{background:#292d32;border-color:#74d8b1;transform:translateY(-2px);outline:2px solid #74d8b140;outline-offset:2px}
+.lang-script-file{position:relative;min-width:0;min-height:138px;display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px;border:1px solid #3a3b42;border-radius:12px;background:#202126;color:#ecedf1;transition:background .15s,border-color .15s;overflow:hidden}
+.lang-language-column .lang-script-file:hover,.lang-language-column .lang-script-file:focus-visible{background:#30323a;border-color:#6d7380;transform:none;outline:none;box-shadow:none}
 .lang-script-file-head{display:flex;justify-content:space-between;align-items:center;height:22px}.lang-script-file .lang-flag{font-size:20px}
 .lang-script-fold{position:absolute;right:0;top:0;width:23px;height:23px;border-radius:0 0 0 7px;background:linear-gradient(45deg,#35383f 49%,#17181c 51%);border-bottom:1px solid #42464f;border-left:1px solid #42464f}
 .lang-script-file strong{font-size:14px;line-height:1.3}.lang-script-file-title{font-size:11px;line-height:1.4;color:#a6a9b4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px;overflow-wrap:anywhere}
@@ -1572,7 +1572,6 @@ select option{background:#232327;color:#f1f1f2}
 .lang-script-complete{display:inline-flex;color:#999da8}
 .lang-script-complete[hidden]{display:none}
 .lang-language-column>.lang-script-file{border:1px solid #3a3b42;border-radius:12px;min-height:132px;flex-shrink:0;width:100%;padding:10px 12px;gap:5px}
-.lang-language-column>.lang-script-file:hover{transform:none;background:#292d32}
 .lang-script-grid>.lang-script-add{min-height:132px;align-self:start;margin-top:47px}
 .lang-voice-setup{padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .lang-voice-setup .lang-voice-panel{padding:0;margin:0;border:0;border-radius:0;background:none}
