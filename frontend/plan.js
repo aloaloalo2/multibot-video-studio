@@ -117,8 +117,25 @@ function renderVoiceStart(panel){
   // A recognition already running shows here too, started in another tab or by an agent through the API. An opening
   // project draws this page before its recognition has loaded (selectProject asks for it afterwards), so wait for it.
   const watch=job=>{if(job && job.project_id===project.id && (job.status==='queued' || job.status==='running'))poll().catch(error=>{lock(false);show(error.message);});};
-  if(state.analysis)watch(state.analysis.job);
-  else loadAnalysis(project.id).then(result=>{if(section.isConnected && state.project?.id===project.id)watch(result.job);}).catch(error=>show(error.message));
+  // A page left open keeps looking too: a recognition an agent starts later through the API shows its progress here,
+  // and a voice applied that way opens the plan. The job seen when the page opened is not taken for a new one.
+  let seen=null;
+  function idle(){
+    if(!section.isConnected || state.project?.id!==project.id)return;
+    if(busy){setTimeout(idle,3000);return;}
+    api(`/api/projects/${encodeURIComponent(project.id)}/analysis`).then(result=>{
+      if(!section.isConnected || state.project?.id!==project.id || busy)return;
+      const job=result.job;
+      if(job && job.id!==seen){
+        if(job.status==='queued' || job.status==='running'){state.analysis=result;watch(job);}
+        else if(job.status==='complete' && result.report?.applied){state.analysis=result;selectProject(project.id,{view:'plan'});return;}
+      }
+      setTimeout(idle,3000);
+    }).catch(()=>setTimeout(idle,3000));
+  }
+  const begin=result=>{seen=result?.job?.status==='queued' || result?.job?.status==='running'?null:(result?.job?.id || null);watch(result?.job);setTimeout(idle,3000);};
+  if(state.analysis)begin(state.analysis);
+  else loadAnalysis(project.id).then(result=>{if(section.isConnected && state.project?.id===project.id)begin(result);}).catch(error=>show(error.message));
 }
 
 function renderPlan(){
