@@ -21,7 +21,7 @@ class TranslationBudgetTest(unittest.TestCase):
 
     def test_phrase_boundaries_are_inclusive_and_number_expansion_is_discounted(self):
         sources = ['s'*100]*4 + ['In 2017.']
-        texts = ['t'*n for n in (94, 95, 105, 106)] + ['In dos mil diecisiete.']
+        texts = ['t'*n for n in (92, 93, 107, 108)] + ['In dos mil diecisiete.']
         plan = budget.number_refinement_plan('\n'.join(sources), texts, sources, 'en', 'es')
         self.assertEqual(plan['pending_ids'], [0, 3])
         self.assertEqual(plan['phrases'][4]['difference_percent'], 0)

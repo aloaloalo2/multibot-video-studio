@@ -122,7 +122,7 @@ function voicePlayer(id,src=null,options={}){
   if(!asset&&!src)return null;
   const box=document.createElement('div');box.className='voice-player';
   const audio=document.createElement('audio');audio.preload='metadata';audio.src=src || `/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
-  const playLabel=options.filename?'Відтворити приклад голосу':'Відтворити озвучку';
+  const playLabel=options.playLabel||(options.filename?'Відтворити приклад голосу':'Відтворити озвучку');
   const play=document.createElement('button');play.type='button';play.className='voice-player-play';play.setAttribute('aria-label',playLabel);play.innerHTML=playIcon;
   const now=document.createElement('time');now.className='voice-player-time';now.textContent=clock(0);
   const bar=document.createElement('input');bar.type='range';bar.min='0';bar.step='0.1';bar.value='0';bar.className='voice-player-bar';bar.setAttribute('aria-label','Перемотати озвучку');

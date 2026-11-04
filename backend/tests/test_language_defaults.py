@@ -241,3 +241,40 @@ class LanguageDefaultsTest(unittest.TestCase):
         for code in ('pl','invalid',[]):
             with self.assertRaises(store.StudioError):language_defaults.save(self.pid,code)
             self.assertEqual(saved.read_bytes(),before)
+
+    def test_language_models_are_independent_and_keep_other_paid_cache_identity(self):
+        with patch.object(languages,'overview',side_effect=lambda pid:languages.load_state(pid)):
+            before=languages.voice_cache_context(self.pid,'uk','elevenlabs')[0]
+            languages.set_provider(self.pid,'fishaudio','drama-3','normal',code='es')
+            self.assertEqual(languages.narration_choices(self.pid,'uk')['provider'],'elevenlabs')
+            self.assertEqual(languages.narration_choices(self.pid,'es')['provider'],'fishaudio')
+            self.assertEqual(languages.voice_cache_context(self.pid,'uk','elevenlabs')[0],before)
+            language_defaults.pin_narration(self.pid,'es')
+            languages.set_provider(self.pid,'elevenlabs','eleven_v4',code='uk')
+            self.assertEqual(languages.narration_choices(self.pid,'es')['provider'],'fishaudio')
+            self.assertEqual(languages.eleven_engine(self.pid,'uk'),'eleven_v4')
+
+    def test_language_defaults_save_preserves_other_models_and_applies_to_new_project(self):
+        language_defaults.save(self.pid)
+        with patch.object(languages,'overview',side_effect=lambda pid:languages.load_state(pid)):
+            languages.set_provider(self.pid,'fishaudio','drama-3','normal',code='es')
+            dirty=language_defaults.status(self.pid)['by_language']
+            self.assertTrue(dirty['uk']);self.assertFalse(dirty['es'])
+            language_defaults.save(self.pid,'es')
+            later=store.create_project('c'*16,'Separate voices')['id']
+            self.assertEqual(languages.narration_choices(later,'es')['provider'],'fishaudio')
+            self.assertEqual(languages.fish_engine(later,'es'),'drama-3')
+            self.assertEqual(languages.narration_choices(later,'uk')['provider'],'elevenlabs')
+            self.assertTrue(language_defaults.status(later)['saved'])
+            self.assertEqual(languages.voice_id(later,'elevenlabs','uk')['id'],'known-clone')
+
+    def test_running_language_does_not_lock_other_language_settings(self):
+        languages.ACTIVE.add(languages.job_key(self.pid,'uk','voice'))
+        try:
+            with patch.object(languages,'overview',side_effect=lambda pid:languages.load_state(pid)):
+                languages.set_provider(self.pid,'fishaudio','drama-3',code='es')
+                before=languages.load_state(self.pid)
+                with self.assertRaises(store.StudioError):languages.set_provider(self.pid,'fishaudio',code='uk')
+                with self.assertRaises(store.StudioError):languages.set_provider(self.pid,'fishaudio')
+                self.assertEqual(languages.load_state(self.pid),before)
+        finally:languages.ACTIVE.clear()

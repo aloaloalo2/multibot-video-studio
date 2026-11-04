@@ -264,7 +264,7 @@ def price(provider: str, text: str, engine: str | None = None) -> float | None:
 
 def voice_estimate(pid: str, code: str, provider: str, text: str) -> dict:
     """Only missing exact takes are billable; fitting and joining are local."""
-    engine=provider_engine(pid,provider)
+    engine=provider_engine(pid,provider,code)
     segments=synced_segments(pid,code)
     texts=line_texts(pid,code) if segments else chunks(text,VOICE_CHUNK)
     identity,aliases=voice_cache_context(pid,code,provider)
@@ -289,35 +289,44 @@ FISH_STYLE = "lively"           # user, 2 November 2026: «живіше варі
 FISH_ENGINE_STYLES = {"drama-3": "normal"}
 
 
-def fish_style(pid: str) -> str:
-    data = narration_settings(pid)
-    engine = fish_engine(pid)
+def fish_style(pid: str, code: str | None = None) -> str:
+    data = narration_settings(pid,code)
+    engine = fish_engine(pid,code)
     styles = data.get("fish_styles")
     style = styles.get(engine) if isinstance(styles, dict) else data.get("fish_style")
     return style if style in FISH_STYLES else FISH_ENGINE_STYLES.get(engine, FISH_STYLE)
 
 
-def fish_engine(pid: str) -> str:
-    engine = narration_settings(pid).get("fish_engine")
+def fish_engine(pid: str, code: str | None = None) -> str:
+    engine = narration_settings(pid,code).get("fish_engine")
     return engine if engine in FISH_ENGINES else FISH_ENGINE
 
 
-def eleven_engine(pid: str) -> str:
-    return narration_settings(pid).get("eleven_engine") or ELEVEN_MODEL
+def eleven_engine(pid: str, code: str | None = None) -> str:
+    return narration_settings(pid,code).get("eleven_engine") or ELEVEN_MODEL
 
 
-def narration_settings(pid: str) -> dict:
+def narration_settings(pid: str, code: str | None = None) -> dict:
     """Resolve absent choices from channel defaults without replacing explicit episode choices."""
-    saved=language_defaults.settings(store.load_project(pid)['channel_id'])
+    saved=language_defaults.settings(store.load_project(pid)['channel_id'],code)
     data=load_state(pid)
+    if code:
+        data={**data,**((data.get('languages') or {}).get(code,{}).get('narration') or {})}
     styles={**(saved.get('fish_styles') or {}),**(data.get('fish_styles') or {})}
     if not isinstance(data.get('fish_styles'),dict) and data.get('fish_style') in FISH_STYLES:
         styles[data.get('fish_engine') or saved.get('fish_engine') or FISH_ENGINE]=data['fish_style']
     return {**saved,**data,'fish_styles':styles}
 
 
-def provider_engine(pid: str, provider: str) -> str:
-    return eleven_engine(pid) if provider == "elevenlabs" else fish_engine(pid)
+def provider_engine(pid: str, provider: str, code: str | None = None) -> str:
+    return eleven_engine(pid,code) if provider == "elevenlabs" else fish_engine(pid,code)
+
+
+def narration_choices(pid: str, code: str | None = None) -> dict:
+    data=narration_settings(pid,code)
+    return {'provider':data.get('provider') if data.get('provider') in PROVIDERS else 'fishaudio',
+            'eleven_engine':eleven_engine(pid,code),'fish_engine':fish_engine(pid,code),
+            'fish_style':fish_style(pid,code),'fish_styles':dict(data.get('fish_styles') or {})}
 
 
 def text_hash(pid: str, code: str) -> str:
@@ -329,8 +338,8 @@ def made_with(pid: str, provider: str, code: str) -> dict:
     """What a voicing was made with: the voice (provider, engine, likeness, example) and the text, so the card shows a
     voicing only while all of it still holds (user, 2 November 2026: «щоб воно дівалось після будь-яких змін, бо не
     ясно, хто це згенерив»)."""
-    engine = (eleven_api.model(eleven_engine(pid)) or {}).get("name") if provider == "elevenlabs" else FISH_ENGINES.get(fish_engine(pid), {}).get("name")
-    style = FISH_STYLES.get(fish_style(pid), {}).get("name") if provider == "fishaudio" else None
+    engine = (eleven_api.model(eleven_engine(pid,code)) or {}).get("name") if provider == "elevenlabs" else FISH_ENGINES.get(fish_engine(pid,code), {}).get("name")
+    style = FISH_STYLES.get(fish_style(pid,code), {}).get("name") if provider == "fishaudio" else None
     return {"voice_key": voice_key(pid, provider, code), "text_hash": text_hash(pid, code),
             "made_by": " · ".join(part for part in (PROVIDERS[provider]["name"], engine, style) if part)}
 
@@ -437,6 +446,8 @@ def overview(pid: str) -> dict:
     for code, item in (data.get("languages") or {}).items():
         if code not in LANGUAGES:
             continue
+        choices=narration_choices(pid,code)
+        item_provider=choices['provider']
         text = (work_dir(pid, code) / "text.txt").read_text(encoding="utf-8") if (work_dir(pid, code) / "text.txt").is_file() else ""
         estimates={key:voice_estimate(pid,code,key,text) for key in PROVIDERS} if text else {}
         samples={key:sample_options(pid,code,key,text) for key in PROVIDERS} if text else {}
@@ -459,12 +470,13 @@ def overview(pid: str) -> dict:
                       "language_check": translation_check(pid, code, text),
                       "voice_language_check": voice_language_check(pid, code),
                       "flag_country":THUMBNAIL_FLAGS.get(code),
+                      "narration": choices, "provider": item_provider,
                       "chars": len(text), "prices": {key:value["base"] for key,value in estimates.items()},
                       "translation_length":translation_budget.assessment(src['script'],text,source_language,code) if text else None,
                       "voice_estimates": estimates,
                       "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
                       "sample_options": samples,
-                      "sample": (item.get('samples') or {}).get(voice_key(pid,provider,code)),
+                      "sample": (item.get('samples') or {}).get(voice_key(pid,item_provider,code)),
                       "files": files(pid, code, project), "voice": voice,
                       "voice_current": voice_current(pid, code, item.get("voice") or {}),
                       "voice_matches_text": voice_matches_text(pid,code,item.get('voice') or {}),
@@ -474,7 +486,7 @@ def overview(pid: str) -> dict:
                       "own_voice": ({"text": own["text"], "filename": own["filename"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
                       "channel_voice": ({"filename": shared["filename"], "duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
                                         if not item.get("use_original_voice") and (shared := channel_voice(project.get("channel_id"), code)) else None),
-                      "voice_key": voice_key(pid, provider, code),
+                      "voice_key": voice_key(pid, item_provider, code),
                       "fish_model": bool((voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
@@ -682,7 +694,7 @@ LOCALIZATION_RULES = """Localization for the target language:
    retain the other title words. This is its pronunciation, not an invented translated title.
 9. Audit every year, age, quantity and unit against the source. Pounds remain pounds and kilograms remain kilograms;
    preserve both values and both units when the original gives a conversion. Never change a date or a person's gender.
-10. Aim for each translated phrase to stay within five percent of its own source's character count, counting recognized
+10. Aim for each translated phrase to stay within seven percent of its own source's character count, counting recognized
     number words as their equivalent digits on BOTH sides. Keep numbers spelled out in the actual narration.
     Character counts and timing hints do not justify dropping facts, adding filler, padding, inventing details or
     changing certainty. Prefer concise, complete native phrasing and check meaning after each length edit.
@@ -747,7 +759,7 @@ def translator(code: str) -> str:
             "information and the speaker's intent. Keep the paragraphs. "
             "Use natural native localization rather than literal word order; retain all facts, full names, "
             "quantities and their correct units. Prioritize complete meaning and natural spoken rhythm. "
-            "Aim for a number-normalized difference within five percent for EACH phrase independently; "
+            "Aim for a number-normalized difference within seven percent for EACH phrase independently; "
             "a matching script total cannot compensate for one overlong or overly short phrase. "
             "Raw counts need care: digits in the source become longer spoken words. "
             "Answer with the translation only.\n\n" + SPEECH_RULES + "\n" + localization(code) + "\n" +
@@ -877,7 +889,7 @@ def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str]
     system = translator(code) + (
         "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
         "a `seconds` timing estimate for context. Preserve all meaning in natural native phrasing. "
-        "Keep each phrase close in number-normalized length to its source, within five percent where natural. "
+        "Keep each phrase close in number-normalized length to its source, within seven percent where natural. "
         "Shorten redundant wording using the concise-adaptation rules; retain essential meaning and facts. "
         "The actual spoken duration is checked separately after synthesis. The rules above apply inside each "
         "line: a line may hold several short sentences, but it stays one line. Keep the lines one to one: never merge, "
@@ -977,7 +989,7 @@ def seed_translation_draft(pid, code, texts, model, *, source_script=None, sourc
 
 
 def before_translate(pid, code, src, texts, source_units, job, draft=None):
-    """Audit meaning and refine each phrase toward its own number-aware 5% band."""
+    """Audit meaning and refine each phrase toward its own number-aware 7% band."""
     if len(texts) != len(source_units):
         raise RuntimeError('Переклад має зберігати кожну фразу оригіналу.')
     texts = [' '.join(text.split()) for text in texts]
@@ -1155,7 +1167,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             if plan['ids']:
                 improved = False
                 for attempt in range(3):
-                    progress(pid, job, 95, f"Оптимізуємо фрази: {len(plan['pending_ids'])} поза ±5% із {len(checked)}")
+                    progress(pid, job, 95, f"Оптимізуємо фрази: {len(plan['pending_ids'])} поза ±7% із {len(checked)}")
                     reasons = {i: f"NUMBER-NORMALIZED length: source {plan['source_lengths'][i]}, current "
                         f"{plan['current_lengths'][i]}, target about {plan['line_targets'][i]} characters including spaces. "
                         f"This phrase's own accepted range is {plan['phrases'][i]['min_chars']} to "
@@ -1179,7 +1191,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         break
                 if not improved:
                     numbers = ', '.join(str(i+1) for i in plan['ids'])
-                    pause(f'Фрази {numbers}: модель не наблизила довжину до ±5% без зміни змісту. Збережено найкращий варіант.')
+                    pause(f'Фрази {numbers}: модель не наблизила довжину до ±7% без зміни змісту. Збережено найкращий варіант.')
                 continue  # Every changed unit must pass the source-meaning audit again.
 
             timing=narration_profile.refinement(checked,timed,src.get('duration') or 0,profile)
@@ -1193,7 +1205,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                            if bounds else target for i, target in timing['targets'].items()}
                 ids = [i for i in timing['ids'] if targets[i]<len(checked[i])]
                 if not ids:
-                    pause('Довжина фраз уже в межах ±5%, але прогноз голосу потребує більше часу. Потрібно перевірити темп або монтаж; платне озвучення не запускалось.')
+                    pause('Довжина фраз уже в межах ±7%, але прогноз голосу потребує більше часу. Потрібно перевірити темп або монтаж; платне озвучення не запускалось.')
                 pacing_attempts+=1
                 progress(pid,job,95,'Узгоджуємо переклад із виміряним темпом голосу')
                 reasons={i:f"Measured narration pacing: about {targets[i]} spoken-text characters "
@@ -1208,7 +1220,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 better={i for i in ids if len(candidate[i])<len(checked[i]) and
                         (not bounds or (next_plan['available'] and next_plan['phrases'][i]['within_budget']))}
                 if not better:
-                    pause('Модель не узгодила темп голосу й довжину фраз у межах ±5%. Збережено переклад; платне озвучення не запускалось.')
+                    pause('Модель не узгодила темп голосу й довжину фраз у межах ±7%. Збережено переклад; платне озвучення не запускалось.')
                 current=[candidate[i] if i in better else text for i,text in enumerate(checked)]
                 draft.save(lines=current,issue='Перевіряємо зміст після узгодження з темпом голосу.')
                 continue
@@ -1673,7 +1685,7 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     if not example:
         raise RuntimeError(NO_VOICE)
     if provider == "fishaudio":
-        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid), "style": fish_style(pid), "language": code,
+        return {"audio": example["path"].read_bytes(), "text": example["text"], "engine": fish_engine(pid,code), "style": fish_style(pid,code), "language": code,
                 "model_id": fish_model(example)}
     slot = f"elevenlabs-{code}-{example['from']}-{example['stamp']}"
     known = (load_state(pid).get("clones") or {}).get(slot)
@@ -1692,7 +1704,7 @@ def voice_id(pid: str, provider: str, code: str | None = None):
         return json.loads(raw).get('voice_id')
     found=eleven_voices.resolve(secret,project['channel_id'],code,example['path'].read_bytes(),known,create)
     update(pid, lambda data: data.setdefault("clones", {}).__setitem__(slot, found))
-    return {"id": found, "engine": eleven_engine(pid), "language": code}
+    return {"id": found, "engine": eleven_engine(pid,code), "language": code}
 
 
 def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "", speed: float = 1.0) -> float | None:
@@ -1797,15 +1809,15 @@ def voice_key(pid: str, provider: str, code: str | None = None) -> str:
     new example or engine never plays an older one's sample."""
     example = voice_for(pid, code)
     tail = f"-{example['from']}{example['stamp']}{'m' if provider == 'fishaudio' and example.get('fish_model') else ''}" if example else ""
-    return (f"fishaudio-{fish_engine(pid)}-{fish_style(pid)}" if provider == "fishaudio" else f"elevenlabs-{eleven_engine(pid)}") + tail
+    return (f"fishaudio-{fish_engine(pid,code)}-{fish_style(pid,code)}" if provider == "fishaudio" else f"elevenlabs-{eleven_engine(pid,code)}") + tail
 
 
 def voice_cache_context(pid: str, code: str, provider: str) -> tuple[dict,set[str]]:
     example=voice_for(pid,code)
-    engine=provider_engine(pid,provider)
+    engine=provider_engine(pid,provider,code)
     audio_hash=voice_cache.file_hash(example['path']) if example else None
     identity={'version':1,'provider':provider,'language':code,'engine':engine,'reference':audio_hash,
-              'settings':eleven_api.settings(engine) if provider=='elevenlabs' else FISH_STYLES[fish_style(pid)]}
+              'settings':eleven_api.settings(engine) if provider=='elevenlabs' else FISH_STYLES[fish_style(pid,code)]}
     if provider=='fishaudio' and example:
         identity.update(reference_text=example['text'])
     aliases={voice_key(pid,provider,code)}
@@ -1875,7 +1887,7 @@ def sample_pieces(pid: str, code: str, text: str, sentences: int | None, cached:
 def sample_options(pid: str, code: str, provider: str, text: str) -> dict:
     identity,aliases=voice_cache_context(pid,code,provider)
     cached=voice_cache.candidates(work_dir(pid,code),identity,aliases)
-    engine=provider_engine(pid,provider)
+    engine=provider_engine(pid,provider,code)
     estimate_price=fixed_price(provider,engine)
     result={}
     for count in SAMPLE_SENTENCES:
@@ -1923,7 +1935,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     folder=work/'sample-parts'/str(time.time_ns())
     folder.mkdir(parents=True)
     store.atomic_json(folder/'request.json',{'identity':identity,'provider':provider,'texts':pieces})
-    engine=provider_engine(pid,provider)
+    engine=provider_engine(pid,provider,code)
     sample_price=fixed_price(provider,engine)
     voice=None;requests=[];parts=[]
     job.update(cost=0,takes=0,reused=0,cost_estimated=True,cost_unit='credits' if provider=='elevenlabs' else 'usd')
@@ -2112,7 +2124,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     manifest = []
     requests=[]
     record_voice_cost(job, requests)
-    engine=provider_engine(pid,provider)
+    engine=provider_engine(pid,provider,code)
     take_price=fixed_price(provider,engine)
     unit="credits" if provider=="elevenlabs" else "usd"
     def take(index: int, kind: str, words: str, target: Path, around: tuple, speed: float = 1.0) -> None:
@@ -2371,7 +2383,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     requests=[];manifest=[]
     job.update(cost=0,takes=0,reused=0,cost_unit='credits' if provider=='elevenlabs' else 'usd',cost_estimated=True)
     record_voice_cost(job, requests)
-    take_price=fixed_price(provider,provider_engine(pid,provider))
+    take_price=fixed_price(provider,provider_engine(pid,provider,code))
     for number, piece in enumerate(pieces):
         progress(pid, job, round(90 * number / len(pieces)), f"Озвучуємо, частина {number + 1} з {len(pieces)}")
         target = parts_dir / f"{number:04d}.mp3"
@@ -2757,7 +2769,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         except RuntimeError as error:
             raise store.StudioError(str(error), 409) from None
         if provider == "elevenlabs":
-            model = eleven_api.model(eleven_engine(pid))
+            model = eleven_api.model(eleven_engine(pid,code))
             if not model:
                 raise store.StudioError("Ця модель ElevenLabs зараз недоступна. Оберіть іншу модель.", 409)
             if model.get("languages") and code not in model["languages"]:
@@ -2869,7 +2881,9 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     return overview(pid)
 
 
-def set_provider(pid: str, provider: str, engine: str | None = None, style: str | None = None) -> dict:
+def set_provider(pid: str, provider: str, engine: str | None = None, style: str | None = None, code: str | None = None) -> dict:
+    if code is not None:
+        check_code(code)
     if provider not in PROVIDERS:
         raise store.StudioError("Невідомий сервіс озвучки")
     if engine is not None and ((provider == "fishaudio" and engine not in FISH_ENGINES)
@@ -2880,8 +2894,17 @@ def set_provider(pid: str, provider: str, engine: str | None = None, style: str 
     if style is not None and style not in FISH_STYLES:
         raise store.StudioError("Невідома подача голосу")
     def change(data):
-        if any(key.startswith(pid + "|") and key.endswith("|voice") for key in ACTIVE):
+        if busy(pid,code,'voice'):
             raise store.StudioError("Дочекайтеся завершення озвучення перед зміною сервісу або моделі", 409)
+        if code is not None:
+            if code not in data.get('languages',{}):
+                raise store.StudioError('Цю мову ще не додано до проєкту.',404)
+            choices=narration_choices(pid,code)
+            data=data['languages'][code].setdefault('narration',choices)
+        else:
+            # The legacy project-wide API explicitly applies its choice to all languages.
+            for item in data.get('languages',{}).values():
+                item.pop('narration',None)
         data["provider"] = provider
         if provider == "elevenlabs":
             if engine:

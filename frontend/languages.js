@@ -19,8 +19,8 @@ function renderLangView(){
   const project=state.project,open=!!project&&state.view==='langs';
   tab.hidden=!project;tab.classList.toggle('active',open);tab.setAttribute('aria-pressed',String(open));
   section.hidden=!open;
-  if(!open){if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
-  if(section.dataset.project!==project.id){section.dataset.project=project.id;section.innerHTML='<div class="lang-view"><h1>Мови</h1><p class="lang-lead">Завантаження…</p></div>';loadLangs(project.id);}
+  if(!open){langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();langThumbnailDialog?.dialog.close();if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
+  if(section.dataset.project!==project.id){section.dataset.project=project.id;section.innerHTML=`<div class="lang-view"><div class="lang-head"><h1>${langTranslateIcon}Мови</h1><p class="lang-lead">Завантаження…</p></div></div>`;loadLangs(project.id);}
 }
 
 async function loadLangs(id){
@@ -34,7 +34,7 @@ async function loadLangs(id){
 }
 
 function langPaintBalance(){
-  document.querySelectorAll('#project-langs .lang-balance').forEach(box=>{
+  document.querySelectorAll('#project-langs .lang-balance,.lang-result-dialog .lang-balance').forEach(box=>{
     const known=Number.isFinite(langBalance?.remaining_credits),stale=langBalance?.state==='stale';
     box.innerHTML=`<div><small>Баланс ElevenLabs</small><strong>${known?`${langBalance.remaining_credits.toLocaleString('uk-UA')} кредитів`:langBalanceLoading?'Перевіряємо…':'Недоступний'}</strong>${stale?'<small>Останній відомий баланс</small>':''}</div>`;
     box.setAttribute('aria-busy',String(langBalanceLoading));
@@ -43,11 +43,11 @@ function langPaintBalance(){
 
 async function langRefreshBalance(force=false){
   clearTimeout(langBalanceTimer);
-  if(state.view!=='langs'||langData?.provider!=='elevenlabs'||langBalanceLoading)return;
+  if(state.view!=='langs'||!langData?.items.some(item=>langSpec(item).id==='elevenlabs')||langBalanceLoading)return;
   langBalanceLoading=true;langPaintBalance();
   try{langBalance=await api('/api/elevenlabs/balance'+(force?'?refresh=1':''));}
   catch(error){langBalance={...langBalance,state:langBalance?.remaining_credits!=null?'stale':'unavailable',error:error.message};}
-  finally{langBalanceLoading=false;langPaintBalance();if(state.view==='langs'&&langData?.provider==='elevenlabs')langBalanceTimer=setTimeout(()=>langRefreshBalance(),30000);}
+  finally{langBalanceLoading=false;langPaintBalance();if(state.view==='langs'&&langData?.items.some(item=>langSpec(item).id==='elevenlabs'))langBalanceTimer=setTimeout(()=>langRefreshBalance(),30000);}
 }
 
 function langBusy(){return langJobs().some(job=>job.status==='running');}
@@ -73,59 +73,31 @@ function langChosen(id){
 }
 function langChoose(id,code){try{localStorage.setItem(`langTab:${id}`,code);}catch{}}
 
-// The languages stand on top as capsules with their flags (user, 2 November 2026: «мови… зверху… капсулами… прапор…
-// плюсик, щоб додати… хрестик… видалити»): a click opens that language's card below, «+» adds one, × removes one.
+// Each language has its own script, narrator, narration and thumbnail cards.
 function drawLangs(id){
   const section=$('project-langs');if(!section||section.dataset.project!==id)return;
   langCloseSampleMenu();
   section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
   const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
-  const used=new Set(data.items.map(item=>item.code)),chosen=langChosen(id);
-  const free=data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language);
+  const chosen=langChosen(id);
   section.innerHTML=`<div class="lang-view">
-    <div class="lang-head"><h1>Мови</h1>
-      <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом. Відео не змінюється: готову озвучку завантажте на YouTube як додаткову аудіодоріжку.</p></div>
-    <div class="lang-original-slot"></div>
-    <div class="lang-pills" role="tablist" aria-label="Мови випуску">
-      ${data.items.map(item=>`<div class="lang-pill${item.code===chosen?' active':''}" data-code="${item.code}"><button type="button" class="lang-pill-pick" role="tab" aria-selected="${item.code===chosen}" title="${esc(item.label)}">${langFlag(item.code)}<span>${esc(item.name)}</span>${langMarks(item)}<i class="lang-pill-busy" aria-hidden="true"></i></button><button type="button" class="lang-pill-x" title="Прибрати мову" aria-label="Прибрати мову ${esc(item.name)}">×</button></div>`).join('')}
-      ${free.length?`<div class="lang-plus-wrap"><button type="button" class="lang-plus" aria-haspopup="true" aria-expanded="false" title="Додати мову" aria-label="Додати мову">+${data.items.length?'':'<span>Додати мову</span>'}</button>
-        <div class="lang-menu" role="menu" hidden>${free.map(item=>`<button type="button" role="menuitem" data-code="${item.code}">${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('')}</div></div>`:''}
-    </div>
+    <div class="lang-head"><h1>${langTranslateIcon}Мови</h1>
+      <p class="lang-lead">Озвучка ролика іншими мовами вашим голосом і прев’ю з перекладеним текстом.</p></div>
     <div class="lang-cards"></div>
   </div>`;
   // listeners go on the page's own root, drawn anew each time, so they never pile up on the section
   const view=section.querySelector('.lang-view'),cards=section.querySelector('.lang-cards');
-  section.querySelector('.lang-original-slot').replaceWith(langOriginal(id,data.source));
   const item=data.items.find(entry=>entry.code===chosen);
-  if(item){cards.append(langCard(id,item,spec));view.append(langAlignment(id,item));}
-  else {cards.innerHTML='<section class="lang-script-step lang-step"><h3><em>1</em>Текст</h3><div class="lang-script-library"></div></section>';langScriptLibrary(id,cards.querySelector('.lang-script-library'),data);}
-  if(spec.id==='elevenlabs'){langPaintBalance();langRefreshBalance();}
-  const plus=view.querySelector('.lang-plus'),menu=view.querySelector('.lang-menu');
-  const closeMenu=()=>{if(menu){menu.hidden=true;plus.setAttribute('aria-expanded','false');}};
-  plus?.addEventListener('click',event=>{event.stopPropagation();menu.hidden=!menu.hidden;plus.setAttribute('aria-expanded',String(!menu.hidden));});
-  view.addEventListener('click',event=>{if(menu&&!menu.hidden&&!event.target.closest('.lang-plus-wrap'))closeMenu();});
-  view.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();});
-  menu?.addEventListener('click',async event=>{
-    const option=event.target.closest('button[data-code]');if(!option)return;closeMenu();
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${option.dataset.code}`,'POST',{});langChoose(id,option.dataset.code);drawLangs(id);}
-    catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}
-  });
-  view.querySelectorAll('.lang-pill').forEach(pill=>{
-    const code=pill.dataset.code,entry=data.items.find(entry=>entry.code===code);
-    pill.querySelector('.lang-pill-pick').addEventListener('click',()=>{if(code===langChosen(id))return;langChoose(id,code);drawLangs(id);});
-    pill.querySelector('.lang-pill-x').addEventListener('click',()=>modal(`Прибрати ${entry.name}?`,
-      `<p>Переклад і озвучка цієї мови зникнуть зі студії.${entry.folder?' Файли в папці випуску залишаться.':''}</p>`,
-      [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
-        try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/remove`,'POST',{});delete langDrafts[`${id}:${code}`];drawLangs(id);}
-        catch(error){langNote(view.querySelector('.lang-pills'),error.message,true);}}}]));
-  });
-  view.addEventListener('change',async event=>{
-    const select=event.target.closest('.lang-chip-select select[data-field], .lang-engine select[data-field]');if(!select)return;
-    const field=select.dataset.field || 'engine';
-    try{langData=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',field==='provider'?{provider:select.value}:{provider:langData.provider,[field]:select.value});drawLangs(id);}catch(error){langNote(select,error.message,true);}
-  });
+  if(item)cards.append(langCard(id,item,langSpec(item)));
+  else {cards.innerHTML='<section class="lang-script-step lang-step"><div class="lang-script-library"></div></section>';langScriptLibrary(id,cards.querySelector('.lang-script-library'),data);}
+  if(data.items.some(item=>langSpec(item).id==='elevenlabs')){langPaintBalance();langRefreshBalance();}
+  view.addEventListener('change',event=>langChangeVoiceSetting(id,event));
+  langRefreshVoiceDialog();
+  langRefreshVoiceResultDialog();
+  langRefreshThumbnailDialog();
   showLangJob();
+  langLoadVoiceScores(id);
 }
 
 // The voice of a language always comes from an example in that language (user, 2 November 2026: «переклад будемо брати
@@ -144,11 +116,11 @@ function langOwnBlock(item){
   // акценту на створенні аудіо»; «кнопки… просто значки»): its label, a compact player and icons
   const model=item.fish_model?'<i class="lang-model-mark" title="Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон">✓ модель</i>':'';
   const add=(again)=>`<button type="button" class="lang-icon lang-own-record" title="${again?'Записати заново':'Записати себе'}" aria-label="${again?'Записати заново':'Записати себе'}">${micIcon}</button><label class="lang-icon lang-own-file" role="button" tabindex="0" title="Завантажити приклад голосу" aria-label="Завантажити приклад голосу">${langIcons.upload}<input type="file" accept="audio/*,video/*" hidden></label>`;
-  if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу${model?`<small>${model}</small>`:''}</span><div class="lang-player" data-kind="own"></div>
+  if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора${model?`<small>${model}</small>`:''}</span><div class="lang-player" data-kind="own"></div>
     <div class="lang-own-actions"><button type="button" class="lang-icon lang-own-remove" title="Прибрати приклад" aria-label="Прибрати приклад">${langIcons.trash}</button></div>${langHeardWarn(own)}</div>`;
-  if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Приклад голосу<small>з налаштувань каналу ${model}</small></span><div class="lang-player" data-kind="channel"></div>
+  if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора<small>з налаштувань каналу ${model}</small></span><div class="lang-player" data-kind="channel"></div>
     <div class="lang-own-actions"><button type="button" class="lang-icon lang-own-remove" title="Прибрати приклад" aria-label="Прибрати приклад">${langIcons.trash}</button></div>${langHeardWarn(shared)}</div>`;
-  return `<div class="lang-own source-voice"><span class="lang-own-label">Приклад голосу</span><div class="lang-own-actions">${add(false)}</div><small class="lang-source-note">${fromOriginal?'Зараз голос береться з оригінального аудіо ролика.':'Додайте приклад голосу для озвучки.'}</small></div>`;
+  return `<div class="lang-own source-voice"><span class="lang-own-label">Голос диктора</span><div class="lang-own-actions">${add(false)}</div><small class="lang-source-note">${fromOriginal?'Зараз голос береться з оригінального аудіо ролика.':'Додайте приклад голосу для озвучки.'}</small></div>`;
 }
 // a recording from the microphone: the button turns into «Зупинити · 0:12»; the blob goes to `done`
 let langRecorder=null;
@@ -312,7 +284,7 @@ function langCacheNote(item,spec){
   return estimate?.reused?`Із кешу: ${estimate.reused} із ${estimate.total} фраз. До озвучення: ${estimate.generate}.`:'';
 }
 function langVoiceAction(item,spec){
-  return item.voice_estimates?.[spec.id]?.generate===0?'Зібрати озвучку':item.files?.voice?'Оновити озвучку':'Озвучити весь ролик';
+  return item.voice_estimates?.[spec.id]?.generate===0?'Зібрати озвучку':item.files?.voice?'Оновити озвучку':'Згенерувати озвучку';
 }
 function langVoiceStatus(item,spec){
   if(!item.files?.voice||item.voice_current===false||item.voice?.provider!==spec.id)return '';
@@ -322,10 +294,11 @@ function langVoiceStatus(item,spec){
 
 function langVoiceSpend(voice){
   const exact=Number.isFinite(voice.actual_cost),value=exact?voice.actual_cost:voice.estimated_cost;
-  if(!Number.isFinite(value))return '';
+  const refit=voice.local_refit?'Вирівнювання: безкоштовно':'';
+  if(!Number.isFinite(value))return refit;
   const credits=voice.cost_unit==='credits'||voice.provider==='elevenlabs';
   const amount=credits?`${Math.ceil(value).toLocaleString('uk-UA')} кредитів`:langMoney(value);
-  return `Витрати за цей запуск: ${exact?'':'≈ '}${amount}${exact?'':' (оцінка)'}`;
+  return `${refit?refit+' · Озвучення':'Витрати за цей запуск'}: ${exact?'':'≈ '}${amount}${exact?'':' (оцінка)'}`;
 }
 
 function langTranslationInfo(item){
@@ -343,23 +316,76 @@ function langNumberComparison(item){
   return `З урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів`;
 }
 
-function langCard(id,item,spec){
-  const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
-  const price=item.prices[spec.id],voice=item.voice || {};
-  const hasSample=(item.files.samples || []).includes(item.voice_key);
-  // a voicing shows only while what made it still holds: the voice, engine, likeness, example and text
+function langSpec(item){
+  const choices=item?.narration || {},provider=item?.provider || langData.provider;
+  const base=langData.providers.find(entry=>entry.id===provider) || langData.providers[0];
+  const engine=choices[provider==='elevenlabs'?'eleven_engine':'fish_engine'] || base.engine;
+  const style=choices.fish_styles?.[engine] || choices.fish_style || base.style;
+  return {...base,engine,style,free:provider==='fishaudio'&&(base.engines||[]).some(entry=>entry.id===engine&&entry.per_char===0)};
+}
+
+let langVoiceDialog=null;
+function langVoiceSummary(id,item){
+  const card=document.createElement('div');card.className='lang-voice-summary';card.dataset.code=item.code;
+  const spec=langSpec(item),engine=spec.engines?.find(entry=>entry.id===spec.engine);
+  const kind=item.own_voice?'own':item.channel_voice?'channel':null;
+  card.innerHTML=`<button type="button" class="lang-voice-open" aria-label="Налаштування голосу: ${esc(item.name)}" title="Змінити голос і налаштування">
+    <strong>${langFlag(item.code)}Голос диктора</strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>
+    <span>${esc(spec.name)}<small>${esc(engine?.name||spec.engine)}${spec.styles?' · '+esc(spec.styles.find(style=>style.id===spec.style)?.name||''):''}</small></span></button>
+    ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
+  card.querySelector('.lang-voice-open').onclick=()=>langOpenVoiceSettings(id,item.code);
+  langWirePlayers(id,card,item);
+  return card;
+}
+
+function langRefreshVoiceDialog(){
+  if(!langVoiceDialog)return;
+  const {id,code,dialog}=langVoiceDialog;
+  const item=langData?.items.find(entry=>entry.code===code);
+  if(state.project?.id!==id||!item){dialog.close();return;}
+  dialog.querySelectorAll('audio').forEach(audio=>audio.pause());
+  dialog.querySelector('.lang-voice-dialog-body').replaceChildren(langVoiceSetup(id,item));
+}
+
+function langOpenVoiceSettings(id,code){
+  if(state.project?.id!==id)return;
+  const item=langData?.items.find(entry=>entry.code===code);if(!item)return;
+  langVoiceDialog?.dialog.close();
+  const dialog=document.createElement('dialog');dialog.className='lang-voice-dialog';
+  dialog.setAttribute('aria-labelledby','lang-voice-dialog-title');
+  dialog.innerHTML=`<div class="lang-script-dialog-head"><h2 id="lang-voice-dialog-title">${langFlag(code)} ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити налаштування голосу">×</button></div><div class="lang-voice-dialog-body"></div>`;
+  langVoiceDialog={id,code,dialog};langRefreshVoiceDialog();
+  dialog.querySelector('.lang-script-close').onclick=()=>dialog.close();
+  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+  dialog.addEventListener('change',event=>langChangeVoiceSetting(id,event));
+  dialog.addEventListener('close',()=>{
+    dialog.querySelectorAll('audio').forEach(audio=>audio.pause());langCloseSampleMenu();
+    if(langVoiceDialog?.dialog===dialog)langVoiceDialog=null;
+    dialog.remove();
+  },{once:true});
+  document.body.append(dialog);dialog.showModal();showLangJob();
+}
+
+async function langChangeVoiceSetting(id,event){
+    const select=event.target.closest('.lang-chip-select select[data-field], .lang-engine select[data-field]');if(!select)return;
+    const field=select.dataset.field || 'engine';
+    const code=select.closest('.lang-voice-setup')?.dataset.code;
+    const entry=langData.items.find(item=>item.code===code);if(!entry)return;
+    const controls=select.closest('.lang-voice-setup');controls.dataset.saving='1';showLangJob();
+    try{
+      const data=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',
+        {code,provider:langSpec(entry).id,[field]:select.value});
+      if(state.project?.id===id){langData=data;drawLangs(id);}
+    }catch(error){langNote(controls,error.message,true);}
+    finally{delete controls.dataset.saving;showLangJob();}
+}
+
+function langVoiceSetup(id,item){
+  const card=document.createElement('div');card.className='lang-voice-setup';card.dataset.code=item.code;
+  const spec=langSpec(item),hasSample=(item.files.samples || []).includes(item.voice_key);
   const readyVoice=item.files.voice&&item.voice_current!==false;
-  const unsafeVoice=item.files.voice&&item.voice_matches_text!==false&&item.voice_language_check&&item.voice_language_check.state!=='ok';
   const savedDefaults=langData.defaults?.by_language?.[item.code] ?? langData.defaults?.saved;
-  const estimate=item.voice_estimates?.[spec.id];
-  const mix=item.saved_mix || {state:'missing'};
-  const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';
-  const alignmentNeeded=voice.alignment?.within_limit===false;
-  const fit=voice.synced?[voice.centered?`паузи розподілено навколо фраз`:`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`${voice.centered?'зміщення для підгонки':'найбільше запізнення'} ${String(voice.latest).replace('.',',')} с`:'',voice.slowest<.99?`темп до ${Math.round(voice.slowest*100)}%`:'',voice.long_gaps?.length?`паузи понад 1,5 с: ${voice.long_gaps.length}, потребують перевірки`:'',voice.timing_issues?.length?`перевірте таймінги ${voice.timing_issues.length} фраз`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
-  card.innerHTML=`
-    <section class="lang-step lang-script-step"><h3 class="lang-text-heading"><em>1</em>Текст</h3><div class="lang-script-library"></div></section>
-    <section class="lang-step"><h3 class="lang-voice-heading"><em>2</em>Озвучка вашим голосом${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти голос і налаштування цієї мови для нових випусків каналу" aria-label="Зберегти налаштування"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg><span>Зберегти налаштування</span></button>`}</h3>
-      <div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
+  card.innerHTML=`<div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
         <div class="lang-voice-panel lang-voice-bar"><span class="lang-panel-title">Налаштування озвучення</span><label class="lang-chip-select" title="Сервіс озвучення"><span>Сервіс</span><select data-field="provider">${langData.providers.map(service=>`<option value="${service.id}"${service.id===spec.id?' selected':''}>${esc(service.name)}</option>`).join('')}</select></label>
           ${spec.engines?`<label class="lang-chip-select" title="Модель ${esc(spec.name)}"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)}${spec.id!=='elevenlabs'&&engine.note?' · '+esc(engine.note):''}</option>`).join('')}</select></label>`:''}
           ${spec.styles?`<label class="lang-chip-select" title="Варіативність подачі голосу. Кожен рушій зберігає свій вибір."><span>Подача</span><select data-field="style">${spec.styles.map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
@@ -373,36 +399,29 @@ function langCard(id,item,spec){
           ${spec.id==='elevenlabs'&&spec.configured===true&&spec.connection_error?`<span class="lang-warn">${esc(spec.connection_error)}. Список моделей поки з документації.</span>`:''}
 
           </div>
-        ${item.text?`<div class="lang-sample-row">
-          ${spec.id==='elevenlabs'?'<div class="lang-balance" role="status" aria-live="polite"></div>':''}
-          <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
-        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Потрібне вирівнювання до 7 с':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
-          <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
-          <div class="lang-player" data-kind="voice"></div>${langVoiceSpend(voice)?`<p class="lang-voice-spend">${esc(langVoiceSpend(voice))}</p>`:''}${langFitReview(voice)}<p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
-      :'<p class="lang-off">Спершу перекладіть текст.</p>'}
-    ${unsafeVoice?`<div class="lang-voice is-unsafe">${langQualityNotice(item.voice_language_check,true)}<div class="lang-player" data-kind="voice"></div></div>`:''}
-    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
-    <section class="lang-step"><h3><em>3</em>Прев’ю</h3>
-      ${langData.thumbnail?`<div class="lang-thumbs"><figure class="lang-thumb"><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy">
-          <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>${langOriginalName()}</figcaption></figure>
-        <figure class="lang-thumb">${item.files.thumbnail?`<div class="lang-thumb-run has-picture" role="button" tabindex="0" aria-label="Згенерувати нове прев’ю"><img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати ще одне</small></span></div>
-          <div class="project-actions lang-thumb-actions"><button type="button" class="project-action thumbnail lang-thumb-redo" title="Згенерувати ще одне" aria-label="Згенерувати прев’ю ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю ${esc(item.name)}">${langDownloadIcon}</a></div>`
-          :`<button type="button" class="lang-thumb-run" aria-label="Згенерувати прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб згенерувати</small></span></button>`}<figcaption>${langFlag(item.code)} ${esc(item.name)}</figcaption>
-          <div class="lang-thumb-ask" hidden><label><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>
-            ${langThumbnailFlag(item)}
-            <div class="lang-thumb-ask-actions"><button type="button" class="secondary lang-thumb-ask-cancel">Скасувати</button><button type="button" class="primary lang-thumb-ask-go">Згенерувати</button></div></div></figure></div>`
-      :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
-    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
-  langScriptLibrary(id,card.querySelector('.lang-script-library'),langData);
+    ${savedDefaults?'':`<button type="button" class="secondary lang-defaults" title="Зберегти цей голос і налаштування для нових випусків каналу"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/></svg>Зберегти налаштування</button>`}
+    <div class="lang-setup-job" role="status" aria-live="polite" hidden></div>`;
+  langWirePlayers(id,card,item);
+  langWireSample(id,card,item,spec);
+  langOwnWire(id,card,item);
   langApplyQuality(card,item);
+  return card;
+}
+
+function langWirePlayers(id,card,item){
+  const voice=item.voice || {};
   for(const box of card.querySelectorAll('.lang-player')){
     const kind=box.dataset.kind;
     const url=kind==='channel'?`/api/channels/${encodeURIComponent(langData.channel_id)}/voices/${item.code}/file?v=${item.channel_voice.stamp}`
       :langUrl(id,item.code,kind,kind==='voice'?voice.made_at:kind==='own'?item.own_voice.stamp:undefined);
     const example=kind==='own'?item.own_voice:kind==='channel'?item.channel_voice:null;
     const player=voicePlayer(id,url,example?{filename:example.filename || 'own-voice.mp3',duration:example.duration}:{});
+    if(kind==='voice'&&player){const audio=player.querySelector('audio');if(audio){audio.dataset.alignmentProject=id;audio.dataset.alignmentCode=item.code;}}
     if(player)box.replaceWith(player);
   }
+}
+
+function langWireSample(id,card,item,spec){
   const flush=()=>langFlushScript(id,item.code);
   let sampleAudio=card.querySelector('.lang-sample-audio'),samplePlay=card.querySelector('.lang-sample-run');
   const sampleChoose=card.querySelector('.lang-sample-choose');
@@ -419,16 +438,155 @@ function langCard(id,item,spec){
   });
   sampleChoose?.addEventListener('click',()=>chooseSample(sampleChoose));
   card.querySelector('.lang-defaults')?.addEventListener('click',event=>langSaveDefaults(id,item.code,event.currentTarget));
-  card.querySelector('.lang-save-audio')?.addEventListener('click',async()=>{if(!(await flush()))return;langStart(id,'save-audio',item.code);});
-  card.querySelector('.lang-voice-run')?.addEventListener('click',async()=>{
-    if(!(await flush()))return;
-    const fresh=langData.items.find(entry=>entry.code===item.code) || item,cost=fresh.prices&&spec.id in fresh.prices?fresh.prices[spec.id]:price,chars=fresh.chars ?? item.chars;
-    const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
-    const action=generate===0?'Зібрати озвучку':'Оновити озвучку';
-    modal(`${action} ${item.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' символів'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
-      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до 8% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
-      [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',item.code);}}]);
+}
+
+const langMagicVoiceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="6" height="11" rx="3"/><path d="M3 11a7 7 0 0 0 14 0M10 18v3M7 21h6M19 2v6m-3-3h6M20 15v4m-2-2h4"/></svg>';
+let langResultDialog=null;
+const langVoiceScores=new Map();
+const langVoiceScoreKey=(id,item)=>`${id}:${item.code}:${item.voice?.made_at||''}:${item.voice_current!==false}`;
+
+async function langLoadVoiceScores(id){
+  const snapshot=langData;
+  await Promise.allSettled(snapshot.items.filter(item=>item.files?.voice&&item.voice_current!==false).map(async item=>{
+    const data=await langAlignmentLoad(id,item,snapshot);
+    if(state.project?.id!==id||langData!==snapshot)return;
+    langVoiceScores.set(langVoiceScoreKey(id,item),data.status==='ready'?data.synchronization:null);
+    langPaintVoiceTiles();
+  }));
+}
+
+function langVoiceTileState(item){
+  const spec=langSpec(item),jobs=langJobs().filter(job=>job.code===item.code&&['voice','refit','save-audio'].includes(job.kind));
+  const job=jobs.find(entry=>entry.status==='running')||jobs.sort((a,b)=>(b.started_at||b.finished_at||0)-(a.started_at||a.finished_at||0))[0];
+  if(job?.status==='running')return {kind:'working',label:job.kind==='voice'?'Створюємо озвучку':job.kind==='refit'?'Вирівнюємо озвучку':'Зберігаємо озвучку',detail:`${Math.round(job.progress||0)}%`,progress:job.progress||0,job};
+  if(job?.status==='failed')return {kind:'attention',label:'Перевірити озвучку',detail:'',job};
+  const status=langVoiceStatus(item,spec);
+  if(status)return {kind:'ready',label:status.replace(' ✓',''),detail:item.voice?.duration?clock(item.voice.duration):'Переглянути'};
+  return {kind:'action',label:langVoiceAction(item,spec),detail:langCost(spec,item.prices?.[spec.id]),blocked:langRunning(item.code,'voice')||!langHasVoice(item)||!item.text||!!(item.language_check&&item.language_check.state!=='ok')};
+}
+
+function langVoiceTile(id,item){
+  const card=document.createElement('div');card.className='lang-voice-tile';card.dataset.code=item.code;
+  card.innerHTML='<button type="button" class="lang-voice-tile-open"></button>';
+  card.querySelector('button').onclick=()=>{
+    const current=langData?.items.find(entry=>entry.code===item.code);if(!current)return;
+    const status=langVoiceTileState(current);
+    if(status.kind==='action'&&!status.blocked)langConfirmVoice(id,item.code);else langOpenVoiceResult(id,item.code);
+  };
+  return card;
+}
+
+function langPaintVoiceTiles(){
+  document.querySelectorAll('#project-langs .lang-voice-tile').forEach(card=>{
+    const item=langData?.items.find(entry=>entry.code===card.dataset.code);if(!item)return;
+    const status=langVoiceTileState(item),button=card.querySelector('button');
+    card.dataset.status=status.kind;
+    const icon=status.kind==='working'?exportSpinner:status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':status.kind==='attention'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':langMagicVoiceIcon;
+    const score=status.kind==='ready'?langVoiceScores.get(langVoiceScoreKey(state.project?.id,item)):null;
+    button.innerHTML=`<span class="lang-voice-tile-heading">${langFlag(item.code)}Озвучка перекладу</span>${status.kind==='ready'?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
+    const existing=card.querySelector('.lang-summary-player');
+    if(status.kind==='ready'&&!existing){
+      const box=document.createElement('div');box.className='lang-summary-player lang-own has-voice';
+      const player=voicePlayer(state.project.id,langUrl(state.project.id,item.code,'voice',item.voice?.made_at),{filename:`${item.name}.mp3`,duration:item.voice?.duration,playLabel:`Відтворити озвучку: ${item.name}`});
+      if(player){const audio=player.querySelector('audio');audio.dataset.alignmentProject=state.project.id;audio.dataset.alignmentCode=item.code;box.append(player);card.append(box);}
+    }else if(status.kind!=='ready'&&existing){existing.querySelectorAll('audio').forEach(audio=>audio.pause());existing.remove();}
+    button.setAttribute('aria-label',`${status.label}: ${item.name}`);button.title=status.job?.error||status.job?.stage||status.label;
   });
+  document.querySelectorAll('.lang-alignment-generate').forEach(button=>{
+    const item=langData?.items.find(entry=>entry.code===button.dataset.code);if(!item)return;
+    const status=langVoiceTileState(item);button.disabled=status.kind==='working'||!item.text||!langHasVoice(item)||!!(item.language_check&&item.language_check.state!=='ok');
+    button.textContent=status.kind==='working'?`${status.label} · ${status.detail}`:item.text?langVoiceAction(item,langSpec(item)):'Спершу перекладіть текст';
+  });
+}
+
+function langRefreshVoiceResultDialog(){
+  if(!langResultDialog)return;
+  const {id,code,dialog}=langResultDialog,item=langData?.items.find(entry=>entry.code===code);
+  if(state.project?.id!==id||!item){dialog.close();return;}
+  dialog.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());
+  dialog.querySelectorAll('audio').forEach(audio=>audio.pause());
+  dialog.querySelector('.lang-result-dialog-body').replaceChildren(langVoiceResult(id,item),langAlignment(id,item));langPaintBalance();
+}
+
+function langOpenVoiceResult(id,code){
+  if(state.project?.id!==id)return;
+  const item=langData?.items.find(entry=>entry.code===code);if(!item)return;
+  langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();
+  const dialog=document.createElement('dialog');dialog.className='lang-result-dialog';
+  dialog.setAttribute('aria-labelledby','lang-result-title');
+  dialog.innerHTML=`<div class="lang-script-dialog-head"><h2 id="lang-result-title">${langFlag(code)} Озвучка · ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити озвучку">×</button></div><div class="lang-result-dialog-body"></div>`;
+  langResultDialog={id,code,dialog};langRefreshVoiceResultDialog();
+  dialog.querySelector('.lang-script-close').onclick=()=>dialog.close();
+  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+  dialog.addEventListener('close',()=>{dialog.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());dialog.querySelectorAll('audio').forEach(audio=>audio.pause());if(langResultDialog?.dialog===dialog)langResultDialog=null;dialog.remove();},{once:true});
+  document.body.append(dialog);dialog.showModal();langPaintBalance();showLangJob();
+}
+
+function langVoiceResult(id,item){
+  const spec=langSpec(item),card=document.createElement('article');
+  card.className='lang-card lang-voice-result';card.dataset.code=item.code;card.dataset.project=id;
+  const price=item.prices[spec.id],voice=item.voice || {};
+  // a voicing shows only while what made it still holds: the voice, engine, likeness, example and text
+  const readyVoice=item.files.voice&&item.voice_current!==false;
+  const unsafeVoice=item.files.voice&&item.voice_matches_text!==false&&item.voice_language_check&&item.voice_language_check.state!=='ok';
+  const estimate=item.voice_estimates?.[spec.id];
+  const mix=item.saved_mix || {state:'missing'};
+  const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';
+  const alignmentNeeded=voice.alignment?.within_limit===false;
+  const fit=voice.synced?[voice.centered?`паузи розподілено навколо фраз`:`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`${voice.centered?'зміщення для підгонки':'найбільше запізнення'} ${String(voice.latest).replace('.',',')} с`:'',voice.slowest<.99?`темп до ${Math.round(voice.slowest*100)}%`:'',voice.long_gaps?.length?`паузи понад 1,5 с: ${voice.long_gaps.length}, потребують перевірки`:'',voice.timing_issues?.length?`перевірте таймінги ${voice.timing_issues.length} фраз`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
+  card.innerHTML=`
+    <section class="lang-step" data-lang-step="1">
+        ${item.text?`<div class="lang-sample-row">
+          ${spec.id==='elevenlabs'?'<div class="lang-balance" role="status" aria-live="polite"></div>':''}
+          <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
+        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Потрібне вирівнювання до 7 с':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
+          <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
+          <div class="lang-player" data-kind="voice"></div><p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
+      :'<p class="lang-off">Спершу перекладіть текст.</p>'}
+    ${unsafeVoice?`<div class="lang-voice is-unsafe">${langQualityNotice(item.voice_language_check,true)}<div class="lang-player" data-kind="voice"></div></div>`:''}
+    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>
+`;
+  langApplyQuality(card,item);langWirePlayers(id,card,item);
+  card.querySelector('.lang-save-audio')?.addEventListener('click',async()=>{if(await langFlushScript(id,item.code))langStart(id,'save-audio',item.code);});
+  card.querySelector('.lang-voice-run')?.addEventListener('click',()=>langConfirmVoice(id,item.code));
+  return card;
+}
+
+async function langConfirmVoice(id,code){
+    if(state.project?.id!==id||!(await langFlushScript(id,code)))return;
+    const fresh=langData.items.find(entry=>entry.code===code);
+    if(!fresh||langRunning(code,'voice')||!langHasVoice(fresh))return;
+    if(fresh.language_check&&fresh.language_check.state!=='ok')return;
+    const spec=langSpec(fresh),cost=fresh.prices?.[spec.id],chars=fresh.chars;
+    langResultDialog?.dialog.close();
+    const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
+    const action=langVoiceAction(fresh,spec);
+    modal(`${action} ${fresh.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' символів'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
+      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до 8% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
+      [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',code);}}]);
+}
+
+function langCard(id,item,spec){
+  const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
+  card.innerHTML='<section class="lang-step lang-script-step" data-lang-step="0"><div class="lang-script-library"></div></section>';
+  langScriptLibrary(id,card.querySelector('.lang-script-library'),langData);
+  return card;
+}
+
+function langThumbnailResult(id,item){
+  const card=document.createElement('article');card.className='lang-card lang-thumbnail-result';card.dataset.code=item.code;
+  card.innerHTML=`
+    <section class="lang-step" data-lang-step="2">
+      ${langData.thumbnail?`<div class="lang-thumbs"><figure class="lang-thumb"><img src="/api/projects/${encodeURIComponent(id)}/cover?v=${Date.now()}" alt="Прев’ю до перекладу" loading="lazy">
+          <div class="project-actions lang-thumb-actions"><a class="project-action" href="/api/projects/${encodeURIComponent(id)}/languages/original/thumbnail?download=${encodeURIComponent('Прев’ю оригінал.png')}" download="Прев’ю оригінал.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю оригіналу">${langDownloadIcon}</a></div><figcaption>${langOriginalName()}</figcaption></figure>
+        <figure class="lang-thumb">${item.files.thumbnail?`<div class="lang-thumb-run has-picture" role="button" tabindex="0" aria-label="Згенерувати нове прев’ю"><img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю після перекладу" loading="lazy"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати ще одне</small></span></div>
+          <div class="project-actions lang-thumb-actions"><button type="button" class="project-action thumbnail lang-thumb-redo" title="Згенерувати ще одне" aria-label="Згенерувати прев’ю ще раз">${typeof thumbnailIcon==='string'?thumbnailIcon:''}</button><a class="project-action" href="${langUrl(id,item.code,'thumbnail')}&download=${encodeURIComponent(`Прев’ю ${item.name}.png`)}" download="Прев’ю ${esc(item.name)}.png" title="Завантажити прев’ю" aria-label="Завантажити прев’ю ${esc(item.name)}">${langDownloadIcon}</a></div>`
+          :`<button type="button" class="lang-thumb-run" aria-label="Згенерувати прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб згенерувати</small></span></button>`}<figcaption>${langFlag(item.code)} ${esc(item.name)}</figcaption>
+          <div class="lang-thumb-ask" hidden><label><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>
+            ${langThumbnailFlag(item)}
+            <div class="lang-thumb-ask-actions"><button type="button" class="secondary lang-thumb-ask-cancel">Скасувати</button><button type="button" class="primary lang-thumb-ask-go">Згенерувати</button></div></div></figure></div>`
+      :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
+    <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
   // the wand opens the wishes under the translated picture; «Перекласти» there starts Codex (user, 2 November 2026:
   // «побажання мають проявлятися тоді, коли нажимаєте… перекласти»)
   const ask=card.querySelector('.lang-thumb-ask'),wishes=ask?.querySelector('input[type="text"]'),flag=ask?.querySelector('.lang-thumb-add-flag');
@@ -448,20 +606,56 @@ function langCard(id,item,spec){
   });
   ask?.querySelector('.lang-thumb-ask-cancel').addEventListener('click',()=>{ask.hidden=true;});
   ask?.querySelector('.lang-thumb-ask-go').addEventListener('click',()=>{ask.hidden=true;langStart(id,'thumbnail',item.code,{wishes:wishes.value || '',add_flag:!!item.flag_country&&flag.checked});});
-  langOwnWire(id,card,item);
-  langWireReview(card);
   return card;
+}
+
+let langThumbnailDialog=null;
+function langThumbnailTile(id,item){
+  const tile=document.createElement('div');tile.className='lang-thumbnail-tile';tile.dataset.code=item.code;
+  tile.innerHTML=`<strong>${langFlag(item.code)}Прев’ю</strong><button type="button" aria-label="Прев’ю: ${esc(item.name)}">${item.files?.thumbnail?`<img src="${langUrl(id,item.code,'thumbnail')}" alt="Прев’ю ${esc(item.name)}" loading="lazy">`:''}<span>${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>${item.files?.thumbnail?'Переглянути':'Згенерувати'}</small></span></button>`;
+  tile.classList.toggle('has-picture',!!item.files?.thumbnail);
+  tile.querySelector('button').onclick=()=>langOpenThumbnail(id,item.code);return tile;
+}
+function langRefreshThumbnailDialog(){
+  if(!langThumbnailDialog)return;
+  const {id,code,dialog}=langThumbnailDialog,item=langData?.items.find(entry=>entry.code===code);
+  if(state.project?.id!==id||!item){dialog.close();return;}
+  dialog.querySelector('.lang-thumbnail-dialog-body').replaceChildren(langThumbnailResult(id,item));
+}
+function langOpenThumbnail(id,code){
+  if(state.project?.id!==id)return;
+  const item=langData?.items.find(entry=>entry.code===code);if(!item)return;
+  langThumbnailDialog?.dialog.close();
+  const dialog=document.createElement('dialog');dialog.className='lang-thumbnail-dialog';dialog.setAttribute('aria-labelledby','lang-thumbnail-title');
+  dialog.innerHTML=`<div class="lang-script-dialog-head"><h2 id="lang-thumbnail-title">${langFlag(code)} Прев’ю · ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити прев’ю">×</button></div><div class="lang-thumbnail-dialog-body"></div>`;
+  langThumbnailDialog={id,code,dialog};langRefreshThumbnailDialog();
+  const ask=dialog.querySelector('.lang-thumb-ask');if(ask&&!item.files?.thumbnail)ask.hidden=false;
+  dialog.querySelector('.lang-script-close').onclick=()=>dialog.close();
+  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+  dialog.addEventListener('close',()=>{if(langThumbnailDialog?.dialog===dialog)langThumbnailDialog=null;dialog.remove();},{once:true});
+  document.body.append(dialog);dialog.showModal();showLangJob();
+}
+
+function langRemoveLanguage(id,code){
+  const item=langData?.items.find(entry=>entry.code===code);if(!item||langRunning(code))return;
+  modal(`Прибрати ${item.name}?`,`<p>Переклад і озвучка цієї мови зникнуть зі студії.${item.folder?' Файли в папці випуску залишаться.':''}</p>`,
+    [{label:'Скасувати',run:closeModal},{label:'Прибрати мову',danger:true,run:async()=>{closeModal();
+      try{const data=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/remove`,'POST',{});if(state.project?.id!==id)return;langData=data;delete langDrafts[`${id}:${code}`];drawLangs(id);}
+      catch(error){langNote(document.querySelector('.lang-script-library'),error.message,true);}}}]);
 }
 
 // Messages of this tab stand where the author pressed, not in the studio's banner at the top (user, 2 November 2026:
 // «сповіщення… мають бути там, де я нажимаю кнопку»): a short line at the end of that step, or under «Нова мова».
 const langStepOf={translate:0,sample:1,voice:1,'save-audio':1,refit:1,thumbnail:2};
 function langPlace(code,kind){
+  if(kind==='sample')return document.querySelector(`.lang-voice-setup[data-code="${code}"]`) || document.querySelector(`#project-langs .lang-voice-summary[data-code="${code}"]`);
+  if(['voice','refit','save-audio'].includes(kind))return document.querySelector(`.lang-result-dialog .lang-card[data-code="${code}"] .lang-step`)||document.querySelector(`#project-langs .lang-voice-tile[data-code="${code}"]`);
+  if(kind==='thumbnail')return document.querySelector(`.lang-thumbnail-dialog .lang-card[data-code="${code}"] .lang-step`)||document.querySelector(`#project-langs .lang-thumbnail-tile[data-code="${code}"]`);
   const card=document.querySelector(`#project-langs .lang-card[data-code="${code}"]`);
-  return card?.querySelectorAll('.lang-step')[langStepOf[kind] ?? 0] || document.querySelector('#project-langs .lang-pills');
+  return card?.querySelector(`[data-lang-step="${langStepOf[kind] ?? 0}"]`) || document.querySelector('#project-langs .lang-script-library');
 }
 function langNote(where,message,error=false){
-  const holder=where?.closest?.('.lang-step, .lang-pills, .lang-card') || where;
+  const holder=where?.closest?.('.lang-voice-setup, .lang-voice-summary, .lang-voice-tile, .lang-thumbnail-tile, .lang-step, .lang-card') || where;
   if(!holder){status(message,error);return;}
   holder.querySelector(':scope > .lang-note')?.remove();
   const note=document.createElement('p');note.className='lang-note'+(error?' is-error':'');note.setAttribute('role',error?'alert':'status');note.textContent=message;
@@ -481,9 +675,9 @@ async function langCancel(id,slot,button){
 async function langStart(id,kind,code,extra={}){
   if(state.project?.id!==id)return;
   try{
-    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langData.provider,...extra});
+    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langSpec(langData.items.find(item=>item.code===code)).id,...extra});
     if(state.project?.id!==id)return;
-    if(kind==='voice'){langSamplePreview.delete(`${id}:${code}`);const sample=document.querySelector(`#project-langs .lang-card[data-code="${code}"] .lang-inline-sample`);sample?.querySelectorAll('audio').forEach(audio=>audio.pause());}
+    if(kind==='voice'){langSamplePreview.delete(`${id}:${code}`);const sample=document.querySelector(`#project-langs .lang-voice-setup[data-code="${code}"] .lang-inline-sample`);sample?.querySelectorAll('audio').forEach(audio=>audio.pause());}
     if(kind==='sample')langSamplePreview.add(`${id}:${code}`);
     langPlace(code,kind)?.querySelector(':scope > .lang-note')?.remove();
     langData.jobs=[...langJobs().filter(other=>other.slot!==job.slot),job];langData.job=job;
@@ -497,30 +691,60 @@ const langGroupOf=kind=>kind==='thumbnail'?'thumbnail':'voice';
 function langJobs(){return langData?.jobs || (langData?.job?[langData.job]:[]);}
 function langRunning(code,group){return langJobs().some(job=>job.status==='running'&&(!code||job.code===code)&&(!group||langGroupOf(job.kind)===group));}
 
+function langPaintVoiceSetups(){
+  document.querySelectorAll('#project-langs .lang-voice-setup,.lang-voice-dialog .lang-voice-setup').forEach(box=>{
+    const code=box.dataset.code,id=state.project?.id;
+    const uploading=langUploads.has(`/api/projects/${encodeURIComponent(id)}/languages/${code}/own-voice`);
+    const locked=langRunning(code,'voice')||uploading||box.dataset.saving==='1';
+    box.querySelectorAll('button,select,input').forEach(control=>{
+      if(control.matches('.voice-player-play,.voice-player-mute,.lang-cancel,.lang-setup-review'))return;
+      control.disabled=control.matches('.lang-defaults')?uploading||box.dataset.saving==='1'||control.dataset.saving==='1':locked||control.dataset.blocked==='1';
+    });
+    box.querySelector('.lang-own-file')?.classList.toggle('is-off',locked);
+    const jobs=langJobs().filter(job=>job.code===code&&['voice','sample','refit'].includes(job.kind));
+    const job=jobs.find(entry=>entry.status==='running')||jobs.sort((a,b)=>(b.started_at||0)-(a.started_at||0))[0];
+    const full=job?.status==='running'&&job.kind!=='sample';
+    const sample=box.querySelector('.lang-inline-sample');if(sample){sample.hidden=full;if(full)sample.querySelector('audio')?.pause();}
+    const progress=box.querySelector('.lang-setup-job');
+    progress.hidden=!job||!['running','failed'].includes(job.status);
+    if(progress.hidden){progress.replaceChildren();return;}
+    if(job.status==='running'){
+      const stopping=langAsked.has(job.slot);
+      progress.innerHTML=`<span>${esc(job.stage||'Починаємо…')}</span><progress max="100" value="${job.progress||0}"></progress><button type="button" class="lang-icon lang-cancel" title="Скасувати" aria-label="Скасувати"${stopping?' disabled':''}>×</button>`;
+      progress.querySelector('button').onclick=event=>langCancel(id,job.slot,event.currentTarget);
+    }else{
+      progress.innerHTML='<button type="button" class="lang-setup-review">Перевірити озвучку</button>';
+      const review=progress.querySelector('button');review.title=job.error||'';
+      review.onclick=()=>langOpenVoiceResult(id,code);
+    }
+  });
+}
+
 function showLangJob(){
   langPaintScriptJobs();
+  langPaintVoiceSetups();
+  langPaintVoiceTiles();
   // a job's line sits in the step it works on, inside the language's own card (user, 2 November 2026: «не треба
   // розкидати блоки… все в один блок»): the text for a translation, the voice for a sample or the whole, the thumbnail
   const jobs=langJobs();
   // the capsule of a language at work shows it, whichever card is open
   document.querySelectorAll('#project-langs .lang-pill').forEach(pill=>pill.classList.toggle('is-working',langRunning(pill.dataset.code)));
-  for(const card of document.querySelectorAll('#project-langs .lang-card[data-code]')){
+  for(const card of document.querySelectorAll('#project-langs .lang-card[data-code],.lang-result-dialog .lang-card[data-code],.lang-thumbnail-dialog .lang-card[data-code]')){
     const code=card.dataset.code,steps=[...card.querySelectorAll('.lang-step')];
     const uploading=langUploads.has(`/api/projects/${encodeURIComponent(state.project?.id)}/languages/${code}/own-voice`);
     const fullVoiceRunning=jobs.some(job=>job.code===code&&['voice','refit'].includes(job.kind)&&job.status==='running');
     const savingAudio=fullVoiceRunning||jobs.some(job=>job.code===code&&job.kind==='save-audio'&&job.status==='running');
     card.querySelectorAll('.lang-voice-delivery,.lang-mix-status').forEach(element=>element.hidden=savingAudio);
     const synthesis=card.querySelector('.lang-voice-actions');if(synthesis)synthesis.hidden=fullVoiceRunning;
-    const sample=card.querySelector('.lang-inline-sample');if(sample){sample.hidden=fullVoiceRunning;if(fullVoiceRunning)sample.querySelector('audio')?.pause();}
     // a running lane locks only its own steps: the text and voice, or the thumbnail
     card.querySelectorAll('button:not(.voice-player-play):not(.voice-player-mute)').forEach(button=>{
       if(button.classList.contains('lang-cancel')||button.closest('.lang-script-library'))return;
       if(button.classList.contains('lang-defaults')){button.disabled=button.dataset.saving==='1'||uploading;return;}
-      const index=steps.findIndex(step=>step.contains(button));
+      const index=Number(button.closest('[data-lang-step]')?.dataset.langStep ?? -1);
       const locked=index<0?langRunning(code):langRunning(code,index===2?'thumbnail':'voice');
       button.disabled=locked || (uploading&&index===1) || button.dataset.blocked==='1';});
-    card.querySelectorAll('.lang-voice-bar select').forEach(select=>{select.disabled=langRunning(null,'voice');});
-    steps.forEach((step,index)=>{
+    steps.forEach(step=>{
+      const index=Number(step.dataset.langStep);
       const box=step.querySelector(':scope > .lang-job');if(!box)return;
       const own=jobs.filter(job=>job.code===code&&langStepOf[job.kind]===index);
       const job=own.find(item=>item.status==='running') || own.sort((a,b)=>(b.finished_at||0)-(a.finished_at||0))[0];
@@ -543,13 +767,18 @@ function showLangJob(){
     });
   }
   // the «after» window of the language being redrawn says so in place of its wand
-  for(const tile of document.querySelectorAll('#project-langs .lang-thumb-run')){
+  for(const tile of document.querySelectorAll('.lang-thumbnail-dialog .lang-thumb-run')){
     const drawing=langRunning(tile.closest('.lang-card')?.dataset.code,'thumbnail');
     tile.classList.toggle('is-drawing',drawing);
     tile.setAttribute('aria-disabled',String(drawing));
     const label=tile.querySelector('.lang-thumb-wand small');
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex генерує, 1-3 хвилини…':label.dataset.idle;}
   }
+  document.querySelectorAll('#project-langs .lang-thumbnail-tile').forEach(tile=>{
+    const busy=langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);
+    tile.querySelector('small').textContent=busy?'Створюємо…':tile.classList.contains('has-picture')?'Переглянути':'Згенерувати';
+  });
+  document.querySelectorAll('.lang-language-remove').forEach(button=>button.disabled=langRunning(button.dataset.code));
 }
 
 async function pollLangs(id){
@@ -688,7 +917,7 @@ function langOpenSampleMenu(button,item,spec,choose,playExisting=null){
     option.addEventListener('click',()=>{langCloseSampleMenu();button.focus();choose(count);});menu.append(option);
   }
   menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp'].includes(event.key))return;event.preventDefault();const options=[...menu.querySelectorAll('button')],index=options.indexOf(document.activeElement);options[(index+(event.key==='ArrowDown'?1:options.length-1))%options.length].focus();});
-  document.body.append(menu);const rect=button.getBoundingClientRect();
+  (button.closest('dialog') || document.body).append(menu);const rect=button.getBoundingClientRect();
   menu.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-menu.offsetWidth-8))+'px';
   menu.style.top=(rect.bottom+menu.offsetHeight+6<window.innerHeight?rect.bottom+6:Math.max(8,rect.top-menu.offsetHeight-6))+'px';
   menu.querySelector('button').focus();

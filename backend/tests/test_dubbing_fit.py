@@ -125,7 +125,7 @@ class DubbingFitTest(unittest.TestCase):
             m=dubbing_fit.recover(p/'old.wav',segs,p/'parts')
             r=dubbing_fit.rebuild(p/'parts',m,p/'new.mp3',8)
             self.assertGreater(r['phrases'][0]['start'],0)
-            self.assertGreaterEqual(r['phrases'][1]['start'],5)
+            self.assertAlmostEqual((r['phrases'][1]['start']+r['phrases'][1]['end'])/2,6,delta=.02)
             self.assertLess(r['phrases'][0]['gap_after'],5-m[0]['length'])
             self.assertGreaterEqual(r['phrases'][0]['speed'],.92)
             self.assertLessEqual(r['phrases'][0]['speed'],1.08)

@@ -106,7 +106,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.initial.return_value = (['t'*118], .1)
         self.ask.side_effect = [(json.dumps({'ok': True, 'ids': [0]}), .01)] + [
             (json.dumps({'0': 't'*118}), .01)]*3
-        with self.assertRaisesRegex(RuntimeError, 'Фрази 1.*±5%'):
+        with self.assertRaisesRegex(RuntimeError, 'Фрази 1.*±7%'):
             languages._translate('test', 'uk', self.job)
         self.save.assert_not_called()
         self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
@@ -117,12 +117,12 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.speak.assert_not_called()
 
     def test_incompatible_pace_does_not_oscillate_outside_phrase_band_or_buy_voice(self):
-        self.initial.return_value = (['t'*95], .1)
+        self.initial.return_value = (['t'*93], .1)
         self.ask.return_value = (json.dumps({'ok': True, 'ids': [0]}), .01)
         with patch.object(languages, 'load_state', return_value={'provider':'elevenlabs'}), \
              patch.object(languages, 'voice_cache_context', return_value=({'model':'test'},set())), \
              patch.object(languages.narration_profile, 'read', return_value={'seconds_per_character':.24,'observations':30}):
-            with self.assertRaisesRegex(RuntimeError, 'в межах ±5%.*прогноз голосу'):
+            with self.assertRaisesRegex(RuntimeError, 'в межах ±7%.*прогноз голосу'):
                 languages._translate('test', 'es', self.job)
         self.assertEqual(self.ask.call_count, 1)
         self.save.assert_not_called()

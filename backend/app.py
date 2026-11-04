@@ -1334,7 +1334,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(languages.language_defaults.save(match.group(1),body.get('code')))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/provider", path)
         if match and method == "POST":
-            return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None, body.get("style") or None))
+            return self.json_response(languages.set_provider(match.group(1), str(body.get("provider") or ""), body.get("engine") or None, body.get("style") or None, body.get("code") or None))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/thumbnail-options", path)
         if match and method == "POST":
             return self.json_response(languages.save_thumbnail_options(match.group(1),body.get('add_flag')))

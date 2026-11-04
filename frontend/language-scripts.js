@@ -18,35 +18,100 @@ function langScriptStatus(item){
 }
 
 function langScriptLibrary(id,holder,data){
-  holder.innerHTML=`<div class="lang-script-grid">${data.items.map(item=>{
+  holder.innerHTML=`<div class="lang-script-grid">${data.items.filter(item=>item.text).map(item=>{
     const status=langScriptStatus(item);
-    return `<button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити сценарій: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
+    return `<div class="lang-language-column" data-language="${item.code}"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити сценарій: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
       <span class="lang-script-file-head">${langFlag(item.code)}<span class="lang-script-fold" aria-hidden="true"></span></span>
       <strong>${esc(item.name)}</strong><span class="lang-script-file-title">${esc(item.title||'Сценарій ролика')}</span>
-      <span class="lang-script-file-status">${langTranslateIcon}<span>${status.label}</span></span>
-      <progress max="100" value="${status.progress||0}"${status.kind==='working'?'':' hidden'}></progress></button>`;
-  }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div>`;
+      <span class="lang-script-file-status" title="Переклад сценарію">${langTranslateIcon}<span${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
+      <progress max="100" value="${status.progress||0}"${status.kind==='working'?'':' hidden'}></progress></button><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
+  }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div><div class="lang-script-queue" aria-live="polite"></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
-  const used=new Set(data.items.map(item=>item.code));
-  const free=data.languages.filter(item=>!used.has(item.code)&&item.code!==data.source.language);
-  holder.querySelector('.lang-script-add').hidden=!free.length;
-  holder.querySelector('.lang-script-add').addEventListener('click',()=>{
-    const dialog=document.createElement('dialog');dialog.className='lang-script-picker';
-    dialog.innerHTML=`<div class="lang-script-dialog-head"><h2>Додати мову</h2><button type="button" class="lang-script-close" aria-label="Закрити">×</button></div><div class="lang-script-language-list">${free.map(item=>`<button type="button" data-code="${item.code}">${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('')}</div><p class="lang-script-message" role="status"></p>`;
-    document.body.append(dialog);dialog.showModal();
-    dialog.querySelector('.lang-script-close').onclick=()=>dialog.close();
-    dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
-    dialog.addEventListener('close',()=>dialog.remove(),{once:true});
-    dialog.querySelector('.lang-script-language-list').addEventListener('click',async event=>{
-      const button=event.target.closest('[data-code]');if(!button)return;
-      dialog.querySelectorAll('[data-code]').forEach(entry=>entry.disabled=true);
-      try{
-        const result=await api(`/api/projects/${encodeURIComponent(id)}/languages/${button.dataset.code}`,'POST',{});
-        dialog.close();if(state.project?.id!==id)return;
-        langData=result;langChoose(id,button.dataset.code);drawLangs(id);langOpenScript(id,button.dataset.code);
-      }catch(error){dialog.querySelector('.lang-script-message').textContent=error.message;dialog.querySelectorAll('[data-code]').forEach(entry=>entry.disabled=false);}
-    });
+  holder.querySelectorAll('[data-language]').forEach(column=>{
+    const item=data.items.find(entry=>entry.code===column.dataset.language);
+    column.querySelector('.lang-setup-slot').replaceWith(langVoiceSummary(id,item));
+    column.append(langVoiceTile(id,item));
+    column.append(langThumbnailTile(id,item));
+    column.querySelector('.lang-language-remove').onclick=()=>langRemoveLanguage(id,item.code);
   });
+  const free=langScriptAvailable(data);
+  holder.querySelector('.lang-script-add').hidden=!free.length;
+  holder.querySelector('.lang-script-add').addEventListener('click',()=>langOpenScriptPicker(id));
+}
+
+function langScriptAvailable(data){
+  const ready=new Set(data.items.filter(item=>item.text).map(item=>item.code));
+  return data.languages.filter(item=>item.code!==data.source.language&&!ready.has(item.code)&&!langRunning(item.code,'voice'));
+}
+
+async function langRequestTranslations(id,codes){
+  // Each language has an independent server job. Never wait for one translation
+  // to finish before starting the others, or retry a successful paid request.
+  return Promise.all([...new Set(codes)].map(async code=>{
+    try{
+      const base=`/api/projects/${encodeURIComponent(id)}/languages/${code}`;
+      const data=await api(base,'POST',{});
+      const {job}=await api(`${base}/translate`,'POST',{});
+      return {code,job,item:data.items.find(item=>item.code===code)};
+    }catch(error){return {code,error:error.message};}
+  }));
+}
+
+function langOpenScriptPicker(id){
+  if(state.project?.id!==id||document.querySelector('.lang-script-picker'))return;
+  const free=langScriptAvailable(langData);if(!free.length)return;
+  const dialog=document.createElement('dialog');dialog.className='lang-script-picker';
+  dialog.setAttribute('aria-labelledby','lang-script-picker-title');
+  dialog.innerHTML=`<div class="lang-script-dialog-head"><h2 id="lang-script-picker-title">Виберіть мови перекладу</h2><button type="button" class="lang-script-close" aria-label="Закрити вибір мов">×</button></div>
+    <div class="lang-script-language-list">${free.map(item=>`<label><input type="checkbox" value="${item.code}">${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></label>`).join('')}</div>
+    <div class="lang-script-picker-footer"><span class="lang-script-picked">Оберіть мови</span><button type="button" class="primary lang-script-batch" disabled>Перекласти</button></div><p class="lang-script-message" role="status"></p>`;
+  let starting=false;
+  const inputs=[...dialog.querySelectorAll('input')],run=dialog.querySelector('.lang-script-batch');
+  const selected=()=>inputs.filter(input=>input.checked&&!input.disabled).map(input=>input.value);
+  const sync=()=>{const count=selected().length;run.disabled=starting||!count;dialog.querySelector('.lang-script-picked').textContent=count?`Вибрано: ${count}`:'Оберіть мови';};
+  dialog.addEventListener('change',sync);
+  const close=()=>{if(!starting)dialog.close();};
+  dialog.querySelector('.lang-script-close').onclick=close;
+  dialog.addEventListener('click',event=>{if(event.target===dialog)close();});
+  dialog.addEventListener('cancel',event=>{if(starting)event.preventDefault();});
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  run.onclick=async()=>{
+    if(starting)return;const codes=selected();if(!codes.length)return;
+    starting=true;inputs.forEach(input=>input.disabled=true);run.disabled=true;run.textContent='Запускаємо…';
+    dialog.querySelector('.lang-script-close').disabled=true;
+    const results=await langRequestTranslations(id,codes);
+    const failed=results.filter(result=>result.error),started=new Set(results.filter(result=>result.job).map(result=>result.code));
+    // Keep accepted jobs visible even if the final overview refresh is offline.
+    if(state.project?.id===id){
+      for(const result of results.filter(result=>result.job)){
+        if(result.item&&!langData.items.some(item=>item.code===result.code))langData.items.push(result.item);
+        langData.jobs=[...langJobs().filter(job=>job.slot!==result.job.slot),result.job];
+      }
+      if(state.view==='langs')drawLangs(id);if(langBusy())pollLangs(id);
+    }
+    try{
+      const data=await api(`/api/projects/${encodeURIComponent(id)}/languages`);
+      if(state.project?.id===id){langData=data;if(state.view==='langs')drawLangs(id);if(langBusy())pollLangs(id);}
+    }catch(error){failed.push({error:error.message});}
+    starting=false;
+    if(!failed.length){dialog.close();return;}
+    inputs.forEach(input=>{input.disabled=started.has(input.value);if(input.disabled)input.checked=false;});
+    dialog.querySelector('.lang-script-close').disabled=false;run.textContent='Перекласти';sync();
+    const message=dialog.querySelector('.lang-script-message');message.classList.add('is-error');
+    message.textContent=failed.map(result=>`${free.find(item=>item.code===result.code)?.name||''}: ${result.error}`).join('\n');
+  };
+  document.body.append(dialog);dialog.showModal();inputs[0]?.focus();
+}
+
+function langPaintScriptQueue(){
+  const queue=document.querySelector('#project-langs .lang-script-queue');if(!queue)return;
+  queue.innerHTML=(langData?.items||[]).filter(item=>!item.text).map(item=>{
+    const job=langScriptJob(item.code),busy=job?.status==='running';
+    return `<div class="lang-script-pending">${langFlag(item.code)}<strong>${esc(item.name)}</strong><span>${esc(busy?job.stage||'Перекладаємо…':job?.error||'Переклад ще не завершено')}</span>
+      ${busy?`<progress max="100" value="${job.progress||0}"></progress><button type="button" class="secondary lang-cancel" data-slot="${esc(job.slot)}">Скасувати</button>`:`<button type="button" class="secondary" data-open-script="${item.code}">Відкрити</button>`}</div>`;
+  }).join('');
+  queue.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>langCancel(state.project.id,button.dataset.slot,button));
+  queue.querySelectorAll('[data-open-script]').forEach(button=>button.onclick=()=>langOpenScript(state.project.id,button.dataset.openScript));
 }
 
 function langPaintScriptJobs(){
@@ -55,10 +120,11 @@ function langPaintScriptJobs(){
     const status=langScriptStatus(item);
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
     button.querySelector('.lang-script-file-status span').textContent=status.label;
+    button.querySelector('.lang-script-file-status span').hidden=status.kind==='ready';
     const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';progress.value=status.progress||0;
     button.title=`${item.name}: ${status.label}${status.detail?' · '+status.detail:''}`;
   });
-  langScriptDialog?.sync();
+  langPaintScriptQueue();langScriptDialog?.sync();
 }
 
 function langFlushScript(id,code){
@@ -101,6 +167,7 @@ function langOpenScript(id,code){
     action.classList.toggle('primary',!item.text);action.classList.toggle('secondary',!!item.text);
     action.querySelector('span').textContent=item.translation_resumable?'Продовжити переклад':item.text?'Перекласти заново':'Перекласти';
     dialog.querySelector('.lang-script-dialog-status span').textContent=status.label;
+    dialog.querySelector('.lang-script-dialog-status').hidden=status.kind==='ready';
     dialog.querySelector('.lang-script-fields').hidden=!item.text&&!draft;
     dialog.querySelector('.lang-script-empty').hidden=!!item.text||!!draft;
     dialog.querySelector('.lang-text-quality').innerHTML=langQualityNotice(item.language_check);

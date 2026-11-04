@@ -158,8 +158,14 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     prefix=0.;blocks=[];targets=[]
     for n,item in enumerate(items):
         left=float(item.get('original_start',item['start']))
-        right=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
-        target=left+max(0,right-left-gaps[n]-lengths[n])/2
+        if item.get('original_end') is not None:
+            # Match the spoken phrase's centre, not the silence up to the next
+            # sentence. A long take can start a little earlier to balance both
+            # boundaries instead of pushing its whole following chain late.
+            target=(left+float(item['original_end'])-lengths[n])/2
+        else:
+            right=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
+            target=left+max(0,right-left-gaps[n]-lengths[n])/2
         targets.append(target)
         blocks.append([target-prefix,1,n,n+1])
         while len(blocks)>1 and blocks[-2][0]>blocks[-1][0]:
@@ -317,8 +323,8 @@ def fitting_speeds(items: list[dict], total: float) -> list[float]:
     return align([min(MAX_SPEED,s+hi) for s in speeds])
 
 
-def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
-                 max_passes: int = 3) -> list[dict]:
+def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
+                  max_passes: int = 3) -> list[dict]:
     """Correct local tempo against measured output, retaining every original take.
 
     ``render(item, speed)`` must render from the preserved source (never from an
@@ -414,6 +420,67 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     raise RuntimeError(f'Озвучка довша за ролик на {excess:.1f} с після перевірки фактичної тривалості '
                        f'при межі {TEMPO_PERCENT}%. Усі аудіофрагменти збережені. '
                        'Автоматичної платної перегенерації не буде.')
+
+
+def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
+                 max_passes: int = 3) -> list[dict]:
+    """Get a valid measured fit, then improve neighbouring phrase synchronization.
+
+    Render only changed tempos, always from raw takes. The optional joint fit is
+    retained only when actual measured placement improves both-boundary error
+    without worsening the maximum drift or synchronization score. On rejection,
+    restore the already valid fitted audio; never replace its metadata alone.
+    """
+    import narration_alignment
+    base = _fit_measured(items, total, render, gap=gap, max_passes=max_passes)
+    proposed = narration_alignment.propose(base, total, join_gaps(base, gap),
+        min_speed=MIN_SPEED, max_speed=MAX_SPEED, max_shift=MAX_SHIFT)
+    if proposed is None:
+        return base
+    before = centered_schedule(base, total, gap)
+    candidate = [dict(item) for item in base]
+    changed = []
+    for n, (item, speed) in enumerate(zip(candidate, proposed)):
+        speed = min(MAX_SPEED, max(MIN_SPEED, round(speed, 6)))
+        if abs(speed-item['speed']) < .0001:
+            continue
+        length = render(item, speed)
+        if not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0:
+            raise RuntimeError('Не вдалося перевірити локальне вирівнювання. Готові записи збережені.')
+        item.update(speed=speed, fitted_length=float(length))
+        changed.append(n)
+    if not changed:
+        return base
+
+    def quality(placed):
+        source = [{'start':x['original_start'], 'end':x['original_end']} for x in placed]
+        # The score expects consecutive row IDs, even for a selected local subset.
+        target = [{'start':x['start'], 'end':x['end']} for x in placed]
+        score = synchronization_score(source, target)
+        error = sum((x[edge]-x[f'original_{edge}'])**2 for x in placed for edge in ('start','end'))
+        return error, score['max_shift_seconds'], score['percent']
+
+    try:
+        after = centered_schedule(candidate, total, gap)
+    except RuntimeError:
+        after = None  # DSP lengths can differ from the proposed inverse durations.
+    if after is not None:
+        old_error, old_max, old_score = quality(before)
+        error, maximum, score = quality(after)
+        if error < old_error-1e-5 and maximum <= old_max+.05 and score >= old_score:
+            return candidate
+    # The renderer owns output files/buffers, so restore those as well as the
+    # manifest. No stacked time-stretching: render() always starts from raw audio.
+    for n in changed:
+        restored = dict(base[n])
+        length = render(restored, restored['speed'])
+        if not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0:
+            raise RuntimeError('Не вдалося відновити локальну підгонку. Готові записи збережені.')
+        base[n].update(fitted_length=float(length))
+        if 'edge_silence' in restored:
+            base[n]['edge_silence'] = restored['edge_silence']
+    centered_schedule(base, total, gap)  # independently verify the restored fit
+    return base
 
 
 def command(args):

@@ -62,9 +62,7 @@ def selection(pid: str) -> tuple[dict,dict]:
     import languages
     project=store.load_project(pid);data=languages.narration_settings(pid)
     codes=[code for code in languages.LANGUAGES if code in data.get('languages',{})]
-    settings={'provider':data.get('provider') if data.get('provider') in languages.PROVIDERS else 'fishaudio',
-              'eleven_engine':languages.eleven_engine(pid),'fish_engine':languages.fish_engine(pid),
-              'fish_style':languages.fish_style(pid),'fish_styles':dict(data.get('fish_styles') or {})}
+    settings=languages.narration_choices(pid)
     settings['fish_styles'][settings['fish_engine']]=settings['fish_style']
     voices={};examples={}
     for code in codes:
@@ -77,7 +75,8 @@ def selection(pid: str) -> tuple[dict,dict]:
             voices[code]={'sha256':hashlib.sha256(raw).hexdigest(),'text':text,'clone':clone}
             examples[code]=example
         else:voices[code]=None  # use each new episode's own original voice
-    payload={'settings':settings,'languages':codes,'voices':voices}
+    payload={'settings':settings,'languages':codes,'voices':voices,
+             'language_settings':{code:languages.narration_choices(pid,code) for code in codes}}
     return {'payload':payload,'signature':signature(payload),'channel_id':project['channel_id']},examples
 
 
@@ -92,11 +91,12 @@ def status(pid: str) -> dict:
             engine=settings.get('fish_engine')
             style=(settings.get('fish_styles') or {}).get(engine,settings.get('fish_style'))
             return (provider,engine,style)
-        settings_match=bool(saved) and effective(previous.get('settings') or {})==effective(payload['settings'])
         # The button belongs to the open language. Extra language tabs and dormant engine preferences
         # do not change its selected voice or active synthesis parameters.
         by_language={}
         for code,voice in payload['voices'].items():
+            old_choices=(previous.get('language_settings') or {}).get(code) or previous.get('settings') or {}
+            settings_match=bool(saved) and effective(old_choices)==effective(payload['language_settings'][code])
             earlier=(previous.get('voices') or {}).get(code) or {}
             matches=(voice or {}).get('sha256')==earlier.get('sha256')
             if not matches and settings_match and voice and earlier and code in examples:
@@ -125,6 +125,12 @@ def save(pid: str, code: str | None = None) -> dict:
         affected=[code] if code is not None else selected['payload']['languages']
         old=previous.get('payload') or {}
         payload=copy.deepcopy(old)
+        # Preserve every other language's model when saving just this column.
+        per_language=payload.setdefault('language_settings',{})
+        for language in old.get('languages') or []:
+            per_language.setdefault(language,copy.deepcopy(old.get('settings') or {}))
+        for language in affected:
+            per_language[language]=selected['payload']['language_settings'][language]
         payload['settings']=selected['payload']['settings']
         payload['languages']=list(dict.fromkeys([*(old.get('languages') or []),*affected]))
         voices=payload.setdefault('voices',{})
@@ -170,6 +176,7 @@ def pin_narration(pid: str, code: str) -> None:
         resolved=languages.narration_settings(pid)
         for key in ('provider','eleven_engine','fish_engine','fish_style','fish_styles'):
             if key in resolved:data[key]=copy.deepcopy(resolved[key])
+        data.setdefault('languages',{}).setdefault(code,{})['narration']=languages.narration_choices(pid,code)
         example=languages.voice_for(pid,code,original=False)
         if example and example['from'] in ('defaults','channel'):
             project=store.load_project(pid)
@@ -199,7 +206,11 @@ def apply(project: dict, explicit: bool = False) -> bool:
         payload=saved['payload'];data=languages.load_state(project['id']) if explicit else {}
         data.update(copy.deepcopy(payload['settings']))
         for code in payload['languages']:
-            if code in languages.LANGUAGES:data.setdefault('languages',{}).setdefault(code,{})
+            if code in languages.LANGUAGES:
+                entry=data.setdefault('languages',{}).setdefault(code,{})
+                choices=(payload.get('language_settings') or {}).get(code)
+                if choices:entry['narration']=copy.deepcopy(choices)
+                elif explicit:entry.pop('narration',None)
         data['defaults_signature']=saved['signature']
         for code,voice in payload['voices'].items():
             if code not in data['languages']:continue
@@ -249,6 +260,7 @@ def saved_clone(cid: str, code: str) -> str | None:
     return (((saved.get('payload') or {}).get('voices') or {}).get(code) or {}).get('clone')
 
 
-def settings(cid: str) -> dict:
+def settings(cid: str, code: str | None = None) -> dict:
     saved=store.read_json(root(cid)/'current.json',{}) or {}
-    return copy.deepcopy((saved.get('payload') or {}).get('settings') or {})
+    payload=saved.get('payload') or {}
+    return copy.deepcopy({**(payload.get('settings') or {}),**((payload.get('language_settings') or {}).get(code) or {})})

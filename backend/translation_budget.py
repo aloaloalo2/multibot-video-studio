@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
 TOLERANCE = .03
-NUMBER_AWARE_TOLERANCE = .05
+NUMBER_AWARE_TOLERANCE = .07
 
 
 def missing_source_years(source_text, translated_text, target_language):
