@@ -1139,6 +1139,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-script-fold{position:absolute;right:0;top:0;width:23px;height:23px;border-radius:0 0 0 7px;background:linear-gradient(45deg,#35383f 49%,#17181c 51%);border-bottom:1px solid #42464f;border-left:1px solid #42464f}
 .lang-script-file strong{font-size:14px;line-height:1.3}.lang-script-file-title{font-size:11px;line-height:1.4;color:#a6a9b4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px;overflow-wrap:anywhere}
 .lang-script-file-status{display:flex;gap:7px;align-items:center;color:#a3a7b3;font-size:12px;margin-top:auto;line-height:1.4}
+.lang-script-file-status>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lang-script-file svg,.lang-script-dialog svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 .lang-script-file.ready .lang-script-file-status{color:#999da8}.lang-script-file.attention .lang-script-file-status{color:#e8bb78}.lang-script-file.working .lang-script-file-status{color:#b3caff}
 .lang-script-file progress{height:3px;position:absolute;bottom:0;left:0;right:0;width:100%;accent-color:#7fc4ee}
