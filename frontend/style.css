@@ -1363,6 +1363,8 @@ select option{background:#232327;color:#f1f1f2}
 .lang-sample-menu button{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:9px 11px;border:0;background:transparent;border-radius:7px;color:#e5e7eb;font-size:13px;text-align:left}
 .lang-sample-menu button:hover,.lang-sample-menu button:focus-visible{background:#3a3c43;outline:none}
 .lang-sample-menu small{color:#a3a6b0;font-size:11px}
+.lang-sample-choice{display:inline-flex;align-items:center;gap:10px}
+.lang-sample-choice svg{width:14px;height:14px;flex:none;fill:currentColor;stroke:none}
 
 /* Thumbnail workspace and the translated covers share one compact gallery. */
 .thumb-view.thumb-studio{max-width:1080px;display:flex;flex-direction:column;gap:20px;margin:0 auto;padding:4px 0 24px}

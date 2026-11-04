@@ -736,14 +736,14 @@ function langOpenSampleMenu(button,item,spec,choose,playExisting=null){
   button.setAttribute('aria-haspopup','menu');button.setAttribute('aria-expanded','true');
   if(playExisting){
     const ready=document.createElement('button');ready.type='button';ready.setAttribute('role','menuitem');
-    ready.innerHTML='<span>Відтворити готовий зразок</span><small>безкоштовно</small>';
+    ready.innerHTML=`<span class="lang-sample-choice">${langIcons.play}<span>Відтворити готовий зразок</span></span><small>безкоштовно</small>`;
     ready.addEventListener('click',()=>{langCloseSampleMenu();button.focus();playExisting();});menu.append(ready);
   }
   for(const count of [3,5,10,20]){
     const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');
     const price=langCost(spec,item.sample_prices?.[spec.id]?.[String(count)]);
     const actual=item.sample_options?.[spec.id]?.[String(count)]?.sentences || count;
-    option.innerHTML=`<span>${count}${actual>count?'+':''} ${count===3?'речення':'речень'}</span><small>${esc(price)}</small>`;
+    option.innerHTML=`<span class="lang-sample-choice">${langIcons.play}<span>${count}${actual>count?'+':''} ${count===3?'речення':'речень'}</span></span><small>${esc(price)}</small>`;
     if(actual>count)option.title=`Збережена фраза прозвучить повністю: у зразку ${actual} речень.`;
     option.addEventListener('click',()=>{langCloseSampleMenu();button.focus();choose(count);});menu.append(option);
   }
