@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from numeric_comparison import comparison_chars as letter_count
 from statistics import median
 
 from dubbing_fit import MAX_SPEED, MAX_SHIFT, TEMPO_PERCENT, join_gaps
@@ -65,8 +66,8 @@ def require_alignment(segments: list[dict], fastest: dict[int,float], total: flo
 
 
 def seconds_per_character(texts: list[str], known: dict[int, float]) -> float | None:
-    points=[(len(texts[i]),float(length)) for i,length in sorted(known.items())
-            if 0<=i<len(texts) and len(texts[i])>=20 and math.isfinite(length) and length>0]
+    points=[(letter_count(texts[i]),float(length)) for i,length in sorted(known.items())
+            if 0<=i<len(texts) and letter_count(texts[i])>=20 and math.isfinite(length) and length>0]
     if len(points)<CALIBRATION or sum(t for _,t in points)<20:return None
     centre=median(t/n for n,t in points)
     stable=[(n,t) for n,t in points if centre*.5<=t/n<=centre*2]
@@ -96,7 +97,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
             'requires_review':minimum>total+.05, 'measured_excess_seconds':round(max(0.,minimum-total),3),
             'targets':{}}
     if rate is None or not pending:return result
-    chars=sum(len(texts[i]) for i in pending)
+    chars=sum(letter_count(texts[i]) for i in pending)
     # All saved takes can use the same bounded fitting as the remaining takes.
     # The forecasting reserve applies only to unknown audio, not to the film's
     # tempo allowance or the duration of recordings we have already measured.
@@ -120,13 +121,13 @@ def edit_issues(texts: list[str], targets: dict[int,int], replacements: dict[int
                        'unexpected_ids':sorted(set(replacements)-set(targets))})
     for i,limit in targets.items():
         value=replacements.get(i)
-        minimum=math.ceil(len(texts[i])*.6)
-        maximum=max(limit,len(texts[i]))
-        if not isinstance(value,str) or '\n' in value or not value.strip() or not minimum<=len(value)<=maximum:
-            issues.append({'id':i,'actual_chars':len(value) if isinstance(value,str) else None,
+        minimum=math.ceil(letter_count(texts[i])*.6)
+        maximum=max(limit,letter_count(texts[i]))
+        if not isinstance(value,str) or '\n' in value or not value.strip() or not minimum<=letter_count(value)<=maximum:
+            issues.append({'id':i,'actual_chars':letter_count(value) if isinstance(value,str) else None,
                            'min_chars':minimum,'max_chars':maximum,'target_chars':limit})
     if not issues:
-        actual=sum(len(replacements[i]) for i in targets)
+        actual=sum(letter_count(replacements[i]) for i in targets)
         budget=sum(targets.values())
         if actual>budget:issues.append({'block_chars':actual,'block_budget':budget,'reduce_by':actual-budget})
     return issues

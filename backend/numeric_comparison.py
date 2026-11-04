@@ -226,19 +226,19 @@ def paired_forms(source: str, translated: str, source_language: str, target_lang
 
 
 def comparison_chars(text: str) -> int:
-    """Count letters, digits and spaces without Unicode punctuation.
+    """Count Unicode letters only; numeric matching happens before this step.
 
-    Apply after value matching so decimal marks, thousands separators and
-    apostrophes cannot change which quantities are paired. Never use for billing.
+    Apostrophe-like modifier letters are punctuation in narration. Never use
+    this linguistic length metric for provider billing or API payload limits.
     """
-    return sum(char != '\u02bc' and not unicodedata.category(char).startswith('P') for char in text)
+    return sum(unicodedata.category(char).startswith('L') and char not in '\u02bc\u02bb' for char in text)
 
 
 def comparison(source: str, translated: str, source_language: str, target_language: str,
                *, source_units=None, translated_units=None) -> dict:
     if (source_units is not None and translated_units is not None
             and len(source_units) == len(translated_units)):
-        # Whole-script counts retain its exact spaces and line breaks. Matched
+        # Whole-script counts ignore whitespace and punctuation. Matched
         # number discounts come only from the corresponding phrase, so a digit
         # in another sentence cannot hide an indefinite 'one' here.
         pairs = [paired_forms(a, b, source_language, target_language)
@@ -262,4 +262,4 @@ def comparison(source: str, translated: str, source_language: str, target_langua
             'source_numbers':source_count,'translated_numbers':target_count,
             'source_reduction':source_reduction,'translated_reduction':target_reduction,
             'basis':'source_digits_matched_to_target_words','punctuation_excluded':True,
-            'spaces_included':True,'advisory_only':True}
+            'spaces_included':False,'letters_only':True,'advisory_only':True}

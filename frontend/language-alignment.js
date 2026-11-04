@@ -27,12 +27,12 @@ function langAlignmentTempoIcon(tempo){
 }
 
 function langAlignmentCharacters(line,comparison,row){
-  const raw=Array.from(line.text||'').length,normalized=comparison?.available===true;
+  const raw=langLetters(line.text||''),normalized=comparison?.available===true;
   const count=normalized?comparison[row===0?'source_chars':'translated_chars']:raw;
   const difference=normalized?comparison.difference_percent:null;
   const change=row>0&&difference!==null?` (${difference>0?'+':difference<0?'−':''}${Math.abs(difference).toLocaleString('uk-UA',{maximumFractionDigits:1})}%)`:'';
-  return {label:`${count.toLocaleString('uk-UA')} символів${change}`,
-    title:normalized?`Враховано лише цифри оригіналу та відповідні числа словами в цій фразі перекладу.${comparison.punctuation_excluded?' Пунктуацію не враховано, пробіли враховано.':''} У тексті: ${raw.toLocaleString('uk-UA')} символів.`:'Символи з пробілами та пунктуацією. Порівняння з урахуванням чисел недоступне.'};
+  return {label:`${count.toLocaleString('uk-UA')} літер${change}`,
+    title:normalized?`Враховано лише цифри оригіналу та відповідні числа словами в цій фразі перекладу. Рахуються лише літери, без пробілів, цифр і пунктуації. У тексті: ${raw.toLocaleString('uk-UA')} літер.`:'Лише літери без пробілів, цифр і пунктуації. Порівняння з урахуванням чисел недоступне.'};
 }
 
 function langAlignmentPlayingPhrase(lines,audio){

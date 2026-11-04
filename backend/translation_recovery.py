@@ -143,6 +143,11 @@ class Draft:
                 for key in ('origin', 'issue', 'repair_model'):
                     if isinstance(saved.get(key), str):
                         self.data[key] = saved[key]
+                ledger = saved.get('single_pass_repairs')
+                if isinstance(ledger, dict):
+                    self.data['single_pass_repairs'] = {k:v for k,v in ledger.items()
+                        if isinstance(k,str) and k.isdecimal() and int(k)<self.size and isinstance(v,dict)
+                        and v.get('status') in ('requested','returned','unusable')}
                 rejected = saved.get('rejected')
                 if isinstance(rejected, dict):
                     self.data['rejected'] = {k: [entry for entry in entries[-3:]
@@ -169,7 +174,7 @@ class Draft:
         if not self.valid_lines(lines):
             raise ValueError('The recovery draft must retain every nonempty source phrase in order.')
         self.save(lines=list(lines), initial_parts={}, audited={}, rewrite={}, rejected={}, completed=False,
-                  origin=origin, issue=None)
+                  origin=origin, issue=None, single_pass_repairs={})
 
     def charge(self, cost):
         if not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:

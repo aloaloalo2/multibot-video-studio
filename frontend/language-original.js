@@ -32,7 +32,7 @@ async function langOpenSourceScript(id){
     // used for the original cover, including projects without a frame plan.
     const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);
     if(langOriginalDialog!==dialog||state.project?.id!==id)return;
-    dialog.querySelector('.lang-script-dialog-body').innerHTML=`<div class="lang-script-fields"><label class="lang-title"><span>Заголовок</span><input type="text" readonly value="${esc(data.title||source.title||'')}"></label><label class="lang-text"><span>Текст оригіналу <small>${(data.script||'').length.toLocaleString('uk-UA')} символів</small></span><textarea rows="14" readonly spellcheck="false">${esc(data.script||'')}</textarea></label></div>`;
+    dialog.querySelector('.lang-script-dialog-body').innerHTML=`<div class="lang-script-fields"><label class="lang-title"><span>Заголовок</span><input type="text" readonly value="${esc(data.title||source.title||'')}"></label><label class="lang-text"><span>Текст оригіналу <small>${langLetters(data.script||'').toLocaleString('uk-UA')} літер</small></span><textarea rows="14" readonly spellcheck="false">${esc(data.script||'')}</textarea></label></div>`;
   }catch(error){if(langOriginalDialog===dialog)dialog.querySelector('.lang-source-loading').textContent=error.message;}
 }
 

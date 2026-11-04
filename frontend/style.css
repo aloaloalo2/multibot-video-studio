@@ -1674,3 +1674,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-thumbnail-dialog::backdrop{background:#0009}.lang-thumbnail-dialog .lang-script-dialog-head{padding:18px 20px}.lang-thumbnail-dialog h2{display:flex;align-items:center;gap:8px;font-size:18px}
 .lang-thumbnail-dialog-body{max-height:calc(100dvh - 130px);overflow:auto}.lang-thumbnail-dialog .lang-thumbnail-result{border:0;border-radius:0;background:none;margin:0}.lang-thumbnail-dialog .lang-step{border:0}.lang-thumbnail-dialog .lang-thumbs{gap:16px}.lang-thumbnail-dialog .lang-thumb-ask{margin-top:12px}
 @media(hover:none){button.lang-language-remove{opacity:1;pointer-events:auto}button.lang-language-remove:disabled{opacity:.45}}
+
+.lang-script-language-warning{display:inline-flex;flex:none;color:#ffd35b}.lang-script-language-warning[hidden]{display:none}.lang-script-language-warning svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.lang-quality-alert .lang-quality-phrase{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0 12px;color:#f1e6e6;font-size:13px;line-height:1.5}

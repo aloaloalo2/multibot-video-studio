@@ -176,19 +176,19 @@ class LanguagesTest(unittest.TestCase):
             item=languages.overview(self.pid)['items'][0]
         self.assertEqual(text_path.read_bytes(),before)
         self.assertEqual(item['text'],translated)
-        self.assertEqual(item['chars'],len(translated))
-        self.assertEqual(item['display_chars'],len(translated)-1)
+        self.assertEqual(item['chars'],sum(c.isalpha() for c in translated))
+        self.assertEqual(item['display_chars'],sum(c.isalpha() for c in translated))
         compared=item['translation_length']['number_comparison']
         self.assertTrue(compared['available'])
-        self.assertEqual(compared['source_chars'],len(source)-1)
-        self.assertEqual(compared['translated_chars'],len('En 2017 ganó 25 libras'))
+        self.assertEqual(compared['source_chars'],sum(c.isalpha() for c in source))
+        self.assertEqual(compared['translated_chars'],sum(c.isalpha() for c in 'En 2017 ganó 25 libras'))
         self.assertTrue(compared['punctuation_excluded'])
         self.assertEqual(item['prices']['fishaudio'],languages.price('fishaudio',translated,languages.fish_engine(self.pid)))
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Next sentence! Third part here.", '{"ok":true,"ids":[0]}', "What If Test"])
         with patch.object(languages, "ask", side_effect=lambda messages, max_tokens=12000: (next(answers), 0.01)), \
-             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":True,"ids":[]}):
+             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":False,"ids":[]}):
             languages.add(self.pid, "en")
             languages.start(self.pid, "translate", "en")
             job = self.wait()
@@ -279,7 +279,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse((work / "sample-fishaudio-s1.mp3").exists())
         self.assertEqual(languages.overview(self.pid)["items"][0]["title"], "Título")
         report = languages.load_state(self.pid)["languages"]["es"]["translation_length"]
-        self.assertEqual(report["translated_chars"], len("Hola."))
+        self.assertEqual(report["translated_chars"], 4)
         self.assertTrue(report["advisory_only"])
         languages.remove(self.pid, "es")
         self.assertFalse(work.exists())
@@ -701,7 +701,7 @@ class LanguagesTest(unittest.TestCase):
                 return '["Раз. Два."]', 0.0                     # a wrong count is asked again
             return '["Раз. Два.", "Три.", "Чотири."]', 0.0
         with patch.object(languages.store, "load_project_plan", return_value=plan), patch.object(languages, "ask", side_effect=ask), \
-             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":True,"ids":[]}):
+             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":False,"ids":[]}):
             languages.add(self.pid, "uk")
             languages.start(self.pid, "translate", "uk")
             job = self.wait()
@@ -730,7 +730,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(calls, [("Раз. Два.", 1.0), ("Три.", 1.0), ("Чотири.", 1.0)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.13))
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.15))
         self.assertGreater(voice["latest"],0)
         self.assertGreater(len(voice["timing_issues"]),0)
         self.assertFalse(voice["paid_timing_retries"])

@@ -10,7 +10,7 @@ function langShortCharacters(count){
 }
 function langScriptCharacters(item){
   const count=item.display_chars;
-  return Number.isInteger(count)&&count>0?`<span class="lang-script-characters" title="${count.toLocaleString('uk-UA')} символів без пунктуації, з пробілами">${langCharactersIcon}${langShortCharacters(count)}</span>`:'';
+  return Number.isInteger(count)&&count>0?`<span class="lang-script-characters" title="${count.toLocaleString('uk-UA')} літер без пробілів, цифр і пунктуації">${langCharactersIcon}${langShortCharacters(count)}</span>`:'';
 }
 
 function langScriptJob(code){
@@ -21,6 +21,17 @@ function langScriptJob(code){
 function langScriptCost(item){
   const cost=item.translate_cost;
   return typeof cost==='number'&&Number.isFinite(cost)&&cost>=0?`$${cost.toFixed(3)}`:'';
+}
+
+function langScriptLanguageWarning(item){
+  const report=item.language_check;
+  if(report?.state!=='blocked')return '';
+  const phrases=(report.issues||[]).slice(0,8).map(issue=>issue.index+1).join(', ');
+  return `Інша мова${phrases?` · фрази ${phrases}`:''}. Озвучення заблоковано`;
+}
+function langScriptWarningMarkup(item){
+  const text=langScriptLanguageWarning(item);
+  return `<span class="lang-script-language-warning" role="img" aria-label="${esc(text)}" title="${esc(text)}"${text?'':' hidden'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2L12 3zM12 9v5m0 3v.1"/></svg></span>`;
 }
 
 function langTranslationProgress(job,now=Date.now()/1000){
@@ -72,7 +83,7 @@ function langScriptLibrary(id,holder,data){
       <span class="lang-script-file-head">${langTranslateIcon}<strong>Переклад</strong><span class="lang-script-fold" aria-hidden="true"></span></span>
       <span class="lang-script-file-title">${esc(item.title||(status.kind==='working'?'Створюємо переклад сценарію…':'Сценарій ролика'))}</span>
       <span class="lang-script-metrics">${langScriptCharacters(item)}<span class="lang-script-job-detail" title="Фрази, узгоджені за довжиною"${status.kind==='working'?'':' hidden'}>${esc(status.compact||'')}</span></span>
-      <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span><span class="lang-script-cost"${status.kind==='ready'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
+      <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span>${langScriptWarningMarkup(item)}<span class="lang-script-cost"${status.kind!=='working'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
       <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><div class="lang-script-controls" data-script-controls="${item.code}"></div></div><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
   }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
@@ -163,7 +174,9 @@ function langPaintScriptJobs(){
     const detail=button.querySelector('.lang-script-job-detail');
     detail.textContent=status.compact||'';detail.hidden=status.kind!=='working';
     button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
-    const cost=button.querySelector('.lang-script-cost');cost.textContent=langScriptCost(item);cost.hidden=status.kind!=='ready'||!cost.textContent;
+    const cost=button.querySelector('.lang-script-cost');cost.textContent=langScriptCost(item);cost.hidden=status.kind==='working'||!cost.textContent;
+    const warning=button.querySelector('.lang-script-language-warning'),notice=langScriptLanguageWarning(item);
+    warning.hidden=!notice;warning.title=notice;warning.setAttribute('aria-label',notice);
     const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';
     if(status.indeterminate)progress.removeAttribute('value');else progress.value=status.progress||0;
     button.title=`${item.name}: ${status.label}${status.detail?' · '+status.detail:''}`;
@@ -202,7 +215,7 @@ function langOpenScript(id,code){
   const dirty=()=>text.value!==baseline.text||title.value!==baseline.title;
   const keepDraft=()=>{if(dirty())langScriptDrafts.set(key,{text:text.value,title:title.value});else langScriptDrafts.delete(key);};
   function metrics(){
-    dialog.querySelector('.lang-script-chars').textContent=`${text.value.length.toLocaleString('uk-UA')} символів`;
+    dialog.querySelector('.lang-script-chars').textContent=`${langLetters(text.value).toLocaleString('uk-UA')} літер`;
     const comparison=dialog.querySelector('.lang-number-comparison');comparison.textContent=langNumberComparison(item);comparison.hidden=dirty()||!comparison.textContent;
     const info=dialog.querySelector('.lang-translation-info');info.textContent=langTranslationInfo(item);info.hidden=!info.textContent;
     const lines=dialog.querySelector('.lang-text-lines');lines.textContent=item.lines?`${item.lines} рядків у таймінгах оригіналу. Змінюйте слова, зберігаючи кількість рядків.`:'';

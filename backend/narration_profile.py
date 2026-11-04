@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import math
+from numeric_comparison import comparison_chars as letter_count
 import os
 import threading
 import time
@@ -29,11 +30,11 @@ def remember(root: Path, identity: dict, observations: list[tuple[str, dict]]) -
     updates = {}
     for text, audio in observations:
         length = audio['length']
-        if len(text) < 20 or not math.isfinite(length) or length <= 0:
+        if letter_count(text) < 20 or not math.isfinite(length) or length <= 0:
             continue
         # Reusing one cached phrase is one observation, however often it is played.
         key = hashlib.sha256((audio['fingerprint'] + text).encode()).hexdigest()
-        updates[key] = {'chars': len(text), 'seconds': length, 'at': time.time()}
+        updates[key] = {'chars': letter_count(text), 'seconds': length, 'at': time.time()}
     if not updates:
         return
     root.mkdir(parents=True, exist_ok=True)
@@ -41,7 +42,8 @@ def remember(root: Path, identity: dict, observations: list[tuple[str, dict]]) -
     with LOCK, path.with_suffix('.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
-            previous = json.loads(path.read_text()).get('observations', {})
+            saved = json.loads(path.read_text())
+            previous = saved.get('observations', {}) if saved.get('version')==2 else {}
         except (OSError, ValueError, AttributeError):
             previous = {}
         for key, value in updates.items():
@@ -49,7 +51,7 @@ def remember(root: Path, identity: dict, observations: list[tuple[str, dict]]) -
         values = dict(sorted(previous.items(), key=lambda x: x[1]['at'])[-512:])
         temporary = path.with_name(f'.{path.name}.{uuid.uuid4().hex}')
         try:
-            temporary.write_text(json.dumps({'version': 1, 'observations': values}))
+            temporary.write_text(json.dumps({'version': 2, 'observations': values}))
             os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
@@ -59,7 +61,7 @@ def read(root: Path, identity: dict) -> dict | None:
     try:
         data = json.loads(location(root, identity).read_text())
         points = list(data['observations'].values())
-        if data['version'] != 1 or any(type(p['chars']) is not int or not 20 <= p['chars'] <= 20000
+        if data['version'] != 2 or any(type(p['chars']) is not int or not 20 <= p['chars'] <= 20000
                                       or not math.isfinite(p['seconds']) or p['seconds'] <= 0 for p in points):
             return None
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
@@ -82,7 +84,7 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
         return {'ids': []}
     available = max(0., total - .05*max(0, len(texts)-1) - max(1., total*.003))
     limit = math.floor(available * narration_pacing.MAX_SPEED / rate)
-    targets = {i: len(text) for i, text in enumerate(texts)}
+    targets = {i: letter_count(text) for i, text in enumerate(texts)}
 
     def reduce(indexes, excess):
         order = sorted(indexes, key=lambda i: (
@@ -92,8 +94,8 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
                 break
             # At most twelve percent per pass, even if both a block and the
             # film need room. Re-audit all wording before any further pass.
-            capacity = min(len(texts[i])-1, max(1, math.floor(len(texts[i])*.12)))
-            used = len(texts[i])-targets[i]
+            capacity = min(letter_count(texts[i])-1, max(1, math.floor(letter_count(texts[i])*.12)))
+            used = letter_count(texts[i])-targets[i]
             reduction = min(excess, max(0, capacity-used))
             targets[i] -= reduction
             excess -= reduction
@@ -125,7 +127,7 @@ def refinement(texts: list[str], segments: list[dict], total: float, profile: di
                math.ceil((issue['excess']+.1)*narration_pacing.MAX_SPEED/rate))
         if sum(targets.values()) == previous:
             break
-    changed = {i:value for i,value in targets.items() if value<len(texts[i])}
+    changed = {i:value for i,value in targets.items() if value<letter_count(texts[i])}
     return {'ids': sorted(changed), 'targets': changed, 'max_chars': limit,'windows':windows,
-            'over_by': max(0, sum(map(len, texts))-limit), 'observations': profile['observations'],
+            'over_by': max(0, sum(map(letter_count, texts))-limit), 'observations': profile['observations'],
             'alignment':alignment}

@@ -46,9 +46,9 @@ class DubbingFitTest(unittest.TestCase):
                 hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
                 items.append({'index':n,'file':path.name,'length':len(signal)/rate,
                               'start':n,'original_start':n,'original_end':n+1})
-            total=4.06
+            total=3.99
             # Adding 50 ms again would reject this film even at the speed limit.
-            with self.assertRaisesRegex(RuntimeError,'при межі 13%'):
+            with self.assertRaisesRegex(RuntimeError,'при межі 15%'):
                 dubbing_fit.fitting_speeds(items,total)
             report=dubbing_fit.rebuild(folder,items,folder/'joined.mp3',total)
             fitted=report['phrases']
@@ -85,7 +85,7 @@ class DubbingFitTest(unittest.TestCase):
     def test_bounded_fit_preserves_short_breath_and_does_not_stretch_into_next_line(self):
         self.assertEqual(dubbing_fit.fit_speed(5, 9, 8), dubbing_fit.MIN_SPEED)
         self.assertEqual(dubbing_fit.fit_speed(5, 9, 5.3), 1)
-        self.assertEqual(dubbing_fit.fit_speed(5, 5.8, 8), dubbing_fit.MIN_SPEED)
+        self.assertAlmostEqual(dubbing_fit.fit_speed(5, 5.8, 8), 5/5.8)
         self.assertEqual(dubbing_fit.fit_speed(8, 5, 5), dubbing_fit.MAX_SPEED)
 
     def test_paid_takes_and_previous_voice_are_archived(self):
@@ -112,14 +112,14 @@ class DubbingFitTest(unittest.TestCase):
         items=[{'start':0,'original_start':0,'original_end':10,'length':10*dubbing_fit.MAX_SPEED}]
         self.assertEqual(dubbing_fit.fitting_speeds(items,10),[dubbing_fit.MAX_SPEED])
 
-    def test_additional_headroom_fits_twelve_point_nine_percent_but_never_exceeds_thirteen(self):
-        item={'start':0,'original_start':0,'original_end':10,'length':11.29}
+    def test_additional_headroom_fits_fourteen_point_nine_percent_but_never_exceeds_fifteen(self):
+        item={'start':0,'original_start':0,'original_end':10,'length':11.49}
         speed=dubbing_fit.fitting_speeds([item],10)[0]
         self.assertGreater(speed,1.08)
-        self.assertLessEqual(speed,1.13)
+        self.assertLessEqual(speed,1.15)
         self.assertLessEqual(item['length']/speed,10)
-        with self.assertRaisesRegex(RuntimeError,'при межі 13%'):
-            dubbing_fit.fitting_speeds([{**item,'length':11.31}],10)
+        with self.assertRaisesRegex(RuntimeError,'при межі 15%'):
+            dubbing_fit.fitting_speeds([{**item,'length':11.51}],10)
 
     @unittest.skipUnless(shutil.which('ffmpeg'),'ffmpeg needed')
     def test_recovery_and_refit_keep_anchors_and_reduce_artificial_gap(self):

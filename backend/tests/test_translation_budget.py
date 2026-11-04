@@ -35,7 +35,7 @@ class TranslationBudgetTest(unittest.TestCase):
         source='Luckily, regular phone calls still work.'
         translated='Por suerte las llamadas normales funcionan.'
         plan=budget.number_refinement_plan(source,[translated],[source],'en','es')
-        self.assertEqual((plan['phrases'][0]['source_chars'],plan['phrases'][0]['translated_chars']),(38,42))
+        self.assertEqual((plan['phrases'][0]['source_chars'],plan['phrases'][0]['translated_chars']),(33,37))
         self.assertFalse(plan['phrases'][0]['within_budget'])
         self.assertFalse(plan['within_budget'])
         self.assertEqual(plan['mode'],'phrase')
@@ -86,10 +86,10 @@ class TranslationBudgetTest(unittest.TestCase):
         self.assertEqual(budget.report('x'*100, 'a'*104)['over_by'], 1)
         self.assertEqual(budget.report('x'*100, 'a'*96)['under_by'], 1)
 
-    def test_spaces_and_newlines_count_but_outer_whitespace_does_not(self):
-        self.assertEqual(budget.count('  a  b\nс  '), 6)
+    def test_spaces_newlines_digits_and_punctuation_do_not_count(self):
+        self.assertEqual(budget.count('  a  b\nс  '), 3)
         self.assertEqual(budget.join_lines(['  a  b ', ' с ']), 'a  b\nс')
-        self.assertEqual(budget.report('a b', 'a  b')['difference_chars'], 1)
+        self.assertEqual(budget.report('a b', 'a  b')['difference_chars'], 0)
 
     def test_short_sources_round_to_attainable_integer_bounds(self):
         self.assertEqual((budget.report('abc', '')['min_chars'], budget.report('abc', '')['max_chars']), (3, 3))
@@ -100,12 +100,12 @@ class TranslationBudgetTest(unittest.TestCase):
         lines = ['a'*20, 'b'*80, 'c'*10]
         targets = budget.allocate_targets(lines, 100)
         self.assertEqual(set(targets), {0, 1, 2})
-        self.assertEqual(sum(targets.values())+2, 100)
+        self.assertEqual(sum(targets.values()), 100)
         self.assertGreater(targets[1], targets[0])
         self.assertGreater(targets[0], targets[2])
-        self.assertEqual(budget.allocate_targets(['a', 'b'], 3), {0: 1, 1: 1})
+        self.assertEqual(budget.allocate_targets(['a', 'b'], 2), {0: 1, 1: 1})
         with self.assertRaises(ValueError):
-            budget.allocate_targets(['a', 'b'], 2)
+            budget.allocate_targets(['a', 'b'], 1)
 
     def test_refinement_selects_bounded_subset_with_exact_measured_caps(self):
         lines = ['a'*120]*20
@@ -113,7 +113,7 @@ class TranslationBudgetTest(unittest.TestCase):
         plan = budget.refinement_plan('s'*2300, lines, source_units)
         self.assertEqual(plan['direction'], 'shorten')
         self.assertEqual(plan['target_chars'], 2369-12)
-        self.assertEqual(plan['required_change'], 2419-plan['target_chars'])
+        self.assertEqual(plan['required_change'], 2400-plan['target_chars'])
         self.assertLess(len(plan['ids']), len(lines))
         selected_chars = sum(len(lines[i]) for i in plan['ids'])
         self.assertEqual(sum(plan['line_targets'].values()), selected_chars-plan['required_change'])
@@ -158,7 +158,7 @@ class TranslationBudgetTest(unittest.TestCase):
         validate = Mock()
         result = budget.fit('s'*100, original, rewrite, validate=validate)
         self.assertEqual(result['lines'], ['x'*70, 'y'*29])
-        self.assertEqual(result['report']['translated_chars'], 100)
+        self.assertEqual(result['report']['translated_chars'], 99)
         self.assertEqual(original, ['a'*80, 'b'*80])
         self.assertEqual(result['passes'], 1)
         validate.assert_called_once_with(result['lines'])
@@ -362,7 +362,7 @@ class InformationalAssessmentTest(unittest.TestCase):
     def test_counts_remain_exact_for_costs_without_quality_threshold(self):
         state = budget.assessment('abc', 'un texto mucho más largo')
         self.assertEqual(state['source_chars'], 3)
-        self.assertEqual(state['translated_chars'], 24)
+        self.assertEqual(state['translated_chars'], 20)
         self.assertTrue(state['advisory_only'])
         self.assertNotIn('max_chars', state)
 

@@ -229,7 +229,7 @@ function langOriginal(id,src){
   // one compact line (user, 2 November 2026: «компактніше… не хочу, щоб акцент був великий»): the name with the
   // language and the text's size, the player beside them; its length is in the player
   card.innerHTML=`<div class="lang-original-row"><div class="lang-original-name"><b>Оригінал${original?` (${esc(original.label)})`:''}</b>
-      <small>${src.chars?`${src.chars.toLocaleString('uk-UA')} символів · `:''}ваша озвучка</small></div>
+      <small>${src.chars?`${src.chars.toLocaleString('uk-UA')} літер · `:''}ваша озвучка</small></div>
     ${src.voice?'<div class="lang-player"></div>':'<p class="lang-off">Озвучку випуску не знайдено. Додайте її на вкладці «План ролика».</p>'}</div>`;
   const slot=card.querySelector('.lang-player');
   if(slot){const player=voicePlayer(id,`/api/projects/${encodeURIComponent(id)}/languages/original`);if(player)slot.replaceWith(player);}
@@ -267,10 +267,12 @@ function langThumbnailFlag(item){
 
 function langQualityNotice(report,voice=false){
   if(!report || report.state==='ok')return '';
-  const issues=report.issues || [],groups=[];
-  for(const entry of issues){const last=groups.at(-1);if(last&&entry.index===last.end+1){last.end=entry.index;last.stop=entry.end;}else groups.push({begin:entry.index,end:entry.index,start:entry.start,stop:entry.end});}
-  return `<div class="lang-quality-alert" role="alert"><strong>${report.state==='unavailable'?'Перевірка мови недоступна':voice?'В озвучці є фрагменти іншою мовою':'У перекладі є фрагменти іншою мовою'}</strong><p>${voice?'Збережені записи залишено для виправлення. Завантаження та збереження цього аудіо заблоковано.':'Озвучення заблоковано до виправлення тексту.'}</p>${issues.length?`<details><summary>Перевірити ${issues.length} фраз</summary><ul>${groups.map(group=>`<li>${voice&&Number.isFinite(group.start)?`<button type="button" class="secondary lang-review-play" data-start="${group.start}" data-end="${group.stop || group.start+5}">▶ ${clock(group.start)}</button> `:''}Фрази ${group.begin+1}${group.end!==group.begin?`–${group.end+1}`:''}</li>`).join('')}</ul></details>`:''}</div>`;
+  const issues=report.issues || [];
+  const language=code=>langData?.languages?.find(item=>item.code===code)?.name||code||'не визначено';
+  const rows=issues.map(entry=>`<li><strong>Фраза ${entry.index+1}${entry.detected?` · ${esc(language(entry.detected))}`:''}</strong>${voice&&Number.isFinite(entry.start)?` <button type="button" class="secondary lang-review-play" data-start="${entry.start}" data-end="${entry.end || entry.start+5}">▶ ${clock(entry.start)}</button>`:''}<p class="lang-quality-phrase">${esc(entry.text||'Текст фрази недоступний. Оновіть сторінку для повторної перевірки.')}</p></li>`).join('');
+  return `<div class="lang-quality-alert" role="alert"><strong>${report.state==='unavailable'?'Перевірка мови недоступна':voice?'В озвучці є фрагменти іншою мовою':'У перекладі є фрагменти іншою мовою'}</strong><p>${voice?'Збережені записи залишено для виправлення. Завантаження та збереження цього аудіо заблоковано.':'Озвучення заблоковано до виправлення тексту.'}</p>${issues.length?`<details${issues.length===1?' open':''}><summary>Перевірити ${issues.length} фраз</summary><ul>${rows}</ul></details>`:''}</div>`;
 }
+
 function langApplyQuality(card,item){
   const unsafe=item.language_check && item.language_check.state!=='ok';
   const box=card.querySelector('.lang-text-quality');if(box)box.innerHTML=langQualityNotice(item.language_check);
@@ -303,11 +305,13 @@ function langVoiceSpend(voice){
   return `${refit?refit+' · Озвучення':'Витрати за цей запуск'}: ${exact?'':'≈ '}${amount}${exact?'':' (оцінка)'}`;
 }
 
+function langLetters(text){
+  return Array.from(text||'').filter(char=>/\p{L}/u.test(char)&&!/[ʼʻ]/u.test(char)).length;
+}
+
 function langTranslationInfo(item){
-  if(!item.translated_model)return '';
-  const model=langData.translation_models?.find(entry=>entry.id===item.translated_model);
-  const price=Number.isFinite(item.translate_cost)?` · $${item.translate_cost.toLocaleString('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:4})}`:'';
-  return `Переклад: ${model?.name || item.translated_model}${item.translation_repair_model?' · уточнення: DeepSeek':''}${price}`;
+  if(!Number.isFinite(item.translate_cost))return '';
+  return `Переклад · $${item.translate_cost.toFixed(3)}`;
 }
 
 function langNumberComparison(item){
@@ -316,7 +320,7 @@ function langNumberComparison(item){
   const number=n=>n.toLocaleString('uk-UA',{maximumFractionDigits:2});
   const percent=(value.difference_percent>0?'+':'')+number(value.difference_percent);
   const limit=item.translation_length?.script_comparison?.tolerance_percent;
-  return `З урахуванням чисел${value.punctuation_excluded?', без пунктуації':''}: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів${limit?` · межа ±${limit}%`:''}`;
+  return `Лише літери, з урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} літер${limit?` · межа ±${limit}%`:''}`;
 }
 
 function langSpec(item){
@@ -544,7 +548,7 @@ function langVoiceResult(id,item){
     <section class="lang-step" data-lang-step="1">
         ${item.text?`<div class="lang-sample-row">
           ${spec.id==='elevenlabs'?'<div class="lang-balance" role="status" aria-live="polite"></div>':''}
-          <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
+          <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} літер"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
         ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Готова озвучка · перевірте синхронізацію':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
           <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
           <div class="lang-player" data-kind="voice"></div><p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
@@ -567,7 +571,7 @@ async function langConfirmVoice(id,code){
     langResultDialog?.dialog.close();
     const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
     const action=langVoiceAction(fresh,spec);
-    modal(`${action} ${fresh.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' символів'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
+    modal(`${action} ${fresh.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' літер'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
       <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(langData.tempo_percent||8).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',code);}}]);
 }

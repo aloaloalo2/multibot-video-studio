@@ -11,7 +11,7 @@ import threading
 import unicodedata
 from functools import lru_cache
 
-VERSION = 2
+VERSION = 4
 _lock = threading.RLock()
 _identifier = None
 LATIN = set('en de es fr pt it pl tr nl id cs ro'.split())
@@ -43,7 +43,30 @@ def script_problem(code: str, text: str, minimum: int = 12) -> bool:
     letters = sum(scripts.values())
     # Names/acronyms can be foreign. A substantial foreign run is unsafe.
     foreign = sum(n for script, n in scripts.items() if script not in EXPECTED.get(code, set()))
-    return foreign >= minimum and foreign / max(1, letters) >= .25
+    # One or two quoted names/terms inside otherwise correct speech are not
+    # evidence of a foreign sentence. Require a predominantly foreign passage.
+    words=re.findall(r'[^\W\d_]+',text,flags=re.UNICODE)
+    foreign_words=sum(any(unicodedata.name(c,'').split(' ',1)[0] not in EXPECTED.get(code,set())
+                          for c in word) for word in words)
+    return foreign >= minimum and foreign / max(1, letters) >= .6 and foreign_words>=3
+
+
+RU_MARKERS=set('что чтобы когда который которая которые это этот эта эти только очень потому где ещё всё также деньги чувствовали много как свою своей своих этого этом будет если уже меня для'.split())
+UK_MARKERS=set('що щоб коли який яка які це цей ця ці тільки лише дуже тому де ще також гроші відчували багато як свою своїх цього цьому буде якщо вже мене для'.split())
+
+def reliable_mismatch(target, detected, text):
+    """Nearby Cyrillic languages need evidence beyond an overconfident classifier."""
+    if {target,detected}=={'ru','uk'}:
+        words=re.findall(r'[^\W\d_]+',text.lower(),flags=re.UNICODE)
+        markers={'ru':RU_MARKERS,'uk':UK_MARKERS}
+        own=sum(word in markers[target]-markers[detected] for word in words)
+        other=sum(word in markers[detected]-markers[target] for word in words)
+        exclusive={'ru':set('ыэёъ'),'uk':set('іїєґ')}
+        own+=sum(c in exclusive[target] for c in text.lower())
+        other+=sum(c in exclusive[detected] for c in text.lower())
+        if own>=2 and own>other:
+            return False
+    return detected in EXPECTED and detected!=target
 
 
 @lru_cache(maxsize=96)
@@ -54,17 +77,17 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
     def inspect(text, indexes, structural=False):
         nonlocal unavailable
         letters = sum(c.isalpha() for c in text)
-        if not structural and letters < 80:
+        if not structural and (letters < 35 or len(text.split()) < 6):
             return
         try:
             detected, score = identify(text)
         except (ImportError, OSError, ValueError):
             unavailable = True
             detected, score = None, 0.0
-        if structural or (detected in EXPECTED and detected != code and score >= .99999):
+        if structural or (reliable_mismatch(code,detected,text) and score >= .99999):
             for index in indexes:
                 issues.setdefault(index, {'index': index, 'detected': detected,
-                    'reason': 'script' if structural else 'language', 'text': lines[index][:220]})
+                    'reason': 'script' if structural else 'language', 'text': lines[index]})
 
     for index, line in enumerate(lines):
         # Scan within a paragraph too, so a short foreign passage in a long
@@ -92,12 +115,12 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
             if sum(c.isalpha() for c in joined) >= 80:
                 try:
                     detected, score = identify(joined)
-                    if detected in EXPECTED and detected != code and score >= .99999:
+                    if reliable_mismatch(code,detected,joined) and score >= .99999:
                         for index in range(start, end):
                             own, confidence = identify(lines[index])
-                            if own == detected and confidence >= .95:
+                            if own == detected and confidence >= .95 and reliable_mismatch(code,own,lines[index]):
                                 issues.setdefault(index, {'index': index, 'detected': detected,
-                                    'reason': 'language', 'text': lines[index][:220]})
+                                    'reason': 'language', 'text': lines[index]})
                 except (ImportError, OSError, ValueError):
                     unavailable = True
         start = end

@@ -25,7 +25,7 @@ class PacingPreparationTest(unittest.TestCase):
     def setUp(self):
         self.texts = ["An already paid phrase."] * 5 + [self.original]
         self.segments = [{"source": "Paid source."}] * 5 + [{"source": self.source}]
-        self.targets = {5: 108}
+        self.targets = {5: 90}
         self.job = {}
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
@@ -56,8 +56,8 @@ class PacingPreparationTest(unittest.TestCase):
 
         self.assertEqual(self.ask.call_count, 3)  # draft, text repair, independent meaning audit
         repair_messages = json.dumps(self.ask.call_args_list[1].args[0], ensure_ascii=False)
-        self.assertIn("123", repair_messages)
-        self.assertIn("108", repair_messages)
+        self.assertIn(str(languages.numeric_comparison.comparison_chars(self.original)), repair_messages)
+        self.assertIn("90", repair_messages)
         self.assertEqual(self.texts, original_texts)
         self.speak.assert_not_called()
 
@@ -99,7 +99,7 @@ class PacingPreparationTest(unittest.TestCase):
     def test_meaning_audit_id_order_is_irrelevant_but_every_id_is_required_once(self):
         self.texts.append(self.original)
         self.segments.append({"source": self.source})
-        self.targets[6] = 108
+        self.targets[6] = 90
         draft = json.dumps({"5": self.compact, "6": self.compact}), .001
         for ids, valid in [([6, 5], True), ([5, 5], False), ([5], False), ([5, "6"], False)]:
             with self.subTest(ids=ids):

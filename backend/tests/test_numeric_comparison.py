@@ -22,15 +22,16 @@ class NumericComparisonTest(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(numbers.normalized(spoken,code)[0],digits)
                 result=numbers.comparison(digits,spoken,code,code)
-                self.assertEqual(result['difference_percent'],0.)
+                self.assertEqual(result['source_chars'],result['translated_chars'])
+                self.assertEqual(result['difference_percent'],0. if result['source_chars'] else None)
                 self.assertEqual(result['source_numbers'],result['translated_numbers'])
 
     def test_numbers_are_not_deleted_and_a_changed_value_stays_visible(self):
         original='25 days';translated='dos mil quinientos días'
         result=numbers.comparison(original,translated,'en','es')
         self.assertEqual(numbers.normalized(translated,'es')[0],'2500 días')
-        self.assertEqual(result['source_chars'],7)
-        self.assertEqual(result['translated_chars'],len(translated))
+        self.assertEqual(result['source_chars'],4)
+        self.assertEqual(result['translated_chars'],sum(c.isalpha() for c in translated))
         self.assertEqual(result['translated_numbers'],0)
         self.assertEqual(original,'25 days');self.assertEqual(translated,'dos mil quinientos días')
 
@@ -66,12 +67,12 @@ class NumericComparisonTest(unittest.TestCase):
                           ('pl','Proszę o jedną małą przysługę.')]:
             with self.subTest(code=code):
                 result=numbers.comparison('A quick favour.',text,'en',code)
-                self.assertEqual(result['translated_chars'],len(text.replace(',','').replace('.','')))
+                self.assertEqual(result['translated_chars'],sum(c.isalpha() for c in text))
                 self.assertEqual(result['translated_numbers'],0)
         result=numbers.comparison("While you're still asleep, here's a quick favor.",
             'Пока вы ещё спите, прошу об одном маленьком одолжении.','en','ru')
-        self.assertEqual(result['translated_chars'],52)
-        self.assertEqual(result['difference_percent'],18.18)
+        self.assertEqual(result['translated_chars'],44)
+        self.assertEqual(result['difference_percent'],18.92)
         self.assertEqual(numbers.normalized('Прошу ровно одно одолжение.','ru')[0],'Прошу ровно 1 одолжение.')
 
     def test_only_original_digits_and_their_exact_word_counterparts_are_discounted(self):
@@ -94,10 +95,10 @@ class NumericComparisonTest(unittest.TestCase):
         sources=['1 hour','A favour.'];targets=['час','одна просьба']
         result=numbers.comparison('\n'.join(sources),'\n'.join(targets),'en','ru',
             source_units=sources,translated_units=targets)
-        self.assertEqual(result['translated_chars'],len('\n'.join(targets)))
+        self.assertEqual(result['translated_chars'],sum(c.isalpha() for c in ''.join(targets)))
         self.assertEqual(result['source_numbers'],0)
         plan=translation_budget.number_refinement_plan('\n'.join(sources),targets,sources,'en','ru')
-        self.assertEqual(plan['phrases'][1]['translated_chars'],len(targets[1]))
+        self.assertEqual(plan['phrases'][1]['translated_chars'],sum(c.isalpha() for c in targets[1]))
 
     def test_expansion_is_local_and_does_not_turn_comparison_into_price_or_acceptance(self):
         result=translation_budget.assessment('In 2004 he gained 25 pounds.',
@@ -122,17 +123,17 @@ class NumericComparisonTest(unittest.TestCase):
     def test_punctuation_is_ignored_in_both_comparison_counts_without_changing_text(self):
         source='Hello, world!';target='Hello: world...'
         result=numbers.comparison(source,target,'en','en')
-        self.assertEqual((result['source_chars'],result['translated_chars']),(11,11))
+        self.assertEqual((result['source_chars'],result['translated_chars']),(10,10))
         self.assertEqual(result['difference_percent'],0)
         self.assertTrue(result['punctuation_excluded'])
-        self.assertEqual(numbers.comparison_chars('«пʼять», п’ять; п\'ять!'),14)
+        self.assertEqual(numbers.comparison_chars('«пʼять», п’ять; п\'ять!'),12)
         self.assertEqual(source,'Hello, world!');self.assertEqual(target,'Hello: world...')
 
     def test_number_values_are_matched_before_punctuation_is_discounted(self):
         result=numbers.comparison('2.5 days!','dos coma cinco días.','en','es')
         self.assertEqual((result['source_numbers'],result['translated_numbers']),(1,1))
-        self.assertEqual(result['source_chars'],7)
-        self.assertEqual(result['translated_chars'],7)
+        self.assertEqual(result['source_chars'],4)
+        self.assertEqual(result['translated_chars'],4)
         mismatch=numbers.comparison('2.5 days!','veinticinco días.','en','es')
         self.assertEqual(mismatch['translated_numbers'],0)
 
@@ -140,12 +141,23 @@ class NumericComparisonTest(unittest.TestCase):
         sources=['Hello, world!','25 days.'];targets=['Hello: world...','veinticinco días!']
         source='\n'.join(sources);target='\n'.join(targets)
         whole=numbers.comparison(source,target,'en','es',source_units=sources,translated_units=targets)
-        self.assertEqual((whole['source_chars'],whole['translated_chars']),(19,19))
+        self.assertEqual((whole['source_chars'],whole['translated_chars']),(14,14))
         plan=translation_budget.number_refinement_plan(source,targets,sources,'en','es')
         self.assertEqual([x['difference_percent'] for x in plan['phrases']],[0,0])
         self.assertTrue(plan['within_budget'])
         raw=translation_budget.assessment(source,target,'en','es')
-        self.assertEqual(raw['translated_chars'],len(target))
+        self.assertEqual(raw['translated_chars'],sum(c.isalpha() for c in target))
+        self.assertEqual(raw['translated_billing_chars'],len(target))
+
+    def test_only_letters_count_in_every_supported_alphabet(self):
+        self.assertEqual(numbers.comparison_chars(" Hello 123, world! "),10)
+        self.assertEqual(numbers.comparison_chars("¿Hola, qué tal? ¡Sí! 25%"),12)
+        self.assertEqual(numbers.comparison_chars("пʼять п’ять п'ять 100 - €"),12)
+        self.assertEqual(numbers.comparison_chars('e\u0301é'),2)
+        self.assertEqual(numbers.comparison_chars(' 123!? -- 🙂'),0)
+        report=numbers.comparison('25 days!','veinticinco días.','en','es')
+        self.assertTrue(report['letters_only']);self.assertFalse(report['spaces_included'])
+        self.assertEqual((report['source_chars'],report['translated_chars']),(4,4))
 
 
 if __name__=='__main__':unittest.main()

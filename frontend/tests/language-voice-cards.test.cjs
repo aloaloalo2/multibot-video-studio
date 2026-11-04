@@ -68,7 +68,7 @@ test('alignment reads are shared by cards and modal within the same overview sna
 test('all translated rows show number-normalized character differences',()=>{
   const env=runtime();
   const result=env.run("langAlignmentCharacters({text:'twenty three'},{available:true,source_chars:10,translated_chars:12,difference_percent:20},4)");
-  assert.match(result.label,/12 символів \(\+20%\)/);
+  assert.match(result.label,/12 літер \(\+20%\)/);
   const raw=env.run("langAlignmentCharacters({text:'twenty three'},{available:false},4)");
   assert.doesNotMatch(raw.label,/%/);
 });
@@ -98,4 +98,35 @@ test('cancellation remains disabled through stale polls and is scoped to the pro
   assert.equal(env.run('langStopping(langData.jobs[0])'),false);
   env.run('langData.jobs[0].cancel_requested=true');
   assert.match(env.run('langCancelButton(langData.jobs[0])'),/ disabled/);
+});
+
+
+test('translation label shows only the combined cost, regardless of contributing models',()=>{
+  const env=runtime();
+  const label=env.run("langTranslationInfo({translated_model:'minimax/minimax-m3.1-flash',translation_repair_model:'deepseek/model',translate_cost:.12345})");
+  assert.equal(label,'Переклад · $0.123');
+  assert.equal(env.run('langTranslationInfo({translate_cost:0})'),'Переклад · $0.000');
+  assert.equal(env.run('langTranslationInfo({})'),'');
+});
+
+
+test('wrong-language text disables narration and never opens a paid confirmation',async()=>{
+  const env=runtime();env.run("langData.items[0].language_check={state:'blocked',issues:[{index:16,detected:'ru'}]}");
+  assert.equal(env.run('langVoiceTileState(langData.items[0]).blocked'),true);
+  await env.run("langConfirmVoice('project-a','uk')");
+  assert.equal(env.confirmations.length,0);assert.equal(env.requests.length,0);
+});
+
+
+test('a single wrong-language warning displays the actual phrase immediately',()=>{
+  const env=runtime();
+  const text=env.run(`langQualityNotice({state:'blocked',issues:[{index:136,detected:'ru',text:'Люди чувствовали вину.'}]})`);
+  assert.match(text,/<details open>/);assert.match(text,/Фраза 137/);assert.match(text,/Люди чувствовали вину/);
+});
+
+test('only Unicode letters count in source, translated and alignment displays',()=>{
+  const env=runtime();
+  assert.equal(env.run(`langLetters("Hello 123, world! — 🙂")`),10);
+  assert.equal(env.run(`langLetters("пʼять п’ять п'ять")`),12);
+  assert.equal(env.run(`langLetters("¿Hola? ¡Sí!")`),6);
 });

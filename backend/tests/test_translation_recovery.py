@@ -90,7 +90,7 @@ class ContinuationTest(unittest.TestCase):
         # These fixtures isolate resumable semantic repairs; the number-aware goal
         # is exercised with real plans in test_translation_length_integration.
         self.stack.enter_context(patch.object(languages.translation_budget, 'number_refinement_plan',
-                                             return_value={'available': True, 'ids': []}))
+                                             return_value={'available': False, 'ids': []}))
         self.job = {'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
 
     def test_missing_id_retry_does_not_repeat_good_neighbour(self):
@@ -108,7 +108,7 @@ class ContinuationTest(unittest.TestCase):
         with patch.object(languages, 'ask', side_effect=ask):
             lines, _ = languages.before_translate('p', 'es', {'script': 's'*99},
                 ['t'*60]*2, ['s'*49]*2, self.job)
-        self.assertEqual(requests, [[0, 1], [1]])
+        self.assertEqual(requests, [[0], [1]])
         self.assertEqual(lines, ['t'*49]*2)
 
     def test_semantic_repair_calls_only_failed_id_and_allows_natural_expansion(self):
@@ -132,35 +132,33 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(models,[languages.DEFAULT_TRANSLATION_MODEL,
             languages.TRANSLATION_REPAIR_MODEL,languages.TRANSLATION_REPAIR_MODEL])
 
-    def test_saved_partial_semantic_repair_resumes_without_paid_repeat(self):
-        src, units, lines = {'script': 's'*99}, ['s'*49]*2, ['t'*60]*2
-        def audit(ids):
-            return json.dumps({'ok': False, 'ids': ids, 'issues': [{'id': i, 'reason': 'Wrong fact.'} for i in ids]}), 0
-        repairs = []
-        def interrupted(messages, max_tokens=12000):
-            ids = [x['id'] for x in json.loads(messages[1]['content'])]
+    def test_uncertain_provider_failure_resumes_without_repeating_any_repair(self):
+        src,units,lines={'script':'s'*99},['s'*49]*2,['t'*60]*2
+        repairs=[]
+        def answer(messages,max_tokens=12000):
+            ids=[x['id'] for x in json.loads(messages[1]['content'])]
             if 'Independently compare' in messages[0]['content']:
-                return audit(ids)
-            repairs.append(ids)
-            if len(repairs) == 1:
-                return json.dumps({'0': 'a'*49}), .01
+                return json.dumps({'ok':False,'ids':ids,'issues':[{'id':i,'reason':'Wrong fact'} for i in ids]}),0
+            repairs.extend(ids)
+            if ids==[0]:return json.dumps({'0':'a'*49}),.01
             raise RuntimeError('Provider unavailable')
-        with patch.object(languages, 'ask', side_effect=interrupted):
-            with self.assertRaisesRegex(RuntimeError, 'Provider unavailable'):
-                languages.before_translate('p', 'es', src, lines, units, self.job)
-        resumed, audits = [], []
-        def resume(messages, max_tokens=12000):
-            ids = [x['id'] for x in json.loads(messages[1]['content'])]
-            if 'Independently compare' in messages[0]['content']:
-                audits.append(ids)
-                return audit(ids) if len(audits) == 1 else (json.dumps({'ok': True, 'ids': ids}), 0)
-            resumed.append(ids)
-            return json.dumps({'1': 'b'*49}), .01
-        with patch.object(languages, 'ask', side_effect=resume):
-            result, _ = languages.before_translate('p', 'es', src, lines, units, self.job)
-        self.assertEqual(repairs, [[0, 1], [1]])
-        self.assertEqual(resumed, [[1]])
-        self.assertEqual(result, ['a'*49, 'b'*49])
+        with patch.object(languages,'ask',side_effect=answer):
+            with self.assertRaisesRegex(RuntimeError,'Provider unavailable'):
+                languages.before_translate('p','es',src,lines,units,self.job)
+        calls=[]
+        def resume(messages,max_tokens=12000):
+            self.assertIn('Independently compare',messages[0]['content'])
+            items=json.loads(messages[1]['content']);ids=[x['id'] for x in items];calls.append(ids)
+            bad=[{'id':x['id'],'reason':'Wrong fact'} for x in items if x['translation'].startswith('t')]
+            return json.dumps({'ok':not bad,'ids':ids,'issues':bad}),0
+        with patch.object(languages,'ask',side_effect=resume):
+            with self.assertRaisesRegex(RuntimeError,'перевірку змісту'):
+                languages.before_translate('p','es',src,lines,units,self.job)
+        draft=json.loads((self.folder/'translation-draft.json').read_text())
+        self.assertEqual(repairs,[0,1])
+        self.assertEqual(draft['lines'][0],'a'*49)
+        self.assertEqual(draft['single_pass_repairs']['1']['status'],'requested')
+        self.assertTrue(calls)
 
     def test_seeded_translation_skips_original_generation(self):
         src = {'script': 's'*100, 'title': 'Title', 'duration': 10}
@@ -194,7 +192,7 @@ class ContinuationTest(unittest.TestCase):
         self.assertTrue(report['numeric_forms_differ'])
         self.assertNotIn('within_budget', report)
 
-    def test_decreasing_semantic_issues_continue_beyond_three_repairs(self):
+    def test_each_semantic_issue_gets_one_independent_repair(self):
         current = ['wrong']*5
         repairs = []
         def ask(messages, max_tokens=12000):

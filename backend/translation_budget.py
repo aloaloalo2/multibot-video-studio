@@ -102,8 +102,8 @@ def number_refinement_plan(source_text, lines, source_units, source_language, ta
 
 
 def count(text: str) -> int:
-    """Match the displayed script count: retain internal spaces, trim only its edges."""
-    return len(text.strip())
+    """Count only linguistic letters, consistently with all displayed counters."""
+    return numeric_comparison.comparison_chars(text)
 
 
 def join_lines(lines: list[str]) -> str:
@@ -149,17 +149,18 @@ def assessment(source_text: str, translated_text: str, source_language: str | No
     if comparison['available']:
         script_comparison.update(report_counts(comparison['source_chars'],comparison['translated_chars'],SCRIPT_TOLERANCE))
     return {'source_chars': source_chars, 'translated_chars': translated_chars,
+            'source_billing_chars':len(source_text.strip()),'translated_billing_chars':len(translated_text.strip()),
             'difference_chars': translated_chars-source_chars,
             'difference_percent': round(100*(translated_chars-source_chars)/source_chars, 3) if source_chars else None,
             'advisory_only': True, 'duration_estimate': False,
             'source_numeric_tokens': source_numbers, 'translated_numeric_tokens': target_numbers,
             'numeric_forms_differ': source_numbers != target_numbers,
-            'comparison_basis': 'raw_characters_with_spaces',
+            'comparison_basis': 'letters_only',
             'number_comparison': comparison,'script_comparison':script_comparison}
 
 
 def allocate_targets(lines: list[str], target_chars: int) -> dict[int, int]:
-    """Proportional hints whose sum plus line separators equals the whole budget.
+    """Proportional letter targets whose sum equals the whole letter budget.
 
     These are not per-phrase constraints: dense phrases may borrow from shorter
     ones. Every existing phrase keeps at least one character and its same id.
@@ -168,7 +169,7 @@ def allocate_targets(lines: list[str], target_chars: int) -> dict[int, int]:
         if target_chars:
             raise ValueError('A nonempty budget needs source lines.')
         return {}
-    available = target_chars-(len(lines)-1)
+    available = target_chars
     if available < len(lines):
         raise ValueError('Budget cannot retain every nonempty phrase.')
     weights = [max(1, count(line)) for line in lines]

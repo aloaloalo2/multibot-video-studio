@@ -35,17 +35,17 @@ class NarrationPacingTest(unittest.TestCase):
         self.assertNotIn(6,targets);self.assertNotIn(9,targets)
 
     def test_impossible_cache_reports_review_and_preserves_allowed_tempo(self):
-        report=pacing.plan(['a'*100]*20,{i:8 for i in range(20)},140,0)
+        report=pacing.plan(['a'*100]*20,{i:8 for i in range(20)},138,0)
         self.assertTrue(report['requires_review'])
-        self.assertAlmostEqual(report['measured_excess_seconds'],160/pacing.MAX_SPEED-140,places=3)
+        self.assertAlmostEqual(report['measured_excess_seconds'],160/pacing.MAX_SPEED-138,places=3)
         self.assertEqual(report['targets'],{})
-        self.assertEqual(pacing.MAX_SPEED,1.13)
+        self.assertEqual(pacing.MAX_SPEED,1.15)
 
     def test_all_cached_takes_are_not_rejected_for_unmeasured_extra_pause_padding(self):
         # The takes include pauses already. Unmeasured extra padding must reach
         # measured assembly rather than trigger a false stop.
         texts=['a'*100]*100
-        known={i:10.5 for i in range(100)}
+        known={i:10.65 for i in range(100)}
         self.assertGreater(sum(known.values())/pacing.MAX_SPEED+.05*99,930.)
         self.assertEqual(pacing.plan(texts,known,930.,0)['measured_phrases'],100)
         self.assertTrue(pacing.plan(texts,known,920.,0)['requires_review'])
@@ -66,7 +66,7 @@ class NarrationPacingTest(unittest.TestCase):
             self.assertLess(forecast['expected_minimum_seconds'],940.)
             self.assertEqual(forecast['remaining_phrases'],100-count)
             self.assertEqual(forecast['targets'],{})
-        self.assertEqual(pacing.MAX_SPEED,1.13)
+        self.assertEqual(pacing.MAX_SPEED,1.15)
 
     def test_reserved_future_duration_does_not_discount_already_measured_audio(self):
         forecast=pacing.plan(['a'*100]*100,{i:8. for i in range(90)},760.,90)
@@ -84,6 +84,12 @@ class NarrationPacingTest(unittest.TestCase):
         pacing.validate_edits(texts,{0:90,1:90},{0:'a'*100,1:'b'*80})
         for replacements in [{0:'a'*100,1:'b'*81},{0:'a'*110,1:'b'*70}]:
             with self.assertRaises(RuntimeError):pacing.validate_edits(texts,{0:90,1:90},replacements)
+
+    def test_eleven_estimate_still_uses_actual_submitted_characters(self):
+        text='¿Hola, 25 días?'
+        with patch.object(languages.eleven_api,'estimate_rate',return_value=.26):
+            self.assertEqual(languages.price('elevenlabs',text,'turbo'),round(len(text)*.26,2))
+        self.assertEqual(languages.numeric_comparison.comparison_chars(text),8)
 
     def test_price_is_frozen_for_the_run(self):
         with patch.object(languages,'price',side_effect=[200,500]) as prices:

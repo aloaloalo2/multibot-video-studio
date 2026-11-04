@@ -87,7 +87,7 @@ class NarrationAudioTest(unittest.TestCase):
         path,_=self.fixture();digest=hashlib.sha256(path.read_bytes()).hexdigest()
         items=[{'index':i,'file':path.name,'start':i*2.5,'original_start':i*2.5,
                 'original_end':i*2.5+2.3,'length':3.29} for i in range(4)]
-        with self.assertRaisesRegex(RuntimeError,'при межі 13%'):
+        with self.assertRaisesRegex(RuntimeError,'при межі 15%'):
             dubbing_fit.fitting_speeds(items,10.)
         result=dubbing_fit.rebuild(self.folder,items,self.folder/'full.mp3',10.)
         self.assertEqual(len(result['phrases']),4)
@@ -111,6 +111,18 @@ class NarrationProfileTest(unittest.TestCase):
         self.assertTrue(all(i<10 for i in plan['ids']))
         self.assertTrue(all(value>=88 for value in plan['targets'].values()))
         self.assertEqual(plan['windows'][0]['start_index'],0)
+
+    def test_voice_rate_counts_letters_and_does_not_reuse_old_character_units(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);identity={'model':'v4','language':'es'}
+            path=profile.location(root,identity)
+            path.write_text('{"version":1,"observations":{"old":{"chars":100,"seconds":8,"at":1}}}')
+            self.assertIsNone(profile.read(root,identity))
+            text='Hello, 123 world! '*3
+            profile.remember(root,identity,[(text,{'fingerprint':str(i),'length':8.}) for i in range(5)])
+            data=profile.read(root,identity)
+            self.assertEqual(data['observations'],5)
+            self.assertAlmostEqual(data['seconds_per_character'],8/30*1.03)
 
     def test_profile_isolated_by_voice_model_language_and_reused_only_once(self):
         with tempfile.TemporaryDirectory() as folder:

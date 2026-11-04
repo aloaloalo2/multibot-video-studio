@@ -114,70 +114,68 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertEqual(item['comparison_translation'],'En 2017 fue así.')
         self.assertEqual(result,[fixed])
 
-    def test_matching_total_still_refines_each_outlying_phrase_and_reaudits_only_changes(self):
-        originals = ['s'*200, 's'*200, 's'*100]
-        texts = ['a'*236, 'b'*164, 'c'*102]
-        self.ask.side_effect = [
-            (json.dumps({'ok': True, 'ids': [0, 1, 2]}), .01),
-            (json.dumps({'0': 'a'*208, '1': 'b'*192}), .01),
-            (json.dumps({'ok': True, 'ids': [0, 1]}), .01)]
-        result, _ = languages.before_translate('test', 'uk',
-            {'script': '\n'.join(originals), 'language': 'en'}, texts, originals, self.job)
-        self.assertEqual(list(map(len, result)), [208, 192, 102])
-        items = json.loads(self.ask.call_args_list[1].args[0][1]['content'])
-        self.assertEqual([item['id'] for item in items], [0, 1])
-        self.assertIn('remove only optional filler', items[0]['issue'])
-        self.assertEqual(self.job['translation_length']['phrase_comparison']['outside_count'], 0)
+    def test_one_isolated_request_per_outlier_and_only_changed_pairs_reaudited(self):
+        originals=['s'*200,'s'*200,'s'*100];texts=['a'*236,'b'*164,'c'*102]
+        self.ask.side_effect=[(json.dumps({'ok':True,'ids':[0,1,2]}),.01),
+            (json.dumps({'0':'a'*208}),.01),(json.dumps({'1':'b'*192}),.01),
+            (json.dumps({'ok':True,'ids':[0,1]}),.01)]
+        result,_=languages.before_translate('test','uk',{'script':'\n'.join(originals),'language':'en'},texts,originals,self.job)
+        self.assertEqual(list(map(len,result)),[208,192,102])
+        for call,index in zip(self.ask.call_args_list[1:3],[0,1]):
+            payload=json.loads(call.args[0][1]['content'])
+            self.assertEqual([row['id'] for row in payload],[index])
+            self.assertIsInstance(payload[0]['target_change_percent'],float)
+            self.assertLess(len(call.args[0][0]['content']),1600)
+            self.assertNotIn(texts[2],call.args[0][1]['content'])
+        self.assertEqual([x['id'] for x in json.loads(self.ask.call_args_list[-1].args[0][1]['content'])],[0,1])
         self.speak.assert_not_called()
 
-    def test_one_improvement_cannot_hide_a_regression_in_another_phrase(self):
-        originals = ['s'*100]*2
-        self.ask.side_effect = [
-            (json.dumps({'ok': True, 'ids': [0, 1]}), .01),
-            (json.dumps({'0': 'a'*100, '1': 'b'*70}), .01),
-            (json.dumps({'ok': True, 'ids': [0]}), .01),
-            (json.dumps({'1': 'b'*100}), .01),
-            (json.dumps({'ok': True, 'ids': [1]}), .01)]
-        result, _ = languages.before_translate('test', 'uk',
-            {'script': '\n'.join(originals), 'language': 'en'}, ['a'*120, 'b'*80], originals, self.job)
-        retry = json.loads(self.ask.call_args_list[3].args[0][1]['content'])
-        self.assertEqual([(item['id'], len(item['translation'])) for item in retry], [(1, 80)])
-        self.assertEqual(list(map(len, result)), [100, 100])
+    def test_worse_optional_revision_keeps_approved_wording_without_retry(self):
+        originals=['s'*100]*2
+        self.ask.side_effect=[(json.dumps({'ok':True,'ids':[0,1]}),.01),
+            (json.dumps({'0':'a'*100}),.01),(json.dumps({'1':'b'*70}),.01),
+            (json.dumps({'ok':True,'ids':[0]}),.01)]
+        result,_=languages.before_translate('test','uk',{'script':'\n'.join(originals),'language':'en'},
+            ['a'*120,'b'*80],originals,self.job)
+        self.assertEqual(list(map(len,result)),[100,80])
+        self.assertEqual(self.ask.call_count,4)
+        self.assertEqual(self.job['translation_length_approval']['phrases'][0]['id'],1)
         self.speak.assert_not_called()
 
-    def test_new_issues_in_different_length_batches_do_not_count_as_stalled_repairs(self):
-        originals, texts = ['s'*100]*81, ['t'*120]*81
-        repaired = []
-        phases = []
-        def answer(messages, max_tokens=12000):
-            items = json.loads(messages[1]['content'])
-            ids = [item['id'] for item in items]
-            review = self.job['translation_review']
-            phases.append(review['phase'])
-            self.assertEqual(review['total'], 81)
-            self.assertTrue(review['waiting'])
-            self.assertEqual(review['phrases'], [i+1 for i in ids])
-            self.assertEqual(self.job['translation_length']['target_tolerance_percent'], 7)
+    def test_many_outliers_each_get_exactly_one_correction_no_whole_script_rewrite(self):
+        originals,texts=['s'*100]*41,['t'*120]*41
+        repair_ids=[]
+        def answer(messages,max_tokens=12000):
+            items=json.loads(messages[1]['content']);ids=[x['id'] for x in items]
             if 'Independently compare' in messages[0]['content']:
-                issues = [{'id':item['id'], 'reason':'Restore the essential source fact.'}
-                          for item in items if item['translation'].startswith('x')]
-                return json.dumps({'ok':not issues, 'ids':ids, 'issues':issues}), .001
-            if items[0]['issue'].startswith('NUMBER-NORMALIZED'):
-                # Each separate batch introduces ONE new issue; the preceding
-                # batch has already been repaired and independently approved.
-                return json.dumps({str(i):('x' if i==ids[0] else 't')*100 for i in ids}), .001
-            repaired.extend(ids)
-            self.assertTrue(items[0]['rejected_revisions'])
-            return json.dumps({str(i):'y'*100 for i in ids}), .001
-        self.ask.side_effect = answer
-        result, _ = languages.before_translate('test','es',
-            {'script':'\n'.join(originals),'language':'en'},texts,originals,self.job)
-        self.assertEqual(len(repaired),5)
-        self.assertEqual(len(set(repaired)),5)
-        self.assertEqual(list(map(len,result)),[100]*81)
-        self.assertEqual(set(phases),{'audit','length','meaning'})
-        self.assertFalse(self.job['translation_review']['waiting'])
-        self.assertEqual(self.job['translation_length']['phrase_comparison']['outside_count'],0)
+                return json.dumps({'ok':True,'ids':ids}),.001
+            self.assertEqual(len(items),1)
+            repair_ids.extend(ids)
+            return json.dumps({str(ids[0]):'t'*100}),.001
+        self.ask.side_effect=answer
+        result,_=languages.before_translate('test','es',{'script':'\n'.join(originals),'language':'en'},texts,originals,self.job)
+        self.assertEqual(sorted(repair_ids),list(range(41)))
+        self.assertEqual(len(repair_ids),len(set(repair_ids)))
+        self.assertEqual(list(map(len,result)),[100]*41)
+        self.assertTrue(self.job['translation_length']['script_comparison']['within_budget'])
+        self.speak.assert_not_called()
+
+    def test_resume_reuses_one_correction_without_buying_another_rewrite(self):
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),('{"0":"'+ 't'*118 +'"}',.01)]
+        first,_=languages.before_translate('test','es',self.source,['t'*118],['s'*100],self.job)
+        self.assertEqual(first,['t'*118])
+        self.assertEqual(self.ask.call_count,2)
+        self.ask.reset_mock();self.ask.side_effect=AssertionError('Must reuse audit and attempted repair')
+        again,_=languages.before_translate('test','es',self.source,first,['s'*100],self.job)
+        self.assertEqual(again,first)
+        self.ask.assert_not_called()
+        self.assertFalse(self.job['translation_length_approval']['script_within_budget'])
+
+    def test_bad_semantic_length_repair_restores_good_text_without_another_attempt(self):
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),('{"0":"'+ 't'*100 +'"}',.01),
+            ('{"ok":false,"ids":[0],"issues":[{"id":0,"reason":"Lost source fact"}]}',.01)]
+        result,_=languages.before_translate('test','es',self.source,['t'*118],['s'*100],self.job)
+        self.assertEqual(result,['t'*118]);self.assertEqual(self.ask.call_count,3)
         self.speak.assert_not_called()
 
     def test_persistent_issue_identifies_phrase_and_resume_keeps_rejected_wording(self):
@@ -197,37 +195,27 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.save.assert_not_called()
         self.speak.assert_not_called()
 
-    def test_failed_phrase_refinement_retains_old_publication_and_paid_cache(self):
-        cache = self.work/'voice-cache'
-        cache.mkdir()
-        paid = cache/'existing.mp3'
-        paid.write_bytes(b'existing paid take')
-        self.initial.return_value = (['t'*118], .1)
-        self.ask.side_effect = [(json.dumps({'ok': True, 'ids': [0]}), .01)] + [
-            (json.dumps({'0': 't'*118}), .01)]*3
-        with self.assertRaisesRegex(RuntimeError, 'Фраза №1.*±8\.5%'):
-            languages._translate('test', 'uk', self.job)
-        self.save.assert_not_called()
-        self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
-        self.assertEqual(paid.read_bytes(), b'existing paid take')
-        saved = json.loads((self.work/'translation-draft.json').read_text())
-        self.assertEqual(saved['lines'], ['t'*118])
-        self.assertTrue(saved['resumable'])
+    def test_nonconverging_length_finishes_once_and_preserves_paid_cache(self):
+        cache=self.work/'voice-cache';cache.mkdir();paid=cache/'existing.mp3';paid.write_bytes(b'paid take')
+        self.initial.return_value=(['t'*118],.1)
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),('{"0":"'+ 't'*118 +'"}',.01)]
+        languages._translate('test','uk',self.job)
+        self.assertEqual(self.ask.call_count,2)
+        self.assertEqual(self.save.call_args.args[4],'t'*118)
+        self.assertFalse(self.job['translation_length_approval']['script_within_budget'])
+        self.assertEqual(paid.read_bytes(),b'paid take')
         self.speak.assert_not_called()
 
-    def test_incompatible_pace_does_not_oscillate_outside_phrase_band_or_buy_voice(self):
-        self.initial.return_value = (['t'*92], .1)
-        self.ask.return_value = (json.dumps({'ok': True, 'ids': [0]}), .01)
-        # Isolate the phrase-band/pacing conflict from the independently tested whole-script bound.
+    def test_incompatible_pace_does_not_cycle_or_buy_voice(self):
+        self.initial.return_value=(['t'*92],.1)
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),('{"0":"'+ 't'*92 +'"}',.01)]
         with patch.object(languages.translation_budget,'SCRIPT_TOLERANCE',.09), \
-             patch.object(languages, 'load_state', return_value={'provider':'elevenlabs'}), \
-             patch.object(languages, 'voice_cache_context', return_value=({'model':'test'},set())), \
-             patch.object(languages.narration_profile, 'read', return_value={'seconds_per_character':.24,'observations':30}):
-            with self.assertRaisesRegex(RuntimeError, 'в межах ±8\.5%.*прогноз голосу'):
-                languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 1)
-        self.save.assert_not_called()
-        self.speak.assert_not_called()
+             patch.object(languages,'load_state',return_value={'provider':'elevenlabs'}), \
+             patch.object(languages,'voice_cache_context',return_value=({'model':'test'},set())), \
+             patch.object(languages.narration_profile,'read',return_value={'seconds_per_character':.24,'observations':30}):
+            languages._translate('test','es',self.job)
+        self.assertEqual(self.ask.call_count,2)
+        self.save.assert_called_once();self.speak.assert_not_called()
 
     def test_semantic_failure_preserves_the_previous_translation(self):
         def rejected(messages, max_tokens=12000):
@@ -345,13 +333,10 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.ask.side_effect = rejected
         with self.assertRaisesRegex(RuntimeError, 'змісту'):
             languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 6)
+        self.assertEqual(self.ask.call_count, 2)
         prompt = self.ask.call_args_list[0].args[0][0]['content']
-        self.assertIn('proper names', prompt)
-        self.assertIn('pounds becoming kilograms', prompt)
-        self.assertIn('source digits and equivalent', prompt)
-        self.assertIn('Compare numeric VALUES and UNITS', prompt)
-        self.assertIn('Raw character length is not a quality failure', prompt)
+        for evidence in ('proper names','quantities','units','negation','Equivalent digit','Character length is not a meaning error'):
+            self.assertIn(evidence,prompt)
         self.save.assert_not_called()
         self.speak.assert_not_called()
 

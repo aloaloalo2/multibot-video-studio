@@ -38,6 +38,26 @@ class LanguageQualityTest(unittest.TestCase):
     def test_short_names_and_acronyms_are_not_wrong_language_proof(self):
         self.assertEqual(quality.check('es', ['Roy Sullivan.', 'NASA.', 'Sí.'])['state'], 'ok')
 
+    def test_short_foreign_sentence_in_same_alphabet_is_detected_on_its_own(self):
+        report=quality.check('es',[ES,'Dzisiaj ludzie nie mogą korzystać z internetu.',ES])
+        self.assertEqual(report['state'],'blocked')
+        self.assertEqual([issue['index'] for issue in report['issues']],[1])
+
+    def test_two_foreign_names_do_not_block_an_otherwise_correct_sentence(self):
+        text='Цього разу дослідники Queen Elizabeth розповіли про важливі результати дослідження.'
+        self.assertFalse(quality.script_problem('uk',text))
+        with patch.object(quality,'identify',return_value=('uk',1.0)):
+            self.assertEqual(quality.check('uk',[text])['state'],'ok')
+
+    def test_clear_russian_sentence_is_not_blocked_by_an_overconfident_ukrainian_guess(self):
+        text='Люди чувствовали вину за то, что у них так много, когда у их друзей так мало.'
+        with patch.object(quality,'identify',return_value=('uk',.99999999999)):
+            self.assertEqual(quality.check('ru',[text])['state'],'ok')
+        with patch.object(quality,'identify',return_value=('ru',.99999999999)):
+            report=quality.check('uk',[text])
+            self.assertEqual(report['state'],'blocked')
+            self.assertEqual(report['issues'][0]['text'],text)
+
     def test_missing_detector_fails_closed_before_any_speech(self):
         with patch.object(quality, 'identify', side_effect=ImportError('missing')):
             self.assertEqual(quality.check('es', [ES])['state'], 'unavailable')

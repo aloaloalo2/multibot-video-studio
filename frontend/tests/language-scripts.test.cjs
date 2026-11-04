@@ -95,3 +95,12 @@ test('review shows measured total progress and provider wait without a fake comp
   assert.match(legacy.detail,/20 фраз/);
   assert.equal(context.langTranslationProgress({status:'running',progress:45,stage:'Перекладаємо'}).indeterminate,false);
 });
+
+
+test('wrong-language phrase warning identifies exact lines and permits ordinary names',()=>{
+  const context=load(()=>assert.fail('Local warning must not call API'));
+  const bad={language_check:{state:'blocked',issues:[{index:16,detected:'ru'},{index:23,detected:'pl'}]}};
+  assert.match(context.langScriptLanguageWarning(bad),/17, 24/);
+  assert.match(context.langScriptLanguageWarning(bad),/Озвучення заблоковано/);
+  assert.equal(context.langScriptLanguageWarning({language_check:{state:'ok'}}),'');
+});
