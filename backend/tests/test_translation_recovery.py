@@ -84,7 +84,8 @@ class ContinuationTest(unittest.TestCase):
         self.stack.enter_context(patch.object(languages.language_quality, 'require'))
         self.stack.enter_context(patch.object(languages, 'translator', return_value='Translate naturally.'))
         self.stack.enter_context(patch.object(languages, 'target_rule', return_value='Spanish.'))
-        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'p'}))
+        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'p','channel_id':'test-channel'}))
+        self.stack.enter_context(patch.object(languages.language_defaults,'settings',return_value={}))
         self.stack.enter_context(patch.object(languages, 'original_language', return_value='en'))
         # These fixtures isolate resumable semantic repairs; the number-aware goal
         # is exercised with real plans in test_translation_length_integration.
@@ -161,7 +162,7 @@ class ContinuationTest(unittest.TestCase):
     def test_seeded_translation_skips_original_generation(self):
         src = {'script': 's'*100, 'title': 'Title', 'duration': 10}
         segments = [{'start': 0, 'end': 10, 'source': 's'*100}]
-        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'p'}))
+        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'p','channel_id':'test-channel'}))
         self.stack.enter_context(patch.object(languages.store, 'load_project_plan', return_value={}))
         self.stack.enter_context(patch.object(languages, 'segments_of', return_value=segments))
         self.stack.enter_context(patch.object(languages, 'source', return_value=src))
@@ -212,7 +213,7 @@ class ContinuationTest(unittest.TestCase):
         draft = languages.translation_draft('p', 'es', src, ['s'*100], self.job, segments)
         draft.seed(['t'*100])
         (self.folder/'text.txt').write_text('Previously accepted text')
-        with patch.object(languages.store, 'load_project', return_value={'id': 'p'}), \
+        with patch.object(languages.store, 'load_project', return_value={'id': 'p','channel_id':'test-channel'}), \
              patch.object(languages.store, 'load_project_plan', return_value={}), \
              patch.object(languages, 'source', return_value={**src, 'script': 'Changed source'}), \
              patch.object(languages, 'segments_of', return_value=segments), \
@@ -229,7 +230,7 @@ class ContinuationTest(unittest.TestCase):
         draft.seed(['t'*100])
         (self.folder/'text.txt').write_text('Previously accepted text')
         segments = [{'start': 0, 'end': 10, 'source': 's'*100}]
-        with patch.object(languages.store, 'load_project', return_value={'id': 'p'}), \
+        with patch.object(languages.store, 'load_project', return_value={'id': 'p','channel_id':'test-channel'}), \
              patch.object(languages.store, 'load_project_plan', return_value={}), \
              patch.object(languages, 'source', return_value=src), \
              patch.object(languages, 'segments_of', return_value=segments), \

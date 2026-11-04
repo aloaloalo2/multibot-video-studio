@@ -72,7 +72,7 @@ class TranslationModelsTest(unittest.TestCase):
         self.assertIn('digits in the source become longer spoken words', prompt)
         self.assertIn('natural spoken rhythm', prompt)
         self.assertNotIn('three percent', prompt)
-        self.assertIn('five percent for EACH phrase independently', prompt)
+        self.assertIn('8.5 percent for EACH phrase independently', prompt)
         self.assertIn('optional', prompt)
         self.assertIn('An unfamiliar', prompt)
         self.assertIn('causal and chronological links', prompt)

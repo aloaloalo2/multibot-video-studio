@@ -13,7 +13,8 @@ from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
 TOLERANCE = .03
-NUMBER_AWARE_TOLERANCE = .07
+NUMBER_AWARE_TOLERANCE = .085
+SCRIPT_TOLERANCE = .07
 
 
 def missing_source_years(source_text, translated_text, target_language):
@@ -42,14 +43,17 @@ def number_refinement_plan(source_text, lines, source_units, source_language, ta
     if (len(source_units) != len(values)
             or any(not isinstance(line, str) or not line.strip() for line in source_units)):
         raise ValueError('Source units must match every nonempty translation phrase.')
-    source, _, available = numeric_comparison.normalized(source_text, source_language)
-    normalized = [numeric_comparison.normalized(line, target_language) for line in values]
-    original_forms = [numeric_comparison.normalized(line, source_language) for line in source_units]
-    if not available or any(not item[2] for item in normalized + original_forms):
+    spoken = values
+    pairs = [numeric_comparison.paired_forms(a, b, source_language, target_language)
+             for a, b in zip(source_units, values)]
+    if any(not a[2] or not b[2] for a, b in pairs):
         return {'available': False, 'ids': []}
-    values = [item[0] for item in normalized]
-    originals = [item[0] for item in original_forms]
-    state = report(source, join_lines(values), NUMBER_AWARE_TOLERANCE)
+    values = [pair[1][0] for pair in pairs]
+    originals = [pair[0][0] for pair in pairs]
+    summary = numeric_comparison.comparison(source_text, join_lines(spoken), source_language, target_language,
+        source_units=source_units, translated_units=spoken)
+    # report() owns the same integer length bounds used for every phrase.
+    state = report_counts(summary['source_chars'], summary['translated_chars'], SCRIPT_TOLERANCE)
     phrases = [dict(report(left, right, NUMBER_AWARE_TOLERANCE), id=i)
                for i, (left, right) in enumerate(zip(originals, values))]
     pending = [row['id'] for row in phrases if not row['within_budget']]
@@ -66,10 +70,30 @@ def number_refinement_plan(source_text, lines, source_units, source_language, ta
         targets[i] = (max(row['max_chars'] - reserve, row['translated_chars'] - capacity)
                       if directions[i] == 'shorten' else
                       min(row['min_chars'] + reserve, row['translated_chars'] + capacity))
+    mode = 'phrase'
+    if not pending and not state['within_budget']:
+        mode = 'whole'
+        shorten = state['over_by'] > 0
+        remaining = state['over_by'] if shorten else state['under_by']
+        eligible = sorted(range(len(phrases)), key=lambda i: (
+            -(phrases[i]['translated_chars']-phrases[i]['source_chars'])*(1 if shorten else -1), i))
+        for i in eligible:
+            row = phrases[i]
+            room = (row['translated_chars']-row['min_chars'] if shorten else row['max_chars']-row['translated_chars'])
+            change = min(remaining, room, max(1, math.floor(row['translated_chars']*.12)))
+            if change <= 0:
+                continue
+            targets[i] = row['translated_chars'] + (-change if shorten else change)
+            directions[i] = 'shorten' if shorten else 'expand'
+            ids.append(i)
+            remaining -= change
+            if not remaining or len(ids) == 20:
+                break
+        ids.sort()
     kinds = set(directions.values())
     return {'available': True, 'report': state, 'phrases': phrases, 'ids': ids,
-            'pending_ids': pending, 'within_budget': not pending,
-            'distance': sum(row['over_by'] + row['under_by'] for row in phrases),
+            'mode':mode,'pending_ids': pending, 'within_budget': not pending and state['within_budget'],
+            'distance': sum(row['over_by'] + row['under_by'] for row in phrases)+state['over_by']+state['under_by'],
             'direction': next(iter(kinds)) if len(kinds) == 1 else 'mixed' if kinds else 'none',
             'directions': directions, 'line_targets': targets,
             'source_lengths': {i: phrases[i]['source_chars'] for i in ids},
@@ -87,9 +111,12 @@ def join_lines(lines: list[str]) -> str:
 
 
 def report(source_text: str, translated_text: str, tolerance: float = TOLERANCE) -> dict:
+    return report_counts(count(source_text), count(translated_text), tolerance)
+
+
+def report_counts(source_chars: int, translated_chars: int, tolerance: float = TOLERANCE) -> dict:
     if not math.isfinite(tolerance) or not 0 <= tolerance < 1:
         raise ValueError('Tolerance must be finite and between zero and one.')
-    source_chars, translated_chars = count(source_text), count(translated_text)
     margin = Decimal(str(tolerance))
     lower = int((Decimal(source_chars) * (1-margin)).to_integral_value(rounding=ROUND_CEILING))
     upper = int((Decimal(source_chars) * (1+margin)).to_integral_value(rounding=ROUND_FLOOR))
@@ -104,7 +131,7 @@ def report(source_text: str, translated_text: str, tolerance: float = TOLERANCE)
 
 
 def assessment(source_text: str, translated_text: str, source_language: str | None = None,
-               target_language: str | None = None) -> dict:
+               target_language: str | None = None, *, source_units=None, translated_units=None) -> dict:
     """Informational counts only: spelling out source digits can lengthen speech text.
 
     Character differences are neither a fidelity verdict nor a duration estimate.
@@ -115,6 +142,11 @@ def assessment(source_text: str, translated_text: str, source_language: str | No
     numeric = re.compile(r"\d+(?:[.,:/-]\d+)*")
     source_numbers = len(numeric.findall(source_text))
     target_numbers = len(numeric.findall(translated_text))
+    comparison = numeric_comparison.comparison(source_text,translated_text,source_language,target_language,
+        source_units=source_units,translated_units=translated_units)
+    script_comparison = {'available':comparison['available'],'tolerance_percent':round(100*SCRIPT_TOLERANCE)}
+    if comparison['available']:
+        script_comparison.update(report_counts(comparison['source_chars'],comparison['translated_chars'],SCRIPT_TOLERANCE))
     return {'source_chars': source_chars, 'translated_chars': translated_chars,
             'difference_chars': translated_chars-source_chars,
             'difference_percent': round(100*(translated_chars-source_chars)/source_chars, 3) if source_chars else None,
@@ -122,7 +154,7 @@ def assessment(source_text: str, translated_text: str, source_language: str | No
             'source_numeric_tokens': source_numbers, 'translated_numeric_tokens': target_numbers,
             'numeric_forms_differ': source_numbers != target_numbers,
             'comparison_basis': 'raw_characters_with_spaces',
-            'number_comparison': numeric_comparison.comparison(source_text,translated_text,source_language,target_language)}
+            'number_comparison': comparison,'script_comparison':script_comparison}
 
 
 def allocate_targets(lines: list[str], target_chars: int) -> dict[int, int]:

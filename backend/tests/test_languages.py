@@ -301,6 +301,37 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse((languages.work_dir(self.pid, "en") / "text.txt").exists())
         self.assertFalse(languages.CANCEL)
 
+    def test_cancel_drains_parallel_responses_into_the_resumable_draft(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        started,release=threading.Event(),threading.Event()
+        lock=threading.Lock();count=0
+        class Draft:
+            data={}
+            cost=0
+            def save(self,**values):self.data.update(values)
+            def charge(self,value):self.cost+=value
+        draft=Draft();job={'key':self.pid+'|es|voice'}
+        lines=[{'start':i*2,'end':i*2+1.5,'source':f'Line {i}.'} for i in range(60)]
+        def part(code,items,before):
+            nonlocal count
+            with lock:
+                count+=1
+                if count==2:started.set()
+            release.wait(5)
+            return ['Texto traducido.']*len(items),.01
+        with patch.object(languages,'translate_part',side_effect=part),patch.object(languages,'progress'):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future=executor.submit(languages.translate_lines,'es',lines,120,self.pid,job,draft)
+                try:
+                    self.assertTrue(started.wait(5))
+                    languages.CANCEL.add(job['key']);release.set()
+                    with self.assertRaises(languages.Stop):future.result(timeout=5)
+                finally:
+                    release.set();languages.CANCEL.discard(job['key'])
+        self.assertEqual(sum(map(len,draft.data['initial_parts'].values())),60)
+        self.assertAlmostEqual(draft.cost,.02)
+
     def test_the_voice_is_found_when_the_plan_names_it_by_another_id(self):
         """Timings attached by a path name the voice by an id the project never had: the clip that starts the film is it."""
         other = tone(Path(self.tmp.name) / "music.wav", 2)
@@ -320,6 +351,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.original_file(self.pid), self.voice)
         data = languages.overview(self.pid)["source"]
         self.assertTrue(data["voice"])
+        self.assertEqual(data["filename"], self.voice.name)
         self.assertAlmostEqual(data["duration"], 6, delta=0.1)
 
     def test_the_originals_language_is_found_once(self):
@@ -696,7 +728,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(calls, [("Раз. Два.", 1.0), ("Три.", 1.0), ("Чотири.", 1.0)])
         voice = languages.load_state(self.pid)["languages"]["uk"]["voice"]
         self.assertTrue(voice["synced"])
-        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.08))
+        self.assertEqual((voice["shortened"], voice["quicker"], voice["fastest"]), (0, 1.0, 1.1))
         self.assertGreater(voice["latest"],0)
         self.assertGreater(len(voice["timing_issues"]),0)
         self.assertFalse(voice["paid_timing_retries"])
@@ -957,7 +989,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in json.loads(asked[1])], [3])
         self.assertEqual(asked[2], "Line 2.")
 
-    def test_minimax_keeps_reasoning_and_retries_only_an_empty_truncated_response(self):
+    def test_minimax_returns_empty_reply_for_smaller_batches_without_escalating_tokens(self):
         sent = []
         replies = iter([
             {"choices": [{"message": {"content": ""}, "finish_reason": "length"}], "usage": {"cost": .001}},
@@ -967,10 +999,27 @@ class LanguagesTest(unittest.TestCase):
             return json.dumps(next(replies)).encode()
         with patch.object(languages, "request", side_effect=request):
             text, cost = languages.ask([{"role": "user", "content": "Hi"}], 600)
-        self.assertEqual((text, round(cost,4)), ("Привіт", .003))
+        self.assertEqual((text, round(cost,4)), ("", .001))
         self.assertTrue(all(call['model']==languages.DEFAULT_TRANSLATION_MODEL for call in sent))
         self.assertTrue(all(call['reasoning']=={'effort':'low'} for call in sent))
-        self.assertEqual([call['max_tokens'] for call in sent], [4096,16384])
+        self.assertEqual([call['max_tokens'] for call in sent], [4096])
+
+    def test_cancel_request_survives_worker_updates_until_a_new_run(self):
+        job={'slot':'es|voice','key':self.pid+'|es|voice','code':'es','kind':'translate',
+             'started_at':100,'status':'running','stage':'Перекладаємо'}
+        languages.put_job(self.pid,dict(job))
+        languages.CANCEL.add(job['key'])
+        try:
+            languages.put_job(self.pid,dict(job,progress=50))
+            saved=languages.load_state(self.pid)['jobs'][job['slot']]
+            self.assertTrue(saved['cancel_requested'])
+            self.assertIn('Скасовуємо',saved['stage'])
+        finally:
+            languages.CANCEL.discard(job['key'])
+        languages.put_job(self.pid,dict(job,status='cancelled'))
+        self.assertTrue(languages.load_state(self.pid)['jobs'][job['slot']]['cancel_requested'])
+        languages.put_job(self.pid,dict(job,started_at=101))
+        self.assertFalse(languages.load_state(self.pid)['jobs'][job['slot']].get('cancel_requested'))
 
     def test_parts_of_a_long_text_are_translated_side_by_side_in_order(self):
         names = [chr(0x430 + i % 32) * (1 + i // 32) for i in range(70)]       # no digits: no speech fix asked
@@ -1137,7 +1186,7 @@ class LanguagesTest(unittest.TestCase):
             with self.assertRaisesRegex(store.StudioError,'збережених таймінгів'):
                 languages.whole(self.pid,'uk','elevenlabs',{'cache_only':True})
 
-    def test_cached_local_drift_blocks_new_paid_requests_before_archive_or_clone(self):
+    def test_cached_local_drift_finishes_missing_take_once_and_reports_review(self):
         work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
         texts=[f'Це збережена фраза номер {n} для перевірки.' for n in range(6)]
         (work/'text.txt').write_text('\n'.join(texts))
@@ -1146,15 +1195,47 @@ class LanguagesTest(unittest.TestCase):
         audio=tone(work/'cached.mp3',3.8)
         segments=[{'start':i*1.5,'end':i*1.5+1.5,'source':text} for i,text in enumerate(texts)]
         segments[-1].update(start=40,end=45)
+        calls=[]
+        def synth(provider,voice,text,target,*args,**kwargs):
+            calls.append(text)
+            shutil.copy2(audio,target)
+        job={}
         with patch.object(languages,'source',return_value={'duration':50}), \
              patch.object(languages.voice_cache,'candidates',return_value={text:audio for text in texts[:5]}), \
-             patch.object(languages,'progress'),patch.object(languages,'archive_voice_parts') as archive, \
-             patch.object(languages,'voice_id') as clone,patch.object(languages,'speak') as speak:
-            with self.assertRaisesRegex(RuntimeError,'для зміщення до 7 с'):
-                languages.whole_synced(self.pid,'uk','elevenlabs',{},segments)
-        archive.assert_not_called();clone.assert_not_called();speak.assert_not_called()
-        self.assertEqual((work/'voice.mp3').read_bytes(),b'previous accepted voice')
+             patch.object(languages,'progress'),patch.object(languages,'voice_id',return_value='saved-voice') as clone, \
+             patch.object(languages,'speak',side_effect=synth):
+            languages.whole_synced(self.pid,'uk','elevenlabs',job,segments)
+        clone.assert_called_once()
+        self.assertEqual(calls,[texts[-1]])
+        self.assertEqual(job['reused'],5)
+        self.assertTrue(job['timing_review'])
+        self.assertAlmostEqual(store.media_duration(work/'voice.mp3'),50,delta=.05)
+        manifest=json.loads((work/'parts/manifest.json').read_text())
+        self.assertEqual([part['text'] for part in manifest],texts)
+        self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=part['speed']<=languages.dubbing_fit.MAX_SPEED for part in manifest))
+        self.assertTrue(all(a['end']<=b['start'] for a,b in zip(manifest,manifest[1:])))
         self.assertFalse(json.loads((work/'alignment-preflight.json').read_text())['within_limit'])
+
+    def test_overlong_cached_narration_is_complete_playable_and_marked_for_review(self):
+        work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
+        texts=['Це перша збережена фраза.','Це друга збережена фраза.']
+        (work/'text.txt').write_text('\n'.join(texts))
+        self.example('uk');audio=tone(work/'cached.mp3',3)
+        segments=[{'start':n,'end':n+1,'source':text} for n,text in enumerate(texts)]
+        job={'cache_only':True}
+        with patch.object(languages,'source',return_value={'duration':2}), \
+             patch.object(languages.voice_cache,'candidates',return_value={text:audio for text in texts}), \
+             patch.object(languages,'progress'),patch.object(languages,'voice_id') as clone, \
+             patch.object(languages,'speak') as synth:
+            languages.whole_synced(self.pid,'uk','elevenlabs',job,segments)
+        clone.assert_not_called();synth.assert_not_called()
+        manifest=json.loads((work/'parts/manifest.json').read_text())
+        self.assertEqual([part['text'] for part in manifest],texts)
+        self.assertTrue(job['timing_review'])
+        self.assertGreater(job['overrun_seconds'],3)
+        self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=part['speed']<=languages.dubbing_fit.MAX_SPEED for part in manifest))
+        self.assertAlmostEqual(store.media_duration(work/'voice.mp3'),manifest[-1]['end'],delta=.06)
+        self.assertGreater(manifest[-1]['end'],5)
 
     def test_interrupted_run_reuses_successful_take_without_repeating_payment(self):
         work=languages.work_dir(self.pid,'uk');work.mkdir(parents=True)
@@ -1216,7 +1297,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertFalse(list((work/'parts').glob('adaptation-*.json')))
         self.assertEqual(len(store.read_json(work/'parts/requests.json')),8)
         manifest=store.read_json(work/'parts/manifest.json')
-        self.assertTrue(all(.92<=x['speed']<=1.08 for x in manifest))
+        self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=x['speed']<=languages.dubbing_fit.MAX_SPEED for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)
         self.assertTrue(languages.voice_matches_text(self.pid,code,languages.load_state(self.pid)['languages'][code]['voice']))
 
@@ -1257,7 +1338,7 @@ class LanguagesTest(unittest.TestCase):
             self.assertEqual(speech.call_count,8)
             prepare.assert_not_called()
         manifest=store.read_json(work/'parts/manifest.json')
-        self.assertTrue(all(.92<=x['speed']<=1.08 and x['reused'] for x in manifest))
+        self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=x['speed']<=languages.dubbing_fit.MAX_SPEED and x['reused'] for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)
 
 

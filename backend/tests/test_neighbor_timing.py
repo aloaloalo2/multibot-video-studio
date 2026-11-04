@@ -23,8 +23,8 @@ class NeighborTimingTest(unittest.TestCase):
 
     def test_previous_tempo_is_optimized_for_the_following_chain_and_isolated_speech_is_untouched(self):
         # First take can fit its own slot, but it leaves no room for its neighbours.
-        items=[self.item(0,0,10,10),self.item(1,10,15,5.5,1.07),
-               self.item(2,15,20,5.5,1.07),self.item(3,20,25,5.3,1.04),
+        items=[self.item(0,0,10,10),self.item(1,10,15,5.65,1.07),
+               self.item(2,15,20,5.65,1.07),self.item(3,20,25,5.3,1.04),
                self.item(4,50,55,5)]
         original=copy.deepcopy(items);calls=[]
         def render(item,speed):
@@ -34,9 +34,9 @@ class NeighborTimingTest(unittest.TestCase):
         result=fit.fit_measured(items,60,render)
         after=fit.centered_schedule(result,60)
         self.assertLess(self.error(after),self.error(before)*.5)
-        self.assertGreater(result[0]['speed'],1.01)
+        self.assertGreater(result[0]['speed'],original[0]['speed'])
         self.assertNotIn(4,calls)
-        self.assertTrue(all(.92<=p['speed']<=1.08 for p in result))
+        self.assertTrue(all(fit.MIN_SPEED<=p['speed']<=fit.MAX_SPEED for p in result))
         self.assertEqual(items,original)
         self.assertEqual([p['text'] for p in result],[p['text'] for p in items])
         self.assertTrue(fit.alignment_report(after)['within_limit'])
@@ -84,7 +84,7 @@ class NeighborTimingTest(unittest.TestCase):
         before=fit.centered_schedule(items,total,gap=0)
         self.assertLessEqual(self.error(placed),self.error(before)+1e-4)
         self.assertTrue(fit.alignment_report(placed)['within_limit'])
-        self.assertTrue(all(.92<=s<=1.08 for s in speeds))
+        self.assertTrue(all(fit.MIN_SPEED<=s<=fit.MAX_SPEED for s in speeds))
         self.assertTrue(all(a['end']<=b['start']+1e-6 for a,b in zip(placed,placed[1:])))
 
     def test_joint_solution_matches_known_single_phrase_optimum(self):

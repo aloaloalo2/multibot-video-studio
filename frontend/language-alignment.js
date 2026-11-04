@@ -32,7 +32,7 @@ function langAlignmentCharacters(line,comparison,row){
   const difference=normalized?comparison.difference_percent:null;
   const change=row>0&&difference!==null?` (${difference>0?'+':difference<0?'−':''}${Math.abs(difference).toLocaleString('uk-UA',{maximumFractionDigits:1})}%)`:'';
   return {label:`${count.toLocaleString('uk-UA')} символів${change}`,
-    title:normalized?`З урахуванням чисел: цифри та розпізнані числівники рахуються в однаковій цифровій формі. У тексті: ${raw.toLocaleString('uk-UA')} символів. Текст озвучки не змінено.`:'Символи з пробілами та пунктуацією. Порівняння з урахуванням чисел недоступне.'};
+    title:normalized?`Враховано лише цифри оригіналу та відповідні числа словами в цій фразі перекладу. У тексті: ${raw.toLocaleString('uk-UA')} символів.`:'Символи з пробілами та пунктуацією. Порівняння з урахуванням чисел недоступне.'};
 }
 
 function langAlignmentPlayingPhrase(lines,audio){
@@ -78,7 +78,7 @@ function langAlignment(id,item){
           <div class="lang-alignment-scroll" tabindex="0" aria-label="Спільна шкала часу"><div class="lang-alignment-canvas">
             <div class="lang-alignment-ruler"></div>${rows.map((_,row)=>`<div class="lang-alignment-track${row?' translated':''}" data-row="${row}" aria-label="Фрази: ${row?esc(item.name):'оригінал'}"></div>`).join('')}<i class="lang-alignment-playhead" aria-hidden="true" hidden></i>
           </div></div></div>
-        <div class="lang-alignment-selection"><b></b><span></span></div><div class="lang-alignment-details"></div>
+        <div class="lang-alignment-selection"><b></b></div><div class="lang-alignment-details"></div>
         <p class="lang-alignment-note" role="status"></p>`;
       const scroll=root.querySelector('.lang-alignment-scroll'),canvas=root.querySelector('.lang-alignment-canvas');
       const ruler=root.querySelector('.lang-alignment-ruler'),head=root.querySelector('.lang-alignment-playhead');
@@ -161,11 +161,6 @@ function langAlignment(id,item){
         const original=rows[0][selected],translated=rows[compareRow].find(line=>line.index===selected);
         const comparison=rowData[compareRow]?.character_comparisons?.find(entry=>entry.index===selected);
         selection.querySelector('b').textContent=`Фраза ${selected+1}`;
-        const shift=translated?translated.start-original.start:null,endShift=translated?translated.end-original.end:null;
-        const drift=value=>Math.abs(value)<.1?'збігається':`${Math.abs(value).toFixed(1).replace('.',',')} с ${value>0?'пізніше':'раніше'}`;
-        const outside=shift!=null&&Math.max(Math.abs(shift),Math.abs(endShift))>data.limit_seconds;
-        selection.querySelector('span').textContent=shift==null?'':`${outside?`Понад ±${data.limit_seconds} с · `:''}Початок ${drift(shift)} · кінець ${drift(endShift)}`;
-        selection.classList.toggle('outside-limit',outside);
         details.innerHTML=[0,compareRow].map(row=>{
           const line=row===0?original:translated;
           const chars=line?langAlignmentCharacters(line,comparison,row):null;

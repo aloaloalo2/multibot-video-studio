@@ -8,7 +8,7 @@ from pathlib import Path
 
 import narration_audio
 
-TEMPO_PERCENT = 8
+TEMPO_PERCENT = 10
 MIN_SPEED = 1 - TEMPO_PERCENT / 100
 MAX_SPEED = 1 + TEMPO_PERCENT / 100
 MAX_SHIFT = 7.0
@@ -139,7 +139,7 @@ def alignment_report(items: list[dict]) -> dict:
             'within_limit': not issues, 'issues': issues}
 
 
-def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list[dict]:
+def centered_schedule(items: list[dict], total: float, gap: float = .05, *, allow_review: bool = False) -> list[dict]:
     """Balance spare time around phrases, borrowing neighbouring silence without overlap.
 
     Bounded isotonic projection keeps both source anchors within seven seconds.
@@ -149,12 +149,19 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
     gaps=join_gaps(items,gap)+[0.]
     occupied=sum(lengths)+sum(gaps)
     slack=total-occupied
-    if slack<-.001:
+    if slack<-.001 and not allow_review:
         raise RuntimeError(f'Озвучка довша за ролик на {-slack:.1f} с навіть після локальної підгонки. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
     windows = alignment_windows(items, total, gap)
-    if windows['issues']:
+    if windows['issues'] and not allow_review:
         raise AlignmentError(max(windows['issues'], key=lambda issue: issue['excess']))
+    relaxed = allow_review and (slack < -.001 or bool(windows['issues']))
+    if relaxed:
+        # Keep every measured sample and phrase order. Project onto the nearest
+        # original centres with non-overlap, allowing a visible review overrun.
+        # When all speech exceeds the film, the full tail remains in the file.
+        windows['lower'] = [0.] * len(items)
+        windows['upper'] = [max(0., slack)] * len(items)
     prefix=0.;blocks=[];targets=[]
     for n,item in enumerate(items):
         left=float(item.get('original_start',item['start']))
@@ -182,7 +189,7 @@ def centered_schedule(items: list[dict], total: float, gap: float = .05) -> list
         result.append({**item,'start':start,'end':start+lengths[n],'center_target':targets[n]})
         prefix+=lengths[n]+gaps[n]
     report=alignment_report(result)
-    if not report['within_limit']:
+    if not report['within_limit'] and not allow_review:
         raise RuntimeError('Не вдалося перевірити межу зміщення 7 с. Готові записи збережені.')
     return result
 
@@ -290,7 +297,7 @@ def _aligned_speeds(items: list[dict], total: float, speeds: list[float],
     return candidate(hi)[0]
 
 
-def fitting_speeds(items: list[dict], total: float) -> list[float]:
+def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = False) -> list[float]:
     """Use spare time across the whole film before declaring a bounded fit impossible."""
     speeds=[]
     gaps=join_gaps(items)+[0.]
@@ -303,6 +310,8 @@ def fitting_speeds(items: list[dict], total: float) -> list[float]:
     budget=max(minimum,available-.1)
     def occupied(delta):return sum(x['length']/min(MAX_SPEED,s+delta) for x,s in zip(items,speeds))
     if minimum>available:
+        if allow_review:
+            return [MAX_SPEED] * len(items)
         excess=minimum-available
         raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі {TEMPO_PERCENT}%. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
@@ -324,7 +333,7 @@ def fitting_speeds(items: list[dict], total: float) -> list[float]:
 
 
 def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
-                  max_passes: int = 3) -> list[dict]:
+                  max_passes: int = 3, allow_review: bool = False) -> list[dict]:
     """Correct local tempo against measured output, retaining every original take.
 
     ``render(item, speed)`` must render from the preserved source (never from an
@@ -414,6 +423,8 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     windows = alignment_windows(result,total,gap)
     if occupied() <= budget() + 1e-6 and not windows['issues']:
         return result
+    if allow_review:
+        return result
     if windows['issues'] and occupied() <= budget() + 1e-6:
         raise AlignmentError(max(windows['issues'],key=lambda issue:issue['excess']))
     excess = max(0., occupied() - budget())
@@ -423,7 +434,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
 
 
 def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
-                 max_passes: int = 3) -> list[dict]:
+                 max_passes: int = 3, allow_review: bool = False) -> list[dict]:
     """Get a valid measured fit, then improve neighbouring phrase synchronization.
 
     Render only changed tempos, always from raw takes. The optional joint fit is
@@ -432,12 +443,20 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     restore the already valid fitted audio; never replace its metadata alone.
     """
     import narration_alignment
-    base = _fit_measured(items, total, render, gap=gap, max_passes=max_passes)
-    proposed = narration_alignment.propose(base, total, join_gaps(base, gap),
-        min_speed=MIN_SPEED, max_speed=MAX_SPEED, max_shift=MAX_SHIFT)
+    base = _fit_measured(items, total, render, gap=gap, max_passes=max_passes, allow_review=allow_review)
+    if not base or any(item.get('original_start') is None or item.get('original_end') is None for item in base):
+        return base  # Legacy unanchored audio can fit its duration without a source-clock optimization.
+    before = centered_schedule(base, total, gap, allow_review=allow_review)
+    windows = alignment_windows(base, total, gap)
+    relaxed = allow_review and (bool(windows['issues']) or windows['slack'] < -1e-6)
+    # Even a review file benefits from joint optimisation. Relax only timing
+    # windows, never tempo, sample preservation or phrase order.
+    fit_total = max(total, before[-1]['end']+.01) if relaxed else total
+    shift_limit = fit_total+max(float(x['original_end']) for x in base) if relaxed else MAX_SHIFT
+    proposed = narration_alignment.propose(base, fit_total, join_gaps(base, gap),
+        min_speed=MIN_SPEED, max_speed=MAX_SPEED, max_shift=shift_limit)
     if proposed is None:
         return base
-    before = centered_schedule(base, total, gap)
     candidate = [dict(item) for item in base]
     changed = []
     for n, (item, speed) in enumerate(zip(candidate, proposed)):
@@ -461,13 +480,14 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
         return error, score['max_shift_seconds'], score['percent']
 
     try:
-        after = centered_schedule(candidate, total, gap)
+        after = centered_schedule(candidate, total, gap, allow_review=allow_review)
     except RuntimeError:
         after = None  # DSP lengths can differ from the proposed inverse durations.
     if after is not None:
         old_error, old_max, old_score = quality(before)
         error, maximum, score = quality(after)
-        if error < old_error-1e-5 and maximum <= old_max+.05 and score >= old_score:
+        if (error < old_error-1e-5 and maximum <= old_max+.05 and score >= old_score
+                and after[-1]['end'] <= max(total,before[-1]['end'])+.02):
             return candidate
     # The renderer owns output files/buffers, so restore those as well as the
     # manifest. No stacked time-stretching: render() always starts from raw audio.
@@ -479,7 +499,7 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
         base[n].update(fitted_length=float(length))
         if 'edge_silence' in restored:
             base[n]['edge_silence'] = restored['edge_silence']
-    centered_schedule(base, total, gap)  # independently verify the restored fit
+    centered_schedule(base, total, gap, allow_review=allow_review)  # verify restored fit
     return base
 
 

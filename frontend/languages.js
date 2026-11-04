@@ -19,7 +19,7 @@ function renderLangView(){
   const project=state.project,open=!!project&&state.view==='langs';
   tab.hidden=!project;tab.classList.toggle('active',open);tab.setAttribute('aria-pressed',String(open));
   section.hidden=!open;
-  if(!open){langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();langThumbnailDialog?.dialog.close();if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
+  if(!open){langCloseOriginal();langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();langThumbnailDialog?.dialog.close();if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
   if(section.dataset.project!==project.id){section.dataset.project=project.id;section.innerHTML=`<div class="lang-view"><div class="lang-head"><h1>${langTranslateIcon}Мови</h1><p class="lang-lead">Завантаження…</p></div></div>`;loadLangs(project.id);}
 }
 
@@ -76,6 +76,7 @@ function langChoose(id,code){try{localStorage.setItem(`langTab:${id}`,code);}cat
 // Each language has its own script, narrator, narration and thumbnail cards.
 function drawLangs(id){
   const section=$('project-langs');if(!section||section.dataset.project!==id)return;
+  if(langOriginalDialog?.dataset.project!==id)langCloseOriginal();
   langCloseSampleMenu();
   section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
@@ -105,6 +106,7 @@ function drawLangs(id){
 // episode («в настройках каналу»), an episode's own wins («якщо ні, то можна закинути свій»). No example, no voicing.
 const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+const langWaveIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4"/></svg>';
 function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Не вдалося розпізнати слова в прикладі. Для точнішого голосу запишіть або завантажте чіткіший запис без фонового шуму.</p>':'';}
 function langAddButtons(primary){
@@ -313,7 +315,8 @@ function langNumberComparison(item){
   if(!value?.available || !Number.isFinite(value.difference_percent))return '';
   const number=n=>n.toLocaleString('uk-UA',{maximumFractionDigits:2});
   const percent=(value.difference_percent>0?'+':'')+number(value.difference_percent);
-  return `З урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів`;
+  const limit=item.translation_length?.script_comparison?.tolerance_percent;
+  return `З урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} символів${limit?` · межа ±${limit}%`:''}`;
 }
 
 function langSpec(item){
@@ -330,7 +333,7 @@ function langVoiceSummary(id,item){
   const spec=langSpec(item),engine=spec.engines?.find(entry=>entry.id===spec.engine);
   const kind=item.own_voice?'own':item.channel_voice?'channel':null;
   card.innerHTML=`<button type="button" class="lang-voice-open" aria-label="Налаштування голосу: ${esc(item.name)}" title="Змінити голос і налаштування">
-    <strong>${langFlag(item.code)}Голос диктора</strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>
+    <strong>${micIcon}<span>Голос диктора</span></strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>
     <span>${esc(spec.name)}<small>${esc(engine?.name||spec.engine)}${spec.styles?' · '+esc(spec.styles.find(style=>style.id===spec.style)?.name||''):''}</small></span></button>
     ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
   card.querySelector('.lang-voice-open').onclick=()=>langOpenVoiceSettings(id,item.code);
@@ -461,7 +464,10 @@ function langVoiceTileState(item){
   if(job?.status==='running')return {kind:'working',label:job.kind==='voice'?'Створюємо озвучку':job.kind==='refit'?'Вирівнюємо озвучку':'Зберігаємо озвучку',detail:`${Math.round(job.progress||0)}%`,progress:job.progress||0,job};
   if(job?.status==='failed')return {kind:'attention',label:'Перевірити озвучку',detail:'',job};
   const status=langVoiceStatus(item,spec);
-  if(status)return {kind:'ready',label:status.replace(' ✓',''),detail:item.voice?.duration?clock(item.voice.duration):'Переглянути'};
+  if(status){
+    const review=item.voice?.timing_status==='review'||item.voice?.alignment?.within_limit===false;
+    return {kind:'ready',review,label:review?'Перевірити синхронізацію':status.replace(' ✓',''),detail:item.voice?.duration?clock(item.voice.duration):'Переглянути'};
+  }
   return {kind:'action',label:langVoiceAction(item,spec),detail:langCost(spec,item.prices?.[spec.id]),blocked:langRunning(item.code,'voice')||!langHasVoice(item)||!item.text||!!(item.language_check&&item.language_check.state!=='ok')};
 }
 
@@ -481,9 +487,9 @@ function langPaintVoiceTiles(){
     const item=langData?.items.find(entry=>entry.code===card.dataset.code);if(!item)return;
     const status=langVoiceTileState(item),button=card.querySelector('button');
     card.dataset.status=status.kind;
-    const icon=status.kind==='working'?exportSpinner:status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':status.kind==='attention'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':langMagicVoiceIcon;
+    const icon=status.kind==='working'?exportSpinner:status.kind==='attention'||status.review?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':langMagicVoiceIcon;
     const score=status.kind==='ready'?langVoiceScores.get(langVoiceScoreKey(state.project?.id,item)):null;
-    button.innerHTML=`<span class="lang-voice-tile-heading">${langFlag(item.code)}Озвучка перекладу</span>${status.kind==='ready'?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
+    button.innerHTML=`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
     const existing=card.querySelector('.lang-summary-player');
     if(status.kind==='ready'&&!existing){
       const box=document.createElement('div');box.className='lang-summary-player lang-own has-voice';
@@ -532,14 +538,14 @@ function langVoiceResult(id,item){
   const estimate=item.voice_estimates?.[spec.id];
   const mix=item.saved_mix || {state:'missing'};
   const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';
-  const alignmentNeeded=voice.alignment?.within_limit===false;
+  const alignmentNeeded=voice.timing_status==='review'||voice.alignment?.within_limit===false;
   const fit=voice.synced?[voice.centered?`паузи розподілено навколо фраз`:`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`${voice.centered?'зміщення для підгонки':'найбільше запізнення'} ${String(voice.latest).replace('.',',')} с`:'',voice.slowest<.99?`темп до ${Math.round(voice.slowest*100)}%`:'',voice.long_gaps?.length?`паузи понад 1,5 с: ${voice.long_gaps.length}, потребують перевірки`:'',voice.timing_issues?.length?`перевірте таймінги ${voice.timing_issues.length} фраз`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
     <section class="lang-step" data-lang-step="1">
         ${item.text?`<div class="lang-sample-row">
           ${spec.id==='elevenlabs'?'<div class="lang-balance" role="status" aria-live="polite"></div>':''}
           <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
-        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Потрібне вирівнювання до 7 с':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
+        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Готова озвучка · перевірте синхронізацію':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
           <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
           <div class="lang-player" data-kind="voice"></div><p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
@@ -562,7 +568,7 @@ async function langConfirmVoice(id,code){
     const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
     const action=langVoiceAction(fresh,spec);
     modal(`${action} ${fresh.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' символів'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
-      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до 8% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
+      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(langData.tempo_percent||8).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',code);}}]);
 }
 
@@ -666,10 +672,20 @@ function langNote(where,message,error=false){
 // the slots whose cancel the author pressed: only they read «Скасовуємо…» (the button used to be disabled with every other
 // button of the card while a job ran, and the next poll took that for a cancel asked; user, 2 November 2026)
 const langAsked=new Set();
+function langCancelKey(id,job){return `${id}:${job.slot}:${job.started_at||0}`;}
+function langStopping(job,id=state.project?.id){return !!job&&(job.cancel_requested||langAsked.has(langCancelKey(id,job)));}
+function langCancelButton(job){const stopping=langStopping(job);return `<button type="button" class="secondary lang-cancel" data-slot="${esc(job.slot)}"${stopping?' disabled':''}>${stopping?'Скасовуємо…':'Скасувати'}</button>`;}
 async function langCancel(id,slot,button){
-  langAsked.add(slot);
+  const job=langJobs().find(entry=>entry.slot===slot),key=langCancelKey(id,job||{slot});
+  if(langAsked.has(key))return;
+  langAsked.add(key);
   if(button){button.disabled=true;button.textContent='Скасовуємо…';}
-  try{await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{slot});}catch(error){langNote(button,error.message,true);}
+  try{
+    const data=await api(`/api/projects/${encodeURIComponent(id)}/languages/cancel`,'POST',{slot});
+    if(state.project?.id!==id)return;
+    if(data.jobs){langData.jobs=data.jobs;langData.job=data.job;}
+    showLangJob();
+  }catch(error){langAsked.delete(key);if(button){button.disabled=false;button.textContent='Скасувати';}if(state.project?.id===id)langNote(button,error.message,true);}
 }
 
 async function langStart(id,kind,code,extra={}){
@@ -709,7 +725,7 @@ function langPaintVoiceSetups(){
     progress.hidden=!job||!['running','failed'].includes(job.status);
     if(progress.hidden){progress.replaceChildren();return;}
     if(job.status==='running'){
-      const stopping=langAsked.has(job.slot);
+      const stopping=langStopping(job);
       progress.innerHTML=`<span>${esc(job.stage||'Починаємо…')}</span><progress max="100" value="${job.progress||0}"></progress><button type="button" class="lang-icon lang-cancel" title="Скасувати" aria-label="Скасувати"${stopping?' disabled':''}>×</button>`;
       progress.querySelector('button').onclick=event=>langCancel(id,job.slot,event.currentTarget);
     }else{
@@ -755,12 +771,12 @@ function showLangJob(){
       box.dataset.status=job?.status || '';
       step.classList.toggle('is-working',busy);
       const slot=job?.slot || (job?`${job.code}|${langGroupOf(job.kind)}`:'');
-      if(!busy)langAsked.delete(slot);
+      if(!busy&&job)langAsked.delete(langCancelKey(state.project?.id,job));
       if(box.hidden){box.innerHTML='';return;}
       // the poll redraws this line every 2 s: a cancel already asked for stays shown
-      const stopping=langAsked.has(slot) || job.stage==='Скасовуємо…';
+      const stopping=langStopping(job);
       box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${stopping?' disabled':''}>${stopping?'Скасовуємо…':'Скасувати'}</button>`
-        :job.status==='cancelled'?`<span>${job.voice_ready?'Озвучка готова. Збереження файлу з музикою й ефектами скасовано.':job.kind==='translate'?'Переклад призупинено. Готові частини збережено для продовження.':'Скасовано, нічого не збережено.'}</span>`
+        :job.status==='cancelled'?`<span>${job.voice_ready?'Озвучка готова. Збереження файлу з музикою й ефектами скасовано.':job.kind==='translate'?'Переклад призупинено. Готові частини збережено для продовження.':'Скасовано. Готові записи фраз збережено.'}</span>`
         :`<span>Не вдалося: ${esc(job.error || '')}</span>`;
       const cancel=box.querySelector('.lang-cancel');
       cancel?.addEventListener('click',()=>langCancel(state.project.id,slot,cancel));
@@ -774,7 +790,7 @@ function showLangJob(){
     const label=tile.querySelector('.lang-thumb-wand small');
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex генерує, 1-3 хвилини…':label.dataset.idle;}
   }
-  document.querySelectorAll('#project-langs .lang-thumbnail-tile').forEach(tile=>{
+  document.querySelectorAll('#project-langs .lang-thumbnail-tile[data-code]').forEach(tile=>{
     const busy=langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);
     tile.querySelector('small').textContent=busy?'Створюємо…':tile.classList.contains('has-picture')?'Переглянути':'Згенерувати';
   });

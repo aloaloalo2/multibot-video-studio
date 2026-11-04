@@ -9,9 +9,43 @@ function langScriptJob(code){
     .sort((a,b)=>(b.started_at||b.finished_at||0)-(a.started_at||a.finished_at||0))[0];
 }
 
+function langScriptCost(item){
+  const cost=item.translate_cost;
+  return typeof cost==='number'&&Number.isFinite(cost)&&cost>=0?`$${cost.toFixed(3)}`:'';
+}
+
+function langTranslationProgress(job,now=Date.now()/1000){
+  if(typeof langStopping==='function'&&langStopping(job))return {label:'Скасовуємо…',detail:'Зберігаємо поточну відповідь. Нові запити не запускаємо.',progress:job.progress||0,indeterminate:true};
+  const review=job.translation_review,comparison=job.translation_length?.phrase_comparison;
+  const reviewing=job.status==='running'&&Number(job.progress)===95;
+  let label='Перекладаємо',detail=job.stage||'Перекладаємо…';
+  if(reviewing){
+    label=({audit:'Перевіряємо зміст',meaning:'Виправляємо зміст',length:'Уточнюємо довжину',pacing:'Узгоджуємо темп'})[review?.phase]||'Уточнюємо переклад';
+    const parts=[];
+    if(comparison?.available&&Number.isInteger(comparison.total)&&Number.isInteger(comparison.outside_count)){
+      parts.push(`Довжина узгоджена: ${comparison.total-comparison.outside_count} з ${comparison.total} фраз`);
+    }
+    const whole=job.translation_length?.script_comparison;
+    if(whole?.available&&!whole.within_budget)parts.push(`Весь сценарій: ${whole.difference_percent>0?'+':''}${whole.difference_percent}% · ціль ±${whole.tolerance_percent}%`);
+    if(review?.phase==='audit')parts.push(`Зміст перевірено: ${review.audited} з ${review.total} фраз`);
+    if(review?.batch_size)parts.push(`Зараз опрацьовуємо ${review.batch_size} фраз`);
+    // Compatibility with a job started before structured review progress existed.
+    if(!review){
+      const batch=(job.stage||'').match(/Уточнюємо переклад: готово \d+ з (\d+) фраз/);
+      parts.push(batch?`Зараз опрацьовуємо ${batch[1]} фраз`:detail);
+    }
+    if(review?.waiting){
+      const elapsed=Math.max(0,Math.floor(now-review.request_started_at));
+      parts.push(`Очікуємо відповідь MiniMax · ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`);
+    }else if(!review)parts.push('Очікуємо відповідь MiniMax');
+    detail=parts.join(' · ');
+  }
+  return {label,detail,progress:job.progress||0,indeterminate:reviewing};
+}
+
 function langScriptStatus(item){
   const job=langScriptJob(item.code);
-  if(job?.status==='running')return {kind:'working',label:'Перекладаємо',detail:job.stage||'',progress:job.progress||0};
+  if(job?.status==='running')return {kind:'working',...langTranslationProgress(job)};
   if(job?.status==='failed'||item.translation_resumable)return {kind:'attention',label:item.translation_resumable?'Переклад призупинено':'Перевірити переклад'};
   if(item.language_check&&item.language_check.state!=='ok')return {kind:'attention',label:'Потрібна перевірка'};
   return item.text?{kind:'ready',label:'Перекладено'}:{kind:'empty',label:'Перекласти'};
@@ -20,11 +54,11 @@ function langScriptStatus(item){
 function langScriptLibrary(id,holder,data){
   holder.innerHTML=`<div class="lang-script-grid">${data.items.filter(item=>item.text).map(item=>{
     const status=langScriptStatus(item);
-    return `<div class="lang-language-column" data-language="${item.code}"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити сценарій: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
-      <span class="lang-script-file-head">${langFlag(item.code)}<span class="lang-script-fold" aria-hidden="true"></span></span>
-      <strong>${esc(item.name)}</strong><span class="lang-script-file-title">${esc(item.title||'Сценарій ролика')}</span>
-      <span class="lang-script-file-status" title="Переклад сценарію">${langTranslateIcon}<span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
-      <progress max="100" value="${status.progress||0}"${status.kind==='working'?'':' hidden'}></progress></button><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
+    return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити переклад: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
+      <span class="lang-script-file-head">${langTranslateIcon}<strong>Переклад</strong><span class="lang-script-fold" aria-hidden="true"></span></span>
+      <span class="lang-script-file-title">${esc(item.title||'Сценарій ролика')}</span>
+      <span class="lang-script-file-status" title="Переклад сценарію"><span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span><span class="lang-script-cost"${status.kind==='ready'&&langScriptCost(item)?'':' hidden'}>${langScriptCost(item)}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
+      <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
   }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div><div class="lang-script-queue" aria-live="polite"></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
   holder.querySelectorAll('[data-language]').forEach(column=>{
@@ -34,6 +68,7 @@ function langScriptLibrary(id,holder,data){
     column.append(langThumbnailTile(id,item));
     column.querySelector('.lang-language-remove').onclick=()=>langRemoveLanguage(id,item.code);
   });
+  holder.querySelector('.lang-script-grid').prepend(langOriginalColumn(id,data));
   const free=langScriptAvailable(data);
   holder.querySelector('.lang-script-add').hidden=!free.length;
   holder.querySelector('.lang-script-add').addEventListener('click',()=>langOpenScriptPicker(id));
@@ -106,9 +141,9 @@ function langOpenScriptPicker(id){
 function langPaintScriptQueue(){
   const queue=document.querySelector('#project-langs .lang-script-queue');if(!queue)return;
   queue.innerHTML=(langData?.items||[]).filter(item=>!item.text).map(item=>{
-    const job=langScriptJob(item.code),busy=job?.status==='running';
-    return `<div class="lang-script-pending">${langFlag(item.code)}<strong>${esc(item.name)}</strong><span>${esc(busy?job.stage||'Перекладаємо…':job?.error||'Переклад ще не завершено')}</span>
-      ${busy?`<progress max="100" value="${job.progress||0}"></progress><button type="button" class="secondary lang-cancel" data-slot="${esc(job.slot)}">Скасувати</button>`:`<button type="button" class="secondary" data-open-script="${item.code}">Відкрити</button>`}</div>`;
+    const job=langScriptJob(item.code),busy=job?.status==='running',status=busy?langTranslationProgress(job):null;
+    return `<div class="lang-script-pending">${langFlag(item.code)}<strong>${esc(item.name)}</strong><span>${esc(busy?status.detail:job?.error||'Переклад ще не завершено')}</span>
+      ${busy?`<progress max="100"${status.indeterminate?'':` value="${status.progress}"`}></progress>${langCancelButton(job)}`:`<button type="button" class="secondary" data-open-script="${item.code}">Відкрити</button>`}</div>`;
   }).join('');
   queue.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>langCancel(state.project.id,button.dataset.slot,button));
   queue.querySelectorAll('[data-open-script]').forEach(button=>button.onclick=()=>langOpenScript(state.project.id,button.dataset.openScript));
@@ -122,7 +157,9 @@ function langPaintScriptJobs(){
     button.querySelector('.lang-script-status-label').textContent=status.label;
     button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';
     button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
-    const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';progress.value=status.progress||0;
+    const cost=button.querySelector('.lang-script-cost');cost.textContent=langScriptCost(item);cost.hidden=status.kind!=='ready'||!cost.textContent;
+    const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';
+    if(status.indeterminate)progress.removeAttribute('value');else progress.value=status.progress||0;
     button.title=`${item.name}: ${status.label}${status.detail?' · '+status.detail:''}`;
   });
   langPaintScriptQueue();langScriptDialog?.sync();
@@ -165,6 +202,7 @@ function langOpenScript(id,code){
     }
     const busy=langRunning(code,'voice'),job=langScriptJob(code),status=langScriptStatus(item);
     text.readOnly=busy;title.readOnly=busy;action.disabled=busy||starting;
+    action.hidden=busy||starting;
     action.classList.toggle('primary',!item.text);action.classList.toggle('secondary',!!item.text);
     action.querySelector('span').textContent=item.translation_resumable?'Продовжити переклад':item.text?'Перекласти заново':'Перекласти';
     dialog.querySelector('.lang-script-dialog-status span').textContent=status.label;
@@ -173,7 +211,7 @@ function langOpenScript(id,code){
     dialog.querySelector('.lang-script-empty').hidden=!!item.text||!!draft;
     dialog.querySelector('.lang-text-quality').innerHTML=langQualityNotice(item.language_check);
     const jobBox=dialog.querySelector('.lang-script-job');
-    jobBox.innerHTML=job?.status==='running'?`<span>${esc(job.stage||'Перекладаємо…')}</span><progress max="100" value="${job.progress||0}"></progress><button type="button" class="secondary lang-cancel">Скасувати</button>`:job?.status==='failed'?`<span class="lang-warn">${esc(job.error||'Не вдалося завершити переклад.')}</span>`:'';
+    jobBox.innerHTML=job?.status==='running'?`<span>${esc(status.detail)}</span><progress max="100"${status.indeterminate?'':` value="${status.progress}"`}></progress>${langCancelButton(job)}`:job?.status==='failed'?`<span class="lang-warn">${esc(job.error||'Не вдалося завершити переклад.')}</span>`:'';
     jobBox.hidden=!jobBox.innerHTML;
     jobBox.querySelector('button')?.addEventListener('click',event=>langCancel(id,job.slot,event.currentTarget));
     metrics();

@@ -72,29 +72,37 @@ def answers(answer, ids):
         return {}, 'The model returned malformed JSON.'
 
 
-def audit(answer, ids):
+class InvalidAudit(RuntimeError):
+    """The reply did not supply a complete, consistent validation result."""
+
+
+def audit(answer, ids, *, strict=False):
     """Strict audit contract: contradictory or incomplete evidence cannot approve text."""
     invalid = {i: 'Перевірка змісту не підтвердила цю фразу. Звірте її з оригіналом.' for i in ids}
+    def invalid_reply():
+        if strict:
+            raise InvalidAudit('Модель не повернула повну відповідь перевірки.')
+        return invalid
     try:
         value = json.loads(answer, object_pairs_hook=_unique_object)
         checked = value.get('ids')
         issues = value.get('issues', [])
         if (not isinstance(checked, list) or any(type(i) is not int for i in checked)
                 or len(checked) != len(ids) or set(checked) != set(ids) or not isinstance(issues, list)):
-            return invalid
+            return invalid_reply()
         if value.get('ok') is True:
-            return {} if not issues else invalid
+            return {} if not issues else invalid_reply()
         if value.get('ok') is not False or not issues:
-            return invalid
+            return invalid_reply()
         result = {}
         for issue in issues:
             if (not isinstance(issue, dict) or type(issue.get('id')) is not int or issue['id'] not in ids
                     or issue['id'] in result or not isinstance(issue.get('reason'), str) or not issue['reason'].strip()):
-                return invalid
+                return invalid_reply()
             result[issue['id']] = issue['reason']
         return result
     except (ValueError, TypeError, AttributeError):
-        return invalid
+        return invalid_reply()
 
 
 class Draft:
@@ -135,6 +143,13 @@ class Draft:
                 for key in ('origin', 'issue'):
                     if isinstance(saved.get(key), str):
                         self.data[key] = saved[key]
+                rejected = saved.get('rejected')
+                if isinstance(rejected, dict):
+                    self.data['rejected'] = {k: [entry for entry in entries[-3:]
+                        if isinstance(entry, dict) and isinstance(entry.get('translation'), str)
+                        and isinstance(entry.get('issue'), str)]
+                        for k, entries in rejected.items() if isinstance(k, str) and k.isdecimal()
+                        and int(k) < self.size and isinstance(entries, list)}
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -153,7 +168,7 @@ class Draft:
     def seed(self, lines, origin=None):
         if not self.valid_lines(lines):
             raise ValueError('The recovery draft must retain every nonempty source phrase in order.')
-        self.save(lines=list(lines), initial_parts={}, audited={}, rewrite={}, completed=False,
+        self.save(lines=list(lines), initial_parts={}, audited={}, rewrite={}, rejected={}, completed=False,
                   origin=origin, issue=None)
 
     def charge(self, cost):

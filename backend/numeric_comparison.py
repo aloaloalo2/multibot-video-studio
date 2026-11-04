@@ -128,9 +128,23 @@ def latin_spans(text, language):
         a,b=matches[number.start].start(),matches[number.end-1].end()
         words=text[a:b].lower()
         # Single indefinite articles/pronouns are not a numerical fact.
-        if words in {'un','una','une','um','uma','een'}:continue
+        if words in {'un','una','unos','unas','une','um','uma','een'}:continue
         if words=='uno' and re.match(r'\s+de\b',text[b:],re.I):continue
+        if language=='es' and words in {'miles','millones','billones'}:continue
+        # Do not read a fraction denominator as a separate ordinal quantity.
+        if language=='es' and (words in {'cuartos','tercios'} or re.match(r'\s+(?:cuartos|tercios)\b',text[b:],re.I)):
+            continue
         value=decimal_text(number.value)
+        if language=='es':
+            scale=re.search(r'\b(mil|millón|millones)\Z',words)
+            half=re.match(r'\s+y\s+medi[oa]\b',text[b:],re.I)
+            half_scale=re.match(r'\s+y\s+medi[oa]\s+(mil|millón|millones)\b',text[b:],re.I)
+            if scale and half:
+                value=decimal_text(Decimal(value)+Decimal(SCALES['es'][scale[1]])/2)
+                b+=half.end()
+            elif half_scale:
+                value=decimal_text((Decimal(value)+Decimal('.5'))*SCALES['es'][half_scale[1].lower()])
+                b+=half_scale.end()
         result.append((a,b,value))
     return result
 
@@ -180,15 +194,61 @@ def normalized(text: str, language: str):
     return rendered,tuple(kept),True
 
 
-def comparison(source: str, translated: str, source_language: str, target_language: str) -> dict:
-    left,left_spans,left_ok=normalized(source,source_language)
-    right,right_spans,right_ok=normalized(translated,target_language)
-    ready=left_ok and right_ok
-    difference=len(right)-len(left)
+def paired_forms(source: str, translated: str, source_language: str, target_language: str):
+    """Discount only a source digit paired with the same value in target words.
+
+    Match occurrences, not merely a set of values. Ordinary words and unmatched
+    or changed quantities stay intact. The general parser above is still used
+    separately for semantic year validation; it does not define display counts.
+    """
+    from collections import defaultdict, deque
+    _, source_spans, source_ok = normalized(source, source_language)
+    _, target_spans, target_ok = normalized(translated, target_language)
+    available = source_ok and target_ok
+    selected_source, selected_target = [], []
+    if available:
+        digits = defaultdict(deque)
+        for span in source_spans:
+            if any(c.isdecimal() for c in source[span[0]:span[1]]):
+                digits[span[2]].append(span)
+        for span in target_spans:
+            if (not any(c.isdecimal() for c in translated[span[0]:span[1]])
+                    and digits[span[2]]):
+                selected_source.append(digits[span[2]].popleft())
+                selected_target.append(span)
+    def render(text, spans):
+        for a, b, value in sorted(spans, reverse=True):
+            text = text[:a] + value + text[b:]
+        return text
+    return ((render(source, selected_source), tuple(sorted(selected_source)), available),
+            (render(translated, selected_target), tuple(selected_target), available))
+
+
+def comparison(source: str, translated: str, source_language: str, target_language: str,
+               *, source_units=None, translated_units=None) -> dict:
+    if (source_units is not None and translated_units is not None
+            and len(source_units) == len(translated_units)):
+        # Whole-script counts retain its exact spaces and line breaks. Matched
+        # number discounts come only from the corresponding phrase, so a digit
+        # in another sentence cannot hide an indefinite 'one' here.
+        pairs = [paired_forms(a, b, source_language, target_language)
+                 for a, b in zip(source_units, translated_units)]
+        ready = source_language in SUPPORTED and target_language in SUPPORTED and all(a[2] and b[2] for a, b in pairs)
+        source_reduction = sum(len(text)-len(pair[0][0]) for text, pair in zip(source_units, pairs))
+        target_reduction = sum(len(text)-len(pair[1][0]) for text, pair in zip(translated_units, pairs))
+        left_count, right_count = len(source)-source_reduction, len(translated)-target_reduction
+        source_count = sum(len(a[1]) for a, _ in pairs)
+        target_count = sum(len(b[1]) for _, b in pairs)
+    else:
+        (left, left_spans, ready), (right, right_spans, _) = paired_forms(source, translated, source_language, target_language)
+        left_count, right_count = len(left), len(right)
+        source_count, target_count = len(left_spans), len(right_spans)
+        source_reduction, target_reduction = len(source)-left_count, len(translated)-right_count
+    difference = right_count-left_count
     return {'available':ready,'source_language':source_language,'target_language':target_language,
-            'source_chars':len(left) if ready else None,'translated_chars':len(right) if ready else None,
+            'source_chars':left_count if ready else None,'translated_chars':right_count if ready else None,
             'difference_chars':difference if ready else None,
-            'difference_percent':round(100*difference/len(left),2) if ready and left else None,
-            'source_numbers':len(left_spans),'translated_numbers':len(right_spans),
-            'source_reduction':len(source)-len(left),'translated_reduction':len(translated)-len(right),
-            'basis':'recognized_numbers_as_digits','advisory_only':True}
+            'difference_percent':round(100*difference/left_count,2) if ready and left_count else None,
+            'source_numbers':source_count,'translated_numbers':target_count,
+            'source_reduction':source_reduction,'translated_reduction':target_reduction,
+            'basis':'source_digits_matched_to_target_words','advisory_only':True}

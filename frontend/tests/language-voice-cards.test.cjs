@@ -72,3 +72,30 @@ test('all translated rows show number-normalized character differences',()=>{
   const raw=env.run("langAlignmentCharacters({text:'twenty three'},{available:false},4)");
   assert.doesNotMatch(raw.label,/%/);
 });
+
+test('a completed voice with timing issues remains playable and clearly needs review',()=>{
+  const env=runtime();
+  env.run("Object.assign(langData.items[0],{files:{voice:true},voice:{provider:'elevenlabs',timing_status:'review',duration:13},saved_mix:{state:'saved'}})");
+  const status=env.run('langVoiceTileState(langData.items[0])');
+  assert.equal(status.kind,'ready');
+  assert.equal(status.review,true);
+  assert.match(status.label,/Перевірити синхронізацію/);
+});
+
+test('cancellation remains disabled through stale polls and is scoped to the project and run',async()=>{
+  const env=runtime();
+  env.run("langData.jobs=[{code:'uk',kind:'voice',slot:'uk|voice',started_at:100,status:'running'}];showLangJob=()=>{};");
+  const button={disabled:false,textContent:'Скасувати'};env.context.cancelButton=button;
+  await env.run("langCancel('project-a','uk|voice',cancelButton)");
+  assert.equal(button.disabled,true);
+  assert.match(env.run('langCancelButton(langData.jobs[0])'),/ disabled/);
+  await env.run("langCancel('project-a','uk|voice',cancelButton)");
+  assert.equal(env.requests.length,1);
+  env.run('langData.jobs[0]={...langData.jobs[0]}');
+  assert.equal(env.run('langStopping(langData.jobs[0])'),true);
+  assert.equal(env.run("langStopping(langData.jobs[0],'project-b')"),false);
+  env.run('langData.jobs[0].started_at=101');
+  assert.equal(env.run('langStopping(langData.jobs[0])'),false);
+  env.run('langData.jobs[0].cancel_requested=true');
+  assert.match(env.run('langCancelButton(langData.jobs[0])'),/ disabled/);
+});

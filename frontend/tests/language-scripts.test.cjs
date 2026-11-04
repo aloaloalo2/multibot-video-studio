@@ -52,3 +52,31 @@ test('picker omits source, completed translations and busy languages, but permit
     languages:['en','pl','uk','fr','es'].map(code=>({code}))};
   assert.deepEqual(Array.from(context.langScriptAvailable(data),item=>item.code),['uk','es']);
 });
+
+test('translation cost is rounded to three dollars decimals and unknown cost stays hidden',()=>{
+  const context=load(()=>assert.fail('Display must not call the API'));
+  assert.equal(context.langScriptCost({translate_cost:.02845}),'$0.028');
+  assert.equal(context.langScriptCost({translate_cost:.1196}),'$0.120');
+  assert.equal(context.langScriptCost({translate_cost:0}),'$0.000');
+  for(const translate_cost of [undefined,null,-1,NaN,Infinity,'0.05']){
+    assert.equal(context.langScriptCost({translate_cost}),'');
+  }
+});
+
+test('review shows measured total progress and provider wait without a fake completion percentage',()=>{
+  const context=load(()=>assert.fail('Display must not call the API'));
+  const job={status:'running',progress:95,stage:'Legacy stage',
+    translation_review:{phase:'length',total:341,batch_size:20,waiting:true,request_started_at:100},
+    translation_length:{phrase_comparison:{available:true,total:341,outside_count:40}}};
+  const status=context.langTranslationProgress(job,175);
+  assert.equal(status.indeterminate,true);
+  assert.match(status.detail,/301 з 341/);
+  assert.match(status.detail,/20 фраз/);
+  assert.match(status.detail,/MiniMax.*1:15/);
+  const legacy=context.langTranslationProgress({status:'running',progress:95,
+    stage:'Уточнюємо переклад: готово 0 з 20 фраз'});
+  assert.equal(legacy.indeterminate,true);
+  assert.doesNotMatch(legacy.detail,/0 з 20/);
+  assert.match(legacy.detail,/20 фраз/);
+  assert.equal(context.langTranslationProgress({status:'running',progress:45,stage:'Перекладаємо'}).indeterminate,false);
+});

@@ -84,7 +84,7 @@ class PhraseAlignmentTest(unittest.TestCase):
         placed=fit.centered_schedule(result,400)
         self.assert_aligned(placed,400)
         self.assertTrue(calls)
-        self.assertTrue(all(.92<=x['speed']<=1.08 for x in result))
+        self.assertTrue(all(fit.MIN_SPEED<=x['speed']<=fit.MAX_SPEED for x in result))
         self.assertEqual([x['length'] for x in result],[x['length'] for x in items])
 
     def test_end_anchor_is_checked_as_well_as_start(self):
@@ -119,7 +119,7 @@ class PhraseAlignmentTest(unittest.TestCase):
         segments=[{'start':i*5,'end':(i+1)*5} for i in range(80)]
         profile={'seconds_per_character':.107,'observations':80}
         result=narration_profile.refinement(texts,segments,400,profile)
-        proposed={i:result['targets'].get(i,len(text))*.107/1.08 for i,text in enumerate(texts)}
+        proposed={i:result['targets'].get(i,len(text))*.107/fit.MAX_SPEED for i,text in enumerate(texts)}
         self.assertTrue(pacing.alignment_check(segments,proposed,400)['within_limit'])
         self.assertTrue(any(i<40 for i in result['ids']))
         self.assertEqual(texts[0],'a'*53)

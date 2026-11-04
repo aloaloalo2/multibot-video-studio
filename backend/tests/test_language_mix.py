@@ -61,6 +61,26 @@ class LanguageMixTest(unittest.TestCase):
         Path(saved['path']).unlink()
         self.assertEqual(language_mix.status(self.project,'uk',self.data['languages']['uk']['saved_mix'])['state'],'missing')
 
+    def test_review_tail_is_preserved_without_repeating_split_narration(self):
+        dubbing_fit.command(['-f','lavfi','-i','sine=frequency=440:duration=5',self.voice])
+        self.data['languages']['uk']['voice']['timing_status']='review'
+        first=self.project['tracks'][0]['clips'][0]
+        first['duration']=1
+        self.project['tracks'][0]['clips'].append(dict(first,start=1,trim_start=1,duration=2))
+        snap=language_mix.snapshot(self.project,'uk')
+        voices=[t for t in snap['tracks'] if t['voice']]
+        self.assertEqual([t['duration'] for t in voices],[1,4])
+        self.assertEqual(snap['duration'],5)
+        language_mix.save('p','uk',{})
+        saved=self.data['languages']['uk']['saved_mix']
+        self.assertAlmostEqual(store.media_duration(Path(saved['path'])),5,delta=.05)
+        import numpy as np
+        audio=np.frombuffer(dubbing_fit.command(['-i',saved['path'],'-ac','1','-ar',48000,'-f','f32le','pipe:1']),dtype='<f4')
+        def level(start):return np.sqrt(np.mean(audio[int(start*48000):int((start+.25)*48000)]**2))
+        self.assertGreater(level(4),.01)
+        self.assertAlmostEqual(level(4)/level(.3),1,delta=.06)
+        self.assertEqual(self.project['duration'],3)
+
     def test_relocation_keeps_saved_mix_current_without_hiding_other_edits(self):
         language_mix.save('p','uk',{})
         previous=self.music;self.music=self.root/'relocated.wav';previous.rename(self.music)

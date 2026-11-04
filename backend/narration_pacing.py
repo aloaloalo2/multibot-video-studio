@@ -34,6 +34,21 @@ def alignment_check(segments: list[dict], fastest: dict[int, float], total: floa
         if cursor > latest+1e-6:
             issues.append({'index':index, 'first_index':owner, 'excess':round(cursor-latest,3)})
         cursor += length
+    # The interval identifies a packed chain, not a request to rewrite every
+    # phrase in it. Name the largest actual duration overruns separately.
+    for issue in issues:
+        candidates = sorted(({'index': i, 'over_by_seconds': round(length -
+            (float(segments[i]['end'])-float(segments[i]['start'])), 3)}
+            for i, length in fastest.items() if issue['first_index'] <= i <= issue['index']
+            and length > float(segments[i]['end'])-float(segments[i]['start'])),
+            key=lambda item: item['over_by_seconds'], reverse=True)
+        selected, covered = [], 0.
+        for candidate in candidates:
+            selected.append(candidate)
+            covered += candidate['over_by_seconds']
+            if covered >= issue['excess']:
+                break
+        issue['contributors'] = selected
     return {'limit_seconds':MAX_SHIFT, 'measured_phrases':len(fastest),
             'within_limit':not issues, 'issues':issues}
 
@@ -72,14 +87,14 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     # Recorded takes already include their boundary pauses. Extra join padding is
     # a forecast reserve, not a measured impossibility; the assembler measures it.
     minimum=measured/MAX_SPEED
-    if minimum>total+.05:
-        raise RuntimeError(f'Збережені фрази вже перевищують тривалість ролика щонайменше на {minimum-total:.1f} с '
-                           f'при прискоренні до {TEMPO_PERCENT}%. Нові платні запити зупинено. Усі записи збережені.')
+    if not math.isfinite(total) or total <= 0:
+        raise ValueError('Invalid source narration duration')
     rate=seconds_per_character(texts,known)
     pending=[i for i in range(offset,len(texts)) if i not in known]
     result={'measured_phrases':len(known),'measured_seconds':round(measured,3),'join_seconds':round(gaps,3),
             'seconds_per_character':rate,'predicted_seconds':None,'predicted_minimum_seconds':None,
-            'requires_review':False,'targets':{}}
+            'requires_review':minimum>total+.05, 'measured_excess_seconds':round(max(0.,minimum-total),3),
+            'targets':{}}
     if rate is None or not pending:return result
     chars=sum(len(texts[i]) for i in pending)
     # All saved takes can use the same bounded fitting as the remaining takes.
@@ -92,14 +107,8 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     result['remaining_phrases']=len(pending)
     result['remaining_budget_seconds']=round(budget/MAX_SPEED,3)
     result['requires_review']=result['predicted_minimum_seconds']>total+.05
-    factor=min(1.,budget/(rate*chars)) if chars else 1.
-    if factor>=.97:return result
-    if factor<.65:
-        excess=(measured+rate*chars)/MAX_SPEED-total
-        raise RuntimeError(f'Для решти {len(pending)} фраз за виміряним темпом прогнозовано бракує {excess:.1f} с '
-                           f'навіть із прискоренням до {TEMPO_PERCENT}%. Нові платні запити зупинено. '
-                           f'Збережено {len(known)} із {len(texts)} записів; повторна оплата за них не потрібна. '
-                           'Потрібно перевірити тривалість озвучки або монтажу.')
+    # A timing forecast is advisory. Finish the requested single takes and show
+    # measured alignment afterwards; never silently rewrite or buy retries.
     return result
 
 

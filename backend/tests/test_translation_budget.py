@@ -8,6 +8,38 @@ import translation_budget as budget
 
 
 class TranslationBudgetTest(unittest.TestCase):
+    def test_fractional_phrase_bound_is_exactly_eight_and_a_half_percent(self):
+        source='s'*200
+        for length,valid in [(182,False),(183,True),(217,True),(218,False)]:
+            with self.subTest(length=length):
+                plan=budget.number_refinement_plan(source,['t'*length],[source],'en','uk')
+                self.assertEqual(plan['phrases'][0]['within_budget'],valid)
+                self.assertEqual((plan['phrases'][0]['min_chars'],plan['phrases'][0]['max_chars']),(183,217))
+
+    def test_whole_script_must_fit_seven_percent_even_when_each_phrase_fits_its_phrase_band(self):
+        sources=['s'*100]*2
+        for texts,direction in [(['t'*108]*2,'shorten'),(['t'*92]*2,'expand')]:
+            plan=budget.number_refinement_plan('\n'.join(sources),texts,sources,'en','uk')
+            self.assertEqual(plan['pending_ids'],[])
+            self.assertFalse(plan['within_budget'])
+            self.assertEqual(plan['mode'],'whole')
+            self.assertTrue(plan['ids'])
+            self.assertTrue(all(plan['directions'][i]==direction for i in plan['ids']))
+            revised=[('t'*plan['line_targets'][i]) if i in plan['ids'] else text for i,text in enumerate(texts)]
+            result=budget.number_refinement_plan('\n'.join(sources),revised,sources,'en','uk')
+            self.assertTrue(result['within_budget'])
+            self.assertTrue(result['report']['within_budget'])
+            self.assertTrue(all(p['within_budget'] for p in result['phrases']))
+
+    def test_spanish_phrase_298_fits_its_phrase_band_and_still_checks_the_whole_script(self):
+        source='Luckily, regular phone calls still work.'
+        translated='Por suerte las llamadas normales funcionan.'
+        plan=budget.number_refinement_plan(source,[translated],[source],'en','es')
+        self.assertTrue(plan['phrases'][0]['within_budget'])
+        self.assertFalse(plan['within_budget'])
+        self.assertEqual(plan['mode'],'whole')
+        self.assertEqual(plan['pending_ids'],[])
+
     def test_phrase_overruns_do_not_cancel_even_when_whole_script_matches(self):
         sources = ['s'*200, 's'*200, 's'*100]
         texts = ['a'*236, 'b'*164, 'c'*102]
@@ -21,7 +53,7 @@ class TranslationBudgetTest(unittest.TestCase):
 
     def test_phrase_boundaries_are_inclusive_and_number_expansion_is_discounted(self):
         sources = ['s'*100]*4 + ['In 2017.']
-        texts = ['t'*n for n in (92, 93, 107, 108)] + ['In dos mil diecisiete.']
+        texts = ['t'*n for n in (91, 92, 108, 109)] + ['In dos mil diecisiete.']
         plan = budget.number_refinement_plan('\n'.join(sources), texts, sources, 'en', 'es')
         self.assertEqual(plan['pending_ids'], [0, 3])
         self.assertEqual(plan['phrases'][4]['difference_percent'], 0)

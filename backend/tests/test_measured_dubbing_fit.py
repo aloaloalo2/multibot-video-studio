@@ -29,7 +29,7 @@ class MeasuredFitTest(unittest.TestCase):
     def test_corrects_atempo_discrepancy_using_actual_output_and_only_available_headroom(self):
         # The inverse-duration estimate fits, while the encoded local takes do not.
         items = [
-            {'index': 0, 'text': 'unchanged at cap', 'speed': 1.08, 'fitted_length': 8.9},
+            {'index': 0, 'text': 'unchanged at cap', 'speed': dubbing_fit.MAX_SPEED, 'fitted_length': 8.9},
             {'index': 1, 'text': 'second complete take', 'speed': 1.0, 'fitted_length': 10.08},
             {'index': 2, 'text': 'third complete take', 'speed': 1.0, 'fitted_length': 10.08},
         ]
@@ -44,7 +44,7 @@ class MeasuredFitTest(unittest.TestCase):
         self.assertLessEqual(sum(x['fitted_length'] for x in result) + .1, 28.85)
         self.assertEqual(result[0], original[0])
         self.assertEqual({n for n, _ in calls}, {1, 2})
-        self.assertTrue(all(1 <= s <= 1.08 for _, s in calls))
+        self.assertTrue(all(1 <= s <= dubbing_fit.MAX_SPEED for _, s in calls))
         self.assertEqual(items, original)
         self.assertEqual([x['text'] for x in result], [x['text'] for x in original])
         self.assertLessEqual(len(calls), 6)
@@ -57,8 +57,8 @@ class MeasuredFitTest(unittest.TestCase):
 
     def test_no_speed_headroom_fails_without_render_or_cut(self):
         render = Mock()
-        with self.assertRaisesRegex(RuntimeError, 'при межі 8%'):
-            dubbing_fit.fit_measured([{'speed': 1.08, 'fitted_length': 5.1}], 5, render)
+        with self.assertRaisesRegex(RuntimeError, 'при межі 10%'):
+            dubbing_fit.fit_measured([{'speed': dubbing_fit.MAX_SPEED, 'fitted_length': 5.1}], 5, render)
         render.assert_not_called()
 
     def test_unresponsive_duration_is_measured_again_but_bounded_to_three_passes(self):
@@ -69,7 +69,7 @@ class MeasuredFitTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Усі аудіофрагменти збережені'):
             dubbing_fit.fit_measured([{'speed': .92, 'fitted_length': 10.01}], 10, render)
         self.assertEqual(len(calls), 3)
-        self.assertTrue(all(a < b <= 1.08 for a, b in zip([.92] + calls, calls)))
+        self.assertTrue(all(a < b <= dubbing_fit.MAX_SPEED for a, b in zip([.92] + calls, calls)))
 
     def test_invalid_measured_duration_never_passes(self):
         for duration in [None, 0, -1, math.nan, math.inf]:
@@ -109,7 +109,7 @@ class MeasuredFitTest(unittest.TestCase):
             for item in placed:
                 self.assertAlmostEqual(item['fitted_length'], len(rendered[item['index']]) / rate)
                 self.assertGreater(item['fitted_length'], items[item['index']]['fitted_length'] * .9)
-                self.assertLessEqual(item['speed'], 1.08)
+                self.assertLessEqual(item['speed'], dubbing_fit.MAX_SPEED)
                 self.assertGreater(float(np.max(np.abs(rendered[item['index']]))), .05)
             self.assertTrue(all(path.is_file() for path in files))
             self.assertLessEqual(len(calls), 12)

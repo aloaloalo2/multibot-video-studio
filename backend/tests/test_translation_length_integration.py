@@ -35,7 +35,8 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.source = {'script': 's'*100, 'duration': 20, 'title': 'Source title', 'language':'en'}
         self.lines = [{'start': 0, 'end': 20, 'source': 's'*100}]
         self.job = {'key': 'length-test', 'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
-        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'test'}))
+        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'test','channel_id':'test-channel'}))
+        self.stack.enter_context(patch.object(languages.language_defaults,'settings',return_value={}))
         self.stack.enter_context(patch.object(languages.store, 'load_project_plan', return_value={}))
         self.stack.enter_context(patch.object(languages, 'source', return_value=self.source))
         self.stack.enter_context(patch.object(languages, 'segments_of', return_value=self.lines))
@@ -66,6 +67,52 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertNotIn('within_budget', self.job['translation_length'])
         self.assertEqual(self.ask.call_count, 3)
         self.speak.assert_not_called()
+
+    def test_pace_profile_follows_this_languages_provider_instead_of_the_old_global_provider(self):
+        self.ask.return_value=(json.dumps({'ok':True,'ids':[0]}),.01)
+        saved={'provider':'fishaudio','languages':{'es':{'narration':{'provider':'elevenlabs'}}}}
+        with patch.object(languages,'load_state',return_value=saved), \
+             patch.object(languages,'voice_cache_context',return_value=({'model':'selected'},set())) as context, \
+             patch.object(languages.narration_profile,'read',return_value=None):
+            languages.before_translate('test','es',self.source,['t'*100],['s'*100],self.job)
+        context.assert_called_once_with('test','es','elevenlabs')
+        self.speak.assert_not_called()
+
+    def test_whole_script_length_is_refined_inside_phrase_bounds_and_audited_again(self):
+        sources=['s'*100]*2;translated=['t'*108,'u'*108]
+        self.ask.side_effect=[(json.dumps({'ok':True,'ids':[0,1]}),.01),
+                              (json.dumps({'0':'t'*106}),.01),
+                              (json.dumps({'ok':True,'ids':[0]}),.01)]
+        result,_=languages.before_translate('test','es',
+            {'script':'\n'.join(sources),'language':'en'},translated,sources,self.job)
+        self.assertEqual(result,['t'*106,'u'*108])
+        self.assertEqual(self.job['translation_length']['target_tolerance_percent'],7)
+        self.assertTrue(self.job['translation_length']['script_comparison']['within_budget'])
+        self.assertEqual(self.job['translation_length']['phrase_comparison']['outside_count'],0)
+        self.speak.assert_not_called()
+
+    def test_empty_audit_splits_checks_without_rewriting_valid_text(self):
+        originals=['s'*100,'x'*100]
+        texts=['t'*100,'y'*100]
+        self.ask.side_effect=[('',.01),('{"ok":true,"ids":[0]}',.01),('{"ok":true,"ids":[1]}',.01)]
+        result,cost=languages.before_translate('test','es',
+            {'script':'\n'.join(originals),'language':'en'},texts,originals,self.job)
+        self.assertEqual(result,texts)
+        self.assertAlmostEqual(cost,.03)
+        self.assertTrue(all('Independently compare' in call.args[0][0]['content'] for call in self.ask.call_args_list))
+        self.speak.assert_not_called()
+
+    def test_length_prompt_supplies_number_normalized_forms(self):
+        source='In 2017.'
+        translated='En dos mil diecisiete fue así.'
+        fixed='En dos mil diecisiete.'
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),
+                              (json.dumps({'0':fixed}),.01),('{"ok":true,"ids":[0]}',.01)]
+        result,_=languages.before_translate('test','es',{'script':source,'language':'en'},[translated],[source],self.job)
+        item=json.loads(self.ask.call_args_list[1].args[0][1]['content'])[0]
+        self.assertEqual(item['comparison_source'],'In 2017.')
+        self.assertEqual(item['comparison_translation'],'En 2017 fue así.')
+        self.assertEqual(result,[fixed])
 
     def test_matching_total_still_refines_each_outlying_phrase_and_reaudits_only_changes(self):
         originals = ['s'*200, 's'*200, 's'*100]
@@ -98,6 +145,58 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertEqual(list(map(len, result)), [100, 100])
         self.speak.assert_not_called()
 
+    def test_new_issues_in_different_length_batches_do_not_count_as_stalled_repairs(self):
+        originals, texts = ['s'*100]*81, ['t'*120]*81
+        repaired = []
+        phases = []
+        def answer(messages, max_tokens=12000):
+            items = json.loads(messages[1]['content'])
+            ids = [item['id'] for item in items]
+            review = self.job['translation_review']
+            phases.append(review['phase'])
+            self.assertEqual(review['total'], 81)
+            self.assertTrue(review['waiting'])
+            self.assertEqual(review['phrases'], [i+1 for i in ids])
+            self.assertEqual(self.job['translation_length']['target_tolerance_percent'], 7)
+            if 'Independently compare' in messages[0]['content']:
+                issues = [{'id':item['id'], 'reason':'Restore the essential source fact.'}
+                          for item in items if item['translation'].startswith('x')]
+                return json.dumps({'ok':not issues, 'ids':ids, 'issues':issues}), .001
+            if items[0]['issue'].startswith('NUMBER-NORMALIZED'):
+                # Each separate batch introduces ONE new issue; the preceding
+                # batch has already been repaired and independently approved.
+                return json.dumps({str(i):('x' if i==ids[0] else 't')*100 for i in ids}), .001
+            repaired.extend(ids)
+            self.assertTrue(items[0]['rejected_revisions'])
+            return json.dumps({str(i):'y'*100 for i in ids}), .001
+        self.ask.side_effect = answer
+        result, _ = languages.before_translate('test','es',
+            {'script':'\n'.join(originals),'language':'en'},texts,originals,self.job)
+        self.assertEqual(len(repaired),5)
+        self.assertEqual(len(set(repaired)),5)
+        self.assertEqual(list(map(len,result)),[100]*81)
+        self.assertEqual(set(phases),{'audit','length','meaning'})
+        self.assertFalse(self.job['translation_review']['waiting'])
+        self.assertEqual(self.job['translation_length']['phrase_comparison']['outside_count'],0)
+        self.speak.assert_not_called()
+
+    def test_persistent_issue_identifies_phrase_and_resume_keeps_rejected_wording(self):
+        def rejected(messages, max_tokens=12000):
+            if 'Independently compare' in messages[0]['content']:
+                return json.dumps({'ok':False,'ids':[0],
+                    'issues':[{'id':0,'reason':'Required source fact is missing.'}]}), .001
+            return json.dumps({'0':'t'*100}), .001
+        self.ask.side_effect = rejected
+        with self.assertRaisesRegex(RuntimeError,'Потрібно перевірити фрази: 1'):
+            languages._translate('test','es',self.job)
+        self.assertEqual(self.job['translation_issues'][0]['phrase'],1)
+        draft=languages.translation_draft('test','es',self.source,
+            [self.lines[0]['source']],self.job,self.lines)
+        self.assertEqual(draft.data['rejected']['0'][0]['translation'],'t'*100)
+        self.assertEqual(draft.data['rejected']['0'][0]['issue'],'Required source fact is missing.')
+        self.save.assert_not_called()
+        self.speak.assert_not_called()
+
     def test_failed_phrase_refinement_retains_old_publication_and_paid_cache(self):
         cache = self.work/'voice-cache'
         cache.mkdir()
@@ -106,7 +205,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.initial.return_value = (['t'*118], .1)
         self.ask.side_effect = [(json.dumps({'ok': True, 'ids': [0]}), .01)] + [
             (json.dumps({'0': 't'*118}), .01)]*3
-        with self.assertRaisesRegex(RuntimeError, 'Фрази 1.*±7%'):
+        with self.assertRaisesRegex(RuntimeError, 'Фраза №1.*±8\.5%'):
             languages._translate('test', 'uk', self.job)
         self.save.assert_not_called()
         self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
@@ -117,12 +216,14 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.speak.assert_not_called()
 
     def test_incompatible_pace_does_not_oscillate_outside_phrase_band_or_buy_voice(self):
-        self.initial.return_value = (['t'*93], .1)
+        self.initial.return_value = (['t'*92], .1)
         self.ask.return_value = (json.dumps({'ok': True, 'ids': [0]}), .01)
-        with patch.object(languages, 'load_state', return_value={'provider':'elevenlabs'}), \
+        # Isolate the phrase-band/pacing conflict from the independently tested whole-script bound.
+        with patch.object(languages.translation_budget,'SCRIPT_TOLERANCE',.09), \
+             patch.object(languages, 'load_state', return_value={'provider':'elevenlabs'}), \
              patch.object(languages, 'voice_cache_context', return_value=({'model':'test'},set())), \
              patch.object(languages.narration_profile, 'read', return_value={'seconds_per_character':.24,'observations':30}):
-            with self.assertRaisesRegex(RuntimeError, 'в межах ±7%.*прогноз голосу'):
+            with self.assertRaisesRegex(RuntimeError, 'в межах ±8\.5%.*прогноз голосу'):
                 languages._translate('test', 'es', self.job)
         self.assertEqual(self.ask.call_count, 1)
         self.save.assert_not_called()

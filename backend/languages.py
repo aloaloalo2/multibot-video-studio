@@ -461,6 +461,10 @@ def overview(pid: str) -> dict:
                 voice['latest']=round(max(abs(line['start']-line['original_start']) for line in placed),1)
         if voice and 'review' not in voice:
             voice['review']=dubbing_fit.review_items(completed_voice_phrases(pid,code,voice))
+        comparison_segments=synced_segments(pid,code) or []
+        comparison_lines=line_texts(pid,code) if comparison_segments else []
+        comparison_units=([unit['source'] for unit in comparison_segments]
+                          if comparison_segments and len(comparison_segments)==len(comparison_lines) else None)
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
                       "translation_model": translation_model(pid, code, data),
                       "translation_resumable": translation_resumable(pid, code, src,
@@ -472,7 +476,8 @@ def overview(pid: str) -> dict:
                       "flag_country":THUMBNAIL_FLAGS.get(code),
                       "narration": choices, "provider": item_provider,
                       "chars": len(text), "prices": {key:value["base"] for key,value in estimates.items()},
-                      "translation_length":translation_budget.assessment(src['script'],text,source_language,code) if text else None,
+                      "translation_length":translation_budget.assessment(src['script'],text,source_language,code,
+                          source_units=comparison_units,translated_units=comparison_lines) if text else None,
                       "voice_estimates": estimates,
                       "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
                       "sample_options": samples,
@@ -490,7 +495,8 @@ def overview(pid: str) -> dict:
                       "fish_model": bool((voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
-    return {"defaults": language_defaults.status(pid),"thumbnail_options":thumbnail_options(pid), "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
+    return {"tempo_percent": dubbing_fit.TEMPO_PERCENT,
+            "defaults": language_defaults.status(pid),"thumbnail_options":thumbnail_options(pid), "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
             "providers": [{"id": key, "name": spec["name"], "note": spec["note"], "configured": configured.get(key),
                            **({"engines": [{"id": eid, **item} for eid, item in FISH_ENGINES.items()], "engine": engine,
                                "styles": [{"id": sid, "name": item["name"]} for sid, item in FISH_STYLES.items()], "style": fish_style(pid),
@@ -503,6 +509,7 @@ def overview(pid: str) -> dict:
             "openrouter": configured.get("openrouter"),
             "translation_models": [{"id": model_id, "name": spec["name"]} for model_id, spec in TRANSLATION_MODELS.items()],
             "source": {"chars": len(src["script"]), "title": src["title"], "duration": src["duration"], "voice": bool(src["voice"]),
+                       "filename": src["voice"].name if src["voice"] else None,
                        "language": source_language,
                        "estimate": {key: price(key, src["script"], provider_engine(pid, key)) for key in PROVIDERS}},
             "items": sorted(items, key=lambda item: list(LANGUAGES).index(item["code"])),
@@ -622,7 +629,7 @@ def translation_trace(pid, code, job, offset=None):
     model = resolved_translation_model(job.get('translation_model'))
     run = str(job.get('started_at') or job.get('key') or time.time_ns()).replace('/', '_').replace('|', '_')
     TRANSLATION_CONTEXT.value = {'path': work_dir(pid, code)/'translation-attempts'/run,
-                                 'target': code, 'offset': offset, 'model': model}
+                                 'target': code, 'offset': offset, 'model': model, 'key': job.get('key')}
     try:
         yield
     finally:
@@ -644,27 +651,28 @@ def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     import agent_openrouter
     context = getattr(TRANSLATION_CONTEXT, 'value', None) or {}
     model = resolved_translation_model(context.get('model'))
-    cost, reasoning = 0.0, dict(TRANSLATION_MODELS[model]['reasoning'])
+    reasoning = dict(TRANSLATION_MODELS[model]['reasoning'])
     if reasoning.get('effort'):
         max_tokens = max(max_tokens, 4096)  # Includes reasoning before short titles or single-line answers.
-    for attempt in range(3):
-        payload = {"model": model, "max_tokens": max_tokens, "usage": {"include": True}, "messages": messages}
-        if reasoning:
-            payload["reasoning"] = reasoning
-        raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),
-                      {"Authorization": "Bearer " + key("openrouter"), "Content-Type": "application/json"}, "OpenRouter")
-        try:
-            result = json.loads(raw)
-            record_translation(payload, result)
-            choice = result["choices"][0]
-            text = str(choice["message"]["content"] or "").strip()
-        except (ValueError, KeyError, IndexError, TypeError):
-            raise RuntimeError("OpenRouter не повернув переклад") from None
-        spent = (result.get("usage") or {}).get("cost")
-        cost += float(spent) if isinstance(spent, (int, float)) else 0.0
-        if text or choice.get("finish_reason") != "length":
-            break
-        max_tokens = max(max_tokens * 4, 4000)
+    if context.get('key') in CANCEL:
+        raise Stop()
+    # A reasoning-only answer used to multiply this budget up to 96,000 tokens.
+    # Return its empty content and cost to structured callers, which split the
+    # batch into smaller requests and preserve completed units.
+    payload = {"model": model, "max_tokens": min(max_tokens,12000), "usage": {"include": True}, "messages": messages}
+    if reasoning:
+        payload["reasoning"] = reasoning
+    raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),
+                  {"Authorization": "Bearer " + key("openrouter"), "Content-Type": "application/json"}, "OpenRouter")
+    try:
+        result = json.loads(raw)
+        record_translation(payload, result)
+        choice = result["choices"][0]
+        text = str(choice["message"]["content"] or "").strip()
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise RuntimeError("OpenRouter не повернув переклад") from None
+    spent = (result.get("usage") or {}).get("cost")
+    cost = float(spent) if isinstance(spent, (int, float)) else 0.0
     return re.sub(r"^```\w*\n|\n```$", "", text).strip(), cost
 
 
@@ -681,7 +689,7 @@ LOCALIZATION_RULES = """Localization for the target language:
 4. Read each line mentally as spoken narration and polish awkward phrasing. For timed dubbing, keep every line's id,
    meaning and place in the sequence. Timing is context; preserve complete natural phrasing.
 5. Complete the thought and use full grammatical constructions. Include the contextually known noun when speech needs
-   it and inflect every part of a compound number. Preserve the exact value and what the statistic measures.
+   it and inflect compound numbers according to the target grammar. Preserve the exact value and what the statistic measures.
 6. Make the meaning immediately clear to a listener. Replace an opaque source-language metaphor with its concrete
    meaning when the literal version sounds puzzling. A metaphor about a personal score of zero in a lightning-safety
    video means avoiding lightning strikes. Express that meaning naturally in the target language.
@@ -694,8 +702,10 @@ LOCALIZATION_RULES = """Localization for the target language:
    retain the other title words. This is its pronunciation, not an invented translated title.
 9. Audit every year, age, quantity and unit against the source. Pounds remain pounds and kilograms remain kilograms;
    preserve both values and both units when the original gives a conversion. Never change a date or a person's gender.
-10. Aim for each translated phrase to stay within seven percent of its own source's character count, counting recognized
-    number words as their equivalent digits on BOTH sides. Keep numbers spelled out in the actual narration.
+10. Aim for each translated phrase to stay within 8.5 percent of its own source's character count, discounting number-word expansion
+    ONLY when an explicit source digit has the same value written in words in that translation phrase.
+    Keep all other words in the count and all numbers spelled out in the actual narration.
+    Keep the complete script within seven percent using this same comparison rule.
     Character counts and timing hints do not justify dropping facts, adding filler, padding, inventing details or
     changing certainty. Prefer concise, complete native phrasing and check meaning after each length edit.
 11. Keep the nouns and grammatical endings that native speech needs for dates, ages, quantities and measures.
@@ -729,6 +739,8 @@ SPEECH_RULES = """Rules for a text that is read aloud:
 def localization(code: str) -> str:
     rules = LOCALIZATION_RULES
     if code == 'ru':
+        rules += ("\nIn compound ordinal years, only the final ordinal takes the case ending; preceding "
+                  "cardinals keep their proper form, e.g. «две тысячи двадцать первого года».")
         rules += ("\nRussian examples, only for Russian output: park ranger may mean «сотрудник национального парка» "
                   "or «инспектор национального парка» depending on duties. Complete a risk comparison as "
                   "«один случай на пятнадцать тысяч триста человек». Explain avoiding lightning as "
@@ -737,6 +749,8 @@ def localization(code: str) -> str:
                   '«в декабре две тысячи семнадцатого года», «в две тысячи семнадцатом году». '
                   'Do not drop «года/году» merely to shorten the text.')
     if code == 'uk':
+        rules += ("\nIn compound ordinal years, only the final ordinal takes the case ending; preceding "
+                  "cardinals keep their proper form, e.g. «дві тисячі двадцять першого року».")
         rules += "\nUkrainian years must be in words, for example «у тисяча дев'ятсот дев'яносто дев'ятому році», never «1999 року»."
         rules += ('\nVerified Ukrainian film title: Super Size Me (Morgan Spurlock, 2004) is «Подвійна порція». '
                   'Do not translate it literally as «Суперрозмір мене».')
@@ -759,7 +773,7 @@ def translator(code: str) -> str:
             "information and the speaker's intent. Keep the paragraphs. "
             "Use natural native localization rather than literal word order; retain all facts, full names, "
             "quantities and their correct units. Prioritize complete meaning and natural spoken rhythm. "
-            "Aim for a number-normalized difference within seven percent for EACH phrase independently; "
+            "Aim for a number-normalized difference within 8.5 percent for EACH phrase independently; "
             "a matching script total cannot compensate for one overlong or overly short phrase. "
             "Raw counts need care: digits in the source become longer spoken words. "
             "Answer with the translation only.\n\n" + SPEECH_RULES + "\n" + localization(code) + "\n" +
@@ -803,7 +817,7 @@ SEGMENT_GAP = 0.3          # sentences closer than this run on as one line
 SEGMENT_MAX = 14.0         # seconds a line may take at most
 SYNC_SPEED = dubbing_fit.MAX_SPEED  # shared local tempo limit, pitch kept
 # Paid takes are never repeated automatically. Saved audio is fitted locally with pitch preserved;
-# neighbouring silence can be redistributed, and a voice that cannot fit stops with its takes retained.
+# neighbouring silence can be redistributed; unresolved timing is reported with the complete voice.
 CHARS_PER_SECOND = {"ja": 8, "zh": 6, "ko": 8}
 TRANSLATE_LINES = 30
 
@@ -866,20 +880,41 @@ def translate_lines(code: str, lines: list[dict], total: float | None, pid: str,
         with translation_trace(pid, code, job, offset):
             return translate_part(code, items_of(offset),
                 "\n".join(line["source"] for line in lines[max(0, offset - 4):offset]))
+    fault = None
     try:
         running = {pool.submit(part, offset): offset for offset in starts if offset not in results}
         while running:
             finished, _ = wait(running, return_when=FIRST_COMPLETED)
             for future in finished:
-                texts, spent = future.result()
-                results[running.pop(future)] = texts
+                offset = running.pop(future)
+                if future.cancelled():
+                    continue
+                try:
+                    texts, spent = future.result()
+                except Exception as error:
+                    fault = fault or error
+                    continue
+                results[offset] = texts
                 cost += spent
                 if draft:
                     draft.save(initial_parts={str(offset): values for offset, values in results.items()})
                     draft.charge(spent)
-            progress(pid, job, round(95 * len(results) / len(starts)), f"Перекладаємо: готово {len(results)} з {len(starts)} частин")
+            if job.get('key') in CANCEL:
+                fault = Stop()
+            if not fault:
+                try:
+                    progress(pid, job, round(95 * len(results) / len(starts)), f"Перекладаємо: готово {len(results)} з {len(starts)} частин")
+                except Stop as error:
+                    fault = error
+            if fault:
+                # Do not launch queued batches. Drain already-paid responses into
+                # the draft before releasing the job, even when cancellation won.
+                for future in running:
+                    future.cancel()
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+    if fault:
+        raise fault
     return [text for offset in starts for text in results[offset]], cost
 
 
@@ -889,7 +924,7 @@ def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str]
     system = translator(code) + (
         "\n\nThe voice-over is dubbed line by line: each line is spoken at the same moment as in the original video and has "
         "a `seconds` timing estimate for context. Preserve all meaning in natural native phrasing. "
-        "Keep each phrase close in number-normalized length to its source, within seven percent where natural. "
+        "Keep each phrase close in number-normalized length to its source, within 8.5 percent where natural. "
         "Shorten redundant wording using the concise-adaptation rules; retain essential meaning and facts. "
         "The actual spoken duration is checked separately after synthesis. The rules above apply inside each "
         "line: a line may hold several short sentences, but it stays one line. Keep the lines one to one: never merge, "
@@ -989,7 +1024,7 @@ def seed_translation_draft(pid, code, texts, model, *, source_script=None, sourc
 
 
 def before_translate(pid, code, src, texts, source_units, job, draft=None):
-    """Audit meaning and refine each phrase toward its own number-aware 7% band."""
+    """Audit meaning and refine each phrase toward its number-aware length band."""
     if len(texts) != len(source_units):
         raise RuntimeError('Переклад має зберігати кожну фразу оригіналу.')
     texts = [' '.join(text.split()) for text in texts]
@@ -1000,7 +1035,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
     source_language = src.get('language') or original_language(pid, store.load_project(pid), src['script'])
     # Only an explicit translation action may adapt wording to the selected
     # voice's real pace. Opening a page or starting narration never does this.
-    state=load_state(pid)
+    state=narration_settings(pid,code)
     provider=state.get('provider')
     profile=None
     if provider in PROVIDERS:
@@ -1029,6 +1064,12 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         return batches
 
     def pause(reason):
+        issues = draft.data.get('semantic_issues') or {}
+        if issues:
+            job['translation_issues'] = [{'phrase': int(i)+1, 'reason': detail}
+                                         for i, detail in issues.items()]
+            numbers = ', '.join(str(item['phrase']) for item in job['translation_issues'][:8])
+            reason += f' Потрібно перевірити фрази: {numbers}.'
         draft.save(issue=reason, resumable=True)
         job['translation_resume'] = {'available': True, 'reason': reason, 'path': str(draft.path)}
         raise RuntimeError(reason+' Чернетку й готові частини збережено; продовження не перекладатиме їх заново.')
@@ -1040,7 +1081,25 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         except (RuntimeError, store.StudioError):
             return False
 
-    def replacements(current, indexes, reason):
+    @contextmanager
+    def review_request(phase, values, group):
+        previous = job.get('translation_review') or {}
+        review = {'phase': phase, 'total': len(values), 'batch_size': len(group),
+                  'phrases': [i+1 for i in group], 'request_number': previous.get('request_number', 0)+1,
+                  'request_started_at': time.time(), 'waiting': True,
+                  'audited': sum((draft.data.get('audited') or {}).get(str(i)) == audit_key(i, value)
+                                 for i, value in enumerate(values))}
+        job['translation_review'] = review
+        labels = {'meaning': 'Виправляємо зміст', 'length': 'Уточнюємо довжину',
+                  'audit': 'Перевіряємо зміст', 'pacing': 'Узгоджуємо темп'}
+        try:
+            progress(pid, job, 95, f"{labels[phase]}: опрацьовуємо {len(group)} фраз. Очікуємо відповідь MiniMax.")
+            yield
+        finally:
+            review['waiting'] = False
+            review['response_at'] = time.time()
+
+    def replacements(current, indexes, reason, phase='meaning'):
         identity = translation_recovery.fingerprint({'mode': 'meaning', 'ids': indexes,
             'current': [current[i] for i in indexes], 'reason': reason})
         cached = draft.data.get('rewrite') or {}
@@ -1051,11 +1110,16 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         queue = [(group, 0) for group in batches_for(current, [i for i in indexes if i not in result])]
         while queue:
             group, attempt = queue.pop(0)
-            progress(pid, job, 95, f'Уточнюємо переклад: готово {len(result)} з {len(indexes)} фраз')
             items = [{'id': i, 'source': source_units[i], 'translation': current[i],
-                      'issue': reason.get(i, '') if isinstance(reason, dict) else reason}
+                      'issue': reason.get(i, '') if isinstance(reason, dict) else reason,
+                      'rejected_revisions': (draft.data.get('rejected') or {}).get(str(i), [])[-2:]}
                      for i in group]
-            with translation_trace(pid, code, job, group[0]):
+            if phase == 'length':
+                for item in items:
+                    left,right=numeric_comparison.paired_forms(item['source'],item['translation'],source_language,code)
+                    item['comparison_source'] = left[0]
+                    item['comparison_translation'] = right[0]
+            with review_request(phase, current, group), translation_trace(pid, code, job, group[0]):
                 answer, cost = ask([{'role': 'system', 'content': translator(code)+
                     '\nRefine these translation units in the target language. Preserve EVERY original fact, name, '
                     'quantity, unit, comparison, negation, uncertainty and complete grammatical meaning. '
@@ -1064,6 +1128,13 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     'Use complete natural speech. If the reported issue gives a NUMBER-NORMALIZED length target, '
                     'rephrase toward it without losing meaning or adding filler. Number words count as their digit '
                     'equivalents only for that comparison; keep the actual translation numbers spelled out. '
+                    'comparison_source and comparison_translation show the Studio\'s read-only numeric forms. '
+                    'Use them to understand the target; never change a quantity to meet a character count. '
+                    'Do not manually count characters or enumerate letter-by-letter calculations. The Studio measures '
+                    'the returned text. Focus on the requested wording correction and return your best natural version. '
+                    'Rejected revisions include exact earlier wording and its validation problem. Correct that problem; '
+                    'do not repeat a rejected version, omit a required fact again or repeat a grammar error. '
+                    'Before returning, verify the corrected words against the reported issue and original source. '
                     'Keep established recurring character names and labels consistent when they match the source. '
                     'Return ONE JSON object mapping ONLY the requested numeric ids to translated strings. '
                     'Example for ids 7 and 8: {"7":"translated line","8":"translated line"}. '
@@ -1091,6 +1162,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         return translation_recovery.fingerprint(['number-aware-v2', code, source_units[index], value])
 
     def validate_final(values):
+        nonlocal semantic_stalls, previous_semantic_issues
         values = list(values)
         audited = draft.data.setdefault('audited', {})
         for round_number in range(3):
@@ -1098,9 +1170,10 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             if not pending:
                 return values
             issues = {}
-            for group in batches_for(values, pending):
-                progress(pid, job, 95, f'Перевіряємо зміст: {sum(audited.get(str(i)) == audit_key(i, value) for i, value in enumerate(values))} з {len(values)} фраз')
-                with translation_trace(pid, code, job, group[0]):
+            audit_queue = [(group, 0) for group in batches_for(values, pending)]
+            while audit_queue:
+                group, attempt = audit_queue.pop(0)
+                with review_request('audit', values, group), translation_trace(pid, code, job, group[0]):
                     answer, cost = ask([{'role': 'system', 'content': target_rule(code)+
                         '\nIndependently compare EVERY translation with its ORIGINAL SOURCE. Check every fact, '
                         'proper names, full names, number and unit, comparison, qualification, negation and natural '
@@ -1122,19 +1195,43 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         {'role': 'user', 'content': json.dumps([{'id': i, 'source': source_units[i],
                                                                'translation': values[i]} for i in group], ensure_ascii=False)}], 2000)
                 charge(cost)
-                failed = translation_recovery.audit(answer, group)
+                try:
+                    failed = translation_recovery.audit(answer, group, strict=True)
+                except translation_recovery.InvalidAudit:
+                    # An empty/incomplete checker response is not evidence of
+                    # bad translation. Retry smaller checks, preserving wording.
+                    if len(group) == 1 and attempt >= 2:
+                        pause(f'Фраза №{group[0]+1}: модель не повернула повну перевірку змісту. Текст збережено без змін.')
+                    size = max(1, len(group)//2)
+                    audit_queue[:0] = [(group[n:n+size], attempt+1) for n in range(0, len(group), size)]
+                    continue
                 failed.update({i: 'Запишіть числа словами й збережіть потрібну мову.' for i in group if not valid_line(values[i])})
                 for i in group:
                     missing = translation_budget.missing_source_years(source_units[i], values[i], code)
                     if missing:
                         failed[i] = 'Preserve these exact source years in natural target-language words: '+', '.join(missing)+'. Correct any misspelled number words.'
                 issues.update(failed)
+                rejected = draft.data.setdefault('rejected', {})
                 for i in group:
                     if i not in failed:
                         audited[str(i)] = audit_key(i, values[i])
-                draft.save(audited=audited, semantic_issues={str(i): text for i, text in issues.items()})
+                    else:
+                        entry = {'translation': values[i], 'issue': failed[i]}
+                        previous = rejected.setdefault(str(i), [])
+                        if entry not in previous:
+                            rejected[str(i)] = (previous+[entry])[-3:]
+                draft.save(audited=audited, rejected=rejected,
+                           semantic_issues={str(i): text for i, text in issues.items()})
             if not issues:
                 return values
+            remaining = set(issues)
+            improving = bool(previous_semantic_issues and remaining < previous_semantic_issues)
+            semantic_stalls = {i: 1 if improving else semantic_stalls.get(i, 0)+1 for i in remaining}
+            previous_semantic_issues = remaining
+            # Check the actual returned revision first. A final successful
+            # repair must not be rejected before its audit has happened.
+            if any(count > 5 for count in semantic_stalls.values()):
+                pause('Модель не усуває повторні проблеми змісту. Виправлену чернетку збережено для продовження.')
             fixed = replacements(values, sorted(issues), issues)
             changed = any(fixed[i] != values[i] for i in fixed)
             for i, value in fixed.items():
@@ -1142,32 +1239,41 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             draft.save(lines=values, rewrite={}, issue='Перевіряємо виправлення змісту.')
             if changed:
                 # Every repair is audited again before publication, regardless of its length.
-                return {'lines': values, 'issue_count': len(issues)}
+                return {'lines': values, 'issues': set(issues)}
         pause('Переклад потребує перевірки змісту: модель повторює ті самі проблемні фрази.')
 
     current, seen = list(texts), set()
-    previous_issue_count, stalled = None, 0
+    semantic_stalls = {}
+    previous_semantic_issues = set()
     while True:
         identity = translation_recovery.fingerprint(current)
         if identity in seen:
             pause('Перевірка змісту повторює вже відхилений варіант. Потрібне уточнення проблемних фраз.')
         seen.add(identity)
-        state = translation_budget.assessment(src['script'], '\n'.join(current), source_language, code)
+        state = translation_budget.assessment(src['script'], '\n'.join(current), source_language, code,
+            source_units=source_units,translated_units=current)
+        plan = translation_budget.number_refinement_plan(src['script'], current, source_units, source_language, code)
+        tolerance = 100 * translation_budget.NUMBER_AWARE_TOLERANCE
+        state['target_tolerance_percent'] = round(100*translation_budget.SCRIPT_TOLERANCE) if plan['available'] else None
+        state['phrase_comparison'] = {
+            'available': plan['available'], 'tolerance_percent': tolerance,
+            'outside_count': len(plan.get('pending_ids', [])) if plan['available'] else None,
+            'total': len(current), 'basis': 'source_digits_matched_to_target_words'}
         job['translation_length'] = state
         draft.save(lines=current, length=state)
         checked = validate_final(current)
         if isinstance(checked, list):
-            plan = translation_budget.number_refinement_plan(src['script'], checked, source_units, source_language, code)
-            job['translation_length']['target_tolerance_percent'] = 5 if plan['available'] else None
-            job['translation_length']['phrase_comparison'] = {
-                'available': plan['available'], 'tolerance_percent': 5,
-                'outside_count': len(plan.get('pending_ids', [])) if plan['available'] else None,
-                'total': len(checked), 'basis': 'recognized_numbers_as_digits'}
+            # A complete successful audit ends this repair cycle. A later length
+            # pass may expose a different issue; it is not a repeated failure.
+            semantic_stalls = {}
+            previous_semantic_issues = set()
             draft.save(length=job['translation_length'])
             if plan['ids']:
                 improved = False
                 for attempt in range(3):
-                    progress(pid, job, 95, f"Оптимізуємо фрази: {len(plan['pending_ids'])} поза ±7% із {len(checked)}")
+                    progress(pid, job, 95,
+                        f"Узгоджуємо весь сценарій до ±{state['target_tolerance_percent']}%" if plan.get('mode')=='whole' else
+                        f"Оптимізуємо фрази: {len(plan['pending_ids'])} поза ±{tolerance}% із {len(checked)}")
                     reasons = {i: f"NUMBER-NORMALIZED length: source {plan['source_lengths'][i]}, current "
                         f"{plan['current_lengths'][i]}, target about {plan['line_targets'][i]} characters including spaces. "
                         f"This phrase's own accepted range is {plan['phrases'][i]['min_chars']} to "
@@ -1176,7 +1282,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         'Keep every fact, numeric value, unit, name and sentence id. This target discounts number-word expansion. '
                         + ('The previous revision did not improve the length. Choose different wording.' if attempt else '')
                         for i in plan['ids']}
-                    fixed = replacements(checked, plan['ids'], reasons)
+                    fixed = replacements(checked, plan['ids'], reasons, phase='length')
                     candidate = [fixed.get(i, text) for i, text in enumerate(checked)]
                     next_plan = translation_budget.number_refinement_plan(src['script'], candidate, source_units, source_language, code)
                     # Retain only improvements to the SAME phrase. A shorter
@@ -1184,6 +1290,16 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     better = {i for i in plan['ids'] if next_plan['available'] and
                               next_plan['phrases'][i]['over_by'] + next_plan['phrases'][i]['under_by'] <
                               plan['phrases'][i]['over_by'] + plan['phrases'][i]['under_by']}
+                    if plan.get('mode')=='whole' and next_plan['available']:
+                        better = {i for i in plan['ids'] if next_plan['phrases'][i]['within_budget'] and
+                            (next_plan['phrases'][i]['translated_chars'] < plan['phrases'][i]['translated_chars']
+                             if plan['directions'][i]=='shorten' else
+                             next_plan['phrases'][i]['translated_chars'] > plan['phrases'][i]['translated_chars'])}
+                        merged=[candidate[i] if i in better else text for i,text in enumerate(checked)]
+                        merged_plan=translation_budget.number_refinement_plan(src['script'],merged,source_units,source_language,code)
+                        old=plan['report'];new=merged_plan['report']
+                        if new['over_by']+new['under_by']>=old['over_by']+old['under_by']:
+                            better=set()
                     if better:
                         current = [candidate[i] if i in better else text for i, text in enumerate(checked)]
                         draft.save(lines=current, issue='Перевіряємо зміст після оптимізації довжини.')
@@ -1191,8 +1307,13 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                         break
                 if not improved:
                     numbers = ', '.join(str(i+1) for i in plan['ids'])
-                    pause(f'Фрази {numbers}: модель не наблизила довжину до ±7% без зміни змісту. Збережено найкращий варіант.')
+                    label = 'Фраза' if len(plan['ids']) == 1 else 'Фрази'
+                    if plan.get('mode')=='whole':
+                        pause('Модель не наблизила весь сценарій до ±7% без зміни змісту. Збережено найкращий варіант.')
+                    pause(f'{label} №{numbers}: модель не наблизила довжину до ±{tolerance}% без зміни змісту. Збережено найкращий варіант.')
                 continue  # Every changed unit must pass the source-meaning audit again.
+            if plan['available'] and not plan.get('within_budget',True):
+                pause('Сценарій потребує узгодження довжини до ±7% зі збереженням змісту. Чернетку збережено.')
 
             timing=narration_profile.refinement(checked,timed,src.get('duration') or 0,profile)
             if timing['ids']:
@@ -1205,7 +1326,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                            if bounds else target for i, target in timing['targets'].items()}
                 ids = [i for i in timing['ids'] if targets[i]<len(checked[i])]
                 if not ids:
-                    pause('Довжина фраз уже в межах ±7%, але прогноз голосу потребує більше часу. Потрібно перевірити темп або монтаж; платне озвучення не запускалось.')
+                    pause(f'Довжина фраз уже в межах ±{tolerance}%, але прогноз голосу потребує більше часу. Потрібно перевірити темп або монтаж; платне озвучення не запускалось.')
                 pacing_attempts+=1
                 progress(pid,job,95,'Узгоджуємо переклад із виміряним темпом голосу')
                 reasons={i:f"Measured narration pacing: about {targets[i]} spoken-text characters "
@@ -1214,26 +1335,19 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     'This is a speech-duration budget, not the number-normalized comparison. '
                     + (f"Keep the NUMBER-NORMALIZED length inside {bounds[i]['min_chars']} to {bounds[i]['max_chars']}. "
                        if bounds else '') for i in ids}
-                fixed=replacements(checked,ids,reasons)
+                fixed=replacements(checked,ids,reasons,phase='pacing')
                 candidate=[fixed.get(i,text) for i,text in enumerate(checked)]
                 next_plan=translation_budget.number_refinement_plan(src['script'],candidate,source_units,source_language,code)
                 better={i for i in ids if len(candidate[i])<len(checked[i]) and
                         (not bounds or (next_plan['available'] and next_plan['phrases'][i]['within_budget']))}
                 if not better:
-                    pause('Модель не узгодила темп голосу й довжину фраз у межах ±7%. Збережено переклад; платне озвучення не запускалось.')
+                    pause(f'Модель не узгодила темп голосу й довжину фраз у межах ±{tolerance}%. Збережено переклад; платне озвучення не запускалось.')
                 current=[candidate[i] if i in better else text for i,text in enumerate(checked)]
                 draft.save(lines=current,issue='Перевіряємо зміст після узгодження з темпом голосу.')
                 continue
             draft.save(lines=checked, length=state, issue=None, rewrite={}, semantic_issues={})
             return checked, spent
-        count = checked['issue_count']
-        improved = previous_issue_count is None or count < previous_issue_count
-        previous_stalls = stalled
-        stalled = 0 if improved else stalled + 1
-        previous_issue_count = count
         current = checked['lines']
-        if previous_stalls >= 3 and not improved:
-            pause('Модель не усуває повторні проблеми змісту. Виправлену чернетку збережено для продовження.')
 
 
 def _translate(pid: str, code: str, job: dict) -> None:
@@ -1305,8 +1419,10 @@ def _translate(pid: str, code: str, job: dict) -> None:
 def save_translation(pid: str, code: str, project: dict, src: dict, text: str, cost: float, job: dict, segments, draft=None) -> None:
     language_quality.require(code, text)
     source_language = src.get('language') or original_language(pid, project, src['script'])
-    length_report = translation_budget.assessment(src['script'], text, source_language, code)
-    length_report['target_tolerance_percent'] = 5 if length_report['number_comparison']['available'] else None
+    length_report = translation_budget.assessment(src['script'], text, source_language, code,
+        source_units=[unit['source'] for unit in segments] if segments else None,
+        translated_units=text.strip().splitlines() if segments else None)
+    length_report['target_tolerance_percent'] = round(100 * translation_budget.SCRIPT_TOLERANCE) if length_report['number_comparison']['available'] else None
     progress(pid, job, 96, "Перекладаємо заголовок")
     title, spent = ask([{"role": "system", "content": f"Translate this YouTube video title into {ENGLISH[code]}. Keep it catchy and short, "
                                                        "as a native YouTuber would title it. Answer with the title only, no quotes.\n\n" + localization(code) + "\n" + target_rule(code)},
@@ -2110,10 +2226,10 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         store.atomic_json(work/'alignment-preflight.json',report)
         if not report['within_limit']:
             job['pacing_review']=True
-            narration_pacing.require_alignment(segments,measured,total)
+            job['alignment_forecast'] = report
     check_alignment()
     # Saved wording is final for every voice run, including older callers sending
-    # preserve_text=False. Pacing may warn or stop; it never rewrites accepted text.
+    # preserve_text=False. Pacing warns; it never stops synthesis or rewrites text.
     narration_pacing.plan(texts,known,total,0,{i:prepared[text]['edge_silence']
                                             for i,text in enumerate(texts) if text in prepared})
     voice=None
@@ -2170,7 +2286,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
                                                                   for i,text in enumerate(texts) if text in prepared})
             store.atomic_json(parts_dir/'pacing.json',forecast)
             next_check=number+(narration_pacing.BLOCK if forecast['seconds_per_character'] else narration_pacing.CALIBRATION)
-            job['pacing_review'] = forecast.get('requires_review', False)
+            job['pacing_review'] = job.get('pacing_review',False) or forecast.get('requires_review', False)
         text=texts[number]
         stage='Збираємо збережену фразу' if job.get('cache_only') else 'Озвучуємо фразу'
         progress(pid, job, round(90 * number / len(segments)), f"{stage} {number + 1} з {len(segments)}")
@@ -2183,8 +2299,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         else:
             if job.get('cache_only'):
                 raise RuntimeError('Бракує готового запису. Локальне збирання зупинено без витрат кредитів.')
-            # A real measured local overrun stops the next purchase, including
-            # between the larger character-pace checkpoints.
+            # Record actual timing risk while completing the requested takes.
             check_alignment()
             if voice is None:
                 announce_model(pid,provider,code,job)
@@ -2220,7 +2335,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             if entry["index"]==number:entry["selected"]=entry["file"]==spoken.name
         store.atomic_json(parts_dir/"requests.json",requests)
     progress(pid, job, 92, "Склеюємо й вирівнюємо гучність")
-    for item,speed in zip(manifest,dubbing_fit.fitting_speeds(manifest,total)):
+    for item,speed in zip(manifest,dubbing_fit.fitting_speeds(manifest,total,allow_review=True)):
         if abs(speed-item['speed'])<.0001:continue
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
              '-af',narration_audio.filters(item,speed),'-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
@@ -2235,12 +2350,12 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             f'уточнити фактичний темп у межах {dubbing_fit.TEMPO_PERCENT}%')
         item['edge_silence']=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed)
         return store.media_duration(parts_dir/item['fitted'])
-    manifest=dubbing_fit.fit_measured(manifest,total,render_measured)
+    manifest=dubbing_fit.fit_measured(manifest,total,render_measured,allow_review=True)
     fastest=max(item['speed'] for item in manifest)
     store.atomic_json(parts_dir/'manifest.json',manifest)
-    manifest=dubbing_fit.centered_schedule(manifest,total)
+    manifest=dubbing_fit.centered_schedule(manifest,total,allow_review=True)
     for item in manifest:
-        gap_seconds=round((item['start']-cursor)*48000)/48000
+        gap_seconds=max(0.,round((item['start']-cursor)*48000)/48000)
         silence(gap_seconds)
         item['start']=cursor+gap_seconds
         item['end']=item['start']+round(item['fitted_length']*48000)/48000
@@ -2264,17 +2379,21 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     long_gaps = dubbing_fit.pause_report(staged)
     if text_hash(pid,code)!=stamp['text_hash'] or voice_cache_context(pid,code,provider)[0]!=identity:
         raise store.StudioError('Налаштування змінилися під час озвучення. Записи фраз збережено, готовий файл не замінено.',409)
-    dubbing_fit.require_valid_alignment(manifest)
-    final = publish_synced_voice(staged, out, total)
+    alignment=dubbing_fit.alignment_report(manifest)
+    review_needed=not alignment['within_limit'] or cursor>total+.05
+    job.update(timing_review=review_needed,alignment=alignment,overrun_seconds=round(max(0.,cursor-total),3))
+    # Validate against the complete scheduled speech, including a review tail.
+    # The original film duration stays separate and is never silently changed.
+    final = publish_synced_voice(staged, out, max(total,cursor))
     joined.unlink(missing_ok=True)
     def keep(data):
         data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
             "provider": provider, "made_at": time.time(), "duration": final, "source_duration": total, "synced": True, **stamp,"identity":identity,
-            "lines": len(segments), "fastest": round(fastest, 2), "latest": round(latest, 1), "shortened": shortened,
+            "lines": len(segments), "fastest": round(fastest, 3), "latest": round(latest, 1), "shortened": shortened,
             "quicker": round(quicker, 2), "slowest": round(min(item["speed"] for item in manifest), 3),
             "long_gaps": long_gaps, "parts_saved": True,"timing_issues":timing_issues,
             "paid_timing_retries":False,"centered":True,
-            "alignment":dubbing_fit.alignment_report(manifest),
+            "alignment":alignment, "timing_status":"review" if review_needed else "aligned",
             "adaptation_cost_usd":job.get('adaptation_cost_usd',0),
             "review":dubbing_fit.review_items(manifest),
             **voice_cost_metadata(job),"takes":len(requests),"reused":job['reused'],
@@ -2679,6 +2798,12 @@ def file_path(pid: str, code: str, kind: str) -> Path:
 
 def put_job(pid: str, job: dict) -> None:
     def keep(data):
+        previous=(data.get('jobs') or {}).get(job['slot']) or {}
+        same_run=previous.get('started_at')==job.get('started_at')
+        if job.get('key') in CANCEL or (same_run and previous.get('cancel_requested')):
+            job['cancel_requested']=True
+            if job.get('status')=='running':
+                job['stage']='Скасовуємо… зберігаємо поточну відповідь'
         data.setdefault("jobs", {})[job["slot"]] = {k: v for k, v in job.items() if k != "key"}
         data["job"] = data["jobs"][job["slot"]]
     update(pid, keep)
@@ -2707,7 +2832,11 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
             progress(pid,job,max(job.get('progress',0),96),'Зберігаємо озвучку з музикою й ефектами')
             language_mix.save(pid,code,job)
             job['audio_saved']=True
-        job.update(status="done", progress=100, stage="Готово", finished_at=time.time())
+        if job.get('key') in CANCEL:
+            raise Stop()
+        job.update(status="done", progress=100,
+                   stage="Озвучка готова. Перевірте позначені зміщення фраз." if job.get('timing_review') else "Готово",
+                   finished_at=time.time())
     except Stop:
         job.update(status="cancelled", stage="Скасовано", finished_at=time.time())
     except (subprocess.TimeoutExpired, OSError, RuntimeError, ValueError, store.StudioError) as error:
@@ -2729,7 +2858,7 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
 def cancel(pid: str, slot: str | None = None) -> dict:
     """Stop a running job (the one of `slot`, «<code>|<group>», or all of the project): at the next part of a
     translation or a voice (the part being made is finished and paid), at once for the thumbnail, whose Codex is killed.
-    Nothing half made is saved."""
+    Keep completed takes and resumable translation drafts; never publish a partial translation."""
     import os, signal
     with LOCK:
         keys = [key for key in ACTIVE if key.startswith(pid + "|") and (not slot or key == f"{pid}|{slot}")]
@@ -2745,7 +2874,7 @@ def cancel(pid: str, slot: str | None = None) -> dict:
         for key in keys:
             job = (data.get("jobs") or {}).get(key.split("|", 1)[1])
             if job:
-                job["stage"] = "Скасовуємо…"
+                job.update(stage="Скасовуємо… зберігаємо поточну відповідь",cancel_requested=True)
     update(pid, mark)
     return overview(pid)
 

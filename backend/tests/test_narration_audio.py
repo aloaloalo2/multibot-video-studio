@@ -66,10 +66,10 @@ class NarrationAudioTest(unittest.TestCase):
         path,_=self.fixture();cache=self.folder/'cache';original=path.read_bytes()
         trim=audio.inspect(path,cache)
         result=audio.fastest(path,cache,trim)
-        rendered=dubbing_fit.command(['-i',path,'-af',audio.filters({'trim':trim},1.08),
+        rendered=dubbing_fit.command(['-i',path,'-af',audio.filters({'trim':trim},dubbing_fit.MAX_SPEED),
                                       '-f','f32le','pipe:1'])
         self.assertAlmostEqual(result['length'],len(rendered)/4/audio.RATE)
-        self.assertEqual(result['speed'],1.08)
+        self.assertEqual(result['speed'],dubbing_fit.MAX_SPEED)
         with patch.object(audio.subprocess,'run',side_effect=AssertionError('Already measured')):
             self.assertEqual(audio.fastest(path,cache,trim),result)
         self.assertEqual(path.read_bytes(),original)
@@ -87,12 +87,12 @@ class NarrationAudioTest(unittest.TestCase):
         path,_=self.fixture();digest=hashlib.sha256(path.read_bytes()).hexdigest()
         items=[{'index':i,'file':path.name,'start':i*2.5,'original_start':i*2.5,
                 'original_end':i*2.5+2.3,'length':3.29} for i in range(4)]
-        with self.assertRaisesRegex(RuntimeError,'при межі 8%'):
+        with self.assertRaisesRegex(RuntimeError,'при межі 10%'):
             dubbing_fit.fitting_speeds(items,10.)
         result=dubbing_fit.rebuild(self.folder,items,self.folder/'full.mp3',10.)
         self.assertEqual(len(result['phrases']),4)
         for item in result['phrases']:
-            self.assertTrue(.92<=item['speed']<=1.08)
+            self.assertTrue(dubbing_fit.MIN_SPEED<=item['speed']<=dubbing_fit.MAX_SPEED)
             self.assertAlmostEqual(item['trim']['removed_leading'],.47)
         self.assertLessEqual(result['phrases'][-1]['end'],10.)
         decoded=dubbing_fit.command(['-i',self.folder/'full.mp3','-ar',audio.RATE,'-ac',1,'-f','f32le','pipe:1'])
