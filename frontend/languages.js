@@ -294,7 +294,15 @@ function langVoiceAction(item,spec){
 function langVoiceStatus(item,spec){
   if(!item.files?.voice||item.voice_current===false||item.voice?.provider!==spec.id)return '';
   if([item.language_check,item.voice_language_check].some(report=>report&&report.state!=='ok'))return '';
+  const duration=langVoiceDurationIssue(item);if(duration)return duration.label;
   return item.saved_mix?.state==='saved'?'Озвучку збережено ✓':'Озвучка готова ✓';
+}
+
+function langVoiceDurationIssue(item){
+  if(item.duration_check&&item.duration_check.state!=='unknown')return ['too_long','too_short'].includes(item.duration_check.state)?item.duration_check:null;
+  const actual=item.voice?.duration,source=item.voice?.source_duration||langData?.source?.duration;
+  if(!Number.isFinite(actual)||!Number.isFinite(source)||actual<=0||source<=0||Math.abs(actual-source)<=.1)return null;
+  return {state:actual>source?'too_long':'too_short',label:actual>source?'Тривалість перевищена':'Тривалість закоротка',difference_seconds:actual-source};
 }
 
 function langVoiceSpend(voice){
@@ -468,6 +476,8 @@ function langVoiceTileState(item){
   const job=jobs.find(entry=>entry.status==='running')||jobs.sort((a,b)=>(b.started_at||b.finished_at||0)-(a.started_at||a.finished_at||0))[0];
   if(job?.status==='running')return {kind:'working',label:job.kind==='voice'?'Створюємо озвучку':job.kind==='refit'?'Вирівнюємо озвучку':'Зберігаємо озвучку',detail:`${Math.round(job.progress||0)}%`,progress:job.progress||0,job};
   if(!item.text||item.translation_resumable)return {kind:'blocked',blocked:true,label:'Спершу завершіть переклад',detail:''};
+  const duration=item.files?.voice&&item.voice_current!==false&&langVoiceDurationIssue(item);
+  if(duration)return {kind:'attention',durationIssue:true,label:duration.label,detail:`${Math.abs(duration.difference_seconds).toLocaleString('uk-UA',{maximumFractionDigits:1})} с ${duration.state==='too_long'?'довша':'коротша'} за оригінал`};
   if(job?.status==='failed')return {kind:'attention',label:'Перевірити озвучку',detail:'',job};
   const status=langVoiceStatus(item,spec);
   if(status){
@@ -493,16 +503,16 @@ function langPaintVoiceTiles(){
   document.querySelectorAll('#project-langs .lang-voice-tile').forEach(card=>{
     const item=langData?.items.find(entry=>entry.code===card.dataset.code);if(!item)return;
     const status=langVoiceTileState(item),button=card.querySelector('button');
-    card.dataset.status=status.kind;button.disabled=status.kind==='blocked'||(status.kind==='action'&&status.blocked);
+    card.dataset.status=status.kind;card.classList.toggle('duration-issue',!!status.durationIssue);button.disabled=status.kind==='blocked'||(status.kind==='action'&&status.blocked);
     const icon=status.kind==='working'?exportSpinner:status.kind==='attention'||status.review?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':langMagicVoiceIcon;
     const score=status.kind==='ready'?langVoiceScores.get(langVoiceScoreKey(state.project?.id,item)):null;
-    button.innerHTML=`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
+    button.innerHTML=`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'||status.durationIssue?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'||status.durationIssue?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
     const existing=card.querySelector('.lang-summary-player');
-    if(status.kind==='ready'&&!existing){
+    if((status.kind==='ready'||status.durationIssue)&&!existing){
       const box=document.createElement('div');box.className='lang-summary-player lang-own has-voice';
       const player=voicePlayer(state.project.id,langUrl(state.project.id,item.code,'voice',item.voice?.made_at),{filename:`${item.name}.mp3`,duration:item.voice?.duration,playLabel:`Відтворити озвучку: ${item.name}`});
       if(player){const audio=player.querySelector('audio');audio.dataset.alignmentProject=state.project.id;audio.dataset.alignmentCode=item.code;box.append(player);card.append(box);}
-    }else if(status.kind!=='ready'&&existing){existing.querySelectorAll('audio').forEach(audio=>audio.pause());existing.remove();}
+    }else if(status.kind!=='ready'&&!status.durationIssue&&existing){existing.querySelectorAll('audio').forEach(audio=>audio.pause());existing.remove();}
     button.setAttribute('aria-label',`${status.label}: ${item.name}`);button.title=status.job?.error||status.job?.stage||status.label;
   });
   document.querySelectorAll('.lang-alignment-generate').forEach(button=>{
@@ -543,17 +553,18 @@ function langVoiceResult(id,item){
   const readyVoice=item.files.voice&&item.voice_current!==false;
   const unsafeVoice=item.files.voice&&item.voice_matches_text!==false&&item.voice_language_check&&item.voice_language_check.state!=='ok';
   const estimate=item.voice_estimates?.[spec.id];
-  const mix=item.saved_mix || {state:'missing'};
+  const durationIssue=langVoiceDurationIssue(item);
+  const mix=durationIssue?{state:'unavailable',error:durationIssue.label+'. Файл випуску не збережено.'}:item.saved_mix || {state:'missing'};
   const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';
-  const alignmentNeeded=voice.timing_status==='review'||voice.alignment?.within_limit===false;
+  const alignmentNeeded=!!durationIssue||voice.timing_status==='review'||voice.alignment?.within_limit===false;
   const fit=voice.synced?[voice.centered?`паузи розподілено навколо фраз`:`фрази у свій час, як в оригіналі`,voice.fastest>1.02?`найшвидша прискорена в ${String(voice.fastest).replace('.',',')} раза`:'',voice.latest>0.3?`${voice.centered?'зміщення для підгонки':'найбільше запізнення'} ${String(voice.latest).replace('.',',')} с`:'',voice.slowest<.99?`темп до ${Math.round(voice.slowest*100)}%`:'',voice.long_gaps?.length?`паузи понад 1,5 с: ${voice.long_gaps.length}, потребують перевірки`:'',voice.timing_issues?.length?`перевірте таймінги ${voice.timing_issues.length} фраз`:''].filter(Boolean).join(' · '):voice.speed?`прискорено в ${String(voice.speed).replace('.',',')} раза, щоб влізти в ролик`:voice.padded?`наприкінці ${String(voice.padded).replace('.',',')} с тиші до довжини ролика`:'';
   card.innerHTML=`
     <section class="lang-step" data-lang-step="1">
         ${item.text?`<div class="lang-sample-row">
           ${spec.id==='elevenlabs'?'<div class="lang-balance" role="status" aria-live="polite"></div>':''}
           <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} літер"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
-        ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${alignmentNeeded?'Готова озвучка · перевірте синхронізацію':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
-          <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
+        ${readyVoice?`<div class="lang-voice${durationIssue?' is-duration-mismatch':''}"><div class="lang-voice-head"><b${alignmentNeeded?' class="lang-warn"':''}>${durationIssue?`<svg class="lang-duration-warning" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>${durationIssue.label}`:alignmentNeeded?'Готова озвучка · перевірте синхронізацію':'Готова озвучка'}</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
+          <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'||durationIssue?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
           <div class="lang-player" data-kind="voice"></div><p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     ${unsafeVoice?`<div class="lang-voice is-unsafe">${langQualityNotice(item.voice_language_check,true)}<div class="lang-player" data-kind="voice"></div></div>`:''}

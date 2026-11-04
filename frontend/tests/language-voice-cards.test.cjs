@@ -85,6 +85,21 @@ test('a completed voice with timing issues remains playable and clearly needs re
   assert.match(status.label,/Перевірити синхронізацію/);
 });
 
+test('duration mismatch overrides an old saved checkmark in either direction',()=>{
+  for(const [duration,label] of [[2400,'Тривалість перевищена'],[2200,'Тривалість закоротка']]){
+    const env=runtime();
+    env.context.audioDuration=duration;
+    env.run("Object.assign(langData.items[0],{files:{voice:true},voice:{provider:'elevenlabs',duration:audioDuration,source_duration:2280},saved_mix:{state:'saved'}})");
+    const status=env.run('langVoiceTileState(langData.items[0])');
+    assert.equal(status.kind,'attention');assert.equal(status.durationIssue,true);assert.equal(status.label,label);
+    assert.equal(env.run('langVoiceStatus(langData.items[0],langSpec(langData.items[0]))'),label);
+    assert.equal(env.requests.length,0);
+  }
+  const env=runtime();
+  env.run("Object.assign(langData.items[0],{files:{voice:true},voice:{provider:'elevenlabs',duration:2280.02,source_duration:2280},saved_mix:{state:'saved'}})");
+  assert.equal(env.run('langVoiceTileState(langData.items[0]).kind'),'ready');
+});
+
 test('cancellation remains disabled through stale polls and is scoped to the project and run',async()=>{
   const env=runtime();
   env.run("langData.jobs=[{code:'uk',kind:'voice',slot:'uk|voice',started_at:100,status:'running'}];showLangJob=()=>{};");

@@ -497,6 +497,7 @@ def overview(pid: str) -> dict:
                       "narration": choices, "provider": item_provider,
                       "chars": display_letters, "billing_chars":len(text), "prices": {key:value["base"] for key,value in estimates.items()},
                       "translation_length":length_report,
+                      "duration_check":language_mix.duration_check(item.get('voice') or {},src.get('duration')),
                       "voice_estimates": estimates,
                       "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
                       "sample_options": samples,
@@ -2827,14 +2828,20 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
         else:
             WORK[kind](pid, code, job)
         if kind in ('voice','refit'):
-            job.update(voice_ready=True,phase='save-audio')
-            progress(pid,job,max(job.get('progress',0),96),'Зберігаємо озвучку з музикою й ефектами')
-            language_mix.save(pid,code,job)
-            job['audio_saved']=True
+            voice=(load_state(pid).get('languages',{}).get(code) or {}).get('voice') or {}
+            check=language_mix.duration_check(voice)
+            job.update(voice_ready=True,duration_check=check)
+            if check['state'] in {'too_long','too_short'}:
+                job.update(audio_saved=False,timing_review=True)
+            else:
+                job['phase']='save-audio'
+                progress(pid,job,max(job.get('progress',0),96),'Зберігаємо озвучку з музикою й ефектами')
+                language_mix.save(pid,code,job)
+                job['audio_saved']=True
         if job.get('key') in CANCEL:
             raise Stop()
         job.update(status="done", progress=100,
-                   stage="Озвучка готова. Перевірте позначені зміщення фраз." if job.get('timing_review') else "Готово",
+                   stage=(job.get('duration_check') or {}).get('label') or ("Озвучка готова. Перевірте позначені зміщення фраз." if job.get('timing_review') else "Готово"),
                    finished_at=time.time())
     except Stop:
         job.update(status="cancelled", stage="Скасовано", finished_at=time.time())

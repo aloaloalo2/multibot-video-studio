@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -10,6 +11,19 @@ import time
 from functools import lru_cache
 from pathlib import Path
 import store
+
+
+def duration_check(voice: dict, source_duration=None, actual_duration=None) -> dict:
+    """Compare published audio to its source, allowing only encoder rounding."""
+    def valid(value):
+        return isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>0
+    source=source_duration if valid(source_duration) else voice.get('source_duration')
+    actual=actual_duration if valid(actual_duration) else voice.get('duration')
+    if not valid(source) or not valid(actual):return {'state':'unknown'}
+    delta=actual-source
+    state='too_long' if delta>.1 else 'too_short' if delta<-.1 else 'matched'
+    return {'state':state,'source_duration':source,'duration':actual,'difference_seconds':round(delta,3),
+            'label':{'too_long':'Тривалість перевищена','too_short':'Тривалість закоротка'}.get(state,'')}
 
 
 @lru_cache(maxsize=256)
@@ -57,6 +71,9 @@ def snapshot(project: dict, code: str) -> dict:
     assets={a['id']:a for a in project.get('assets',[])}
     tracks=[];found_voice=False
     translated_duration=store.media_duration(translated)
+    check=duration_check(voice,voice.get('source_duration') or project.get('duration'),translated_duration)
+    if check['state'] in {'too_long','too_short'}:
+        raise store.StudioError(check['label']+'. Готові фрази збережено в кеші. Файл випуску не збережено.',409)
     total=max(float(project.get('duration') or 0),max((float(c.get('start') or 0)+float(c.get('duration') or 0)
               for layer in project.get('tracks',[]) for c in layer.get('clips',[])),default=0))
     for layer in project.get('tracks',[]):
@@ -78,14 +95,6 @@ def snapshot(project: dict, code: str) -> dict:
             tracks.append({'source':str(path),'start':start,
                 'trim_start':trim,'duration':duration,
                 'volume':volume,'voice':narration,'size':stat.st_size,'stamp':stat.st_mtime_ns})
-    if found_voice and voice.get('timing_status')=='review' and translated_duration:
-        # Only the last narration clip can carry an overlong tail. Extending
-        # every cut would replay the remaining speech on top of later clips.
-        last=max((track for track in tracks if track['voice']),
-                 key=lambda track:track['start']+track['duration'],default=None)
-        if last:
-            last['duration']=max(last['duration'],translated_duration-last['trim_start'])
-            total=max(total,last['start']+last['duration'])
     if not found_voice:
         stat=translated.stat();length=store.media_duration(translated)
         tracks.insert(0,{'source':str(translated),'start':0,'trim_start':0,'duration':length,'volume':1,'voice':True,

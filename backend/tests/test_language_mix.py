@@ -61,25 +61,39 @@ class LanguageMixTest(unittest.TestCase):
         Path(saved['path']).unlink()
         self.assertEqual(language_mix.status(self.project,'uk',self.data['languages']['uk']['saved_mix'])['state'],'missing')
 
-    def test_review_tail_is_preserved_without_repeating_split_narration(self):
-        dubbing_fit.command(['-f','lavfi','-i','sine=frequency=440:duration=5',self.voice])
-        self.data['languages']['uk']['voice']['timing_status']='review'
-        first=self.project['tracks'][0]['clips'][0]
-        first['duration']=1
-        self.project['tracks'][0]['clips'].append(dict(first,start=1,trim_start=1,duration=2))
-        snap=language_mix.snapshot(self.project,'uk')
-        voices=[t for t in snap['tracks'] if t['voice']]
-        self.assertEqual([t['duration'] for t in voices],[1,4])
-        self.assertEqual(snap['duration'],5)
+    def test_duration_mismatch_never_overwrites_a_valid_episode_mix(self):
         language_mix.save('p','uk',{})
         saved=self.data['languages']['uk']['saved_mix']
-        self.assertAlmostEqual(store.media_duration(Path(saved['path'])),5,delta=.05)
-        import numpy as np
-        audio=np.frombuffer(dubbing_fit.command(['-i',saved['path'],'-ac','1','-ar',48000,'-f','f32le','pipe:1']),dtype='<f4')
-        def level(start):return np.sqrt(np.mean(audio[int(start*48000):int((start+.25)*48000)]**2))
-        self.assertGreater(level(4),.01)
-        self.assertAlmostEqual(level(4)/level(.3),1,delta=.06)
-        self.assertEqual(self.project['duration'],3)
+        original=Path(saved['path']).read_bytes()
+        for length,label in [(5,'Тривалість перевищена'),(2,'Тривалість закоротка')]:
+            with self.subTest(length=length):
+                dubbing_fit.command(['-f','lavfi','-i',f'sine=frequency=440:duration={length}',self.voice])
+                self.data['languages']['uk']['voice'].update(duration=length,source_duration=3,timing_status='review')
+                with self.assertRaisesRegex(store.StudioError,label):language_mix.save('p','uk',{})
+                self.assertEqual(Path(saved['path']).read_bytes(),original)
+                self.assertEqual(language_mix.status(self.project,'uk',saved)['state'],'unavailable')
+                self.assertTrue(self.voice.is_file())
+
+    def test_automatic_overlong_and_short_voice_skip_mix_without_paid_retry(self):
+        for kind in ('voice','refit'):
+            for length,label in [(5,'Тривалість перевищена'),(2,'Тривалість закоротка')]:
+                with self.subTest(kind=kind,length=length):
+                    self.data['languages']['uk']['voice'].update(duration=length,source_duration=3)
+                    job={'key':'p|uk|voice','kind':kind,'status':'running','cost':37,'takes':2}
+                    with patch.dict(languages.WORK,{kind:lambda *args:None}),patch.object(languages,'put_job'), \
+                         patch.object(language_mix,'save') as save,patch.object(languages,'speak') as speak:
+                        languages.worker('p',kind,'uk','elevenlabs',job)
+                    self.assertEqual(job['status'],'done')
+                    self.assertEqual(job['stage'],label)
+                    self.assertFalse(job['audio_saved'])
+                    self.assertEqual((job['cost'],job['takes']),(37,2))
+                    save.assert_not_called();speak.assert_not_called()
+
+    def test_duration_comparison_ignores_only_encoder_rounding(self):
+        for duration in (2.98,3.02):
+            self.assertEqual(language_mix.duration_check({'duration':duration,'source_duration':3})['state'],'matched')
+        self.assertEqual(language_mix.duration_check({'duration':3.11,'source_duration':3})['state'],'too_long')
+        self.assertEqual(language_mix.duration_check({'duration':2.89,'source_duration':3})['state'],'too_short')
 
     def test_relocation_keeps_saved_mix_current_without_hiding_other_edits(self):
         language_mix.save('p','uk',{})
