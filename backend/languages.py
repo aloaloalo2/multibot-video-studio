@@ -251,7 +251,7 @@ def price(provider: str, text: str, engine: str | None = None) -> float | None:
     """What voicing the text costs; None when the provider names no price for the engine."""
     spec = PROVIDERS[provider]
     if provider == "elevenlabs":
-        rate = (eleven_api.model(engine or ELEVEN_MODEL) or {}).get("credits_per_char")
+        rate = eleven_api.estimate_rate(engine or ELEVEN_MODEL)
         return round(len(text) * rate, 2) if rate is not None else None
     fish = FISH_ENGINES.get(engine or FISH_ENGINE, FISH_ENGINES[FISH_ENGINE]) if provider == "fishaudio" else None
     rate = (fish["promo"][0] if fish.get("promo") and time.time() < fish["promo"][1] else fish["per_char"]) if fish else spec["per_char"]
@@ -460,7 +460,8 @@ def key(service: str) -> str:
 def request(url: str, data: bytes, headers: dict, what: str) -> bytes:
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=data, method="POST", headers=headers), timeout=TIMEOUT) as response:
-            return response.read()
+            audio = response.read()
+            return eleven_api.SpeechAudio(audio, response.headers) if what == 'ElevenLabs' else audio
     except urllib.error.HTTPError as error:
         body = error.read()[:2000].decode("utf-8", errors="replace")
         try:
@@ -912,7 +913,7 @@ def seed_translation_draft(pid, code, texts, model, *, source_script=None, sourc
 
 
 def before_translate(pid, code, src, texts, source_units, job, draft=None):
-    """Resume source-meaning audits and repairs; character counts are advisory only."""
+    """Audit meaning, then refine the most expanded units toward a number-aware 5% band."""
     if len(texts) != len(source_units):
         raise RuntimeError('Переклад має зберігати кожну фразу оригіналу.')
     texts = [' '.join(text.split()) for text in texts]
@@ -920,6 +921,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
     if not draft.data.get('lines'):
         draft.save(lines=texts)
     spent = 0.0
+    source_language = src.get('language') or original_language(pid, store.load_project(pid), src['script'])
 
     def charge(cost):
         nonlocal spent
@@ -973,7 +975,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     'quantity, unit, comparison, negation, uncertainty and complete grammatical meaning. '
                     'The ORIGINAL SOURCE is authoritative. Repair the reported issue. Rephrase naturally; do not '
                     'summarize, pad, invent facts or translate literally. Keep all source information in the SAME id. '
-                    'Use the length needed for complete natural speech. Character counts are not a constraint. '
+                    'Use complete natural speech. If the reported issue gives a NUMBER-NORMALIZED length target, '
+                    'rephrase toward it without losing meaning or adding filler. Number words count as their digit '
+                    'equivalents only for that comparison; keep the actual translation numbers spelled out. '
                     'Keep established recurring character names and labels consistent when they match the source. '
                     'Return ONE JSON object mapping ONLY the requested numeric ids to translated strings. '
                     'Example for ids 7 and 8: {"7":"translated line","8":"translated line"}. '
@@ -998,7 +1002,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         return result
 
     def audit_key(index, value):
-        return translation_recovery.fingerprint([code, source_units[index], value])
+        return translation_recovery.fingerprint(['number-aware-v2', code, source_units[index], value])
 
     def validate_final(values):
         values = list(values)
@@ -1032,6 +1036,10 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 charge(cost)
                 failed = translation_recovery.audit(answer, group)
                 failed.update({i: 'Запишіть числа словами й збережіть потрібну мову.' for i in group if not valid_line(values[i])})
+                for i in group:
+                    missing = translation_budget.missing_source_years(source_units[i], values[i], code)
+                    if missing:
+                        failed[i] = 'Preserve these exact source years in natural target-language words: '+', '.join(missing)+'. Correct any misspelled number words.'
                 issues.update(failed)
                 for i in group:
                     if i not in failed:
@@ -1056,11 +1064,41 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         if identity in seen:
             pause('Перевірка змісту повторює вже відхилений варіант. Потрібне уточнення проблемних фраз.')
         seen.add(identity)
-        state = translation_budget.assessment(src['script'], '\n'.join(current))
+        state = translation_budget.assessment(src['script'], '\n'.join(current), source_language, code)
         job['translation_length'] = state
         draft.save(lines=current, length=state)
         checked = validate_final(current)
         if isinstance(checked, list):
+            plan = translation_budget.number_refinement_plan(src['script'], checked, source_units, source_language, code)
+            job['translation_length']['target_tolerance_percent'] = 5 if plan['available'] else None
+            if not plan['available']:
+                # Unsupported number grammars must not break otherwise valid
+                # translations, or pretend a raw count meets a normalized goal.
+                draft.save(lines=checked, length=state, issue=None, rewrite={}, semantic_issues={})
+                return checked, spent
+            if plan['ids']:
+                baseline = plan['report']['over_by'] + plan['report']['under_by']
+                improved = False
+                for attempt in range(3):
+                    progress(pid, job, 95, f"Оптимізуємо переклад: {plan['report']['difference_percent']:+.2f}%, ціль ±5%")
+                    reasons = {i: f"NUMBER-NORMALIZED length: source {plan['source_lengths'][i]}, current "
+                        f"{plan['current_lengths'][i]}, target about {plan['line_targets'][i]} characters including spaces. "
+                        f"{'Use more concise idiomatic phrasing.' if plan['direction']=='shorten' else 'Check for omitted nuance and use complete idiomatic phrasing without adding new facts.'} "
+                        'Keep every fact, numeric value, unit, name and sentence id. This target discounts number-word expansion. '
+                        + ('The previous revision did not improve the length. Choose different wording.' if attempt else '')
+                        for i in plan['ids']}
+                    fixed = replacements(checked, plan['ids'], reasons)
+                    candidate = [fixed.get(i, text) for i, text in enumerate(checked)]
+                    next_plan = translation_budget.number_refinement_plan(src['script'], candidate, source_units, source_language, code)
+                    distance = next_plan['report']['over_by'] + next_plan['report']['under_by']
+                    if distance < baseline:
+                        current = candidate
+                        draft.save(lines=current, issue='Перевіряємо зміст після оптимізації довжини.')
+                        improved = True
+                        break
+                if not improved:
+                    pause('Модель не наблизила переклад до ±5% без зміни змісту. Збережено найкращий варіант.')
+                continue  # Every changed unit must pass the source-meaning audit again.
             draft.save(lines=checked, length=state, issue=None, rewrite={}, semantic_issues={})
             return checked, spent
         count = checked['issue_count']
@@ -1141,7 +1179,9 @@ def _translate(pid: str, code: str, job: dict) -> None:
 
 def save_translation(pid: str, code: str, project: dict, src: dict, text: str, cost: float, job: dict, segments, draft=None) -> None:
     language_quality.require(code, text)
-    length_report = translation_budget.assessment(src['script'], text)
+    source_language = src.get('language') or original_language(pid, project, src['script'])
+    length_report = translation_budget.assessment(src['script'], text, source_language, code)
+    length_report['target_tolerance_percent'] = 5 if length_report['number_comparison']['available'] else None
     progress(pid, job, 96, "Перекладаємо заголовок")
     title, spent = ask([{"role": "system", "content": f"Translate this YouTube video title into {ENGLISH[code]}. Keep it catchy and short, "
                                                        "as a native YouTuber would title it. Answer with the title only, no quotes.\n\n" + localization(code) + "\n" + target_rule(code)},
@@ -1531,7 +1571,7 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     def create(ordinal):
         meta=eleven_voice_metadata(project,code,ordinal)
         with tempfile.TemporaryDirectory(prefix='eleven-upload-',dir=example['path'].parent) as temporary:
-            parts=eleven_voices.upload_files(example['path'],Path(temporary))
+            parts=eleven_voices.clone_files(example['path'],Path(temporary))
             body,mime=multipart({'name':meta['name'][:90],'description':meta['description'],
                                  'labels':json.dumps(meta['labels']),'remove_background_noise':'false'},
                                 [('files',path,'audio/mpeg') for path in parts])
@@ -1542,7 +1582,7 @@ def voice_id(pid: str, provider: str, code: str | None = None):
     return {"id": found, "engine": eleven_engine(pid), "language": code}
 
 
-def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "", speed: float = 1.0) -> None:
+def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "", speed: float = 1.0) -> float | None:
     if isinstance(voice, dict) and voice.get('language'):
         language_quality.require(voice['language'], text)
     if provider == "elevenlabs":
@@ -1554,14 +1594,15 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
             pieces = textwrap.wrap(text, width=limit, break_long_words=True, break_on_hyphens=False)
             with tempfile.TemporaryDirectory(dir=target.parent) as folder:
                 folder = Path(folder)
+                receipts = []
                 for number, piece in enumerate(pieces):
-                    speak(provider, ref, piece, folder / f"{number}.mp3", pieces[number - 1] if number else before,
-                          pieces[number + 1] if number + 1 < len(pieces) else after, speed=speed)
+                    receipts.append(speak(provider, ref, piece, folder / f"{number}.mp3", pieces[number - 1] if number else before,
+                          pieces[number + 1] if number + 1 < len(pieces) else after, speed=speed))
                 listing = folder / "list.txt"
                 listing.write_text("".join(f"file '{n}.mp3'\n" for n in range(len(pieces))), encoding="utf-8")
                 run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
                      "-c:a", "copy", str(target)], "склеїти зразок ElevenLabs")
-            return
+            return sum(receipts) if all(eleven_api.finite_number(x) and x >= 0 for x in receipts) else None
         if model in ("eleven_v4_turbo", "eleven_v3_conversational"):
             audio = eleven_api.streamed_dialogue(key(provider), ref["id"], text, model)
         else:
@@ -1595,6 +1636,7 @@ def speak(provider: str, voice: str, text: str, target: Path, before: str = "", 
     if len(audio) < 1000:
         raise RuntimeError("Сервіс озвучки повернув порожній звук")
     target.write_bytes(audio)
+    return getattr(audio, 'credits', None)
 
 
 def msgpack(value) -> bytes:
@@ -1739,6 +1781,24 @@ def sample_sentence_count(pieces: list[str]) -> int:
     return sum(len([part for part in re.split(r"(?<=[.!?…])\s+|\n+",piece.strip()) if part.strip()]) for piece in pieces)
 
 
+def record_voice_cost(job: dict, requests: list[dict]) -> None:
+    """Keep an estimate distinct from complete, per-request provider receipts."""
+    estimates = [item.get('estimated_cost') for item in requests]
+    estimated = round(sum(estimates), 2) if all(eleven_api.finite_number(x) and x >= 0 for x in estimates) else None
+    receipts = [item.get('actual_cost') for item in requests]
+    confirmed = all(item.get('status') == 'complete' and eleven_api.finite_number(value) and value >= 0
+                    for item, value in zip(requests, receipts))
+    actual = round(sum(receipts), 2) if confirmed else None
+    job.update(estimated_cost=estimated, actual_cost=actual, cost=actual if confirmed else estimated,
+               cost_estimated=not confirmed, takes=len(requests))
+
+
+def voice_cost_metadata(job: dict) -> dict:
+    return {'estimated_cost': job.get('estimated_cost', job.get('cost')),
+            'actual_cost': job.get('actual_cost'), 'cost_estimated': job.get('cost_estimated', True),
+            'cost_unit': job.get('cost_unit', 'credits')}
+
+
 def sample(pid: str, code: str, provider: str, job: dict) -> None:
     text=read_text(pid,code)
     language_quality.require(code,text)
@@ -1754,6 +1814,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
     sample_price=fixed_price(provider,engine)
     voice=None;requests=[];parts=[]
     job.update(cost=0,takes=0,reused=0,cost_estimated=True,cost_unit='credits' if provider=='elevenlabs' else 'usd')
+    record_voice_cost(job, requests)
     for number,piece in enumerate(pieces):
         progress(pid,job,round(90*number/len(pieces)),f'Зразок: фраза {number+1} з {len(pieces)}')
         target=folder/f'{number:04d}.mp3'
@@ -1767,7 +1828,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
             entry={'text':piece,'file':target.name,'status':'started','estimated_cost':sample_price(piece)}
             requests.append(entry);store.atomic_json(folder/'requests.json',requests)
             try:
-                speak(provider,voice,piece,target,pieces[number-1] if number else '',pieces[number+1] if number+1<len(pieces) else '')
+                entry['actual_cost'] = speak(provider,voice,piece,target,pieces[number-1] if number else '',pieces[number+1] if number+1<len(pieces) else '')
                 cached[piece]=voice_cache.remember(work,identity,piece,target)
                 entry['status']='complete'
             except BaseException:
@@ -1775,8 +1836,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
                 raise
             finally:
                 store.atomic_json(folder/'requests.json',requests)
-                costs=[item['estimated_cost'] for item in requests]
-                job.update(cost=round(sum(costs),2) if all(cost is not None for cost in costs) else None,takes=len(requests))
+                record_voice_cost(job, requests)
         parts.append(target)
     progress(pid,job,95,'Збираємо зразок із збережених фраз')
     staged=folder/'sample.mp3'
@@ -1796,7 +1856,7 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
         item=data.setdefault('languages',{}).setdefault(code,{})
         item['sample_provider']=provider
         item.setdefault('samples',{})[sample_key]={'requested_sentences':job.get('sentences'),
-            'sentences':sample_sentence_count(pieces),'duration':duration,'made_at':time.time()}
+            'sentences':sample_sentence_count(pieces),'duration':duration,'made_at':time.time(), **voice_cost_metadata(job)}
     update(pid,publish)
 
 
@@ -1920,6 +1980,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
     parts_dir.mkdir(parents=True)
     manifest = []
     requests=[]
+    record_voice_cost(job, requests)
     engine=provider_engine(pid,provider)
     take_price=fixed_price(provider,engine)
     unit="credits" if provider=="elevenlabs" else "usd"
@@ -1932,7 +1993,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         requests.append(entry)
         store.atomic_json(parts_dir/"requests.json",requests)
         try:
-            speak(provider,voice,words,target,*around,speed=speed)
+            entry['actual_cost'] = speak(provider,voice,words,target,*around,speed=speed)
             entry["status"]="complete"
         except BaseException:
             # A failed transport can still have been billed by the provider.
@@ -1941,9 +2002,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         finally:
             entry["finished_at"]=time.time()
             store.atomic_json(parts_dir/"requests.json",requests)
-            costs=[entry["estimated_cost"] for entry in requests]
-            job.update(cost=round(sum(costs),2) if all(cost is not None for cost in costs) else None,
-                       cost_unit=unit,cost_estimated=True,takes=len(requests))
+            record_voice_cost(job, requests)
     store.atomic_json(parts_dir / "request.json", {"provider": provider, "voice_key": voice_key(pid, provider, code),
                                                  "identity":identity,"segments": segments, "translations": texts})
     pieces, cursor, fastest, latest, shortened, quicker = [], 0.0, 1.0, 0.0, 0, 1.0
@@ -2060,7 +2119,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
             "paid_timing_retries":False,"centered":True,
             "adaptation_cost_usd":job.get('adaptation_cost_usd',0),
             "review":dubbing_fit.review_items(manifest),
-            "estimated_cost":job.get("cost"),"cost_unit":unit,"takes":len(requests),"reused":job['reused'],
+            **voice_cost_metadata(job),"takes":len(requests),"reused":job['reused'],
             "longer": round(max(0.0, cursor - total), 1)}
     update(pid, keep)
 
@@ -2158,6 +2217,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     parts = []
     requests=[];manifest=[]
     job.update(cost=0,takes=0,reused=0,cost_unit='credits' if provider=='elevenlabs' else 'usd',cost_estimated=True)
+    record_voice_cost(job, requests)
     take_price=fixed_price(provider,provider_engine(pid,provider))
     for number, piece in enumerate(pieces):
         progress(pid, job, round(90 * number / len(pieces)), f"Озвучуємо, частина {number + 1} з {len(pieces)}")
@@ -2173,15 +2233,14 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
                    'estimated_cost':take_price(piece),'cost_unit':job['cost_unit']}
             requests.append(entry);store.atomic_json(parts_dir/'requests.json',requests)
             try:
-                speak(provider, voice, piece, target, pieces[number - 1] if number else "", pieces[number + 1] if number + 1 < len(pieces) else "")
+                entry['actual_cost'] = speak(provider, voice, piece, target, pieces[number - 1] if number else "", pieces[number + 1] if number + 1 < len(pieces) else "")
                 entry['status']='complete'
             except BaseException:
                 entry['status']='uncertain'
                 raise
             finally:
                 store.atomic_json(parts_dir/'requests.json',requests)
-                costs=[item['estimated_cost'] for item in requests]
-                job.update(cost=round(sum(costs),2) if all(c is not None for c in costs) else None,takes=len(requests))
+                record_voice_cost(job, requests)
             cached[piece]=voice_cache.remember(work,identity,piece,target)
         manifest.append({'index':number,'text':piece,'file':target.name})
         store.atomic_json(parts_dir/'manifest.json',manifest)
@@ -2216,7 +2275,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     def keep(data):
         data.setdefault("languages", {}).setdefault(code, {})["voice"] = {
             "provider": provider, "made_at": time.time(), "duration": final, "source_duration": target_length, **fit, **stamp,
-            'identity':identity,'takes':job['takes'],'reused':job['reused'],'estimated_cost':job['cost']}
+            'identity':identity,'takes':job['takes'],'reused':job['reused'], **voice_cost_metadata(job)}
     update(pid, keep)
 
 

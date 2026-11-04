@@ -1,6 +1,6 @@
-"""Informational translation counts and legacy explicit character-budget utilities.
+"""Translation counts and selective number-aware length refinement.
 
-The automatic translation pipeline uses assessment(), never the legacy fitter.
+The translation pipeline uses number_refinement_plan(), never the legacy fitter.
 Raw character counts do not measure spoken duration or translation quality.
 This module never synthesizes audio or publishes text.
 """
@@ -13,6 +13,36 @@ from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
 TOLERANCE = .03
+NUMBER_AWARE_TOLERANCE = .05
+
+
+def missing_source_years(source_text, translated_text, target_language):
+    """High-confidence year anchors supplement the model's semantic audit.
+
+    Only explicit four-digit source years are checked. This deliberately avoids
+    guessing equivalence for fractions, indefinite articles or unit conversions.
+    """
+    expected = set(re.findall(r'(?<![\w.,])(?:1[5-9]\d{2}|20\d{2})(?!\w|[.,]\d)', source_text))
+    normalized, _, available = numeric_comparison.normalized(translated_text, target_language)
+    if not available:
+        return []
+    found = set(re.findall(r'(?<![\w.])\d{4}(?!\w|\.\d)', normalized))
+    return sorted(expected-found)
+
+
+def number_refinement_plan(source_text, lines, source_units, source_language, target_language):
+    """Rank expanded phrases after equivalent number words have been normalized."""
+    source, _, available = numeric_comparison.normalized(source_text, source_language)
+    normalized = [numeric_comparison.normalized(line, target_language) for line in lines]
+    if not available or any(not item[2] for item in normalized):
+        return {'available': False, 'ids': []}
+    values = [item[0] for item in normalized]
+    originals = [numeric_comparison.normalized(line, source_language)[0] for line in source_units]
+    state = report(source, join_lines(values), NUMBER_AWARE_TOLERANCE)
+    plan = refinement_plan(source, values, originals, NUMBER_AWARE_TOLERANCE)
+    return {**plan, 'available': True, 'report': state,
+            'source_lengths': {i: len(originals[i]) for i in plan['ids']},
+            'current_lengths': {i: len(values[i]) for i in plan['ids']}}
 
 
 def count(text: str) -> int:

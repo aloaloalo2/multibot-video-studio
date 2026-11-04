@@ -10,10 +10,49 @@ import time
 import store
 
 LOCK=threading.RLock()
-# Stay below even the strictest reported per-file upload limit. All MP3 packets
-# are sent in the same clone request; splitting is transport only, never a trim.
+# Stay below even the strictest reported per-file upload limit. Instant cloning
+# uses one bounded sample; upload_files retains lossless transport for legacy callers.
 UPLOAD_BYTES=900_000
 UPLOAD_FILES=25
+REFERENCE_SECONDS=70
+
+
+def clone_files(source: Path, folder: Path) -> list[Path]:
+    """Keep the full reference locally; send a compact sample for instant cloning."""
+    duration = store.media_duration(source) or 0
+    if source.suffix.lower() == '.mp3' and 0 < duration <= 120 and source.stat().st_size <= UPLOAD_BYTES:
+        return [source]
+    if duration <= 0:
+        raise RuntimeError('Не вдалося прочитати звук прикладу голосу.')
+    import numpy as np
+    # Compare bounded windows by silence and clipping, favouring the earliest
+    # equally usable window. This is not speaker separation or noise removal.
+    scan = subprocess.run(['ffmpeg','-v','error','-nostdin','-i',str(source),'-t','300',
+                           '-vn','-ac','1','-ar','8000','-f','s16le','pipe:1'],
+                          capture_output=True,timeout=120)
+    if scan.returncode or not scan.stdout:
+        raise RuntimeError('Не вдалося підготувати приклад голосу. Оригінал збережено.')
+    samples=np.frombuffer(scan.stdout,dtype='<i2').astype(np.float32)/32768
+    window=min(len(samples),REFERENCE_SECONDS*8000)
+    def quality(offset):
+        segment=samples[offset:offset+window]
+        frames=segment[:len(segment)//800*800].reshape(-1,800)
+        active=float(np.mean(np.sqrt(np.mean(frames**2,axis=1)) > .006)) if len(frames) else 0
+        return active-4*float(np.mean(np.abs(segment)>.99))
+    start=max(range(0,max(1,len(samples)-window+1),5*8000),key=quality)/8000
+    folder.mkdir(parents=True,exist_ok=True)
+    prepared=folder/'clone-sample.mp3'
+    result=subprocess.run(['ffmpeg','-v','error','-nostdin','-y','-ss',str(start),'-i',str(source),
+                           '-t',str(min(REFERENCE_SECONDS,duration-start)),'-map','0:a:0','-vn',
+                           '-af','loudnorm=I=-18:TP=-3:LRA=11','-ar','44100','-ac','1',
+                           '-c:a','libmp3lame','-b:a','96k','-map_metadata','-1',str(prepared)],
+                          capture_output=True,timeout=120)
+    length=store.media_duration(prepared) if result.returncode==0 else None
+    if not length or abs(length-min(REFERENCE_SECONDS,duration-start))>.15:
+        raise RuntimeError('Не вдалося перевірити приклад голосу. Оригінал збережено.')
+    store.atomic_json(folder/'preparation.json',{'source_duration':duration,'start':start,
+        'sample_duration':length,'bytes':prepared.stat().st_size,'original_preserved':True})
+    return upload_files(prepared,folder/'parts')
 
 
 def upload_limit_error() -> RuntimeError:

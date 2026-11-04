@@ -149,8 +149,8 @@ class LanguagesTest(unittest.TestCase):
 
     def test_price_counts_characters_or_bytes(self):
         with patch.object(eleven_api, "model", return_value={"credits_per_char": .2}):
-            self.assertEqual(languages.price("elevenlabs", "a" * 10000, "eleven_v4_turbo"), 2000)
-            self.assertEqual(languages.price("elevenlabs", "я я", "eleven_v4_turbo"), .6)
+            self.assertEqual(languages.price("elevenlabs", "a" * 10000, "eleven_v4_turbo"), 2600)
+            self.assertEqual(languages.price("elevenlabs", "я я", "eleven_v4_turbo"), .78)
         with patch.object(eleven_api, "model", return_value={}):
             self.assertIsNone(languages.price("elevenlabs", "a" * 10000, "unknown"))
         # Fish Audio bills UTF-8 bytes: Cyrillic is two a letter
@@ -185,7 +185,8 @@ class LanguagesTest(unittest.TestCase):
 
     def test_translate_sample_and_whole_voice_fitted_to_the_video(self):
         answers = iter(["First sentence. Next sentence! Third part here.", '{"ok":true,"ids":[0]}', "What If Test"])
-        with patch.object(languages, "ask", side_effect=lambda messages, max_tokens=12000: (next(answers), 0.01)):
+        with patch.object(languages, "ask", side_effect=lambda messages, max_tokens=12000: (next(answers), 0.01)), \
+             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":True,"ids":[]}):
             languages.add(self.pid, "en")
             languages.start(self.pid, "translate", "en")
             job = self.wait()
@@ -636,16 +637,15 @@ class LanguagesTest(unittest.TestCase):
                 languages.store_example(languages.work_dir(second['id'],'uk'),'own-voice','uk',
                                         io.BytesIO(raw),len(raw),'','renamed.wav')
                 self.assertEqual(languages.own_voice(second['id'],'uk')['path'].read_bytes(),original_bytes)
-                with patch.object(languages.eleven_voices,'upload_files',side_effect=AssertionError('must reuse before splitting')):
+                with patch.object(languages.eleven_voices,'clone_files',side_effect=AssertionError('must reuse before preparing')):
                     self.assertEqual(languages.voice_id(second['id'],'elevenlabs','uk')['id'],first['id'])
             upload.assert_called_once()
 
-    def test_over_limit_new_reference_never_sends_a_clone_request(self):
+    def test_failed_reference_preparation_never_sends_a_clone_request(self):
         self.example('uk')
-        prepare=languages.eleven_voices.upload_files
-        with patch.object(languages.eleven_voices,'upload_files',side_effect=lambda source,folder:prepare(source,folder,max_bytes=1000)), \
+        with patch.object(languages.eleven_voices,'clone_files',side_effect=RuntimeError('Не вдалося підготувати приклад')), \
              patch.object(languages,'request') as upload:
-            with self.assertRaisesRegex(RuntimeError,'до 25 аудіофрагментів'):
+            with self.assertRaisesRegex(RuntimeError,'Не вдалося підготувати'):
                 languages.voice_id(self.pid,'elevenlabs','uk')
             upload.assert_not_called()
         self.assertTrue(languages.own_voice(self.pid,'uk')['path'].is_file())
@@ -666,7 +666,8 @@ class LanguagesTest(unittest.TestCase):
             if len(asked) == 1:
                 return '["Раз. Два."]', 0.0                     # a wrong count is asked again
             return '["Раз. Два.", "Три.", "Чотири."]', 0.0
-        with patch.object(languages.store, "load_project_plan", return_value=plan), patch.object(languages, "ask", side_effect=ask):
+        with patch.object(languages.store, "load_project_plan", return_value=plan), patch.object(languages, "ask", side_effect=ask), \
+             patch.object(languages.translation_budget, "number_refinement_plan", return_value={"available":True,"ids":[]}):
             languages.add(self.pid, "uk")
             languages.start(self.pid, "translate", "uk")
             job = self.wait()
@@ -968,7 +969,8 @@ class LanguagesTest(unittest.TestCase):
             if isinstance(reply, Exception):
                 raise reply
             return reply.encode()
-        with patch.object(languages, "request", side_effect=request):
+        with patch.object(languages, "request", side_effect=request), \
+             patch.object(languages, "DEFAULT_TRANSLATION_MODEL", languages.DEEPSEEK_TRANSLATION_MODEL):
             text, cost = languages.ask([{"role": "user", "content": "Hi"}], 600)
         self.assertEqual((text, round(cost, 4)), ("Привіт", 0.003))
         self.assertEqual(sent[0]["reasoning"], {"enabled": False})

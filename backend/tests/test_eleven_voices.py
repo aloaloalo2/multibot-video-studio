@@ -49,6 +49,33 @@ class ElevenVoiceReuseTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'needs ffmpeg')
 class ElevenUploadTest(unittest.TestCase):
+    def test_instant_clone_uses_one_compact_sample_and_preserves_a_long_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder=Path(folder);source=folder/'full.mp3'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=duration=1201',
+                            '-ar','44100','-ac','1','-b:a','192k',str(source)],check=True)
+            before=source.read_bytes()
+            self.assertGreater(len(before),eleven_voices.UPLOAD_BYTES*eleven_voices.UPLOAD_FILES)
+            parts=eleven_voices.clone_files(source,folder/'upload')
+            self.assertEqual(len(parts),1)
+            self.assertLess(parts[0].stat().st_size,eleven_voices.UPLOAD_BYTES)
+            self.assertAlmostEqual(store.media_duration(parts[0]),70,delta=.15)
+            self.assertEqual(source.read_bytes(),before)
+            subprocess.run(['ffmpeg','-v','error','-i',str(parts[0]),'-f','null','-'],check=True,capture_output=True)
+
+    def test_video_input_is_encoded_as_mp3_and_quiet_intro_is_skipped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder=Path(folder);source=folder/'reference.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=duration=100',
+                            '-af','adelay=30000','-c:a','aac',str(source)],check=True)
+            before=source.read_bytes()
+            parts=eleven_voices.clone_files(source,folder/'upload')
+            self.assertEqual(len(parts),1)
+            self.assertEqual(parts[0].suffix,'.mp3')
+            self.assertLess(parts[0].stat().st_size,eleven_voices.UPLOAD_BYTES)
+            self.assertGreaterEqual(json.loads((folder/'upload'/'preparation.json').read_text())['start'],30)
+            self.assertEqual(source.read_bytes(),before)
+
     def test_long_mp3_is_sent_whole_without_reencoding_or_oversize_files(self):
         with tempfile.TemporaryDirectory() as folder:
             folder=Path(folder);source=folder/'full.mp3'

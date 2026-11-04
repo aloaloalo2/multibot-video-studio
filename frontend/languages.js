@@ -321,6 +321,14 @@ function langVoiceStatus(item,spec){
   return item.saved_mix?.state==='saved'?'Озвучку збережено ✓':'Озвучка готова ✓';
 }
 
+function langVoiceSpend(voice){
+  const exact=Number.isFinite(voice.actual_cost),value=exact?voice.actual_cost:voice.estimated_cost;
+  if(!Number.isFinite(value))return '';
+  const credits=voice.cost_unit==='credits'||voice.provider==='elevenlabs';
+  const amount=credits?`${Math.ceil(value).toLocaleString('uk-UA')} кредитів`:langMoney(value);
+  return `Витрати за цей запуск: ${exact?'':'≈ '}${amount}${exact?'':' (оцінка)'}`;
+}
+
 function langTranslationInfo(item){
   if(!item.translated_model)return '';
   const model=langData.translation_models?.find(entry=>entry.id===item.translated_model);
@@ -376,7 +384,7 @@ function langCard(id,item,spec){
           <div class="lang-voice-actions"><span class="lang-voice-saved" role="status"${langVoiceStatus(item,spec)?'':' hidden'}>${langVoiceStatus(item,spec)}</span><button type="button" class="${readyVoice?'secondary':'primary'} lang-voice-run"${langVoiceStatus(item,spec)?' hidden':''} title="${item.chars.toLocaleString('uk-UA')} символів"${langHasVoice(item)?'':' data-blocked="1" disabled'}>${langVoiceAction(item,spec)} · <b class="lang-voice-cost">${langCost(spec,price)}</b></button><small class="lang-cache-note"${langVoiceStatus(item,spec)?' hidden':''}>${langCacheNote(item,spec)}</small></div></div>
         ${readyVoice?`<div class="lang-voice"><div class="lang-voice-head"><b>Готова озвучка</b><small>${voice.made_by?`${esc(voice.made_by)} · `:''}${voice.duration?clock(voice.duration):''}${voice.source_duration?` · ролик ${clock(voice.source_duration)}`:''}${fit?` · ${fit}`:''}${voice.longer?` · довша на ${String(voice.longer).replace('.',',')} с`:''}</small>
           <div class="lang-voice-delivery"><a class="lang-icon lang-download" href="${langUrl(id,item.code,'voice',voice.made_at)}&download=${encodeURIComponent(`Озвучка ${item.name}.mp3`)}" download="Озвучка ${esc(item.name)}.mp3" title="Завантажити лише голос" aria-label="Завантажити MP3">${langDownloadIcon}</a>${mix.state==='saved'?'':`<button type="button" class="secondary lang-save-audio"${mix.state==='unavailable'?' data-blocked="1" disabled':''} title="Зберегти озвучку цією мовою разом із музикою й ефектами монтажу без витрат кредитів">${mix.state==='outdated'?'Оновити файл':'Зберегти файл'}</button>`}</div></div>
-          <div class="lang-player" data-kind="voice"></div>${langFitReview(voice)}<p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
+          <div class="lang-player" data-kind="voice"></div>${langVoiceSpend(voice)?`<p class="lang-voice-spend">${esc(langVoiceSpend(voice))}</p>`:''}${langFitReview(voice)}<p class="lang-mix-status${mix.state==='saved'?' is-saved':''}" role="status">${esc(mixText)}${mix.state==='saved'?`<small>${esc(mix.filename)}</small>`:''}</p></div>`:''}`
       :'<p class="lang-off">Спершу перекладіть текст.</p>'}
     ${unsafeVoice?`<div class="lang-voice is-unsafe">${langQualityNotice(item.voice_language_check,true)}<div class="lang-player" data-kind="voice"></div></div>`:''}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>

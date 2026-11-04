@@ -1352,6 +1352,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-voice-delivery[hidden],.lang-mix-status[hidden]{display:none}
 .lang-voice-delivery .lang-save-audio{font-size:13px;padding:9px 14px;white-space:nowrap}
 .lang-mix-status{font-size:12px;color:var(--muted,#9a9ca4);margin:10px 0 0;overflow-wrap:anywhere}
+.lang-voice-spend{font-size:12px;color:var(--muted,#9a9ca4);margin:10px 0 0}
 .lang-mix-status.is-saved{color:#6bf2ae}
 .lang-mix-status small{display:block;color:var(--muted,#9a9ca4);margin-top:4px}
 

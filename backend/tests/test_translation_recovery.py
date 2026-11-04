@@ -84,6 +84,12 @@ class ContinuationTest(unittest.TestCase):
         self.stack.enter_context(patch.object(languages.language_quality, 'require'))
         self.stack.enter_context(patch.object(languages, 'translator', return_value='Translate naturally.'))
         self.stack.enter_context(patch.object(languages, 'target_rule', return_value='Spanish.'))
+        self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'p'}))
+        self.stack.enter_context(patch.object(languages, 'original_language', return_value='en'))
+        # These fixtures isolate resumable semantic repairs; the number-aware goal
+        # is exercised with real plans in test_translation_length_integration.
+        self.stack.enter_context(patch.object(languages.translation_budget, 'number_refinement_plan',
+                                             return_value={'available': True, 'ids': []}))
         self.job = {'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
 
     def test_missing_id_retry_does_not_repeat_good_neighbour(self):

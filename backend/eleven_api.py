@@ -23,6 +23,8 @@ API_USD_PER_CHAR = {"eleven_v4": 0.00008, "eleven_v4_turbo": 0.00004}
 API_PRICE_CHECKED = "2026-11-03"
 API_PRICE_SOURCE = "https://elevenlabs.io/pricing/api"
 DEFAULT_MODEL = "eleven_v4"
+# Author-selected planning allowance. This is not a provider debit or catalogue rate.
+STUDIO_ESTIMATE_RATES = {"eleven_v4_turbo": 0.26}
 PRIORITY = ["eleven_v4", "eleven_v4_turbo"]
 FALLBACK = [
     {"id": mid, "name": name, "note": note, "credits_per_char": None, "languages": [],
@@ -333,6 +335,24 @@ def catalog(refresh: bool = False) -> dict:
 
 def model(mid: str) -> dict | None:
     return next((m for m in catalog()["models"] if m["id"] == mid), None)
+
+
+def estimate_rate(mid: str) -> float | None:
+    if mid in STUDIO_ESTIMATE_RATES:
+        return STUDIO_ESTIMATE_RATES[mid]
+    return (model(mid) or {}).get('credits_per_char')
+
+
+class SpeechAudio(bytes):
+    """Audio plus the provider's per-request receipt, when HTTP supplies one."""
+    def __new__(cls, audio: bytes, headers):
+        result = super().__new__(cls, audio)
+        try:
+            value = float(headers.get('character-cost'))
+            result.credits = value if math.isfinite(value) and value >= 0 else None
+        except (TypeError, ValueError):
+            result.credits = None
+        return result
 
 
 def settings(mid: str) -> dict:

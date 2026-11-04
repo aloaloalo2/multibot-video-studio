@@ -1,4 +1,4 @@
-"""Natural faithful translation is audited; character counts never force a rewrite."""
+"""Number-aware length refinement preserves meaning, phrase ids and paid audio."""
 import contextlib
 import json
 import sys
@@ -19,7 +19,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.work = Path(self.tmp.name)
         (self.work/'text.txt').write_text('Accepted previous translation\n')
-        self.source = {'script': 's'*100, 'duration': 20, 'title': 'Source title'}
+        self.source = {'script': 's'*100, 'duration': 20, 'title': 'Source title', 'language':'en'}
         self.lines = [{'start': 0, 'end': 20, 'source': 's'*100}]
         self.job = {'key': 'length-test', 'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
         self.stack.enter_context(patch.object(languages.store, 'load_project', return_value={'id': 'test'}))
@@ -32,22 +32,26 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.stack.enter_context(patch.object(languages, 'translator', return_value='Translate naturally.'))
         self.stack.enter_context(patch.object(languages, 'target_rule', return_value='Spanish only.'))
         self.stack.enter_context(patch.object(languages.language_quality, 'require'))
-        self.initial = self.stack.enter_context(patch.object(languages, 'translate_lines', return_value=(['t'*120], .1)))
+        self.stack.enter_context(patch.object(languages, 'original_language', return_value='en'))
+        self.initial = self.stack.enter_context(patch.object(languages, 'translate_lines', return_value=(['t'*100], .1)))
         self.ask = self.stack.enter_context(patch.object(languages, 'ask'))
         self.save = self.stack.enter_context(patch.object(languages, 'save_translation'))
         self.speak = self.stack.enter_context(patch.object(languages, 'speak'))
 
-    def test_long_natural_translation_is_audited_without_character_compression(self):
-        self.ask.return_value = json.dumps({'ok': True, 'ids': [0]}), .01
+    def test_long_translation_is_refined_then_audited_again(self):
+        self.initial.return_value = (['t'*120], .1)
+        self.ask.side_effect = [(json.dumps({'ok':True,'ids':[0]}),.01),
+                               (json.dumps({'0':'t'*104}),.02),
+                               (json.dumps({'ok':True,'ids':[0]}),.01)]
         with patch.object(languages.translation_budget, 'fit', side_effect=AssertionError('No character fitting')):
             languages._translate('test', 'es', self.job)
         saved = self.save.call_args.args
-        self.assertEqual(saved[4], 't'*120)
-        self.assertAlmostEqual(saved[5], .11)
+        self.assertEqual(saved[4], 't'*104)
+        self.assertAlmostEqual(saved[5], .14)
         self.assertEqual(saved[7], self.lines)
         self.assertTrue(self.job['translation_length']['advisory_only'])
         self.assertNotIn('within_budget', self.job['translation_length'])
-        self.assertEqual(self.ask.call_count, 1)
+        self.assertEqual(self.ask.call_count, 3)
         self.speak.assert_not_called()
 
     def test_semantic_failure_preserves_the_previous_translation(self):
@@ -62,12 +66,33 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.assertEqual((self.work/'text.txt').read_text(), 'Accepted previous translation\n')
         self.speak.assert_not_called()
 
-    def test_short_natural_translation_is_not_padded(self):
+    def test_wrong_year_is_repaired_even_when_model_audit_accepts_it(self):
+        self.source['script']='In 1989.'
+        self.lines[0]['source']='In 1989.'
+        self.initial.return_value=(['En mil ochocientos ochenta y nueve.'],.1)
+        fixed='En mil novecientos ochenta y nueve.'
+        self.ask.side_effect=[('{"ok":true,"ids":[0]}',.01),
+                              (json.dumps({'0':fixed}),.01),('{"ok":true,"ids":[0]}',.01)]
+        languages._translate('test','es',self.job)
+        self.assertEqual(self.save.call_args.args[4],fixed)
+        self.assertIn('1989',self.ask.call_args_list[1].args[0][1]['content'])
+        self.speak.assert_not_called()
+
+    def test_unsupported_number_grammar_does_not_break_translation_or_claim_the_goal(self):
+        self.ask.return_value=('{"ok":true,"ids":[0]}',.01)
+        languages._translate('test','ja',self.job)
+        self.save.assert_called_once()
+        self.assertIsNone(self.job['translation_length']['target_tolerance_percent'])
+        self.speak.assert_not_called()
+
+    def test_short_translation_restores_natural_detail_and_is_audited(self):
         self.initial.return_value = (['t'*50], .1)
-        self.ask.return_value = json.dumps({'ok': True, 'ids': [0]}), .01
+        self.ask.side_effect = [(json.dumps({'ok':True,'ids':[0]}),.01),
+                               (json.dumps({'0':'t'*96}),.02),
+                               (json.dumps({'ok':True,'ids':[0]}),.01)]
         languages._translate('test', 'es', self.job)
-        self.assertEqual(self.save.call_args.args[4], 't'*50)
-        self.assertEqual(self.ask.call_count, 1)
+        self.assertEqual(self.save.call_args.args[4], 't'*96)
+        self.assertEqual(self.ask.call_count, 3)
         self.speak.assert_not_called()
 
     def test_unsynced_paragraph_units_are_flattened_and_kept_in_order(self):
@@ -156,7 +181,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.speak.assert_not_called()
 
     def test_large_translation_audits_every_batch_without_length_rewrites(self):
-        originals, translated = ['s'*10]*45, ['t'*12]*45
+        originals, translated = ['s'*10]*45, ['t'*10]*45
         src = {'script': '\n'.join(originals)}
         sizes = []
         def ask(messages, max_tokens=12000):
