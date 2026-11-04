@@ -567,7 +567,7 @@ async function langConfirmVoice(id,code){
 }
 
 function langCard(id,item,spec){
-  const card=document.createElement('article');card.className='lang-card';card.dataset.code=item.code;
+  const card=document.createElement('article');card.className='lang-card lang-workspace';card.dataset.code=item.code;
   card.innerHTML='<section class="lang-step lang-script-step" data-lang-step="0"><div class="lang-script-library"></div></section>';
   langScriptLibrary(id,card.querySelector('.lang-script-library'),langData);
   return card;

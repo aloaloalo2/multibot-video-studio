@@ -23,7 +23,7 @@ function langScriptLibrary(id,holder,data){
     return `<div class="lang-language-column" data-language="${item.code}"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити сценарій: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
       <span class="lang-script-file-head">${langFlag(item.code)}<span class="lang-script-fold" aria-hidden="true"></span></span>
       <strong>${esc(item.name)}</strong><span class="lang-script-file-title">${esc(item.title||'Сценарій ролика')}</span>
-      <span class="lang-script-file-status" title="Переклад сценарію">${langTranslateIcon}<span${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
+      <span class="lang-script-file-status" title="Переклад сценарію">${langTranslateIcon}<span class="lang-script-complete"${status.kind==='ready'?'':' hidden'}>${langScriptCheck}</span><span class="lang-script-status-label"${status.kind==='ready'?' hidden':''}>${status.label}</span></span>
       <progress max="100" value="${status.progress||0}"${status.kind==='working'?'':' hidden'}></progress></button><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
   }).join('')}<button type="button" class="lang-script-add" aria-label="Додати мову перекладу"><span aria-hidden="true">+</span>Додати мову</button></div><div class="lang-script-queue" aria-live="polite"></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode)));
@@ -119,8 +119,9 @@ function langPaintScriptJobs(){
     const item=langData?.items.find(entry=>entry.code===button.dataset.scriptCode);if(!item)return;
     const status=langScriptStatus(item);
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
-    button.querySelector('.lang-script-file-status span').textContent=status.label;
-    button.querySelector('.lang-script-file-status span').hidden=status.kind==='ready';
+    button.querySelector('.lang-script-status-label').textContent=status.label;
+    button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';
+    button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
     const progress=button.querySelector('progress');progress.hidden=status.kind!=='working';progress.value=status.progress||0;
     button.title=`${item.name}: ${status.label}${status.detail?' · '+status.detail:''}`;
   });
