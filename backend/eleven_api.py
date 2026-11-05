@@ -10,6 +10,7 @@ import json
 import math
 import threading
 import time
+from contextlib import contextmanager
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,6 +23,9 @@ BASE = "https://api.elevenlabs.io/v1"
 API_USD_PER_CHAR = {"eleven_v4": 0.00008, "eleven_v4_turbo": 0.00004}
 API_PRICE_CHECKED = "2026-11-03"
 API_PRICE_SOURCE = "https://elevenlabs.io/pricing/api"
+# Monthly subscription allocation, not an extra cash debit. Public price checked 2026-11-05.
+MONTHLY_USD = {"free": 0, "starter": 6, "creator": 22, "pro": 99, "scale": 299, "business": 990}
+MONTHLY_CREDITS = {"free": 10000, "starter": 30000, "creator": 121000, "pro": 600000, "scale": 1800000, "business": 6000000}
 DEFAULT_MODEL = "eleven_v4"
 # Author-selected planning allowance. This is not a provider debit or catalogue rate.
 STUDIO_ESTIMATE_RATES = {"eleven_v4_turbo": 0.26}
@@ -36,6 +40,9 @@ FALLBACK = [
     ]
 ]
 _cache = {}
+_refreshing = set()
+_ui_lock = threading.Lock()
+_metadata_mode = threading.local()
 _lock = threading.Lock()
 _balances = {}
 _balance_lock = threading.Lock()
@@ -67,6 +74,14 @@ def balance(refresh: bool = False) -> dict:
                 raise RuntimeError('ElevenLabs не повернув коректний баланс кредитів.')
             result={'state':'ready','remaining_credits':max(0,int(limit)-int(used)),
                     'total_credits':int(limit),'used_credits':int(used),'checked_at':time.time()}
+            tier = str(account.get('tier') or '').lower()
+            fee, included = MONTHLY_USD.get(tier), MONTHLY_CREDITS.get(tier)
+            if fee is not None and included:
+                result.update(credit_usd_rate=fee/included, credit_usd_estimated=True,
+                              credit_usd_basis=f'{tier.title()}: ${fee:g} / {included:,} кредитів (орієнтовно, без податків і знижок)',
+                              credit_usd_source='https://elevenlabs.io/pricing')
+                store.atomic_json(store.DATA_ROOT/'eleven-credit-usd.json',
+                                  {k:result[k] for k in ('credit_usd_rate','credit_usd_basis','credit_usd_source')})
         except (RuntimeError,ValueError,TypeError,AttributeError) as error:
             result={**(cached[1] if cached else {}),'state':'stale' if cached and 'remaining_credits' in cached[1] else 'unavailable',
                     'error':str(error)}
@@ -272,6 +287,42 @@ def invalidate_credit_rate(signature: str, mid: str, now: float) -> None:
         pass
 
 
+@contextmanager
+def nonblocking_metadata(enabled=True):
+    previous = getattr(_metadata_mode, 'cached', False)
+    _metadata_mode.cached = enabled
+    try:
+        yield
+    finally:
+        _metadata_mode.cached = previous
+
+
+def ui_catalog() -> dict:
+    """Immediate cached metadata for UI. Refresh the provider in one background worker."""
+    try:
+        secret = credentials.vault().read(credentials.service_name('elevenlabs'))
+    except RuntimeError:
+        return {'models': FALLBACK, 'verified': False, 'error': 'Додайте ключ ElevenLabs у налаштуваннях студії'}
+    signature = hashlib.sha256(secret.encode()).hexdigest()
+    cached = _cache.get(signature)
+    if cached and time.monotonic()-cached[0] < 300:
+        return cached[1]
+    saved = store.read_json(store.DATA_ROOT/'eleven-catalog'/f'{signature}.json', {}) or {}
+    result = cached[1] if cached else saved.get('data') or {'models': FALLBACK, 'verified': False}
+    with _ui_lock:
+        if signature not in _refreshing:
+            _refreshing.add(signature)
+            def refresh_metadata():
+                try:
+                    fresh = catalog()
+                    store.atomic_json(store.DATA_ROOT/'eleven-catalog'/f'{signature}.json', {'data': fresh})
+                finally:
+                    with _ui_lock:
+                        _refreshing.discard(signature)
+            threading.Thread(target=refresh_metadata, daemon=True).start()
+    return result
+
+
 def catalog(refresh: bool = False) -> dict:
     try:
         secret = credentials.vault().read(credentials.service_name("elevenlabs"))
@@ -340,6 +391,8 @@ def model(mid: str) -> dict | None:
 def estimate_rate(mid: str) -> float | None:
     if mid in STUDIO_ESTIMATE_RATES:
         return STUDIO_ESTIMATE_RATES[mid]
+    if getattr(_metadata_mode, 'cached', False):
+        return next((m.get('credits_per_char') for m in ui_catalog()['models'] if m['id'] == mid), None)
     return (model(mid) or {}).get('credits_per_char')
 
 

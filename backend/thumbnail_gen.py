@@ -290,6 +290,8 @@ def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
         answer = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
     except ValueError:
         answer = {}
+    import project_costs
+    project_costs.record_at(work.parent, 'claude_code', answer.get('total_cost_usd'))
     if director.limit_stop(answer):
         raise RuntimeError(director.limit_stop(answer) + " Прев'ю можна згенерувати, коли ліміт оновиться.")
     written = re.sub(r"^```\w*\n|\n```$", "", str(answer.get("result") or "").strip()).strip()
@@ -301,7 +303,7 @@ def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
 # A trial the author asked for on 1 November 2026: DeepSeek (OpenRouter) writes the prompt instead of Claude Opus, from
 # the same brief, the same reference frames (sent as pictures) and the story bible (sent as text), so the two prompts can
 # be compared on the same Codex drawing. «Згенерувати з DeepSeek» in the thumbnail window starts it.
-def write_prompt_deepseek(text: str, folder: Path, refs: list[Path]) -> tuple[str, dict]:
+def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id: str | None = None) -> tuple[str, dict]:
     import base64, io, urllib.request
     import agent_openrouter, credentials
     try:
@@ -331,6 +333,10 @@ def write_prompt_deepseek(text: str, folder: Path, refs: list[Path]) -> tuple[st
     try:
         with urllib.request.urlopen(request, timeout=PROMPT_TIMEOUT) as response:
             result = json.load(response)
+        if project_id:
+            import project_costs
+            project_costs.record_at(store.project_dir(project_id), 'openrouter', (result.get('usage') or {}).get('cost'),
+                                    identity=result.get('id'))
         written = str(result["choices"][0]["message"]["content"] or "").strip()
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         raise RuntimeError("DeepSeek не відповів. Перевірте ключ OpenRouter і спробуйте ще раз") from None
@@ -374,7 +380,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 note = "[Трендове прев’ю · Codex] " + written
             else:
                 text = brief(title, script, wishes, folder, refs)
-                written, answer = write_prompt_deepseek(text, folder, refs) if writer == "deepseek" else write_prompt(text, folder.parent, work)
+                written, answer = write_prompt_deepseek(text, folder, refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work)
                 note = ("[DeepSeek] " if writer == "deepseek" else "") + written
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))

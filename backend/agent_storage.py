@@ -81,6 +81,8 @@ def add_cost(project_id, kind, model, amount, request_id=None):
         entry = {"id": uuid.uuid4().hex, "kind": kind, "model": model, "amount_usd": amount, "request_id": request_id, "created_at": time.time()}
         data["costs"].append(entry)
         store.atomic_json(conversation_path(project_id), data)
+    import project_costs
+    project_costs.record_at(store.project_dir(project_id),'openrouter',amount,identity=request_id or entry['id'],category='agent')
     return entry
 
 

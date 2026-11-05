@@ -393,6 +393,7 @@ function renderOverview() {
       card.classList.add('producing');card.setAttribute('aria-busy','true');open.setAttribute('aria-disabled','true');
     }
     card.append(open,projectCardHeading(project),projectActions(project));
+    if(typeof attachProjectCosts==='function')attachProjectCosts(card,project);
     if(producing||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))){
       const control=productionControl(project.id,producing);control.classList.add('project-production-control');card.append(control);
     }

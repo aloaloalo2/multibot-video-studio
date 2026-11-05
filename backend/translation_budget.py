@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 import re
+import copy
+from functools import lru_cache
 import numeric_comparison
 from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
@@ -133,6 +135,13 @@ def report_counts(source_chars: int, translated_chars: int, tolerance: float = T
 
 def assessment(source_text: str, translated_text: str, source_language: str | None = None,
                target_language: str | None = None, *, source_units=None, translated_units=None) -> dict:
+    return copy.deepcopy(_assessment(source_text, translated_text, source_language, target_language,
+                                    tuple(source_units) if source_units is not None else None,
+                                    tuple(translated_units) if translated_units is not None else None))
+
+
+@lru_cache(maxsize=96)
+def _assessment(source_text, translated_text, source_language, target_language, source_units, translated_units):
     """Informational counts only: spelling out source digits can lengthen speech text.
 
     Character differences are neither a fidelity verdict nor a duration estimate.

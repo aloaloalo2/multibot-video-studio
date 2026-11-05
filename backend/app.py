@@ -30,6 +30,7 @@ import style_lab
 import style_copy
 import director
 import spend_report
+import project_costs
 import production_context
 import director_plan
 import episode_restart
@@ -1135,7 +1136,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_media(thumbnail_gen.version_file(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
-            return self.json_response(languages.overview(match.group(1)))
+            return self.json_response(languages.overview(match.group(1), compact=True))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/voices", path)
+        if match:
+            return self.json_response(languages.voice_options(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/cost", path)
         if match:
             return self.json_response(languages.cost_breakdown(*match.groups()))
@@ -1187,6 +1191,15 @@ class Handler(BaseHTTPRequestHandler):
             data = production_context.build(project, request)
             if (query.get("format") or [""])[0] == "text":
                 return self.text_response(production_context.text(data))
+            return self.json_response(data)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/costs", path)
+        if match:
+            pid = match.group(1)
+            store.load_project(pid)
+            # Card hover is entirely local; balance refresh retains the conversion basis separately.
+            balance = store.read_json(store.DATA_ROOT/'eleven-credit-usd.json', {}) or {}
+            data = project_costs.summary(pid, credit_rate=balance.get('credit_usd_rate'))
+            data['elevenlabs_basis'] = balance.get('credit_usd_basis')
             return self.json_response(data)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/spend", path)
         if match:

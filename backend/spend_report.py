@@ -326,6 +326,9 @@ def record(log: Path) -> dict | None:
         target.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(log.stat().st_mtime))
         store.atomic_json(target / f"{log.stem}-{stamp}.json", report)
+        import project_costs
+        project_costs.record_at(log.parent,'claude_code',report.get('cost_usd'),identity=report.get('log') or str(log),
+                                category='production',estimated=not report.get('cost_measured'))
         return report
     except Exception:   # a log that cannot be read must not touch the run it describes
         import traceback

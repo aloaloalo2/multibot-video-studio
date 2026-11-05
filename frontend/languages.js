@@ -18,6 +18,7 @@ function renderLangView(){
   const tab=$('view-langs'),section=$('project-langs');if(!tab||!section)return;
   const project=state.project,open=!!project&&state.view==='langs';
   tab.hidden=!project;tab.classList.toggle('active',open);tab.setAttribute('aria-pressed',String(open));
+  if(typeof updateLanguageCostBadge==='function')updateLanguageCostBadge(project?.id);
   section.hidden=!open;
   if(!open){langCloseOriginal();langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();langThumbnailDialog?.dialog.close();if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
   if(section.dataset.project!==project.id){section.dataset.project=project.id;section.innerHTML=`<div class="lang-view"><div class="lang-head"><h1>${langTranslateIcon}Мови</h1><p class="lang-lead">Завантаження…</p></div></div>`;loadLangs(project.id);}
@@ -855,6 +856,16 @@ function dubChoice(){
   return code || null;
 }
 let dubStamps={};
+const dubOptionsCache=new Map(),dubOptionsPending=new Map();
+async function loadDubOptions(id){
+  const cached=dubOptionsCache.get(id);
+  if(cached&&Date.now()-cached.at<15000)return cached.data;
+  if(dubOptionsPending.has(id))return dubOptionsPending.get(id);
+  const request=api(`/api/projects/${encodeURIComponent(id)}/languages/voices`).then(data=>{
+    dubOptionsCache.set(id,{at:Date.now(),data});return data;
+  }).finally(()=>dubOptionsPending.delete(id));
+  dubOptionsPending.set(id,request);return request;
+}
 function isVoiceClip(clip){
   if(clip?.kind!=='audio')return false;
   const asset=(state.project?.assets || []).find(item=>item.id===clip.asset_id);
@@ -880,23 +891,34 @@ function addLayerDubControl(heading,layer){
   button.addEventListener('click',async event=>{
     event.stopPropagation();
     document.querySelector('.layer-dub-menu')?.remove();
-    let data;try{data=await api(`/api/projects/${encodeURIComponent(state.project.id)}/languages`);}catch(error){status(error.message,true);return;}
-    const ready=data.items.filter(item=>item.files?.voice&&item.voice_current!==false);
-    for(const item of ready)dubStamps[item.code]=Math.round(item.voice?.made_at || 0);
+    const projectId=state.project.id;
     const menu=document.createElement('div');menu.className='layer-dub-menu lang-menu';menu.setAttribute('role','menu');
-    menu.innerHTML=`<button type="button" data-code=""${!code?' class="active"':''}>🎙<span>Оригінал</span></button>${ready.map(item=>`<button type="button" data-code="${item.code}"${item.code===code?' class="active"':''}>${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('') || '<p class="layer-dub-empty">Готової озвучки іншими мовами ще немає. Її робить вкладка «Мови».</p>'}`;
+    const original=`<button type="button" data-code=""${!code?' class="active"':''}>🎙<span>Оригінал</span></button>`;
+    menu.innerHTML=original+'<p class="layer-dub-empty" role="status">Завантаження озвучок…</p>';
     const rect=button.getBoundingClientRect();Object.assign(menu.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.bottom+6}px`,zIndex:60});
     document.body.append(menu);
+    const placeMenu=()=>{const height=menu.getBoundingClientRect().height,width=menu.getBoundingClientRect().width;
+      menu.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-width-8))}px`;
+      menu.style.top=`${rect.bottom+6+height<=window.innerHeight-8?rect.bottom+6:Math.max(8,rect.top-height-6)}px`;};
+    placeMenu();
     const close=()=>{menu.remove();document.removeEventListener('pointerdown',outside,true);};
     const outside=e=>{if(!menu.contains(e.target)&&e.target!==button)close();};
     document.addEventListener('pointerdown',outside,true);
     menu.addEventListener('click',e=>{
       const choice=e.target.closest('button[data-code]');if(!choice)return;close();
+      if(state.project?.id!==projectId)return;
       try{if(choice.dataset.code)localStorage.setItem(`dub:${state.project.id}`,choice.dataset.code);else localStorage.removeItem(`dub:${state.project.id}`);}catch{}
       const playing=state.playing;if(typeof stopPlayback==='function'&&playing)stopPlayback();
       buildAudioNodes();renderProject();
       status(choice.dataset.code?'Перегляд з перекладеною озвучкою. Експорт лишається з оригіналом.':'Перегляд з оригінальною озвучкою.');
     });
+    try{
+      const data=await loadDubOptions(projectId);
+      if(!menu.isConnected||state.project?.id!==projectId)return;
+      for(const item of data.items)dubStamps[item.code]=Math.round(item.made_at || 0);
+      menu.innerHTML=original+(data.items.map(item=>`<button type="button" data-code="${item.code}"${item.code===code?' class="active"':''}>${langFlag(item.code)}<span>${esc(item.name)}</span><small>${esc(item.label)}</small></button>`).join('') || '<p class="layer-dub-empty">Готової озвучки іншими мовами ще немає. Її робить вкладка «Мови».</p>');
+      placeMenu();
+    }catch(error){if(menu.isConnected){menu.innerHTML=original+`<p class="layer-dub-empty">${esc(error.message)}</p>`;placeMenu();}}
   });
   heading.append(button);
 }

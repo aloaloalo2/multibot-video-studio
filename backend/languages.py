@@ -440,7 +440,28 @@ def cost_breakdown(pid,code):
     return translation_costs.breakdown(work_dir(pid,code),item.get('translate_cost'))
 
 
-def overview(pid: str) -> dict:
+def voice_options(pid: str) -> dict:
+    """Montage switcher metadata only: no provider catalogue, prices or full scripts."""
+    with store.read_snapshot():
+        project=store.load_project(pid)
+        data=load_state(pid)
+        items=[]
+        for code,item in (data.get('languages') or {}).items():
+            if code not in LANGUAGES:
+                continue
+            voice=item.get('voice') or {}
+            if voice and final_voice(project,code) and voice_current(pid,code,voice):
+                items.append({'code':code,'name':LANGUAGES[code][0],'label':lang_name(code),
+                              'made_at':voice.get('made_at',0)})
+        return {'items':items}
+
+
+def overview(pid: str, *, compact=False) -> dict:
+    with store.read_snapshot(), eleven_api.nonblocking_metadata(compact):
+        return _overview(pid, compact=compact)
+
+
+def _overview(pid: str, *, compact=False) -> dict:
     project = store.load_project(pid)
     data = load_state(pid)
     src = source(project)
@@ -448,7 +469,7 @@ def overview(pid: str) -> dict:
     engine = fish_engine(pid)
     settings=narration_settings(pid)
     provider = settings.get("provider") if settings.get("provider") in PROVIDERS else "fishaudio"
-    eleven = eleven_api.catalog()
+    eleven = eleven_api.ui_catalog() if compact else eleven_api.catalog()
     items = []
     resume_segments = None
     if any((work_dir(pid, code)/'translation-draft.json').is_file()
@@ -470,8 +491,10 @@ def overview(pid: str) -> dict:
             if placed:
                 voice['alignment']=dubbing_fit.alignment_report(placed)
                 voice['latest']=round(max(abs(line['start']-line['original_start']) for line in placed),1)
-        if voice and 'review' not in voice:
+        if voice and 'review' not in voice and not compact:
             voice['review']=dubbing_fit.review_items(completed_voice_phrases(pid,code,voice))
+        if compact:
+            voice.pop('review', None)
         comparison_segments=synced_segments(pid,code) or []
         comparison_lines=line_texts(pid,code) if comparison_segments else []
         comparison_units=([unit['source'] for unit in comparison_segments]
@@ -509,7 +532,7 @@ def overview(pid: str) -> dict:
                       "saved_mix": language_mix.status(project, code, item.get("saved_mix")) if files(pid, code, project)["voice"] else {"state": "missing"},
                       "lines": len(synced_segments(pid, code) or []),
                       "passage": passage(text) if text else "",
-                      "own_voice": ({"text": own["text"], "filename": own["filename"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
+                      "own_voice": ({**({"text": own["text"]} if not compact else {}), "filename": own["filename"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
                       "channel_voice": ({"filename": shared["filename"], "duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
                                         if not item.get("use_original_voice") and (shared := channel_voice(project.get("channel_id"), code)) else None),
                       "voice_key": voice_key(pid, item_provider, code),
@@ -654,7 +677,7 @@ def translation_trace(pid, code, job, offset=None, *, request_model=None):
     if model not in TRANSLATION_REQUEST_MODELS:
         raise store.StudioError('Невідома модель перевірки перекладу.',400)
     run = str(job.get('started_at') or job.get('key') or time.time_ns()).replace('/', '_').replace('|', '_')
-    TRANSLATION_CONTEXT.value = {'path': work_dir(pid, code)/'translation-attempts'/run,
+    TRANSLATION_CONTEXT.value = {'path': work_dir(pid, code)/'translation-attempts'/run, 'project_id':pid,
                                  'target': code, 'offset': offset, 'model': model, 'key': job.get('key')}
     try:
         yield
@@ -665,6 +688,9 @@ def translation_trace(pid, code, job, offset=None, *, request_model=None):
 def record_translation(payload, result):
     context = getattr(TRANSLATION_CONTEXT, 'value', None)
     if context:
+        import project_costs
+        project_costs.record_at(store.project_dir(context['project_id']), 'openrouter', (result.get('usage') or {}).get('cost'),
+                                identity=result.get('id') or uuid.uuid4().hex, category='languages', language=context['target'])
         # Exact input/output and target, without HTTP headers or credentials.
         store.atomic_json(context['path']/f'{time.time_ns()}-{uuid.uuid4().hex[:8]}.json', {
             'target': context['target'], 'offset': context['offset'], 'at': time.time(),
@@ -2033,6 +2059,13 @@ def record_voice_cost(job: dict, requests: list[dict]) -> None:
     actual = round(sum(receipts), 2) if confirmed else None
     job.update(estimated_cost=estimated, actual_cost=actual, cost=actual if confirmed else estimated,
                cost_estimated=not confirmed, takes=len(requests))
+    pid=str(job.get('key') or '').split('|')[0]
+    if requests and job.get('provider')=='elevenlabs' and re.fullmatch(r'[0-9a-f]{24}',pid):
+        import project_costs
+        entry=requests[-1]
+        known=entry.get('status')=='complete' and eleven_api.finite_number(entry.get('actual_cost'))
+        project_costs.record_at(store.project_dir(pid),'elevenlabs',entry.get('actual_cost') if known else entry.get('estimated_cost'),
+                                identity=entry.get('receipt_id') or str(entry.get('started_at')), category='voice', estimated=not known)
 
 
 def voice_cost_metadata(job: dict) -> dict:
@@ -2067,7 +2100,8 @@ def sample(pid: str, code: str, provider: str, job: dict) -> None:
             if voice is None:
                 announce_model(pid,provider,code,job)
                 voice=voice_id(pid,provider,code)
-            entry={'text':piece,'file':target.name,'status':'started','estimated_cost':sample_price(piece)}
+            entry={'text':piece,'file':target.name,'status':'started','estimated_cost':sample_price(piece),
+                   'receipt_id':uuid.uuid4().hex,'started_at':time.time()}
             requests.append(entry);store.atomic_json(folder/'requests.json',requests)
             try:
                 entry['actual_cost'] = speak(provider,voice,piece,target,pieces[number-1] if number else '',pieces[number+1] if number+1<len(pieces) else '')
@@ -2248,6 +2282,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         if job.get('cache_only'):
             raise RuntimeError('Локальне збирання не може запускати платну озвучку.')
         entry={"index":index,"kind":kind,"text":words,"chars":len(words),"file":target.name,
+               "receipt_id":uuid.uuid4().hex,
                "estimated_cost":take_price(words),"cost_unit":unit,
                "started_at":time.time(),"status":"started","selected":False}
         requests.append(entry)
@@ -2523,7 +2558,8 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
                 announce_model(pid,provider,code,job)
                 voice=voice_id(pid,provider,code)
             entry={'index':number,'text':piece,'file':target.name,'kind':'original','status':'started',
-                   'estimated_cost':take_price(piece),'cost_unit':job['cost_unit']}
+                   'estimated_cost':take_price(piece),'cost_unit':job['cost_unit'],
+                   'receipt_id':uuid.uuid4().hex,'started_at':time.time()}
             requests.append(entry);store.atomic_json(parts_dir/'requests.json',requests)
             try:
                 entry['actual_cost'] = speak(provider, voice, piece, target, pieces[number - 1] if number else "", pieces[number + 1] if number + 1 < len(pieces) else "")
@@ -2586,11 +2622,24 @@ def read_text(pid: str, code: str) -> str:
     return text
 
 
+def cached_language_check(pid, code, texts, segments):
+    """Immutable language preflight keyed by exact text/timing and detector version."""
+    key=hashlib.sha256(json.dumps([language_quality.VERSION,code,texts,segments],ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+    path=work_dir(pid,code)/'quality-cache'/f'{key}.json'
+    saved=store.read_json(path,None)
+    if isinstance(saved,dict) and saved.get('version')==language_quality.VERSION and saved.get('target')==code and saved.get('state') in {'ok','blocked'}:
+        return saved
+    report=language_quality.check(code,texts,segments)
+    if report.get('state') in {'ok','blocked'}:
+        store.atomic_json(path,report)
+    return report
+
+
 def translation_check(pid: str, code: str, text: str | None = None) -> dict:
     path = work_dir(pid, code) / 'text.txt'
     if text is None:
         text = path.read_text(encoding='utf-8') if path.is_file() else ''
-    return language_quality.check(code, text, store.read_json(segments_path(pid, code), []) or [])
+    return cached_language_check(pid, code, text, store.read_json(segments_path(pid, code), []) or [])
 
 
 def voice_language_check(pid: str, code: str) -> dict:
@@ -2598,10 +2647,10 @@ def voice_language_check(pid: str, code: str) -> dict:
     parts = work_dir(pid, code) / 'parts'
     manifest = store.read_json(parts/'manifest.json', []) or []
     if isinstance(manifest, list) and manifest:
-        return language_quality.check(code, [str(item.get('text') or '') for item in manifest], manifest)
+        return cached_language_check(pid, code, [str(item.get('text') or '') for item in manifest], manifest)
     request = store.read_json(parts/'request.json', {}) or {}
     if isinstance(request, dict) and request.get('translations'):
-        return language_quality.check(code, request['translations'], request.get('segments'))
+        return cached_language_check(pid, code, request['translations'], request.get('segments'))
     return translation_check(pid, code)
 
 
