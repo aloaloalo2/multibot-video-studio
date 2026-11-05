@@ -54,7 +54,7 @@ class DirectMontageUITest(unittest.TestCase):
             setAttribute(k,v){this.attrs[k]=v},classList:{toggle(){}},replaceChildren(){}} );
           const state={project:{id:'p',plan_mode:'direct'},plan:{timing:{status:'audio_synced'},frames:[]},
             view:'plan',channels:[]};
-          let rendered='';function renderEpisode(){rendered='source'}function renderVoiceStart(){rendered='upload'}
+          let rendered='';function renderPlanSwitch(){} function renderEpisode(){rendered='source'}function renderVoiceStart(){rendered='upload'}
         """
         result = preview_js.run(['projectPlanMode', 'directMontage', 'renderPlan'], """
           renderPlan();const ready=[rendered,$('view-plan-label').textContent,$('project-plan').attrs['aria-label']];

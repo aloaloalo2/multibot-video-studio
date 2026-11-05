@@ -622,12 +622,9 @@ def channel_animated(channel: Path) -> bool:
 
 
 def project_plan_mode(project: dict) -> str:
-    """The current channel setting governs every project, including ones opened before it changed."""
-    try:
-        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {}) or {}
-    except (StudioError, KeyError):
-        settings = project.get("settings") or {}
-    return "direct" if settings.get("plan_mode") == "direct" else "director"
+    """A project's own choice, with its saved creation settings for legacy projects."""
+    mode = project.get('plan_mode', (project.get('settings') or {}).get('plan_mode', 'director'))
+    return 'direct' if mode == 'direct' else 'director'
 
 
 def project_animated(project: dict) -> bool:
@@ -841,6 +838,7 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         folder.mkdir(parents=True, exist_ok=False)
         global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
+        project["plan_mode"] = "direct" if plan_config.get("plan_mode") == "direct" else "director"
         atomic_json(folder / "project.json", project)
         import language_defaults
         language_defaults.apply(project)
@@ -1209,7 +1207,8 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if not path.is_file() or path.suffix.lower() != ".txt" or not under(path, episode):
             raise StudioError("Сценарій має бути TXT-файлом у папці випуску")
         script = path.read_text(encoding="utf-8-sig")
-    if (read_json(channel / PLAN_CONFIG, {}) or {}).get("plan_mode") == "direct":
+    mode_project = load_project(project_id) if project_id else project_for_episode(cid, episode)
+    if (project_plan_mode(mode_project) if mode_project else (read_json(channel / PLAN_CONFIG, {}) or {}).get("plan_mode")) == "direct":
         with LOCK:
             existing = load_project(project_id) if project_id else project_for_episode(cid, episode)
             if existing and (existing["channel_id"] != cid or Path(existing["episode_path"]).resolve() != episode):
@@ -2258,6 +2257,14 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
             for edit in edits:
                 if not isinstance(edit, dict) or not apply_universal_action(project, edit.get("type"), edit.get("payload", {})):
                     raise StudioError("Unsupported batch action")
+        elif action == "set_plan_mode":
+            mode = payload.get('mode')
+            if mode not in {'director', 'direct'}:
+                raise StudioError('Невірний режим плану')
+            import director, production
+            if pid in director.ACTIVE or pid in production.ACTIVE:
+                raise StudioError('Спочатку призупиніть створення кадрів або режисуру', 409)
+            project['plan_mode'] = mode
         elif action == "rename_project":
             project["name"] = validated_name(payload.get("name"))
         elif project.get("schema_version") == 2 and apply_universal_action(project, action, payload):

@@ -892,6 +892,7 @@ class Handler(BaseHTTPRequestHandler):
             # the preview plays the voice at the export's level (audio_gain)
             project["production"], project["audio_gain"] = derived_state(project)
             project["plan_mode"] = project["production"].get("plan_mode", store.project_plan_mode(project))
+            project["plan_mode_editable"] = True
             project["video_bitrates"] = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
                                                              int(project.get("fps") or 25))
             value = {**value, "project": project}

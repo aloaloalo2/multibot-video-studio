@@ -46,10 +46,24 @@ class DirectWorkflowTest(unittest.TestCase):
 
     def direct(self):
         store.update_channel_settings(self.cid, {'plan_mode': 'direct'})
+        self.project = store.apply_action(self.pid, 'set_plan_mode', {'mode':'direct'})
 
     def source(self):
         return store.generate_project_plan(self.cid, self.project['name'], self.project['episode_path'],
                                            project_id=self.pid, script=self.script, timings=self.timings)
+
+    def test_channel_mode_is_only_a_creation_default(self):
+        store.update_channel_settings(self.cid, {'plan_mode':'direct'})
+        new = store.create_project(self.cid, 'Direct episode')
+        self.assertEqual(store.project_plan_mode(new), 'direct')
+        self.assertEqual(store.project_plan_mode(self.project), 'director')
+        store.update_channel_settings(self.cid, {'plan_mode':'director'})
+        self.assertEqual(store.project_plan_mode(store.load_project(new['id'])), 'direct')
+        before = copy.deepcopy(self.project['tracks'])
+        for mode in ('direct', 'director'):
+            changed = store.apply_action(self.pid, 'set_plan_mode', {'mode':mode})
+            self.assertEqual(changed['tracks'], before)
+            self.assertEqual(store.project_plan_mode(store.load_project(self.pid)), mode)
 
     def test_default_planned_mode_and_invalid_mode(self):
         self.assertEqual(store.project_plan_mode(self.project), 'director')
@@ -66,10 +80,10 @@ class DirectWorkflowTest(unittest.TestCase):
         self.assertFalse(readiness['export_ready'])
         result = agent_runtime.execute(self.pid, 'add_clip', {
             'layer_id': 'layer-1', 'kind': 'text', 'text': 'A real scene', 'start': 0,
-            'duration': 6, 'expected_revision': 0,
+            'duration': 6, 'expected_revision': self.project['revision'],
         }, self.callbacks, False)
         edited = store.load_project(self.pid)
-        self.assertEqual(result['revision'], 1)
+        self.assertEqual(result['revision'], self.project['revision'] + 1)
         self.assertTrue(store.plan_readiness(edited)['export_ready'])
         self.assertTrue(app.normalize_for_engine(edited)['timeline_layers'])
         edited['tracks'][0]['hidden'] = True
@@ -81,8 +95,11 @@ class DirectWorkflowTest(unittest.TestCase):
         self.direct()
         self.assertTrue(app.derived_state(self.project)[0]['editor_ready'])
         store.update_channel_settings(self.cid, {'plan_mode': 'director'})
+        self.assertTrue(app.derived_state(self.project)[0]['editor_ready'])
+        before = copy.deepcopy(self.project['tracks'])
+        self.project = store.apply_action(self.pid, 'set_plan_mode', {'mode':'director'})
         self.assertFalse(app.derived_state(self.project)[0]['editor_ready'])
-        self.assertEqual(store.project_path(self.pid).read_bytes(), old_bytes)
+        self.assertEqual(self.project['tracks'], before)
 
     def test_real_source_saved_without_fabricated_frames_or_timeline_change(self):
         self.direct()
@@ -111,6 +128,7 @@ class DirectWorkflowTest(unittest.TestCase):
         self.assertEqual(Path(store.load_project(self.pid)['plan_source']).read_bytes(), old_bytes)
         self.assertEqual(store.load_project_narration(self.pid)['script'], self.script)
         store.update_channel_settings(self.cid, {'plan_mode': 'director'})
+        store.apply_action(self.pid, 'set_plan_mode', {'mode':'director'})
         self.assertEqual(store.load_project_narration(self.pid)['script'], legacy['script'])
         self.assertEqual(store.load_project_source(self.pid), result['source'])
 
@@ -180,6 +198,8 @@ class DirectWorkflowTest(unittest.TestCase):
         self.assertIsNone(data["plan"])
         self.assertEqual(data["source"]["script"], self.script)
         store.update_channel_settings(self.cid, {"plan_mode": "director"})
+        self.assertEqual(get()["project"]["plan_mode"], "direct")
+        store.apply_action(self.pid, "set_plan_mode", {"mode":"director"})
         data = get("/plan")
         self.assertIsNone(data["source"])
         self.assertFalse(get()["project"]["production"]["editor_ready"])

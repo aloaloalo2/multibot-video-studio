@@ -26,6 +26,13 @@ def migrate(pid):
     with store.LOCK:
         project = store.load_project(pid)
         folder = store.project_dir(pid)
+        if 'plan_mode' not in project:
+            try:
+                defaults = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+                project['plan_mode'] = 'direct' if defaults.get('plan_mode') == 'direct' else 'director'
+                store.save_project(project)
+            except (store.StudioError, KeyError):
+                pass
         if not project.get('episode_path'):
             return []
         episode = Path(project['episode_path'])

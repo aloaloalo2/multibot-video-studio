@@ -6,7 +6,7 @@ function filmClips(project=state.project){
 }
 function projectPlanMode(project=state.project){
   const channel=state.channels?.find(item=>item.id===project?.channel_id) || (state.channel?.id===project?.channel_id?state.channel:null);
-  const mode=project?.plan_mode || project?.production?.plan_mode || channel?.settings?.plan_mode;
+  const mode=project?.plan_mode || project?.production?.plan_mode || project?.settings?.plan_mode || channel?.settings?.plan_mode;
   return mode==='direct'?'direct':'director';
 }
 function directMontage(project=state.project){return projectPlanMode(project)==='direct';}
@@ -150,6 +150,7 @@ function renderPlan(){
   $('view-agent').setAttribute('aria-pressed',String(state.view==='agent'));
   const panel=$('project-plan');panel.replaceChildren();
   if(!state.project || state.view!=='plan')return;
+  renderPlanSwitch(panel);
   if(direct){
     if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced')renderEpisode(panel);
     else renderVoiceStart(panel);
@@ -179,3 +180,13 @@ function planTable(frames,synced,made=new Set()){
 $('view-plan').addEventListener('click',()=>setProjectView('plan'));
 $('view-editor').addEventListener('click',()=>setProjectView('editor'));
 $('view-agent').addEventListener('click',()=>setProjectView('agent'));
+
+function renderPlanSwitch(panel){
+  const heading=document.createElement('div');heading.className='project-plan-heading';
+  heading.innerHTML=`<h1>План ролика</h1><label class="project-plan-switch"><input type="checkbox" role="switch" aria-label="Увімкнути план ролика" ${directMontage()?'':'checked'}><span aria-hidden="true"></span></label>`;
+  const input=heading.querySelector('input'),id=state.project.id;
+  input.disabled=state.project.plan_mode_editable!==true;
+  if(input.disabled)heading.title='Перемикач запрацює після безпечного перезапуску студії';
+  input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
+  panel.append(heading);
+}

@@ -45,9 +45,9 @@ const makeCount={},stripZoom={};
 function renderEpisode(panel){
   if(!state.project)return;
   const id=state.project.id;
-  const heading=document.createElement('div');heading.className='plan-heading';heading.innerHTML=`<div class="plan-heading-label"><h1>${directMontage()?'Озвучка':'План ролика'}</h1></div>`;
   // the director makes every plan from the voice (user, 31 October 2026), so there is no plan to rebuild by hand here
-  panel.append(heading);
+  // The project workflow heading and switch are rendered by renderPlan.
+
   const episode=document.createElement('div');episode.className='episode';episode.dataset.project=id;
   panel.append(episode);
   arrangeEpisode(episode);
