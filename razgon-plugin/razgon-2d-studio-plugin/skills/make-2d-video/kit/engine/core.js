@@ -103,7 +103,8 @@ export function luma(c) { try { const [r, g, b] = rgb(c); return Number.isFinite
 //   It cross-fades over a narrow band, so a moving background never makes it blink, and no pixel is read back to the CPU
 //   (render speed).
 // Mid-tone text (a saturated red, a pink) keeps its colour and gets the dark shadow. { contrast: 'shadow' } gives the shadow
-// alone; config.json "textTone": false switches the tone off for a whole film.
+// alone. The tone is OFF by default since 5 November 2026 (it blinked on moving pictures); config.json "textTone": true
+// turns it on for a film that really needs it.
 const LIGHT_TEXT = 0.45, DARK_TEXT = 0.3;
 // a pixel is too close to the letters when its luma comes within .27 of theirs (wholly within .17), or passes it; the opposite
 // tone fades in while such pixels cover 42 % to 48 % of the box of the letters
@@ -131,7 +132,7 @@ function textBitmap(g, str, size, o) {
   const fontStr = fontOf(o.italic, o.weight, size, o.font);
   const m = (() => { g.save(); g.font = fontStr; if ('letterSpacing' in g) g.letterSpacing = `${o.spacing}px`; const r = g.measureText(str); g.restore(); return r; })();
   const tw = Math.ceil(m.width) + 2, th = Math.ceil(size * 1.5), w = tw + pad * 2, h = th + pad * 2;
-  const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w * f)); c.height = Math.max(1, Math.ceil(h * f));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w * f)); c.height = Math.max(1, Math.ceil(h * f)); c.__text = true;
   const x = c.getContext('2d'); x.scale(f, f); x.font = fontStr; x.textAlign = o.align; x.textBaseline = o.base; if ('letterSpacing' in x) x.letterSpacing = `${o.spacing}px`;
   const ox = pad + (o.align === 'center' ? tw / 2 : o.align === 'right' || o.align === 'end' ? tw : 0);
   const oy = pad + (o.base === 'top' || o.base === 'hanging' ? size * 0.2 : o.base === 'bottom' || o.base === 'ideographic' ? size * 1.3 : o.base === 'alphabetic' ? size * 1.05 : th / 2);
@@ -196,6 +197,20 @@ function drawToned(g, A, B, dx, dy, kind, L) {
   return true;
 }
 
+// Text that belongs to a thing (a page, a sign, a screen, a poster, a label on a box) lies ON that thing: give the four
+// corners of its face as they are drawn (top-left, top-right, bottom-right, bottom-left, e.g. measured on the prop's
+// picture and placed like pic() places it), and u, v (0..1) on that face. Sizes are in thousandths of the face (a size of
+// 60 is about a twelfth of it), so the text slants, shrinks and turns with the face and never hangs flat over a slanted
+// surface or runs past its edge (user, 5 November 2026: text «тяп-ляп», lying anywhere, not in its place).
+//   textOn(g, [[x0,y0],[x1,y1],[x2,y2],[x3,y3]], 'NAMES', 0.5, 0.1, { size: 66, color: '#6a4224', align: 'center' })
+export function textOn(g, quad, str, u, v, o = {}) {
+  const at = (uu, vv) => { const [a, b, c, d] = quad, tx = a[0] + (b[0] - a[0]) * uu, ty = a[1] + (b[1] - a[1]) * uu, bx = d[0] + (c[0] - d[0]) * uu, by = d[1] + (c[1] - d[1]) * uu;
+    return [tx + (bx - tx) * vv, ty + (by - ty) * vv]; };
+  const [ox, oy] = at(u, v), [ux, uy] = at(u + 0.01, v), [vx, vy] = at(u, v + 0.01);
+  g.save(); g.transform((ux - ox) / 10, (uy - oy) / 10, (vx - ox) / 10, (vy - oy) / 10, ox, oy);
+  text(g, str, 0, 0, { align: 'left', ...o }); g.restore();
+}
+
 export function text(g, str, x, y, o = {}) {
   const { font = FONTS.title, weight = 700, color = '#fff', align = 'center', base = 'middle', glow: gl = 0, glowColor = 'rgba(255,140,60,.8)', spacing = 0, alpha: a = 1, stroke = 0, strokeColor = '#000', italic = false, maxWidth = 0, contrast = false } = o;
   let size = o.size ?? 48;
@@ -203,7 +218,10 @@ export function text(g, str, x, y, o = {}) {
   if (maxWidth > 0) { const w = measure(g, str, size, font, weight) + spacing * Math.max(0, String(str).length - 1); if (w > maxWidth) size *= maxWidth / w; }
   const kind = contrast ? textKind(color) : null;
   const shadow = o.shadow ? [].concat(o.shadow) : contrast ? legibleShadow(size, kind !== 'dark') : [];
-  const toned = contrast && contrast !== 'shadow' && kind !== 'mid' && E.cfg?.textTone !== false;
+  // the tone switch is off unless a film asks for it ("textTone": true): on a moving picture it flipped letters between
+  // light and dark (user, 5 November 2026: «блимає то чорний, то білий… забудь про такий метод»); the shadow alone keeps
+  // white text readable
+  const toned = contrast && contrast !== 'shadow' && kind !== 'mid' && E.cfg?.textTone === true;
   g.save(); g.globalAlpha *= a; g.font = fontOf(italic, weight, size, font); g.textAlign = align; g.textBaseline = base;
   if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`;
   // Text is drawn once into a cached bitmap and placed with drawImage: canvas fillText snaps glyphs to whole pixels,
@@ -221,11 +239,14 @@ export function text(g, str, x, y, o = {}) {
     g.fillStyle = color; g.fillText(str, x, y);
   }
   // render.mjs --text-check: log where every visible line of text lands on the canvas, so text cut by the frame edge is caught
-  if (globalThis.TEXT_LOG && g.globalAlpha > 0.2 && !o.offscreen) {
+  // render.mjs --logic-check logs it too, in drawing order with the pictures and figures (DRAW_LOG)
+  if ((globalThis.TEXT_LOG || globalThis.DRAW_LOG) && g.globalAlpha > 0.2 && !o.offscreen) {
     const m = g.measureText(str), w = m.width, x0 = align === 'center' ? x - w / 2 : align === 'right' || align === 'end' ? x - w : x, T = g.getTransform();
     const px = [x0, x0 + w, x0, x0 + w], py = [y - m.actualBoundingBoxAscent, y - m.actualBoundingBoxAscent, y + m.actualBoundingBoxDescent, y + m.actualBoundingBoxDescent];
     const sx = px.map((v, i) => T.a * v + T.c * py[i] + T.e), sy = px.map((v, i) => T.b * v + T.d * py[i] + T.f);
-    globalThis.TEXT_LOG.push({ str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height });
+    const box = { str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height };
+    if (globalThis.TEXT_LOG) globalThis.TEXT_LOG.push(box);
+    if (globalThis.DRAW_LOG && String(str).trim()) globalThis.DRAW_LOG.push({ k: 'text', ...box, a: g.globalAlpha, layer: globalThis.__LAYER ?? null });
   }
   g.restore();
 }
@@ -236,7 +257,9 @@ export function measure(g, str, size, font = FONTS.title, weight = 700) { g.save
 export function layer(g, cam, depth, fn) {
   g.save(); const z = 1 + ((cam.z ?? 1) - 1) * depth;
   g.translate(E.W / 2, E.H / 2); if (cam.r) g.rotate(cam.r * Math.min(1, depth)); g.scale(z, z);
-  g.translate(-E.W / 2 - (cam.x || 0) * depth, -E.H / 2 - (cam.y || 0) * depth); fn(g); g.restore();
+  g.translate(-E.W / 2 - (cam.x || 0) * depth, -E.H / 2 - (cam.y || 0) * depth);
+  // the logic check compares depth only inside one layer (a far layer's foot lines are not this layer's)
+  const was = globalThis.__LAYER; globalThis.__LAYER = depth; try { fn(g); } finally { globalThis.__LAYER = was; } g.restore();
 }
 // cheap depth-of-field: draw into a small canvas and upscale (optionally extra blur)
 const _blurPool = [];
@@ -245,7 +268,8 @@ export function blurLayer(g, amount, fn, cam = null, depth = 1) {
   const k = clamp(1 / (1 + amount / 3), 0.06, 1);
   const w = Math.max(8, Math.round(E.W * E.PX * k)), h = Math.max(8, Math.round(E.H * E.PX * k));
   let c = _blurPool.find(b => !b.busy && b.width === w && b.height === h);
-  if (!c) { c = document.createElement('canvas'); c.width = w; c.height = h; _blurPool.push(c); }
+  // __blur: a deliberately soft layer; the logic check does not call its upscale a blown-up asset
+  if (!c) { c = document.createElement('canvas'); c.width = w; c.height = h; c.__blur = true; _blurPool.push(c); }
   c.busy = true; const x = c.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, w, h);
   x.setTransform(w / E.W, 0, 0, h / E.H, 0, 0); cam ? layer(x, cam, depth, fn) : fn(x);
   // blur at the small size (fast), then upscale smoothly

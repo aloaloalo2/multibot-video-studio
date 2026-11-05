@@ -5,6 +5,8 @@
 //   node render.mjs --project P --stills 3.5,12,40                    stills at times -> build/stills
 //   node render.mjs --project P --styles dusk,midnight,golden,neon --at 3.5,12,40   style comparison grid
 //   node render.mjs --project P --text-check [0.25] [--from A --to B]                 every text cut by the frame edge (sampled every 0.25 s) -> build/text_check.json, exit 1 if any
+//   node render.mjs --project P --logic-check [0.5] [--from A --to B]                a closer thing drawn under a farther one, text covered by a later picture,
+//                                                                                      a picture blown up past its pixels -> build/logic_check.json, exit 1 if any
 //   node render.mjs --project P --speed-check [2.5]                                    every take timed in one browser; takes slower than 2.5 x the median -> build/speed_check.json, exit 1 if any
 // Options: --workers N  --scale K  --style ID  --debug  --format png|jpeg  --crf 18  --gl auto|gpu|swiftshader  --encoder x264|videotoolbox  --q 75  --out FILE
 import http from 'node:http';
@@ -31,7 +33,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream', 'Cache-Control': 'no-store' }); fs.createReadStream(p).pipe(res);
 }).listen(0);
 const PORT = server.address().port;
-// a Mac draws on its GPU by default: 4–7 times faster than Chromium's software drawing, the same picture (30 October 2026)
+// a Mac draws on its GPU by default: headless Chromium's software drawing (--gl auto) is 4–7 times slower, the same picture (30 October 2026)
 const gl = args.gl || (process.platform === 'linux' ? 'swiftshader' : process.platform === 'darwin' ? 'gpu' : 'auto');
 const LAUNCH = { args: ['--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage', ...(gl === 'swiftshader' ? ['--use-angle=swiftshader'] : []), ...(gl === 'gpu' ? ['--enable-gpu', '--use-angle=default'] : [])] };
 const FORMAT = args.format === 'jpeg' ? 'jpeg' : 'png';
@@ -97,7 +99,8 @@ async function contactSheet(browser, items, outFile, cols = 4, cellW = 480) {
 }
 async function renderStills() {
   const browser = await chromium.launch(LAUNCH); const styles = args.styles ? String(args.styles).split(',') : [args.style || null];
-  const dir = path.join(BUILD, args.styles ? 'styles' : args.sheet ? 'sheets' : 'stills'); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  // --dir build/<name>: a folder of its own, so several reviewers rendering stills at once never empty each other's
+  const dir = args.dir ? path.resolve(PROJECT, String(args.dir)) : path.join(BUILD, args.styles ? 'styles' : args.sheet ? 'sheets' : 'stills'); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
   const all = [];
   for (const st of styles) {
     const page = await openPlayer(browser, st); const fps = FPS;
@@ -140,6 +143,125 @@ async function textCheck() {
   fails.forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  box ${r.box.join(',')} on ${r.canvas.join('x')}`));
   process.exitCode = 1;
 }
+// The scene logic check (user, 5 November 2026: «людина сквозь машину не може проходити», «текст… не там, де потрібно»,
+// «асети… якість портять, якщо їх розтягнути»): every picture, figure and line of text of a sampled frame is logged in
+// drawing order with its box on the canvas, and three things are flagged, without a single image for anyone to look at:
+//  - depth: a thing standing closer to the camera (its foot line lower on the screen) drawn UNDER a farther thing that
+//    overlaps it, as a person behind a car's body with his legs in front of it; a thing resting on another (a teletype on
+//    a desk, a sleeper on a bed) is not flagged, nor are small held props;
+//  - text covered: a line of text under a later opaque picture or figure (a date under a lamp);
+//  - blown up: a picture drawn more than 1.6 times its own pixels at the output size (a 400 px viaduct over the whole
+//    frame goes soft): such props are drawn one or two to a sheet at full size.
+// Depth or covered text held 1 s or more is a FAIL (a thing passing another for an instant is not), a blown-up picture 0.5 s.
+async function logicCheck() {
+  const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
+  await page.evaluate(() => {
+    const proto = CanvasRenderingContext2D.prototype, orig = proto.drawImage, main = document.getElementById('main') || document.querySelector('canvas');
+    window.__LOGIC_MAIN = main;
+    // a filled rectangle on the frame (a paper slip, a screen, a sign board drawn in code) can carry text: logged as a host
+    const fillRect0 = proto.fillRect;
+    proto.fillRect = function (x, y, w, h) {
+      try {
+        if (window.DRAW_LOG && (this.canvas === main || (this.canvas.width === main.width && this.canvas.height === main.height)) && this.globalAlpha > 0.6 && Math.abs(w * h) > 400) {
+          const T = this.getTransform(), xs = [x, x + w, x, x + w], ys = [y, y, y + h, y + h];
+          const px = xs.map((v, i) => T.a * v + T.c * ys[i] + T.e), py = xs.map((v, i) => T.b * v + T.d * ys[i] + T.f);
+          window.DRAW_LOG.push({ k: 'host', name: 'shape', x0: Math.min(...px), x1: Math.max(...px), y0: Math.min(...py), y1: Math.max(...py), a: this.globalAlpha, layer: window.__LAYER ?? null, W: main.width, H: main.height });
+        }
+      } catch (e) { /* the check never breaks a frame */ }
+      return fillRect0.call(this, x, y, w, h);
+    };
+    proto.drawImage = function (img, ...a) {
+      try {
+        const name = img && img.src ? decodeURIComponent(img.src.split('/').pop().replace(/\.(png|jpe?g|webp)(\?.*)?$/i, '')) : null;
+        const sw = a.length === 8 ? a[2] : (img.naturalWidth || img.width), sh = a.length === 8 ? a[3] : (img.naturalHeight || img.height);
+        const [dx, dy, dw, dh] = a.length === 8 ? a.slice(4) : a.length === 4 ? a : [a[0], a[1], img.naturalWidth || img.width, img.naturalHeight || img.height];
+        if (this.canvas !== main && !(this.canvas.width === main.width && this.canvas.height === main.height)) {
+          // a cached copy of a prop (shade, flip): remember which picture it holds and how much it already enlarged it
+          if (name && sh) this.canvas.__src = { name, k: (Math.abs(dh) * Math.hypot(this.getTransform().b, this.getTransform().d)) / sh };
+          else if (img.__src) { this.canvas.__src = img.__src; this.canvas.__soft = !!(img.__blur || img.__soft); }
+        } else if (window.DRAW_LOG && !img.__text && !img.__blur && !img.__soft && this.globalAlpha > 0.3) {
+          const T = this.getTransform(), xs = [dx, dx + dw, dx, dx + dw], ys = [dy, dy, dy + dh, dy + dh];
+          const px = xs.map((v, i) => T.a * v + T.c * ys[i] + T.e), py = xs.map((v, i) => T.b * v + T.d * ys[i] + T.f);
+          const screenH = Math.abs(dh) * Math.hypot(T.b, T.d), src = name ? { name, k: 1 } : img.__src;
+          const blow = src && sh ? (screenH / sh) * src.k * (window.OUT[1] / main.height) : 0;
+          window.DRAW_LOG.push({ k: 'img', name: src ? src.name : 'canvas', x0: Math.min(...px), x1: Math.max(...px), y0: Math.min(...py), y1: Math.max(...py), base: Math.max(...py), blow, a: this.globalAlpha, layer: window.__LAYER ?? null, W: main.width, H: main.height });
+        }
+      } catch (e) { /* the check never breaks a draw */ }
+      return orig.call(this, img, ...a);
+    };
+  });
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((+args['logic-check'] > 0 ? +args['logic-check'] : 0.5) * fps));
+  const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
+  const hits = [];
+  // a transition draws two shots in one frame (their things are not one room): leave 0.6 s on either side of a cut out
+  let cuts = []; try { const sj = JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'shots.json'), 'utf8')); cuts = (sj.shots || sj).map((x) => +x.start).filter((x) => x > 0); } catch (e) { /* no story: every frame */ }
+  const nearCut = (t) => cuts.some((c) => Math.abs(c - t) < 0.6);
+  const area = (b) => Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
+  const inter = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+  for (let f = fa; f < fb; f += step) {
+    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, f);
+    const t = +(f / fps).toFixed(2);
+    if (!log.length || nearCut(t)) continue;
+    const sized = log.find((b) => b.W && b.H); if (!sized) continue;
+    const H = sized.H, W = sized.W, frame = W * H;
+    // things that stand on the ground of a layer: not screen overlays (a phone held up to the viewer), not what hangs on a wall
+    const WALL = /curtain|poster|frame|clock|calendar|window|painting|picture|map|board|sign|shelf|bookcase|sky|cloud|moon|sun|mountain|banner/i;
+    const things = log.map((b, i) => ({ ...b, i })).filter((b) => b.k !== 'text' && b.k !== 'host' && b.layer != null && !WALL.test(b.name) && area(b) < frame * 0.6 && (b.y1 - b.y0) > H * 0.07 && b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H);
+    for (const b of log) if (b.k === 'img' && b.blow > 1.6 && (b.y1 - b.y0) > H * 0.1 && b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H)
+      hits.push({ kind: 'blown up', key: `blown up: ${b.name}`, t, text: `${b.name} drawn ${b.blow.toFixed(1)}× its pixels` });
+    for (let a = 0; a < things.length; a++) for (let c = a + 1; c < things.length; c++) {
+      const A = things[a], B = things[c];             // A drawn first, B over it
+      const ov = inter(A, B); if (ov < Math.min(area(A), area(B)) * 0.15) continue;
+      const hA = A.y1 - A.y0, tol = H * 0.025;
+      if (A.layer !== B.layer) continue;                // only inside one layer
+      if (!(A.base > B.base + tol)) continue;          // B is not farther than A
+      if (B.base <= A.y0 + hA * 0.45) continue;        // B rests on A (on its top) or hangs above it
+      const wB = B.x1 - B.x0, inside = Math.max(0, Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0)) / (wB || 1);
+      if (inside >= 0.8 && B.base < A.base) continue;   // B lies on A (a duvet on a bed, a book on a table)
+      if (A.lying || B.lying) continue;
+      // a small thing over most of a person is held by that person (an umbrella, a radio, a box, a spade): no depth error
+      const held = (P, Q) => { if (P.k !== 'fig' || Q.k === 'fig' || (Q.y1 - Q.y0) > (P.y1 - P.y0) * 0.6) return false; const w = P.x1 - P.x0, cx = (Q.x0 + Q.x1) / 2, cy = (Q.y0 + Q.y1) / 2;
+        return cx > P.x0 - w * 0.35 && cx < P.x1 + w * 0.35 && cy > P.y0 && cy < P.base; };
+      if (held(A, B) || held(B, A)) continue;
+      hits.push({ kind: 'depth', key: `depth: ${B.name} over ${A.name}`, t, text: `${B.name} (foot ${Math.round(B.base)}) drawn over the closer ${A.name} (foot ${Math.round(A.base)})` });
+    }
+    const texts = log.map((b, i) => ({ ...b, i })).filter((b) => b.k === 'text' && b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H);
+    for (const tx of texts) for (const o of log.slice(tx.i + 1)) {
+      if (o.k === 'text' || o.k === 'host' || o.a < 0.6 || area(o) >= frame * 0.6) continue;
+      if (inter(tx, o) > area(tx) * 0.3) { hits.push({ kind: 'text covered', key: `text covered: "${tx.str}" by ${o.name}`, t, text: `"${tx.str}" under ${o.name}` }); break; }
+    }
+    // text half on a thing and half off it: a heading sticking out of its page, a caption lying across the edge of a
+    // painting or a window. Text that belongs to a thing goes on it whole (textOn), a caption goes on bare wall or sky
+    // a text lying whole on something drawn before it (a phone's screen, a paper slip, a page) has its host and is fine
+    for (const tx of texts) {
+      if ((tx.a ?? 1) < 0.5) continue;
+      const under = log.slice(0, tx.i).filter((o) => (o.k === 'img' || o.k === 'host') && o.a >= 0.6 && area(o) < frame * 0.6);
+      if (under.some((o) => inter(tx, o) / (area(tx) || 1) >= 0.8)) continue;
+      let worst = null, wf = 0;
+      for (const o of under) {
+        if (o.k !== 'img' || (o.y1 - o.y0) < H * 0.06 || (tx.layer != null && o.layer !== tx.layer)) continue;   // a caption over the frame (no layer) against anything
+        const f = inter(tx, o) / (area(tx) || 1);
+        if (f > 0.2 && f < 0.8 && f > wf) { worst = o; wf = f; }
+      }
+      if (worst) hits.push({ kind: 'text half on', key: `text half on: "${tx.str}" across ${worst.name}`, t, text: `"${tx.str}" lies ${Math.round(wf * 100)}% on ${worst.name}, the rest off it` });
+    }
+  }
+  await browser.close();
+  const runs = []; for (const h of hits) { const r = runs.find((x) => x.key === h.key && h.t - x.to <= step / fps + 1e-6); if (r) r.to = h.t; else runs.push({ ...h, from: h.t, to: h.t }); }
+  // depth and covered text held for a second or more (an instant at a cut inside a shot is not a scene); a blown-up picture
+  // is soft for as long as it shows
+  runs.forEach((r) => { r.fail = r.to - r.from + step / fps >= (r.kind === 'blown up' ? 0.5 : 1.0); });
+  fs.writeFileSync(path.join(BUILD, 'logic_check.json'), JSON.stringify(runs, null, 1));
+  const fails = runs.filter((r) => r.fail);
+  console.log(`Logic check: ${Math.ceil((fb - fa) / step)} frames sampled, ${fails.length} finding(s)`);
+  if (!fails.length) { console.log('Logic check: OK, no closer thing under a farther one, no covered text, no blown-up picture'); return; }
+  for (const kind of ['depth', 'text covered', 'text half on', 'blown up']) {
+    const list = fails.filter((r) => r.kind === kind); if (!list.length) continue;
+    console.log(`Logic check: FAIL, ${kind} (${list.length}):`);
+    list.slice(0, 40).forEach((r) => console.log(`  ${r.from.toFixed(1)}–${r.to.toFixed(1)} s  ${r.text}`));
+  }
+  process.exitCode = 1;
+}
 // every take timed on its own: two frames at 20, 50 and 80 % of it, drawn and captured in one browser. A take far slower than
 // the others puts a filter on each of many draws (g.filter = 'blur(...)' over a whole layer of shapes, a shade filter on 365
 // props): in 06 Fast Food such takes cost 4-6 times a normal frame (31 October 2026). Blur a group once with blurLayer();
@@ -167,6 +289,6 @@ async function speedCheck() {
   for (const r of slow) console.log(`  ${r.id}  ${r.start}-${r.end} s  ${r.ms} ms a frame`);
   process.exitCode = 1;
 }
-try { if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
+try { if (args['logic-check']) await logicCheck(); else if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
 catch (e) { console.error('RENDER FAILED:', e.message); process.exitCode = 1; }
 finally { server.close(); }

@@ -196,6 +196,16 @@ export function drawFigure(g, o) {
   const of = { ...(o.outfit || {}), _ink: ink };
   const rim = o.rim === false ? null : { dir: [-0.8, -0.5], w: st.rimWidth, color: '#ffc68a', ...(o.rim || {}) };
   g.save(); if (o.alpha != null) g.globalAlpha *= o.alpha;
+  // render.mjs --logic-check: where the figure stands on the canvas (its box and the foot line), in drawing order
+  if (globalThis.DRAW_LOG && g.globalAlpha > 0.3) {
+    const T = g.getTransform(), c = Math.cos(o.rot || 0), sn = Math.sin(o.rot || 0), hp = p.hip;
+    const pt = (q) => { const dx = q[0] - hp[0], dy = q[1] - hp[1], lx = hp[0] + dx * c - dy * sn, ly = hp[1] + dx * sn + dy * c, wx = o.x + lx * f * s, wy = o.y + ly * s;
+      return [T.a * wx + T.c * wy + T.e, T.b * wx + T.d * wy + T.f]; };
+    const pts = ['head', 'sh', 'hip', 'eF', 'hF', 'eB', 'hB', 'kF', 'fF', 'kB', 'fB'].filter((k) => p[k]).map((k) => pt(p[k]));
+    const hd = pt(p.head), r = 26 * s * Math.hypot(T.a, T.b); pts.push([hd[0] - r, hd[1] - r], [hd[0] + r, hd[1] + r]);
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]), feet = o.rot ? Math.max(...ys) : Math.max(pt(p.fF)[1], pt(p.fB)[1]);
+    globalThis.DRAW_LOG.push({ k: 'fig', name: (o.outfit && o.outfit.name) || 'figure', x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), base: feet, lying: !!o.rot, a: g.globalAlpha, layer: globalThis.__LAYER ?? null, W: g.canvas.width, H: g.canvas.height });
+  }
   if (o.shadow !== false && !o.rot) { g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.ellipse(o.x, o.y + 2, 34 * s, 6 * s, 0, 0, Math.PI * 2); g.fill(); }
   if (o.trail) { const { count = 4, dx = -40, dy = 0, a = 0.22 } = o.trail; for (let i = count; i >= 1; i--) { g.save(); g.globalAlpha *= a * (1 - i / (count + 1)); body(g, { ...o, x: o.x + dx * i, y: o.y + dy * i, trail: null }, p, s, f, of, ink, far, null, alpha(rim?.color || '#fff', 1)); g.restore(); } }
   body(g, o, p, s, f, of, ink, far, rim);

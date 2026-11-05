@@ -613,8 +613,9 @@ light under dark; no plate, outline or halo, What If's rule) and picks the tone 
 letters is drawn down to 16×4 through an SVG filter that marks samples within 0.27 of the letters' luma or past it,
 halved to 1×1, and when such samples cover 42–48 % of the box, light letters cross-fade to a dark tone of their own
 colour (dark ones to a light tone). No pixel is read back, so the export is not slower (07: 42 ms a frame before and
-after, 1.3 % over all takes). Mid-tone text (a saturated red) keeps its colour with the dark shadow. `config.json`
-`"textTone": false` turns the tone off for a film. The kit's `core.js` and `ui2d.js` now carry the working copy's text
+after, 1.3 % over all takes). Mid-tone text (a saturated red) keeps its colour with the dark shadow. Since 5 November 2026 the tone is off by
+default (user: «блимає то чорний, то білий… в більшості текст може бути білий з тінню… забудь про такий метод»): the
+shadow alone stays, and `config.json` `"textTone": true` turns the tone on for a film. The kit's `core.js` and `ui2d.js` now carry the working copy's text
 cache and `compareBars` `labelW` as well, so the copy and the kit are the same files again. The skill's `render-qc.md`,
 `SKILL.md` and the frame agent's brief say in one line to put text and numbers on a calm part of the picture.
 
