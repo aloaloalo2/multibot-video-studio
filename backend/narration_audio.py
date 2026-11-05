@@ -83,7 +83,8 @@ def filters(item: dict, speed: float) -> str:
 def fastest(path: Path, cache: Path, trim: dict) -> dict:
     """Measure the actual fastest legal take before any further paid requests."""
     import numpy as np
-    from dubbing_fit import MAX_SPEED, quiet_edges
+    from dubbing_fit import max_speed, quiet_edges
+    MAX_SPEED = max_speed()
 
     record = cache / f"{trim['fingerprint']}-v{VERSION}-tempo-{MAX_SPEED}.json"
     try:

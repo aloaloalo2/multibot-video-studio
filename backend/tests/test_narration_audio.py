@@ -74,6 +74,19 @@ class NarrationAudioTest(unittest.TestCase):
             self.assertEqual(audio.fastest(path,cache,trim),result)
         self.assertEqual(path.read_bytes(),original)
 
+    def test_russian_fastest_measurements_do_not_reuse_fifteen_percent_cache(self):
+        path,_=self.fixture();cache=self.folder/'cache';original=path.read_bytes()
+        trim=audio.inspect(path,cache)
+        default=audio.fastest(path,cache,trim)
+        with dubbing_fit.for_language('ru'):
+            russian=audio.fastest(path,cache,trim)
+            self.assertEqual(russian['speed'],1.17)
+            with patch.object(audio.subprocess,'run',side_effect=AssertionError('Already measured')):
+                self.assertEqual(audio.fastest(path,cache,trim),russian)
+        self.assertEqual(default['speed'],1.15)
+        self.assertEqual(audio.fastest(path,cache,trim),default)
+        self.assertEqual(path.read_bytes(),original)
+
     def test_silent_or_invalid_audio_stops_without_destroying_original(self):
         path=self.folder/'silent.wav'
         with wave.open(str(path),'wb') as out:

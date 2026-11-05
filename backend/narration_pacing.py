@@ -5,7 +5,8 @@ import math
 from numeric_comparison import comparison_chars as letter_count
 from statistics import median
 
-from dubbing_fit import MAX_SPEED, MAX_SHIFT, TEMPO_PERCENT, join_gaps
+import dubbing_fit
+from dubbing_fit import MAX_SPEED, MAX_SHIFT, join_gaps
 
 CALIBRATION = 5
 BLOCK = 10
@@ -87,7 +88,7 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     measured=sum(known.values())
     # Recorded takes already include their boundary pauses. Extra join padding is
     # a forecast reserve, not a measured impossibility; the assembler measures it.
-    minimum=measured/MAX_SPEED
+    minimum=measured/dubbing_fit.max_speed()
     if not math.isfinite(total) or total <= 0:
         raise ValueError('Invalid source narration duration')
     rate=seconds_per_character(texts,known)
@@ -101,12 +102,12 @@ def plan(texts: list[str], known: dict[int, float], total: float, offset: int,
     # All saved takes can use the same bounded fitting as the remaining takes.
     # The forecasting reserve applies only to unknown audio, not to the film's
     # tempo allowance or the duration of recordings we have already measured.
-    budget=max(0,total*MAX_SPEED-measured)
+    budget=max(0,total*dubbing_fit.max_speed()-measured)
     result['predicted_seconds']=round(measured+rate*chars/FORECAST_RESERVE+gaps,3)
-    result['predicted_minimum_seconds']=round((measured+rate*chars)/MAX_SPEED+gaps,3)
-    result['expected_minimum_seconds']=round((measured+rate*chars/FORECAST_RESERVE)/MAX_SPEED+gaps,3)
+    result['predicted_minimum_seconds']=round((measured+rate*chars)/dubbing_fit.max_speed()+gaps,3)
+    result['expected_minimum_seconds']=round((measured+rate*chars/FORECAST_RESERVE)/dubbing_fit.max_speed()+gaps,3)
     result['remaining_phrases']=len(pending)
-    result['remaining_budget_seconds']=round(budget/MAX_SPEED,3)
+    result['remaining_budget_seconds']=round(budget/dubbing_fit.max_speed(),3)
     result['requires_review']=result['predicted_minimum_seconds']>total+.05
     # A timing forecast is advisory. Finish the requested single takes and show
     # measured alignment afterwards; never silently rewrite or buy retries.

@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 import narration_audio
@@ -13,6 +15,33 @@ MIN_SPEED = 1 - TEMPO_PERCENT / 100
 MAX_SPEED = 1 + TEMPO_PERCENT / 100
 MAX_SHIFT = 7.0
 LONG_GAP = 1.5
+LANGUAGE_TEMPO_PERCENT = {'ru':17}
+_TEMPO = ContextVar('narration_tempo_percent',default=None)
+
+
+def language_tempo_percent(code):
+    return LANGUAGE_TEMPO_PERCENT.get(code,TEMPO_PERCENT)
+
+
+def tempo_percent():
+    value=_TEMPO.get()
+    return TEMPO_PERCENT if value is None else value
+
+
+def min_speed():
+    return MIN_SPEED if _TEMPO.get() is None else 1-tempo_percent()/100
+
+
+def max_speed():
+    return MAX_SPEED if _TEMPO.get() is None else 1+tempo_percent()/100
+
+
+@contextmanager
+def for_language(code):
+    """Isolate tempo limits between concurrent languages and restore on failure."""
+    token=_TEMPO.set(language_tempo_percent(code))
+    try:yield
+    finally:_TEMPO.reset(token)
 
 
 def quiet_edges(samples, rate: int, speed: float = 1.) -> dict:
@@ -53,9 +82,9 @@ def join_gaps(items: list[dict], gap: float = .05) -> list[float]:
         value, speed = edge.get(side), edge.get('speed')
         if (not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
                 or not isinstance(speed, (int, float)) or not math.isfinite(speed)
-                or not MIN_SPEED <= speed <= MAX_SPEED):
+                or not min_speed() <= speed <= max_speed()):
             return 0.
-        return max(0., value * speed / MAX_SPEED - .01)
+        return max(0., value * speed / max_speed() - .01)
     return [max(0., gap - quiet(a, 'trailing') - quiet(b, 'leading'))
             for a, b in zip(items, items[1:])]
 
@@ -249,14 +278,14 @@ def review_items(manifest: list[dict]) -> list[dict]:
 
 def fit_speed(length: float, place: float, speech_span: float) -> float:
     if length <= 0 or place <= 0:
-        return MAX_SPEED if place <= 0 else 1.0
+        return max_speed() if place <= 0 else 1.0
     if length > place:
-        return min(MAX_SPEED, length / place)
+        return min(max_speed(), length / place)
     # Fill only excess silence, leaving the original's breath after the spoken span.
     target = min(place, max(length, speech_span))
     if target - length < 0.5:
         return 1.0
-    return max(MIN_SPEED, length / target)
+    return max(min_speed(), length / target)
 
 
 def _speed_caps(items: list[dict], lengths: list[float]) -> list[float]:
@@ -265,8 +294,8 @@ def _speed_caps(items: list[dict], lengths: list[float]) -> list[float]:
     caps = []
     for item, length in zip(items, lengths):
         span = float(item.get('original_end') or 0)-float(item.get('original_start') or 0)
-        cap = min(MAX_SPEED, length/(span-2*MAX_SHIFT)) if span > 2*MAX_SHIFT else MAX_SPEED
-        caps.append(max(MIN_SPEED, cap))
+        cap = min(max_speed(), length/(span-2*MAX_SHIFT)) if span > 2*MAX_SHIFT else max_speed()
+        caps.append(max(min_speed(), cap))
     return caps
 
 
@@ -283,10 +312,10 @@ def _aligned_speeds(items: list[dict], total: float, speeds: list[float],
     selected, windows = candidate(0.)
     if not windows['issues'] and windows['slack'] >= -1e-6:
         return selected
-    selected, windows = candidate(MAX_SPEED-MIN_SPEED)
+    selected, windows = candidate(max_speed()-min_speed())
     if windows['issues']:
         raise AlignmentError(max(windows['issues'], key=lambda issue: issue['excess']))
-    lo, hi = 0., MAX_SPEED-MIN_SPEED
+    lo, hi = 0., max_speed()-min_speed()
     for _ in range(40):
         mid = (lo+hi)/2
         _, windows = candidate(mid)
@@ -306,14 +335,14 @@ def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = Fals
         end=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
         speeds.append(fit_speed(item['length'],end-start-gaps[n],float(item['original_end'])-start))
     available=total-sum(gaps)
-    minimum=sum(x['length']/MAX_SPEED for x in items)
+    minimum=sum(x['length']/max_speed() for x in items)
     budget=max(minimum,available-.1)
-    def occupied(delta):return sum(x['length']/min(MAX_SPEED,s+delta) for x,s in zip(items,speeds))
+    def occupied(delta):return sum(x['length']/min(max_speed(),s+delta) for x,s in zip(items,speeds))
     if minimum>available:
         if allow_review:
-            return [MAX_SPEED] * len(items)
+            return [max_speed()] * len(items)
         excess=minimum-available
-        raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі {TEMPO_PERCENT}%. '
+        raise RuntimeError(f'Озвучка довша за ролик щонайменше на {excess:.1f} с при межі {tempo_percent()}%. '
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
     def align(selected):
         try:
@@ -324,12 +353,12 @@ def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = Fals
             return _speed_caps(items,[x['length'] for x in items])
     if occupied(0)<=budget:
         return align(speeds)
-    lo,hi=0.,MAX_SPEED-MIN_SPEED
+    lo,hi=0.,max_speed()-min_speed()
     for _ in range(40):
         mid=(lo+hi)/2
         if occupied(mid)>budget:lo=mid
         else:hi=mid
-    return align([min(MAX_SPEED,s+hi) for s in speeds])
+    return align([min(max_speed(),s+hi) for s in speeds])
 
 
 def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
@@ -350,7 +379,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     for item in result:
         speed, length = item.get('speed'), item.get('fitted_length')
         if (not isinstance(speed, (int, float)) or not math.isfinite(speed)
-                or not MIN_SPEED <= speed <= MAX_SPEED
+                or not min_speed() <= speed <= max_speed()
                 or not isinstance(length, (int, float)) or not math.isfinite(length) or length <= 0):
             raise RuntimeError('Не вдалося перевірити тривалість локальних аудіофрагментів. '
                                'Усі записи фраз збережені.')
@@ -376,7 +405,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
                 selected = _speed_caps(result,[x['fitted_length']*x['speed'] for x in result])
             changed = False
             for item, speed in zip(result,selected):
-                speed = min(MAX_SPEED,max(MIN_SPEED,math.ceil(speed*1e6)/1e6))
+                speed = min(max_speed(),max(min_speed(),math.ceil(speed*1e6)/1e6))
                 if abs(speed-item['speed']) < 1e-7:
                     continue
                 rendered = dict(item)
@@ -390,7 +419,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
             if not changed:
                 break
             continue
-        movable = [item for item in result if item['speed'] < MAX_SPEED - 1e-7]
+        movable = [item for item in result if item['speed'] < max_speed() - 1e-7]
         if not movable:
             break
         # Inverse duration is an estimate only. Leave a small margin, then measure
@@ -398,8 +427,8 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
         target = max(0., budget() - .1)
         def predicted(delta):
             return sum(item['fitted_length'] * item['speed'] /
-                       min(MAX_SPEED, item['speed'] + delta) for item in result)
-        lo, hi = 0., MAX_SPEED - MIN_SPEED
+                       min(max_speed(), item['speed'] + delta) for item in result)
+        lo, hi = 0., max_speed() - min_speed()
         if predicted(hi) <= target:
             for _ in range(40):
                 mid = (lo + hi) / 2
@@ -409,7 +438,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
                     hi = mid
         # Round upwards to the same precision as ffmpeg's atempo argument.
         for item in movable:
-            speed = min(MAX_SPEED, math.ceil((item['speed'] + hi) * 1e6) / 1e6)
+            speed = min(max_speed(), math.ceil((item['speed'] + hi) * 1e6) / 1e6)
             if speed <= item['speed']:
                 continue
             rendered = dict(item)
@@ -429,7 +458,7 @@ def _fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
         raise AlignmentError(max(windows['issues'],key=lambda issue:issue['excess']))
     excess = max(0., occupied() - budget())
     raise RuntimeError(f'Озвучка довша за ролик на {excess:.1f} с після перевірки фактичної тривалості '
-                       f'при межі {TEMPO_PERCENT}%. Усі аудіофрагменти збережені. '
+                       f'при межі {tempo_percent()}%. Усі аудіофрагменти збережені. '
                        'Автоматичної платної перегенерації не буде.')
 
 
@@ -454,13 +483,13 @@ def fit_measured(items: list[dict], total: float, render, *, gap: float = .05,
     fit_total = max(total, before[-1]['end']+.01) if relaxed else total
     shift_limit = fit_total+max(float(x['original_end']) for x in base) if relaxed else MAX_SHIFT
     proposed = narration_alignment.propose(base, fit_total, join_gaps(base, gap),
-        min_speed=MIN_SPEED, max_speed=MAX_SPEED, max_shift=shift_limit)
+        min_speed=min_speed(), max_speed=max_speed(), max_shift=shift_limit)
     if proposed is None:
         return base
     candidate = [dict(item) for item in base]
     changed = []
     for n, (item, speed) in enumerate(zip(candidate, proposed)):
-        speed = min(MAX_SPEED, max(MIN_SPEED, round(speed, 6)))
+        speed = min(max_speed(), max(min_speed(), round(speed, 6)))
         if abs(speed-item['speed']) < .0001:
             continue
         length = render(item, speed)
@@ -597,7 +626,7 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
                  '-af', 'alimiter=limit=0.841395:level=false', '-c:a', 'libmp3lame', '-b:a', '192k', target])
     finally:
         raw.unlink(missing_ok=True)
-    return {'min_speed': MIN_SPEED, 'phrases': report,
+    return {'min_speed': min_speed(), 'phrases': report,
             'changed': sum(x['speed'] < .999 for x in report),
             'long_gaps': [x for x in report if x['gap_after'] > LONG_GAP]}
 

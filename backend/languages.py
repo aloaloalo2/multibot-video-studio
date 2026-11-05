@@ -482,6 +482,7 @@ def overview(pid: str) -> dict:
         display_letters=(compared.get('translated_chars') if compared.get('available')
                          else numeric_comparison.comparison_chars(text))
         items.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "text": text, "title": item.get("title") or "",
+                      "tempo_percent":dubbing_fit.language_tempo_percent(code),
                       "display_chars": display_letters, "literal_letter_chars":numeric_comparison.comparison_chars(text),
                       "translation_model": translation_model(pid, code, data),
                       "translation_resumable": translation_resumable(pid, code, src,
@@ -2339,7 +2340,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         if abs(speed-item['speed'])<.0001:continue
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
              '-af',narration_audio.filters(item,speed),'-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
-            f'збалансувати темп у межах {dubbing_fit.TEMPO_PERCENT}%')
+            f'збалансувати темп у межах {dubbing_fit.tempo_percent()}%')
         item.update(speed=speed,fitted_length=store.media_duration(parts_dir/item['fitted']),
                     edge_silence=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed))
         fastest=max(fastest,speed)
@@ -2347,7 +2348,7 @@ def whole_synced(pid: str, code: str, provider: str, job: dict, segments: list[d
         progress(pid,job,92,'Уточнюємо тривалість готових фраз без нових витрат')
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(parts_dir/item['file']),
              '-af',narration_audio.filters(item,speed),'-ac','1','-c:a','pcm_s16le',str(parts_dir/item['fitted'])],
-            f'уточнити фактичний темп у межах {dubbing_fit.TEMPO_PERCENT}%')
+            f'уточнити фактичний темп у межах {dubbing_fit.tempo_percent()}%')
         item['edge_silence']=dubbing_fit.measure_edges(parts_dir/item['fitted'],speed)
         return store.media_duration(parts_dir/item['fitted'])
     manifest=dubbing_fit.fit_measured(manifest,total,render_measured,allow_review=True)
@@ -2540,7 +2541,7 @@ def whole(pid: str, code: str, provider: str, job: dict) -> None:
     if target_length and length:
         ratio = length / target_length
         if ratio > 1.0:
-            speed = min(ratio, FIT_MAX)
+            speed = min(ratio, dubbing_fit.max_speed())
             filters.insert(0, f"atempo={speed:.4f}")
             fit["speed"] = round(speed, 3)
             length /= speed
@@ -2821,6 +2822,11 @@ NAMES = {"translate": "переклад", "sample": "зразок озвучки
 
 
 def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> None:
+    with dubbing_fit.for_language(code):
+        _worker(pid,kind,code,provider,job)
+
+
+def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> None:
     try:
         if kind in ("sample", "voice"):
             job["cost_unit"] = "credits" if provider == "elevenlabs" else "usd"

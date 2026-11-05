@@ -589,7 +589,7 @@ async function langConfirmVoice(id,code){
     const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
     const action=langVoiceAction(fresh,spec);
     modal(`${action} ${fresh.name}?`,`${spec.id==='elevenlabs'?`<div class="lang-balance lang-confirm-balance" role="status" aria-live="polite">${langBalanceMarkup()}</div>`:''}<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' літер'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
-      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(langData.tempo_percent||8).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Якщо тривалість відповідає ролику, озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
+      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(fresh.tempo_percent||langData.tempo_percent||15).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Якщо тривалість відповідає ролику, озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',code);}}]);
     if(spec.id==='elevenlabs')langRefreshBalance(true);
 }

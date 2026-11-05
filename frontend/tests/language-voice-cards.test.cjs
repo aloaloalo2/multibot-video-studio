@@ -49,6 +49,14 @@ test('confirmation paints cached balance immediately and refreshes only account 
   assert.ok(env.requests.every(call=>call[0].startsWith('/api/elevenlabs/balance')));
 });
 
+test('narration confirmation uses the selected language tempo allowance',async()=>{
+  const env=runtime();env.run("langData.tempo_percent=15;langData.items[0].tempo_percent=17");
+  await env.run("langConfirmVoice('project-a','uk')");
+  assert.match(env.confirmations[0][1],/до 17%/);
+  await env.run("langConfirmVoice('project-a','pl')");
+  assert.match(env.confirmations[1][1],/до 15%/);
+});
+
 test('cached-only confirmation stays free and unrelated busy languages do not lock it',async()=>{
   const env=runtime();env.run("langData.jobs=[{code:'uk',kind:'voice',status:'running'}]");
   await env.run("langConfirmVoice('project-a','pl')");
