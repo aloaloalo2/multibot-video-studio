@@ -62,9 +62,8 @@ function renderGroupingControls(){
   let box=$('timeline-group-controls');
   if(!box){box=document.createElement('div');box.id='timeline-group-controls';box.className='timeline-group-controls';toolbar.insertBefore(box,toolbar.querySelector('.timeline-spacer'));}
   box.replaceChildren();
-  const all=document.createElement('button');all.type='button';all.textContent='Виділити все';all.addEventListener('click',selectEntireTimeline);
   const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Видалити виділене',true);remove.disabled=state.busy || !(state.selected || state.selectedGroup || state.multiSelection?.length);remove.addEventListener('click',deleteTimelineSelection);
-  box.append(all,remove);
+  box.append(remove);
 
   // an animated film has only frames on its timeline: it always shows them, with no switch to layers
   const animatedFilm=state.channel?.settings?.channel_kind==='animated';
@@ -168,7 +167,7 @@ function renderGroupedTimelineWithIndex(){
 function prepareTimelineMenu(){
   if($('timeline-add-menu'))return;
   const toolbar=document.querySelector('.timeline-toolbar');
-  const menu=document.createElement('details');menu.id='timeline-add-menu';menu.className='timeline-add-menu';
+  const menu=document.createElement('details');menu.id='timeline-add-menu';menu.className='timeline-add-menu';menu.style.display='none';
   const summary=document.createElement('summary');summary.textContent='＋ Додати';summary.setAttribute('aria-label','Додати елемент на таймлайн');menu.append(summary);
   const content=document.createElement('div');content.className='timeline-add-options';
   for(const id of ['add-layer','add-scene','add-text','add-animation','add-transition']){const button=$(id);if(button){content.append(button);button.addEventListener('click',()=>{menu.open=false;});}}
