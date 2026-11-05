@@ -1519,6 +1519,7 @@ select option{background:#232327;color:#f1f1f2}
 .lang-balance{display:flex;align-items:center;gap:10px;color:#c9cad0;min-height:44px}
 .lang-balance div{display:grid;gap:3px}.lang-balance small{color:#93969f;font-size:12px}
 .lang-balance strong{font-size:15px;font-weight:550;font-variant-numeric:tabular-nums}
+.lang-confirm-balance{padding:10px 12px;margin-bottom:16px;border-radius:10px;background:#292a30}.lang-confirm-balance>div{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.lang-confirm-balance strong{font-size:16px}
 
 .lang-fit-review{border:1px solid #655536;border-radius:12px;background:#242118;color:#e2cc9e;font-size:12px}
 .lang-fit-review summary{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;list-style:none;font-weight:600}

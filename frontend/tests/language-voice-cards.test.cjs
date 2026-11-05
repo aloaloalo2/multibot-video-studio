@@ -8,10 +8,11 @@ function runtime(){
   const confirmations=[],requests=[];
   const context=vm.createContext({
     $:()=>null,state:{project:{id:'project-a'},view:'langs'},
-    document:{addEventListener(){}},
+    document:{addEventListener(){},querySelectorAll(){return [];}},
+    clearTimeout(){},setTimeout(){return 0;},
     langFlushScript:async()=>true,closeModal(){},esc:String,
     modal:(...args)=>confirmations.push(args),
-    api:async(...args)=>{requests.push(args);return {status:'ready',original:[],translated:[]};},
+    api:async(...args)=>{requests.push(args);return args[0].startsWith('/api/elevenlabs/balance')?{state:'ready',remaining_credits:23456}:{status:'ready',original:[],translated:[]};},
     clock:value=>String(value),console,
   });
   for(const file of ['languages.js','language-alignment.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
@@ -29,7 +30,23 @@ test('confirmation uses the clicked language provider, estimate and cache, witho
   assert.match(env.confirmations[0][1],/ElevenLabs/);
   assert.match(env.confirmations[0][1],/13 кредитів/);
   assert.match(env.confirmations[0][1],/1 із 2/);
-  assert.equal(env.requests.length,0);
+  assert.deepEqual(env.requests.map(call=>call[0]),['/api/elevenlabs/balance?refresh=1']);
+  assert.match(env.confirmations[0][1],/lang-confirm-balance/);
+});
+
+test('confirmation paints cached balance immediately and refreshes only account balance',async()=>{
+  const env=runtime();env.run("langBalance={state:'ready',remaining_credits:1000}");
+  await env.run("langConfirmVoice('project-a','uk')");
+  assert.match(env.confirmations[0][1],/Баланс ElevenLabs/);
+  assert.match(env.confirmations[0][1],/1\s*000 кредитів/);
+  await new Promise(setImmediate);
+  assert.match(env.run('langBalanceMarkup()'),/23\s*456 кредитів/);
+  env.run("langBalance={state:'stale',remaining_credits:0}");
+  assert.match(env.run('langBalanceMarkup()'),/0 кредитів/);
+  assert.match(env.run('langBalanceMarkup()'),/Останній відомий баланс/);
+  env.run("langBalance={state:'unavailable'}");
+  assert.match(env.run('langBalanceMarkup()'),/Недоступний/);
+  assert.ok(env.requests.every(call=>call[0].startsWith('/api/elevenlabs/balance')));
 });
 
 test('cached-only confirmation stays free and unrelated busy languages do not lock it',async()=>{

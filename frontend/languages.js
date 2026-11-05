@@ -33,10 +33,13 @@ async function loadLangs(id){
   if(langBusy())pollLangs(id);
 }
 
+function langBalanceMarkup(){
+  const known=Number.isFinite(langBalance?.remaining_credits),stale=langBalance?.state==='stale';
+  return `<div><small>Баланс ElevenLabs</small><strong>${known?`${langBalance.remaining_credits.toLocaleString('uk-UA')} кредитів`:langBalanceLoading?'Перевіряємо…':'Недоступний'}</strong>${stale?'<small>Останній відомий баланс</small>':''}</div>`;
+}
 function langPaintBalance(){
-  document.querySelectorAll('#project-langs .lang-balance,.lang-result-dialog .lang-balance').forEach(box=>{
-    const known=Number.isFinite(langBalance?.remaining_credits),stale=langBalance?.state==='stale';
-    box.innerHTML=`<div><small>Баланс ElevenLabs</small><strong>${known?`${langBalance.remaining_credits.toLocaleString('uk-UA')} кредитів`:langBalanceLoading?'Перевіряємо…':'Недоступний'}</strong>${stale?'<small>Останній відомий баланс</small>':''}</div>`;
+  document.querySelectorAll('#project-langs .lang-balance,.lang-result-dialog .lang-balance,.lang-confirm-balance').forEach(box=>{
+    box.innerHTML=langBalanceMarkup();
     box.setAttribute('aria-busy',String(langBalanceLoading));
   });
 }
@@ -585,9 +588,10 @@ async function langConfirmVoice(id,code){
     langResultDialog?.dialog.close();
     const estimate=fresh.voice_estimates?.[spec.id],cached=estimate?.reused || 0,generate=estimate?.generate;
     const action=langVoiceAction(fresh,spec);
-    modal(`${action} ${fresh.name}?`,`<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' літер'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
-      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(langData.tempo_percent||8).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Готову озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
+    modal(`${action} ${fresh.name}?`,`${spec.id==='elevenlabs'?`<div class="lang-balance lang-confirm-balance" role="status" aria-live="polite">${langBalanceMarkup()}</div>`:''}<p>${cached?`${cached} із ${estimate.total} фраз уже є в кеші. `:''}${generate===0?'Усі фрази буде зібрано локально без платних запитів.':`${esc(spec.name)} озвучить ${generate!=null?generate+' нових або змінених фраз':chars.toLocaleString('uk-UA')+' літер'}: <b>${esc(langCost(spec,cost))}</b>. Автоматичних платних повторів немає.`}</p>
+      <p>Студія використає збережений текст і вирівняє озвучку паузами та зміною темпу до ${Number(langData.tempo_percent||8).toLocaleString('uk-UA')}% в обидва боки. Змінений темп буде позначено для прослуховування.</p><p>Якщо тривалість відповідає ролику, озвучку автоматично зведемо з музикою й ефектами монтажу та збережемо в папці випуску.</p>`,
       [{label:'Скасувати',run:closeModal},{label:`${action} · ${langCost(spec,cost)}`,primary:true,run:()=>{closeModal();langStart(id,'voice',code);}}]);
+    if(spec.id==='elevenlabs')langRefreshBalance(true);
 }
 
 function langCard(id,item,spec){
