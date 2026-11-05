@@ -43,7 +43,10 @@ def channel_settings(project: dict) -> dict:
     settings = dict(channel.get("settings") or {})
     if project.get("plan_weights") is not None:
         settings["weights"] = project["plan_weights"]
-    return planner.effective_settings(settings)
+    result = planner.effective_settings(settings)
+    if "karl" in str(channel.get("name", "")).lower():
+        result["host_even_distribution"] = True
+    return result
 
 
 def shares(settings: dict) -> dict[str, float]:
@@ -57,6 +60,8 @@ def shares(settings: dict) -> dict[str, float]:
 
 def opening(settings: dict) -> tuple[str | None, int]:
     """The format the channel's first frames must have, if it names one, and how many frames."""
+    if settings.get("host_even_distribution") and float(settings.get("weights", {}).get("host", 0)) > 0:
+        return "host", 1
     chosen = settings.get("first_clip_format", "auto")
     if chosen == "video":
         weights = settings["weights"]
@@ -81,7 +86,9 @@ def sentences(pid: str) -> dict:
             "duration": float(plan["timing"]["audio"]["duration"]), "shares": targets,
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,
-            "opening": {"format": first, "count": count} if first else None}
+            "opening": {"format": first, "count": count} if first else None,
+            "host_rules": {"first_frame": True, "no_consecutive": True, "even_distribution": True}
+                if settings.get("host_even_distribution") else None}
 
 
 def apply(pid: str, frames, dry_run: bool = False) -> dict:
@@ -131,6 +138,16 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     seconds = {key: 0.0 for key in targets}
     for kind, (start, end) in zip(kinds, times):
         seconds[kind] += end - start
+    if settings.get("host_even_distribution") and "host" in targets:
+        hosts = [i for i, kind in enumerate(kinds) if kind == "host"]
+        if any(b == a + 1 for a, b in zip(hosts, hosts[1:])):
+            problems.append("Ведучий не може бути у двох кадрах поспіль")
+        if hosts:
+            starts = [times[i][0] for i in hosts]
+            ideal = duration / len(hosts)
+            gaps = [b - a for a, b in zip(starts, starts[1:] + [duration])]
+            if max(gaps) > ideal * 2:
+                problems.append("Розподіліть ведучого рівномірно по всьому ролику: завелика перерва між появами")
     covered = sum(seconds.values()) or 1
     actual = {key: round(100 * value / covered, 1) for key, value in seconds.items()}
     for key, target in targets.items():

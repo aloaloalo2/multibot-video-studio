@@ -167,6 +167,13 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
     projects that can be busy (the work this server holds in memory), so the rest are not read at all."""
     busy = [f"експорт {job['project_id']}: {job.get('progress', 0)}%, {job.get('stage', '')}" for job in active_exports if job.get("status") in BUSY]
     names = {c["id"]: c.get("name") for c in store.list_channels()}
+    active_channels = set()
+    for job in active_exports:
+        if job.get("status") in BUSY:
+            try:
+                active_channels.add(store.listed_project(store.project_dir(job["project_id"]) / "project.json").get("channel_id"))
+            except (OSError, ValueError, store.StudioError):
+                pass
     for pid in sorted(candidates) if candidates is not None else [item["id"] for item in store.list_projects()]:
         try:
             item = store.listed_project(store.project_dir(pid) / "project.json")
@@ -176,5 +183,6 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
             continue
         for what, status in project_jobs(item["id"]).items():
             if status in BUSY:
+                active_channels.add(item.get("channel_id"))
                 busy.append(f"{what}: {names.get(item.get('channel_id'), '')} / {item.get('name') or pid} ({pid})")
-    return {"busy": busy, "exports": active_exports}
+    return {"busy": busy, "exports": active_exports, "active_channels": sorted(x for x in active_channels if x)}

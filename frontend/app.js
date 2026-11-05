@@ -160,11 +160,25 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
   }
 }
 
+const channelActivity=new Set();
+async function pollChannelActivity(){
+  if(document.hidden)return;
+  try{
+    const activity=await api('/api/studio/status');channelActivity.clear();
+    for(const id of activity.active_channels||[])channelActivity.add(id);
+    for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
+    for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
+      const spinner=button.querySelector('.channel-busy');if(spinner)spinner.hidden=!channelActivity.has(button.dataset.channelId);
+    }
+  }catch(error){console.warn('Стан каналів тимчасово недоступний',error);}
+}
+(function channelActivityLoop(){setTimeout(async()=>{await pollChannelActivity();channelActivityLoop();},5000);})();
+
 function renderChannels() {
   const list=$('channel-list'); list.replaceChildren();
   for (const channel of state.channels) {
     const row=document.createElement('div'); row.className='channel-item'+(state.channel?.id===channel.id?' active':''); row.setAttribute('role','listitem');
-    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIcon}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;
+    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIcon}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
     choose.addEventListener('click',()=>selectChannel(channel.id).catch(error=>status(error.message,true)));
     row.append(choose); list.append(row);
   }
@@ -988,7 +1002,8 @@ function openChannelSettings(channel) {
   const keys=shown.map(index=>allKeys[index]),colors=shown.map(index=>allColors[index]);
   const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
-  const body=`<section class="settings-section settings-workflow"><label for="settings-plan-mode"><h3>Режим нових випусків</h3></label><select id="settings-plan-mode"><option value="director" ${original.plan_mode!=='direct'?'selected':''}>З планом кадрів</option><option value="direct" ${original.plan_mode==='direct'?'selected':''}>Без плану</option></select><p id="settings-plan-mode-note"></p></section>${brandingSections(channel)}<p id="settings-purpose" class="settings-purpose regular-only">Режисер ділить озвучку на кадри за цими частками форматів, а агент кадрів і студія беруть з цих налаштувань формат відео, акценти й початок ролика.</p>
+  const projectDefaults=`<div class="settings-workflow"><label for="settings-plan-mode"><h4>План кадрів</h4></label><select id="settings-plan-mode"><option value="director" ${original.plan_mode!=='direct'?'selected':''}>З планом кадрів</option><option value="direct" ${original.plan_mode==='direct'?'selected':''}>Без плану</option></select><p id="settings-plan-mode-note"></p></div>`;
+  const body=`${brandingSections(channel,projectDefaults)}<p id="settings-purpose" class="settings-purpose regular-only">Режисер ділить озвучку на кадри за цими частками форматів, а агент кадрів і студія беруть з цих налаштувань формат відео, акценти й початок ролика.</p>
     <section class="settings-section regular-only"><h3>Імпорт з іншого каналу</h3><p>Виберіть канал, щоб скопіювати його пропорції форматів у ці поля. Потім натисніть «Зберегти».</p><div class="settings-import-row"><label>Канал для імпорту<select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><button id="settings-import" class="secondary" type="button" disabled>Імпортувати пропорції</button></div><p id="settings-import-feedback" role="status" aria-live="polite">${sources.length?'':'Додайте ще один канал, щоб імпортувати його пропорції.'}</p></section>
     <section class="settings-section regular-only"><h3>Візуальні формати</h3><p id="settings-weights-purpose">Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.</p><div id="settings-weights" class="weights-grid"></div><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
     <section class="settings-section regular-only planned-only"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>

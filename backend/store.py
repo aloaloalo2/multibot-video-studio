@@ -882,6 +882,35 @@ def validate_plan(plan: dict) -> dict:
     return copy.deepcopy(plan)
 
 
+def attach_timed_narration(project: dict, source: dict) -> bool:
+    """Put the exact timed source on the montage once; never substitute another recording."""
+    timing = source.get("timing") or {}
+    audio = timing.get("audio") or {}
+    if timing.get("status") != "audio_synced" or not audio.get("sha256"):
+        return False
+    for track in project.get("tracks", []):
+        for clip in track.get("clips", []):
+            if clip.get("kind") == "audio":
+                try:
+                    asset = resolve_asset(project, clip.get("asset_id"))
+                    if audio_fingerprint(Path(asset["path"])) == audio["sha256"]:
+                        return False
+                except (StudioError, OSError):
+                    pass
+    for asset in discover_assets(project):
+        if asset.get("kind") != "audio":
+            continue
+        path = Path(asset["path"])
+        if audio_fingerprint(path) != audio["sha256"]:
+            continue
+        project.setdefault("tracks", []).append({"id": uuid.uuid4().hex[:12], "name": "Озвучка", "type": "universal",
+            "z_index": len(project.get("tracks", [])), "clips": [{"id": uuid.uuid4().hex[:12], "kind": "audio",
+            "asset_id": asset["id"], "start": 0, "duration": float(audio["duration"]), "trim_start": 0,
+            "volume": 1, "title": "Озвучка"}]})
+        return True
+    return False
+
+
 def attach_plan(pid: str, plan: dict) -> dict:
     plan = validate_plan(plan)
     with LOCK:
@@ -893,6 +922,7 @@ def attach_plan(pid: str, plan: dict) -> dict:
             shutil.copy2(path, versions / (str(time.time_ns()) + ".json"))
         atomic_json(path, plan)
         project["plan_source"] = str(path)
+        attach_timed_narration(project, plan)
         project["plan_updated_at"] = time.time()
         project["revision"] = project.get("revision", 0) + 1
         save_project(project)
@@ -1010,6 +1040,7 @@ def save_project_source(project: dict, script: str, *, narration=None, timings=N
         if audio is None and old and old.get("script_sha256") == source["script_sha256"]:
             source = old
         atomic_json(project_dir(project["id"]) / "source-timing.json", source)
+        attach_timed_narration(current, source)
         current["voice_script"] = {"text": script, "sha256": source["script_sha256"], "saved_at": time.time()}
         current["revision"] = current.get("revision", 0) + 1
         save_project(current)

@@ -110,7 +110,7 @@ function groupLane(title,groups,ref){
   const occupied=[];
   for(const group of groups){
     const bounds=groupBounds(group),members=groupMembers(group);if(!members.length)continue;
-    let slot=occupied.findIndex(end=>end<=bounds.start+.001);if(slot<0)slot=occupied.length;occupied[slot]=bounds.end;
+    let slot=ref==='scenes'?0:occupied.findIndex(end=>end<=bounds.start+.001);if(slot<0)slot=occupied.length;occupied[slot]=bounds.end;
     const button=document.createElement('button');button.type='button';button.draggable=true;button.className='frame-group-clip'+(state.selectedGroup===group.id?' selected':'');button.dataset.groupId=group.id;
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
     // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty

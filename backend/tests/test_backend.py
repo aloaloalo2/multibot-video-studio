@@ -323,7 +323,9 @@ class BackendTest(unittest.TestCase):
         self.assertTrue(store.plan_readiness(store.load_project(pid))["plan_ready"])
         self.assertFalse(store.plan_readiness(store.load_project(pid))["export_ready"])
         self.assertEqual(source.read_bytes(), original)
-        self.assertFalse(any(track["clips"] for track in store.load_project(pid)["tracks"]))
+        clips = [clip for track in store.load_project(pid)["tracks"] for clip in track["clips"]]
+        self.assertEqual([clip["kind"] for clip in clips], ["audio"])
+        self.assertEqual(clips[0]["asset_id"], asset["id"])
         before = store.load_project_plan(pid)
         with patch.object(speech, "transcribe", return_value=(words[:-1], {"engine": "test", "model": "fixture", "local": True})):
             self.request("/api/projects/" + pid + "/plan/analyze", "POST", {"asset_id": asset["id"]})

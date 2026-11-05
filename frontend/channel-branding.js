@@ -23,13 +23,13 @@ const styleNames={neon:['Неоновий нуар','Глибокий чорни
   blueglow:['Синє сяйво','Нічний синій світ із бірюзовим світлом: м’які переливи, світний контур героя, сильне сяйво, без ліній.'],
   care:['Турбота','Дружня аптечна пастель: м’ятні й білі кімнати, коралові акценти, м’які паперові тіні.']};
 
-function brandingSections(channel){
+function brandingSections(channel,projectDefaults=''){
   const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
   const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" value="${value}" ${kind===value?'checked':''}><span><strong>${title}</strong><small>${text}</small></span></label>`;
   const cells=brandingPositions.map(item=>item?`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`:'<span class="logo-position-gap" aria-hidden="true"></span>').join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></section>
-    <section class="settings-section channel-kind-section"><h3>Тип нових проєктів</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></section>
+    <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></div></section>
     <section class="settings-section logo-section"><h3>Логотип каналу</h3>
       <div class="logo-file">
         <label class="logo-tile" id="logo-tile" title="Завантажити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -41,7 +41,6 @@ function brandingSections(channel){
         <label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати в роликах</label>
       </div>
       <div class="logo-place" id="logo-place" hidden>
-        <div class="logo-mini" id="logo-mini" aria-hidden="true"><img class="logo-mark" alt=""></div>
         <div class="logo-place-controls"><div class="logo-place-row"><span class="logo-place-label">Місце</span><div class="logo-position-grid" role="group" aria-label="Місце логотипа">${cells}</div></div>
           <div class="logo-sliders">${slider('logo-size','Розмір',3,40,logo.size,'%')}${slider('logo-margin','Відступ від краю',0,15,logo.margin,'%')}${slider('logo-opacity','Видимість',10,100,logo.opacity,'%')}</div></div>
       </div>
@@ -59,7 +58,7 @@ function brandingSections(channel){
 
 function bindBranding(channel){
   const settings=channel.settings || {},logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
-  const frame=$('logo-preview'),image=$('logo-preview-image'),mini=$('logo-mini'),tileImage=$('logo-tile-image'),feedback=$('logo-feedback'),strip=$('style-strip'),film=$('style-film'),stage=$('style-stage-state');
+  const frame=$('logo-preview'),image=$('logo-preview-image'),tileImage=$('logo-tile-image'),feedback=$('logo-feedback'),strip=$('style-strip'),film=$('style-film'),stage=$('style-stage-state');
   let version=settings.logo?.version || 0,present=false,styles=null,cards=null,chosen=animation.style || null,filmStyle=null,request=0,filmRequest=0;
   const kind=()=>document.querySelector('input[name="channel-kind"]:checked')?.value || 'regular';
   const logoUrl=()=>`/api/channels/${encodeURIComponent(channel.id)}/logo?v=${version}`;
@@ -81,7 +80,7 @@ function bindBranding(channel){
     $('logo-file-title').textContent=present?'Логотип каналу':'Логотип ще не додано';
     $('logo-file-meta').textContent=present?`${tileImage.naturalWidth} × ${tileImage.naturalHeight} пікселів${$('logo-enabled').checked?'':' · у роликах не показується'}`:'Перетягніть картинку в квадрат або натисніть на нього. Найкраще PNG з прозорим фоном, до 6 МБ.';
     $('logo-place').classList.toggle('is-off',!$('logo-enabled').checked);
-    for(const mark of [...film.querySelectorAll('.logo-mark'),...mini.querySelectorAll('.logo-mark')]){if(mark.getAttribute('src')!==logoUrl())mark.src=logoUrl();place(mark);}
+    for(const mark of film.querySelectorAll('.logo-mark')){if(mark.getAttribute('src')!==logoUrl())mark.src=logoUrl();place(mark);}
     for(const id of ['logo-size','logo-margin','logo-opacity'])$(id).nextElementSibling.textContent=$(id).value+'%';
   };
   const load=()=>{tileImage.onload=()=>{present=true;draw();};tileImage.onerror=()=>{present=false;draw();};tileImage.src=logoUrl();image.src=logoUrl();};
@@ -90,7 +89,7 @@ function bindBranding(channel){
   // The logo sits on the style card of the chosen Razgon style: an animated channel's films and a regular channel's 2D-animation frames.
   const backdrop=()=>{
     const style=styles?.find(item=>item.id===chosen);
-    frame.style.backgroundImage=mini.style.backgroundImage=style?`url("${card(style.id)}")`:'';
+    frame.style.backgroundImage=style?`url("${card(style.id)}")`:'';
     if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<span>${esc(text)}</span>`;}
     else if(!styles)$('style-caption').innerHTML='<strong>Завантажуємо стилі…</strong>';
   };

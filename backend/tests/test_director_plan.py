@@ -38,6 +38,13 @@ class DirectorPlanTest(unittest.TestCase):
         self.assertEqual(data["shares"], {"stock_photo": 50.0, "text": 50.0})
         self.assertEqual(data["max_sentences"], 3)
 
+    def test_karl_requires_first_host_and_no_adjacent_hosts(self):
+        channel={**CHANNEL,"name":"Karl Brenners Werkstatt","settings":{**CHANNEL["settings"],"weights":{"host":50,"stock_photo":50}}}
+        with patch.object(store,"list_channels",return_value=[channel]):
+            self.assertEqual(director_plan.sentences(PROJECT["id"])["opening"],{"format":"host","count":1})
+            result=director_plan.apply(PROJECT["id"],frames(([1,2],"host"),([3,4],"host"),([5,6],"stock_photo"),([7,8],"stock_photo")),dry_run=True)
+            self.assertTrue(any("двох кадрах поспіль" in x for x in result["problems"]))
+
     def test_a_plan_needs_the_voice(self):
         self.plan = None
         with self.assertRaises(store.StudioError):

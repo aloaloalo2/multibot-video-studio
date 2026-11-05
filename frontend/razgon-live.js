@@ -89,7 +89,12 @@
 
   // A mixed episode (photos, stock, text frames and some Razgon frames, e.g. Alexey Gorbunov's): only its razgon_2d frames
   // are drawn live, and only while the playhead is inside one; the rest of the timeline plays as usual. null: all Razgon.
-  const razgonFrames = () => { const frames = state.plan?.frames || [], own = frames.filter((f) => f.format === 'razgon_2d'); return own.length && own.length < frames.length ? own : null; };
+  const razgonFrames = () => {
+    const frames = state.plan?.frames || [], fps=state.project?.fps||25;
+    const own = frames.filter(f=>f.format==='razgon_2d').map(f=>({...f,sourceStart:f.start,sourceEnd:f.end,
+      start:Math.floor(f.start*fps+.5+1e-8)/fps,end:Math.floor(f.end*fps+.5+1e-8)/fps}));
+    return own.length && own.length < frames.length ? own : null;
+  };
 
   // In live mode the rendered Razgon clips are not decoded at all: the iframe draws the picture under the studio's own
   // overlay layers (the channel plashka group), and the studio keeps time and sound.
@@ -105,7 +110,8 @@
     const blocksAt = (time) => layers().flatMap((layer) => layer.clips || []).filter((clip) => /^Razgon · кадр/.test(clip.title || '') && time >= Number(clip.start) && time < Number(clip.start) + Number(clip.duration));
     const seen = (time) => { const blocks = blocksAt(time); return !blocks.length || blocks.some((clip) => !hiddenClip.has(clip.id)); };
     const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < f.end + (tail(f)?.duration || 0));
-    seekTime = fading ? fading.end - 1 / (state.project?.fps || 25) : null;
+    const sourceFrame=inside||fading;
+    seekTime = sourceFrame ? Math.max(sourceFrame.sourceStart,Math.min(t,sourceFrame.sourceEnd-1/(state.project?.fps||25))) : null;
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
     content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden'; note.style.visibility = on ? '' : 'hidden';
     if (!on) return baseUniversal.apply(this, args);

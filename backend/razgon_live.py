@@ -61,10 +61,30 @@ def _log_tail(project: Path) -> str:
     return lines[-1][-300:] if lines else ""
 
 
+def patch_mixed_player(root: Path) -> None:
+    """A mixed film's external photo is composited by Studio, not a missing Razgon scene."""
+    live = root / "live.html"
+    if live.is_file():
+        source = live.read_text()
+        sample = "const sample = window.SHOT_LIST.find(s => t >= s.start && t < s.end); const f = sample ? Math.max(Math.ceil(sample.start * fps - 1e-8), Math.min(Math.floor(t * fps + 1e-8), Math.ceil(sample.end * fps - 1e-8) - 1)) : Math.floor(t * fps + 1e-8);"
+        fixed = source.replace("const f = Math.round(t * fps);", sample).replace("const f = Math.floor(t * fps + 1e-8);", sample) if "const sample = window.SHOT_LIST.find" not in source else source
+        if fixed != source:
+            store.atomic_text(live, fixed)
+    path = root / "engine" / "player.js"
+    if not path.is_file():
+        return
+    old = "const tr = shot.in || { type: 'cut' }"
+    new = "const tr = (i > 0 && !getShot(E.shots[i - 1].id)) ? { type: 'cut' } : (shot.in || { type: 'cut' })"
+    source = path.read_text()
+    if old in source:
+        store.atomic_text(path, source.replace(old, new, 1))
+
+
 def start(pid: str, restart: bool = False) -> dict:
     info = link(store.load_project(pid))
     if not info:
         raise store.StudioError("Для цього випуску немає проєкту Razgon", 404)
+    patch_mixed_player(info["root"])
     url = f"http://127.0.0.1:{info['port']}/live.html"
     if restart:
         # «Перезапустити перегляд»: the live server of this project stops and starts afresh (user, 2 November 2026:
