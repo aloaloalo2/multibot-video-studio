@@ -5,7 +5,7 @@ folder, text frames and Razgon frames of a mixed episode) are made by the same a
 frame on the timeline with tools/studio.py place, and the run is done when each of the requested frames has its clip
 (store.made_frames). An animated film's frames follow below.
 
-The production request (store.request_production) hands the frames to Claude Opus 5.5 (extra-high effort) through Claude
+The production request (store.request_production) hands the frames to Claude Opus 5.5 (high effort) through Claude
 Code on the user's subscription, in the YOUTUBE folder, as the channel rules' step 7 asks: scenes of the shots behind
 those frames, props from the library or drawn by Codex (tools/codex_image.py), checks on contact sheets. The frames stay
 «Кадр N» code blocks on the timeline that the live preview draws: nothing is rendered until the author presses «Експорт
@@ -26,9 +26,8 @@ import razgon_sound
 import store
 
 TIMEOUT = 6 * 3600
-# The film itself is drawn at extra-high effort (user, 30 October 2026: «я хочу, щоб ролик складав надвисокий Опус 5.5»);
-# the director keeps high.
-EFFORT = "xhigh"
+# Frame creation and direction both use high effort (user choice, 5 November 2026).
+EFFORT = "high"
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 

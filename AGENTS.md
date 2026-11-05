@@ -107,7 +107,7 @@ by `production.settle` whenever a project or the list is read and at start-up: d
 otherwise stopped (a fresh request gets 30 s to start).
 
 `production.start` runs for every channel. A photo channel's agent (`production.photo_brief`, Claude Opus 5.5 at
-`xhigh`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,
+`high`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,
 stock through `studio.py stock` (a numbered contact sheet of Pixabay previews, `backend/stock_sheet.py`, looked at
 instead of lists of tags) and `studio.py stock-pick` (downloads the chosen one into the project and places it), pictures drawn by Codex through
 `What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
