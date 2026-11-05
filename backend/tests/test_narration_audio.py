@@ -80,7 +80,7 @@ class NarrationAudioTest(unittest.TestCase):
         default=audio.fastest(path,cache,trim)
         with dubbing_fit.for_language('ru'):
             russian=audio.fastest(path,cache,trim)
-            self.assertEqual(russian['speed'],1.17)
+            self.assertEqual(russian['speed'],1.18)
             with patch.object(audio.subprocess,'run',side_effect=AssertionError('Already measured')):
                 self.assertEqual(audio.fastest(path,cache,trim),russian)
         self.assertEqual(default['speed'],1.15)

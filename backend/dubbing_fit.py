@@ -15,7 +15,7 @@ MIN_SPEED = 1 - TEMPO_PERCENT / 100
 MAX_SPEED = 1 + TEMPO_PERCENT / 100
 MAX_SHIFT = 7.0
 LONG_GAP = 1.5
-LANGUAGE_TEMPO_PERCENT = {'ru':17}
+LANGUAGE_TEMPO_PERCENT = {'ru':18}
 _TEMPO = ContextVar('narration_tempo_percent',default=None)
 
 
@@ -338,7 +338,7 @@ def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = Fals
     minimum=sum(x['length']/max_speed() for x in items)
     budget=max(minimum,available-.1)
     def occupied(delta):return sum(x['length']/min(max_speed(),s+delta) for x,s in zip(items,speeds))
-    if minimum>available:
+    if minimum>available+1e-6:
         if allow_review:
             return [max_speed()] * len(items)
         excess=minimum-available

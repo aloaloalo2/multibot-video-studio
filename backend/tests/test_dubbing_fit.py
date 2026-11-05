@@ -10,7 +10,7 @@ import dubbing_fit
 import languages
 
 class DubbingFitTest(unittest.TestCase):
-    def test_russian_tempo_is_seventeen_percent_and_other_jobs_remain_fifteen(self):
+    def test_russian_tempo_is_eighteen_percent_and_other_jobs_remain_fifteen(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
         barrier=Barrier(2)
@@ -21,19 +21,19 @@ class DubbingFitTest(unittest.TestCase):
                         dubbing_fit.fit_speed(8,10,10))
         with ThreadPoolExecutor(max_workers=2) as pool:
             ru,uk=list(pool.map(fit,['ru','uk']))
-        self.assertEqual(ru[0],17);self.assertAlmostEqual(ru[1],1.17);self.assertAlmostEqual(ru[2],.83)
+        self.assertEqual(ru[0],18);self.assertAlmostEqual(ru[1],1.18);self.assertAlmostEqual(ru[2],.82)
         self.assertEqual(uk[0],15);self.assertAlmostEqual(uk[1],1.15);self.assertAlmostEqual(uk[2],.85)
         self.assertEqual(dubbing_fit.tempo_percent(),15)
 
     def test_russian_bound_can_fit_saved_audio_that_exceeds_default_limit(self):
-        item={'start':0,'original_start':0,'original_end':10,'length':11.7}
+        item={'start':0,'original_start':0,'original_end':10,'length':11.8}
         with dubbing_fit.for_language('ru'):
-            self.assertAlmostEqual(dubbing_fit.fitting_speeds([item],10)[0],1.17)
+            self.assertAlmostEqual(dubbing_fit.fitting_speeds([item],10)[0],1.18)
         with self.assertRaises(RuntimeError):dubbing_fit.fitting_speeds([item],10)
         with self.assertRaises(ValueError):
             with dubbing_fit.for_language('ru'):
                 with dubbing_fit.for_language('pl'):self.assertEqual(dubbing_fit.tempo_percent(),15)
-                self.assertEqual(dubbing_fit.tempo_percent(),17)
+                self.assertEqual(dubbing_fit.tempo_percent(),18)
                 raise ValueError('test failure')
         self.assertEqual(dubbing_fit.tempo_percent(),15)
 
@@ -43,15 +43,15 @@ class DubbingFitTest(unittest.TestCase):
         with patch.object(languages,'_worker',side_effect=lambda *a:seen.append(dubbing_fit.tempo_percent())):
             languages.worker('p','voice','ru','elevenlabs',{})
             languages.worker('p','voice','uk','elevenlabs',{})
-        self.assertEqual(seen,[17,15]);self.assertEqual(dubbing_fit.TEMPO_PERCENT,15)
+        self.assertEqual(seen,[18,15]);self.assertEqual(dubbing_fit.TEMPO_PERCENT,15)
 
     def test_reduced_synthetic_padding_can_fit_without_exceeding_tempo(self):
-        items=[{'start':0,'original_start':0,'original_end':10,'length':11.7},
-               {'start':10,'original_start':10,'original_end':20.01,'length':11.7}]
+        items=[{'start':0,'original_start':0,'original_end':10,'length':11.8},
+               {'start':10,'original_start':10,'original_end':20.01,'length':11.8}]
         with dubbing_fit.for_language('ru'):
             with self.assertRaises(RuntimeError):dubbing_fit.fitting_speeds(items,20.01)
             speeds=dubbing_fit.fitting_speeds(items,20.01,gap=.01)
-            self.assertTrue(all(.83<=speed<=1.17 for speed in speeds))
+            self.assertTrue(all(.82<=speed<=1.18 for speed in speeds))
             self.assertLessEqual(sum(x['length']/speed for x,speed in zip(items,speeds))+.01,20.010001)
 
     def test_join_padding_counts_native_silence_with_tempo_and_edge_guards(self):

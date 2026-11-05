@@ -50,9 +50,9 @@ test('confirmation paints cached balance immediately and refreshes only account 
 });
 
 test('narration confirmation uses the selected language tempo allowance',async()=>{
-  const env=runtime();env.run("langData.tempo_percent=15;langData.items[0].tempo_percent=17");
+  const env=runtime();env.run("langData.tempo_percent=15;langData.items[0].tempo_percent=18");
   await env.run("langConfirmVoice('project-a','uk')");
-  assert.match(env.confirmations[0][1],/до 17%/);
+  assert.match(env.confirmations[0][1],/до 18%/);
   await env.run("langConfirmVoice('project-a','pl')");
   assert.match(env.confirmations[1][1],/до 15%/);
 });
