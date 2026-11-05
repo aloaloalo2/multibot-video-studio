@@ -117,6 +117,13 @@ async function renderStills() {
 // Text must never be cut by the frame edge (a direct rule of the user, 29 Oct 2026): every visible line drawn with text()
 // is logged with its on-canvas box; a line partly outside the frame is a FAIL. Fully off-screen text (still entering) and
 // lines drawn with { offscreen: true } are ignored.
+// a scene that does not load or throws draws nothing to check: a check that passed over it would be a false OK
+// (08: a broken e132 passed the text and logic checks). Both checks fail on any shot error.
+async function shotErrors(page) {
+  const errs = (await page.evaluate('window.ERRORS || []').catch(() => [])) || [];
+  if (errs.length) { console.log(`Shot errors (${errs.length}): the check cannot see these shots, fix them first:`); [...new Set(errs)].slice(0, 20).forEach((e) => console.log('  ' + e)); process.exitCode = 1; }
+  return errs.length;
+}
 async function textCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
   const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((+args['text-check'] > 0 ? +args['text-check'] : 0.25) * fps));
@@ -130,6 +137,7 @@ async function textCheck() {
       if (visible && cut && b.str.trim()) hits.push({ t: +(f / fps).toFixed(2), str: b.str, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round), canvas: [b.W, b.H] });
     }
   }
+  const broken = await shotErrors(page);
   await browser.close();
   const runs = []; for (const h of hits) { const r = runs.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.last = h.box; } else runs.push({ str: h.str, from: h.t, to: h.t, box: h.box, last: h.box, canvas: h.canvas }); }
   // text that crosses the edge while the camera travels past it is a normal pan; text that stays cut is the bug:
@@ -138,7 +146,7 @@ async function textCheck() {
   fs.writeFileSync(path.join(BUILD, 'text_check.json'), JSON.stringify(runs, null, 1));
   const fails = runs.filter((r) => r.fail);
   console.log(`Text check: ${runs.length - fails.length} text(s) only pass the edge during camera moves (${Math.ceil((fb - fa) / step)} frames sampled)`);
-  if (!fails.length) { console.log('Text check: OK, no text is held cut by the frame'); return; }
+  if (!fails.length) { console.log(broken ? 'Text check: FAIL, shots with errors were not checked' : 'Text check: OK, no text is held cut by the frame'); return; }
   console.log(`Text check: FAIL, ${fails.length} text(s) held cut by the frame edge:`);
   fails.forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  box ${r.box.join(',')} on ${r.canvas.join('x')}`));
   process.exitCode = 1;
@@ -246,6 +254,7 @@ async function logicCheck() {
       if (worst) hits.push({ kind: 'text half on', key: `text half on: "${tx.str}" across ${worst.name}`, t, text: `"${tx.str}" lies ${Math.round(wf * 100)}% on ${worst.name}, the rest off it` });
     }
   }
+  const broken = await shotErrors(page);
   await browser.close();
   const runs = []; for (const h of hits) { const r = runs.find((x) => x.key === h.key && h.t - x.to <= step / fps + 1e-6); if (r) r.to = h.t; else runs.push({ ...h, from: h.t, to: h.t }); }
   // depth and covered text held for a second or more (an instant at a cut inside a shot is not a scene); a blown-up picture
@@ -254,7 +263,7 @@ async function logicCheck() {
   fs.writeFileSync(path.join(BUILD, 'logic_check.json'), JSON.stringify(runs, null, 1));
   const fails = runs.filter((r) => r.fail);
   console.log(`Logic check: ${Math.ceil((fb - fa) / step)} frames sampled, ${fails.length} finding(s)`);
-  if (!fails.length) { console.log('Logic check: OK, no closer thing under a farther one, no covered text, no blown-up picture'); return; }
+  if (!fails.length) { console.log(broken ? 'Logic check: FAIL, shots with errors were not checked' : 'Logic check: OK, no closer thing under a farther one, no covered text, no blown-up picture'); return; }
   for (const kind of ['depth', 'text covered', 'text half on', 'blown up']) {
     const list = fails.filter((r) => r.kind === kind); if (!list.length) continue;
     console.log(`Logic check: FAIL, ${kind} (${list.length}):`);
