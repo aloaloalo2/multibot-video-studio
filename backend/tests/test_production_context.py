@@ -48,6 +48,14 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text())["mode"], "repair")
         self.assertEqual(json.dumps(self.plan), before)
 
+    def test_batches_only_include_unfinished_frames_in_groups_of_five(self):
+        self.request['frames'] = 13
+        self.plan['frames'] = [dict(self.plan['frames'][0], number=n) for n in range(1, 14)]
+        packet = context.build(self.project, self.request)
+        self.assertEqual(packet['batch_size'], 5)
+        self.assertEqual(packet['frame_batches'], [[3,4,5,6,7], [8,9,10,11,12], [13]])
+        self.assertIn('Пакет 1: 3, 4, 5, 6, 7', context.text(packet))
+
     def test_mismatched_plan_refuses_handoff_before_model(self):
         linked = json.loads((self.rz / "story/studio_frames.json").read_text())
         linked["frames"][1]["start"] = 2.5

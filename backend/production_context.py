@@ -13,6 +13,8 @@ from pathlib import Path
 import frame_progress
 import store
 
+FRAME_BATCH_SIZE = 5
+
 IMPORT = re.compile(r"(?:from\s*|import\s*\(?\s*)['\"]([^'\"]+)['\"]")
 
 
@@ -65,7 +67,8 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
             "script_sha256": plan.get("script_sha256"), "razgon_project": str(razgon) if razgon else None,
             "sources": {"plan": str(store.project_plan_file(project) or store.project_dir(pid) / "imported-plan.json"),
                         "shots": str(razgon / "story/shots.json") if razgon else None},
-            "issues": issues, "scene_issues": scene_issues, "pending_frames": targets, "frames": rows}
+            "issues": issues, "scene_issues": scene_issues, "pending_frames": targets, "frames": rows,
+            "batch_size": FRAME_BATCH_SIZE, "frame_batches": [targets[i:i + FRAME_BATCH_SIZE] for i in range(0, len(targets), FRAME_BATCH_SIZE)]}
 
 
 def write(project: dict, request: dict, *, repair: bool = False) -> tuple[Path, str]:
@@ -89,6 +92,8 @@ def text(packet: dict) -> str:
         lines += ["Збережені побажання автора:", packet["task_notes"]]
     if packet.get("previous_summary"):
         lines += ["Короткий підсумок попередньої роботи:", packet["previous_summary"]]
+    for index, batch in enumerate(packet.get("frame_batches", []), 1):
+        lines.append(f"Пакет {index}: " + ", ".join(map(str, batch)))
     for f in packet["frames"]:
         state = "готовий" if f["made"] else "зробити"
         missing = ",".join(f.get("missing_takes", [])) or "немає"
@@ -111,9 +116,11 @@ def instructions(summary: str) -> str:
 Повторно перевір лише змінені сцени та їхні стики з сусідами. Для нового кадру перевірка обов'язкова.
 Окремий render.mjs --sheet поверх тих самих перевірених зображень не потрібен.
 Помічників, вкладені Claude-сесії та паралельну генерацію не запускай.
-Працюй послідовно: один незавершений кадр, його відсутні дублі, збереження коду, перевірка трьох моментів і наступний кадр.
+Бери в роботу пакет до 5 незавершених кадрів з карти. Один агент робить увесь пакет, використовуючи спільні сцени й декорації.
+Зберігай код кожного кадру одразу після завершення. Перевір три моменти кожного кадру пакета одним запуском frame_review.py sheets --frames <номери пакета>.
+Коли пакет завершено й перевірено, переходь до наступного пакета до 5 кадрів. Після паузи пропускай уже готові кадри.
 Якщо кадр частково готовий, допиши лише відсутні дублі з карти. Наявні сцени, декорації та бібліотеки використовуй повторно.
-Не готуй наперед окремі набори декорацій для всього ролика: допоміжний код додавай лише для поточного кадру.
+Не готуй наперед окремі набори декорацій для всього ролика: допоміжний код додавай лише для поточного пакета.
 Після завершення кожного кадру перевір його наявність через tools/studio.py work <id>. Файли сцен є контрольними точками для продовження.
 Експорт запускається окремо кнопкою користувача.
 """

@@ -33,4 +33,4 @@
 
 ## Sequential frame checkpoints
 
-Agent and Task tools are disabled in the Claude CLI. Work through pending frames sequentially, reuse existing code and finish the current frame before preparing later scenery. The derived handoff names missing takes separately from existing scene files. This prevents repeated broad assignments after a pause. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
+Agent and Task tools are disabled in the Claude CLI. One agent works through batches of up to five pending frames, reuses shared code, saves each frame immediately and checks the batch before moving on. The derived handoff names missing takes separately from existing scene files. This prevents repeated broad assignments after a pause. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
