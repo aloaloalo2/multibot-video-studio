@@ -326,10 +326,10 @@ def _aligned_speeds(items: list[dict], total: float, speeds: list[float],
     return candidate(hi)[0]
 
 
-def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = False) -> list[float]:
+def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = False, gap: float = .05) -> list[float]:
     """Use spare time across the whole film before declaring a bounded fit impossible."""
     speeds=[]
-    gaps=join_gaps(items)+[0.]
+    gaps=join_gaps(items,gap)+[0.]
     for n,item in enumerate(items):
         start=float(item.get('original_start',item['start']))
         end=float(items[n+1].get('original_start',items[n+1]['start'])) if n+1<len(items) else total
@@ -346,7 +346,7 @@ def fitting_speeds(items: list[dict], total: float, *, allow_review: bool = Fals
                            'Усі аудіофрагменти збережені. Автоматичної платної перегенерації не буде.')
     def align(selected):
         try:
-            return _aligned_speeds(items,total,selected,[x['length'] for x in items])
+            return _aligned_speeds(items,total,selected,[x['length'] for x in items],gap)
         except AlignmentError:
             # Actual atempo output can differ from the estimate. Measure the
             # fastest legal candidates before deciding that local repair fails.
@@ -580,7 +580,7 @@ def recover(source: Path, segments: list[dict], folder: Path) -> list[dict]:
     return manifest
 
 
-def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progress=None) -> dict:
+def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progress=None, *, gap: float = .05) -> dict:
     """Fit retained takes locally, then balance surrounding silence without cutting speech."""
     import numpy as np
     rate = 48000
@@ -595,7 +595,7 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
         prepared.append({**item,'trim':trim,'length':trim['length'],'raw_length':trim['raw_length'],
                          'edge_silence':trim['edge_silence']})
     manifest=prepared
-    speeds=fitting_speeds(manifest,total)
+    speeds=fitting_speeds(manifest,total,gap=gap)
     def render(item, speed):
         pcm = command(['-i', parts/item['file'], '-af', narration_audio.filters(item,speed), '-ar', rate,
                        '-ac', '1', '-f', 'f32le', 'pipe:1'])
@@ -609,8 +609,8 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
         measured={**item,'_rebuild_position':n,'speed':speed}
         measured['fitted_length']=render(measured,speed)
         report.append(measured)
-    report=fit_measured(report,total,render)
-    report=centered_schedule(report,total)
+    report=fit_measured(report,total,render,gap=gap)
+    report=centered_schedule(report,total,gap=gap)
     for n,item in enumerate(report):
         audio=fitted[item.pop('_rebuild_position')]
         a=round(item['start']*rate)
@@ -626,7 +626,7 @@ def rebuild(parts: Path, manifest: list[dict], target: Path, total: float, progr
                  '-af', 'alimiter=limit=0.841395:level=false', '-c:a', 'libmp3lame', '-b:a', '192k', target])
     finally:
         raw.unlink(missing_ok=True)
-    return {'min_speed': min_speed(), 'phrases': report,
+    return {'min_speed': min_speed(), 'join_gap':gap, 'phrases': report,
             'changed': sum(x['speed'] < .999 for x in report),
             'long_gaps': [x for x in report if x['gap_after'] > LONG_GAP]}
 

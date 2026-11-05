@@ -2423,8 +2423,16 @@ def refit(pid: str, code: str, job: dict) -> None:
     progress(pid,job,1,'Вирівнюємо збережені аудіофрагменти без витрат кредитів')
     with tempfile.TemporaryDirectory(prefix='refit-',dir=work) as directory:
         folder=Path(directory)
-        report=dubbing_fit.rebuild(parts,manifest,folder/'centered.mp3',total,
-            progress=lambda n,count:progress(pid,job,round(85*n/count),f'Вирівнюємо фразу {n+1} з {count}'))
+        # Shorten only generated inter-phrase padding before rejecting retained
+        # speech. Source samples and native pauses stay intact; tempo stays bounded.
+        for gap in (.05,.03,.01):
+            try:
+                report=dubbing_fit.rebuild(parts,manifest,folder/'centered.mp3',total,gap=gap,
+                    progress=lambda n,count:progress(pid,job,max(job.get('progress',0),round(85*n/count)),
+                        f'{"Вирівнюємо фразу" if gap==.05 else "Коригуємо проміжки, фраза"} {n+1} з {count}'))
+                break
+            except dubbing_fit.AlignmentError:
+                if gap==.01:raise
         staged=folder/'voice.mp3'
         run(['ffmpeg','-v','error','-nostdin','-y','-i',str(folder/'centered.mp3'),'-af',
              'loudnorm=I=-16:TP=-1.5:LRA=11','-ar','48000','-b:a','192k',str(staged)],'вирівняти гучність')
@@ -2434,7 +2442,7 @@ def refit(pid: str, code: str, job: dict) -> None:
         gaps=dubbing_fit.pause_report(staged)
         dubbing_fit.require_valid_alignment(report['phrases'])
         progress(pid,job,98,'Зберігаємо аудіо й позначки для перевірки')
-        metadata={**previous,'made_at':time.time(),'duration':duration,'centered':True,
+        metadata={**previous,'made_at':time.time(),'duration':duration,'centered':True,'join_gap':report['join_gap'],
                   'latest':round(max(abs(x['start']-x['original_start']) for x in report['phrases']),1),
                   'fastest':round(max(x['speed'] for x in report['phrases']),3),
                   'slowest':round(min(x['speed'] for x in report['phrases']),3),

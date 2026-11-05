@@ -45,6 +45,15 @@ class DubbingFitTest(unittest.TestCase):
             languages.worker('p','voice','uk','elevenlabs',{})
         self.assertEqual(seen,[17,15]);self.assertEqual(dubbing_fit.TEMPO_PERCENT,15)
 
+    def test_reduced_synthetic_padding_can_fit_without_exceeding_tempo(self):
+        items=[{'start':0,'original_start':0,'original_end':10,'length':11.7},
+               {'start':10,'original_start':10,'original_end':20.01,'length':11.7}]
+        with dubbing_fit.for_language('ru'):
+            with self.assertRaises(RuntimeError):dubbing_fit.fitting_speeds(items,20.01)
+            speeds=dubbing_fit.fitting_speeds(items,20.01,gap=.01)
+            self.assertTrue(all(.83<=speed<=1.17 for speed in speeds))
+            self.assertLessEqual(sum(x['length']/speed for x,speed in zip(items,speeds))+.01,20.010001)
+
     def test_join_padding_counts_native_silence_with_tempo_and_edge_guards(self):
         edge={'leading':.035,'trailing':.035,'speed':.92}
         extra=dubbing_fit.join_gaps([{'edge_silence':edge},{'edge_silence':edge}])[0]
