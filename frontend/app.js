@@ -208,7 +208,7 @@ async function refreshProjects(){
 }
 
 function renameProject(project){
-  modal('Перейменувати випуск',`<label>Назва випуску<input id="rename-project-name" type="text" maxlength="100" value="${esc(project.name)}"></label>`,[{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+  modal('Перейменувати випуск',`<label>Назва випуску<input id="rename-project-name" type="text" maxlength="100" value="${esc(project.name)}"></label>`,[{label:'Зберегти',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');button.disabled=true;
     try{
       const name=$('rename-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');

@@ -265,7 +265,7 @@ The project-card creation dialog says «Створити нове прев’ю�
 
 «Трендове прев’ю» is a third creation action (`writer: trending`): send the English creative rules in `backend/prompts/trending_thumbnail.md`, video title, narration, author wishes and style references directly to Codex. Codex develops the idea itself. Keep visible image text in the video's language; create a new version without a base image. Do not run an extra Claude/DeepSeek prompt-writing stage.
 
-On project cards, clicking the title opens rename; remove the separate pencil action. Hover changes only the title colour to light mint. Omit tooltip, underline, background and extra border. Preserve normal card navigation and export locks.
+On project cards, clicking the title opens rename; remove the separate pencil action. Hover changes the title colour to light mint and adds a soft glow to its letters. Omit tooltip, underline, background and extra border. The rename popup has only Save; its cross closes it. Preserve normal card navigation and export locks.
 
 On project cards, omit the thumbnail creation action until the episode has enough made frames for `thumbnailReady`. Do not render a grey unavailable button. Once ready, show the normal creation action; keep export locks unchanged.
 

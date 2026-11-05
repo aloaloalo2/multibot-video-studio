@@ -1020,10 +1020,10 @@ select:hover:not(:disabled){filter:brightness(1.08)}
 select:disabled{cursor:not-allowed;opacity:.6}
 select option{background:#232327;color:#f1f1f2}
 /* a long title's second line sits over the top of the cover (its dark fade is made for it), not under it */
-.overview-projects .project-card>h2{position:absolute;top:12px;left:16px;right:16px;padding-right:100px;z-index:3;display:flex;gap:8px;pointer-events:none}
+.overview-projects .project-card>h2{position:absolute;top:12px;left:16px;right:16px;padding-right:100px;z-index:3;display:flex;gap:8px;pointer-events:none;overflow:visible}
 .project-title-spacer{height:44px;flex:0 0 44px;order:0}
-.project-card .project-title-rename{pointer-events:auto;min-width:0;padding:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;transition:background .15s,color .15s}
-.project-card .project-title-rename:hover:not(:disabled),.project-card .project-title-rename:focus-visible{background:none;color:#9de6c8;text-decoration:none;box-shadow:none;outline:none}
+.project-card .project-title-rename{pointer-events:auto;min-width:0;padding:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;filter:none;transition:color .15s,filter .15s}
+.project-card .project-title-rename:hover:not(:disabled),.project-card .project-title-rename:focus-visible{background:none;color:#b3f5db;filter:drop-shadow(0 0 5px rgba(114,240,187,.65)) drop-shadow(0 0 10px rgba(114,240,187,.22));text-decoration:none;box-shadow:none;outline:none}
 .project-card .project-title-rename:disabled{cursor:default;opacity:1}
 /* stacked fields in a settings section keep a gap */
 .settings-section>label+label{margin-top:12px}
