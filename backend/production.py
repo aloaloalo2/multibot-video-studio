@@ -103,6 +103,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні сцени, перевір змінені кадри й їхні сусідні стики та зроби крок 4.\n\n"
                if notes.strip() else "")
+    if request.get("continuation_mode") == "handoff":
+        remarks = f"Продовження зі збережених файлів:\n{notes.strip()}\n\n"
     return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
@@ -171,6 +173,8 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     tools = store.APP_ROOT.name + "/tools"
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
+    if request.get("continuation_mode") == "handoff":
+        remarks = f"Продовження зі збережених файлів:\n{notes.strip()}\n\n"
     return f"""Ти монтажер випуску в VideoKey Studio. План кадрів іде за озвучкою, автор натиснув «Почати створення ролика».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
@@ -239,13 +243,13 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             log = run_log(pid, request)
             started = time.time()
             set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False, paused=False)
-        # Pauses resume their session; a new repair gets a compact file handoff
-        # instead of carrying hundreds of thousands of old tokens into every step.
+        # Every continuation gets a fresh session and a compact disk checkpoint.
+        # A cold resume after quota reset must not reload the entire old history.
         text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
-        _, handoff = production_context.write(project, request, repair=bool(notes.strip()) and not request.get("continue_session"))
+        _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
         text += production_context.instructions(handoff)
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=request.get("session_id") if request.get("continue_session") else None, effort=EFFORT)
+                                       resume=None, effort=EFFORT)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
@@ -284,8 +288,8 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 razgon_sound.start(pid, "production")
 
 
-def fix(pid: str, notes: str, *, continue_session: bool = False) -> dict:
-    """Repair through a fresh handoff; only an explicit pause/limit resumes the old session."""
+def fix(pid: str, notes: str, *, handoff: bool = False) -> dict:
+    """Repair or continue through a fresh session with the current disk checkpoint."""
     notes = str(notes or "").strip()
     if not notes:
         raise store.StudioError("Напишіть, що виправити")
@@ -293,7 +297,10 @@ def fix(pid: str, notes: str, *, continue_session: bool = False) -> dict:
     request = project.get("production_request") or {}
     if request.get("status") not in {"done", "failed"}:
         raise store.StudioError("Агент ще працює над цими кадрами")
-    set_request(pid, status="requested", paused=False, continue_session=continue_session,
+    task_notes = str(request.get("task_notes", request.get("notes", "")) or "") if handoff else notes[:4000]
+    set_request(pid, status="requested", paused=False, continue_session=False,
+                continuation_mode="handoff" if handoff else "repair", task_notes=task_notes,
+                previous_session_id=request.get("session_id"),
                 created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
     start(pid, notes)
     return store.load_project(pid)
@@ -304,7 +311,7 @@ RESUME = ("Ліміт підписки оновився. Продовж робо
 
 
 def resume(pid: str) -> dict:
-    """Go on with frames a run left when the subscription limit ran out, in that run's own session."""
+    """Continue saved frames with a compact handoff, preserving completed work and author wishes."""
     with LOCK:
         if pid in ACTIVE:
             raise store.StudioError('Ще зупиняємо попередню роботу. Спробуйте за кілька секунд.',409)
@@ -314,7 +321,7 @@ def resume(pid: str) -> dict:
         raise store.StudioError("Агент не стоїть на паузі")
     notes=("Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
            "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else RESUME
-    return fix(pid, notes, continue_session=True)
+    return fix(pid, notes, handoff=True)
 
 
 def pause(pid: str) -> dict:

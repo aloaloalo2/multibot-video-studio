@@ -27,6 +27,7 @@ PREVIEW = "Превью.png"
 FOLDER = "Превью"
 TIMEOUT = 20 * 60
 PROMPT_TIMEOUT = 10 * 60
+TRENDING_RULES = Path(__file__).parent / "prompts" / "trending_thumbnail.md"
 # the prompt is the creative half of the thumbnail (user, 30 October 2026: «краще, щоб Claude Code писав промпт, як і
 # раніше було... получались дуже круті результати»)
 PROMPT_EFFORT = "high"
@@ -90,7 +91,7 @@ def versions(pid: str) -> list[dict]:
         number = int(match.group(1))
         prompt = work / f"Промпт прев'ю v{number}.txt"
         head = prompt.read_text(encoding="utf-8", errors="replace")[:200] if " до " not in path.name and prompt.is_file() else ""
-        writer = "deepseek" if head.startswith("[DeepSeek]") else "edit" if head.startswith("[Правка") else None
+        writer = "deepseek" if head.startswith("[DeepSeek]") else "trending" if head.startswith("[Трендове прев’ю") else "edit" if head.startswith("[Правка") else None
         edit = re.match(r"\[Правка Превью (?:до )?v(\d+)\.png\] (.*)", head)
         items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
                       **({"from": int(edit.group(1)), "notes": edit.group(2).strip()} if edit else {}),
@@ -129,7 +130,7 @@ def defaults(pid: str) -> dict:
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES,
-            "versions": versions(pid)}
+            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"]}
 
 
 def job_path(pid: str) -> Path:
@@ -257,6 +258,25 @@ Use the built-in image generation tool with exactly this prompt and make exactly
 directory as "{name}" and reply only with the saved path."""
 
 
+def trending(title: str, script: str, wishes: str, name: str) -> str:
+    """Codex owns both the creative concept and drawing, using the author's English rules."""
+    rules = TRENDING_RULES.read_text(encoding="utf-8").strip()
+    return f"""{rules}
+
+VIDEO TITLE (preserve its language):
+{title}
+
+AUTHOR'S WISHES (take priority when choosing the concept):
+{wishes.strip() or 'Choose the strongest concept yourself.'}
+
+VIDEO NARRATION:
+{script.strip()[:12000]}
+
+Save the finished image in the current working directory as "{name}".
+This creates a new thumbnail version. Use the attached frames for style and character reference.
+"""
+
+
 def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
     """Claude Code writes the picture's prompt; returns it with the run's answer (cost, session)."""
     try:
@@ -349,9 +369,13 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
             refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
             # 1. Claude (or DeepSeek, on trial) picks the moment and writes the prompt; it is kept even if the drawing fails
-            text = brief(title, script, wishes, folder, refs)
-            written, answer = write_prompt_deepseek(text, folder, refs) if writer == "deepseek" else write_prompt(text, folder.parent, work)
-            note = ("[DeepSeek] " if writer == "deepseek" else "") + written
+            if writer == "trending":
+                written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
+                note = "[Трендове прев’ю · Codex] " + written
+            else:
+                text = brief(title, script, wishes, folder, refs)
+                written, answer = write_prompt_deepseek(text, folder, refs) if writer == "deepseek" else write_prompt(text, folder.parent, work)
+                note = ("[DeepSeek] " if writer == "deepseek" else "") + written
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
@@ -359,7 +383,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
         for ref in refs:
             command += ["-i", str(ref)]
-        result = subprocess.run(command + ["-"], input=written if base else drawing(written, name), cwd=work, text=True,
+        result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
                                 capture_output=True, timeout=TIMEOUT)
         (work / f"Лог генерації v{number}.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
         made = work / name
@@ -394,7 +418,9 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
 
 
 def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None) -> dict:
-    writer = "deepseek" if writer == "deepseek" else "claude"
+    writer = writer if writer in {"deepseek", "trending"} else "claude"
+    if writer == "trending" and base:
+        raise store.StudioError("Трендове прев’ю створюється як нова версія, без бази для редагування", 400)
     if base:
         version_file(pid, base)
         if not str(wishes or "").strip():
@@ -411,7 +437,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
         if pid in ACTIVE:
             return state(pid)
         ACTIVE.add(pid)
-        data = {"status": "running", "stage": "drawing" if base else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
+        data = {"status": "running", "stage": "drawing" if base or writer == "trending" else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
                 "writer": writer, **({"base": base} if base else {})}
         store.atomic_json(job_path(pid), data)
     threading.Thread(target=run, args=(pid, title, script, wishes, writer, base), daemon=True).start()

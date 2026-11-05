@@ -194,7 +194,7 @@ function projectActions(project){
   const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(canCreateThumbnail)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;
-  for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(project)]]:[]),['rename','Перейменувати випуск',()=>renameProject(project)],['delete','Видалити випуск',()=>deleteProject(project)]]){
+  for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(project)]]:[]),['delete','Видалити випуск',()=>deleteProject(project)]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
   }
   return actions;
@@ -324,6 +324,15 @@ function projectCreationDate(timestamp){
   return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
 }
 
+function projectCardHeading(project){
+  const heading=document.createElement('h2');heading.innerHTML=projectIcon;
+  const button=document.createElement('button');button.type='button';button.className='project-title-rename';
+  button.textContent=project.name || 'Без назви';
+  button.setAttribute('aria-label',`Перейменувати випуск «${project.name || 'Без назви'}»`);
+  button.addEventListener('click',event=>{event.stopPropagation();renameProject(project);});
+  heading.append(button);return heading;
+}
+
 function projectProductionCardState(request){
   const total=Math.max(0,Number(request?.frames)||0),done=Math.max(0,Math.min(total,Number(request?.made)||0));
   return {total,done,working:['requested','in_progress'].includes(request?.status),
@@ -342,7 +351,7 @@ function renderOverview() {
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
+    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
     // While the agent makes the frames the card shows how far it got and does not open; after it is done, paused or
     // stopped, it opens as usual.
     const making=project.production_request,makingState=projectProductionCardState(making),producing=makingState.working;
@@ -383,7 +392,7 @@ function renderOverview() {
       open.insertBefore(box,open.querySelector('.project-meta'));
       card.classList.add('producing');card.setAttribute('aria-busy','true');open.setAttribute('aria-disabled','true');
     }
-    card.append(open,projectActions(project));
+    card.append(open,projectCardHeading(project),projectActions(project));
     if(producing||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))){
       const control=productionControl(project.id,producing);control.classList.add('project-production-control');card.append(control);
     }
@@ -414,7 +423,7 @@ function updateOverviewExports(){
     card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')));
     const making=card.querySelector('.project-making');if(making)making.hidden=active;
     const control=card.querySelector('.project-production-control');if(control)control.hidden=active;
-    for(const button of card.querySelectorAll('.project-action'))button.disabled=active;
+    for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active;
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));

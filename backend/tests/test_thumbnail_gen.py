@@ -53,6 +53,35 @@ class ThumbnailTest(unittest.TestCase):
         self.assertTrue(drawing.startswith("A neon close-up."))
         self.assertIn('"Превью v2.png"', drawing)
 
+    def test_trending_codex_gets_english_rules_and_original_language_content(self):
+        text = thumbnail_gen.trending("Що буде завтра?", "Українська озвучка.", "Більше емоції", "Превью v2.png")
+        for part in ("40-70%", "Signal colours", "Peak action", "Concrete stakes", "Atmospheric integration",
+                     "Title and image synergy", "same language", "Що буде завтра?", "Українська озвучка.",
+                     "Більше емоції", '"Превью v2.png"', "Choose one clear"):
+            self.assertIn(part, text)
+
+    def test_trending_goes_directly_to_codex_and_is_saved_as_a_new_version(self):
+        with self.tools(), patch.object(thumbnail_gen, "write_prompt") as claude, \
+             patch.object(thumbnail_gen, "write_prompt_deepseek") as deepseek:
+            thumbnail_gen.run(self.project["id"], "Що буде завтра?", "Текст ролика.", "Велике обличчя", writer="trending")
+        claude.assert_not_called(); deepseek.assert_not_called()
+        self.assertEqual(len(self.calls), 1)
+        command, sent = self.calls[0]
+        self.assertIn("exec", command)
+        self.assertIn("40-70%", sent["input"])
+        self.assertIn("Що буде завтра?", sent["input"])
+        self.assertEqual(thumbnail_gen.state(self.project["id"])["prompt_cost_usd"], 0)
+        self.assertEqual(thumbnail_gen.versions(self.project["id"])[0]["writer"], "trending")
+
+    def test_trending_start_skips_prompt_stage_and_disallows_edit_base(self):
+        self.made_frames(2)
+        with patch.object(thumbnail_gen, "CODEX", Path(sys.executable)), patch.object(thumbnail_gen.threading, "Thread") as thread:
+            job = thumbnail_gen.start(self.project["id"], "T", "S", writer="trending")
+        self.assertEqual((job["writer"], job["stage"]), ("trending", "drawing"))
+        self.assertEqual(thread.call_args.kwargs["args"][4], "trending")
+        with self.assertRaisesRegex(store.StudioError, "без бази"):
+            thumbnail_gen.start(self.project["id"], "T", "S", writer="trending", base="Превью v1.png")
+
     def tools(self, picture=True, answer=None):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""
         self.calls = []

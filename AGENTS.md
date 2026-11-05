@@ -2,7 +2,7 @@
 
 ## Production efficiency (5 November 2026)
 
-Use the compact derived handoff `production-context.txt` and `tools/studio.py work P` before scene work. Preserve the accepted Studio frame ids/times and Razgon shots; see [docs/PRODUCTION_EFFICIENCY.md](docs/PRODUCTION_EFFICIENCY.md). New repair requests start fresh Claude sessions; explicit pause/limit continuation resumes its existing session. Each repair keeps a separate cost log. Review new/changed frame dependencies and adjacent cuts once through `frame_review.py`, retaining unchanged stills/verdicts and requiring a current whole-film status. Keep checks for genuine visual defects, including detached neon contours. Asset selection uses saved picks, one bounded library search/contact sheet, then generation when no candidate fits. Do not lower the user's chosen model/effort or start paid production for a workflow test.
+Use the compact derived handoff `production-context.txt` and `tools/studio.py work P` before scene work. Preserve the accepted Studio frame ids/times and Razgon shots; see [docs/PRODUCTION_EFFICIENCY.md](docs/PRODUCTION_EFFICIENCY.md). Repair requests and pause/limit continuations start fresh Claude sessions with a compact disk checkpoint, author wishes and remaining frame ids; never replay the old conversation. Each repair keeps a separate cost log. Review new/changed frame dependencies and adjacent cuts once through `frame_review.py`, retaining unchanged stills/verdicts and requiring a current whole-film status. Keep checks for genuine visual defects, including detached neon contours. Asset selection uses saved picks, one bounded library search/contact sheet, then generation when no candidate fits. Do not lower the user's chosen model/effort or start paid production for a workflow test.
 
 ## Video production workflow
 
@@ -263,6 +263,10 @@ writes the prompt from the same brief, the frames attached as pictures (`thumbna
 
 The project-card creation dialog says «Створити нове прев’ю» and contains only the optional idea field, creation actions and any active/error status. Do not show the current cover, version library or explanatory library paragraph in this dialog: those make a new-image request look like an edit. Keep existing images in the Preview tab. A creation request sends wishes without a `base` image; its textarea is separate from the tab's own field.
 
+«Трендове прев’ю» is a third creation action (`writer: trending`): send the English creative rules in `backend/prompts/trending_thumbnail.md`, video title, narration, author wishes and style references directly to Codex. Codex develops the idea itself. Keep visible image text in the video's language; create a new version without a base image. Do not run an extra Claude/DeepSeek prompt-writing stage.
+
+On project cards, clicking the title opens rename; remove the separate pencil action. Hover changes only the title colour to light mint. Omit tooltip, underline, background and extra border. Preserve normal card navigation and export locks.
+
 On project cards, omit the thumbnail creation action until the episode has enough made frames for `thumbnailReady`. Do not render a grey unavailable button. Once ready, show the normal creation action; keep export locks unchanged.
 
 ## Razgon lives in the studio's folder (1 November 2026)
@@ -516,7 +520,7 @@ Each language column also has a separate «Озвучка перекладу» c
 
 ## Pause frame creation and current channel logos (4 November 2026)
 
-`POST /api/projects/<id>/production-pause` stops this project's production worker and children while preserving the existing frames and session ID. Set `paused: true` on the saved request and include it in project-list responses so both the card and plan show a resume control. `POST .../production-resume` waits until the stopped worker exits and continues the same session, keeping finished assets. A queued paused worker must not launch. Never resume a user's paused project as part of UI testing.
+`POST /api/projects/<id>/production-pause` stops this project's production worker and children while preserving the existing frames and session ID. Set `paused: true` on the saved request and include it in project-list responses so both the card and plan show a resume control. `POST .../production-resume` waits until the stopped worker exits and starts a fresh session from the compact saved handoff, keeping finished assets and original author wishes. A queued paused worker must not launch. Never resume a user's paused project as part of UI testing.
 
 `logo_layer.bind` resolves managed channel-logo clips from the channel's current source and placement on project reads. Legacy copies named `channel_logo.png` are relinked; unrelated host/name plates stay unchanged. Prepared overlays have immutable versioned paths under the channel's Studio data, shared by preview and new exports. Previously prepared exports retain their snapshot. Do not rewrite montage history or increment the project revision merely to resolve a newer logo. `GET /api/projects/<id>/branding?version=...` lets an open editor refresh its logo while preserving the playhead and selection. Disabling/removing a channel logo removes its managed overlay from the current view.
 

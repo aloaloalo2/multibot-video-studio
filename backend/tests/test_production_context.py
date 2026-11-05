@@ -61,7 +61,7 @@ class ContextTest(unittest.TestCase):
         (self.rz / "scenes/missing.js").write_text("export const fixed = true;")
         self.assertEqual(context.build(self.project, self.request)["scene_issues"], [])
 
-    def test_fixes_are_fresh_but_pause_resume_retains_session(self):
+    def test_pause_continuation_uses_handoff_preserving_author_wishes(self):
         self.project["production_request"] = {**self.request, "status": "done", "session_id": "large-old-session"}
         with patch.object(store, "load_project", return_value=self.project), \
              patch.object(store, "save_project"), patch.object(production, "start"):
@@ -69,7 +69,9 @@ class ContextTest(unittest.TestCase):
             self.assertFalse(self.project["production_request"]["continue_session"])
             self.project["production_request"].update(status="failed", paused=True)
             production.resume("test")
-            self.assertTrue(self.project["production_request"]["continue_session"])
+            self.assertFalse(self.project["production_request"]["continue_session"])
+            self.assertEqual(self.project["production_request"]["continuation_mode"], "handoff")
+            self.assertEqual(self.project["production_request"]["task_notes"], "Fix frame 2")
             self.assertEqual(self.project["production_request"]["session_id"], "large-old-session")
 
     def test_each_repair_has_its_own_cost_log(self):
@@ -78,7 +80,19 @@ class ContextTest(unittest.TestCase):
         third = production.run_log("test", {**self.request, "fixes": 2})
         self.assertEqual(len({first, second, third}), 3)
 
-    def test_worker_resumes_only_explicit_continuation(self):
+    def test_continuation_handoff_preserves_summary_wishes_and_remaining_frames(self):
+        request = {**self.request, "continuation_mode": "handoff", "task_notes": "Fix the chair in frame 3",
+                   "summary": "Frames 1 and 2 are ready."}
+        packet = context.build(self.project, request, repair=True)
+        self.assertEqual(packet["mode"], "continue")
+        self.assertEqual(packet["pending_frames"], [3])
+        text = context.text(packet)
+        self.assertIn("Fix the chair in frame 3", text)
+        self.assertIn("Frames 1 and 2 are ready.", text)
+        self.assertIn("001 0.00-3.00 готовий", text)
+        self.assertIn("003 6.00-9.00 зробити", text)
+
+    def test_worker_never_resends_old_history_even_for_a_legacy_continue_flag(self):
         for continuation in (False, True):
             self.project["production_request"] = {**self.request, "status": "requested", "session_id": "old-session",
                                                   "continue_session": continuation}
@@ -88,7 +102,7 @@ class ContextTest(unittest.TestCase):
                  patch.object(production.razgon_sound, "start"), \
                  patch.object(production.director, "claude", return_value=(0, {"result": "Ready", "session_id": "new"})) as model:
                 production.run("test", Path("claude"), "Fix frame 2")
-            self.assertEqual(model.call_args.kwargs["resume"], "old-session" if continuation else None)
+            self.assertIsNone(model.call_args.kwargs["resume"])
 
     def test_mismatched_source_never_spends_a_model_request(self):
         (self.rz / "story/studio_frames.json").write_text('{"script_sha256":"other","frames":[]}')

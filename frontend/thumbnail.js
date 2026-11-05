@@ -17,7 +17,7 @@ function thumbLibrary(id,versions){
   const box=document.createElement('div');box.className='thumb-library';
   if(!versions?.length)return box;
   const url=name=>`/api/projects/${encodeURIComponent(id)}/thumbnails/${encodeURIComponent(name)}`;
-  const tag=item=>item.writer==='deepseek'?'<i>DeepSeek</i>':item.writer==='edit'?`<i title="${esc(item.notes || '')}">Правка v${item.from}</i>`:'';
+  const tag=item=>item.writer==='deepseek'?'<i>DeepSeek</i>':item.writer==='trending'?'<i>Трендове</i>':item.writer==='edit'?`<i title="${esc(item.notes || '')}">Правка v${item.from}</i>`:'';
   box.innerHTML=`<p class="thumb-library-head"><b>Ваші прев’ю</b><span>${versions.length} · натисніть на картинку, щоб зробити її обкладинкою</span></p>
     <div class="thumb-library-grid">${versions.map(item=>`<div class="thumb-tile${item.current?' current':''}" data-name="${esc(item.name)}">
       <button type="button" class="thumb-pick" aria-pressed="${item.current}" title="${item.current?'Зараз обкладинка':'Зробити обкладинкою'}"><img src="${url(item.name)}?v=${Math.round(item.time)}" alt="" loading="lazy"></button>
@@ -69,7 +69,9 @@ async function openThumbnail(project){
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
-    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},{label:'Створити нове прев’ю',primary:true,run:()=>generateThumbnail(project,'claude',$('thumb-create-wishes').value)}]);
+    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},
+     {label:'Створити нове прев’ю',primary:true,run:()=>generateThumbnail(project,'claude',$('thumb-create-wishes').value)},
+     {label:'Трендове прев’ю',run:()=>generateThumbnail(project,'trending',$('thumb-create-wishes').value)}]);
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
   showThumbnailState(project.id);
@@ -80,15 +82,19 @@ function showThumbnailState(id){
   const box=$('thumb-state'),run=thumbnailRuns.get(id);
   if(!box)return;
   // the window's button and the tab's: busy while a run goes on, and the tab's also until a couple of frames are made
-  for(const button of document.querySelectorAll('#modal-actions button, .thumb-view-generate'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
+  for(const button of document.querySelectorAll('#modal-actions button, .thumb-view-generate, .thumb-view-trending'))button.disabled=thumbnailBusy(id) || button.dataset.gated==='1';
   box.dataset.status=run?.status || '';
-  const writer=run?.writer==='deepseek'?'DeepSeek':'Claude';
-  box.textContent=!run?'':run.status==='running'?({prompt:`${writer} вибирає момент і пише промпт, зазвичай до хвилини.`,drawing:run.base?'Codex вносить вашу правку, зазвичай 1–3 хвилини.':`Codex малює прев’ю за промптом ${writer}, зазвичай 1–3 хвилини.`}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'':`Не вдалося: ${run.error}`;
+  const writer=run?.writer==='trending'?'Codex':run?.writer==='deepseek'?'DeepSeek':'Claude';
+  box.textContent=!run?'':run.status==='running'?({prompt:`${writer} вибирає момент і пише промпт, зазвичай до хвилини.`,drawing:run.base?'Codex вносить вашу правку, зазвичай 1–3 хвилини.':run.writer==='trending'?'Codex продумує ідею й створює трендове прев’ю.':`Codex малює прев’ю за промптом ${writer}, зазвичай 1–3 хвилини.`}[run.stage] || 'Codex малює прев’ю, зазвичай 1–3 хвилини.')+' Вікно можна закрити, картка оновиться сама.':run.status==='done'?'':`Не вдалося: ${run.error}`;
 }
 
 async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes')?.value || ''){
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
   try{
+    if(writer==='trending'){
+      const available=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);
+      if(!available.writers?.includes('trending'))throw new Error('Трендове прев’ю стане доступним після безпечного перезапуску студії. Зараз триває робота.');
+    }
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);
     thumbnailRuns.set(project.id,job);
     // the window closes once the wishes are sent: the card behind it shows «Малюємо прев’ю» while the picture is made
@@ -164,8 +170,10 @@ function renderThumbView(){
   if(!open){if(section.childElementCount)section.replaceChildren();delete section.dataset.project;return;}
   if(section.dataset.project!==project.id)buildThumbView(section,project);
   // the server counts made frames as it gates the run: pictures on the timeline and frames drawn as code alike
-  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=thumbnailFrames,button=section.querySelector('.thumb-view-generate');
-  button.dataset.gated=ready?'':'1';button.disabled=!ready || thumbnailBusy(project.id);
+  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=thumbnailFrames;
+  for(const button of section.querySelectorAll('.thumb-view-generate, .thumb-view-trending')){
+    button.dataset.gated=ready?'':'1';button.disabled=!ready || thumbnailBusy(project.id);
+  }
   section.querySelector('.thumb-view-gate').hidden=ready;
 }
 async function buildThumbView(section,project){
@@ -176,10 +184,11 @@ async function buildThumbView(section,project){
       <div class="thumb-preview-meta"><span class="thumb-preview-language">Оригінал</span><div><button type="button" class="secondary thumb-set-cover" hidden>Зробити обкладинкою</button></div></div></div>
     <aside class="thumb-compose"><span class="thumb-compose-icon">${thumbnailIcon}</span><h2>Нова ідея</h2>
       <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
-      <div class="thumb-view-actions"><button type="button" class="primary thumb-view-generate">Згенерувати</button><p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p></div>
+      <div class="thumb-view-actions"><button type="button" class="primary thumb-view-generate">Згенерувати</button><button type="button" class="secondary thumb-view-trending">Трендове прев’ю</button><p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p></div>
       <p class="thumb-view-gate" hidden>Для прев’ю потрібні хоча б ${thumbnailFrames} готові кадри ролика.</p></aside></div>
     <section class="thumb-collection"><header><h2>Галерея</h2><div class="thumb-filters" role="group" aria-label="Мова прев’ю"></div></header><div class="thumb-gallery-grid"></div></section></div>`;
   section.querySelector('.thumb-view-generate').addEventListener('click',()=>generateThumbnail(state.project));
+  section.querySelector('.thumb-view-trending').addEventListener('click',()=>generateThumbnail(state.project,'trending'));
   if(!thumbRoute)fetch(`/channels/${state.channel.id}/projects/${id}/preview`,{method:'GET'}).then(response=>{if(response.ok&&response.headers.get('content-type')?.includes('text/html')){thumbRoute='/preview';if(state.view==='thumb')syncRoute(true);}}).catch(()=>{});
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);}catch(error){status(error.message,true);return;}

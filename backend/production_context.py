@@ -57,7 +57,10 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
                      "scene_files": sorted({str(Path(p).relative_to(razgon)) for t in takes for p in owners.get(t, [])})})
     targets = [r["number"] for r in rows if not r["made"]]
     return {"schema": 1, "project_id": pid, "request_id": request["id"],
-            "mode": "repair" if repair else "build", "plan_sha256": digest(plan.get("frames", [])),
+            "mode": "continue" if request.get("continuation_mode") == "handoff" else "repair" if repair else "build",
+            "task_notes": str(request.get("task_notes") or "")[:4000],
+            "previous_summary": str(request.get("summary") or "")[-1200:],
+            "plan_sha256": digest(plan.get("frames", [])),
             "script_sha256": plan.get("script_sha256"), "razgon_project": str(razgon) if razgon else None,
             "sources": {"plan": str(store.project_plan_file(project) or store.project_dir(pid) / "imported-plan.json"),
                         "shots": str(razgon / "story/shots.json") if razgon else None},
@@ -81,6 +84,10 @@ def text(packet: dict) -> str:
     lines = [f"Проєкт {packet['project_id']}. Карта чинного монтажу, не окремий план.",
              f"Razgon: {packet.get('razgon_project') or 'немає'}", f"План: {packet['sources']['plan']}",
              "Повний зміст конкретних кадрів: tools/studio.py plan <id> --frames N-M."]
+    if packet.get("task_notes"):
+        lines += ["Збережені побажання автора:", packet["task_notes"]]
+    if packet.get("previous_summary"):
+        lines += ["Короткий підсумок попередньої роботи:", packet["previous_summary"]]
     for f in packet["frames"]:
         state = "готовий" if f["made"] else "зробити"
         lines.append(f"{f['number']:03d} {f['start']:.2f}-{f['end']:.2f} {state} {f['format']} "
