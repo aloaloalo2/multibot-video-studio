@@ -302,7 +302,12 @@ def normalize_for_engine(project: dict) -> dict:
     if project.get("schema_version") == 2:
         layers = []
         assets = {asset["id"]: asset for asset in store.discover_assets(project)}
-        voice = audio_level.voice_gains(project)   # the voice at 100% is the Studio's standard level (audio_level.py)
+        # the voice at 100% is the Studio's standard level (audio_level.py): the export plays its leveled copy, made now
+        # if the background has not made it yet
+        voices = audio_level._voice_paths(project)
+        for voice_path in voices.values():
+            audio_level.leveled(voice_path, wait=True)
+        voice = audio_level.voice_gains(project)
         visual_count = 0
         for z, layer in enumerate(project.get("tracks", [])):
             rendered_clips = []
@@ -319,7 +324,9 @@ def normalize_for_engine(project: dict) -> dict:
                     if asset is None:
                         raise store.StudioError("Для кліпу «%s» ще не вибрано матеріал" % clip.get("title", ""))
                     source = Path(asset["path"]).resolve()
-                    if not valid_local_source(source, project):
+                    if clip.get("asset_id") in voices:
+                        source = audio_level.leveled(source).resolve()
+                    if source.parent != audio_level.leveled_dir().resolve() and not valid_local_source(source, project):
                         raise store.StudioError("Матеріал кліпу недоступний")
                 if kind != "audio":
                     visual_count += 1
@@ -1279,7 +1286,8 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             project = store.load_project(match.group(1))
             asset = store.resolve_asset(project, match.group(2))
-            return self.serve_media(Path(asset["path"]))
+            # the voice plays its copy at the standard level once it is made (audio_level.leveled)
+            return self.serve_media(audio_level.voice_file(project, match.group(2), Path(asset["path"])))
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)
         if match:
             return self.json_response({"job": load_job(match.group(1))})

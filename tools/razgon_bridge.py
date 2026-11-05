@@ -530,6 +530,14 @@ def render_bed(razgon: Path) -> Path | None:
     if not hasattr(MIX, "fit"):   # beds() yielding (part, gain, at) came with fit()
         return _bed_from_whole_mix(razgon, MIX)
     config, story = read_json(razgon / "config.json"), read_json(razgon / "story" / "shots.json")
+    # the Studio's one sound standard (backend/audio_level.py): music and effects at its levels in every episode, made
+    # against the voice as the Studio plays it (brought to −16 LUFS), not against the file the voice service delivered
+    sys.path.insert(0, str(STUDIO_BACKEND))
+    import audio_level
+    config = {**config, "music": {**(config.get("music") or {}), "gainDb": audio_level.MUSIC_DB},
+              "sfx": {**(config.get("sfx") or {}), "gainDb": audio_level.SFX_DB}}
+    level = audio_level.measure(razgon / config["voiceover"])
+    voice_gain = 10 ** (audio_level.standard_db(level) / 20) if level else 1.0
     n = MIX.secs(story.get("duration") or story["shots"][-1]["end"])
     voice = MIX.fit(MIX.load_any(str(razgon / config["voiceover"])), n)
     level, envelope = MIX.voice_level(voice)
@@ -546,6 +554,7 @@ def render_bed(razgon: Path) -> Path | None:
     if bed is None:
         return None
     MIX.minus_lp(bed, 25)
+    bed *= voice_gain   # the bed rises and falls with the voice the Studio levels
     if max(float(np.abs(bed[i:i + MIX.BLOCK]).max(initial=0)) for i in range(0, n, MIX.BLOCK)) < 1e-5:
         return None
     path = razgon / "build" / "studio" / "music_sfx.wav"

@@ -2833,7 +2833,10 @@ def original_file(pid: str) -> Path:
     voice = source(store.load_project(pid))["voice"]
     if not voice or not voice.is_file():
         raise store.StudioError("Не знайдено озвучку випуску", 404)
-    return voice
+    # at the standard level, like the translations beside it (they are made at −16 LUFS): a quiet HeyGen original
+    # sounded far quieter than its translations (episode 08, 5 November 2026)
+    import audio_level
+    return audio_level.leveled(voice, wait=False)
 
 
 def file_path(pid: str, code: str, kind: str) -> Path:

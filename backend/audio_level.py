@@ -11,6 +11,8 @@ bytes (store.plan_readiness counts the voice the same way). Music and effects ke
 """
 from __future__ import annotations
 
+import hashlib
+import math
 import re
 import subprocess
 import threading
@@ -20,6 +22,20 @@ import store
 
 TARGET_LUFS = -16.0   # spoken video under quiet music: clear and well below YouTube's −14 LUFS playback level
 PEAK_DBTP = -1.5      # the loudest moment of the voice at 100% stays this far under full scale
+# The sound standard of every episode (user, 5 November 2026: «one script that sets everything the same from episode to
+# episode … calm, not loud, and the music is heard»). The original voice and every translation play at TARGET_LUFS; the
+# music and effects under them are set against the voice at that level, not against the file the service delivered
+# (episode 08: HeyGen gave −26.6 LUFS, so the bed made against it came out at −48.8 LUFS and was lost under the
+# voice the Studio had brought up by 10.6 dB). MUSIC_DB is the music's loudness against the voice (it is ducked a
+# further 9 dB while the narrator speaks), SFX_DB the effects' level against it: the levels agreed for What If 06.
+MUSIC_DB = -13.0
+SFX_DB = -6.0
+LEVELED: Path | None = None   # where leveled voice copies go; None: store.DATA_ROOT / "leveled" (read when used, so a
+                              # test that moves DATA_ROOT keeps its copies out of the real data)
+
+
+def leveled_dir() -> Path:
+    return LEVELED or store.DATA_ROOT / "leveled"
 CACHE = store.DATA_ROOT / "audio_levels.json"
 _LOCK = threading.Lock()
 _MEASURING: dict[str, threading.Lock] = {}   # a lock per file being measured now
@@ -82,8 +98,13 @@ def gain(level: dict) -> float:
     return round(max(0.1, min(4.0, 10 ** (db / 20))), 4)
 
 
-def voice_gains(project: dict, plan: dict | None = None) -> dict:
-    """{asset id: gain} for the audio clips that carry the project's timed voice; {} when the voice is unknown."""
+def standard_db(level: dict) -> float:
+    """The gain in dB that brings a voice to TARGET_LUFS; its peaks are held by the limiter of leveled()."""
+    return max(-20.0, min(20.0, TARGET_LUFS - level["lufs"]))
+
+
+def _voice_paths(project: dict, plan: dict | None = None) -> dict:
+    """{asset id: path} of the audio clips that carry the project's timed voice; {} when the voice is unknown."""
     if plan is None:
         try:
             plan = store.load_project_narration(project["id"])
@@ -103,7 +124,82 @@ def voice_gains(project: dict, plan: dict | None = None) -> dict:
                 same = aid == audio.get("asset_id") or audio.get("sha256") and store.audio_fingerprint(path) == audio["sha256"]
             except (store.StudioError, OSError):
                 continue
-            level = measure(path) if same else None
-            if level:
-                result[aid] = gain(level)
+            if same:
+                result[aid] = path
     return result
+
+
+def voice_gains(project: dict, plan: dict | None = None) -> dict:
+    """{asset id: gain} for the audio clips that carry the project's timed voice; {} when the voice is unknown. A voice
+    whose leveled copy is made plays that copy (voice_file) at gain 1; until then the old gain, capped by its peaks."""
+    result = {}
+    for aid, path in _voice_paths(project, plan).items():
+        level = measure(path)
+        if level:
+            result[aid] = 1.0 if _at_standard(level) or leveled(path, wait=False, level=level) != path else gain(level)
+    return result
+
+
+def voice_file(project: dict, aid: str, path: Path, wait: bool = False) -> Path:
+    """The file a player or the export plays for this asset: the voice's leveled copy when it carries the timed voice
+    (made now with wait=True, as the export does; else started in the background), any other file as it is."""
+    return leveled(path, wait=wait) if aid in _voice_paths(project) else path
+
+
+def _at_standard(level: dict) -> bool:
+    return abs(level["lufs"] - TARGET_LUFS) < 0.5 and level["peak"] <= PEAK_DBTP + 0.3
+
+
+_BUILDING: set[str] = set()
+
+
+def leveled(path: Path, wait: bool = True, level: dict | None = None) -> Path:
+    """The voice file at the standard level: brought to TARGET_LUFS by a plain gain, its peaks held under PEAK_DBTP by a
+    limiter (no levelling of its own). A quiet HeyGen voice (08: −26.6 LUFS, peaks −5.1 dB) could reach only −23 LUFS with
+    a gain capped by its peaks, while its translations stood at −16, so the original sounded quieter (user, 5 November
+    2026). FLAC keeps every sample in place (timings stay exact); made once per file version, in about 30 s of CPU. With
+    wait=False the copy is started in the background and the file itself is returned until it is there. A file already
+    at the standard, or one that cannot be measured, is returned as it is (level: its measure, when already read)."""
+    level = level or measure(path)
+    if not level or _at_standard(level):
+        return path
+    key = hashlib.sha1(_key(path).encode()).hexdigest()[:20]
+    out = leveled_dir() / (key + ".flac")
+    if out.is_file():
+        return out
+    if not wait:
+        with _LOCK:
+            if key in _BUILDING:
+                return path
+            _BUILDING.add(key)
+        threading.Thread(target=_build, args=(path, out, level, key), daemon=True).start()
+        return path
+    _build(path, out, level, key)
+    return out if out.is_file() else path
+
+
+def _build(path: Path, out: Path, level: dict, key: str) -> None:
+    lock = _MEASURING.setdefault("leveled:" + key, threading.Lock())
+    with lock:
+        try:
+            if out.is_file():
+                return
+            out.parent.mkdir(parents=True, exist_ok=True)
+            part = out.with_name(out.stem + ".part.flac")
+            limit = 10 ** ((PEAK_DBTP - 1.0) / 20)   # a dB of room for the true peak between samples
+            db = standard_db(level)
+            for _ in range(4):   # the limiter takes some loudness off the peaks: give it back (08 needed +0.6 dB once)
+                subprocess.run(["nice", "-n", "10", "ffmpeg", "-y", "-v", "error", "-nostdin", "-i", str(path), "-vn", "-af",
+                                f"volume={db:.2f}dB,alimiter=limit={limit:.4f}:attack=5:release=50:level=false",
+                                "-c:a", "flac", str(part)], check=True, timeout=1800)
+                got = measure(part)
+                short = TARGET_LUFS - got["lufs"] if got else 0.0
+                if short < 0.4 or db >= 20:
+                    break
+                db = min(20.0, db + short)
+            part.replace(out)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        finally:
+            with _LOCK:
+                _BUILDING.discard(key)
