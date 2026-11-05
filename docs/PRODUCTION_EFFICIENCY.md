@@ -29,3 +29,8 @@
 4. Якщо відповідного предмета немає, підготуйте промпт і згенеруйте потрібні предмети одним аркушем. Не повертайтеся до пошуку тих самих предметів по колу.
 
 Пошук у бібліотеці локальний. Перегляд кандидатів витрачає контекст моделі, генерація може мати окрему вартість і час очікування. Точний розмір економії оцінюйте за наступними справжніми звітами `studio.py spend P --all`; тест зміни процесу не запускає платного створення ролика.
+
+
+## Sequential frame checkpoints
+
+Agent and Task tools are disabled in the Claude CLI. Work through pending frames sequentially, reuse existing code and finish the current frame before preparing later scenery. The derived handoff names missing takes separately from existing scene files. This prevents repeated broad assignments after a pause. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.

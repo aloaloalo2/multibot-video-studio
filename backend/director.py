@@ -30,9 +30,9 @@ NO_RENDER = "MULTIBOT_RENDER_ON_EXPORT"   # set for the agents; tools/razgon_bri
 # whose run was stopped on purpose (episode_restart) ends without writing its state back.
 RUNNING: dict[str, subprocess.Popen] = {}
 CANCELLED: set[str] = set()
-# Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder; Opus may send
-# helpers off in parallel.
-ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task"] + [f"Bash({cmd}:*)" for cmd in
+# Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder.
+# Helpers are disabled to keep frame progress local and avoid multiplying the context.
+ALLOWED = ["Read", "Write", "Edit", "Glob", "Grep"] + [f"Bash({cmd}:*)" for cmd in
            ("python3", "node", "ls", "cat", "head", "tail", "wc", "grep", "find", "mkdir", "cp", "mv", "diff", "jq")]
 
 
@@ -212,6 +212,7 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+               "--disallowedTools", "Agent", "Task",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
     # its own process group; kill() also stops the commands, renders and helpers under it
     # the agents draw frames as code; only «Експорт MP4» renders them, so razgon_bridge.py refuses push and final here

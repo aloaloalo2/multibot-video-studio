@@ -159,6 +159,10 @@ def summary(pid: str, *, credit_rate=None, refresh=False) -> dict:
         cached = CACHE.get(pid)
         if cached and not refresh and time.monotonic() - cached[0] < TTL and cached[1] == credit_rate:
             return cached[2]
+        # Stopped runs may save their native billing receipt after the CLI stream closes.
+        # Unchanged receipts only require local file stamps; never call a paid API.
+        import spend_report
+        spend_report.backfill(pid)
         root = store.project_dir(pid)
         path = root / "project-costs.json"
         data = collect(root, store.read_json(path, {}) or {})

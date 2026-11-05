@@ -92,6 +92,9 @@ class DirectorTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 director.claude(Path("claude"), "brief", Path(self.tmp.name) / "log", Path(self.tmp.name) / "feed.json", 60)
         self.assertEqual(popen.call_args.kwargs["env"][director.NO_RENDER], "1")
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index('--disallowedTools') + 1:command.index('--disallowedTools') + 3], ['Agent', 'Task'])
+        self.assertNotIn('Agent', director.ALLOWED)
 
     def test_a_run_left_by_a_restart_reads_as_failed(self):
         director.save(PROJECT["id"], {"status": "running", "started_at": time.time()})

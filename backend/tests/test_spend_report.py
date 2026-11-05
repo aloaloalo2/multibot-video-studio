@@ -101,6 +101,41 @@ class SpendReportTest(unittest.TestCase):
         broken.write_text("not json\n", encoding="utf-8")
         self.assertIsNone(spend_report.record(broken))
 
+    def test_stopped_run_uses_native_total_including_helpers_and_refreshes_once(self):
+        import project_costs
+        sid = "11111111-1111-1111-1111-111111111111"
+        log = self.write_log([{"type": "system", "session_id": sid}, turn("first", 160_000, 10_000, text="Done")])
+        native = log.parent / "native.jsonl"
+        def receipt(cost):
+            native.write_text(json.dumps(turn("first", 0, 1)) + "\n" + json.dumps({
+                "type": "cost-state", "sessionId": sid, "modelUsage": {"claude-opus-5-5": {
+                    "costUSD": cost, "outputTokens": 1000, "thinkingTokens": 800}}}) + "\n")
+        receipt(45.22)
+        with mock.patch.object(spend_report, "session_file", return_value=native), \
+                mock.patch.object(spend_report.store, "project_dir", return_value=log.parent):
+            report = spend_report.record(log)
+            self.assertEqual(report['cost_usd'], 45.22)
+            self.assertTrue(report['cost_measured'])
+            self.assertEqual(report['cost_source'], 'claude-session')
+            receipt(46.5)
+            self.assertEqual(len(spend_report.backfill(log.parent.name)), 1)
+            self.assertEqual(spend_report.backfill(log.parent.name), [])
+            data = project_costs.collect(log.parent, spend_report.store.read_json(log.parent / 'project-costs.json'))
+            events = [e for e in data['events'].values() if e['provider'] == 'claude_code']
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]['amount'], 46.5)
+
+    def test_native_cumulative_total_is_rejected_when_stream_starts_mid_session(self):
+        sid = "11111111-1111-1111-1111-111111111111"
+        log = self.write_log([{"type": "system", "session_id": sid}, turn("later", 200_000, 10, text="Done")])
+        native = log.parent / 'native.jsonl'
+        native.write_text(json.dumps(turn('earlier', 0, 10)) + '\n' + json.dumps({
+            'type': 'cost-state', 'sessionId': sid, 'modelUsage': {'model': {'costUSD': 999}}}))
+        with mock.patch.object(spend_report, 'session_file', return_value=native):
+            report = spend_report.analyse(log)
+        self.assertFalse(report['cost_measured'])
+        self.assertLess(report['cost_usd'], 999)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,6 +54,7 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
                      "idea_preview": (f.get("visual") or f.get("scene") or "")[:100],
                      "text_preview": " ".join(f.get("sentences", []))[:100],
                      "made": f["number"] in made, "takes": takes,
+                     "missing_takes": [t for t in takes if not owners.get(t)],
                      "scene_files": sorted({str(Path(p).relative_to(razgon)) for t in takes for p in owners.get(t, [])})})
     targets = [r["number"] for r in rows if not r["made"]]
     return {"schema": 1, "project_id": pid, "request_id": request["id"],
@@ -90,8 +91,9 @@ def text(packet: dict) -> str:
         lines += ["Короткий підсумок попередньої роботи:", packet["previous_summary"]]
     for f in packet["frames"]:
         state = "готовий" if f["made"] else "зробити"
+        missing = ",".join(f.get("missing_takes", [])) or "немає"
         lines.append(f"{f['number']:03d} {f['start']:.2f}-{f['end']:.2f} {state} {f['format']} "
-                     + ",".join(f["takes"]) + " | " + ", ".join(f["scene_files"]))
+                     + ",".join(f["takes"]) + " | " + ", ".join(f["scene_files"]) + " | відсутні дублі: " + missing)
     lines.extend("УВАГА: " + issue for issue in packet["issues"])
     lines.extend(f"Відсутній імпорт: {v['file']} -> {v['missing']}" for v in packet.get("scene_issues", []))
     return "\n".join(lines) + "\n"
@@ -108,5 +110,10 @@ def instructions(summary: str) -> str:
 Перевірку зображення об'єднай: frame_review.py sheets --frames <змінені кадри> дає три моменти кадру.
 Повторно перевір лише змінені сцени та їхні стики з сусідами. Для нового кадру перевірка обов'язкова.
 Окремий render.mjs --sheet поверх тих самих перевірених зображень не потрібен.
-Помічників із копією всієї розмови не запускай. Експорт запускається окремо кнопкою користувача.
+Помічників, вкладені Claude-сесії та паралельну генерацію не запускай.
+Працюй послідовно: один незавершений кадр, його відсутні дублі, збереження коду, перевірка трьох моментів і наступний кадр.
+Якщо кадр частково готовий, допиши лише відсутні дублі з карти. Наявні сцени, декорації та бібліотеки використовуй повторно.
+Не готуй наперед окремі набори декорацій для всього ролика: допоміжний код додавай лише для поточного кадру.
+Після завершення кожного кадру перевір його наявність через tools/studio.py work <id>. Файли сцен є контрольними точками для продовження.
+Експорт запускається окремо кнопкою користувача.
 """

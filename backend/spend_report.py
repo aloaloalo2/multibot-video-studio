@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import collections
 import json
+import os
 import re
 import threading
 import time
@@ -28,6 +29,7 @@ PRICE = {"input": 3.0, "output": 15.0, "read": 0.30, "write_1h": 6.0, "write_5m"
 CHARS_PER_TOKEN = 3.2
 FORKED = 150_000      # a helper that starts with more context than this carries a copy of the whole conversation
 RESUMED = 150_000     # a run whose first turn already holds this much continued an old session
+BILLING_VERSION = 2
 SCENE = re.compile(r"/scenes/|\.m?js$")
 IMAGE = re.compile(r"\.(png|jpe?g|webp|gif)$", re.I)
 
@@ -86,12 +88,49 @@ def read_target(name: str, data: dict) -> str | None:
     return None
 
 
+def session_file(sid: str) -> Path | None:
+    if not re.fullmatch(r"[0-9a-f-]{36}", sid or ""):
+        return None
+    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    cwd = re.sub(r"[^a-zA-Z0-9]", "-", str(store.YOUTUBE_ROOT))
+    return config / "projects" / cwd / (sid + ".jsonl")
+
+
+def session_receipt(sid: str, first_message: str) -> dict:
+    """Use the native session total only when the stream covers that session from its first main turn.
+
+    A stopped CLI can omit its result while Claude still saves the total, including helpers and thinking.
+    An old resumed session's cumulative total must never be charged again as a new run.
+    """
+    path = session_file(sid)
+    if path is None or not path.is_file() or not first_message:
+        return {}
+    first, receipt = None, {}
+    with path.open(encoding="utf-8", errors="replace") as source:
+        for line in source:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("type") == "assistant" and not event.get("isSidechain") and first is None:
+                first = (event.get("message") or {}).get("id")
+                if first != first_message:
+                    return {}
+            if event.get("type") == "cost-state" and event.get("sessionId") == sid and event.get("modelUsage"):
+                receipt = event
+    if first != first_message or receipt.get("hasUnknownModelCost"):
+        return {}
+    return {"modelUsage": receipt.get("modelUsage") or {}, "_native_fresh": True,
+            "_receipt_modified": path.stat().st_mtime_ns}
+
+
 def parse(log: Path) -> tuple[list[dict], dict]:
     """The log's turns in order (one per message, with usage, calls and written characters) and its last result."""
     turns: dict[str, dict] = {}
     calls: dict[str, dict] = {}
     result: dict = {}
     baseline: dict = {}
+    sid, first_message = None, None
     with log.open(encoding="utf-8", errors="replace") as source:
         for line in source:
             try:
@@ -99,6 +138,7 @@ def parse(log: Path) -> tuple[list[dict], dict]:
             except ValueError:
                 continue
             kind = event.get("type")
+            sid = event.get("session_id") or sid
             if kind == "result" and event.get("modelUsage"):
                 result = event
                 # a resumed session reports what it had already spent before this run made a single step
@@ -114,6 +154,8 @@ def parse(log: Path) -> tuple[list[dict], dict]:
             if kind != "assistant":
                 continue
             message = event.get("message") or {}
+            if first_message is None and not event.get("parent_tool_use_id"):
+                first_message = message.get("id")
             key = message.get("id") or f"_{len(turns)}"
             turn = turns.setdefault(key, {"usage": {}, "calls": [], "chars": 0, "agent": event.get("parent_tool_use_id") or "main"})
             turn["usage"] = message.get("usage") or turn["usage"]
@@ -128,6 +170,11 @@ def parse(log: Path) -> tuple[list[dict], dict]:
                             "reads": read_target(part.get("name"), data)}
                     calls[part.get("id")] = call
                     turn["calls"].append(call)
+    if not result.get("modelUsage") and sid:
+        result = {**result, **session_receipt(sid, first_message)}
+    result["_session_id"] = sid
+    native = session_file(sid)
+    result["_session_modified"] = native.stat().st_mtime_ns if native and native.is_file() else None
     if result and baseline and baseline is not result:
         # this run only: the session's totals at its end less what the session had spent before it
         usage = {}
@@ -144,7 +191,7 @@ def analyse(log: Path) -> dict:
     real_cost = sum(float(u.get("costUSD") or 0) for u in models.values()) or None
     first_context = sum(int((turns[0]["usage"] if turns else {}).get(key) or 0)
                         for key in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-    if first_context > RESUMED and "resumed_from_usd" not in result:
+    if first_context > RESUMED and "resumed_from_usd" not in result and not result.get("_native_fresh"):
         # a resumed session whose earlier spending is unknown: its totals would count earlier runs too
         models, real_cost = {}, None
     real_out = sum(int(u.get("outputTokens") or 0) for u in models.values())
@@ -229,6 +276,10 @@ def analyse(log: Path) -> dict:
     report = {
         "log": log.name, "kind": "director" if log.name.startswith("director") else "production",
         "made_at": time.time(), "log_modified": log.stat().st_mtime,
+        "billing_version": BILLING_VERSION, "session_id": result.get("_session_id"),
+        "cost_source": "claude-session" if result.get("_native_fresh") else "stream",
+        "receipt_modified": result.get("_receipt_modified"),
+        "session_modified": result.get("_session_modified"),
         "model": next(iter(models), None), "cost_usd": round(total, 2), "cost_measured": real_cost is not None,
         "turns": len(turns), "main_turns": len(main) if by_agent.get("main") else 0,
         "tokens": {"input": totals["input"], "cache_write": totals["cache_write"], "cache_read": totals["cache_read"],
@@ -343,13 +394,20 @@ def record_later(log: Path) -> None:
 def backfill(pid: str) -> list[dict]:
     """Reports for the logs a project already has (each log once, by its time)."""
     made = []
-    existing = {path.name for path in folder(pid).glob("*.json")} if folder(pid).is_dir() else set()
     for log in sorted(store.project_dir(pid).glob("*.log")):
         if not (log.name.startswith("director") or log.name.startswith("production")):
             continue
         stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(log.stat().st_mtime))
-        if f"{log.stem}-{stamp}.json" in existing:
-            continue
+        saved = folder(pid) / f"{log.stem}-{stamp}.json"
+        if saved.is_file():
+            previous = store.read_json(saved, {})
+            native = session_file(previous.get("session_id"))
+            modified = native.stat().st_mtime_ns if native and native.is_file() else None
+            if previous.get("billing_version") == BILLING_VERSION and (
+                previous.get("session_modified") == modified or
+                previous.get("cost_measured") and previous.get("cost_source") == "stream"
+            ):
+                continue
         report = record(log)
         if report:
             made.append(report)

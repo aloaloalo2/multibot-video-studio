@@ -41,6 +41,8 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(packet["frames"][1]["takes"], ["s2"])
         self.assertEqual(packet["frames"][1]["scene_files"], ["scenes/a.js"])
         self.assertEqual(packet["frames"][2]["scene_files"], [])
+        self.assertEqual(packet["frames"][1]["missing_takes"], [])
+        self.assertEqual(packet["frames"][2]["missing_takes"], ['s3'])
         before = json.dumps(self.plan)
         path, _ = context.write(self.project, self.request, repair=True)
         self.assertEqual(json.loads(path.read_text())["mode"], "repair")

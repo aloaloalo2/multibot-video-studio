@@ -1029,6 +1029,8 @@ select option{background:#232327;color:#f1f1f2}
 .project-card:hover>.project-costs,.project-card:focus-within>.project-costs{opacity:1;visibility:visible;transform:none;pointer-events:auto}
 .project-cost-item{display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:5px 8px;border-radius:8px;background:rgba(18,19,23,.88);backdrop-filter:blur(8px);color:#ced1d8;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .project-cost-item svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+/* Claude brand silhouette from Simple Icons, https://simpleicons.org/?q=claude */
+.project-cost-item svg.claude-mark{fill:#d97757;stroke:none;opacity:1}
 .project-cost-unavailable{max-width:100px;font-size:11px;color:#aaa;background:#18181de6;padding:6px;border-radius:7px}
 .project-views .language-total-cost{font-size:12px;font-weight:400;color:#979aa3;white-space:nowrap;margin-left:2px}
 @media(hover:none){.project-costs{opacity:1;visibility:visible;transform:none;pointer-events:auto}}
