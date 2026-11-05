@@ -1728,3 +1728,9 @@ select option{background:#232327;color:#f1f1f2}
 .lang-translations-carousel{border-left-color:#ffffff0c}
 
 .lang-head h1{display:flex;align-items:center;gap:10px}.lang-add-language{display:inline-grid;place-items:center;width:28px;height:28px;margin-left:2px;padding:0;border:1px solid #ffffff18;border-radius:50%;background:#25282d;color:#b8c1c9;font-size:23px;font-weight:400;line-height:1;cursor:pointer}.lang-add-language:hover,.lang-add-language:focus-visible{color:#aaf1cf;border-color:#6caa8b;background:#2d3a33}.lang-add-language[hidden]{display:none}
+
+.lang-thumbnail-preview>button:focus{outline:none;box-shadow:none}
+.lang-thumbnail-preview>button:focus-visible{outline:1px solid #747984;outline-offset:2px}
+.lang-thumbnail-status[hidden]{display:none!important}
+.lang-thumbnail-tile.is-working .lang-thumbnail-image{opacity:1;cursor:progress}
+.lang-thumbnail-status .export-spinner{width:22px;height:22px}

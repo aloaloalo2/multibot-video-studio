@@ -639,6 +639,7 @@ function langThumbnailResult(id,item){
 }
 
 let langThumbnailDialog=null;
+const langThumbnailPending=new Set();
 function langThumbnailTile(id,item){
   const tile=document.createElement('div');tile.className='lang-thumbnail-tile';tile.dataset.code=item.code;
   const ready=!!item.files?.thumbnail;
@@ -715,6 +716,8 @@ async function langCancel(id,slot,button){
 
 async function langStart(id,kind,code,extra={}){
   if(state.project?.id!==id)return;
+  const thumbnailKey=`${id}:${code}`;
+  if(kind==='thumbnail'){langThumbnailPending.add(thumbnailKey);langThumbnailDialog?.dialog.close();showLangJob();}
   try{
     const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langSpec(langData.items.find(item=>item.code===code)).id,...extra});
     if(state.project?.id!==id)return;
@@ -724,6 +727,7 @@ async function langStart(id,kind,code,extra={}){
     langData.jobs=[...langJobs().filter(other=>other.slot!==job.slot),job];langData.job=job;
     showLangJob();pollLangs(id);return true;
   }catch(error){if(state.project?.id===id){if(kind==='translate'&&langScriptDialog?.project===id&&langScriptDialog.code===code)langScriptDialog.error(error.message);else langNote(langPlace(code,kind),error.message,true);}return false;}
+  finally{if(kind==='thumbnail'){langThumbnailPending.delete(thumbnailKey);if(state.project?.id===id)showLangJob();}}
 }
 
 // Jobs run side by side (user, 2 November 2026: «перекладалось текст, я нажав перекласти прев'ю, і воно зупиняє
@@ -816,9 +820,9 @@ function showLangJob(){
     if(label){label.dataset.idle??=label.textContent;label.textContent=drawing?'Codex генерує, 1-3 хвилини…':label.dataset.idle;}
   }
   document.querySelectorAll('#project-langs .lang-thumbnail-tile[data-code]').forEach(tile=>{
-    const busy=langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);
+    const busy=langThumbnailPending.has(`${state.project?.id}:${tile.dataset.code}`)||langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);tile.setAttribute('aria-busy',String(busy));tile.querySelector('.lang-thumbnail-image').disabled=busy;
     const status=tile.querySelector('.lang-thumbnail-status');status.hidden=tile.classList.contains('has-picture')&&!busy;
-    status.querySelector('small').textContent=busy?'Створюємо…':'Згенерувати';
+    status.innerHTML=busy?'<i class="export-spinner" aria-hidden="true"></i><small>Створюємо прев’ю…</small>':`${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати</small>`;
     const redo=tile.querySelector('.lang-thumbnail-redo');if(redo)redo.disabled=busy;
   });
   document.querySelectorAll('.lang-language-remove').forEach(button=>button.disabled=langRunning(button.dataset.code));
