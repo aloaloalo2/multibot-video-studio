@@ -239,7 +239,7 @@ def prepare(args) -> None:
             "script_sha256": plan["script_sha256"], "audio_sha256": audio.get("sha256"), "duration": duration, "fps": fps, "frames": frames}
     write_json(target / "story" / "studio_frames.json", link)
     # tells the Studio where the Razgon project of this episode lives (for its live preview tab)
-    write_json(Path(project["episode_path"]) / "razgon.json", {"razgon_root": str(root), "project": str(target)})
+    studio.call("POST", f"/api/projects/{project['id']}/razgon-link", {"razgon_root": str(root), "project": str(target)})
 
     shots_path = target / "story" / "shots.json"
     if not shots_path.is_file():

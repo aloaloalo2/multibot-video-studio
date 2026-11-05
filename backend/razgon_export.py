@@ -1,6 +1,6 @@
 """«Експорт MP4» for Razgon 2D episodes: the same film as the agent's `razgon_bridge.py push` + `final`.
 
-An episode folder with razgon.json is drawn by Razgon 2D Studio. Its timeline holds one clip per Studio frame titled
+A Studio project with an internal razgon-link.json is drawn by Razgon 2D Studio. Its timeline holds one clip per Studio frame titled
 «Razgon · кадр NNN»: a code block (an invisible shape that only the live preview draws over) or, after push, the
 rendered MP4. The export hands the frames to `razgon_bridge.py export`, which renders every frame that has no rendered
 clip yet, glues the clips, lays the channel plate on top and mixes Razgon's music and SFX under the original voice at

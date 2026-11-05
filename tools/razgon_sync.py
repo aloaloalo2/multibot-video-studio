@@ -67,7 +67,7 @@ def relink(old: Path, new: Path, youtube: Path = YOUTUBE) -> None:
     old_s, new_s = str(old), str(new)
     rel_old = old.relative_to(youtube).as_posix() if youtube in old.parents else None
     rel_new = new.relative_to(youtube).as_posix() if youtube in new.parents else None
-    for link in youtube.glob("*/*/razgon.json"):
+    for link in [*youtube.glob("*/*/razgon.json"), *APP_ROOT.glob("backend/data/projects/*/razgon-link.json")]:
         try:
             data = json.loads(link.read_text(encoding="utf-8"))
         except (OSError, ValueError):

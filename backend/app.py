@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import store
+import technical_files
 import covers
 import channel_branding
 import style_lab
@@ -1282,6 +1283,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)
         if match:
             return self.json_response({"job": load_job(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-link", path)
+        if match:
+            return self.json_response(store.razgon_link(store.load_project(match.group(1))) or {})
         if path.startswith("/api/"):
             raise store.StudioError("Сторінку не знайдено", 404)
         if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent|preview|languages))?)?/?", path):
@@ -1305,6 +1309,9 @@ class Handler(BaseHTTPRequestHandler):
             store.load_project(match.group(1))
             threading.Thread(target=tidy_project, args=(match.group(1),), daemon=True).start()
             return self.json_response({"started": True}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-link", path)
+        if match and method == "POST":
+            return self.json_response(technical_files.save_link(match.group(1), body))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
         if match and method == "POST":
             return self.json_response(razgon_live.start(match.group(1), bool(body.get("restart"))))
@@ -1642,6 +1649,9 @@ def main():
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
     server = StudioHTTPServer((args.host, args.port), Handler)
+    for pid, result in technical_files.migrate_all().items():
+        if isinstance(result, dict) and result.get("error"):
+            print(f"Technical file migration of {pid}: {result['error']}", flush=True)
     threading.Thread(target=update_loop, daemon=True).start()
     # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
     threading.Thread(target=warm_project_cache, daemon=True).start()

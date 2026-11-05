@@ -105,3 +105,8 @@ Video audio is extracted to a lossless PCM WAV without changing the source video
 The report distinguishes word-match percentage, complete phrase matches, differences, missing boundaries, overlapping intervals and low recognition confidence. Only complete normalized-text matches with usable actual ASR word boundaries are applied automatically. Incomplete phrase boundaries are never interpolated. A word-match percentage is not a calibrated estimate of timestamp accuracy. Reports requiring review leave the existing plan untouched. A changed source file or changed script prevents automatic application. Successful application regenerates the plan with current project/channel proportions, preserves montage and plan history, and binds export to the analyzed audio fingerprint.
 
 Tests cover missing/replaced/repeated words, punctuation normalization, misleading 100% text matches with low confidence, actual boundary selection, background application, review without overwriting, and video extraction reuse. A separate short synthetic audio/video check runs the real installed Whisper model. Real channel episodes are not rendered as part of these checks.
+
+
+Episode folders contain user deliverables and source media. Service metadata lives in `backend/data/projects/<id>/`: `imported-plan.json`, `razgon-link.json`, `production-request.json`, source timings and histories. Startup archives legacy episode JSON under `technical-history/` after verifying an exact copy.
+
+`GET /api/projects/<id>/razgon-link` returns the animation link. `POST` to the same endpoint accepts `{razgon_root, project}`, verifies the project ID in `story/studio_frames.json`, and stores the link internally. No episode JSON is written.

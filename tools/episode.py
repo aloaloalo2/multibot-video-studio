@@ -52,7 +52,7 @@ def steps(episode: Path):
     pid = project_of(episode)
     plan = ((studio(f"/api/projects/{pid}/plan") or {}).get("plan") if pid else None) or {}
     project = ((studio(f"/api/projects/{pid}") or {}).get("project") if pid else None) or {}
-    link = read_json(episode / "razgon.json") or {}
+    link = (studio(f"/api/projects/{pid}/razgon-link") if pid else None) or read_json(episode / "razgon.json") or {}
     razgon = Path(link["project"]) if link.get("project") else None
     synced = plan.get("timing", {}).get("status") == "audio_synced"
     frames = plan.get("frames") or []

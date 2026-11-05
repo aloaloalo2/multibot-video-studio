@@ -59,7 +59,7 @@ def restart(pid: str) -> dict:
             plan = store.project_plan_file(project)
         except store.StudioError:
             plan = None
-        files = [plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json",
+        files = [folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json",
                  store.history_folder(pid), director.state_path(pid), folder / "director.log",
                  director.activity_path(pid, "director"), director.activity_path(pid, "production"),
                  *sorted(folder.glob("production-*.log"))]

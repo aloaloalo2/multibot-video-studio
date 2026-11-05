@@ -28,15 +28,30 @@ class StyleLabError(ValueError):
 def films(channel: Path) -> list[tuple[Path, Path]]:
     """(Razgon root, project) of the channel's Razgon films, newest first."""
     found = []
+    links = []
+    for metadata in store.PROJECTS_ROOT.glob('*/project.json'):
+        try:
+            project = store.read_json(metadata)
+            if not project.get('deleted_at') and project.get('episode_path') and Path(project['episode_path']).resolve().parent == channel.resolve():
+                links.append(store.razgon_link(project))
+        except (OSError, ValueError, store.StudioError):
+            continue
     for link in channel.glob("*/razgon.json"):
         try:
             data = json.loads(link.read_text(encoding="utf-8"))
-            root, project = Path(data["razgon_root"]), Path(data["project"])
+            links.append(data)
         except (OSError, ValueError, KeyError, TypeError):
+            continue
+    for data in links:
+        if not isinstance(data, dict):
+            continue
+        try:
+            root, project = Path(data["razgon_root"]), Path(data["project"])
+        except (KeyError, TypeError):
             continue
         if (root / "render.mjs").is_file() and (project / "story" / "shots.json").is_file() and (project / "scenes").is_dir():
             found.append((root, project))
-    return sorted(found, key=lambda item: (item[1] / "story" / "shots.json").stat().st_mtime, reverse=True)
+    return sorted(set(found), key=lambda item: (item[1] / "story" / "shots.json").stat().st_mtime, reverse=True)
 
 
 def presets(root: Path) -> list[dict]:

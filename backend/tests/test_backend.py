@@ -62,6 +62,20 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(result['messages'][-1]['content'], 'Кадр додано.')
         self.assertEqual(store.load_project(pid)['tracks'][0]['clips'][0]['text'], 'Test')
 
+    def test_animation_link_http_keeps_service_file_inside_studio(self):
+        project = store.create_project(store.channel_id(self.channel), "Animation storage")
+        pid = project["id"]
+        root = Path(self.tmp.name) / "animation-link"
+        target = root / "projects" / pid
+        (target / "story").mkdir(parents=True)
+        (root / "render.mjs").write_text("")
+        (target / "story/studio_frames.json").write_text(json.dumps({"project_id": pid}))
+        link = {"razgon_root": str(root.resolve()), "project": str(target.resolve())}
+        code, result = self.request(f"/api/projects/{pid}/razgon-link", "POST", link)
+        self.assertEqual((code, result), (200, link))
+        self.assertEqual(self.request(f"/api/projects/{pid}/razgon-link"), (200, link))
+        self.assertFalse((Path(project["episode_path"]) / "razgon.json").exists())
+
     def test_projects_are_ordered_by_creation_time_not_name_or_update(self):
         cid = store.channel_id(self.channel)
         older = store.create_project(cid, "A older sorting test")
@@ -373,7 +387,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual([len(frame["sentences"]) for frame in rebuilt["frames"]], [3, 1])
         self.assertEqual(rebuilt["frames"][1]["episode"], "E02")
         self.assertAlmostEqual(rebuilt["frames"][1]["sentence_timings"][0]["start"], 6.1)
-        self.assertEqual(len(json.loads((Path(project["episode_path"]) / "План видео.json").read_text())["frames"]), 2)
+        self.assertEqual(len(json.loads((store.project_dir(pid) / "imported-plan.json").read_text())["frames"]), 2)
         code, result = self.request("/api/projects/" + pid + "/production-request", "POST", {"frames": 3})
         self.assertEqual(code, 400)
         import frame_progress
@@ -387,8 +401,10 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(result["project"]["production_request"]["frames"], 1)
         self.assertEqual(result["project"]["production_request"]["end"], rebuilt["frames"][0]["end"])
-        mirrored = json.loads((Path(project["episode_path"]) / "Запит на створення.json").read_text())
+        mirrored = json.loads((store.project_dir(pid) / "production-request.json").read_text())
         self.assertEqual(mirrored["status"], "requested")
+        self.assertFalse((Path(project["episode_path"]) / "Запит на створення.json").exists())
+        self.assertFalse((Path(project["episode_path"]) / "План видео.json").exists())
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg is needed for video audio extraction")
     def test_video_analysis_reuses_extracted_audio_without_duplicate_assets(self):

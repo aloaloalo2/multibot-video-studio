@@ -1,6 +1,6 @@
 """Live preview for Razgon 2D episodes: no render, the Razgon player draws frames in real time in an iframe.
 
-An episode folder that holds razgon.json ({"razgon_root", "project"}) gets a "Наживо" tab. Opening it starts
+A Studio project with an internal razgon-link.json ({"razgon_root", "project"}) gets a "Наживо" tab. Opening it starts
 `node tools/live.mjs` for that Razgon project on a port derived from the project path (one server per project) and
 returns its URL. The server keeps running for quick re-opens and reloads the page whenever the scenes change.
 """

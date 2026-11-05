@@ -85,6 +85,7 @@ def frames_brief(project: dict) -> str:
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила каналу {channel / 'AGENTS.md'}: як ділити озвучку на кадри і для чого який формат; сценарії інших випусків не читай.
 
@@ -114,6 +115,7 @@ def razgon_brief(project: dict) -> str:
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'} і навик режисури Razgon
 ({store.razgon_rel()}/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).

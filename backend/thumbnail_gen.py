@@ -212,6 +212,13 @@ def code_stills(project: dict, work: Path) -> list[Path]:
     return stills
 
 
+def episode_link(folder: Path) -> dict | None:
+    project = store.project_for_episode(store.channel_id(folder.parent), folder)
+    if project:
+        return store.razgon_link(project)
+    return store.read_json(folder / 'razgon.json', None)
+
+
 def references(folder: Path) -> list[Path]:
     """The channel's style frames («Еталон стилю/Референс кадру*.png»), so the thumbnail is drawn in the video's look."""
     style = folder.parent / "Еталон стилю"
@@ -229,7 +236,7 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) 
     look = "; ".join(str(path) for path in [*refs, *pictures])
     look = f"\nПеред тим як писати, подивись інструментом Read ці картинки, щоб знати стиль і героя: {look}\n" if look else ""
     # a Razgon episode describes its heroes and world in the story bible: the thumbnail's hero must be the video's
-    link = store.read_json(folder / "razgon.json", None)
+    link = episode_link(folder)
     bible = Path(link["project"]) / "story" / "bible.md" if isinstance(link, dict) and link.get("project") else None
     if bible and bible.is_file():
         look += f"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: {bible}\n"
@@ -312,7 +319,7 @@ def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id:
         raise RuntimeError("Додайте ключ OpenRouter у налаштуваннях студії") from None
     # DeepSeek has no Read tool: what Claude would open is attached here instead
     text = re.sub(r"\nПеред тим як писати, подивись інструментом Read ці картинки[^\n]*\n", "\nКартинки стилю й героя прикріплені нижче.\n", text)
-    link = store.read_json(folder / "razgon.json", None)
+    link = episode_link(folder)
     bible = Path(link["project"]) / "story" / "bible.md" if isinstance(link, dict) and link.get("project") else None
     if bible and bible.is_file():
         text = re.sub(r"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: [^\n]*\n", "", text)

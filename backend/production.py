@@ -47,8 +47,7 @@ def set_request(pid: str, **fields) -> dict:
         # the request's state is not an edit of the montage: the revision stays, so an open editor is not told the
         # project changed under it at every start and end of a run
         store.save_project(project)
-        if project.get("episode_path") and Path(project["episode_path"]).is_dir():
-            store.atomic_json(Path(project["episode_path"]) / "Запит на створення.json", request)
+        store.atomic_json(store.project_dir(pid) / "production-request.json", request)
     return request
 
 
@@ -110,6 +109,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
 Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'} і навики Razgon
 («{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). Великі документи самої
@@ -180,6 +180,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
 Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
+Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила каналу {episode.parent / 'AGENTS.md'} (і {root / 'AGENTS.md'}, якщо він є): там стиль і що в якому форматі.
 Великі документи студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для цієї роботи нижче.

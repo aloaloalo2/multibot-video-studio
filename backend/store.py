@@ -31,16 +31,15 @@ YOUTUBE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def razgon_link(project: dict) -> dict | None:
-    """The episode's link to its Razgon project ({"razgon_root", "project"}): the episode folder's razgon.json, kept
-    also in the studio (razgon-link.json) so the animation still plays when the episode folder is deleted (user,
-    2 November 2026: «після видалення папки код не видно на таймлайні»). A link that names Razgon's old home in What If
-    is read at its new home in the studio when it has moved there."""
+    """Read the authoritative Studio animation link, with legacy episode fallback for migration."""
     episode = Path(project.get("episode_path") or "")
     try:
         kept = project_dir(project["id"]) / "razgon-link.json"
     except (StudioError, KeyError):
         kept = None
-    link = read_json(episode / "razgon.json", None) if project.get("episode_path") else None
+    link = read_json(kept, None) if kept is not None else None
+    if not isinstance(link, dict) or not link.get("project"):
+        link = read_json(episode / "razgon.json", None) if project.get("episode_path") else None
     if isinstance(link, dict) and link.get("project"):
         if kept is not None and read_json(kept, None) != link:
             try:
@@ -892,10 +891,6 @@ def attach_plan(pid: str, plan: dict) -> dict:
             versions.mkdir(exist_ok=True)
             shutil.copy2(path, versions / (str(time.time_ns()) + ".json"))
         atomic_json(path, plan)
-        # The episode's own plan file mirrors the attached plan, so no older draft is left behind in the folder.
-        episode_plan = Path(project["episode_path"]) / "План видео.json"
-        if plan.get("frame_source") and episode_plan.is_file():
-            atomic_json(episode_plan, plan)
         project["plan_source"] = str(path)
         project["plan_updated_at"] = time.time()
         project["revision"] = project.get("revision", 0) + 1
@@ -1275,8 +1270,6 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         plan["settings_scope"] = "project" if weights is not None else "channel"
         plan["channel_id"] = cid
         plan["generated_at"] = time.time()
-        output = episode / "План видео.json"
-        plan["report"]["json"] = str(output)
         if project_id:
             project = load_project(project_id)
             if project["channel_id"] != cid or Path(project["episode_path"]).resolve() != episode:
@@ -1292,16 +1285,12 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
             save_project(project)
         url = f"/channels/{cid}/projects/{project['id']}/plan"
         plan["report"].update(project_id=project["id"], plan_url=url)
-        # Keep a recoverable copy of every previous plan, including manual imports.
-        if output.is_file():
-            versions = project_dir(project["id"]) / "plan-history"
-            versions.mkdir(exist_ok=True)
-            shutil.copy2(output, versions / (str(time.time_ns()) + ".json"))
-        atomic_json(output, plan)
+        output = project_dir(project["id"]) / "imported-plan.json"
+        plan["report"]["json"] = str(output)
         if audio:
             spoken_path = episode / "Сценарий для озвучки.txt"
             if spoken_path.exists() and spoken_path.read_text(encoding="utf-8-sig") != plan["spoken_script"]:
-                spoken_path = episode / "ТЕХНИЧЕСКИЕ ФАЙЛЫ" / ("Озвученный сценарий " + plan["spoken_script_sha256"][:12] + ".txt")
+                spoken_path = project_dir(project["id"]) / "source-history" / ("Озвученный сценарий " + plan["spoken_script_sha256"][:12] + ".txt")
             atomic_text(spoken_path, plan["spoken_script"])
             formatted_path = episode / "Сценарий.txt"
             if formatted_path.exists() and formatted_path.read_text(encoding="utf-8-sig") not in {script, build_script, plan["script"]}:
@@ -1309,8 +1298,7 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
             atomic_text(formatted_path, plan["script"])
             plan["spoken_script_file"] = str(spoken_path)
             plan["report"]["formatted_script"] = str(formatted_path)
-            atomic_json(output, plan)
-        atomic_json(project_dir(project["id"]) / "imported-plan.json", plan)
+        atomic_json(output, plan)
         return {"project": project, "plan": plan, "plan_url": url, "settings_match": True}
 
 
@@ -2478,5 +2466,5 @@ def request_production(pid: str, frames) -> dict:
         project["production_request"] = request
         project["revision"] = project.get("revision", 0) + 1
         save_project(project)
-        atomic_json(Path(project["episode_path"]) / "Запит на створення.json", request)
+        atomic_json(project_dir(pid) / "production-request.json", request)
         return project
