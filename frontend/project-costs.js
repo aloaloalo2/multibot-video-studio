@@ -1,5 +1,6 @@
 // Project cost receipts are loaded only on hover/focus, cached between card redraws.
 const projectCostCache=new Map(),projectCostPending=new Map();
+const claudeSubscriptionDivisor=29;
 const projectCostIcons={
   openrouter:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5m-2-2 2 2-2 2m2-2c5 0 3-7 8-7h5m-3-3 3 3-3 3M8 12c5 0 3 7 8 7h5m-3-3 3 3-3 3"/></svg>',
   claude_code:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1 7 5-5-3 7 7-1-6 4 4 5-7-3-1 6-2-6-6 3 3-6-5-2 7-1-4-6 6 4z"/></svg>',
@@ -18,10 +19,11 @@ async function loadProjectCosts(id){
 function projectCostMarkup(data){
   const names={openrouter:'OpenRouter',claude_code:'Claude Code',elevenlabs:'ElevenLabs'};
   return Object.keys(names).map(key=>{
-    const item=data?.providers?.[key],amount=item?.usd;
-    const approximate=item?.estimated||item?.equivalent||item?.unknown;
+    const item=data?.providers?.[key],rawAmount=item?.usd;
+    const amount=key==='claude_code'&&rawAmount!=null?rawAmount/claudeSubscriptionDivisor:rawAmount;
+    const approximate=key==='claude_code'||item?.estimated||item?.equivalent||item?.unknown;
     const label=item?`${approximate?'≈ ':''}${projectCostMoney(item.unknown&&!amount?null:amount)}`:'…';
-    const detail=key==='claude_code'?'Грошова оцінка використання Claude Code за журналами, не окреме списання підписки.':key==='elevenlabs'?`Оцінка за збереженими запитами озвучення. ${data?.elevenlabs_basis||'Курс кредитів ще невідомий.'}`:'Збережені витрати API: переклади, перевірки, агент і зображення.';
+    const detail=key==='claude_code'?`Орієнтовна частка підписки: API-еквівалент ${projectCostMoney(rawAmount)} ÷ ${claudeSubscriptionDivisor}. Коефіцієнт задано користувачем.`:key==='elevenlabs'?`Оцінка за збереженими запитами озвучення. ${data?.elevenlabs_basis||'Курс кредитів ще невідомий.'}`:'Збережені витрати API: переклади, перевірки, агент і зображення.';
     return `<span class="project-cost-item" title="${esc(names[key]+'. '+detail+(item?.unknown?' Частину витрат не підтверджено.':''))}" aria-label="${esc(names[key]+': '+label)}">${projectCostIcons[key]}<span>${label}</span></span>`;
   }).join('');
 }
