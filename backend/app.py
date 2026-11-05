@@ -30,6 +30,7 @@ import style_lab
 import style_copy
 import director
 import spend_report
+import production_context
 import director_plan
 import episode_restart
 import frame_progress
@@ -1178,6 +1179,15 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnails/(v[1-9][0-9]*\.png)",path)
         if match:
             return self.serve_media(languages.language_thumbnails.version_file(*match.groups()),download=(query.get('download') or [None])[0],cache=True)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/work", path)
+        if match:
+            project = store.load_project(match.group(1))
+            plan = store.load_project_plan(project["id"]) or {}
+            request = project.get("production_request") or {"id": "view", "frames": len(plan.get("frames", []))}
+            data = production_context.build(project, request)
+            if (query.get("format") or [""])[0] == "text":
+                return self.text_response(production_context.text(data))
+            return self.json_response(data)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/spend", path)
         if match:
             # where the director's and frame agent's runs spent the Claude limits (backend/spend_report.py)

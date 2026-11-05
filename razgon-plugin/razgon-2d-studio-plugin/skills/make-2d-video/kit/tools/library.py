@@ -107,13 +107,32 @@ def add_project(project, catalog=None, quiet=False):
     return added
 
 
-def search(words):
+def search(words, limit=6, sheet=None):
     catalog = load()
     terms = [w.lower() for w in words]
     hits = [p for p in catalog["props"] if all(t in (p["name"] + " " + p.get("description", "")).lower() for t in terms)]
-    for p in hits:
-        print(f"{p['name']:<28} {p.get('description', '')[:90]}  [{', '.join(p['projects'])}]")
-    print(f"Знайдено {len(hits)} з {len(catalog['props'])}.")
+    # Exact names first, then close name matches. The agent sees a bounded list,
+    # rather than loading the entire library and many individual source PNGs.
+    query = "_".join(terms)
+    hits.sort(key=lambda p: (p["name"].lower() != query, -sum(t in p["name"].lower() for t in terms), p["name"]))
+    shown = hits[:max(1, min(24, int(limit)))]
+    for p in shown:
+        print(f"{p['name']:<28} {p.get('description', '')[:90]}")
+    print(f"Показано {len(shown)} із {len(hits)} відповідних предметів.")
+    if sheet and shown:
+        from PIL import Image, ImageDraw, ImageFont
+        sheet = Path(sheet)
+        sheet.parent.mkdir(parents=True, exist_ok=True)
+        canvas = Image.new("RGB", (3 * 240, ((len(shown) + 2) // 3) * 200), (35, 35, 40))
+        draw = ImageDraw.Draw(canvas)
+        for i, p in enumerate(shown):
+            x, y = i % 3 * 240, i // 3 * 200
+            with Image.open(LIBRARY / "props" / (p["name"] + ".png")) as source:
+                im = source.convert("RGBA"); im.thumbnail((216, 155))
+                canvas.paste(im, (x + (240 - im.width) // 2, y + (160 - im.height) // 2), im)
+            draw.text((x + 10, y + 168), p["name"][:32], fill="white", font=ImageFont.load_default())
+        canvas.save(sheet)
+        print(f"Один аркуш кандидатів: {sheet}")
 
 
 def use(project, names):
@@ -121,11 +140,17 @@ def use(project, names):
     missing = [n for n in names if n not in catalog]
     if missing: sys.exit("Немає в бібліотеці: " + ", ".join(missing))
     assets = project / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
     for name in names:
         target = assets / f"{name}.png"
         if target.exists() and digest(target) != catalog[name]["sha256"]:
             sys.exit(f"{target} уже є і відрізняється від бібліотечного; перейменуйте один із них")
-        clone(LIBRARY / "props" / f"{name}.png", target)
+        if not target.exists():
+            clone(LIBRARY / "props" / f"{name}.png", target)
+    picks_path = assets / "library-picks.json"
+    picks = json.loads(picks_path.read_text()) if picks_path.is_file() else {}
+    picks.update({name: {"sha256": catalog[name]["sha256"], "file": f"{name}.png"} for name in names})
+    picks_path.write_text(json.dumps(picks, ensure_ascii=False, indent=1))
     (assets / "index.json").write_text(json.dumps(sorted(p.stem for p in assets.glob("*.png"))))
     add_project(project, quiet=True)
     print(f"У {project.name} додано: {', '.join(names)}")
@@ -136,6 +161,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("collect")
     s = sub.add_parser("search"); s.add_argument("words", nargs="+")
+    s.add_argument("--limit", type=int, default=6)
+    s.add_argument("--sheet", help="one small contact sheet of the selected candidates")
     u = sub.add_parser("use"); u.add_argument("--project", required=True); u.add_argument("names", nargs="+")
     args = ap.parse_args()
     if args.cmd == "collect":
@@ -145,7 +172,7 @@ def main():
         save(catalog)
         print(f"У бібліотеці {len(catalog['props'])} предметів: {LIBRARY / 'props'}")
     elif args.cmd == "search":
-        search(args.words)
+        search(args.words, args.limit, args.sheet)
     else:
         use(Path(args.project).resolve(), args.names)
 

@@ -39,6 +39,8 @@ and puts in what it can.
 
 ## Working through tools/studio.py
 
+For video production, start with `python3 tools/studio.py work P`: the current frame-to-scene map and pending frames. Read [docs/PRODUCTION_EFFICIENCY.md](docs/PRODUCTION_EFFICIENCY.md) for incremental review, fresh repair sessions and bounded asset selection. The handoff is derived from the saved plan and scene files; it must never become a separately edited plan.
+
 Start here: it answers in a few lines and changes the montage in one checked batch. P is a project id or words that find
 one project (`"Горбунов 23"`).
 

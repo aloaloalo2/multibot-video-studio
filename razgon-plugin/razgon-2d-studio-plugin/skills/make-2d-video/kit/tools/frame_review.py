@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
+from review_dependencies import fingerprints
 
 PER_SHEET = 4
 SPOTS = (0.2, 0.5, 0.8)
@@ -103,20 +104,35 @@ def sheets(proj: Path, root: Path, a) -> None:
     fps = json.loads((proj / "config.json").read_text()).get("fps", 25)
     frames = frames_of(proj)
     want = pick(a.frames, len(frames)) if a.frames else {f["n"] for f in frames}
-    todo = [f for f in frames if f["n"] in want]
+    state_path = proj / "build" / "review" / "review.json"
+    state = load_state(state_path)
+    sources = fingerprints(proj, root, frames)
+    keep = state_path.parent / "frames"
+    def reusable(f):
+        old = state["frames"].get(str(f["n"]), {})
+        return (not old.get("errors") and old.get("source") == sources[f["n"]] and old.get("scale") == a.scale
+                and old.get("times") and all((keep / f"{t:.2f}.png").is_file() for t in old["times"]))
+    todo = [f for f in frames if f["n"] in want and (getattr(a, "all", False) or not reusable(f))]
+    if not todo:
+        print("No changed frames: saved stills and visual verdicts reused. No renderer started.")
+        return
     for f in todo:   # on the frame grid, inside the frame, away from its first and last 0.5 s (transitions)
         lo, hi = f["start"] + min(0.5, (f["end"] - f["start"]) * 0.2), f["end"] - min(0.5, (f["end"] - f["start"]) * 0.2)
         f["times"] = [round(round(min(hi, max(lo, f["start"] + (f["end"] - f["start"]) * k)) * fps) / fps, 2) for k in SPOTS]
     out = proj / "build" / "review"
     keep = out / "frames"
     keep.mkdir(parents=True, exist_ok=True)
-    stills = proj / "build" / "stills"
+    # A dedicated directory prevents concurrent review/stills commands overwriting
+    # one another. Its owner is this one invocation only.
+    import tempfile
+    stills = Path(tempfile.mkdtemp(prefix="review-", dir=proj / "build"))
     times = sorted({t for f in todo for t in f["times"]})
     before = {t: thumb(keep / f"{t:.2f}.png") for t in times}   # the stills of the last run, to tell a real change from dust
     errors = []   # a scene that throws draws an ERROR line into its frame: the film is not reviewed until there are none
-    for i in range(0, len(times), 90):   # render.mjs empties build/stills on every run: keep each batch aside
+    for i in range(0, len(times), 90):
         chunk = ",".join(f"{t:.2f}" for t in times[i:i + 90])
-        r = subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk, "--scale", str(a.scale)],
+        r = subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk,
+                            "--scale", str(a.scale), "--dir", str(stills)],
                            cwd=root, capture_output=True, text=True)
         if r.returncode:
             sys.exit(r.stdout[-1500:] + r.stderr[-1500:])
@@ -127,8 +143,8 @@ def sheets(proj: Path, root: Path, a) -> None:
             if not p.name.startswith("sheet"):
                 p.replace(keep / p.name.split("_")[-1])
         print(f"  stills {min(i + 90, len(times))}/{len(times)}", flush=True)
-    state_path = out / "review.json"
-    state = load_state(state_path)
+    import shutil
+    shutil.rmtree(stills, ignore_errors=True)
     reset = 0
     for f in todo:
         imgs = [Image.open(keep / f"{t:.2f}.png").convert("RGB") for t in f["times"]]
@@ -139,7 +155,8 @@ def sheets(proj: Path, root: Path, a) -> None:
         if old.get("pixels") != digest and old.get("verdict") and not same:
             reset += 1
             old = {}
-        state["frames"][str(f["n"])] = {**old, "pixels": digest, "times": f["times"], "takes": f["takes"]}
+        state["frames"][str(f["n"])] = {**old, "pixels": digest, "times": f["times"], "takes": f["takes"],
+                                         "source": sources[f["n"]], "scale": a.scale, "errors": sorted(set(errors))[:40]}
     for p in out.glob("review_*.png"):
         p.unlink()
     w, h = todo[0]["imgs"][0].size
@@ -162,7 +179,7 @@ def sheets(proj: Path, root: Path, a) -> None:
         sheet.save(out / f"review_{s // PER_SHEET + 1:02d}.png")
     state["sheets_at"] = time.time()
     state["total"] = len(frames)
-    state["errors"] = sorted(set(errors))[:40]
+    state["errors"] = sorted({e for v in state["frames"].values() for e in v.get("errors", [])})[:40]
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1))
     print(f"Sheets: {out}/review_NN.png ({-(-len(todo) // PER_SHEET)} sheets, {len(todo)} frames, 3 stills each)")
     if reset:
@@ -189,11 +206,13 @@ def mark(proj: Path, a) -> None:
 
 def status(proj: Path) -> int:
     state = load_state(proj / "build" / "review" / "review.json")
-    total = len(frames_of(proj))
+    units = frames_of(proj)
+    total = len(units)
     frames = state.get("frames", {})
     bugs = [(n, e.get("note", "")) for n, e in frames.items() if e.get("verdict") == "bug"]
     unseen = [n for n in range(1, total + 1) if frames.get(str(n), {}).get("verdict") is None]
-    stale = state.get("sheets_at", 0) < code_mtime(proj)
+    sources = fingerprints(proj, proj.parent.parent, units)
+    stale = [f["n"] for f in units if frames.get(str(f["n"]), {}).get("source") != sources[f["n"]]]
     errors = state.get("errors") or []
     ok = total - len(bugs) - len(unseen)
     print(f"Frames reviewed ok: {ok}/{total}")
@@ -202,7 +221,7 @@ def status(proj: Path) -> int:
     if unseen:
         print(f"  not reviewed: {', '.join(map(str, unseen[:30]))}{'…' if len(unseen) > 30 else ''}")
     if stale:
-        print("  the code changed after the last sheets: run `sheets` again (unchanged frames keep their verdict)")
+        print("  changed frames needing fresh stills: " + ",".join(map(str, stale)))
     for e in errors[:8]:
         print(f"  RENDER ERROR  {e}")
     return 0 if not bugs and not unseen and not stale and not errors else 1
@@ -213,6 +232,7 @@ def main() -> None:
     ap.add_argument("--project", required=True)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("sheets"); s.add_argument("--frames", default=""); s.add_argument("--scale", type=float, default=0.34)
+    s.add_argument("--all", action="store_true", help="force new stills even when source content is unchanged")
     m = sub.add_parser("mark"); m.add_argument("frames"); m.add_argument("verdict", choices=["ok", "bug"]); m.add_argument("note", nargs="?", default="")
     sub.add_parser("status")
     a = ap.parse_args()

@@ -48,6 +48,7 @@ async function openPlayer(browser, style) {
   const qs = new URLSearchParams(); if (args.scale) qs.set('scale', args.scale); if (style || args.style) qs.set('style', style || args.style); if (args.debug) qs.set('debug', '1');
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
   page.on('pageerror', e => console.log('[pageerror]', e.message));
+  page.on('requestfailed', r => console.log('[requestfailed]', r.url(), r.failure()?.errorText || 'unknown'));
   page.on('console', m => { const t = m.text(); if (/ERROR|missing/i.test(t)) console.log('[page]', t); });
   await page.goto(`http://localhost:${PORT}/player.html?${qs}`);
   await page.waitForFunction('window.READY === true || !!window.BOOT_ERROR', null, { timeout: 120000 });

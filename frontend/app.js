@@ -324,6 +324,12 @@ function projectCreationDate(timestamp){
   return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
 }
 
+function projectProductionCardState(request){
+  const total=Math.max(0,Number(request?.frames)||0),done=Math.max(0,Math.min(total,Number(request?.made)||0));
+  return {total,done,working:['requested','in_progress'].includes(request?.status),
+    stopped:request?.status==='failed'&&done<total};
+}
+
 function renderOverview() {
   $('overview-title').innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';
   $('overview-create').disabled=!state.channel;
@@ -339,7 +345,7 @@ function renderOverview() {
     open.innerHTML=`<h2>${projectIcon}<span>${esc(project.name || 'Без назви')}</span></h2><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
     // While the agent makes the frames the card shows how far it got and does not open; after it is done, paused or
     // stopped, it opens as usual.
-    const making=project.production_request,producing=['requested','in_progress'].includes(making?.status);
+    const making=project.production_request,makingState=projectProductionCardState(making),producing=makingState.working;
     open.addEventListener('click',()=>{
       if(producing){status('Агент ще створює кадри цього ролика. Випуск відкриється, коли він закінчить.');return;}
       selectProject(project.id,{view:directMontage(project)||count?'editor':'plan'}).catch(error=>status(error.message,true));
@@ -362,16 +368,16 @@ function renderOverview() {
     }else card.classList.add('no-cover');
     const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
     // a stopped or paused run tells it on the card too: the author was sent here to watch the frames being made
-    const stopped=making?.status==='failed';
+    const stopped=makingState.stopped;
     if(stopped){
-      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0);
+      const {total,done}=makingState;
       const box=document.createElement('div');box.className='project-making stopped';
       box.innerHTML=`<span class="project-export-label"><span>${making.paused?'На паузі':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
       box.title='Відкрийте випуск, щоб продовжити або почати ще раз';
       open.insertBefore(box,open.querySelector('.project-meta'));card.classList.add('production-stopped');
     }
     if(producing){
-      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
+      const {total,done}=makingState,progress=total?Math.round(done/total*100):0;
       const box=document.createElement('div');box.className='project-making';
       box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
       open.insertBefore(box,open.querySelector('.project-meta'));
@@ -405,12 +411,14 @@ function productionControl(id,working){
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
     const job=state.projectExports.get(card.dataset.projectId),active=!!job&&['queued','running','cancelling'].includes(job.status);
-    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active));
+    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')));
+    const making=card.querySelector('.project-making');if(making)making.hidden=active;
+    const control=card.querySelector('.project-production-control');if(control)control.hidden=active;
     for(const button of card.querySelectorAll('.project-action'))button.disabled=active;
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
-    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='razgon_frames'?`Малюємо кадри Razgon · ${Number(job.razgon_completed)||0} з ${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
+    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='razgon_frames'?`Експорт · ${Number(job.razgon_completed)||0}/${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
   }
 }

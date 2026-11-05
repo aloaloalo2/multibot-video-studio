@@ -204,8 +204,12 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-export-state{color:#f5c04a;font-size:12px;font-weight:600}
 .project-card.exporting .project-created{display:none}
 .project-export-state[hidden]{display:none}
+.project-making[hidden],.project-production-control[hidden]{display:none}
+.project-card.exporting .project-making,.project-card.exporting .project-production-control{display:none}
 .project-export-label{display:flex;align-items:center;gap:7px;min-width:0;white-space:nowrap}
-.project-export-label>span{overflow:hidden;text-overflow:ellipsis}
+.project-export-label>span:not(.export-spinner){overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.project-export-label>.export-spinner{width:14px;height:14px;min-width:14px;flex:0 0 14px}
+.project-export-label>strong{flex:none;white-space:nowrap}
 /* the percent follows the stage right away («Перевіряємо файл · 98%»), not floating in the middle of the card */
 .project-export-label strong{font-variant-numeric:tabular-nums;color:#f1f1f2;font-weight:600}
 .project-export-label strong:before{content:'·';margin-right:7px;color:#f5c04a99}

@@ -21,6 +21,7 @@ from pathlib import Path
 import director
 import frame_progress
 import logo_layer
+import production_context
 import razgon_sound
 import store
 
@@ -30,6 +31,11 @@ TIMEOUT = 6 * 3600
 EFFORT = "xhigh"
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
+
+
+def run_log(pid: str, request: dict) -> Path:
+    suffix = f"-fix{request['fixes']}" if request.get("fixes") else ""
+    return store.project_dir(pid) / f"production-{request['id']}{suffix}.log"
 
 
 def set_request(pid: str, **fields) -> dict:
@@ -95,7 +101,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     rel = episode.relative_to(root) if root in episode.parents else episode
     frames = ",".join(str(n) for n in range(1, request["frames"] + 1))
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
-               "Виправ саме це у сценах цих кадрів, перевір усі кадри за пунктом 5 і зроби крок 4.\n\n"
+               "Виправ потрібні сцени, перевір змінені кадри й їхні сусідні стики та зроби крок 4.\n\n"
                if notes.strip() else "")
     return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
 
@@ -112,10 +118,14 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
 кладе сама після твоєї роботи, без рендеру.
 1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
-2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "{store.razgon_rel()}/tools/library.py" search <слова> і use.
+2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше перевір assets/library-picks.json і вже прикріплені предмети.
+   Далі один точний пошук: python3 "{store.razgon_rel()}/tools/library.py" search <слова> --limit 6 --sheet <аркуш.png> і use.
+   Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
+   Не переглядай бібліотеку по колу й не генеруй уже вибраний предмет заново.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
-3. Перевірка: node render.mjs --project <проєкт> --sheet --scale 0.5 у папці {store.razgon_rel()}, відкривай кожен аркуш і виправляй; direction_check.py без FAIL.
+3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
+   Переглянь аркуші й познач результат через mark; direction_check.py без FAIL. Один набір аркушів для перевірки композиції й логіки.
 {QUALITY.replace("<студія>", store.APP_ROOT.name)}
 4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
@@ -128,9 +138,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 
 Не роби фінальний MP4, не змінюй режисуру й стиль, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Рендерю аркуш кадрів 1–3».
-Незалежні сцени можна писати паралельно помічниками (Agent), а сам ти режисер, який збирає їхню роботу.
-Помічнику пиши в завданні все, що йому треба (стиль, герої, шляхи, команди, правила якості коротко), щоб він не перечитував
-правила й навики заново: кожне таке читання з'їдає ліміт.
+Працюй із короткою картою кадрів студії. Не передавай помічникам копію великої розмови.
 Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
 
 
@@ -162,7 +170,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     rel = episode.relative_to(root) if root in episode.parents else episode
     tools = store.APP_ROOT.name + "/tools"
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
-               "Виправ саме це, перевір усі кадри за пунктом 5 і доведи решту до кінця.\n\n" if notes.strip() else "")
+               "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
     return f"""Ти монтажер випуску в VideoKey Studio. План кадрів іде за озвучкою, автор натиснув «Почати створення ролика».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
@@ -228,13 +236,16 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             request = project["production_request"]
             if request.get('paused'):
                 return
-            log = store.project_dir(pid) / f"production-{request['id']}.log"
+            log = run_log(pid, request)
             started = time.time()
             set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False, paused=False)
-        # a fix goes on in the run's own session, so the agent keeps everything it already knows about these frames
+        # Pauses resume their session; a new repair gets a compact file handoff
+        # instead of carrying hundreds of thousands of old tokens into every step.
         text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
+        _, handoff = production_context.write(project, request, repair=bool(notes.strip()) and not request.get("continue_session"))
+        text += production_context.instructions(handoff)
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=request.get("session_id") if notes.strip() else None, effort=EFFORT)
+                                       resume=request.get("session_id") if request.get("continue_session") else None, effort=EFFORT)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
@@ -273,8 +284,8 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 razgon_sound.start(pid, "production")
 
 
-def fix(pid: str, notes: str) -> dict:
-    """The author's remarks on the frames already made: the agent fixes them in the same session and puts them back."""
+def fix(pid: str, notes: str, *, continue_session: bool = False) -> dict:
+    """Repair through a fresh handoff; only an explicit pause/limit resumes the old session."""
     notes = str(notes or "").strip()
     if not notes:
         raise store.StudioError("Напишіть, що виправити")
@@ -282,7 +293,8 @@ def fix(pid: str, notes: str) -> dict:
     request = project.get("production_request") or {}
     if request.get("status") not in {"done", "failed"}:
         raise store.StudioError("Агент ще працює над цими кадрами")
-    set_request(pid, status="requested", paused=False, created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
+    set_request(pid, status="requested", paused=False, continue_session=continue_session,
+                created_at=time.time(), notes=notes[:4000], fixes=int(request.get("fixes") or 0) + 1)
     start(pid, notes)
     return store.load_project(pid)
 
@@ -302,7 +314,7 @@ def resume(pid: str) -> dict:
         raise store.StudioError("Агент не стоїть на паузі")
     notes=("Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
            "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else RESUME
-    return fix(pid, notes)
+    return fix(pid, notes, continue_session=True)
 
 
 def pause(pid: str) -> dict:
@@ -314,7 +326,9 @@ def pause(pid: str) -> dict:
     # A first run may not have returned its result yet. Its initial event already
     # identifies the persistent conversation that Resume must continue.
     session=request.get('session_id')
-    log=store.project_dir(pid)/f"production-{request['id']}.log"
+    log=run_log(pid, request)
+    if not log.is_file():
+        log=store.project_dir(pid)/f"production-{request['id']}.log"  # legacy repair runs shared this path
     if log.is_file():
         with log.open() as stream:
             for _,line in zip(range(20),stream):

@@ -1,5 +1,9 @@
 # Planning ownership
 
+## Production efficiency (5 November 2026)
+
+Use the compact derived handoff `production-context.txt` and `tools/studio.py work P` before scene work. Preserve the accepted Studio frame ids/times and Razgon shots; see [docs/PRODUCTION_EFFICIENCY.md](docs/PRODUCTION_EFFICIENCY.md). New repair requests start fresh Claude sessions; explicit pause/limit continuation resumes its existing session. Each repair keeps a separate cost log. Review new/changed frame dependencies and adjacent cuts once through `frame_review.py`, retaining unchanged stills/verdicts and requiring a current whole-film status. Keep checks for genuine visual defects, including detached neon contours. Asset selection uses saved picks, one bounded library search/contact sheet, then generation when no candidate fits. Do not lower the user's chosen model/effort or start paid production for a workflow test.
+
 ## Video production workflow
 
 Before planning or editing a video with this Studio, read [docs/AI_VIDEO_WORKFLOW.md](docs/AI_VIDEO_WORKFLOW.md) and the applicable channel instructions. Use the Studio's saved channel settings and verify the plan and project through its local API.

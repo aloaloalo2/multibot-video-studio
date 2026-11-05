@@ -207,6 +207,9 @@ def main(argv=None) -> int:
     spend = commands.add_parser("spend", help="куди запуски режисера й агента кадрів витратили ліміти Claude")
     spend.add_argument("project")
     spend.add_argument("--all", action="store_true", help="усі звіти, а не лише останній")
+    work = commands.add_parser("work", help="чинні кадри, файли сцен і незавершена робота одним коротким списком")
+    work.add_argument("project")
+    work.add_argument("--json", action="store_true")
     for name, text in (("undo", "скасувати останню зміну монтажу"), ("redo", "повторити скасовану зміну")):
         commands.add_parser(name, help=text).add_argument("project")
     remove = commands.add_parser("remove", help="прибрати кадр з таймлайну разом з його групою")
@@ -331,6 +334,10 @@ def main(argv=None) -> int:
             spec = {"op": "replace", "path": str(Path(args.file).expanduser().resolve())}
             spec.update({"clip": args.clip} if args.clip else {"frame": int(args.frame) if args.frame.isdigit() else args.frame})
             run_ops(project, [spec], args.dry_run)
+            return 0
+        if args.command == "work":
+            result = call("GET", f"/api/projects/{pid}/work" + ("" if args.json else "?format=text"), raw=not args.json)
+            print(json.dumps(result, ensure_ascii=False, indent=1) if args.json else result)
             return 0
         if args.command == "spend":
             print(call("GET", f"/api/projects/{pid}/spend?format=text" + ("" if args.all else "&limit=1"), raw=True))

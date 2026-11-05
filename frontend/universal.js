@@ -181,10 +181,12 @@ function visualGaps(){
     const groups=sceneGroups().filter(group=>group.role!=='overlay');
     const sceneIds=groups.length?new Set(groups.flatMap(group=>group.clip_ids)):null;
     const spans=universalClips().filter(clip=>clip.kind!=='audio'&&(!sceneIds||sceneIds.has(clip.id))).map(clip=>[frame(clip.start),frame(Number(clip.start)+Number(clip.duration))]).sort((a,b)=>a[0]-b[0]);
-    const total=frame(duration()),gaps=[];let covered=0;
+    // Export rounds the output length upward and holds the final composition
+    // through a fractional audio sample (engine/render.py timeline_plan).
+    const total=Math.ceil(Number(duration())*fps-1e-8),gaps=[];let covered=0;
     if(!spans.length)return [];
     for(const [start,end] of spans){if(start>covered)gaps.push({start:covered/fps,end:start/fps});covered=Math.max(covered,end);}
-    if(covered<total)gaps.push({start:covered/fps,end:total/fps});
+    if(total-covered>1)gaps.push({start:covered/fps,end:total/fps});
     return gaps;
   });
 }
