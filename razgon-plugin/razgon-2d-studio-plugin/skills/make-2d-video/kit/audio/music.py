@@ -147,7 +147,8 @@ def render_score(plan, total, seed=1, key=None):
         if i < len(plan) - 1: y[-fo:] *= (np.cos(np.linspace(0, np.pi / 2, fo)) ** 2)[:, None]
         place(out, y, secs(st - (xf * 0.5 if i else 0)))
     k = secs(3.0); out[-k:] *= np.linspace(1, 0, k)[:, None]
-    return (out * db(-20 - rms_db(out))).astype(np.float32)
+    out *= db(-20 - rms_db(out))   # in place: the same numbers without two more copies of the whole score
+    return out
 
 
 def default_plan(total):

@@ -2156,13 +2156,13 @@ def clear_history(pid: str, side: str) -> None:
         path.unlink()
 
 
-RAZGON_RENDER = re.compile(r"(frame_\d{3}|music_sfx)(-[0-9a-f]{8})?\.(mp4|wav)")
+RAZGON_RENDER = re.compile(r"(frame_\d{3}|music_sfx)(-[0-9a-f]{8})?\.(mp4|wav|m4a)")   # m4a: the bed of razgon_bridge.py sound
 
 
 def prune_razgon_renders(pid: str) -> dict:
     """Delete clip renders the Razgon bridge imported and later replaced by a newer render of the same frame.
 
-    Only files the bridge names (frame_NNN.mp4, music_sfx.wav) in this project's media folder are candidates. A frame is
+    Only files the bridge names (frame_NNN.mp4, music_sfx.wav or .m4a) in this project's media folder are candidates. A frame is
     changed in its code and never brought back (user, 30 October 2026: «старі кадри не треба зберігати... міняємо напряму
     код, без можливості повернути назад»), so a render stays only while the timeline shows it. The undo steps that still
     show a replaced one go with it, oldest first, so the steps left form one unbroken chain; redo steps holding one are

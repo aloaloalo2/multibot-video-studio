@@ -1,4 +1,8 @@
+import contextlib
+import io
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -6,6 +10,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import razgon_bridge
@@ -124,6 +129,201 @@ class PictureFingerprintTest(unittest.TestCase):
             (razgon / "scenes" / "helpers.js").write_text("export const glow = 2")
             changed = razgon_bridge.picture_fingerprints(razgon, frames)
             self.assertTrue(all(changed[n] != after[n] for n in range(1, 5)))           # a shared helper: every frame
+
+
+class SoundStudio:
+    """The few Studio calls of `razgon_bridge.py sound`, applied the way the Studio's store does: add_layer at an index,
+    add_clip into an empty layer (a full one gets a new layer on top), delete_clip with its layer, imports as assets."""
+    def __init__(self, project, plan):
+        self.data, self.plan_data, self.sent, self.imported, self.calls = project, plan, [], [], []
+
+    def project(self, pid):
+        return json.loads(json.dumps(self.data))
+
+    def plan(self, pid):
+        return self.plan_data
+
+    def import_file(self, pid, path):
+        copy = Path(path).with_name(f"imported-{len(self.imported)}{Path(path).suffix}")
+        shutil.copy(path, copy)
+        asset = {"id": f"a{len(self.imported)}", "kind": "audio", "path": str(copy)}
+        self.imported.append(asset)
+        self.data["assets"].append(asset)
+        self.data["revision"] += 1
+        return asset
+
+    def batch(self, project, actions):
+        if project.get("revision") != self.data["revision"]:
+            raise razgon_bridge.BridgeError("Студія відповіла 409 на POST /actions: Проєкт змінився")
+        tracks = self.data["tracks"]
+        for action in actions:
+            self.sent.append(action)
+            payload = action["payload"]
+            if action["type"] == "add_layer":
+                tracks.insert(payload["to_index"], {"id": f"L{len(self.sent)}", "name": payload["name"], "clips": []})
+            elif action["type"] == "add_clip":
+                layer = next(t for t in tracks if t["id"] == payload["layer_id"])
+                if layer["clips"]:
+                    layer = {"id": f"L{len(self.sent)}", "name": payload["title"], "clips": []}
+                    tracks.append(layer)
+                layer["clips"].append({**payload, "id": f"c{len(self.sent)}"})
+            elif action["type"] == "delete_clip":
+                layer = next(t for t in tracks if any(c["id"] == payload["clip_id"] for c in t["clips"]))
+                layer["clips"] = [c for c in layer["clips"] if c["id"] != payload["clip_id"]]
+                tracks.remove(layer)
+        self.data["revision"] += 1
+        return self.project(self.data["id"])
+
+    def call(self, method, path, body=None):
+        self.calls.append((method, path))
+        return {}
+
+
+class SoundTest(unittest.TestCase):
+    """Music and effects reach the timeline without a render (5 November 2026: episode 07 had the voice alone)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.razgon = Path(self.tmp.name) / "projects" / "07"
+        (self.razgon / "story").mkdir(parents=True)
+        (self.razgon / "build" / "studio").mkdir(parents=True)
+        frames = [{"number": 1, "start": 0.0, "end": 2.0, "format": "razgon_2d"}, {"number": 2, "start": 2.0, "end": 4.0, "format": "razgon_2d"}]
+        self.link = {"project_id": "p" * 24, "fps": 25, "duration": 4.0, "studio_url": "http://studio", "frames": frames,
+                     "script_sha256": "s1", "audio_sha256": "v1"}
+        (self.razgon / "story" / "studio_frames.json").write_text(json.dumps(self.link))
+        (self.razgon / "story" / "shots.json").write_text(json.dumps(
+            {"duration": 4.0, "shots": [{"id": "e01", "start": 0.0, "end": 4.0}], "sfx": [{"t": 1.0, "name": "ding"}]}))
+        (self.razgon / "config.json").write_text(json.dumps({"fps": 25}))
+        voice = {"id": "voice", "kind": "audio", "title": "Озвучка", "start": 0, "duration": 4.0, "volume": 1}
+        frame = lambda n: {"id": f"f{n}", "kind": "animation", "title": f"Razgon · кадр {n:03d}", "start": 2.0 * (n - 1), "duration": 2.0}
+        plate = {"id": "logo", "kind": "image", "title": "Логотип каналу", "start": 0, "duration": 4.0, "channel_logo": True}
+        project = {"id": "p" * 24, "revision": 3, "assets": [],
+                   "tracks": [{"id": "t0", "name": "Шар 1", "clips": [voice]}, {"id": "t1", "name": "Кадр 1", "clips": [frame(1)]},
+                              {"id": "t2", "name": "Кадр 2", "clips": [frame(2)]}, {"id": "t3", "name": "Плашка каналу", "clips": [plate]}],
+                   "scene_groups": [{"id": "g", "title": "Плашка каналу", "clip_ids": ["logo"], "role": "overlay"}]}
+        self.studio = SoundStudio(project, {"script_sha256": "s1", "timing": {"audio": {"sha256": "v1"}}})
+        self.tone = 440
+
+    def bed(self, razgon):
+        """A short WAV in place of Razgon's mix (render_bed is checked against the kit's mix below)."""
+        path = razgon / "build" / "studio" / "music_sfx.wav"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={self.tone}:duration=4:sample_rate=48000",
+                        "-ac", "2", str(path)], check=True)
+        return path
+
+    def run_sound(self):
+        args = SimpleNamespace(razgon=str(self.razgon), studio_url=None)
+        output = io.StringIO()
+        with patch.object(razgon_bridge, "Studio", lambda url: self.studio), patch.object(razgon_bridge, "render_bed", self.bed), \
+                patch.object(razgon_bridge, "renders_running", lambda: 0), contextlib.redirect_stdout(output):
+            razgon_bridge.sound(args)
+        return output.getvalue()
+
+    def beds(self):
+        return [(index, track, clip) for index, track in enumerate(self.studio.data["tracks"]) for clip in track["clips"]
+                if clip.get("title") == razgon_bridge.BED_TITLE]
+
+    def test_the_bed_goes_on_its_own_layer_under_the_plate_and_replaces_the_old_one(self):
+        self.studio.data["tracks"].insert(1, {"id": "old", "name": "x", "clips": [
+            {"id": "oldbed", "kind": "audio", "title": razgon_bridge.BED_TITLE, "start": 0, "duration": 4.0, "volume": 1, "asset_id": "gone"}]})
+        self.run_sound()
+        found = self.beds()
+        self.assertEqual(len(found), 1)                                               # the old clip went with its layer
+        index, track, clip = found[0]
+        self.assertEqual((clip["kind"], clip["start"], clip["duration"], clip["volume"]), ("audio", 0, 4.0, 1))
+        self.assertEqual((track["name"], len(track["clips"])), (razgon_bridge.BED_TITLE, 1))
+        self.assertEqual(index, len(self.studio.data["tracks"]) - 2)                  # right under the plate
+        self.assertEqual(self.studio.data["tracks"][-1]["clips"][0]["id"], "logo")    # the plate stays on top
+        self.assertNotIn("old", [t["id"] for t in self.studio.data["tracks"]])
+        bed = Path(self.studio.imported[0]["path"])
+        self.assertEqual(bed.suffix, ".m4a")
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,bit_rate:format=duration", "-of", "json", str(bed)],
+                               capture_output=True, text=True, check=True)
+        info = json.loads(probe.stdout)
+        self.assertEqual(info["streams"][0]["codec_name"], "aac")
+        self.assertAlmostEqual(float(info["format"]["duration"]), 4.0, delta=0.03)
+        self.assertIn(("POST", f"/api/projects/{'p' * 24}/tidy"), self.studio.calls)
+
+    def test_an_unchanged_bed_is_left_and_a_new_one_replaces_it(self):
+        self.run_sound()
+        sent = len(self.studio.sent)
+        self.assertIn("не змінилися", self.run_sound())
+        self.assertEqual((len(self.studio.sent), len(self.studio.imported)), (sent, 1))  # nothing imported or sent again
+        self.tone = 330                                                                    # new cues: a new bed
+        self.run_sound()
+        self.assertEqual(len(self.studio.imported), 2)
+        self.assertEqual([clip["asset_id"] for _, _, clip in self.beds()], ["a1"])
+
+    def test_an_edit_meanwhile_is_met_with_a_fresh_project(self):
+        batch = self.studio.batch
+        def once_stale(project, actions):
+            if not getattr(self, "edited", False):
+                self.edited = True
+                self.studio.data["revision"] += 1                                       # the author edits right then
+            return batch(project, actions)
+        self.studio.batch = once_stale
+        self.run_sound()
+        self.assertEqual(len(self.beds()), 1)
+        self.assertEqual(len([t for t in self.studio.data["tracks"] if t["name"] == razgon_bridge.BED_TITLE]), 1)
+
+    def test_a_mixed_episode_and_a_changed_plan_are_refused(self):
+        self.link["frames"][1]["format"] = "stock_photo"
+        (self.razgon / "story" / "studio_frames.json").write_text(json.dumps(self.link))
+        with self.assertRaisesRegex(razgon_bridge.BridgeError, "змішаного"):
+            self.run_sound()
+        self.link["frames"][1]["format"] = "razgon_2d"
+        (self.razgon / "story" / "studio_frames.json").write_text(json.dumps(self.link))
+        self.studio.plan_data = {"script_sha256": "s2", "timing": {"audio": {"sha256": "v1"}}}
+        with self.assertRaisesRegex(razgon_bridge.BridgeError, "prepare"):
+            self.run_sound()
+        self.assertEqual(self.beds(), [])
+
+    def test_the_agents_may_lay_the_sound(self):
+        run = subprocess.run([sys.executable, str(BRIDGE), "sound", "--razgon", self.tmp.name], capture_output=True, text=True,
+                             env={**os.environ, "MULTIBOT_RENDER_ON_EXPORT": "1"}, timeout=60)
+        self.assertNotIn("«Експорт MP4»", run.stderr)                                 # not refused like push and final
+
+    def test_the_mix_waits_while_razgon_renders(self):
+        running = iter([2, 1, 0])
+        with patch.object(razgon_bridge, "renders_running", lambda: next(running)), patch.object(razgon_bridge.time, "sleep") as sleep, \
+                contextlib.redirect_stdout(io.StringIO()):
+            razgon_bridge.wait_for_renders()
+        self.assertEqual(sleep.call_count, 2)
+
+
+class KitBedTest(unittest.TestCase):
+    """render_bed sums the kit mix's own parts: the same bed as the whole mix less the voice, without whole-film copies."""
+
+    def test_the_bed_from_the_parts_equals_the_mix_less_the_voice(self):
+        try:
+            import numpy as np
+            import scipy  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy and scipy are needed for the kit's mix")
+        kit = Path(razgon_bridge.__file__).resolve().parents[1] / "razgon-plugin" / "razgon-2d-studio-plugin" / "skills" / "make-2d-video" / "kit"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "audio").symlink_to(kit / "audio")
+            (root / "tools").symlink_to(kit / "tools")
+            razgon = root / "projects" / "t"
+            for folder in ("input", "story", "build"):
+                (razgon / folder).mkdir(parents=True)
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=200:duration=12:sample_rate=48000", "-af", "volume=0.3",
+                            "-ac", "2", str(razgon / "input" / "voice.wav")], check=True)
+            shots = [{"id": "e01", "start": 0.0, "end": 6.0, "amb": {"name": "wind", "gain": -22}, "sfx": [{"at": 1.0, "name": "swish"}]},
+                     {"id": "e02", "start": 6.0, "end": 12.0, "amb": {"name": "city", "gain": -24}}]
+            (razgon / "story" / "shots.json").write_text(json.dumps({"duration": 12.0, "shots": shots,
+                "music": [{"start": 0, "end": 12, "mood": "calm", "intensity": 0.4}], "sfx": [{"t": 9.5, "name": "ding", "gain": -10}]}))
+            (razgon / "config.json").write_text(json.dumps({"voiceover": "input/voice.wav", "music": {"gainDb": -13}, "sfx": {"gainDb": -6}}))
+            parts = razgon_bridge.render_bed(razgon)
+            lean = np.frombuffer(parts.read_bytes()[44:], np.int16).copy()
+            import mix as MIX
+            whole = razgon_bridge._bed_from_whole_mix(razgon, MIX)
+            old = np.frombuffer(whole.read_bytes()[44:], np.int16)
+        self.assertEqual(len(lean), len(old))
+        self.assertLessEqual(int(np.abs(lean.astype(np.int32) - old).max()), 1)   # float rounding of the voice taken out
+        self.assertGreater(int(np.abs(old).max()), 100)                              # there is sound in it
 
 if __name__ == "__main__":
     unittest.main()

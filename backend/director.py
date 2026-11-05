@@ -4,8 +4,10 @@ The Studio hands the episode to Claude Code once Whisper has turned the voice in
 voice; no channel gets its frames from the sentence splitter (user, 31 October 2026: «план завжди робить клод-код, тобто
 режисер… на основі тих пропорцій, які були вказані в каналі»). Claude Code runs on the user's claude.ai subscription, in
 the YOUTUBE folder. For an animated channel it does the director's steps of the channel rules: razgon_bridge.py
-prepare, the shot table (story/gen_shots.py) written by meaning, direction_check.py without FAIL, and razgon_bridge.py
-plan, which writes the frame plan back into the Studio. For a photo or video channel it groups the sentences into frames
+prepare, the shot table (story/gen_shots.py) written by meaning, the film's sound cues (story/gen_sound.py: effects at
+absolute times and ambience per shot, kept by gen_shots.py when it runs again), direction_check.py without FAIL, and
+razgon_bridge.py plan, which writes the frame plan back into the Studio; a finished run lays the music and effects on the
+timeline (razgon_sound.py). For a photo or video channel it groups the sentences into frames
 by meaning, gives each a format within the channel's shares and hands them in through tools/studio.py frames
 (backend/director_plan.py checks them). It draws no scenes and renders nothing. The state of the run lives next to the
 project (director.json), its full answer in director.log, and the plan page shows it.
@@ -15,6 +17,7 @@ from __future__ import annotations
 import json, os, re, shutil, signal, subprocess, threading, time
 from pathlib import Path
 
+import razgon_sound
 import store
 
 MODEL = "claude-opus-5-5"
@@ -106,6 +109,7 @@ def razgon_brief(project: dict) -> str:
     episode = Path(project["episode_path"])
     channel = episode.parent
     rel = episode.relative_to(root) if root in episode.parents else episode
+    SOUND_DESIGN = f"{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/references/sound-design.md"
     return f"""Ти режисер анімаційного випуску в VideoKey Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
@@ -117,7 +121,7 @@ def razgon_brief(project: dict) -> str:
 Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках ({store.razgon_rel()}/projects/*/story/gen_shots.py,
 ls -t покаже найновіші), а не в усіх.
 
-Твоє завдання: режисура й план кадрів, кроки 3–5 правил каналу.
+Твоє завдання: режисура, звук і план кадрів, кроки 3–5 правил каналу.
 1. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
    python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" prepare --project-id {project['id']}
 2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
@@ -125,11 +129,21 @@ ls -t покаже найновіші), а не в усіх.
    описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
    одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 {store.razgon_rel()}/tools/direction_check.py --project <проєкт>
    має пройти без FAIL. На WARN відповідай у story/bible.md або виправляй.
-3. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
+3. Звук фільму за {SOUND_DESIGN}: там назви ефектів, їхні правила й гучності. Музичний план (music) пишеш у gen_shots.py, як у попередніх випусках.
+   Ефекти й атмосферу запиши в story/shots.json окремим скриптом story/gen_sound.py: напиши його й запусти, він читає shots.json і timeline/words.json.
+   - "sfx" для всього фільму: [{{"t": 81.4, "name": "ding", "gain": -10, "seed": 3, "shot": "e12", "why": "слова, під які він звучить"}}], де t означає
+     секунди від початку фільму. Ефект звучить на видиму подію шоту (поява, удар, відкриття, число, перехід) у мить її слова, приблизно один
+     на 15–25 секунд. Два ефекти не стоять ближче ніж за 0,3 с, і голос лишається чистим.
+   - "amb" на більшості шотів за місцем дії: {{"name": "city", "gain": -24, "seed": 7}} (rain, wind, city, roomtone, murmur, hum), від −18 до −28.
+   gen_shots.py при кожному запуску бере їх з попереднього shots.json, щоб нова нарізка шотів не стерла звук:
+   old = json.loads(шлях.read_text()) якщо файл є, sfx=old.get("sfx", []) у story і amb=old_amb.get(id шоту), де old_amb = {{s["id"]: s.get("amb") for s in old.get("shots", [])}}.
+   Після кожного запуску gen_shots.py запускай і gen_sound.py. direction_check.py рахує ефекти й атмосферу і попереджає, коли їх мало або вони накладаються.
+   Музику й ефекти на таймлайн студія кладе сама, щойно ти закінчиш, без рендеру: push для цього не потрібен.
+4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
 
 Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
-Наприкінці коротко напиши українською: скільки шотів і кадрів студії вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
+Наприкінці коротко напиши українською: скільки шотів, кадрів студії і звукових ефектів вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
 
 
 def spent(answer: dict, started: float | None = None) -> dict:
@@ -154,6 +168,7 @@ def spent(answer: dict, started: float | None = None) -> dict:
 # Razgon renders, and helpers are the agents Opus sends off in parallel. Steps that write into the Studio are the
 # director's too: the Studio itself only receives them.
 COMMANDS = [("razgon_bridge.py prepare", "opus", "Готує проєкт Razgon зі студії"), ("gen_shots.py", "opus", "Розбиває озвучку на шоти"),
+            ("gen_sound.py", "opus", "Розставляє звукові ефекти й атмосферу"),
             ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
             ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py slots", "opus", "Ставить кадри кодом на таймлайн"),
             ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
@@ -177,7 +192,8 @@ def describe(tool: str, args: dict) -> tuple[str, str] | None:
         # what the file is for, never its name
         target = str(args.get("file_path"))
         what = ("Пише сцени" if "/scenes/" in target else "Описує предмети для художника" if "prompt" in name
-                else "Пише режисуру шотів" if name in {"gen_shots.py", "shots.json"} else "Записує задум ролика" if name == "bible.md"
+                else "Пише режисуру шотів" if name in {"gen_shots.py", "shots.json"} else "Розставляє звук фільму" if name == "gen_sound.py"
+                else "Записує задум ролика" if name == "bible.md"
                 else "Готує допоміжні файли")
         return "opus", what
     if tool == "Read":
@@ -343,6 +359,10 @@ def _run(pid: str, cli: Path) -> None:
                 save(pid, data)
             except OSError:
                 pass
+            if data.get("status") == "done":
+                # the shots and their sound cues are written: the film's music and effects go on the timeline at once
+                # (razgon_sound.py; a photo channel's film is not due and is left alone)
+                razgon_sound.start(pid, "director")
 
 
 def start(pid: str, reason: str = "voice") -> dict:

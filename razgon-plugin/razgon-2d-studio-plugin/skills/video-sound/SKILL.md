@@ -18,12 +18,13 @@ Work inside `razgon-2d-studio/` on the active project. Read `../make-2d-video/re
 - **No music:** `"music": {"enabled": false}`.
 
 ## 2. SFX and ambience
+- For the whole film (preferred: it stays put when the shots are cut again): `"sfx": [{"t": <s from the film's start>, "name": "<effect>", "gain": -10}]` at the top of shots.json, about one cue per 15–25 s, never two within 0.3 s.
 - Per shot: `"sfx": [{"at": <s from shot start>, "name": "<effect>", "gain": -8}]` (optional `dur`, `seed`, `pitch`; `name` may be a path to the user's own WAV/MP3 inside the project). Per shot ambience: `"amb": {"name": "rain|wind|city|roomtone|murmur|hum", "gain": -20}`.
 - List the library with `python audio/sfx.py --list`, or audition it with `python audio/sfx.py --demo build/sfx_demo`.
 - Place cues on actions and graphics: `whoosh`/`swish` on whips and fast moves, `pop`/`blip` when graphics appear, `counter` under ticking numbers, `riser` then `impact`/`stinger` on reveals, `slowmo`/`freeze` for time effects, `hit`/`kick`/`footstep` on contact. Never stack more than ~2 cues at the same instant.
 
 ## 3. Mix and mux
-For a VideoKey Studio episode, regenerate only its soundtrack with `tools/razgon_bridge.py`'s `render_bed(project_path)` and replace the existing music/effects clip through the Studio API. This also works after cache cleanup: the helper must create `build/studio` before writing its bed. Preserve a backup of the old configuration, cue plan and audio. Do not call `push` or render/export video for a sound-only request. Verify the returned bed exists and has the full episode duration before importing it. Keep narration and visual clips intact.
+For a VideoKey Studio episode, regenerate only its soundtrack with `python3 "VideoKey Studio/tools/razgon_bridge.py" sound --razgon <project>`: it builds the bed with `render_bed(project_path)`, encodes it to M4A and replaces the «Razgon · музика й ефекти» clip on the timeline (the Studio runs it by itself after the director and the frame agent). This also works after cache cleanup: the helper must create `build/studio` before writing its bed. Preserve a backup of the old configuration, cue plan and audio. Do not call `push` or render/export video for a sound-only request. Verify the returned bed exists and has the full episode duration before importing it. Keep narration and visual clips intact.
 
 Run `python audio/mix.py --project projects/<slug>`. It ducks the music −9 dB and ambience −5 dB under the voice, normalises to `config.loudness` (−14 LUFS default), writes `build/mix.wav`, and, when `build/video_silent.mp4` exists, writes `out/<title>.mp4`.
 - Levels: `config.music.gainDb` (default −17 relative to the voice) and `config.sfx.gainDb` (default −6). Change them by 2–3 dB per iteration.

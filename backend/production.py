@@ -21,6 +21,7 @@ from pathlib import Path
 import director
 import frame_progress
 import logo_layer
+import razgon_sound
 import store
 
 TIMEOUT = 6 * 3600
@@ -108,6 +109,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
+Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
+кладе сама після твоєї роботи, без рендеру.
 1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше спершу бібліотека: python3 "{store.razgon_rel()}/tools/library.py" search <слова> і use.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
@@ -264,6 +267,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 set_request(pid, finished_at=time.time(), **fields)
             except (OSError, store.StudioError):
                 pass
+            if fields.get("status") == "done":
+                # the scenes may have brought new sound cues: the film's music and effects are laid again, without a
+                # render (razgon_sound.py; only an animated film is due)
+                razgon_sound.start(pid, "production")
 
 
 def fix(pid: str, notes: str) -> dict:

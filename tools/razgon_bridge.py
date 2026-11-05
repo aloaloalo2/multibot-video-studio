@@ -14,6 +14,7 @@ Studio frame it passes through (push --shots).
   python3 "VideoKey Studio/tools/razgon_bridge.py" slots   --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--frames 3,7]
   python3 "VideoKey Studio/tools/razgon_bridge.py" push    --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" [--frames 3,7 | --shots e03s02] [--no-render]
   python3 "VideoKey Studio/tools/razgon_bridge.py" overlay --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>"
+  python3 "VideoKey Studio/tools/razgon_bridge.py" sound   --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>"
   python3 "VideoKey Studio/tools/razgon_bridge.py" export  --razgon "VideoKey Studio/razgon-2d-studio/projects/<slug>" --spec <studio job.json> --out <file.mp4>
 """
 from __future__ import annotations
@@ -517,11 +518,46 @@ def render_frames(razgon: Path, link: dict, numbers: set[int], workers: str | No
 
 
 def render_bed(razgon: Path) -> Path | None:
-    """Music, SFX and ambience exactly as Razgon mixes them under the voice, but without the voice."""
+    """Music, SFX and ambience exactly as Razgon mixes them under the voice, but without the voice
+    (build/studio/music_sfx.wav). The kit's audio/mix.py gives its parts one at a time (beds), they are summed and get
+    the master's high-pass, block by block: the voice is read only for its level and the ducking. A working copy whose
+    mix.py is older (until razgon_sync brings the kit at the next start) has its whole mix captured before the master
+    and the voice taken back out of it."""
     root = razgon.parents[1]
     sys.path[:0] = [str(root / "audio"), str(root / "tools")]
     import numpy as np
     import mix as MIX
+    if not hasattr(MIX, "fit"):   # beds() yielding (part, gain, at) came with fit()
+        return _bed_from_whole_mix(razgon, MIX)
+    config, story = read_json(razgon / "config.json"), read_json(razgon / "story" / "shots.json")
+    n = MIX.secs(story.get("duration") or story["shots"][-1]["end"])
+    voice = MIX.fit(MIX.load_any(str(razgon / config["voiceover"])), n)
+    level, envelope = MIX.voice_level(voice)
+    del voice
+    bed = None
+    with contextlib.redirect_stdout(io.StringIO()):
+        for part, gain, at in MIX.beds(str(razgon), config, story, n, level, envelope):
+            if bed is None and gain == 1.0 and at == 0 and len(part) == n:
+                bed = part   # the music, the whole film: the effects are added onto it
+            else:
+                bed = np.zeros((n, 2), np.float32) if bed is None else bed
+                MIX.add(bed[at:at + len(part)], part, gain)
+            del part
+    if bed is None:
+        return None
+    MIX.minus_lp(bed, 25)
+    if max(float(np.abs(bed[i:i + MIX.BLOCK]).max(initial=0)) for i in range(0, n, MIX.BLOCK)) < 1e-5:
+        return None
+    path = razgon / "build" / "studio" / "music_sfx.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    MIX.write_wav(str(path), bed)
+    return path
+
+
+def _bed_from_whole_mix(razgon: Path, MIX) -> Path | None:
+    """render_bed with a kit whose mix.py has no beds(): its whole mix, captured before the master, less the voice."""
+    import numpy as np
+    import dsp as DSP
     captured = {}
     original_write, original_run = MIX.write_wav, MIX.subprocess.run
 
@@ -551,7 +587,7 @@ def render_bed(razgon: Path) -> Path | None:
     voice = MIX.load_any(str(razgon / config["voiceover"]))
     n = len(captured["mix"])
     voice = np.concatenate([voice, np.zeros((max(0, n - len(voice)), 2), np.float32)])[:n]
-    bed = captured["mix"] - (voice - MIX.lp(voice, 25))
+    bed = captured["mix"] - (voice - DSP.lp(voice, 25))
     if np.abs(captured["mix"]).max() >= 0.949:
         print("Увага: Razgon м'яко обрізав піки суміші, доріжка музики може містити слабкий слід голосу")
     if np.abs(bed).max() < 1e-5:
@@ -735,6 +771,121 @@ def slots(args) -> None:
     project = ensure_frame_slots(studio, razgon, link, project, reset)
     n = sum(1 for _, c in all_clips(project) if re.fullmatch(r"Razgon · кадр \d{3}", c.get("title", "")))
     print(f"Кадри на таймлайні: {n} (блоки-код без медіа, наживо малює Razgon)")
+
+
+# ---------------------------------------------------------------- music and effects without a render
+LOGO_TITLE = "Логотип каналу"
+RENDER_WAIT = 1800   # seconds `sound` waits for Razgon renders to finish before it mixes anyway
+
+
+def plate_layer(project: dict, track: dict) -> bool:
+    """A layer of the channel plate or logo: the ones that stay on top of the timeline."""
+    overlay = {cid for group in project.get("scene_groups", []) if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
+    clips = track.get("clips") or []
+    return bool(clips) and all(c["id"] in overlay or c.get("title") in {OVERLAY_TITLE, LOGO_TITLE} or c.get("channel_logo") for c in clips)
+
+
+def renders_running() -> int:
+    """Razgon renders (render.mjs) running on this Mac now: an export, a push or a check sheet."""
+    found = subprocess.run(["pgrep", "-f", "render.mjs"], capture_output=True, text=True).stdout.split()
+    return sum(1 for item in found if item.isdigit() and int(item) != os.getpid())
+
+
+def wait_for_renders(limit: float = RENDER_WAIT) -> None:
+    """A whole film's music and effects take a few GB of RAM for a minute or two. While Razgon renders (each Chromium about
+    2 GB, the export fills the RAM up to RAM_LIMIT) the mix waits, so the two do not drive the Mac into swap together;
+    after `limit` seconds it goes on anyway."""
+    until, told = time.monotonic() + limit, False
+    while renders_running() and time.monotonic() < until:
+        if not told:
+            print("Чекаю, поки закінчиться рендер Razgon, щоб не забрати в нього пам'ять", flush=True)
+            told = True
+        time.sleep(10)
+
+
+def encode_bed(wav: Path, duration: float) -> Path:
+    """The bed as AAC 192 kbit/s in M4A, exactly `duration` seconds: a 54-minute film's WAV is about 600 MB, the M4A 75 MB."""
+    out = wav.with_suffix(".m4a")
+    staged = out.with_name(".music_sfx-staged.m4a")
+    subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-threads", "2", "-i", str(wav),
+                    "-af", f"apad=whole_dur={duration:.3f}", "-t", f"{duration:.3f}", "-c:a", "aac", "-b:a", "192k",
+                    "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(staged)], check=True)
+    staged.replace(out)
+    return out
+
+
+def bed_in_place(project: dict, duration: float, fps: int) -> dict | None:
+    """The one music-and-effects clip as the bridge lays it (the whole film, volume 1, on its own layer under the plate),
+    or None when there is none, several, or it was moved."""
+    found = [(track, clip) for track, clip in all_clips(project) if clip.get("title") == BED_TITLE]
+    if len(found) != 1:
+        return None
+    track, clip = found[0]
+    tracks = project["tracks"]
+    under_plate = all(plate_layer(project, above) for above in tracks[tracks.index(track) + 1:])
+    whole = abs(float(clip.get("start", 0))) < 1e-3 and abs(float(clip["duration"]) - duration) <= 1 / fps
+    return clip if whole and float(clip.get("volume", 1)) == 1 and len(track.get("clips", [])) == 1 and under_plate else None
+
+
+def lay_bed(studio: "Studio", project: dict, asset_id: str, duration: float) -> dict:
+    """Put the bed on a layer of its own right under the channel plate and logo, then remove the clip it replaces (its
+    layer goes with it). An empty layer of this name left by an interrupted run is taken again."""
+    old = [clip for _, clip in all_clips(project) if clip.get("title") == BED_TITLE]
+    layer = next((track for track in project["tracks"] if track.get("name") == BED_TITLE and not track.get("clips")), None)
+    if layer is None:
+        top = len(project["tracks"])
+        while top > 1 and plate_layer(project, project["tracks"][top - 1]):
+            top -= 1
+        project = studio.batch(project, [{"type": "add_layer", "payload": {"name": BED_TITLE, "to_index": top}}])
+        layer = [track for track in project["tracks"] if track.get("name") == BED_TITLE and not track.get("clips")][-1]
+    actions = [{"type": "add_clip", "payload": {"layer_id": layer["id"], "kind": "audio", "asset_id": asset_id, "start": 0,
+                                                "duration": duration, "title": BED_TITLE, "volume": 1}}]
+    return studio.batch(project, actions + [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in old])
+
+
+def sound(args) -> None:
+    """The film's music, SFX and ambience on the Studio timeline, with no picture rendered. Since the render moved to
+    «Експорт MP4» only push laid the bed, and the agents may not push, so «Наживо» and the language soundtracks had the
+    voice alone (episode 07, 5 November 2026). Razgon's bed (render_bed) goes to M4A, into the Studio's media and onto
+    the «Razgon · музика й ефекти» clip on its own layer under the channel plate, in place of the one before; a bed equal
+    to the one on the timeline is left as it is. The Studio runs this itself after the director and the frame agent
+    (backend/razgon_sound.py). Only for a film Razgon draws whole: a mixed episode's sound is the Studio's."""
+    razgon = Path(args.razgon).resolve()
+    problems = check_project(razgon)
+    if problems:
+        raise BridgeError("Проєкт Razgon не готовий:\n- " + "\n- ".join(problems))
+    link, _, _ = load_link(razgon)
+    if len(drawn_frames(link)) != len(link["frames"]):
+        raise BridgeError("Razgon малює лише частину кадрів цього ролика: музику й ефекти змішаного ролика веде студія")
+    studio = Studio(args.studio_url or link["studio_url"])
+    pid, fps, duration = link["project_id"], int(link["fps"]), float(link["duration"])
+    plan = studio.plan(pid)
+    if plan["script_sha256"] != link["script_sha256"] or plan.get("timing", {}).get("audio", {}).get("sha256") != link.get("audio_sha256"):
+        raise BridgeError("План у студії змінився після prepare. Запустіть prepare ще раз і перевірте шоти")
+    wait_for_renders()
+    wav = render_bed(razgon)
+    if wav is None:
+        print("Музики й ефектів у проєкті немає (вимкнені в config.json або порожні): на таймлайн нічого не покладено")
+        return
+    bed = encode_bed(wav, duration)
+    project = studio.project(pid)
+    current = bed_in_place(project, duration, fps)
+    asset = next((item for item in project.get("assets", []) if current and item.get("id") == current.get("asset_id")), None)
+    if asset and Path(asset.get("path", "")).is_file() and sha256(Path(asset["path"])) == sha256(bed):
+        print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
+        return
+    asset = studio.import_file(pid, bed)
+    for attempt in range(3):
+        try:
+            # importing bumps the revision, and an author may edit meanwhile: each try starts from the project as it is
+            project = lay_bed(studio, studio.project(pid), asset["id"], duration)
+            break
+        except BridgeError as error:
+            if " 409 " not in str(error) or attempt == 2:
+                raise
+    print(f"Музика й ефекти на таймлайні: «{BED_TITLE}», {duration / 60:.1f} хв, окремим шаром під плашкою каналу")
+    with contextlib.suppress(BridgeError):
+        studio.call("POST", f"/api/projects/{pid}/tidy", {})   # the replaced bed's file goes (store.prune_razgon_renders)
 
 
 def plan_from_direction(args) -> None:
@@ -1022,6 +1173,10 @@ def main() -> None:
     f.add_argument("--razgon", required=True)
     f.add_argument("--out", required=True)
     f.set_defaults(run=final)
+    w = sub.add_parser("sound", help="покласти музику й ефекти Razgon на таймлайн студії без рендеру відео")
+    w.add_argument("--razgon", required=True)
+    w.add_argument("--studio-url")
+    w.set_defaults(run=sound)
     o = sub.add_parser("overlay", help="покласти плашку каналу (config.json overlay) верхнім шаром на весь ролик")
     o.add_argument("--razgon", required=True)
     o.add_argument("--studio-url")
@@ -1045,7 +1200,7 @@ def main() -> None:
         sys.exit("Кадри рендерить тільки «Експорт MP4» студії, коли автор його натисне. "
                  "Поклади кадри на таймлайн блоками-кодом: python3 'VideoKey Studio/tools/razgon_bridge.py' slots --razgon <проєкт> --frames <номери>")
     try:
-        with project_lock(Path(args.razgon).resolve()) if args.command in {"push", "final", "export", "frames"} else contextlib.nullcontext():
+        with project_lock(Path(args.razgon).resolve()) if args.command in {"push", "final", "export", "frames", "sound"} else contextlib.nullcontext():
             args.run(args)
     except BridgeError as error:
         if args.command in {"export", "frames"}:

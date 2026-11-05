@@ -10,6 +10,7 @@ Read the whole transcript twice, then read `storytelling.md`. Plan **episodes fi
 
 Then **rewrite `story/shots.json`** (schema in engine-api.md, story/shots.json). For every shot set:
 `id, start, end, episode, line, scene` (one concrete sentence describing the picture, e.g. "OTS: blurred Jake shoulder fg, Max at the window, rain, slow push"), `set`, `bars`, `in` (transition), `sfx`, `amb`, `notes`.
+A script that writes this file again (`story/gen_shots.py`) keeps the sound of the file it replaces: the story-level `sfx` and each shot's `amb` by its id (sound-design.md).
 
 Pacing rules (long takes, storytelling.md §0):
 - First write `story/beats.json` by hand from the meaning of the narration (never generate it from sentence or word counts). Beats of 10–35 s, a new one where the narration changes the subject.

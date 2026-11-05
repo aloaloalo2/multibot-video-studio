@@ -101,6 +101,8 @@ First read the current project's `plan_mode`. With `direct` («Без плану
 - Frames of Razgon 2D animation stay code until the user presses «Експорт MP4»: put them on the timeline as
   «Razgon · кадр NNN» blocks (`razgon_bridge.py slots`), let «Наживо» show them, never render them yourself. The export
   renders the blocks (`razgon_bridge.py export` for an all-Razgon film, `frames` for a mixed one) and builds the video.
+  The film's music and effects need no render: the Studio lays them itself after the director and the frame agent
+  (`razgon_bridge.py sound`, backend/razgon_sound.py).
 - The voice at 100% is the studio's standard level (`audio_level.py`: −16 LUFS, peaks ≤ −1.5 dB); leave the voice clip
   at volume 1.0. The export mix has a −1 dBFS limiter.
 - The preview (`frontend/*.js`) and the export (`engine/`) draw the same picture; `engine/tests/test_preview_parity.py`

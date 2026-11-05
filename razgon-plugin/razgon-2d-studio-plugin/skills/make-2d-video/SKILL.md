@@ -92,7 +92,7 @@ Non-negotiables from the style bible:
 - No `Math.random`/`Date.now`.
 
 ## Stage 7: Sound
-Read `references/sound-design.md`. Fill `story/shots.json` → `music` (contiguous mood sections) and add per-shot `sfx` cues and `amb` beds. Put a cue on every new visual event from the director pass (door stop, slammed word, landing, smash cut) at the frame it happens. Mixing happens after the final render (Stage 8), or run `python audio/mix.py --project projects/<slug>` now to audition `build/mix.wav`.
+Read `references/sound-design.md`. Fill `story/shots.json` → `music` (contiguous mood sections), story-level `sfx` cues at absolute times `t` (or per-shot cues with `at`) and per-shot `amb` beds. Put a cue on every new visual event from the director pass (door stop, slammed word, landing, smash cut) at the frame it happens, about one per 15–25 s. A script that regenerates shots.json keeps `sfx` and `amb` from the previous file (sound-design.md). Mixing happens after the final render (Stage 8), or run `python audio/mix.py --project projects/<slug>` now to audition `build/mix.wav`.
 
 ## Stage 8: Render and deliver
 Read `references/render-qc.md`.

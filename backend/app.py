@@ -43,6 +43,7 @@ import credentials
 import analysis_jobs
 import razgon_live
 import razgon_export
+import razgon_sound
 import topics
 import audio_level
 import waveforms
@@ -80,7 +81,8 @@ def restart_after_update():
         UPDATE_RESTARTING = False
 
 
-BUSY_WORDS = {"режисура": "режисер", "створення кадрів": "агент кадрів", "прев'ю": "агент прев’ю", "агент студії": "агент студії",
+BUSY_WORDS = {"режисура": "режисер", "створення кадрів": "агент кадрів", "музика й ефекти": "збирання музики й ефектів",
+              "прев'ю": "агент прев’ю", "агент студії": "агент студії",
               "розпізнавання озвучки": "розпізнавання озвучки", "експорт": "експорт"}
 
 
@@ -703,7 +705,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (director.ACTIVE.copy() | production.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
+    return (director.ACTIVE.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -718,6 +720,7 @@ def project_jobs(pid: str) -> dict:
     return {"розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
+            "музика й ефекти": status(lambda: razgon_sound.state(pid)),
             "прев'ю": status(lambda: thumbnail_gen.state(pid)),
             "мови": 'running' if languages.busy(pid) else status(lambda: next((job for job in (languages.load_state(pid).get("jobs") or {}).values() if job.get("status") == "running"),
                                         languages.load_state(pid).get("job"))),

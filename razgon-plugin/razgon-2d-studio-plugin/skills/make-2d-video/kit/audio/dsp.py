@@ -27,6 +27,21 @@ def _sos(kind, f, order=2):
 
 
 def lp(x, f, order=2): return signal.sosfilt(_sos("lowpass", f, order), x, axis=0).astype(np.float32)
+
+
+# A long signal (a whole film's soundtrack) is worked on this many samples at a time: whole-film float copies of it,
+# float64 ones in the filters, needed about 8 MB of RAM per second of film, 26 GB for a 54-minute one (5 November 2026).
+BLOCK = SR * 10
+
+
+def minus_lp(x, f, order=2):
+    """x - lp(x, f) in place, block by block: the same numbers, without a float64 copy of the whole signal."""
+    sos = _sos("lowpass", f, order)
+    zi = np.zeros((sos.shape[0], 2) + x.shape[1:])
+    for i in range(0, len(x), BLOCK):
+        low, zi = signal.sosfilt(sos, x[i:i + BLOCK], axis=0, zi=zi)
+        x[i:i + BLOCK] -= low.astype(np.float32)
+    return x
 def hp(x, f, order=2): return signal.sosfilt(_sos("highpass", f, order), x, axis=0).astype(np.float32)
 def bp(x, lo, hi, order=2): return signal.sosfilt(_sos("bandpass", [lo, hi], order), x, axis=0).astype(np.float32)
 
@@ -141,7 +156,13 @@ def normalize(x, peak_db=-1.0):
 
 
 def rms_db(x):
-    v = np.sqrt(np.mean(np.square(x, dtype=np.float64))); return 20 * np.log10(v + 1e-12)
+    """dB RMS. A signal longer than BLOCK is squared block by block: as one float64 copy of itself a 54-minute film
+    took 2.5 GB (the sum differs from np.mean's only in the last bits)."""
+    if len(x) <= BLOCK:
+        v = np.sqrt(np.mean(np.square(x, dtype=np.float64)))
+    else:
+        v = np.sqrt(sum(float(np.square(x[i:i + BLOCK], dtype=np.float64).sum()) for i in range(0, len(x), BLOCK)) / x.size)
+    return 20 * np.log10(v + 1e-12)
 
 
 def place(dst, src, at, gain=1.0):
@@ -152,6 +173,10 @@ def place(dst, src, at, gain=1.0):
 
 
 def write_wav(path, x):
+    """16-bit stereo WAV, converted block by block (BLOCK) so a whole film needs no float copies of itself."""
     from scipy.io import wavfile
-    x = np.clip(as_stereo(x), -1, 1)
-    wavfile.write(path, SR, (x * 32767).astype(np.int16))
+    x = as_stereo(x)
+    pcm = np.empty(x.shape, np.int16)
+    for i in range(0, len(x), BLOCK):
+        pcm[i:i + BLOCK] = (np.clip(x[i:i + BLOCK], -1, 1) * 32767).astype(np.int16)
+    wavfile.write(path, SR, pcm)
