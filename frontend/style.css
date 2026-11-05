@@ -1763,3 +1763,8 @@ select option{background:#232327;color:#f1f1f2}
 .channel-busy{flex:none;width:13px;height:13px;margin-left:auto;border:2px solid #777d8b40;border-top-color:#b9becb;border-radius:50%;animation:channel-activity-spin .9s linear infinite}
 .channel-busy[hidden]{display:none}
 @keyframes channel-activity-spin{to{transform:rotate(360deg)}}
+
+.thumb-modal-open .modal{width:min(820px,100%)}
+.thumb-writer-button{display:inline-flex;align-items:center;justify-content:center;gap:9px}
+.thumb-writer-button svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.thumb-writer-button .claude-mark{fill:currentColor;stroke:none}

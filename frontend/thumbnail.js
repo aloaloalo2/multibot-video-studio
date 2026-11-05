@@ -69,9 +69,15 @@ async function openThumbnail(project){
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
-    [{label:'Згенерувати з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},
-     {label:'Створити нове прев’ю',primary:true,run:()=>generateThumbnail(project,'claude',$('thumb-create-wishes').value)},
-     {label:'Трендове прев’ю',run:()=>generateThumbnail(project,'trending',$('thumb-create-wishes').value)}]);
+    [{label:'Створити з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},
+     {label:'Створити з Codex',run:()=>generateThumbnail(project,'trending',$('thumb-create-wishes').value)},
+     {label:'Створити з Claude',primary:true,run:()=>generateThumbnail(project,'claude',$('thumb-create-wishes').value)}]);
+  const writerIcons=[
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-6 8-6 11-2l6-3-2 6c-2 7-11 7-15-1Z"/><path d="M7 11h.01M13 16l2 3"/></svg>',
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16"/></svg>',
+    projectCostIcons.claude_code];
+  [...$('modal-actions').children].forEach((button,index)=>{button.innerHTML=writerIcons[index]+`<span>${esc(button.textContent)}</span>`;button.classList.add('thumb-writer-button');});
+  $('modal-actions').children[1].title='Трендове прев’ю: Codex сам продумує ідею за правилами обкладинок';
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
   showThumbnailState(project.id);
