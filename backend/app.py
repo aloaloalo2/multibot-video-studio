@@ -1200,7 +1200,7 @@ class Handler(BaseHTTPRequestHandler):
             # Card hover is entirely local; balance refresh retains the conversion basis separately.
             balance = store.read_json(store.DATA_ROOT/'eleven-credit-usd.json', {}) or {}
             data = project_costs.summary(pid, credit_rate=balance.get('credit_usd_rate'))
-            data['elevenlabs_basis'] = balance.get('credit_usd_basis')
+            data['elevenlabs_basis'] = (balance.get('credit_usd_basis') or 'Орієнтовна вартість кредитів').replace('без податків і знижок', 'без знижок') + ' · податок 20% включено'
             return self.json_response(data)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/spend", path)
         if match:

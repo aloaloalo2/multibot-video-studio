@@ -44,7 +44,7 @@ class ProjectCostsTest(unittest.TestCase):
         result=project_costs.totals(self.collect(),.0002)['providers']['elevenlabs']
         self.assertEqual(result['requests'],2)
         self.assertEqual(result['amount'],60)
-        self.assertEqual(result['usd'],.012)
+        self.assertEqual(result['usd'],.0144)
         self.assertTrue(result['estimated'])
 
     def test_cache_reuse_has_no_paid_charge_and_missing_receipts_are_not_zero(self):

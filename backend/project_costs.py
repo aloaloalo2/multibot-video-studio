@@ -147,7 +147,7 @@ def totals(data: dict, credit_rate=None) -> dict:
     for name, item in result.items():
         item["amount"] = round(item["amount"], 6)
         item["unit"] = "credits" if name == "elevenlabs" else "usd"
-        item["usd"] = round(item["amount"] * credit_rate, 6) if name == "elevenlabs" and number(credit_rate) else item["amount"] if name != "elevenlabs" else 0. if not item['requests'] else None
+        item["usd"] = round(item["amount"] * credit_rate * 1.20, 6) if name == "elevenlabs" and number(credit_rate) else item["amount"] if name != "elevenlabs" else 0. if not item['requests'] else None
     result["elevenlabs"]["estimated"] |= bool(result["elevenlabs"]["requests"])
     result["claude_code"]["equivalent"] = True
     return {"providers": result, "languages_usd": round(language_usd, 6), "updated_at": time.time()}
