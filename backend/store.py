@@ -628,6 +628,8 @@ def project_plan_mode(project: dict) -> str:
 
 
 def project_animated(project: dict) -> bool:
+    if project.get('project_kind') in {'regular', 'animated'}:
+        return project['project_kind'] == 'animated'
     try:
         return channel_animated(get_channel_folder(project["channel_id"], include_disabled=True))
     except (StudioError, KeyError):
@@ -839,6 +841,7 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
         global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         project["plan_mode"] = "direct" if plan_config.get("plan_mode") == "direct" else "director"
+        project["project_kind"] = "animated" if plan_config.get("channel_kind") == "animated" else "regular"
         atomic_json(folder / "project.json", project)
         import language_defaults
         language_defaults.apply(project)

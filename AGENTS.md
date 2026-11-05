@@ -679,3 +679,13 @@ Frame creation and direction use High. Agent/Task tools are explicitly disabled 
 ## Project plan switch
 
 The switch beside «План ролика» sets the individual project mode through POST /api/projects/<id>/actions with type set_plan_mode and payload {mode: director|direct}. Channel plan_mode is a creation default only. Persist project choices and preserve plans, source audio and montage when switching. Reject changes while its director or production runs. Startup snapshots the current effective channel mode for legacy projects. The UI waits for plan_mode_editable from the backend before enabling the new switch.
+
+
+## Project type defaults and timeline history
+
+Channel settings label the creation default «Тип нових проєктів»: regular is «Універсальний» and animated means a film entirely composed of animation. Store project_kind at creation and read it for production and editor controls. Legacy projects snapshot their effective current type at safe startup. Changing channel defaults must not change existing project types.
+
+Cmd/Ctrl-Z undoes timeline edits; Cmd/Ctrl-Shift-Z and Ctrl-Y redo. Use physical key codes for Cyrillic keyboards, preserve native text-field undo, skip open dialogs, and wait for a pending drag save before undoing it.
+
+
+Enabled accents are a montage priority for meaningful animated arrows, circles and short captions on all kinds of photos. Use them on video when helpful, never as extra overlays on finished animation, host or text-only frames. Do not select frames mechanically by a fixed one-in-three quota. Both frame-agent briefs and get_project for the Studio agent must expose the saved accents flag.

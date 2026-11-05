@@ -29,7 +29,7 @@ function brandingSections(channel){
   const cells=brandingPositions.map(item=>item?`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`:'<span class="logo-position-gap" aria-hidden="true"></span>').join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></section>
-    <section class="settings-section channel-kind-section"><h3>Тип каналу</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип каналу">${kindCard('regular','Звичайний','Фото, стокове й створене відео, текст')}${kindCard('animated','Анімаційний','Мультфільм Razgon зі своїм стилем')}</div></section>
+    <section class="settings-section channel-kind-section"><h3>Тип нових проєктів</h3><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></section>
     <section class="settings-section logo-section"><h3>Логотип каналу</h3>
       <div class="logo-file">
         <label class="logo-tile" id="logo-tile" title="Завантажити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>

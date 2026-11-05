@@ -26,6 +26,13 @@ def migrate(pid):
     with store.LOCK:
         project = store.load_project(pid)
         folder = store.project_dir(pid)
+        if 'project_kind' not in project:
+            try:
+                settings = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+                project['project_kind'] = 'animated' if settings.get('channel_kind') == 'animated' else 'regular'
+                store.save_project(project)
+            except (store.StudioError, KeyError):
+                pass
         if 'plan_mode' not in project:
             try:
                 defaults = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}) or {}

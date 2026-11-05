@@ -52,6 +52,15 @@ class DirectWorkflowTest(unittest.TestCase):
         return store.generate_project_plan(self.cid, self.project['name'], self.project['episode_path'],
                                            project_id=self.pid, script=self.script, timings=self.timings)
 
+    def test_project_kind_uses_channel_default_only_at_creation(self):
+        self.assertFalse(store.project_animated(self.project))
+        store.update_channel_settings(self.cid, {'channel_kind':'animated'})
+        animated = store.create_project(self.cid, 'Animated episode')
+        self.assertTrue(store.project_animated(animated))
+        self.assertFalse(store.project_animated(store.load_project(self.pid)))
+        store.update_channel_settings(self.cid, {'channel_kind':'regular'})
+        self.assertTrue(store.project_animated(store.load_project(animated['id'])))
+
     def test_channel_mode_is_only_a_creation_default(self):
         store.update_channel_settings(self.cid, {'plan_mode':'direct'})
         new = store.create_project(self.cid, 'Direct episode')

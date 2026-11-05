@@ -8,7 +8,7 @@
 const directorRuns={};
 let directorTimer=null,productionTimer=null;
 
-function directorAnimated(){return state.channel?.settings?.channel_kind==='animated';}
+function directorAnimated(){return projectAnimated();}
 
 // An episode has no frames until the director writes them: the Studio's own split by sentences is only the timing
 // behind them. Every channel goes this way (user, 31 October 2026: «план завжди робить клод-код, тобто режисер»); a

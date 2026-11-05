@@ -190,3 +190,5 @@ function renderPlanSwitch(panel){
   input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
   panel.append(heading);
 }
+
+function projectAnimated(project=state.project){const kind=project?.project_kind ?? state.channel?.settings?.channel_kind;return kind==='animated';}
