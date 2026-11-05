@@ -20,6 +20,7 @@ function projectCostMarkup(data){
   const names={openrouter:'OpenRouter',claude_code:'Claude Code',elevenlabs:'ElevenLabs'};
   return Object.keys(names).map(key=>{
     const item=data?.providers?.[key],rawAmount=item?.usd;
+    if(key!=='claude_code'&&item&&item.amount===0&&!item.unknown)return '';
     const amount=key==='claude_code'&&rawAmount!=null?rawAmount/claudeSubscriptionDivisor:rawAmount;
     const approximate=key==='claude_code'||item?.estimated||item?.equivalent||item?.unknown;
     const label=item?`${approximate?'≈ ':''}${projectCostMoney(item.unknown&&!amount?null:amount)}`:'…';
