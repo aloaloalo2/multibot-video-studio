@@ -14,28 +14,29 @@ export function titleCard(g, t, o = {}) {
   const sizes = lines.map((ln, i) => fit(ln, i === lines.length - 1 ? big : small));
   const gaps = sizes.slice(1).map((s2, i) => (sizes[i] + s2) * 0.62), totalH = gaps.reduce((a, b) => a + b, 0);
   let yy = -totalH / 2 - (sub ? big * 0.45 : 0);
-  lines.forEach((ln, i) => { const isBig = i === lines.length - 1; text(g, ln, 0, yy, { size: sizes[i], color: isBig ? ui.gold : ui.cream, glow: 30, glowColor: 'rgba(255,120,40,.85)', spacing: isBig ? 3 : 4 }); yy += gaps[i] ?? sizes[i] * 0.9; });
-  if (sub) { g.fillStyle = alpha(ui.cream, 0.55); g.fillRect(-E.W * 0.22, yy - big * 0.32, E.W * 0.44, 3); text(g, sub, 0, yy + big * 0.32, { size: small * 1.05, color: ui.accent, glow: 24, glowColor: 'rgba(255,80,60,.7)', spacing: 3 }); }
+  lines.forEach((ln, i) => { const isBig = i === lines.length - 1; text(g, ln, 0, yy, { size: sizes[i], color: isBig ? ui.gold : ui.cream, glow: 30, glowColor: 'rgba(255,120,40,.85)', spacing: isBig ? 3 : 4, contrast: true }); yy += gaps[i] ?? sizes[i] * 0.9; });
+  if (sub) { g.fillStyle = alpha(ui.cream, 0.55); g.fillRect(-E.W * 0.22, yy - big * 0.32, E.W * 0.44, 3); text(g, sub, 0, yy + big * 0.32, { size: small * 1.05, color: ui.accent, glow: 24, glowColor: 'rgba(255,80,60,.7)', spacing: 3, contrast: true }); }
   g.restore();
 }
 // A line of text in the picture as plain text (user, 30 October 2026: no plate, no solid or dark backing at all, the text
-// appears as text). It keeps only a small soft drop shadow under the letters, so it still reads on a light sky, and it
-// rises into place as it fades in, so it appears rather than switches on.
+// appears as text). It reads on any background (user, 5 November 2026): a soft shadow under the letters, and on a picture
+// as light as the letters it turns to a dark tone of its own colour (core.js text, { contrast: true }). It rises into
+// place as it fades in, so it appears rather than switches on.
 export function label(g, str, x, y, a = 1, o = {}) {
   if (a <= 0) return; const size = o.size ?? V(44, 38), color = o.color || S().ui.gold, k = clamp(a);
   g.save(); g.globalAlpha *= k;
   text(g, str, x, y + (1 - ease.out(k)) * size * 0.35, { size, color, font: o.font || FONTS.ui, weight: 900, align: o.align || 'center',
-    spacing: o.spacing ?? 1, glow: size * 0.12, glowColor: 'rgba(0,0,0,.45)', maxWidth: o.maxW ?? E.W * 0.86 });
+    spacing: o.spacing ?? 1, contrast: o.contrast ?? true, maxWidth: o.maxW ?? E.W * 0.86 });
   g.restore();
 }
 // Glowing single question / chapter line ("IS ANY OF THIS REAL?")
-export function bigLine(g, t, o = {}) { const { str = 'IS ANY OF THIS REAL?', dur = 3, y = E.H / 2, size = V(84, 76), color = S().ui.gold } = o; const a = fadeIO(t, dur, 0.4, 0.4); if (a <= 0) return; const sz = Math.min(size, (E.W * 0.88) / Math.max(1, measure(g, str, size) / size)); text(g, str, E.W / 2, y, { size: sz, color, glow: 30, glowColor: alpha(color, 0.7), alpha: a, spacing: 2 }); }
+export function bigLine(g, t, o = {}) { const { str = 'IS ANY OF THIS REAL?', dur = 3, y = E.H / 2, size = V(84, 76), color = S().ui.gold } = o; const a = fadeIO(t, dur, 0.4, 0.4); if (a <= 0) return; const sz = Math.min(size, (E.W * 0.88) / Math.max(1, measure(g, str, size) / size)); text(g, str, E.W / 2, y, { size: sz, color, glow: 30, glowColor: alpha(color, 0.7), alpha: a, spacing: 2, contrast: true }); }
 // Corner badge e.g. "100x" (slow-motion factor) or "DAY 3"
 export function badge(g, o = {}) {
   const { str = '100x', x = E.W - V(90, 70), y = V(110, 150), color = S().ui.gold, size = V(38, 44), a = 1, align = 'right' } = o;
   // the badge always stays inside the frame: a growing counter pushes its anchor in instead of running off the edge
   const w = measure(g, str, size, FONTS.ui, 900), m = V(56, 44), left = align === 'left' ? x : align === 'center' ? x - w / 2 : x - w, dx = Math.max(0, m - left) - Math.max(0, left + w - (E.W - m));
-  text(g, str, x + dx, y, { size, color, glow: 18, glowColor: alpha(color, 0.6), align, alpha: a, font: FONTS.ui, weight: 900 });
+  text(g, str, x + dx, y, { size, color, glow: 18, glowColor: alpha(color, 0.6), align, alpha: a, font: FONTS.ui, weight: 900, contrast: true });
 }
 // timing / measurement readout e.g. "0.20 s", "NORMAL: 0.25 s"
 export function readout(g, o = {}) {
@@ -43,13 +44,13 @@ export function readout(g, o = {}) {
   const ls = size * 0.42, lw = label ? measure(g, label, ls, FONTS.ui, 900) + 18 : 0, vw = measure(g, value, size, FONTS.ui, 900), tot = lw + vw;
   let xx = align === 'center' ? x - tot / 2 : align === 'right' ? x - tot : x;
   g.save(); g.globalAlpha *= a;
-  if (label) text(g, label, xx, y + size * 0.08, { size: ls, color: alpha(S().ui.cream, 0.8), font: FONTS.ui, weight: 900, align: 'left', spacing: 2 });
-  text(g, value, xx + lw, y, { size, color, glow: 16, glowColor: alpha(color, 0.6), font: FONTS.ui, weight: 900, align: 'left' }); g.restore();
+  if (label) text(g, label, xx, y + size * 0.08, { size: ls, color: alpha(S().ui.cream, 0.8), font: FONTS.ui, weight: 900, align: 'left', spacing: 2, contrast: true });
+  text(g, value, xx + lw, y, { size, color, glow: 16, glowColor: alpha(color, 0.6), font: FONTS.ui, weight: 900, align: 'left', contrast: true }); g.restore();
 }
 // Callout label with leader line pointing at something
-export function callout(g, t, o = {}) { const { at = [E.W / 2, E.H / 2], to = [E.W / 2 + 200, E.H / 2 - 150], str = 'LABEL', color = S().ui.cream, size = V(30, 36), start = 0 } = o; const p = ease.out(prog(t, start, start + 0.5)); if (p <= 0) return; const ex = lerp(at[0], to[0], p), ey = lerp(at[1], to[1], p); circle(g, at[0], at[1], 6, color); seg(g, [at, [ex, ey]], 2, alpha(color, 0.8)); text(g, str, to[0] + (to[0] > at[0] ? 12 : -12), to[1], { size, color, font: FONTS.ui, weight: 900, align: to[0] > at[0] ? 'left' : 'right', alpha: clamp((p - 0.6) / 0.4), spacing: 1.5 }); }
+export function callout(g, t, o = {}) { const { at = [E.W / 2, E.H / 2], to = [E.W / 2 + 200, E.H / 2 - 150], str = 'LABEL', color = S().ui.cream, size = V(30, 36), start = 0 } = o; const p = ease.out(prog(t, start, start + 0.5)); if (p <= 0) return; const ex = lerp(at[0], to[0], p), ey = lerp(at[1], to[1], p); circle(g, at[0], at[1], 6, color); seg(g, [at, [ex, ey]], 2, alpha(color, 0.8)); text(g, str, to[0] + (to[0] > at[0] ? 12 : -12), to[1], { size, color, font: FONTS.ui, weight: 900, align: to[0] > at[0] ? 'left' : 'right', alpha: clamp((p - 0.6) / 0.4), spacing: 1.5, contrast: true }); }
 // Dimension line with arrows: "30 m"
-export function dimension(g, t, o = {}) { const { x1, y1, x2, y2, str = '30 m', color = S().ui.gold, start = 0 } = o; const p = ease.out(prog(t, start, start + 0.6)); if (p <= 0) return; const ex = lerp(x1, x2, p), ey = lerp(y1, y2, p); seg(g, [[x1, y1], [ex, ey]], 3, color); const ang = Math.atan2(y2 - y1, x2 - x1), ar = (x, y, a) => poly(g, [[x, y], [x - Math.cos(a - 0.4) * 16, y - Math.sin(a - 0.4) * 16], [x - Math.cos(a + 0.4) * 16, y - Math.sin(a + 0.4) * 16]], color); ar(x1, y1, ang + Math.PI); if (p > 0.98) ar(x2, y2, ang); text(g, str, (x1 + x2) / 2 + 24, (y1 + y2) / 2, { size: V(40, 46), color, font: FONTS.ui, weight: 900, align: 'left', glow: 12, glowColor: alpha(color, 0.6), alpha: clamp((p - 0.5) * 2) }); }
+export function dimension(g, t, o = {}) { const { x1, y1, x2, y2, str = '30 m', color = S().ui.gold, start = 0 } = o; const p = ease.out(prog(t, start, start + 0.6)); if (p <= 0) return; const ex = lerp(x1, x2, p), ey = lerp(y1, y2, p); seg(g, [[x1, y1], [ex, ey]], 3, color); const ang = Math.atan2(y2 - y1, x2 - x1), ar = (x, y, a) => poly(g, [[x, y], [x - Math.cos(a - 0.4) * 16, y - Math.sin(a - 0.4) * 16], [x - Math.cos(a + 0.4) * 16, y - Math.sin(a + 0.4) * 16]], color); ar(x1, y1, ang + Math.PI); if (p > 0.98) ar(x2, y2, ang); text(g, str, (x1 + x2) / 2 + 24, (y1 + y2) / 2, { size: V(40, 46), color, font: FONTS.ui, weight: 900, align: 'left', glow: 12, glowColor: alpha(color, 0.6), alpha: clamp((p - 0.5) * 2), contrast: true }); }
 // Data card: title, subtitle, animated counter + curve drawing on
 export function dataCard(g, t, o = {}) {
   const { title = 'SUBJECT 11 · MAX', subtitle = 'SPEED FACTOR', from = 10, to = 12.4, decimals = 1, unit = 'x', start = 0.4, dur = 2, labels = [[0, null], [0.55, null], [1, null]], shape = 1.7, arrow = true, inDur = 0.35, total = 99 } = o;
@@ -72,9 +73,9 @@ export function dataCard(g, t, o = {}) {
   g.restore();
 }
 // Horizontal comparison bars: [{label:'REAL', v:0.3}, {label:'FELT', v:0.9}]
-export function compareBars(g, t, o = {}) { const { rows = [{ label: 'REAL', v: 0.3 }, { label: 'FELT', v: 0.9 }], x = V(220, 120), y = E.H - V(250, 520), w = V(700, 840), start = 0, color = S().ui.blueprint } = o; rows.forEach((r, i) => { const p = ease.out(prog(t, start + i * 0.3, start + i * 0.3 + 1)); const yy = y + i * 60; text(g, r.label, x, yy, { size: V(24, 30), color: alpha(S().ui.cream, 0.8), font: FONTS.ui, weight: 900, align: 'left', spacing: 2 }); rr(g, x + 120, yy - 10, w, 20, 10); g.fillStyle = alpha(color, 0.15); g.fill(); rr(g, x + 120, yy - 10, Math.max(20, w * r.v * p), 20, 10); g.fillStyle = r.color || color; g.fill(); }); }
+export function compareBars(g, t, o = {}) { const { rows = [{ label: 'REAL', v: 0.3 }, { label: 'FELT', v: 0.9 }], x = V(220, 120), y = E.H - V(250, 520), w = V(700, 840), start = 0, color = S().ui.blueprint, labelW = 120 } = o; rows.forEach((r, i) => { const p = ease.out(prog(t, start + i * 0.3, start + i * 0.3 + 1)); const yy = y + i * 60; text(g, r.label, x, yy, { size: V(24, 30), color: alpha(S().ui.cream, 0.8), font: FONTS.ui, weight: 900, align: 'left', spacing: 2, contrast: true }); rr(g, x + labelW, yy - 10, w, 20, 10); g.fillStyle = alpha(color, 0.15); g.fill(); rr(g, x + labelW, yy - 10, Math.max(20, w * r.v * p), 20, 10); g.fillStyle = r.color || color; g.fill(); }); }
 // Progress / timeline meter (e.g. TIME vs MEMORY strips)
-export function meter(g, t, o = {}) { const { x = 200, y = 300, w = E.W - 400, ticks = 40, label = 'TIME', color = S().ui.gold, start = 0, speed = 1 } = o; text(g, label, x, y - 50, { size: V(40, 44), color, align: 'left', glow: 14, glowColor: alpha(color, 0.5) }); rr(g, x, y - 26, w, 52, 10); g.fillStyle = alpha(color, 0.08); g.fill(); for (let i = 0; i <= ticks; i++) { const big = i % 5 === 0, xx = x + 20 + ((w - 40) * i) / ticks, on = (t - start) * speed * ticks > i; seg(g, [[xx, y - (big ? 18 : 9)], [xx, y + (big ? 18 : 9)]], big ? 4 : 2, alpha(color, on ? 1 : 0.35)); } }
+export function meter(g, t, o = {}) { const { x = 200, y = 300, w = E.W - 400, ticks = 40, label = 'TIME', color = S().ui.gold, start = 0, speed = 1 } = o; text(g, label, x, y - 50, { size: V(40, 44), color, align: 'left', glow: 14, glowColor: alpha(color, 0.5), contrast: true }); rr(g, x, y - 26, w, 52, 10); g.fillStyle = alpha(color, 0.08); g.fill(); for (let i = 0; i <= ticks; i++) { const big = i % 5 === 0, xx = x + 20 + ((w - 40) * i) / ticks, on = (t - start) * speed * ticks > i; seg(g, [[xx, y - (big ? 18 : 9)], [xx, y + (big ? 18 : 9)]], big ? 4 : 2, alpha(color, on ? 1 : 0.35)); } }
 // Blueprint style: dark navy backdrop + faint grid; draw your diagram in bpStroke() colour with seg/ring
 export function blueprint(g, o = {}) { const { grid = 60, a = 0.07 } = o; const ui = S().ui; g.fillStyle = ui.bpBg; g.fillRect(-E.W, -E.H, E.W * 3, E.H * 3); g.strokeStyle = alpha(ui.blueprint, a); g.lineWidth = 1; for (let x = 0; x <= E.W; x += grid) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, E.H); g.stroke(); } for (let y = 0; y <= E.H; y += grid) { g.beginPath(); g.moveTo(0, y); g.lineTo(E.W, y); g.stroke(); } }
 export const bpStroke = () => S().ui.blueprint;
@@ -88,7 +89,7 @@ export function endScreen(g, t, o = {}) {
   g.fillStyle = linGrad(g, 0, 0, 0, E.H, moodColors); g.fillRect(-E.W, -E.H, E.W * 3, E.H * 3);
   glow(g, E.W / 2, E.H * 0.9, E.W * 0.45, '#ff9a5a', 0.3);
   const a1 = ease.out(prog(t, 0.2, 0.8));
-  text(g, question, E.W / 2, V(150, 360), { size: V(64, 66), font: FONTS.serif, weight: 900, italic: true, color: ui.cream, alpha: a1, glow: 18, glowColor: 'rgba(255,170,90,.5)' });
+  text(g, question, E.W / 2, V(150, 360), { size: V(64, 66), font: FONTS.serif, weight: 900, italic: true, color: ui.cream, alpha: a1, glow: 18, glowColor: 'rgba(255,170,90,.5)', contrast: true });
   bubble(g, E.W / 2 - V(260, 170), V(300, 560), { w: V(110, 130), h: V(60, 70) });
   const sp = ease.outBack(prog(t, 0.6, 1.1)); g.save(); g.translate(E.W / 2 + V(60, 60), V(300, 560)); g.scale(sp, sp); rr(g, -150, -38, 300, 76, 38); g.fillStyle = '#e0302a'; g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-104, 12); g.quadraticCurveTo(-104, -18, -92, -18); g.quadraticCurveTo(-80, -18, -80, 12); g.closePath(); g.fill(); circle(g, -92, 17, 5, '#fff'); text(g, 'Subscribe', 18, 2, { size: 34, color: '#fff', font: FONTS.ui, weight: 900 }); g.restore();
   const n = cast.length, gap = Math.min(V(150, 120), (E.W * 0.85) / Math.max(1, n)), y0 = E.H - V(170, 420);

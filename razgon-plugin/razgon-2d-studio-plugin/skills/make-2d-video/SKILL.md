@@ -32,7 +32,7 @@ Stage commands from this plugin re-run one stage: `/new-video` (stages 1–4), `
 6. **Write the beats yourself, by meaning, and film each as a long take.** No script splits the narration; you start a new beat where the narration changes the subject (storytelling.md §0). Inside a beat the camera travels instead of cutting.
 7. **Direct episodes, not sentences.** Plan the film as 10–20 continuous episodes (one place, one through-action, one camera idea, a visible change from start to end). Shots are cuts inside an episode, never one shot per sentence. See `references/storytelling.md`.
 8. **Every shot is written for its moment.** Share sets and helpers, never shots: no template registry that stamps the same composition with different text. Run `tools/direction_check.py` before every long render and fix every FAIL.
-9. **Nothing pops, every cut earns itself.** Every element enters and leaves with motion or a fade; text stays for its reading time and lives in film `overlays` when it would be cut off; a cut changes at least two of place, size, angle and subject, otherwise move the camera instead (storytelling.md §4).
+9. **Nothing pops, every cut earns itself.** Every element enters and leaves with motion or a fade; text stays for its reading time and lives in film `overlays` when it would be cut off; text and numbers sit on a calm part of the picture (`label()` adds a soft shadow and darkens light letters on a light picture by itself); a cut changes at least two of place, size, angle and subject, otherwise move the camera instead (storytelling.md §4).
 10. **Files are the truth.** Each video lives in `razgon-2d-studio/projects/<slug>/`, and `story/shots.json` owns all timing.
 
 ## Stage 1: Intake

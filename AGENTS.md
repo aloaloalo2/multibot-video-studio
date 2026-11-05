@@ -590,3 +590,18 @@ When a local refit of retained takes exceeds the source-anchor shift limit, try 
 
 The user: «отчет по витраченим токенам… можливо, контекст якийсь старий ми читаємо лишній раз… прям в проект хай записується». When a run of `director.claude` ends (director or frame agent), `spend_report.record_later` reads its stream-json log and saves `projects/<id>/spend/<log>-<time>.json`; at start-up `spend_report.backfill_all` reports logs that still lack one. A report holds the run's cost from Claude Code's `modelUsage` (for a resumed session, the totals at the end less the result it printed before its first step; a resumed session without that baseline is an estimate), tokens, start and average context, shares of work by group (scene code, checks and stills, reading, directing, assets, studio, thinking), the tool results re-read on the most turns, files read again, helpers that started with a copy of the conversation, cache rewrites after long waits and short advice. Each turn's price is put on the action it starts; prices $3/$15/$0.30 and $6/$3.75 for 1h/5m cache writes per million tokens match the reported costs. `GET /api/projects/<id>/spend` (`?format=text&limit=1`) and `tools/studio.py spend P [--all]` read them; a report never touches its run. Findings and what to save: docs/LIMITS_SPEND.md. Test: `backend/tests/test_spend_report.py`.
 
+## Razgon text reads on any background (5 November 2026)
+
+The user: «текст, цифри… на фоні чогось, де не видно нічого… зливаються з фоном», then «по дефолту… контрастні циферки
+і букви… мало кредитів не тратить». The kit's `engine/core.js` `text(g, …, { contrast: true })` does it in the engine, so
+no new check or agent step is needed. `label()`, `badge`, `readout`, `callout`, `dimension`, `bigLine`, `titleCard`, `meter`,
+`compareBars`, the end screen and film `label` overlays use it (scenes already written get it too); `kText` letters get
+the shadow alone (`contrast: 'shadow'`). It puts a soft two-layer shadow under the letters (dark under light text,
+light under dark; no plate, outline or halo, What If's rule) and picks the tone on the GPU: the picture under the
+letters is drawn down to 16×4 through an SVG filter that marks samples within 0.27 of the letters' luma or past it,
+halved to 1×1, and when such samples cover 42–48 % of the box, light letters cross-fade to a dark tone of their own
+colour (dark ones to a light tone). No pixel is read back, so the export is not slower (07: 42 ms a frame before and
+after, 1.3 % over all takes). Mid-tone text (a saturated red) keeps its colour with the dark shadow. `config.json`
+`"textTone": false` turns the tone off for a film. The kit's `core.js` and `ui2d.js` now carry the working copy's text
+cache and `compareBars` `labelW` as well, so the copy and the kit are the same files again. The skill's `render-qc.md`,
+`SKILL.md` and the frame agent's brief say in one line to put text and numbers on a calm part of the picture.

@@ -26,7 +26,7 @@ python audio/mix.py --project projects/my-video        # builds music + SFX, mix
 - [ ] Every shot has a motivated camera move (not a lone linear zoom) and some atmosphere; medium shots have a soft foreground that enters the frame without covering faces or text.
 - [ ] Arrivals and contacts have weight (overshoot, settle, impact); non-cut transitions read correctly in `--stills` taken inside them.
 - [ ] Every new visual event (slam, landing, smash cut) has its SFX on the same frame.
-- [ ] Text is short, inside the safe area, and legible at phone size. Numbers match the narration.
+- [ ] Text is short, inside the safe area, and legible at phone size, on a calm part of the picture and clearly lighter or darker than it. Numbers match the narration.
 - [ ] Nothing pops: every element enters and leaves with motion or a fade; text stays for its reading time; no cut between near-identical frames; no strobing time-lapse (`tools/direction_check.py --video`).
 - [ ] Variety: no more than 3 consecutive shots of the same type or framing, with close-ups and inserts sprinkled in.
 - [ ] 9:16: subjects in the middle, nothing important under the captions.
@@ -41,7 +41,7 @@ python audio/mix.py --project projects/my-video        # builds music + SFX, mix
 - [ ] **Scale and place are believable.** People are not giants next to a station or tiny next to a cup unless that is the joke; a person on Earth stands on the ground, not as a head sticking out of the planet.
 - [ ] **Windows, screens and the logo corner stay clear.** A card, fan, checklist or bottle is not pasted over a window or porthole: it goes on free wall or into a hand. Nothing sits under the channel logo (the overlay's top-right box, e.g. x 1675–1855, y 55–149 at 1080p) or behind the top-centre title plate, including things that drift through the frame.
 - [ ] **A PNG brings only what the scene needs.** A prop drawn with extra parts (clippers with their own coiled hose, a desk with a chair) is clipped to the part that is used, and the rest is drawn to fit the scene, so it does not wrap or cover a body.
-- [ ] **Craft.** No primitive shape standing in for a real object (use a PNG prop); no empty, flat or cramped frame; no clipped heads or text; nothing ugly or unfinished; no stairs or props that lead nowhere. If it would not pass on a top channel, it is a bug.
+- [ ] **Craft.** No primitive shape standing in for a real object (use a PNG prop); no empty, flat or cramped frame; no clipped heads or text; no text or number that merges with the picture under it (move it to a calm part); nothing ugly or unfinished; no stairs or props that lead nowhere. If it would not pass on a top channel, it is a bug.
 
 ## Troubleshooting
 - **Fonts look like serif defaults** → the `@fontsource` packages are missing. Run `npm install` in razgon-2d-studio.

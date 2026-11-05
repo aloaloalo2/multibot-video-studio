@@ -88,16 +88,138 @@ export function backdrop(g, colors, area = [-E.W, -E.H, E.W * 3, E.H * 3]) { g.f
 export const FONTS = { title: 'Fredoka', ui: 'Nunito', serif: 'Playfair Display' };
 // A font without a letter (Fredoka, Bebas and the other title fonts have no Cyrillic) falls back to Nunito, which player.js
 // loads with Cyrillic, never to the browser's serif.
+const fontOf = (italic, weight, size, font) => `${italic ? 'italic ' : ''}${weight} ${size}px "${font}", "Nunito", sans-serif`;
+// how light a colour looks: sRGB luma, 0 black … 1 white (its alpha is ignored; a colour rgb() cannot read counts as light)
+export function luma(c) { try { const [r, g, b] = rgb(c); return Number.isFinite(r + g + b) ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 : 0.8; } catch { return 0.8; } }
+
+// Text over the picture must read on any background (user, 5 November 2026: «текст, цифри… на фоні чогось, де не видно
+// нічого… зливаються з фоном»). text(g, s, x, y, { contrast: true }), which label(), badges, readouts and callouts use:
+// - a soft shadow under the letters: dark under light text, light under dark text. Two layers, a close one that keeps the
+//   edges of the letters and a wide faint one; no plate, no outline, no halo around the letters (What If's rule);
+// - the tone: the GPU measures how much of the picture under the letters is about as light as the letters or lighter (for
+//   dark text: as dark or darker), and when that is a large part of it, light text turns to a dark tone of its own colour
+//   (dark text to a light one). A share, not the mean brightness: a bright spot on a purple wall keeps the neon colour, a
+//   light sky or a pink wall under pink letters does not.
+//   It cross-fades over a narrow band, so a moving background never makes it blink, and no pixel is read back to the CPU
+//   (render speed).
+// Mid-tone text (a saturated red, a pink) keeps its colour and gets the dark shadow. { contrast: 'shadow' } gives the shadow
+// alone; config.json "textTone": false switches the tone off for a whole film.
+const LIGHT_TEXT = 0.45, DARK_TEXT = 0.3;
+// a pixel is too close to the letters when its luma comes within .27 of theirs (wholly within .17), or passes it; the opposite
+// tone fades in while such pixels cover 42 % to 48 % of the box of the letters
+export const TONE_RULE = { near: [0.27, 0.17], share: [0.42, 0.48] };
+// the luma band of the pixels too close to letters of luma L (light text: from L - .27 up; dark text: from L + .27 down)
+export const nearBand = (L, kind) => { const q = Math.round(L * 20) / 20, [a, b] = TONE_RULE.near, c = (v) => +clamp(v, 0.05, 0.95).toFixed(2); return kind === 'dark' ? [c(q + a), c(q + b)] : [c(q - a), c(q - b)]; };
+const textKind = (color) => { const L = luma(color); return L >= LIGHT_TEXT ? 'light' : L < DARK_TEXT ? 'dark' : 'mid'; };
+export function legibleShadow(size, dark = true) {
+  const c = dark ? '0,0,0' : '255,255,255';
+  return [{ color: `rgba(${c},.7)`, blur: size * 0.05, x: 0, y: size * 0.03 }, { color: `rgba(${c},.35)`, blur: size * 0.16, x: 0, y: size * 0.06 }];
+}
+// the opposite tone of a text colour: a dark one of the same hue for light text, a light one for dark text
+export const oppositeTone = (color) => (textKind(color) === 'dark' ? mix(color, '#ffffff', 0.86) : mix(color, '#000000', 0.8));
+
+// ---------- cached text bitmaps (smooth sub-pixel motion for text) ----------
+const _textCache = new Map(), TEXT_OVERSAMPLE = 2.5, TEXT_CACHE_MAX = 600;
+function textBitmap(g, str, size, o) {
+  if (typeof document === 'undefined' || !str) return null;
+  const sh = o.shadow || [];
+  const key = [str, size.toFixed(2), o.font, o.weight, o.color, o.align, o.base, o.gl, o.glowColor, o.spacing, o.stroke, o.strokeColor, o.italic, JSON.stringify(sh)].join('|');
+  let bm = _textCache.get(key);
+  if (bm) { _textCache.delete(key); _textCache.set(key, bm); return bm; }
+  const shPad = sh.reduce((m, s) => Math.max(m, (s.blur || 0) * 1.5 + Math.max(Math.abs(s.x || 0), Math.abs(s.y || 0))), 0);
+  const f = TEXT_OVERSAMPLE * Math.max(1, E.PX || 1), pad = Math.ceil(Math.max((o.gl || 0) * 1.5, shPad) + (o.stroke || 0) + size * 0.25);
+  const fontStr = fontOf(o.italic, o.weight, size, o.font);
+  const m = (() => { g.save(); g.font = fontStr; if ('letterSpacing' in g) g.letterSpacing = `${o.spacing}px`; const r = g.measureText(str); g.restore(); return r; })();
+  const tw = Math.ceil(m.width) + 2, th = Math.ceil(size * 1.5), w = tw + pad * 2, h = th + pad * 2;
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w * f)); c.height = Math.max(1, Math.ceil(h * f));
+  const x = c.getContext('2d'); x.scale(f, f); x.font = fontStr; x.textAlign = o.align; x.textBaseline = o.base; if ('letterSpacing' in x) x.letterSpacing = `${o.spacing}px`;
+  const ox = pad + (o.align === 'center' ? tw / 2 : o.align === 'right' || o.align === 'end' ? tw : 0);
+  const oy = pad + (o.base === 'top' || o.base === 'hanging' ? size * 0.2 : o.base === 'bottom' || o.base === 'ideographic' ? size * 1.3 : o.base === 'alphabetic' ? size * 1.05 : th / 2);
+  // the shadows first: the letters that cast them are thrown off the bitmap, so only the shadow lands and a see-through
+  // colour keeps its own opacity (a canvas shadow offset is in pixels, so it carries the oversampling)
+  const off = w + 20;
+  for (const s of sh) { x.save(); x.shadowColor = s.color; x.shadowBlur = (s.blur || 0) * f; x.shadowOffsetX = ((s.x || 0) + off) * f; x.shadowOffsetY = (s.y || 0) * f; x.fillStyle = '#000'; x.fillText(str, ox - off, oy); x.restore(); }
+  if (o.stroke) { x.lineJoin = 'round'; x.lineWidth = o.stroke; x.strokeStyle = o.strokeColor; x.strokeText(str, ox, oy); }
+  if (o.gl) { x.shadowColor = o.glowColor; x.shadowBlur = o.gl * f; }
+  x.fillStyle = o.color; x.fillText(str, ox, oy);
+  // the box of the letters themselves inside the bitmap: the tone samples the picture under the letters, not around them
+  const gb = [ox - (m.actualBoundingBoxLeft || 0), ox + (m.actualBoundingBoxRight || tw), oy - (m.actualBoundingBoxAscent || size * 0.4), oy + (m.actualBoundingBoxDescent || size * 0.4)];
+  bm = { c, w, h, ox, oy, gb }; _textCache.set(key, bm);
+  if (_textCache.size > TEXT_CACHE_MAX) _textCache.delete(_textCache.keys().next().value);
+  return bm;
+}
+
+// ---------- the tone under the letters, on the GPU ----------
+// Scratch canvases large enough to stay on the GPU: a small canvas is drawn on the CPU, and copying a GPU picture into it
+// waits for the whole frame. The picture under a line is drawn down to 16x4 through a filter that marks each sample too
+// close to the letters (luminanceToAlpha, then a steep ramp; one filter per band, made when first needed), halved to 1x1,
+// so that pixel's alpha is the share of such samples; a second filter turns the share into the weight of the opposite tone.
+let TONE = null;
+function toneKit() {
+  if (TONE !== null) return TONE;
+  TONE = false;
+  if (typeof document === 'undefined' || typeof CanvasRenderingContext2D === 'undefined' || !('filter' in CanvasRenderingContext2D.prototype)) return TONE;
+  const NS = 'http://www.w3.org/2000/svg', el = (tag, at = {}) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); return e; };
+  const svg = el('svg', { width: 0, height: 0, style: 'position:absolute;width:0;height:0' });
+  const ramp = (id, [b0, b1], lum) => {
+    const ft = el('filter', { id, 'color-interpolation-filters': 'sRGB' }), ct = el('feComponentTransfer');
+    ct.append(el('feFuncA', { type: 'linear', slope: (1 / (b1 - b0)).toFixed(4), intercept: (-b0 / (b1 - b0)).toFixed(4) }));
+    if (lum) ft.append(el('feColorMatrix', { type: 'luminanceToAlpha' })); ft.append(ct); svg.append(ft);
+  };
+  ramp('rz-tone', TONE_RULE.share, false);
+  (document.body || document.documentElement).append(svg);
+  const mk = (w, h) => { const k = document.createElement('canvas'); k.width = w; k.height = h; return k; }, made = new Set();
+  const near = (band) => { const id = `rz-near-${band.join('-')}`; if (!made.has(id)) { ramp(id, band, true); made.add(id); } return `url(#${id})`; };
+  TONE = { P: mk(256, 64), Q: mk(256, 64), A: mk(256, 256), B: mk(256, 256), near };
+  return TONE;
+}
+const fit = (c, w, h) => { if (c.width < w || c.height < h) { c.width = Math.max(c.width, w); c.height = Math.max(c.height, h); } };
+const reset = (c, smooth = true) => { c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'copy'; c.filter = 'none'; c.imageSmoothingEnabled = smooth; c.imageSmoothingQuality = 'low'; return c; };
+// draws bitmap A where the picture under it suits its colour and bitmap B (the opposite tone) where it does not; false when
+// the line is off the canvas or the browser has no canvas filters (then the caller draws A alone)
+function drawToned(g, A, B, dx, dy, kind, L) {
+  const K = toneKit(); if (!K) return false;
+  const T = g.getTransform(), [x0, x1, y0, y1] = [dx + A.gb[0], dx + A.gb[1], dy + A.gb[2], dy + A.gb[3]];
+  const xs = [x0, x1, x0, x1], ys = [y0, y0, y1, y1], X = xs.map((v, i) => T.a * v + T.c * ys[i] + T.e), Y = xs.map((v, i) => T.b * v + T.d * ys[i] + T.f);
+  const cw = g.canvas.width, ch = g.canvas.height;
+  const bx0 = clamp(Math.min(...X), 0, cw), bx1 = clamp(Math.max(...X), 0, cw), by0 = clamp(Math.min(...Y), 0, ch), by1 = clamp(Math.max(...Y), 0, ch);
+  if (bx1 - bx0 < 2 || by1 - by0 < 2) return false;
+  const p = reset(K.P.getContext('2d')), q = reset(K.Q.getContext('2d'));
+  p.filter = K.near(nearBand(L, kind)); p.drawImage(g.canvas, bx0, by0, bx1 - bx0, by1 - by0, 0, 0, 16, 4); p.filter = 'none';
+  q.drawImage(K.P, 0, 0, 16, 4, 0, 0, 8, 2); p.drawImage(K.Q, 0, 0, 8, 2, 0, 0, 4, 1); q.drawImage(K.P, 0, 0, 4, 1, 0, 0, 2, 1); p.drawImage(K.Q, 0, 0, 2, 1, 0, 0, 1, 1);
+  const w = A.c.width, h = A.c.height, flt = 'url(#rz-tone)'; fit(K.A, w, h); fit(K.B, w, h);
+  const a = reset(K.A.getContext('2d'), false), b = reset(K.B.getContext('2d'), false);
+  b.drawImage(B.c, 0, 0); b.globalCompositeOperation = 'destination-in'; b.filter = flt; b.drawImage(K.P, 0, 0, 1, 1, 0, 0, w, h); b.filter = 'none';
+  a.drawImage(A.c, 0, 0); a.globalCompositeOperation = 'destination-out'; a.filter = flt; a.drawImage(K.P, 0, 0, 1, 1, 0, 0, w, h); a.filter = 'none';
+  a.globalCompositeOperation = 'lighter'; a.drawImage(K.B, 0, 0, w, h, 0, 0, w, h);
+  g.drawImage(K.A, 0, 0, w, h, dx, dy, A.w, A.h);
+  return true;
+}
+
 export function text(g, str, x, y, o = {}) {
-  const { font = FONTS.title, weight = 700, color = '#fff', align = 'center', base = 'middle', glow: gl = 0, glowColor = 'rgba(255,140,60,.8)', spacing = 0, alpha: a = 1, stroke = 0, strokeColor = '#000', italic = false, maxWidth = 0 } = o;
+  const { font = FONTS.title, weight = 700, color = '#fff', align = 'center', base = 'middle', glow: gl = 0, glowColor = 'rgba(255,140,60,.8)', spacing = 0, alpha: a = 1, stroke = 0, strokeColor = '#000', italic = false, maxWidth = 0, contrast = false } = o;
   let size = o.size ?? 48;
   // maxWidth: shrink the font until the line fits its container (a notebook page, a card, the frame) — text never overflows
   if (maxWidth > 0) { const w = measure(g, str, size, font, weight) + spacing * Math.max(0, String(str).length - 1); if (w > maxWidth) size *= maxWidth / w; }
-  g.save(); g.globalAlpha *= a; g.font = `${italic ? 'italic ' : ''}${weight} ${size}px "${font}", "Nunito", sans-serif`; g.textAlign = align; g.textBaseline = base;
+  const kind = contrast ? textKind(color) : null;
+  const shadow = o.shadow ? [].concat(o.shadow) : contrast ? legibleShadow(size, kind !== 'dark') : [];
+  const toned = contrast && contrast !== 'shadow' && kind !== 'mid' && E.cfg?.textTone !== false;
+  g.save(); g.globalAlpha *= a; g.font = fontOf(italic, weight, size, font); g.textAlign = align; g.textBaseline = base;
   if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`;
-  if (stroke) { g.lineJoin = 'round'; g.lineWidth = stroke; g.strokeStyle = strokeColor; g.strokeText(str, x, y); }
-  if (gl) { g.shadowColor = glowColor; g.shadowBlur = gl; }
-  g.fillStyle = color; g.fillText(str, x, y);
+  // Text is drawn once into a cached bitmap and placed with drawImage: canvas fillText snaps glyphs to whole pixels,
+  // so text on a slowly moving or zooming camera would step while everything around it glides.
+  const opt = { font, weight, color, align, base, gl, glowColor, spacing, stroke, strokeColor, italic, shadow };
+  const bm = textBitmap(g, String(str), size, opt);
+  if (bm) {
+    const dx = x - bm.ox, dy = y - bm.oy;
+    const done = toned && drawToned(g, bm, textBitmap(g, String(str), size, { ...opt, color: oppositeTone(color), shadow: legibleShadow(size, kind === 'dark') }), dx, dy, kind, luma(color));
+    if (!done) g.drawImage(bm.c, dx, dy, bm.w, bm.h);
+  } else {
+    for (const s of shadow) { g.save(); g.shadowColor = s.color; g.shadowBlur = (s.blur || 0) * (E.PX || 1); g.shadowOffsetX = (s.x || 0) * (E.PX || 1); g.shadowOffsetY = (s.y || 0) * (E.PX || 1); g.fillStyle = color; g.fillText(str, x, y); g.restore(); }
+    if (stroke) { g.lineJoin = 'round'; g.lineWidth = stroke; g.strokeStyle = strokeColor; g.strokeText(str, x, y); }
+    if (gl) { g.shadowColor = glowColor; g.shadowBlur = gl; }
+    g.fillStyle = color; g.fillText(str, x, y);
+  }
   // render.mjs --text-check: log where every visible line of text lands on the canvas, so text cut by the frame edge is caught
   if (globalThis.TEXT_LOG && g.globalAlpha > 0.2 && !o.offscreen) {
     const m = g.measureText(str), w = m.width, x0 = align === 'center' ? x - w / 2 : align === 'right' || align === 'end' ? x - w : x, T = g.getTransform();
@@ -107,7 +229,7 @@ export function text(g, str, x, y, o = {}) {
   }
   g.restore();
 }
-export function measure(g, str, size, font = FONTS.title, weight = 700) { g.save(); g.font = `${weight} ${size}px "${font}", "Nunito", sans-serif`; const w = g.measureText(str).width; g.restore(); return w; }
+export function measure(g, str, size, font = FONTS.title, weight = 700) { g.save(); g.font = fontOf(false, weight, size, font); const w = g.measureText(str).width; g.restore(); return w; }
 
 // ---------- camera & parallax ----------
 // cam = {x, y, z (zoom), r (roll, radians)}; depth 1 = character plane, <1 farther, >1 foreground

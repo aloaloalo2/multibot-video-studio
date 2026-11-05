@@ -115,7 +115,7 @@ export function kText(g, t, str, x, y, o = {}) {
     else if (mode === 'type') { sc = 0.6 + 0.4 * clamp(s); }
     g.save(); g.translate(lx + dx, y + dy); g.rotate(rot); g.scale(sc, sc);
     if (mode === 'rise') { g.beginPath(); g.rect(-w, -size * 0.75 - dy, w * 2, size * 1.5); g.clip(); }
-    text(g, c, 0, 0, { size, font, weight, color, alpha: a, glow, glowColor });
+    text(g, c, 0, 0, { size, font, weight, color, alpha: a, glow, glowColor, contrast: o.contrast ?? 'shadow' });   // shadow only: a tone per letter could split a word
     g.restore();
   });
   return { w: W, h: size, k: kAll };

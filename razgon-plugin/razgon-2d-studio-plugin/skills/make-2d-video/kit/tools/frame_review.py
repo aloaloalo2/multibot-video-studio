@@ -12,8 +12,8 @@ them out in build/review/review_NN.png, four frames per sheet: frame number, tim
 the three pictures. Open every sheet and check every frame against the checklist in references/render-qc.md
 («Frame review»): bodies and poses that are physically wrong (lying on a bed, sitting on a chair, holding things,
 standing on the floor), things that float, overlap or pass through each other, a picture that does not match the
-words, text and labels, framing, and anything that simply looks unfinished or ugly. Then `mark` each frame ok, or bug
-with a note; fix the bugs and run `sheets` again.
+words, text and labels (cut, or merging with the picture under them), framing, and anything that simply looks unfinished
+or ugly. Then `mark` each frame ok, or bug with a note; fix the bugs and run `sheets` again.
 
 A verdict belongs to the pixels it was given on: `sheets` hashes every still, and a frame whose stills changed since
 its verdict (a fix, or a change in a shared set or engine file) goes back to «not reviewed», while untouched frames keep

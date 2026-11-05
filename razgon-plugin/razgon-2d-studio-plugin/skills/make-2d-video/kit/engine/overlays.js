@@ -26,7 +26,7 @@ export function drawOverlays(g, t) {
       rr(g, x - w / 2, y - size * 0.75, w, size * 1.5, size * 0.75); g.fillStyle = alpha('#05040c', 0.55); g.fill();
       text(g, ov.str, x, y, { size, color: c, font: FONTS.ui, weight: 900, glow: 14, glowColor: alpha(c, 0.6), spacing: 2 });
     } else if (ov.type === 'label') {
-      text(g, ov.str, x, y + (1 - ease.out(prog(lt, 0, 0.4))) * 18, { size: ov.size ?? V(36, 42), color: c, font: FONTS.ui, weight: 900, glow: 14, glowColor: alpha(c, 0.6), align: ov.align || 'center', spacing: 2 });
+      text(g, ov.str, x, y + (1 - ease.out(prog(lt, 0, 0.4))) * 18, { size: ov.size ?? V(36, 42), color: c, font: FONTS.ui, weight: 900, glow: 14, glowColor: alpha(c, 0.6), align: ov.align || 'center', spacing: 2, contrast: true });
     } else {   // kinetic text: the letters animate in with `mode`, the whole line fades out together before `end`
       kText(g, lt, ov.str, x, y, { start: 0, mode: ov.mode || 'rise', size: ov.size ?? V(84, 76), color: c, glow: ov.glow ?? 22, align: ov.align || 'center', font: ov.font === 'ui' ? FONTS.ui : FONTS.title, weight: ov.font === 'ui' ? 900 : 700 });
     }
