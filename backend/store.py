@@ -675,8 +675,9 @@ def production_state(project: dict) -> dict | None:
             plan = listed_plan(project)
         except (StudioError, OSError, ValueError):
             plan = None
-        # made among the frames this request asks for (from its first one), so «1 з 6» never counts a frame made before
-        state["made"] = sum(1 for number in made_frames(project, plan) if state["first"] <= number <= state["frames"])
+        # every made frame of the asked ones, earlier runs too: the card reads «86 з 107» for the whole film (user,
+        # 4 November 2026: «краще залишити 107… всі кадри, які зроблені»), not «64 з 85» counted from the first gap
+        state["made"] = sum(1 for number in made_frames(project, plan) if 1 <= number <= state["frames"])
     return state
 
 

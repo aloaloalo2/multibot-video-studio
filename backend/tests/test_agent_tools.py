@@ -209,7 +209,7 @@ class AgentToolsTest(unittest.TestCase):
         project = self.project(frames=1)
         plan = {"frames": [{"number": n, "format": "stock_photo", "start": 4.0 * (n - 1), "end": 4.0 * n, "sentences": [f"Речення {n}."]} for n in range(1, 4)],
                 "timing": {"status": "audio_synced"}, "script_sha256": "x"}
-        with patch.object(store, "load_project_plan", return_value=plan):
+        with patch.object(store, "load_project_plan", return_value=plan), patch.object(store, "listed_plan", return_value=plan):
             with self.assertRaises(store.StudioError) as made:
                 store.request_production(project["id"], 1)   # frame 1 is already on the timeline
             self.assertEqual(made.exception.status, 409)
@@ -217,7 +217,7 @@ class AgentToolsTest(unittest.TestCase):
             with self.assertRaises(store.StudioError):
                 store.request_production(project["id"], 3)   # one request at a time
             listed = next(p for p in store.list_projects() if p["id"] == project["id"])
-            self.assertEqual(listed["production_request"], {"status": "requested", "frames": 3, "first": 2, "limit": False, "made": 0})   # frame 1 was made before: the request is frames 2–3
+            self.assertEqual(listed["production_request"], {"status": "requested", "frames": 3, "first": 2, "limit": False, "paused": False, "made": 1})   # the agent starts at frame 2; the card counts frame 1, made before, of all 3
             stale = {**plan, "director_stale": True}
         with patch.object(store, "load_project_plan", return_value=stale):
             other = self.project(frames=1)

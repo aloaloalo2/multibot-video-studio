@@ -364,14 +364,14 @@ function renderOverview() {
     // a stopped or paused run tells it on the card too: the author was sent here to watch the frames being made
     const stopped=making?.status==='failed';
     if(stopped){
-      const total=(Number(making.frames) || 0)-(Number(making.first) || 1)+1,done=Math.min(total,Number(making.made) || 0);
+      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0);
       const box=document.createElement('div');box.className='project-making stopped';
       box.innerHTML=`<span class="project-export-label"><span>${making.paused?'На паузі':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
       box.title='Відкрийте випуск, щоб продовжити або почати ще раз';
       open.insertBefore(box,open.querySelector('.project-meta'));card.classList.add('production-stopped');
     }
     if(producing){
-      const total=(Number(making.frames) || 0)-(Number(making.first) || 1)+1,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
+      const total=Number(making.frames) || 0,done=Math.min(total,Number(making.made) || 0),progress=total?Math.round(done/total*100):0;
       const box=document.createElement('div');box.className='project-making';
       box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
       open.insertBefore(box,open.querySelector('.project-meta'));

@@ -418,7 +418,8 @@ function fillMake(make){
   // While the agent works the button turns into its progress; the steps of the work read in the feed below.
   start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked;
   if(working){
-    const done=[...made].filter(index=>index>=first-1&&index<request.frames).length,total=request.frames-first+1;
+    // the whole asked film with every frame made so far, earlier runs too: «86 з 107», never counted from the first gap
+    const done=[...made].filter(index=>index<request.frames).length,total=request.frames;
     start.disabled=true;start.classList.add('loading');
     start.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо кадри · ${done} з ${total}</span>`;
     start.after(productionControl(id,true));
