@@ -27,6 +27,7 @@ import store
 import technical_files
 import covers
 import channel_branding
+import channel_hero
 import style_lab
 import style_copy
 import director
@@ -1267,6 +1268,13 @@ class Handler(BaseHTTPRequestHandler):
             if not channel_branding.overlay_png(match.group(1), settings.get("logo"), frame, target):
                 raise store.StudioError("Логотип не додано або вимкнено", 404)
             return self.serve_media(target)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/thumbnail-hero", path)
+        if match:
+            store.get_channel_folder(match.group(1))
+            file = channel_hero.path(match.group(1))
+            if not file.is_file():
+                raise store.StudioError("Референс героя не додано", 404)
+            return self.serve_media(file, cache=True)
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
         if match:
             store.get_channel_folder(match.group(1))
@@ -1389,7 +1397,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
-            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None)}, 202)
+            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None, use_hero=body.get("use_hero"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
         if match and method == "POST":
             return self.json_response(languages.cancel(match.group(1), body.get("slot") or None))
@@ -1425,7 +1433,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(languages.remove_own_voice(pid, code))
             if action == "text":
                 return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
-            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False),cache_only=body.get('cache_only',False))}, 202)
+            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False),cache_only=body.get('cache_only',False),use_hero=body.get('use_hero'))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
@@ -1483,6 +1491,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation"), body.get("style")))
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 409) from None
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/thumbnail-hero", path)
+        if match and method in {"POST", "DELETE"}:
+            if method == "POST":
+                hero = channel_hero.save(match.group(1), body.get("data"))
+            else:
+                channel_hero.remove(match.group(1))
+                hero = None
+            return self.json_response({"hero_reference": hero, "channels": store.list_channels()})
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
         if match and method in {"POST", "DELETE"}:
             try:

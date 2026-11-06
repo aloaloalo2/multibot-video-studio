@@ -75,6 +75,23 @@ class StyleLabTest(unittest.TestCase):
             # The film itself is untouched.
             self.assertEqual(json.loads((project / "config.json").read_text())["overlay"], "input/plashka.png")
 
+    def test_regular_card_assets_toggle_changes_the_rendered_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp);scene=film(base,"style-card-info");(scene/"scenes/shots").mkdir()
+            root=base/"razgon";(root/"library/props").mkdir(parents=True)
+            for name in ("carrots","brain","eye_model"):(root/"library/props"/f"{name}.png").write_bytes(b"fixture")
+            seen=[]
+            def render(root,folder,ids,times):
+                seen.append(json.loads((folder/"assets/index.json").read_text()))
+                self.assertIn("picture(g, 'brain'",(folder/"scenes/shots/01_info.js").read_text())
+                out=folder/"build/styles";out.mkdir();(out/"neon_2.0s_2.00.jpeg").write_bytes(b"rendered")
+                return out
+            with patch.object(store,"DATA_ROOT",base/"data"),patch.object(style_lab,"card_scene",return_value=(scene,2.0)),patch.object(style_lab,"render_stills",side_effect=render):
+                plain=style_lab.card_set(root,["neon"],1,"Nunito",False,kind="regular")
+                props=style_lab.card_set(root,["neon"],1,"Nunito",True,kind="regular")
+                self.assertNotEqual(plain,props)
+            self.assertEqual(seen,[[],["carrots","brain","eye_model"]])
+
     def test_preview_file_rejects_paths_outside_the_cache(self):
         for key, name in (("../" * 3, "dusk-0.jpg"), ("a" * 20, "../../logo.png")):
             with self.assertRaises(style_lab.StyleLabError):

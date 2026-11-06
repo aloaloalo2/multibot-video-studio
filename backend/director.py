@@ -337,9 +337,9 @@ def _run(pid: str, cli: Path) -> None:
     try:
         data = state(pid) or {}
         project = store.load_project(pid)
-        data.update(status="running", started_at=time.time(), model=MODEL, effort=EFFORT, error=None, summary=None, limit=False)
+        data.update(status="running", started_at=time.time(), model=MODEL, effort=store.channel_effort(project), error=None, summary=None, limit=False)
         save(pid, data)
-        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT)
+        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT, effort=data["effort"])
         plan = store.load_project_plan(pid) or {}
         plan_file = store.project_plan_file(store.load_project(pid))
         # the run counts only if it wrote a fresh director plan into the Studio
@@ -388,7 +388,7 @@ def start(pid: str, reason: str = "voice") -> dict:
         except RuntimeError as error:
             raise store.StudioError(str(error), 503) from None
         ACTIVE.add(pid)
-        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": EFFORT}
+        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": store.channel_effort(project)}
         save(pid, data)
     threading.Thread(target=run, args=(pid, cli), daemon=True).start()
     return data

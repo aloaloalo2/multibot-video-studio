@@ -69,7 +69,7 @@ function syncRoute(replace=false){
 async function api(path, method='GET', body) {
   const options = {method, headers: {'Accept':'application/json'}};
   if (body !== undefined) {options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body);}
-  const startupRead=method==='GET' && (path==='/api/health' || path==='/api/channels' || path.startsWith('/api/projects?') || /^\/api\/projects\/[0-9a-f]{24}(?:\/(?:assets|plan|analysis|export\/active))?$/.test(path));
+  const startupRead=method==='GET' && (path==='/api/health' || path==='/api/channels' || path==='/api/studio/status' || path.startsWith('/api/projects?') || /^\/api\/projects\/[0-9a-f]{24}(?:\/(?:assets|plan|analysis|export\/active))?$/.test(path));
   for(let attempt=0;;attempt++){
     const controller=startupRead?new AbortController():null;
     const timeout=controller?setTimeout(()=>controller.abort(),15000):null;
@@ -163,19 +163,38 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
 function channelIdentityIcon(channel){
   return channel?.icon_url?`<img class="channel-icon channel-avatar" src="${esc(channel.icon_url)}" alt="" draggable="false">`:channelIcon;
 }
-const channelActivity=new Set();
+const channelActivity=new Set(),projectActivities=new Map();
+let channelActivityPending=false;
+function renderProjectActivities(){
+  for(const card of document.querySelectorAll('.project-card')){
+    card.querySelector('.project-stage-job')?.remove();
+    const kind=projectActivities.get(card.dataset.projectId);if(!kind)continue;
+    const open=card.querySelector('.project-open');if(!open)continue;
+    const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    open.insertBefore(box,open.querySelector('.project-meta'));
+  }
+}
+
 async function pollChannelActivity(){
-  if(document.hidden)return;
+  if(document.hidden||channelActivityPending)return;
+  channelActivityPending=true;
   try{
-    const activity=await api('/api/studio/status');channelActivity.clear();
+    const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
+    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
+    for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
+    renderProjectActivities();
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
     for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
       const spinner=button.querySelector('.channel-busy');if(spinner)spinner.hidden=!channelActivity.has(button.dataset.channelId);
     }
   }catch(error){console.warn('Стан каналів тимчасово недоступний',error);}
+  finally{channelActivityPending=false;}
 }
-(function channelActivityLoop(){setTimeout(async()=>{await pollChannelActivity();channelActivityLoop();},5000);})();
+(function channelActivityLoop(delay=5000){setTimeout(async()=>{await pollChannelActivity();channelActivityLoop();},delay);})(0);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollChannelActivity();});
+window.addEventListener('focus',()=>pollChannelActivity());
 
 function renderChannels() {
   const list=$('channel-list'); list.replaceChildren();
@@ -186,6 +205,7 @@ function renderChannels() {
     row.dataset.channelId=channel.id;row.append(choose); list.append(row);
   }
   wireChannelOrder(list);
+  pollChannelActivity();
 }
 
 async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
@@ -416,7 +436,7 @@ function renderOverview() {
     }
     container.append(card);
   }
-  updateOverviewExports();pollOverviewExports(true);
+  renderProjectActivities();updateOverviewExports();pollOverviewExports(true);
   if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
 }
 
@@ -1018,7 +1038,7 @@ function openChannelSettings(channel) {
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal(`Налаштування: ${channel.name}`,body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+    try {if(!validWeights())throw new Error('Сума часток має дорівнювати 100%.');const settings={...original,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       const memory=$('channel-agent-memory').value;
       if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});

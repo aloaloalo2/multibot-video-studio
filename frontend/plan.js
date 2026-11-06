@@ -88,7 +88,7 @@ function renderVoiceStart(panel){
   for(const name of ['dragenter','dragover'])drop.addEventListener(name,event=>{event.preventDefault();drop.classList.add('is-over');});
   for(const name of ['dragleave','drop'])drop.addEventListener(name,()=>drop.classList.remove('is-over'));
   drop.addEventListener('drop',event=>{event.preventDefault();choose(event.dataTransfer.files[0]);});
-  function show(stage,value){progress.innerHTML=`<span>${esc(stage)}</span>${value===undefined?'':`<progress max="100" value="${value}"></progress>`}`;}
+  function show(stage,value){progress.innerHTML=`<span class="voice-progress-stage">${exportSpinner}<span>${esc(stage)}</span></span>${value===undefined?'':`<progress max="100" value="${value}"></progress>`}`;}
   function lock(value){busy=value;start.disabled=value || !file;text.disabled=value;drop.classList.toggle('is-busy',value);}
   start.addEventListener('click',async()=>{
     if(!file || busy)return;lock(true);

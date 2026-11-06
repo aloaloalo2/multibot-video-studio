@@ -613,6 +613,7 @@ function langThumbnailResult(id,item){
           :`<button type="button" class="lang-thumb-run" aria-label="Згенерувати прев’ю"><span class="lang-thumb-wand">${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Натисніть, щоб згенерувати</small></span></button>`}<figcaption>${langFlag(item.code)} ${esc(item.name)}</figcaption>
           <div class="lang-thumb-ask" hidden><label><span>Побажання <em>необов’язково</em></span><input type="text" maxlength="1500" placeholder="Наприклад: напис коротший і жовтий, слово DAY не перекладати" value="${esc(langDrafts[`${id}:${item.code}:wishes`] || '')}"></label>
             ${langThumbnailFlag(item)}
+            ${langData.thumbnail_options?.hero_reference?'<label class="thumb-hero-choice"><input class="lang-thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
             <div class="lang-thumb-ask-actions"><button type="button" class="secondary lang-thumb-ask-cancel">Скасувати</button><button type="button" class="primary lang-thumb-ask-go">Згенерувати</button></div></div></figure></div>`
       :'<p class="lang-off">У випуску ще немає прев’ю. Створіть його на вкладці «Прев’ю».</p>'}
     <div class="lang-job" role="status" aria-live="polite" hidden></div></section>`;
@@ -634,7 +635,7 @@ function langThumbnailResult(id,item){
     if(button.tagName!=='BUTTON')button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open();}});
   });
   ask?.querySelector('.lang-thumb-ask-cancel').addEventListener('click',()=>{ask.hidden=true;});
-  ask?.querySelector('.lang-thumb-ask-go').addEventListener('click',()=>{ask.hidden=true;langStart(id,'thumbnail',item.code,{wishes:wishes.value || '',add_flag:!!item.flag_country&&flag.checked});});
+  ask?.querySelector('.lang-thumb-ask-go').addEventListener('click',()=>{const hero=ask.querySelector('.lang-thumb-use-hero');ask.hidden=true;langStart(id,'thumbnail',item.code,{wishes:wishes.value || '',add_flag:!!item.flag_country&&flag.checked,...(hero?{use_hero:hero.checked}:{})});});
   return card;
 }
 

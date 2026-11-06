@@ -198,7 +198,7 @@ function fillVoiceLine(box){
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
   else{state_='empty';text='озвучку ще не додано';}
   box.dataset.state=state_;
-  box.innerHTML=`<span class="episode-voice-icon">${voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<b>${esc(name)}</b>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
+  box.innerHTML=`<span class="episode-voice-icon">${working?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<b>${esc(name)}</b>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
   if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
   const stage=box.closest('.episode-voice-block');
   if(stage){
@@ -247,6 +247,7 @@ function fillDirectorLine(box){
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
     line('Режисер розкладає озвучку на кадри',`Claude Opus 5.5. Скільки буде кадрів, вирішить режисер: «Створення ролика» з’явиться, щойно він закінчить.${took}`);
+    box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
     renderTeam(box,'director',id,true);
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){

@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 import director
 import frame_progress
 import store
+import channel_hero
 
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 PREVIEW = "Превью.png"
@@ -130,7 +131,8 @@ def defaults(pid: str) -> dict:
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES,
-            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"]}
+            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"],
+            "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
 
 def job_path(pid: str) -> Path:
@@ -284,13 +286,13 @@ This creates a new thumbnail version. Use the attached frames for style and char
 """
 
 
-def write_prompt(text: str, cwd: Path, work: Path) -> tuple[str, dict]:
+def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) -> tuple[str, dict]:
     """Claude Code writes the picture's prompt; returns it with the run's answer (cost, session)."""
     try:
         cli = director.executable()
     except RuntimeError as error:
         raise RuntimeError(str(error)) from None
-    command = [str(cli), "--model", director.MODEL, "--effort", PROMPT_EFFORT, "--strict-mcp-config", "--allowedTools", "Read",
+    command = [str(cli), "--model", director.MODEL, "--effort", effort, "--strict-mcp-config", "--allowedTools", "Read",
                "--add-dir", str(work), "--output-format", "json", "-p"]
     result = subprocess.run(command, input=text, cwd=cwd, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
     try:
@@ -364,7 +366,7 @@ Use the built-in image generation tool and make exactly one image. Save it in th
 and reply only with the saved path."""
 
 
-def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None) -> None:
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None) -> None:
     data = state(pid) or {}
     try:
         project = store.load_project(pid)
@@ -374,6 +376,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         work.mkdir(exist_ok=True)
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
         name = f"Превью v{number}.png"
+        hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
             refs, answer = [version_file(pid, base)], {}
@@ -386,9 +389,14 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
                 note = "[Трендове прев’ю · Codex] " + written
             else:
-                text = brief(title, script, wishes, folder, refs)
-                written, answer = write_prompt_deepseek(text, folder, refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work)
+                prompt_refs = ([hero] if hero else []) + refs
+                text = brief(title, script, wishes, folder, prompt_refs) + hero_rules
+                written, answer = write_prompt_deepseek(text, folder, prompt_refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
                 note = ("[DeepSeek] " if writer == "deepseek" else "") + written
+        if hero:
+            refs = [hero, *refs]
+        written += hero_rules
+        note += hero_rules
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
@@ -430,7 +438,9 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None) -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None) -> dict:
+    if use_hero is not None and not isinstance(use_hero, bool):
+        raise store.StudioError('Оберіть, чи використовувати головного героя', 400)
     writer = writer if writer in {"deepseek", "trending"} else "claude"
     if writer == "trending" and base:
         raise store.StudioError("Трендове прев’ю створюється як нова версія, без бази для редагування", 400)
@@ -451,7 +461,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
             return state(pid)
         ACTIVE.add(pid)
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
-                "writer": writer, **({"base": base} if base else {})}
+                "writer": writer, "use_hero": use_hero, **({"base": base} if base else {})}
         store.atomic_json(job_path(pid), data)
-    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base), daemon=True).start()
+    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero), daemon=True).start()
     return data

@@ -321,6 +321,8 @@ def get_channel_folder(cid: str, include_disabled=False) -> Path:
 def validate_settings(value: dict) -> dict:
     if not isinstance(value, dict):
         raise StudioError("Налаштування мають бути об'єктом")
+    if not isinstance(value.get("claude_effort", "high"), str) or value.get("claude_effort", "high") not in {"low", "medium", "high", "xhigh"}:
+        raise StudioError("Невідомий рівень зусиль агента")
     name = value.get("display_name")
     if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 80):
         raise StudioError("Назва каналу має містити від 1 до 80 символів")
@@ -388,8 +390,18 @@ def channel_record(folder: Path) -> dict:
         icon_url = f"/api/channels/{channel_id(folder)}/icon?v={icon.stat().st_mtime_ns}"
     except FileNotFoundError:
         icon_url = None
-    return {"icon_url": icon_url, "id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
+    import channel_hero
+    return {"hero_reference": channel_hero.info(channel_id(folder)), "icon_url": icon_url, "id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
             "path": str(folder), "settings": settings}
+
+
+def channel_effort(project: dict) -> str:
+    try:
+        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {})
+    except (StudioError, KeyError):
+        return "high"
+    value = settings.get("claude_effort", "high")
+    return value if isinstance(value, str) and value in {"low", "medium", "high", "xhigh"} else "high"
 
 
 def list_channels() -> list[dict]:

@@ -67,6 +67,7 @@ async function openThumbnail(project){
   thumbnailSources.set(project.id,{title:data.title,script:data.script});
   modal('Створити нове прев’ю',`
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
+    ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
     [{label:'Створити з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},
@@ -96,6 +97,7 @@ function showThumbnailState(id){
 
 async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes')?.value || ''){
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
+  if($('thumb-use-hero'))body.use_hero=$('thumb-use-hero').checked;
   try{
     if(writer==='trending'){
       const available=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);

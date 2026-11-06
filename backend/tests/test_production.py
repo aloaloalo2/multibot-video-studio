@@ -82,7 +82,8 @@ class ProductionTest(unittest.TestCase):
     def test_done_only_when_the_frames_are_drawn_and_stay_code_blocks(self):
         answer = json.dumps({"result": "Кадри 1–3 готові", "total_cost_usd": 4.2, "usage": {"input_tokens": 10, "output_tokens": 5}, "duration_ms": 60000})
         blocks = lambda kind: [{"clips": [{"kind": kind, "title": f"Razgon · кадр {n:03d}"} for n in (1, 2, 3)]}]
-        with patch.object(production.director, "claude", return_value=(0, json.loads(answer))), \
+        with patch.object(production.director, "claude", return_value=(0, json.loads(answer))) as model, \
+                patch.object(store, "channel_effort", return_value="medium"), \
                 patch.object(production.frame_progress, "drawn", return_value=[1, 2]) as scenes:
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
@@ -96,6 +97,8 @@ class ProductionTest(unittest.TestCase):
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
         request = self.project["production_request"]
+        self.assertEqual(model.call_args.kwargs["effort"], "medium")
+        self.assertEqual(request["effort"], "medium")
         self.assertEqual((request["status"], request["cost_usd"]), ("done", 4.2))
         self.assertGreaterEqual(request["minutes"], 0)                                 # wall clock from the start
         mirror = json.loads((store.project_dir(self.project["id"]) / "production-request.json").read_text())

@@ -7,15 +7,15 @@ const source=fs.readFileSync(path.join(__dirname,'..','thumbnail.js'),'utf8');
 const open=source.slice(source.indexOf('async function openThumbnail('),source.indexOf('function showThumbnailState('));
 const generation=source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
-test('third creation action sends the existing wishes to direct Codex trending mode',async()=>{
+test('Codex action sends wishes to trending mode and Claude remains primary on the right',async()=>{
   let actions;const calls=[];
   const c=vm.createContext({api:async()=>({title:'¿Qué pasaría?',script:'Texto español.'}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
-    modal:(title,body,buttons)=>{actions=buttons;},$:()=>({value:'Make the face large',classList:{add(){}}}),
+    modal:(title,body,buttons)=>{actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
     document:{querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
     generateThumbnail:(...args)=>calls.push(args),status(){}});
   vm.runInContext(open,c);await vm.runInContext("openThumbnail({id:'p',name:'Spanish video'})",c);
-  assert.equal(actions.length,3);assert.equal(actions[2].label,'Трендове прев’ю');
-  actions[2].run();assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
+  assert.equal(actions.length,3);assert.equal(actions[1].label,'Створити з Codex');assert.equal(actions[2].label,'Створити з Claude');assert.equal(actions[2].primary,true);
+  actions[1].run();assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
 });
 test('trending request preserves source title/script and creates a new image without a base',async()=>{
   const calls=[];
@@ -28,7 +28,19 @@ test('trending request preserves source title/script and creates a new image wit
 });
 test('an older running server cannot silently launch the normal paid mode for a trending request',async()=>{
   const calls=[];let error;
-  const c=vm.createContext({thumbnailSources:new Map(),api:async(...args)=>{calls.push(args);return {};},status:text=>error=text});
+  const c=vm.createContext({thumbnailSources:new Map(),$:()=>null,api:async(...args)=>{calls.push(args);return {};},status:text=>error=text});
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'trending','Idea')",c);
   assert.equal(calls.length,1);assert.notEqual(calls[0][1],'POST');assert.match(error,/перезапуску/);
+});
+
+test('host checkbox sends the explicit per-run choice and is omitted when unavailable',async()=>{
+  for(const choice of [true,false,null]){
+    let body;
+    const c=vm.createContext({thumbnailSources:new Map(),thumbnailRuns:new Map(),
+      $:id=>id==='thumb-use-hero'?(choice===null?null:{checked:choice}):{hidden:true},
+      api:async(url,method,value)=>{body=value;return {job:{status:'running'}};},
+      showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw new Error(message);}});
+    vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',name:'T'},'claude','Idea')",c);
+    assert.equal(body.use_hero,choice===null?undefined:choice);
+  }
 });

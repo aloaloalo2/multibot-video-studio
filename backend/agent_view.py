@@ -168,6 +168,7 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
     busy = [f"експорт {job['project_id']}: {job.get('progress', 0)}%, {job.get('stage', '')}" for job in active_exports if job.get("status") in BUSY]
     names = {c["id"]: c.get("name") for c in store.list_channels()}
     active_channels = set()
+    activities = []
     for job in active_exports:
         if job.get("status") in BUSY:
             try:
@@ -183,6 +184,7 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
             continue
         for what, status in project_jobs(item["id"]).items():
             if status in BUSY:
+                activities.append({"project_id": pid, "channel_id": item.get("channel_id"), "kind": what, "status": status})
                 active_channels.add(item.get("channel_id"))
                 busy.append(f"{what}: {names.get(item.get('channel_id'), '')} / {item.get('name') or pid} ({pid})")
-    return {"busy": busy, "exports": active_exports, "active_channels": sorted(x for x in active_channels if x)}
+    return {"busy": busy, "exports": active_exports, "active_channels": sorted(x for x in active_channels if x), "activities": activities}

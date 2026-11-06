@@ -82,6 +82,27 @@ class ThumbnailTest(unittest.TestCase):
         with self.assertRaisesRegex(store.StudioError, "без бази"):
             thumbnail_gen.start(self.project["id"], "T", "S", writer="trending", base="Превью v1.png")
 
+    def test_host_reference_and_opt_out_reach_each_thumbnail_writer_and_codex(self):
+        import channel_hero
+        hero=Path(self.tmp.name)/'host.png';Image.new('RGB',(16,16),'green').save(hero)
+        for writer in ('claude','deepseek','trending'):
+            for enabled in (True,False):
+                for image in (self.studio/'preview').glob('*.png'):
+                    image.unlink()
+                with self.subTest(writer=writer,enabled=enabled), self.tools(), \
+                     patch.object(channel_hero,'prepare',return_value=(hero if enabled else None,'\nHOST INCLUDED\n' if enabled else '\nHOST EXCLUDED\n')) as prepared, \
+                     patch.object(thumbnail_gen,'write_prompt',return_value=('A carefully designed thumbnail. '*10,{})) as claude, \
+                     patch.object(thumbnail_gen,'write_prompt_deepseek',return_value=('A carefully designed thumbnail. '*10,{})) as deepseek:
+                    thumbnail_gen.run(self.project['id'],'T','S','',writer=writer,use_hero=enabled)
+                    self.assertEqual(thumbnail_gen.state(self.project['id'])['status'],'done')
+                    self.assertEqual(prepared.call_args.args[-1],enabled)
+                    command,sent=self.calls[-1]
+                    self.assertEqual(str(hero) in command,enabled)
+                    self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',sent['input'])
+                    prompt_writer=claude if writer=='claude' else deepseek if writer=='deepseek' else None
+                    if prompt_writer:
+                        self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',prompt_writer.call_args.args[0])
+
     def tools(self, picture=True, answer=None):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""
         self.calls = []

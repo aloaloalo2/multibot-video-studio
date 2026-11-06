@@ -100,7 +100,7 @@ def execute(project_id, name, args, callbacks, allow_images):
     if name == "get_project":
         assets = store.discover_assets(project)
         settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {})
-        setting_keys = ("accents", "channel_kind", "plan_mode", "weights", "first_clip_format", "first_clip_count", "first_clip_seconds", "motion_easing", "typography")
+        setting_keys = ("animation", "claude_effort", "accents", "channel_kind", "plan_mode", "weights", "first_clip_format", "first_clip_count", "first_clip_seconds", "motion_easing", "typography")
         return {"plan_mode": store.project_plan_mode(project), "revision": project.get("revision", 0), "production": store.plan_readiness(project), "channel_settings": {key: settings[key] for key in setting_keys if key in settings}, "layers": [{"id": layer["id"], "name": layer.get("name"), "clips": [{"id": c["id"], "kind": c.get("kind"), "start": c.get("start"), "duration": c.get("duration")} for c in layer.get("clips", [])]} for layer in project.get("tracks", [])][:500], "groups": [{key: group.get(key) for key in ("id", "title", "role", "clip_ids")} for group in project.get("scene_groups", [])], "assets": [{key: a.get(key) for key in ("id", "name", "kind", "duration", "source")} for a in assets[:500]]}
     if name == "get_source":
         source = store.load_project_narration(project_id) or {}
@@ -198,7 +198,7 @@ def worker(project_id, text, callbacks, allow_images, guard, reasoning_effort):
         system = ("Ти монтажер Video Studio. Працюй лише в поточному проєкті. " + workflow +
                   "Створи групу через group_clips, навіть якщо кадр поки містить один елемент; інші елементи кадру додавай з group_id. "
                   "Озвучку та інші матеріали, що тривають через декілька кадрів, залишай окремо. "
-                  "Враховуй accents із get_project: увімкнено означає опрацювати акценти на фото за правилами студії (production.ACCENT_RULES): " + production.ACCENT_RULES.replace(chr(10), ' ') + " Вимкнено означає не додавати акценти. "
+                  "Налаштування animation.assets з get_project застосовується до предметів Razgon в універсальних і анімаційних проєктах: увімкнено означає використання PNG-предметів із бібліотеки або генерації, вимкнено означає малювання кодом. Враховуй accents із get_project: увімкнено означає опрацювати акценти на фото за правилами студії (production.ACCENT_RULES): " + production.ACCENT_RULES.replace(chr(10), ' ') + " Вимкнено означає не додавати акценти. "
                   "Перед роботою перевір наявні групи і шари через get_project, щоб не дублювати їх. Застосовуй лише доступні інструменти. "
                   "Текстові вставки створюй за змістом і стилем каналу: виділяй справді важливі тези, зберігай сенс сценарію, не вигадуй фактів. "
                   "Роби текст коротким, виразним і читабельним: достатній контраст, розмір, безпечні відступи і час на читання. "

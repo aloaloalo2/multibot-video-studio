@@ -243,6 +243,21 @@ def accents_step(project: dict, tools: str) -> str:
    Перевір стоп-кадром кінця кадру (fN:end), що акцент на місці. У підсумку назви кадри з акцентами."""
 
 
+def mixed_assets_step(project: dict) -> str:
+    try:
+        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {})
+    except (store.StudioError, KeyError):
+        settings = {}
+    enabled = (settings.get("animation") or {}).get("assets", True) is not False
+    if not enabled:
+        return '   Асети предметів для 2D-анімацій вимкнені: нові сцени Razgon малюй кодом, config.json "assets": false.'
+    return f"""   Асети предметів для 2D-анімацій увімкнені також в універсальному типі: використовуй PNG-предмети всередині кадрів razgon_2d.
+   Спершу готові assets/library-picks.json і предмети проєкту, далі один обмежений пошук tools/library.py search і один аркуш кандидатів.
+   Вдалий предмет приєднай через library.py pull; якщо немає відповідного, замов PNG-предмети аркушем у Codex через tools/codex_image.py та split_sheet.py.
+   Підключи картинки до scenes/assets.js і реально намалюй їх у сцені; порожній assets/index.json при ввімкненому перемикачі не виконує це завдання.
+   У config.json має бути "assets": true. Уже прийняті сцени зберігай. Це правило предметів Razgon; повнокадрові фото роби за окремим форматом кадру."""
+
+
 def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     """The brief for a photo channel: each frame by its format, placed at its time on the timeline."""
     root = store.YOUTUBE_ROOT
@@ -287,6 +302,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
    python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
    python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>: блоки-код стануть лише на кадри формату razgon_2d.
+{mixed_assets_step(project)}
    Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> [--motion zoom_in|zoom_out|none].
 5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN --small: половинний розмір, учетверо дешевший на
@@ -326,14 +342,15 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 return
             log = run_log(pid, request)
             started = time.time()
-            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=EFFORT, error=None, limit=False, paused=False)
+            effort = store.channel_effort(project)
+            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=effort, error=None, limit=False, paused=False)
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         text = brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
         _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
         text += production_context.instructions(handoff)
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=None, effort=EFFORT)
+                                       resume=None, effort=effort)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),

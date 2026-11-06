@@ -3,7 +3,7 @@
 // (the character by a house) in the chosen style, with every template style as a thumbnail underneath and, on request,
 // real frames of the channel's latest film. Every frame places the logo with the same rule as the backend
 // (backend/channel_branding.py): size and margin are percent of the frame width.
-const brandingPositions=[['top-left','Угорі ліворуч'],['top-center','Угорі по центру'],['top-right','Угорі праворуч'],['middle-left','Посередині ліворуч'],null,['middle-right','Посередині праворуч'],['bottom-left','Унизу ліворуч'],['bottom-center','Унизу по центру'],['bottom-right','Унизу праворуч']];
+const brandingPositions=[['top-left','Угорі ліворуч'],['top-right','Угорі праворуч'],['bottom-left','Унизу ліворуч'],['bottom-right','Унизу праворуч']];
 const razgonDefaultStyle='dusk';   // tools/razgon_bridge.py prepare: the style of a channel that names none
 const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opacity:100};
 const titleFonts=['Fredoka','Baloo 2','Lilita One','Bangers','Bebas Neue','Montserrat','Permanent Marker','Nunito','Playfair Display'];
@@ -26,37 +26,59 @@ const styleNames={neon:['Неоновий нуар','Глибокий чорни
 function brandingSections(channel,projectDefaults=''){
   const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
   const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" value="${value}" ${kind===value?'checked':''}><span><strong>${title}</strong><small>${text}</small></span></label>`;
-  const cells=brandingPositions.map(item=>item?`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`:'<span class="logo-position-gap" aria-hidden="true"></span>').join('');
+  const cells=brandingPositions.map(item=>`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`).join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><div class="channel-identity-edit"><div class="channel-avatar-edit"><label class="channel-avatar-pick" title="Завантажити іконку каналу"><input id="channel-icon-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><span id="channel-icon-image">${channelIdentityIcon(channel)}</span></label><button id="channel-icon-remove" class="channel-avatar-remove" type="button" aria-label="Видалити іконку каналу" title="Видалити іконку" ${channel.icon_url?'':'hidden'}>${trashIcon}</button></div><div class="channel-identity-name"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></div></div><p id="channel-icon-state" class="channel-icon-state" role="status" hidden></p></section>
-    <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></div></section>
-    <section class="settings-section logo-section"><h3>Логотип каналу</h3>
+    <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-effort-setting"><label for="settings-claude-effort"><h4>Рівень зусиль Claude Code</h4></label><select id="settings-claude-effort">${[["low","Легкий"],["medium","Середній"],["high","Високий"],["xhigh","Надвисокий"]].map(([value,label])=>`<option value="${value}" ${(settings.claude_effort||"high")===value?"selected":""}>${label}</option>`).join('')}</select></div><div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></div></section>
+    <section class="settings-section logo-section"><div class="logo-heading"><h3>Логотип каналу</h3><label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати</label></div><div class="logo-compact-body">
       <div class="logo-file">
-        <label class="logo-tile" id="logo-tile" title="Завантажити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <div class="logo-tile-wrap"><label class="logo-tile" id="logo-tile" title="Додати або замінити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
           <img id="logo-tile-image" alt="Логотип каналу" hidden>
-          <span class="logo-tile-empty" id="logo-tile-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>Додати</span></label>
+          <span class="logo-tile-empty" id="logo-tile-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span></label><button id="logo-remove" class="logo-tile-remove" type="button" title="Видалити логотип" aria-label="Видалити логотип" hidden>${trashIcon}</button></div>
         <div class="logo-file-info"><strong id="logo-file-title">Логотип ще не додано</strong>
           <small id="logo-file-meta">Перетягніть картинку в квадрат або натисніть на нього. Найкраще PNG з прозорим фоном, до 6 МБ.</small>
-          <div class="logo-file-actions"><button id="logo-replace" class="secondary" type="button" hidden>Замінити</button><button id="logo-remove" class="logo-remove" type="button" hidden>Видалити</button></div></div>
-        <label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати в роликах</label>
+          <button id="logo-replace" type="button" hidden>Замінити</button></div>
       </div>
       <div class="logo-place" id="logo-place" hidden>
         <div class="logo-place-controls"><div class="logo-place-row"><span class="logo-place-label">Місце</span><div class="logo-position-grid" role="group" aria-label="Місце логотипа">${cells}</div></div>
           <div class="logo-sliders">${slider('logo-size','Розмір',3,40,logo.size,'%')}${slider('logo-margin','Відступ від краю',0,15,logo.margin,'%')}${slider('logo-opacity','Видимість',10,100,logo.opacity,'%')}</div></div>
       </div>
-      <p id="logo-feedback" class="logo-feedback" role="status" aria-live="polite"></p></section>
+      </div><p id="logo-feedback" class="logo-feedback" role="status" aria-live="polite"></p></section>
+    <section class="settings-section hero-reference-section"><div><h3>Референс головного героя</h3><p>Ведучий для прев’ю. Його можна вимкнути перед генерацією.</p><small id="hero-reference-state" role="status"></small></div><div class="hero-reference-pick"><label title="Додати або замінити фото героя"><input id="hero-reference-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><img id="hero-reference-image" ${channel.hero_reference?`src="${esc(channel.hero_reference.url)}"`:'hidden'} alt="Головний герой"><span id="hero-reference-empty" ${channel.hero_reference?'hidden':''}>+</span></label><button id="hero-reference-remove" type="button" class="logo-tile-remove" title="Видалити референс героя" aria-label="Видалити референс героя" ${channel.hero_reference?'':'hidden'}>${trashIcon}</button></div></section>
     <section class="settings-section channel-look"><h3><span class="regular-only">Стиль 2D-анімації Razgon</span><span class="animated-only">Стиль анімації</span></h3>
       <p class="regular-only style-note">Як виглядають кадри 2D-анімації Razgon у звичайних роликах каналу.</p>
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}</option>`).join('')}</select></label>
-          <label class="logo-toggle" title="Агент бере готові картинки предметів з бібліотеки або замовляє їх у Codex. Вимкнено: усе малюється кодом, фігурами."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Готові картинки предметів</label>
+          <label class="logo-toggle" title="Предмети в кадрах 2D-анімації для універсальних і анімаційних проєктів. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Готові картинки предметів</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div></section>`;
 }
 
 function bindBranding(channel){
+  const heroFile=$('hero-reference-file'),heroRemove=$('hero-reference-remove'),heroState=$('hero-reference-state');
+  const heroBusy=value=>{heroFile.disabled=value;heroRemove.disabled=value;};
+  const applyHero=result=>{
+    channel.hero_reference=result.hero_reference;state.channels=result.channels;
+    if(state.channel?.id===channel.id)state.channel.hero_reference=result.hero_reference;
+    const image=$('hero-reference-image');image.hidden=!result.hero_reference;if(result.hero_reference)image.src=result.hero_reference.url;else image.removeAttribute('src');
+    $('hero-reference-empty').hidden=!!result.hero_reference;heroRemove.hidden=!result.hero_reference;
+  };
+  heroFile.addEventListener('change',async event=>{
+    const file=event.target.files[0];event.target.value='';if(!file)return;
+    if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>6*1024*1024){heroState.textContent='Оберіть фото PNG, JPG або WebP до 6 МБ.';return;}
+    heroBusy(true);heroState.textContent='Завантажуємо фото…';
+    try{
+      const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не вдалося прочитати фото'));reader.readAsDataURL(file);});
+      applyHero(await api(`/api/channels/${encodeURIComponent(channel.id)}/thumbnail-hero`,'POST',{data}));heroState.textContent='';
+    }catch(error){heroState.textContent=error.message;}finally{heroBusy(false);}
+  });
+  heroRemove.addEventListener('click',async()=>{
+    heroBusy(true);
+    try{applyHero(await api(`/api/channels/${encodeURIComponent(channel.id)}/thumbnail-hero`,'DELETE'));heroState.textContent='';}
+    catch(error){heroState.textContent=error.message;}finally{heroBusy(false);}
+  });
   const iconState=$('channel-icon-state'),iconImage=$('channel-icon-image'),iconRemove=$('channel-icon-remove'),iconFile=$('channel-icon-file');
   const identityBusy=busy=>{iconRemove.disabled=busy;iconFile.disabled=busy;};
   const setIconState=text=>{iconState.textContent=text;iconState.hidden=!text;};

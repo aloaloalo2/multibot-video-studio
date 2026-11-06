@@ -141,7 +141,12 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     """Render the style card in every gallery style for one title font and assets choice, unless it is cached. A
     channel's own style (one id with its definition) travels in the config, as it does in a film."""
     scene, moment = card_scene(root, kind)
-    key = hashlib.sha256(json.dumps([scene.name, moment, font, assets, ids, stamp, definition], sort_keys=True).encode()).hexdigest()[:20]
+    template = Path(__file__).with_name("style_card_info.js") if kind == "regular" and scene.name == "style-card-info" else None
+    revision = hashlib.sha256(template.read_bytes()).hexdigest() if template else None
+    key_parts = [scene.name, moment, font, assets, ids, stamp, definition]
+    if revision:
+        key_parts.append(revision)
+    key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:20]
     cache = card_dir(key)
     if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
         return key
@@ -151,12 +156,27 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     (folder / "build").mkdir(parents=True)
     for name in ("story", "scenes", "timeline") + (("assets",) if assets else ()):
         if (scene / name).exists():
-            os.symlink(scene / name, folder / name)
-    if not assets:
+            if template and name == "scenes":
+                shutil.copytree(scene / name, folder / name)
+                shutil.copyfile(template, folder / "scenes/shots/01_info.js")
+            elif not (template and name == "assets"):
+                os.symlink(scene / name, folder / name)
+    if template:
+        (folder / "assets").mkdir(exist_ok=True)
+        names = []
+        if assets:
+            for name in ("carrots", "brain", "eye_model"):
+                source = root / "library/props" / f"{name}.png"
+                if source.is_file():
+                    shutil.copyfile(source, folder / "assets" / source.name)
+                    names.append(name)
+        (folder / "assets/index.json").write_text(json.dumps(names))
+    if not assets and not template:
         (folder / "assets").mkdir()
         (folder / "assets" / "index.json").write_text("[]")
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
     config["fonts"] = {"title": font}
+    config["assets"] = assets
     if definition:
         config.update(style=ids[0], styleDef=definition)
     (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False))

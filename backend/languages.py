@@ -2657,9 +2657,11 @@ def voice_language_check(pid: str, code: str) -> dict:
 # ---------- thumbnail ----------
 
 def thumbnail_options(pid: str) -> dict:
+    import channel_hero
     cid=store.load_project(pid)['channel_id']
     saved=store.read_json(store.DATA_ROOT/'language-thumbnail-options'/f'{cid}.json',{}) or {}
-    return {"add_flag":saved.get('add_flag') is True}
+    hero=channel_hero.info(cid)
+    return {"add_flag":saved.get('add_flag') is True, **({'hero_reference':hero} if hero else {})}
 
 
 def save_thumbnail_options(pid: str, add_flag: bool) -> dict:
@@ -2713,8 +2715,13 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
     (work / name).unlink(missing_ok=True)
     title = ((load_state(pid).get("languages") or {}).get(code) or {}).get("title")
     prompt=thumbnail_brief(code,title,str(job.get('wishes') or ''),job.get('add_flag') is True,name)
+    import channel_hero
+    hero,hero_rules=channel_hero.prepare(project,work,job.get('use_hero'))
+    prompt+=hero_rules
     (work/'thumbnail-prompt.txt').write_text(prompt,encoding='utf-8')
-    command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base), "-"]
+    command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base)]
+    if hero:command.extend(['-i',str(hero)])
+    command.append('-')
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=work, text=True,
                                start_new_session=True)
     PROCS[job["key"]] = process
@@ -2951,7 +2958,8 @@ def cancel(pid: str, slot: str | None = None) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False, use_hero: bool | None = None) -> dict:
+    if use_hero is not None and not isinstance(use_hero,bool):raise store.StudioError('Оберіть, чи використовувати головного героя',400)
     if not isinstance(preserve_text,bool):
         raise store.StudioError('Оберіть, чи зберігати перевірені формулювання.',400)
     if not isinstance(cache_only,bool) or (cache_only and kind!='voice'):
@@ -3020,7 +3028,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
                **({'cache_only':True} if cache_only else {}),
                "slot": f"{code}|{group}", "key": job_key(pid, code, group),
                "what": NAMES[kind], "started_at": time.time(),
-               **({'add_flag':flag} if kind=='thumbnail' else {}),
+               **({'add_flag':flag,'use_hero':use_hero} if kind=='thumbnail' else {}),
                **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {}),
                **({"sentences": int(sentences)} if kind == "sample" and str(sentences or "").isdigit() and int(sentences) in SAMPLE_SENTENCES else {})}
         if kind=='thumbnail' and code in THUMBNAIL_FLAGS and add_flag is not None:
