@@ -44,7 +44,8 @@ def channel_settings(project: dict) -> dict:
     if project.get("plan_weights") is not None:
         settings["weights"] = project["plan_weights"]
     result = planner.effective_settings(settings)
-    if "karl" in str(channel.get("name", "")).lower():
+    # a host frame on any channel (user, 5 November 2026): first and last frame, never two in a row, spread evenly
+    if float((result.get("weights") or {}).get("host", 0) or 0) > 0:
         result["host_even_distribution"] = True
     return result
 
@@ -87,7 +88,7 @@ def sentences(pid: str) -> dict:
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,
             "opening": {"format": first, "count": count} if first else None,
-            "host_rules": {"first_frame": True, "no_consecutive": True, "even_distribution": True}
+            "host_rules": {"first_frame": True, "last_frame": True, "no_consecutive": True, "even_distribution": True}
                 if settings.get("host_even_distribution") else None}
 
 
@@ -142,6 +143,8 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
         hosts = [i for i, kind in enumerate(kinds) if kind == "host"]
         if any(b == a + 1 for a, b in zip(hosts, hosts[1:])):
             problems.append("Ведучий не може бути у двох кадрах поспіль")
+        if kinds and kinds[-1] != "host":
+            problems.append("Останній кадр ролику має бути з ведучим")
         if hosts:
             starts = [times[i][0] for i in hosts]
             ideal = duration / len(hosts)

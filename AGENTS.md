@@ -46,6 +46,8 @@ For planning changes run `python3 -m unittest discover -s backend/tests -v` and 
 
 After real phrase timings or a successful local Whisper comparison, format written-out quantities as digits in the actual saved script, phrase text and text inserts for every channel. Use backend/number_text.py. Keep spoken_script, its hash and an immutable spoken-source TXT separately; preserve ASR word boundaries when collapsing multiword numbers. Save the numeric script to the matching episode source, preserving unrelated local text. Keep exact fractions distinct from ranges. Draft scripts retain their pre-voice form. Test Russian, Ukrainian, English and German cases, value mismatches, genuine ASR boundaries and idempotent regeneration.
 
+The formatter only finds numbers; the agent decides how each sentence reads (user, 5 November 2026: «знаходити їх скриптом, але переводити… вручну»). `python3 tools/studio.py numbers P` lists every sentence the formatter changed; `numbers P FILE.json [--dry-run]` saves `{spoken sentence: studio text}` as the plan's `number_fixes` (`store.number_fixes`, `GET/POST /api/projects/<id>/number-fixes`). Keep quantities, percentages, years, dates, money, measures and list numbers as digits; keep words such as an indefinite «один», ordinal adjectives, «полгода», «половину», German «erst»/«als Erstes»/«einer Sekunde». A fix may change only how numbers are written (`planner.check_number_fix`); fixes survive plan rebuilds and director passes and are written to the episode's «Сценарий.txt». Test: `backend/tests/test_number_fixes.py`.
+
 ## Every channel: voice first, the director's frames, a light plan page (31 October 2026)
 
 The user: «без озвучки план не може бути згенерований. І план завжди робить клод-код, тобто режисер… на основі тих
@@ -97,8 +99,8 @@ until then its tab says «Монтаж відкриється з першими 
 
 «Почати створення ролика» posts the request and goes back to the channel's projects (`showProjectList`). Each project
 in `GET /api/projects` carries `production_request` (`status`, `frames`, `limit`, and `made` while the agent works,
-`store.production_state`); the card shows «Створюємо кадри · N з M», does not open while the agent works and opens
-again once it is done, paused or failed. The list is read again every 8 s while any card is in work. A frame counts as
+`store.production_state`); the card shows «Створюємо кадри · N з M» and opens while the agent works too, so the author can watch the frames come in
+(user, 5 November 2026). The list is read again every 8 s while any card is in work. A frame counts as
 made (`store.made_frames`) when a film clip covers its middle; a Razgon code block counts once its scene is written;
 an animated film counts its frames drawn as code (`frame_progress.drawn`). A request for frames already made is refused
 with 409, a second request while one runs too. A request that says the agent works while no agent of this Studio
@@ -112,8 +114,10 @@ stock through `studio.py stock` (a numbered contact sheet of Pixabay previews, `
 instead of lists of tags) and `studio.py stock-pick` (downloads the chosen one into the project and places it), pictures drawn by Codex through
 `What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
 `razgon_bridge.py`, and puts each frame at its time with `python3 tools/studio.py place P N FILE|--text` (the montage op
-`place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). People in every frame and every
-prompt are stick figures, apart from the host. The channel setting «Акценти на кадрах» (`accents` in
+`place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). How people look follows the channel's «Люди в кадрах» (`people_style` in `video-plan.json`, `production.people_rules`):
+`stickman` (default) keeps every person a stick figure apart from the host and stock without people; `real` (Karl Brenners
+Werkstatt) asks for real people in natural phone-like photos and allows stock with people; `real_older` (Valentin Chichvarkin
+and Alexey Gorbunov, user 5 November 2026) asks the same with people over 60. The channel setting «Акценти на кадрах» (`accents` in
 `video-plan.json`, photo and video channels only, off by default) tells the agent to add an arrow, a ring or a short
 caption with `studio.py accent` on about every third or fourth picture frame where it helps (`production.accents_step`),
 or none at all. The run is done when each requested frame is made. Tests:
@@ -689,3 +693,7 @@ Cmd/Ctrl-Z undoes timeline edits; Cmd/Ctrl-Shift-Z and Ctrl-Y redo. Use physical
 
 
 Enabled accents are a montage priority for meaningful animated arrows, circles and short captions on all kinds of photos. Use them on video when helpful, never as extra overlays on finished animation, host or text-only frames. Do not select frames mechanically by a fixed one-in-three quota. Both frame-agent briefs and get_project for the Studio agent must expose the saved accents flag.
+
+## Designed text frames, moving pictures and springing accents (5 November 2026)
+
+The user: «фон, блюр… анімацію появлення букв… професійно», «Якщо нема руху, це є проблема», «якщо диктора ми вибираємо… приближення… або віддалення… 10-15%», «акценти… з анімацією, з динамікою». `montage_ops.place --text` designs a full-frame text frame (`_designed_text`, `TEXT_LOOKS`): a neighbouring frame's picture of the episode blurred under a dark, navy or light veil, contrasting words that appear with the voice (`text_words`, varied `word_entrance`), the look turning from frame to frame. `place` moves every picture: wide photos take turns to zoom in, drift sideways and zoom out by about 12% with a cover scale, a vertical or 4:3 photo sits on its own blurred copy (`K### фон`) and zooms, a host frame zooms 12%. The `motion` op gives placed frames the same moves (frames with accents keep theirs). Accents spring in (55% → 112% → 100%) and pulse once a second later (`pop`); `animate_accents` updates older ones. The frame agent's brief adds the transitions step (`transitions --share 0.7`) and takes how people look from the channel (`people_style`). Tests: `backend/tests/test_designed_text.py`, `test_people_style.py`, `test_number_fixes.py`.

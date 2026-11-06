@@ -919,7 +919,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .project-making .project-export-progress>span{background:linear-gradient(90deg,#3fbf86,#9dffd0);box-shadow:0 0 10px #6bf2ae99}
 .project-card.producing{border-color:#6bf2ae66}
 .project-card.producing .project-created{display:none}
-.project-card.producing .project-open{cursor:progress}
+.project-card.producing .project-open{cursor:pointer}
 /* the voice player in the voice stage: play and pause, a seek bar, the time */
 .voice-player{display:flex;align-items:center;gap:12px;margin:0 12px 12px;padding:6px 14px 6px 6px;border:1px solid #2a2a2f;border-radius:999px;background:#141416}
 .voice-player audio{display:none}

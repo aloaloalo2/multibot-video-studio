@@ -366,11 +366,10 @@ function renderOverview() {
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
     open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span></div>`;
-    // While the agent makes the frames the card shows how far it got and does not open; after it is done, paused or
-    // stopped, it opens as usual.
+    // While the agent makes the frames the card shows how far it got and still opens, so the author can watch the frames
+    // come in (user, 5 November 2026: «коли проект створюється… дозволено нажимати на проект… подивитися, що там відбувається»).
     const making=project.production_request,makingState=projectProductionCardState(making),producing=makingState.working;
     open.addEventListener('click',()=>{
-      if(producing){status('Агент ще створює кадри цього ролика. Випуск відкриється, коли він закінчить.');return;}
       selectProject(project.id,{view:directMontage(project)||count?'editor':'plan'}).catch(error=>status(error.message,true));
     });
     const length=Number(project.voice_duration || (count>0?project.duration:0));
@@ -404,7 +403,7 @@ function renderOverview() {
       const box=document.createElement('div');box.className='project-making';
       box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
       open.insertBefore(box,open.querySelector('.project-meta'));
-      card.classList.add('producing');card.setAttribute('aria-busy','true');open.setAttribute('aria-disabled','true');
+      card.classList.add('producing');card.setAttribute('aria-busy','true');
     }
     card.append(open,projectCardHeading(project),projectActions(project));
     if(typeof attachProjectCosts==='function')attachProjectCosts(card,project);

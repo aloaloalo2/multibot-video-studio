@@ -367,6 +367,8 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Невідома якість відео")
     if "accents" in value and not isinstance(value["accents"], bool):
         raise StudioError("Невірне значення: accents")
+    if "people_style" in value and value["people_style"] not in {"stickman", "real", "real_older"}:
+        raise StudioError("Невірне значення: people_style")
     if "opening_clip_types" in value and (not isinstance(value["opening_clip_types"], list) or any(item not in allowed for item in value["opening_clip_types"])):
         raise StudioError("Невірні типи вступних кліпів")
     import channel_branding
@@ -1283,7 +1285,9 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         previous_plan = None
         if existing_project:
             previous_plan = load_project_plan(existing_project["id"])
-            if previous_plan and previous_plan.get("spoken_script") and number_text.to_digits(previous_plan["spoken_script"]) == script:
+            if previous_plan and previous_plan.get("spoken_script") and script in {
+                    number_text.to_digits(previous_plan["spoken_script"]),
+                    planner.script_digits(previous_plan["spoken_script"], previous_plan.get("number_fixes"))}:
                 build_script = previous_plan["spoken_script"]
         try:
             if audio and alignment is None:
@@ -1294,6 +1298,11 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
         if audio:
             plan["timing"]["audio"] = audio
             plan = planner.digitize_synced_plan(plan)
+            # the agent's manual number writing survives a rebuild for every sentence the voice still says
+            kept = {key: value for key, value in ((previous_plan or {}).get("number_fixes") or {}).items()
+                    if key in set(planner.split_sentences(plan["spoken_script"]))}
+            if kept:
+                plan = planner.apply_number_fixes(plan, kept)
             planner.validate_synced_plan(plan, audio["duration"])
             # An animated film keeps its director's frames through every rebuild of the plan.
             try:
@@ -1333,6 +1342,45 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
             plan["report"]["formatted_script"] = str(formatted_path)
         atomic_json(output, plan)
         return {"project": project, "plan": plan, "plan_url": url, "settings_match": True}
+
+
+def number_fixes(pid: str, fixes=None, dry_run: bool = False) -> dict:
+    """The sentences whose number writing the formatter changed, and the agent's manual choices for them.
+
+    With `fixes` ({spoken sentence: studio text}) they are checked (only the writing of numbers may differ) and,
+    unless dry_run, saved into the plan, its frames and the episode's «Сценарий.txt»."""
+    project = load_project(pid)
+    plan = load_project_plan(pid)
+    if not plan or plan.get("number_format") != "digits_after_whisper":
+        raise StudioError("Числа правлять тільки в плані за озвучкою")
+    spoken = plan["spoken_script"]
+    locale = number_text.detect_locale(spoken)
+    current = plan.get("number_fixes") or {}
+    rows = []
+    for number, sentence in enumerate(planner.split_sentences(spoken), 1):
+        auto = number_text.to_digits(sentence, locale)
+        if auto != sentence or sentence in current:
+            rows.append({"number": number, "spoken": sentence, "auto": auto, "text": current.get(sentence, auto)})
+    if fixes is None:
+        return {"sentences": rows, "fixes": len(current)}
+    if not isinstance(fixes, dict):
+        raise StudioError("Передайте fixes: {фраза озвучки: текст студії}")
+    try:
+        updated = planner.apply_number_fixes(plan, {**current, **fixes})
+        planner.validate_synced_plan(updated, float(updated["timing"]["audio"]["duration"]))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise StudioError(str(exc)) from None
+    changed = sum(1 for a, b in zip(plan["timing"]["sentences"], updated["timing"]["sentences"]) if a.get("text") != b.get("text"))
+    result = {"ok": True, "changed": changed, "fixes": len(updated.get("number_fixes") or {})}
+    if dry_run:
+        return result
+    attach_plan(pid, updated)
+    episode = Path(project.get("episode_path") or "")
+    formatted = episode / "Сценарий.txt"
+    if episode.is_dir() and (not formatted.exists() or formatted.read_text(encoding="utf-8-sig") == plan["script"]):
+        atomic_text(formatted, updated["script"])
+        result["script_file"] = str(formatted)
+    return result
 
 
 def import_plan_data(cid: str, plan: dict, name: str, episode_path: str | None = None, source_path: str | None = None) -> dict:

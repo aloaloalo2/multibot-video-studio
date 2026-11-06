@@ -115,7 +115,8 @@ class AgentToolsTest(unittest.TestCase):
                 anchor = anchor or spot
                 self.assertAlmostEqual(spot[0], anchor[0], places=3, msg=f"{title} at {moment}")
                 self.assertAlmostEqual(spot[1], anchor[1], places=3, msg=f"{title} at {moment}")
-                self.assertAlmostEqual(montage_ops.keyframe_value(ring, "scale", moment), photo.state(moment)[2] / photo.state(2)[2], places=3)
+                if moment in (0, 3.99):   # in between the accent springs in and pulses once (user, 5 November 2026)
+                    self.assertAlmostEqual(montage_ops.keyframe_value(ring, "scale", moment), photo.state(moment)[2] / photo.state(2)[2], places=3)
             self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", .5), 0)
             self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", 2), 1)
         circle = clips["K002 акцент 0 коло"]
@@ -188,7 +189,8 @@ class AgentToolsTest(unittest.TestCase):
             self.assertIn(clips["K002 кадр"]["id"], groups["Кадр 2"]["clip_ids"])
             self.assertIn(clips["K003 кадр"]["id"], groups["Кадр 3"]["clip_ids"])
             self.assertEqual((clips["K002 кадр"]["start"], clips["K002 кадр"]["duration"]), (4.0, 4.0))
-            self.assertEqual([k["scale"] for k in clips["K002 кадр"]["keyframes"]], [1.0, 1.08])
+            scales = [k["scale"] for k in clips["K002 кадр"]["keyframes"]]   # every picture moves by about 12% (user, 5 November 2026)
+            self.assertGreaterEqual(abs(scales[0] - scales[1]), .1)
             self.assertEqual(clips["K003 кадр"]["text_role"], "full_frame")
             # a frame already on the timeline is changed with replace, not placed twice
             status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "place", "frame": 1, "path": str(episode / "other.png")}]})

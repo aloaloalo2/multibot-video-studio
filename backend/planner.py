@@ -230,15 +230,24 @@ def validate_synced_plan(plan, duration):
     locale = number_text.detect_locale(spoken_script)
     if plan.get("spoken_script_sha256") and hashlib.sha256(spoken_script.encode("utf-8")).hexdigest() != plan["spoken_script_sha256"]:
         raise ValueError("Озвучений оригінал сценарію змінився")
-    if plan.get("number_format") == "digits_after_whisper" and number_text.to_digits(spoken_script) != script:
+    fixes = plan.get("number_fixes") if plan.get("number_format") == "digits_after_whisper" else None
+    if fixes:
+        for key, value in fixes.items():
+            problem = check_number_fix(key, value, locale)
+            if problem:
+                raise ValueError(f"Ручний запис чисел: {problem}")
+    if plan.get("number_format") == "digits_after_whisper" and script_digits(spoken_script, fixes) != script:
         raise ValueError("Числовий текст не відповідає озвученому сценарію")
     timings = validate_sentence_timings(spoken_script, timing.get("sentences"), duration)
     if plan.get("number_format") == "digits_after_whisper":
-        timings = [{**item, "text": number_text.to_digits(item["text"], locale)} for item in timings]
+        # the timings keep the spoken words; their studio text is the same sentence in the plan's number writing
+        spoken_sentences = split_sentences(spoken_script)
+        timings = [{**item, "text": sentence_digits(spoken, locale, fixes)} for item, spoken in zip(timings, spoken_sentences)] \
+            if len(spoken_sentences) == len(timings) else [{**item, "text": number_text.to_digits(item["text"], locale)} for item in timings]
     groups = [frame.get("sentences", []) for frame in plan["frames"]]
     expected_sentences = split_sentences(spoken_script)
     if plan.get("number_format") == "digits_after_whisper":
-        expected_sentences = [number_text.to_digits(text, locale) for text in expected_sentences]
+        expected_sentences = [sentence_digits(text, locale, fixes) for text in expected_sentences]
     if [text for group in groups for text in group] != expected_sentences:
         raise ValueError("Кадри не покривають усі фрази сценарію")
     opening = plan.get("opening_clip_split")
@@ -267,7 +276,7 @@ def upgrade_legacy_number_format(plan):
     stored script, sentence timings and frame contents still agree. This does
     not alter the saved plan, frame boundaries, formats or the montage.
     """
-    if plan.get('number_format') != 'digits_after_whisper' or plan.get('timing', {}).get('status') != 'audio_synced':
+    if plan.get('number_format') != 'digits_after_whisper' or plan.get('timing', {}).get('status') != 'audio_synced' or plan.get('number_fixes'):
         return plan
     spoken = plan.get('spoken_script', '')
     script = plan.get('script', '')
@@ -305,6 +314,82 @@ def upgrade_legacy_number_format(plan):
     except (ValueError, TypeError, KeyError):
         return plan
     return updated
+
+
+def sentence_digits(text: str, locale=None, fixes=None) -> str:
+    """One spoken sentence in the studio's number writing: an agent's manual choice first, the formatter otherwise.
+
+    number_text only finds the numbers; whether «полгода» becomes «0,5 года» is a reading decision, so the agent
+    may keep words where digits would read wrong (`number_fixes` of the plan, keyed by the spoken sentence)."""
+    if fixes and text in fixes:
+        return fixes[text]
+    return number_text.to_digits(text, locale)
+
+
+def script_digits(spoken: str, fixes=None) -> str:
+    """The whole formatted script: the formatter's text with each manually fixed sentence put back in place."""
+    script = number_text.to_digits(spoken)
+    if not fixes:
+        return script
+    locale = number_text.detect_locale(spoken)
+    cursor = 0
+    for sentence in split_sentences(spoken):
+        auto = number_text.to_digits(sentence, locale)
+        at = script.find(auto, cursor)
+        if at < 0:
+            raise ValueError("Не вдалося знайти фразу в числовому тексті: " + sentence[:60])
+        chosen = fixes.get(sentence, auto)
+        script = script[:at] + chosen + script[at + len(auto):]
+        cursor = at + len(chosen)
+    return script
+
+
+def check_number_fix(spoken: str, text: str, locale=None) -> str | None:
+    """Why a manual number writing is refused, or None. Only how numbers are written may change, never the words."""
+    if not isinstance(text, str) or not text.strip():
+        return "порожній текст"
+    if number_text.to_digits(text, locale) != number_text.to_digits(spoken, locale):
+        return "змінено не лише запис чисел"
+    return None
+
+
+def apply_number_fixes(plan, fixes):
+    """A synced plan with these manual number writings in its script, sentence timings and frames."""
+    if plan.get("number_format") != "digits_after_whisper" or plan.get("timing", {}).get("status") != "audio_synced":
+        raise ValueError("Числа правлять тільки в плані за озвучкою")
+    spoken = plan["spoken_script"]
+    locale = number_text.detect_locale(spoken)
+    sentences = split_sentences(spoken)
+    known = set(sentences)
+    clean = {}
+    for key, value in (fixes or {}).items():
+        if key not in known:
+            raise ValueError("Такої фрази немає в озвученому сценарії: " + str(key)[:60])
+        problem = check_number_fix(key, value, locale)
+        if problem:
+            raise ValueError(f"{problem}: «{value[:80]}»")
+        if value != number_text.to_digits(key, locale):
+            clean[key] = value
+    plan = copy.deepcopy(plan)
+    if clean:
+        plan["number_fixes"] = clean
+    else:
+        plan.pop("number_fixes", None)
+    formatted = [sentence_digits(sentence, locale, clean) for sentence in sentences]
+    previous = {old: new for old, new in zip((item.get("text") for item in plan["timing"]["sentences"]), formatted)}
+    plan["script"] = script_digits(spoken, clean)
+    plan["script_sha256"] = hashlib.sha256(plan["script"].encode("utf-8")).hexdigest()
+    for item, text in zip(plan["timing"]["sentences"], formatted):
+        item["text"] = text
+    offset = 0
+    for frame in plan["frames"]:
+        count = len(frame["sentences"])
+        frame["sentences"] = formatted[offset:offset + count]
+        frame["sentence_timings"] = [{**item, "text": text} for item, text in zip(frame["sentence_timings"], formatted[offset:offset + count])]
+        if frame.get("continuation"):
+            frame["continuation"]["text"] = previous.get(frame["continuation"]["text"], frame["continuation"]["text"])
+        offset += count
+    return plan
 
 
 def digitize_synced_plan(plan):

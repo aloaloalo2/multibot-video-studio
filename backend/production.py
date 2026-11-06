@@ -168,10 +168,54 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
 
 
-# The channels' own rule for every picture (user): people are stick figures in every frame of every channel, apart from
-# the host, and so in every prompt for a picture.
+# How people look in a channel's pictures: «Люди в кадрах» (`people_style` in video-plan.json). Stick figures are the
+# default (user, 31 October 2026); the health channels for older viewers show real people (user, 5 November 2026: «його
+# проект має бути для дорослих людей… не дудл, а живих справжніх людей. Старших… як будто сфоткані на телефон»).
 PEOPLE = ("Люди в кожному кадрі, крім кадрів ведучого, лише стикмени: і на картинках, і в кожному промпті для картинки "
           "чи відео прямо пиши, що всі люди намальовані стикменами. Стокове фото чи відео з живими людьми не бери.")
+PEOPLE_REAL = ("Люди на картинках живі й справжні, у звичайному одязі й звичайній обстановці, вік і вигляд за правилами каналу: "
+               "природна фотографія, ніби знята на телефон, не завжди ідеальної якості, денне чи кімнатне світло, без студійного глянцю, "
+               "ретуші й мультяшності. Приблизно половина фото вертикальні (3:4), половина горизонтальні (4:3): вертикальні додають "
+               "ролику правдивості. "
+               "Ніяких стикменів, дудлів і намальованих людей. У кожному промпті прямо пиши, що це реалістична аматорська фотографія "
+               "на телефон зі справжніми людьми. Перевіряй анатомію: руки, пальці, обличчя.")
+# The photo style that the author liked in GORBUNOV-23 («Алексей Горбунов/23 Овощи и печень/Фото кадров/photos.py»):
+# real amateur smartphone photos, about half of them vertical, older Eastern Slavic people, no text.
+PHOTO_STYLE_OLDER = ("Style: a real amateur photo taken on an ordinary smartphone, not professional. Natural available light, everyday home or "
+                     "city setting in an ordinary post-Soviet apartment or Russian town, casual unposed moment, ordinary framing, natural skin "
+                     "texture. No studio lighting, no advertising look, no glossy retouching, no model poses, no shallow-depth studio bokeh. "
+                     "Every main person is at least 60 years old with visible age features, fair skin, Eastern Slavic appearance and ordinary "
+                     "everyday clothes. Anatomy correct, hands natural. No text, no letters, no numbers, no captions, no logos, no watermarks, "
+                     "no pills or medicine packages anywhere.")
+PEOPLE_REAL_OLDER = ("Створені картинки — живі природні фотографії справжніх людей старшого віку (60+), ніби зняті на звичайний телефон, "
+                     "не завжди ідеальної якості; ніяких стикменів, дудлів, мультяшності й намальованих людей. Приблизно половина фото "
+                     "вертикальні (3:4), половина горизонтальні (4:3); вертикальне фото стоїть у кадрі як є, зі своїми полями. Опиши в промпті "
+                     "конкретну людину з віком («a man about 67 years old»), дію й обстановку за словами кадру, і в кожен промпт англійською "
+                     "дослівно додай цей рядок стилю: «" + PHOTO_STYLE_OLDER + "» Фото з однаковою орієнтацією малюй по чотири на аркуші "
+                     "2×2 з білими проміжками й ріж аркуш скриптом, як у «Алексей Горбунов/23 Овощи и печень/Фото кадров» (photos.py, run.py). "
+                     "Перевіряй кожне фото: анатомію, руки, обличчя, вік, відповідність словам.")
+PEOPLE_STYLES = {"stickman", "real", "real_older"}
+
+
+def people_style(project: dict) -> str:
+    """The channel's choice of people in pictures: «stickman» (default), «real» or «real_older»."""
+    try:
+        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+    except (store.StudioError, KeyError):
+        settings = {}
+    return settings.get("people_style") if settings.get("people_style") in PEOPLE_STYLES else "stickman"
+
+
+def people_rules(project: dict) -> dict:
+    """The three places of the photo brief that depend on how people look: the picture rule, stock choice, the check."""
+    style = people_style(project)
+    if style == "real_older":
+        return {"rule": PEOPLE_REAL_OLDER, "stock": "можна з живими людьми старшого віку, якщо вони пасують до слів",
+                "check": "люди живі, старшого віку й природні, без стикменів і дудлів"}
+    if style == "real":
+        return {"rule": PEOPLE_REAL, "stock": "можна з живими людьми, якщо вони пасують до слів",
+                "check": "люди живі й природні, без стикменів і дудлів"}
+    return {"rule": PEOPLE, "stock": "без живих людей", "check": "люди лише стикмени"}
 
 
 def accents_step(project: dict, tools: str) -> str:
@@ -197,6 +241,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     episode = Path(project["episode_path"])
     rel = episode.relative_to(root) if root in episode.parents else episode
     tools = store.APP_ROOT.name + "/tools"
+    people = people_rules(project)
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
     if request.get("continuation_mode") == "handoff":
@@ -220,12 +265,15 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 1. Картинки автора першими: якщо автор сам поклав картинки чи відео в папку випуску (find "{rel}" -maxdepth 2 -type f),
    а вони пасують до кадру, бери їх.
 2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/studio.py" stock {project['id']} N "англійські слова" [--video]
-   складає аркуш пронумерованих варіантів Pixabay для кадру N; подивись його (Read) і вибери за змістом слів кадру, без живих людей,
+   складає аркуш пронумерованих варіантів Pixabay для кадру N; подивись його (Read) і вибери за змістом слів кадру, {people['stock']},
    а відео не коротше за кадр. Вибраний ставить кадром одна команда: python3 "{tools}/studio.py" stock-pick {project['id']} N <id> [--video].
    Нічого не підходить: інші слова, ще один аркуш.
 3. Створені картинки (generated_photo, generated_video як картинка з рухом): малює Codex через термінал:
    промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
-   {PEOPLE}
+   Фото малюй по чотири на одному аркуші 2×2 (кадри однієї орієнтації разом, білі проміжки між ними) і ріж аркуш скриптом на
+   чотири файли без білих ліній по краях, як у «Алексей Горбунов/23 Овощи и печень/Фото кадров/run.py»: це вчетверо менше генерацій.
+   Кожне вирізане фото перевір окремо; одиночне фото малюй тільки для останніх кадрів, коли до четвірки не вистачає.
+   {people['rule']}
 4. Текстові кадри (text) робиш сам одним кроком: python3 "{tools}/studio.py" place {project['id']} all-text ставить слова кожного ще не
    поставленого текстового кадру на весь екран.
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
@@ -235,8 +283,11 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN --small: половинний розмір, учетверо дешевший на
    перегляд; повний розмір лише коли береш координати для акценту) ти переглядаєш очима: картинка відповідає словам кадру,
-   люди лише стикмени, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
+   {people['check']}, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
 {accents_step(project, tools)}
+7. Переходи: коли всі кадри запиту стоять, python3 "{tools}/studio.py" transitions {project['id']} --share 0.7 ставить оформлені
+   переходи приблизно на 70% стиків за правилами каналу (у текстовий кадр зрізом, без двох однакових переходів, крім розчинення, поспіль).
+   Текстові кадри place … all-text сам оформлює: розмитий фон із картинки випуску, тон підкладки, поява слів у такт голосу.
 
 Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
 Не запускай експорт, не змінюй план і налаштування каналу, не чіпай кадри після {request['frames']}-го і нічого не публікуй.

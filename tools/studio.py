@@ -20,6 +20,7 @@
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
     python3 tools/studio.py sentences P                     # the director: numbered sentences of the voice, the channel's formats
     python3 tools/studio.py frames P FILE.json [--dry-run]  # the director: check and save the frame plan
+    python3 tools/studio.py numbers P [FILE.json] [--dry-run]  # sentences whose numbers became digits; manual writing
 
 P is a project id or words that find one project ("Горбунов 23"). Points and sizes are pixels of the project frame as
 it looks at the frame's middle moment (as `still P fN` shows it), or with --space photo fractions of the picture.
@@ -241,6 +242,10 @@ def main(argv=None) -> int:
     frames.add_argument("project")
     frames.add_argument("file")
     frames.add_argument("--dry-run", action="store_true")
+    numbers = commands.add_parser("numbers", help="фрази, де студія переписала числа цифрами; ручний запис із JSON")
+    numbers.add_argument("project")
+    numbers.add_argument("file", nargs="?", help="JSON {фраза озвучки: текст студії}; без нього тільки список")
+    numbers.add_argument("--dry-run", action="store_true")
     ops = commands.add_parser("ops", help="операції з JSON-файлу або stdin")
     ops.add_argument("project")
     ops.add_argument("file")
@@ -292,6 +297,18 @@ def main(argv=None) -> int:
             if not data["ok"]:
                 return 1
             print(f"Перевірка пройшла: {data['frames']} кадрів" if args.dry_run else f"План кадрів записано в студію: {data['frames']} кадрів")
+            return 0
+        if args.command == "numbers":
+            if not args.file:
+                data = call("GET", f"/api/projects/{pid}/number-fixes")
+                for row in data["sentences"]:
+                    mark = "✎" if row["text"] != row["auto"] else " "
+                    print(f"{row['number']:>4} {mark} {row['spoken']}\n       → {row['text']}")
+                print(f"Фраз із числами: {len(data['sentences'])}, ручних записів: {data['fixes']}")
+                return 0
+            fixes = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            data = call("POST", f"/api/projects/{pid}/number-fixes", {"fixes": fixes, "dry_run": args.dry_run})
+            print(("Перевірка пройшла" if args.dry_run else "Записано") + f": змінено фраз {data['changed']}, ручних записів {data['fixes']}")
             return 0
         if args.command == "still":
             at = moment(project, args.time)
