@@ -79,6 +79,7 @@ async function openThumbnail(project){
     projectCostIcons.claude_code];
   [...$('modal-actions').children].forEach((button,index)=>{button.innerHTML=writerIcons[index]+`<span>${esc(button.textContent)}</span>`;button.classList.add('thumb-writer-button');});
   $('modal-actions').children[1].title='Трендове прев’ю: Codex сам продумує ідею за правилами обкладинок';
+  if(data.hero_reference)$('modal-actions').prepend($('thumb-use-hero').closest('label'));
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
   showThumbnailState(project.id);
