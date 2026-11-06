@@ -160,6 +160,9 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
   }
 }
 
+function channelIdentityIcon(channel){
+  return channel?.icon_url?`<img class="channel-icon channel-avatar" src="${esc(channel.icon_url)}" alt="" draggable="false">`:channelIcon;
+}
 const channelActivity=new Set();
 async function pollChannelActivity(){
   if(document.hidden)return;
@@ -178,10 +181,11 @@ function renderChannels() {
   const list=$('channel-list'); list.replaceChildren();
   for (const channel of state.channels) {
     const row=document.createElement('div'); row.className='channel-item'+(state.channel?.id===channel.id?' active':''); row.setAttribute('role','listitem');
-    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIcon}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
+    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIdentityIcon(channel)}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
     choose.addEventListener('click',()=>selectChannel(channel.id).catch(error=>status(error.message,true)));
-    row.append(choose); list.append(row);
+    row.dataset.channelId=channel.id;row.append(choose); list.append(row);
   }
+  wireChannelOrder(list);
 }
 
 async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
@@ -354,7 +358,7 @@ function projectProductionCardState(request){
 }
 
 function renderOverview() {
-  $('overview-title').innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';
+  $('overview-title').innerHTML=state.channel?`${channelIdentityIcon(state.channel)}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';
   $('overview-create').disabled=!state.channel;
   $('overview-channel-settings').disabled=!state.channel;
   const container=$('overview-projects');container.replaceChildren();
@@ -568,7 +572,7 @@ function renderProject() {
   $('editor-brand').hidden=!state.project;
   $('overview-channel-settings').hidden=!!state.project || !state.channel;
   const title=$('project-title');title.replaceChildren();
-  const channelName=document.createElement('strong');channelName.title=state.channel?.name || '';channelName.innerHTML=state.channel?`${channelIcon}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';title.append(channelName);
+  const channelName=document.createElement('strong');channelName.title=state.channel?.name || '';channelName.innerHTML=state.channel?`${channelIdentityIcon(state.channel)}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';title.append(channelName);
   // inside an episode the channel's name leads back to its episodes (the sidebar is hidden there)
   if(state.project&&state.channel){channelName.classList.add('project-title-channel');channelName.setAttribute('role','link');channelName.tabIndex=0;channelName.title=`До випусків каналу «${state.channel.name}»`;
     channelName.addEventListener('click',showProjectList);channelName.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}

@@ -28,7 +28,7 @@ function brandingSections(channel,projectDefaults=''){
   const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" value="${value}" ${kind===value?'checked':''}><span><strong>${title}</strong><small>${text}</small></span></label>`;
   const cells=brandingPositions.map(item=>item?`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`:'<span class="logo-position-gap" aria-hidden="true"></span>').join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
-  return `<section class="settings-section channel-name-section"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></section>
+  return `<section class="settings-section channel-name-section"><div class="channel-identity-edit"><div class="channel-avatar-edit"><label class="channel-avatar-pick" title="Завантажити іконку каналу"><input id="channel-icon-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><span id="channel-icon-image">${channelIdentityIcon(channel)}</span></label><button id="channel-icon-remove" class="channel-avatar-remove" type="button" aria-label="Видалити іконку каналу" title="Видалити іконку" ${channel.icon_url?'':'hidden'}>${trashIcon}</button></div><div class="channel-identity-name"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></div></div><p id="channel-icon-state" class="channel-icon-state" role="status" hidden></p></section>
     <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></div></section>
     <section class="settings-section logo-section"><h3>Логотип каналу</h3>
       <div class="logo-file">
@@ -57,6 +57,29 @@ function brandingSections(channel,projectDefaults=''){
 }
 
 function bindBranding(channel){
+  const iconState=$('channel-icon-state'),iconImage=$('channel-icon-image'),iconRemove=$('channel-icon-remove'),iconFile=$('channel-icon-file');
+  const identityBusy=busy=>{iconRemove.disabled=busy;iconFile.disabled=busy;};
+  const setIconState=text=>{iconState.textContent=text;iconState.hidden=!text;};
+  const applyIdentity=result=>{
+    state.channels=result.channels;const next=state.channels.find(item=>item.id===channel.id);
+    channel.icon_url=next?.icon_url||null;if(state.channel?.id===channel.id)state.channel.icon_url=channel.icon_url;
+    iconImage.innerHTML=channelIdentityIcon(channel);iconRemove.hidden=!channel.icon_url;
+    renderChannels();if(!state.project)renderOverview();
+  };
+  iconFile.addEventListener('change',async event=>{
+    const file=event.target.files[0];event.target.value='';if(!file)return;
+    if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>6*1024*1024){setIconState('Оберіть PNG, JPG або WebP до 6 МБ.');return;}
+    setIconState('Завантажуємо іконку…');identityBusy(true);
+    try{
+      const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не вдалося прочитати файл'));reader.readAsDataURL(file);});
+      applyIdentity(await api(`/api/channels/${encodeURIComponent(channel.id)}/icon`,'POST',{data}));setIconState('');
+    }catch(error){setIconState(error.message);}finally{identityBusy(false);}
+  });
+  iconRemove.addEventListener('click',async()=>{
+    identityBusy(true);
+    try{applyIdentity(await api(`/api/channels/${encodeURIComponent(channel.id)}/icon`,'DELETE'));setIconState('');}
+    catch(error){setIconState(error.message);}finally{identityBusy(false);}
+  });
   const settings=channel.settings || {},logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
   const frame=$('logo-preview'),image=$('logo-preview-image'),tileImage=$('logo-tile-image'),feedback=$('logo-feedback'),strip=$('style-strip'),film=$('style-film'),stage=$('style-stage-state');
   let version=settings.logo?.version || 0,present=false,styles=null,cards=null,chosen=animation.style || null,filmStyle=null,request=0,filmRequest=0;

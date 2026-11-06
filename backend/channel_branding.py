@@ -71,7 +71,21 @@ def logo_path(cid: str) -> Path:
     return store.DATA_ROOT / "channels" / cid / "logo.png"
 
 
-def save_logo(cid: str, data: str) -> dict:
+def icon_path(cid: str) -> Path:
+    return store.DATA_ROOT / "channels" / cid / "icon.png"
+
+
+def icon_info(cid: str) -> dict | None:
+    path = icon_path(cid)
+    return {"url": f"/api/channels/{cid}/icon?v={path.stat().st_mtime_ns}"} if path.is_file() else None
+
+
+def remove_icon(cid: str) -> None:
+    store.get_channel_folder(cid)
+    icon_path(cid).unlink(missing_ok=True)
+
+
+def save_logo(cid: str, data: str, *, identity_icon: bool = False) -> dict:
     """Store an uploaded logo (base64 image) as a PNG with transparency, at most MAX_SIDE pixels on its long side."""
     store.get_channel_folder(cid)
     if not isinstance(data, str) or not data:
@@ -80,13 +94,18 @@ def save_logo(cid: str, data: str) -> dict:
         raw = base64.b64decode(data.split(",", 1)[-1], validate=True)
     except (binascii.Error, ValueError):
         raise BrandingError("Файл логотипа пошкоджено") from None
+    if identity_icon and len(raw) > 6 * 1024 * 1024:
+        raise BrandingError("Оберіть іконку до 6 МБ")
     try:
         with Image.open(io.BytesIO(raw)) as source:
             image = ImageOps.exif_transpose(source).convert("RGBA")
     except (UnidentifiedImageError, OSError):
         raise BrandingError("Логотип має бути картинкою PNG, JPG або WEBP") from None
-    image.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS)
-    target = logo_path(cid)
+    if identity_icon:
+        image = ImageOps.fit(image, (256, 256), method=Image.Resampling.LANCZOS)
+    else:
+        image.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS)
+    target = icon_path(cid) if identity_icon else logo_path(cid)
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name(f".logo-{uuid.uuid4().hex}.png")
     try:
@@ -95,7 +114,7 @@ def save_logo(cid: str, data: str) -> dict:
     finally:
         if temp.exists():
             temp.unlink()
-    return logo_info(cid)
+    return icon_info(cid) if identity_icon else logo_info(cid)
 
 
 def remove_logo(cid: str) -> None:

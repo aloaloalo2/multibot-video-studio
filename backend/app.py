@@ -1267,6 +1267,13 @@ class Handler(BaseHTTPRequestHandler):
             if not channel_branding.overlay_png(match.group(1), settings.get("logo"), frame, target):
                 raise store.StudioError("Логотип не додано або вимкнено", 404)
             return self.serve_media(target)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
+        if match:
+            store.get_channel_folder(match.group(1))
+            icon = channel_branding.icon_path(match.group(1))
+            if not icon.is_file():
+                raise store.StudioError("Іконку не додано", 404)
+            return self.serve_media(icon, cache=True)
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
         if match:
             store.get_channel_folder(match.group(1))
@@ -1308,6 +1315,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        if method == "PATCH" and path == "/api/channels/order":
+            return self.json_response({"channels": store.reorder_channels(body.get("ids"))})
         if method=='POST' and path=='/api/studio/restart/prepare':
             return self.json_response(prepare_local_restart())
         if method == 'POST' and path == '/api/update/apply':
@@ -1474,6 +1483,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation"), body.get("style")))
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 409) from None
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
+        if match and method in {"POST", "DELETE"}:
+            try:
+                if method == "POST":
+                    icon = channel_branding.save_logo(match.group(1), body.get("data"), identity_icon=True)
+                else:
+                    channel_branding.remove_icon(match.group(1))
+                    icon = None
+                return self.json_response({"icon": icon, "channels": store.list_channels()})
+            except channel_branding.BrandingError as error:
+                raise store.StudioError(str(error)) from None
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
         if match and method in {"POST", "DELETE"}:
             try:

@@ -383,12 +383,31 @@ def channel_record(folder: Path) -> dict:
     # The name shown in the Studio can differ from the folder: the folder path is the channel's id, so it never moves.
     settings = read_json(folder / PLAN_CONFIG, {})
     name = (settings.get("display_name") or "").strip() or folder.name
-    return {"id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
+    icon = DATA_ROOT / "channels" / channel_id(folder) / "icon.png"
+    try:
+        icon_url = f"/api/channels/{channel_id(folder)}/icon?v={icon.stat().st_mtime_ns}"
+    except FileNotFoundError:
+        icon_url = None
+    return {"icon_url": icon_url, "id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
             "path": str(folder), "settings": settings}
 
 
 def list_channels() -> list[dict]:
-    return [channel_record(folder) for folder in channel_folders()]
+    channels = [channel_record(folder) for folder in channel_folders()]
+    saved = read_json(DATA_ROOT / "channel-order.json", [])
+    order = {cid: index for index, cid in enumerate(saved) if isinstance(cid, str)} if isinstance(saved, list) else {}
+    return sorted(channels, key=lambda channel: order.get(channel["id"], len(order)))
+
+
+def reorder_channels(ids) -> list[dict]:
+    if not isinstance(ids, list) or not all(isinstance(cid, str) for cid in ids) or len(set(ids)) != len(ids):
+        raise StudioError("Передайте список каналів без повторів")
+    with LOCK:
+        channels = list_channels()
+        if set(ids) != {channel["id"] for channel in channels}:
+            raise StudioError("Список каналів змінився. Оновіть сторінку та спробуйте ще раз", 409)
+        atomic_json(DATA_ROOT / "channel-order.json", ids)
+        return list_channels()
 
 
 def add_channel(folder: Path, copy_from: str | None = None) -> dict:

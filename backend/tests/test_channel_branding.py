@@ -49,6 +49,20 @@ class BrandingTest(unittest.TestCase):
             channel_branding.remove_logo("a" * 16)
             self.assertIsNone(channel_branding.logo_info("a" * 16))
 
+    def test_sidebar_icon_is_square_and_separate_from_video_logo(self):
+        cid = "a" * 16
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, "DATA_ROOT", Path(tmp)), patch.object(store, "get_channel_folder", return_value=Path(tmp)):
+            channel_branding.save_logo(cid, png((400, 100)))
+            original = channel_branding.logo_path(cid).read_bytes()
+            info = channel_branding.save_logo(cid, png((100, 300)), identity_icon=True)
+            self.assertIn("/icon?v=", info["url"])
+            with Image.open(channel_branding.icon_path(cid)) as image:
+                self.assertEqual(image.size, (256, 256))
+            self.assertEqual(channel_branding.logo_path(cid).read_bytes(), original)
+            channel_branding.remove_icon(cid)
+            self.assertIsNone(channel_branding.icon_info(cid))
+            self.assertEqual(channel_branding.logo_path(cid).read_bytes(), original)
+
     def test_rejects_files_that_are_not_images(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, "DATA_ROOT", Path(tmp)), patch.object(store, "get_channel_folder", return_value=Path(tmp)):
             with self.assertRaises(channel_branding.BrandingError):
