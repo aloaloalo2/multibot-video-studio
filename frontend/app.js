@@ -455,6 +455,7 @@ function productionControl(id,working){
   return button;
 }
 
+function exportQueueLabel(job){return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
     const job=state.projectExports.get(card.dataset.projectId),active=!!job&&['queued','running','cancelling'].includes(job.status);
@@ -465,7 +466,7 @@ function updateOverviewExports(){
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
-    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?'Експорт у черзі':job.stage==='razgon_frames'?`Експорт · ${Number(job.razgon_completed)||0}/${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
+    const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?exportQueueLabel(job):job.stage==='razgon_frames'?`Експорт · ${Number(job.razgon_completed)||0}/${Number(job.razgon_total)||0}`:job.stage==='razgon_sound'?'Зводимо звук':job.stage==='verifying'?'Перевіряємо файл':'Експорт триває';
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
   }
 }
@@ -1172,7 +1173,7 @@ function updateExportLock(){
   for(const id of ['editor-workspace','editor-timeline','project-plan','project-title'])$(id).inert=locked;
   $('undo').disabled=locked || !state.project?.can_undo;$('redo').disabled=locked || !state.project?.can_redo;
   const exportPercent=Math.max(0,Math.min(100,Math.round(state.job?.progress || 0)));
-  $('export-open').innerHTML=locked?`${exportSpinner}<span>Експорт триває · ${exportPercent}%</span>`:'Експорт MP4';
+  $('export-open').innerHTML=locked?`${exportSpinner}<span>${state.job.status==='queued'?exportQueueLabel(state.job):`Експорт триває · ${exportPercent}%`}</span>`:'Експорт MP4';
   $('export-open').classList.toggle('export-busy',locked);$('export-open').setAttribute('aria-busy',String(locked));
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
   if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
@@ -1224,11 +1225,11 @@ async function openExport() {
   modal('Експорт ролика',`${gapWarning}${exportQualityHtml()}<div id="render-state" aria-live="polite"><p>Готовий MP4 збережеться у папці випуску або вибраній підпапці.</p></div>`,[{label:'Скасувати',run:closeModal},{label:'Почати експорт',primary:true,run:async()=>{
     const button=$('modal-actions').querySelector('.primary');
     if(button.disabled)return;
-    button.disabled=true;button.textContent='Підготовка...';
-    $('render-state').textContent='Готуємо випуск до експорту...';
+    button.disabled=true;button.innerHTML=`${exportSpinner}<span>Додаємо до черги…</span>`;
+    $('render-state').innerHTML=`<p class="export-status-line">${exportSpinner}<span>Готуємо випуск до експорту…</span></p>`;
     const projectId=state.project.id, renderState=$('render-state');
     const quality=document.querySelector('input[name="export-quality"]:checked');
-    try{const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:Number(quality.value)}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
+    try{const capabilities=await api('/api/health');if(!capabilities.export_queue)throw new Error('Черга експорту стане доступною після безпечного перезапуску студії. Поточний експорт продовжує працювати.');const result=await api(`/api/projects/${encodeURIComponent(projectId)}/export`,'POST',{confirm_export:true,...(quality?{video_bitrate:Number(quality.value)}:{})});state.job=result.job;if(!state.job?.id)throw new Error('Сервер не повернув завдання експорту.');updateExportLock();if(renderState.isConnected){modal('Експорт ролика','<div id="render-state" aria-live="polite"></div>',exportActions());}pollJob();}catch(error){status(error.message,true);if(renderState.isConnected)renderState.textContent=error.message;button.disabled=false;button.textContent='Почати експорт';}
   }}]);
   for(const button of document.querySelectorAll('.export-gap-list button'))button.addEventListener('click',()=>{const gap=shownGaps[Number(button.dataset.gap)];closeModal();stopPlayback();state.playhead=gap.start;renderPreview();revealTimelineTime(gap.start);});
 }
@@ -1253,10 +1254,10 @@ async function pollJob(){
     const progress=Math.max(0,Math.min(100,Math.round(state.job.progress||0)));
     const target=$('render-state');
     if(target && state.project?.id===state.job.project_id){
-      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?'Експорт у черзі':state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='razgon_frames'?'Малюємо кадри Razgon':state.job.stage==='razgon_sound'?'Зводимо звук':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
-      const detail=cancelled?'Випуск знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Випуск заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Випуск заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Випуск заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Випуск заблоковано до завершення експорту.':'Випуск заблоковано до завершення експорту.';
-      const estimate=!complete&&!failed&&!cancelled&&jobStatus!=='cancelling'?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
-      target.innerHTML=`<p>${label}</p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
+      const label=cancelled?'Експорт скасовано':jobStatus==='cancelling'?'Зупиняємо експорт':failed?'Експорт не завершився':complete?'Експорт завершено':jobStatus==='queued'?exportQueueLabel(state.job):state.job.stage==='preparing_cloud'?'Завантажуємо матеріали з хмари':state.job.stage==='razgon_frames'?'Малюємо кадри Razgon':state.job.stage==='razgon_sound'?'Зводимо звук':state.job.stage==='verifying'?'Перевіряємо готовий файл':'Експорт триває';
+      const detail=cancelled?'Випуск знову доступний для редагування.':jobStatus==='cancelling'?'Зачекайте, доки студія завершить зупинку.':failed?'Перевірте повідомлення нижче.':complete?'Готовий файл збережено у папці випуску.':jobStatus==='queued'?'Студія запустить цей експорт автоматично, коли надійде його черга.':state.job.stage==='razgon_frames'?`Готово ${Number(state.job.razgon_completed)||0} із ${Number(state.job.razgon_total)||0} кадрів. Випуск заблоковано до завершення експорту.`:state.job.stage==='preparing_cloud'?`Завантажено ${Number(state.job.cloud_completed)||0} із ${Number(state.job.cloud_total)||0} матеріалів. Випуск заблоковано до завершення експорту.`:state.job.gpu_fallback?'Швидкий режим недоступний, студія продовжує звичайний експорт. Випуск заблоковано до завершення експорту.':progress===0?'Студія готує матеріали. На початку це може зайняти деякий час. Випуск заблоковано до завершення експорту.':'Випуск заблоковано до завершення експорту.';
+      const estimate=!complete&&!failed&&!cancelled&&!['cancelling','queued'].includes(jobStatus)?`<p>${exportTimeRemaining(state.job.remaining_seconds)}</p>`:'';
+      target.innerHTML=`<p class="export-status-line">${!complete&&!failed&&!cancelled?exportSpinner:''}<span>${label}</span></p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
     jobPollFailures=0;
     if(complete||failed||cancelled){if(state.poll)clearTimeout(state.poll);state.poll=null;if(target){const box=$('modal-actions');box.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='Закрити';close.addEventListener('click',closeModal);box.append(close);}status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}

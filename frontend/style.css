@@ -1807,10 +1807,12 @@ select option{background:#232327;color:#f1f1f2}
 
 .channel-name{flex:1}
 .channel-busy{min-width:13px;margin-left:2px;margin-right:1px}
-.sidebar-heading #add-channel{display:grid;place-items:center;flex:none;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:transparent;color:#888c96;font-size:18px;line-height:1;box-shadow:none;transition:color .15s,background .15s}
-.sidebar-heading #add-channel:hover{background:#303137;color:#c5c8d0}
-.sidebar-heading #add-channel:active{background:#3a3c44;color:#dedfe5}
+.sidebar-heading #add-channel{display:grid;place-items:center;flex:none;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;font-size:14px;line-height:1;box-shadow:none;transition:background .15s}
+.sidebar-heading #add-channel:hover{background:#292a30;color:inherit}
+.sidebar-heading #add-channel:active{background:#34353c;color:inherit}
 .sidebar-heading #add-channel:focus-visible{outline:2px solid #747986;outline-offset:2px}
+.export-status-line{display:flex;align-items:center;gap:9px}
+#modal-actions button:has(>.export-spinner){display:inline-flex;align-items:center;justify-content:center;gap:8px}
 @media(min-width:561px){#channel-sidebar .channel-list{max-height:none;min-height:0;flex:0 1 auto}#channel-sidebar .sidebar-heading,#channel-sidebar .brand,#channel-sidebar .sidebar-bottom{flex-shrink:0}}
 
 /* Minimal channel image controls. The picture itself opens replacement. */

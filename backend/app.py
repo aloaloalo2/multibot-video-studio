@@ -66,6 +66,8 @@ ENGINE_SCRIPT = APP_ROOT / "engine" / "render.py"
 JOBS_ROOT = store.DATA_ROOT / "jobs"
 JOBS_LOCK = threading.RLock()
 ACTIVE_EXPORTS = {}
+EXPORT_CONDITION = threading.Condition(JOBS_LOCK)
+EXPORT_RUNNING = None
 UPDATE_MUTEX = threading.RLock()
 UPDATE_MANAGER = updater.Updater(APP_ROOT)
 UPDATE_BOOT = uuid.uuid4().hex
@@ -202,6 +204,8 @@ def cancel_export(jid):
         entry['cancel'] = True
         entry['job']['status'] = 'cancelling'
         save_job(entry['job'])
+        _export_queue_positions()
+        EXPORT_CONDITION.notify_all()
         process = entry.get('process')
         if process and process.poll() is None:
             try:
@@ -478,6 +482,57 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
         save_job(job)
 
 
+def _export_queue_positions() -> None:
+    """Called under JOBS_LOCK; queued jobs are ordered by their accepted submission."""
+    waiting = [entry['job'] for entry in ACTIVE_EXPORTS.values()
+               if entry['job']['status'] == 'queued' and not entry['cancel']]
+    for position, job in enumerate(waiting, 1):
+        if job.get('queue_position') != position:
+            job['queue_position'] = position
+            save_job(job)
+
+
+def _queued_render_worker(job: dict, *args) -> None:
+    """A single render slot across channels, with cancellable FIFO waiting."""
+    global EXPORT_RUNNING
+    try:
+        with EXPORT_CONDITION:
+            entry = ACTIVE_EXPORTS[job['id']]
+            while not entry['cancel']:
+                first = next((item['job']['id'] for item in ACTIVE_EXPORTS.values()
+                              if item['job']['status'] == 'queued' and not item['cancel']), None)
+                if EXPORT_RUNNING is None and first == job['id']:
+                    EXPORT_RUNNING = job['id']
+                    job.update(status='running', stage='preparing', queue_position=None)
+                    save_job(job)
+                    break
+                EXPORT_CONDITION.wait()
+            _export_queue_positions()
+        # A cancelled waiting job follows the existing cleanup path without starting an encoder.
+        _render_worker(job, *args)
+    except Exception as error:
+        with JOBS_LOCK:
+            entry = ACTIVE_EXPORTS.pop(job['id'], None)
+            if entry:
+                job.update(status='failed', error=str(error), queue_position=None)
+                try:
+                    save_job(job)
+                finally:
+                    guard = entry.pop('project_guard', None)
+                    if guard:
+                        guard.close()
+            for file in args[:2]:
+                file.unlink(missing_ok=True)
+    finally:
+        with EXPORT_CONDITION:
+            if EXPORT_RUNNING == job['id']:
+                EXPORT_RUNNING = None
+            try:
+                _export_queue_positions()
+            finally:
+                EXPORT_CONDITION.notify_all()
+
+
 def _render_worker(job: dict, render_manifest: Path, staging: Path, destination: Path, command: list[str] | None = None, mixed: dict | None = None) -> None:
     with JOBS_LOCK:
         entry = ACTIVE_EXPORTS[job['id']]
@@ -702,12 +757,15 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
                 raise store.StudioError("Проєкт змінився перед експортом. Спробуйте ще раз.", 409)
             save_job(job)
             ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False, 'project_guard': guard}
+            _export_queue_positions()
             command = razgon_export.command(manifest_path, staging) if razgon else None
-            threading.Thread(target=_render_worker, args=(job, manifest_path, staging, destination, command, mixed), daemon=True).start()
+            threading.Thread(target=_queued_render_worker, args=(job, manifest_path, staging, destination, command, mixed), daemon=True).start()
         except Exception:
             ACTIVE_EXPORTS.pop(jid, None)
             guard.close()
             manifest_path.unlink(missing_ok=True)
+            _export_queue_positions()
+            EXPORT_CONDITION.notify_all()
             raise
     return job
 
@@ -1022,7 +1080,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/update':
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
-            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required"})
+            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True})
         if path == "/api/channels":
             return self.json_response({"channels": store.list_channels()})
         if path == "/api/extension":

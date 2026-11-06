@@ -13,6 +13,62 @@ class ExportControlTest(unittest.TestCase):
     tearDownClass = classmethod(support.BackendTest.tearDownClass.__func__)
     request = support.BackendTest.request
 
+    def test_exports_wait_fifo_cancel_without_starting_and_continue_after_failure(self):
+        self.assertTrue(self.request('/api/health')[1]['export_queue'])
+        projects=[store.create_project(store.channel_id(self.channel),'Queue '+str(n)) for n in range(4)]
+        script=Path(self.tmp.name)/'queue_engine.py'
+        script.write_text('import sys,time,json\nfrom pathlib import Path\n'
+                          'out=Path(sys.argv[sys.argv.index("--output")+1])\n'
+                          'manifest=json.loads(Path(sys.argv[sys.argv.index("--project")+1]).read_text())\n'
+                          'out.with_suffix(".started").touch()\n'
+                          'while not out.with_suffix(".release").exists():time.sleep(.02)\n'
+                          'if manifest.get("test_fail"):sys.exit(2)\n'
+                          'out.write_bytes(b"test video")\n')
+        ready={'stage':'audio_synced','plan_ready':True,'export_ready':True,'reason':''}
+        def wait(predicate):
+            deadline=time.monotonic()+6
+            while time.monotonic()<deadline:
+                if predicate():return
+                time.sleep(.02)
+            self.fail('Export queue did not progress')
+        def marker(project,job,kind):return store.cache_dir(project)/'renders'/(job['id']+'.'+kind)
+        jobs=[]
+        with patch.object(app,'ENGINE_SCRIPT',script),patch.object(store,'plan_readiness',return_value=ready), \
+             patch.object(app,'normalize_for_engine',side_effect=lambda project:{'timeline_layers':[],'test_fail':project['id']==projects[2]['id']}), \
+             patch.object(app,'_check_render'),patch.object(app.language_mix,'refresh_later'):
+            try:
+                jobs.append(app.start_export(projects[0],True))
+                wait(lambda:marker(projects[0],jobs[0],'started').exists())
+                for project in projects[1:]:jobs.append(app.start_export(project,True))
+                self.assertEqual([app.load_job(job['id'])['queue_position'] for job in jobs[1:]],[1,2,3])
+                self.assertTrue(all(app.load_job(job['id'])['status']=='queued' for job in jobs[1:]))
+                self.assertEqual(app.start_export(projects[1],True)['id'],jobs[1]['id'])
+                self.assertTrue(all(not marker(project,job,'started').exists() for project,job in zip(projects[1:],jobs[1:])))
+                guard=app.agent_runtime.acquire_project_guard(projects[1]['id'],'test')
+                try:self.assertIsNone(guard)
+                finally:
+                    if guard:guard.close()
+                app.cancel_export(jobs[1]['id'])
+                wait(lambda:app.load_job(jobs[1]['id'])['status']=='cancelled')
+                self.assertEqual(app.load_job(jobs[2]['id'])['queue_position'],1)
+                self.assertFalse(marker(projects[1],jobs[1],'started').exists())
+                self.assertEqual(app.load_job(jobs[0]['id'])['status'],'running')
+                marker(projects[0],jobs[0],'release').touch()
+                wait(lambda:marker(projects[2],jobs[2],'started').exists())
+                self.assertEqual(app.load_job(jobs[0]['id'])['status'],'complete')
+                self.assertEqual(app.load_job(jobs[3]['id'])['status'],'queued')
+                marker(projects[2],jobs[2],'release').touch()
+                wait(lambda:marker(projects[3],jobs[3],'started').exists())
+                self.assertEqual(app.load_job(jobs[2]['id'])['status'],'failed')
+                marker(projects[3],jobs[3],'release').touch()
+                wait(lambda:app.load_job(jobs[3]['id'])['status']=='complete')
+                wait(lambda:app.EXPORT_RUNNING is None)
+                self.assertTrue(all(app.active_export(project['id']) is None for project in projects))
+            finally:
+                for job in jobs:
+                    if app.active_export(job['project_id']):app.cancel_export(job['id'])
+                wait(lambda:all(app.active_export(project['id']) is None for project in projects))
+
     def test_export_is_blocked_while_agent_owns_project(self):
         project = store.create_project(store.channel_id(self.channel), 'Agent export lock')
         guard = app.agent_runtime.acquire_project_guard(project['id'], 'agent')
