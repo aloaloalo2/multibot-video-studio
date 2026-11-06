@@ -327,3 +327,34 @@ class KitBedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EpisodeFolderTest(unittest.TestCase):
+    """Two Cyrillic episodes with one number got one Razgon folder (6 November 2026): the slug keeps the words now,
+    a linked episode keeps its folder, and another project's folder is refused."""
+
+    class FakeStudio:
+        def __init__(self, link=None):
+            self.link = link or {}
+
+        def call(self, method, path, body=None):
+            return self.link
+
+    def test_cyrillic_names_keep_their_words(self):
+        self.assertEqual(razgon_bridge.slugify("25 Сухость глаз"), "25-sukhost-glaz")
+        self.assertNotEqual(razgon_bridge.slugify("25 Сухость глаз"), razgon_bridge.slugify("25 Головокружение при вставании"))
+        self.assertEqual(razgon_bridge.slugify("08 Internet Gone"), "08-internet-gone")
+
+    def test_new_linked_and_foreign_folders(self):
+        import tempfile
+        root = Path(tempfile.mkdtemp())
+        project = {"id": "a" * 24, "episode_path": "/x/Алексей Горбунов/25 Сухость глаз"}
+        target = razgon_bridge.episode_target(self.FakeStudio(), project, root, None)
+        self.assertEqual(target.name, "aleksey-gorbunov-25-sukhost-glaz")
+        linked = root / "projects" / "25"
+        linked.mkdir(parents=True)
+        self.assertEqual(razgon_bridge.episode_target(self.FakeStudio({"project": str(linked)}), project, root, None), linked)
+        (linked / "story").mkdir()
+        (linked / "story" / "studio_frames.json").write_text('{"project_id": "' + "b" * 24 + '"}', encoding="utf-8")
+        with self.assertRaises(razgon_bridge.BridgeError):
+            razgon_bridge.episode_target(self.FakeStudio(), project, root, "25")

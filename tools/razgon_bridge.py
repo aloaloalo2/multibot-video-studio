@@ -100,9 +100,35 @@ class Studio:
 
 
 # ---------------------------------------------------------------- helpers
+CYRILLIC = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяіїєґ",
+                    ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f",
+                     "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "i", "yi", "ye", "g"]))
+
+
 def slugify(name: str) -> str:
-    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    # Cyrillic is spelled in Latin letters: dropped, «25 Сухость глаз» and «25 Головокружение» both became «25» and
+    # the second episode took the first one's Razgon folder (6 November 2026)
+    text = "".join(CYRILLIC.get(ch, ch) for ch in unicodedata.normalize("NFC", name).lower())
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "episode"
+
+
+def episode_target(studio, project: dict, root: Path, slug: str | None) -> Path:
+    """The Razgon folder of this episode: the one the Studio already links to it, else a new one named after the channel
+    and the episode. A folder that belongs to another Studio project is never taken."""
+    if not slug:
+        linked = (studio.call("GET", f"/api/projects/{project['id']}/razgon-link") or {}).get("project")
+        if linked and Path(linked).is_dir():
+            return Path(linked)
+        episode = Path(project["episode_path"])
+        slug = f"{slugify(episode.parent.name)}-{slugify(episode.name)}"
+    target = root / "projects" / slug
+    owner_file = target / "story" / "studio_frames.json"
+    if owner_file.is_file():
+        owner = read_json(owner_file).get("project_id")
+        if owner and owner != project["id"]:
+            raise BridgeError(f"Папка Razgon «{slug}» належить іншому проєкту студії ({owner}). Візьміть інший --slug")
+    return target
 
 
 def read_json(path: Path):
@@ -176,8 +202,7 @@ def prepare(args) -> None:
     root = Path(args.studio_dir).resolve()
     if not (root / "render.mjs").is_file():
         raise BridgeError(f"Razgon 2D Studio не встановлено в {root}")
-    slug = args.slug or slugify(Path(project["episode_path"]).name)
-    target = root / "projects" / slug
+    target = episode_target(studio, project, root, args.slug)
     for name in ("input", "timeline", "story", "scenes/sets", "scenes/shots", "build", "out"):
         (target / name).mkdir(parents=True, exist_ok=True)
     voice_dst = target / "input" / ("voiceover" + voice.suffix.lower())
