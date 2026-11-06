@@ -102,6 +102,8 @@ def _run(pid: str, reason: str) -> None:
             data.update(status="failed", error=(problem[-1] if problem else f"razgon_bridge.py sound завершився з кодом {result.returncode}")[-600:])
         else:
             data.update(status="done", summary=lines[-1] if lines else "")
+            import language_mix   # the new bed belongs in every saved language soundtrack too
+            language_mix.refresh(pid, "music and effects")
     except subprocess.TimeoutExpired:
         data.update(status="failed", error="Музика й ефекти не зібралися за годину")
     except (OSError, store.StudioError) as error:

@@ -193,8 +193,13 @@ class Picture:
         return sorted(t for t in moments if 0 <= t <= end_time(duration))
 
 
+def is_background(clip: dict) -> bool:
+    """The blurred copy under a vertical photo or a text frame («K012 фон»): it moves its own way, nothing glues to it."""
+    return str(clip.get("title", "")).endswith(" фон")
+
+
 def main_picture(project: dict, frame: dict) -> dict | None:
-    pictures = [c for c in frame["clips"] if not is_accent(c) and c.get("asset_id") and
+    pictures = [c for c in frame["clips"] if not is_accent(c) and not is_background(c) and c.get("asset_id") and
                 (c.get("kind") in ("image", "video") or c.get("kind") == "animation" and c.get("content_type") == "image")]
     return max(pictures, key=lambda c: float(c.get("width", 1)) * float(c.get("height", 1)), default=None)
 
@@ -219,18 +224,127 @@ def _scale_at(points: list[dict], time: float, base: float) -> float:
     return have[-1][1]
 
 
-def pop(points: list[dict], at: float, duration: float, base: float = 1.0) -> list[dict]:
-    """An accent springs in (55% → 112% → 100% of its glued size) and a second later gives one soft pulse, so the eye
-    goes to it (user, 5 November 2026: «акценти… з анімації трошки, з динамікою»)."""
-    at = max(0.05, min(at, duration - 0.4))
-    marks = [(at - .04, .55), (at + .16, 1.12), (at + .32, 1.0), (at + 1.25, 1.0), (at + 1.45, 1.07), (at + 1.7, 1.0)]
-    extra = [{"time": round(t, 3), "scale": round(_scale_at(points, t, base) * k, 4)} for t, k in marks if 0 < t < duration - .05]
-    return merge(points, extra)
-
-
 def appear(at: float, duration: float, top: float = 1.0) -> list[dict]:
     at = max(0.05, min(at, duration - 0.4))
     return [{"time": 0.0, "opacity": 0.0}, {"time": round(at - 0.04, 3), "opacity": 0.0}, {"time": round(at + 0.25, 3), "opacity": top}]
+
+
+# ---------------------------------------------------------------- how an accent comes in
+# The user, 6 November 2026: «активной анимации… красивое появление, типа стрелочки… которая указывает на то место,
+# куда нужно. Кружочек, который появляется». The engine moves a clip by x, y, scale and opacity under one easing, so a
+# glued accent keeps its photo's slow curve, and its entrance plays in a second, short clip on top (title «… поява …»,
+# linear, a keyframe each 0.04 s): an arrow grows out of its tail towards the point and jabs at it twice, a ring closes
+# in on its target from 1.7× and pulses, a card springs open, an underline is drawn from its left end. The glued clip
+# stays invisible until the entrance ends.
+
+ENTRANCE = {"стрілка": 1.5, "коло": 1.4, "картка": .5, "риска": .5, "картинка": .6}
+STEP = .04
+
+
+def _back_out(p: float) -> float:
+    p = max(0.0, min(1.0, p)) - 1
+    return 1 + 2.70158 * p ** 3 + 1.70158 * p ** 2
+
+
+def _entrance_state(kind: str, tau: float, top: float) -> tuple[float, float, float]:
+    """(grow, jab in px along the arrow, opacity) at `tau` seconds into the entrance."""
+    if kind == "стрілка":
+        grow = .15 + .85 * _back_out(tau / .32)
+        jab = 16 * abs(math.sin(math.pi * (tau - .75) / .3)) if .75 <= tau <= 1.35 else 0.0
+        return grow, jab, top * min(1.0, tau / .1)
+    if kind == "коло":
+        grow = 1.7 - .7 * _back_out(tau / .38)
+        if .85 <= tau <= 1.25:
+            grow *= 1 + .08 * math.sin(math.pi * (tau - .85) / .4)
+        return grow, 0.0, top * min(1.0, tau / .15)
+    if kind == "риска":
+        return .04 + .96 * (1 - (1 - min(1.0, tau / .35)) ** 3), 0.0, top * min(1.0, tau / .08)
+    return .6 + .4 * _back_out(tau / .3), 0.0, top * min(1.0, tau / .12)
+
+
+def accent_kind(clip: dict) -> str:
+    return str(clip.get("title", "")).split()[-1]
+
+
+def is_entrance(clip: dict) -> bool:
+    return " поява " in f" {clip.get('title', '')} "
+
+
+def _arrow_ends(path) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Tail and head of a drawn arrow, in pixels from the picture's centre: the two ends farthest apart, the head the
+    one with more ink around it (its triangle)."""
+    image = Image.open(path).getchannel("A")
+    k = max(1, max(image.size) // 160)
+    small = image.resize((max(1, image.width // k), max(1, image.height // k)))
+    ink = [(x * k, y * k) for y in range(small.height) for x in range(small.width) if small.getpixel((x, y)) > 128]
+    if len(ink) < 2:
+        return (-image.width / 4, 0.0), (image.width / 4, 0.0)
+    cx, cy = sum(x for x, _ in ink) / len(ink), sum(y for _, y in ink) / len(ink)
+    a = max(ink, key=lambda q: (q[0] - cx) ** 2 + (q[1] - cy) ** 2)
+    b = max(ink, key=lambda q: (q[0] - a[0]) ** 2 + (q[1] - a[1]) ** 2)
+    def width(end, other):     # the ink across the arrow a little way in from this end: the head's triangle is wider
+        dx, dy = other[0] - end[0], other[1] - end[1]
+        norm = math.hypot(dx, dy) or 1.0
+        dx, dy = dx / norm, dy / norm
+        cx, cy = end[0] + dx * 20, end[1] + dy * 20
+        hits = 0
+        for step in range(-40, 41):
+            x, y = int(cx - dy * step), int(cy + dx * step)
+            if 0 <= x < image.width and 0 <= y < image.height and image.getpixel((x, y)) > 128:
+                hits += 1
+        return hits
+    tail, head = (a, b) if width(b, a) >= width(a, b) else (b, a)
+    centre = (image.width / 2, image.height / 2)
+    return (tail[0] - centre[0], tail[1] - centre[1]), (head[0] - centre[0], head[1] - centre[1])
+
+
+def _anchor(ctx: Context, kind: str, payload: dict, path=None):
+    """The point an accent grows from (px from its centre at scale 1) and the unit direction it jabs in."""
+    if kind == "стрілка" and path:
+        tail, head = _arrow_ends(path)
+        length = math.hypot(head[0] - tail[0], head[1] - tail[1]) or 1.0
+        return tail, ((head[0] - tail[0]) / length, (head[1] - tail[1]) / length)
+    if kind == "риска":
+        return (-float(payload["width"]) * ctx.W / 2, 0.0), (1.0, 0.0)
+    return (0.0, 0.0), (0.0, 0.0)
+
+
+def animated(ctx: Context, frame: dict, picture, title: str, payload: dict, keys: list[dict], base: dict, at: float,
+             duration: float, top: float = 1.0, path=None) -> None:
+    """Add a glued accent with its entrance: the glued clip appears when the entrance ends, the entrance clip plays
+    from `at` (seconds into the clip) over it."""
+    kind = title.split()[-1]
+    length = ENTRANCE.get(kind, .6)
+    at = max(0.0, min(at, duration - length - .2))
+    shown = round(at + length, 3)
+    fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(shown - .04, 3), "opacity": 0.0}, {"time": shown, "opacity": top}]
+    steady = {**payload, **base, "scale": 1.0, "opacity": top, "keyframes": merge(keys, fades)}
+    ctx.add(frame, picture, title, steady)
+    ctx.actions.append(_entrance_action(ctx, frame, picture, title, steady, at, length, top, path))
+
+
+def _entrance_action(ctx, frame, picture, title, steady, at, length, top, path) -> dict:
+    kind = title.split()[-1]
+    clip = {**steady, "easing": (picture.clip.get("easing", ctx.easing) if picture else ctx.easing)}
+    (ox, oy), (dx, dy) = _anchor(ctx, kind, steady, path)
+    points, tau = [], 0.0
+    span = length + .08          # a little over the glued clip's first visible frame: no gap at the hand-over
+    while tau <= span + 1e-9:
+        t = at + tau
+        px, py, s = keyframe_value(clip, "x", t) * ctx.W, keyframe_value(clip, "y", t) * ctx.H, keyframe_value(clip, "scale", t)
+        grow, jab, opacity = _entrance_state(kind, min(tau, length), top)
+        cx, cy = px - (grow - 1) * s * ox + dx * jab * s, py - (grow - 1) * s * oy + dy * jab * s
+        points.append({"time": round(tau, 3), "x": round(cx / ctx.W, 5), "y": round(cy / ctx.H, 5),
+                       "scale": round(max(.05, s * grow), 5), "opacity": round(opacity, 4)})
+        tau = round(tau + STEP, 6)
+    start = float(picture.clip["start"]) if picture else frame["start"]
+    words = title.split()
+    named = " ".join(words[:-1] + ["поява", words[-1]])
+    keep = ("kind", "asset_id", "content_type", "color", "width", "height", "mask", "corner_radius", "shadow")
+    return {"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "group_id": frame["group"]["id"],
+                                            "start": round(start + at, 3), "duration": round(span, 3), "easing": "linear",
+                                            "title": f"{ctx.prefix(frame)} акцент {named}", "x": points[0]["x"], "y": points[0]["y"],
+                                            "scale": 1.0, "opacity": top, "keyframes": points, **{k: steady[k] for k in keep if k in steady}}}
 
 
 # ---------------------------------------------------------------- drawn accents
@@ -409,7 +523,8 @@ def accent(ctx: Context, spec: dict) -> None:
     start = float(clip["start"]) if clip else frame["start"]
     mid = duration / 2
     kind = spec.get("kind")
-    index = sum(1 for c in frame["clips"] if is_accent(c)) + sum(1 for a in ctx.actions if a["type"] == "add_clip" and a["payload"].get("group_id") == frame["group"]["id"])
+    index = (sum(1 for c in frame["clips"] if is_accent(c) and not is_entrance(c)) +
+             sum(1 for a in ctx.actions if a["type"] == "add_clip" and a["payload"].get("group_id") == frame["group"]["id"] and not is_entrance(a["payload"])))
     colors = (spec.get("color", YELLOW), spec.get("edge", INK))
     if kind == "text":
         _accent_text(ctx, frame, picture, spec, start, duration, mid, index)
@@ -433,11 +548,10 @@ def accent(ctx: Context, spec: dict) -> None:
         centre = _point(ctx, picture, spec, "at", mid)
         w, h = spec.get("size") or [400, 120]
         keys, base = _glued(picture, centre, mid, duration, ctx, spec.get("pin", True))
-        ctx.add(frame, picture, f"{index} картка", {"kind": "animation", "content_type": "shape", "color": spec.get("color", NAVY), **base,
-                                                    "width": w / ctx.W, "height": h / ctx.H, "opacity": 1, "mask": "rounded",
-                                                    "corner_radius": float(spec.get("radius", min(24, h / 2))),
-                                                    "keyframes": pop(merge(appear(_moment(ctx, frame, spec, start), duration, float(spec.get("opacity", .9))), keys),
-                                                                     _moment(ctx, frame, spec, start), duration, float(base.get("scale", 1)))})
+        animated(ctx, frame, picture, f"{index} картка", {"kind": "animation", "content_type": "shape", "color": spec.get("color", NAVY),
+                                                          "width": w / ctx.W, "height": h / ctx.H, "mask": "rounded",
+                                                          "corner_radius": float(spec.get("radius", min(24, h / 2)))},
+                 keys, base, _moment(ctx, frame, spec, start), duration, float(spec.get("opacity", .9)))
     else:
         raise OpError("Невідомий вид акценту: text, arrow, circle, card або image")
     ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: {kind}")
@@ -445,8 +559,8 @@ def accent(ctx: Context, spec: dict) -> None:
 
 def _accent_picture(ctx, frame, picture, title, path, centre, size, at, duration, mid):
     keys, base = _glued(picture, centre, mid, duration, ctx)
-    ctx.add(frame, picture, title, {"kind": "image", "asset_id": ctx.asset_for(path), **base, "width": size[0] / ctx.W, "height": size[1] / ctx.H,
-                                    "opacity": 1, "keyframes": pop(merge(appear(at, duration), keys), at, duration, float(base.get("scale", 1)))})
+    animated(ctx, frame, picture, title, {"kind": "image", "asset_id": ctx.asset_for(path), "width": size[0] / ctx.W, "height": size[1] / ctx.H},
+             keys, base, at, duration, path=path)
 
 
 def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index):
@@ -488,9 +602,10 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
                  {"title": "риска", "centre": (centre[0], centre[1] + (bottom - top) / 2 + 8), "size": (right - left, 12), "color": spec.get("card_color", YELLOW),
                   "at": words[-1][1] - start + .2, "top": 1.0, "radius": 4})
         keys, base = _glued(picture, under["centre"], mid, duration, ctx, pin)
-        ctx.add(frame, picture, f"{index} {under['title']}", {"kind": "animation", "content_type": "shape", "color": under["color"], **base,
-                                                            "width": under["size"][0] / ctx.W, "height": under["size"][1] / ctx.H, "opacity": 1,
-                                                            "mask": "rounded", "corner_radius": under["radius"], "keyframes": pop(merge(appear(under["at"], duration, under["top"]), keys), under["at"], duration, float(base.get("scale", 1)))})
+        animated(ctx, frame, picture, f"{index} {under['title']}", {"kind": "animation", "content_type": "shape", "color": under["color"],
+                                                                     "width": under["size"][0] / ctx.W, "height": under["size"][1] / ctx.H,
+                                                                     "mask": "rounded", "corner_radius": under["radius"]},
+                 keys, base, max(0.0, under["at"] - (ENTRANCE.get(under["title"], .5) if under["title"] == "картка" else 0)), duration, under["top"])
     keys, base = _glued(picture, (bx, by), mid, duration, ctx, pin)
     entrance = spec.get("entrance") or ENTRANCES[ctx.entrance % len(ENTRANCES)]
     ctx.entrance += 1
@@ -502,7 +617,12 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
 
 def clear_accents(ctx: Context, spec: dict) -> None:
     frame = find_frame(ctx.frames, spec.get("frame"))
-    ids = [c["id"] for c in frame["clips"] if is_accent(c)]
+    accents = [c for c in frame["clips"] if is_accent(c)]
+    if spec.get("kind") == "text":    # only the captions, with the card or underline drawn for each
+        index = lambda c: str(c.get("title", "")).split(" акцент ", 1)[-1].split()[0]
+        wanted = {index(c) for c in accents if c.get("kind") == "text"}
+        accents = [c for c in accents if index(c) in wanted]
+    ids = [c["id"] for c in accents]
     ctx.actions += [{"type": "delete_clip", "payload": {"clip_id": cid}} for cid in ids]
     ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: прибрано акцентів {len(ids)}")
 
@@ -825,27 +945,55 @@ def motion(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"рух оновлено в кадрах: {changed}")
 
 
-def animate_accents(ctx: Context, spec: dict) -> None:
-    """Give accents placed before the spring-in their pop and pulse (pictures and cards; caption words keep their own)."""
-    done = 0
+def reglue(ctx: Context, spec: dict) -> None:
+    """Glue the accents of a frame to its photo again, where they stand at the frame's middle moment (an accent glued to
+    the blurred background copy drifted against the photo; user, 6 November 2026: «акцент двигается не синхронно»),
+    and give arrows, rings, cards and underlines their entrance clip (made again, so it can run any number of times)."""
+    wanted = set(spec.get("frames") or [])
+    done = animated_count = 0
     for frame in ctx.frames:
-        for clip in frame["clips"]:
-            if not is_accent(clip) or clip.get("kind") == "text":
+        if wanted and frame.get("number") not in wanted:
+            continue
+        clip = main_picture(ctx.project, frame)
+        if not clip or clip.get("kind") not in ("image", "video"):
+            continue
+        by_title = {c["title"].replace(" поява ", " "): c for c in frame["clips"] if is_accent(c) and is_entrance(c)}
+        ctx.actions += [{"type": "delete_clip", "payload": {"clip_id": c["id"]}} for c in by_title.values()]
+        picture = Picture(ctx.project, clip)
+        duration, mid = picture.duration, picture.duration / 2
+        for accent_clip in [c for c in frame["clips"] if is_accent(c) and not is_entrance(c)]:
+            local = mid - (float(accent_clip["start"]) - float(clip["start"]))
+            centre = (keyframe_value(accent_clip, "x", local) * ctx.W, keyframe_value(accent_clip, "y", local) * ctx.H)
+            text = accent_clip.get("kind") == "text"
+            pin = picture.covers(centre[0], centre[1], mid) if text else True
+            keys, base = _glued(picture, centre, mid, duration, ctx, pin)
+            fades = [{"time": p["time"], "opacity": p["opacity"]} for p in accent_clip.get("keyframes") or [] if "opacity" in p]
+            kind = accent_kind(accent_clip)
+            if text or kind not in ENTRANCE or not fades:
+                ctx.actions.append({"type": "update_clip", "payload": {"clip_id": accent_clip["id"],
+                                                                        "patch": {"x": base["x"], "y": base["y"], "scale": 1.0, "keyframes": merge(keys, fades)}}})
+                done += 1
                 continue
-            points = clip.get("keyframes") or []
-            if sum(1 for p in points if "scale" in p) > 3:     # already springs
-                continue
-            shown = next((float(p["time"]) for p in points if float(p.get("opacity", 0)) > 0), None)
-            if shown is None:
-                continue
-            at = max(0.05, shown - .25)
-            keyframes = pop(points, at, float(clip["duration"]), float(clip.get("scale", 1)))
-            ctx.actions.append({"type": "update_clip", "payload": {"clip_id": clip["id"], "patch": {"keyframes": keyframes}}})
+            top = float(fades[-1]["opacity"]) or 1.0
+            old = by_title.get(accent_clip["title"])
+            shown = next((float(p["time"]) for p in fades if float(p["opacity"]) > 0), .3)
+            at = float(old["start"]) - float(accent_clip["start"]) if old else max(0.0, shown - .25)
+            length = ENTRANCE[kind]
+            at = max(0.0, min(at, duration - length - .2))
+            visible = round(at + length, 3)
+            fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(visible - .04, 3), "opacity": 0.0}, {"time": visible, "opacity": top}]
+            steady = {**accent_clip, **base, "scale": 1.0, "keyframes": merge(keys, fades)}
+            ctx.actions.append({"type": "update_clip", "payload": {"clip_id": accent_clip["id"],
+                                                                    "patch": {"x": base["x"], "y": base["y"], "scale": 1.0, "keyframes": steady["keyframes"]}}})
+            path = store.resolve_asset(ctx.project, accent_clip["asset_id"])["path"] if accent_clip.get("asset_id") else None
+            title = accent_clip["title"].split(" акцент ", 1)[-1]
+            ctx.actions.append(_entrance_action(ctx, frame, picture, title, steady, at, length, top, path))
             done += 1
-    ctx.report.append(f"акцентів з анімацією: {done}")
+            animated_count += 1
+    ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"animate_accents": animate_accents, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
+OPS = {"reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

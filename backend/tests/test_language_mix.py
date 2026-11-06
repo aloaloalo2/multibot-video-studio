@@ -39,6 +39,18 @@ class LanguageMixTest(unittest.TestCase):
         self.assertEqual((snap['tracks'][1]['start'],snap['tracks'][1]['trim_start'],snap['tracks'][1]['volume']),(1,.2,.3))
         self.assertIn('Українська',snap['destination'].name)
 
+    def test_a_soundtrack_the_timeline_outran_is_saved_again_locally(self):
+        """Music laid after the soundtrack was saved (episode 08, 6 November 2026) reaches it without a click."""
+        self.data['languages']['uk']['voice']={'made_at':1}
+        self.data['languages']['ru']={'voice':{'made_at':1}}
+        self.data['languages']['pl']={}                      # no voice yet: nothing to mix
+        language_mix.save('p','uk',{})
+        with patch.object(languages,'start') as start:
+            self.assertEqual(language_mix.refresh('p','test'),['ru'])   # uk is current, ru was never saved
+            self.project['tracks'][1]['clips'][0]['volume']=.5         # the bed changed
+            self.assertEqual(sorted(language_mix.refresh('p','test')),['ru','uk'])
+        self.assertEqual({call.args[1] for call in start.call_args_list},{'save-audio'})   # the local job, no speech
+
     def test_save_and_invalidation(self):
         self.assertEqual(language_mix.status(self.project,'uk',None)['state'],'missing')
         language_mix.save('p','uk',{})

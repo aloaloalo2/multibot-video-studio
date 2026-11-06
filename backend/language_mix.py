@@ -179,3 +179,45 @@ def rebase_saved_after_move(pid: str, moves: dict) -> int:
             for code,signature in updates.items():current['languages'][code]['saved_mix']['signature']=signature
         languages.update(pid,keep)
     return len(updates)
+
+
+def refresh(pid: str, reason: str = "") -> list[str]:
+    """Save again every language soundtrack the timeline's sound has outrun (user, 6 November 2026: «переклади…
+    йдуть без музики… без спецефектів… щоб більше такого не повторювалось»). Episode 08 had its four soundtracks saved
+    with the voice alone; the Studio laid the film's music and effects afterwards and nothing saved them again. Only
+    a language whose full voice is current and whose saved file is outdated or missing is mixed; this is the local
+    «save-audio» job (FFmpeg only, no speech service), and a language already at work is left alone."""
+    import languages
+    try:
+        project = store.load_project(pid)
+        data = languages.load_state(pid)
+    except (OSError, ValueError, store.StudioError):
+        return []
+    started = []
+    for code, entry in (data.get("languages") or {}).items():
+        voice = (entry or {}).get("voice") or {}
+        if not voice:
+            continue
+        try:
+            if not languages.voice_current(pid, code, voice):
+                continue
+            if status(project, code, entry.get("saved_mix")).get("state") not in {"outdated", "missing"}:
+                continue
+            languages.start(pid, "save-audio", code)
+            started.append(code)
+        except (OSError, RuntimeError, ValueError, KeyError, store.StudioError) as error:
+            print(f"Language soundtrack {pid} {code} ({reason}): {error}", flush=True)
+    if started:
+        print(f"Language soundtracks saved again for {pid} ({reason}): {', '.join(started)}", flush=True)
+    return started
+
+
+def refresh_later(pid: str, reason: str = "") -> None:
+    import threading
+    threading.Thread(target=refresh, args=(pid, reason), daemon=True).start()
+
+
+def refresh_all() -> None:
+    """At start-up: soundtracks a timeline change outran while nothing refreshed them (older versions)."""
+    for folder in sorted((store.DATA_ROOT / "projects").glob("*/languages/languages.json")):
+        refresh(folder.parent.parent.name, "start")

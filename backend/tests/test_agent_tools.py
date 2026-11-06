@@ -101,7 +101,7 @@ class AgentToolsTest(unittest.TestCase):
             {"op": "accent", "frame": 2, "kind": "circle", "at": [900, 500], "radii": [100, 60], "appear": 1.0},
             {"op": "accent", "frame": 2, "kind": "arrow", "from": [1300, 200], "to": [1000, 420], "appear": 1.2}]})
         self.assertEqual(status, 200, result)
-        self.assertEqual(result["applied"], 3)   # two clips and the plate back on top
+        self.assertEqual(result["applied"], 5)   # two accents, their entrances and the plate back on top
         current = store.load_project(project["id"])
         clips = {c["title"]: c for t in current["tracks"] for c in t["clips"]}
         photo = montage_ops.Picture(current, clips["K002 фото"])
@@ -118,7 +118,25 @@ class AgentToolsTest(unittest.TestCase):
                 if moment in (0, 3.99):   # in between the accent springs in and pulses once (user, 5 November 2026)
                     self.assertAlmostEqual(montage_ops.keyframe_value(ring, "scale", moment), photo.state(moment)[2] / photo.state(2)[2], places=3)
             self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", .5), 0)
-            self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", 2), 1)
+            self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", 3.3), 1)
+            # the entrance plays on top until the glued clip shows, and hands over where the glued clip stands
+            entrance = clips[title.replace(" акцент 0 ", " акцент 0 поява ").replace(" акцент 1 ", " акцент 1 поява ")]
+            local = float(entrance["start"]) + float(entrance["duration"]) - .05 - float(ring["start"])
+            for prop in ("x", "y", "scale"):
+                self.assertAlmostEqual(montage_ops.keyframe_value(entrance, prop, float(entrance["duration"]) - .05),
+                                       montage_ops.keyframe_value(ring, prop, local), places=2, msg=f"{title} {prop}")
+            self.assertAlmostEqual(montage_ops.keyframe_value(ring, "opacity", float(entrance["start"]) - float(ring["start"]) + .3), 0)
+        arrow = clips["K002 акцент 1 поява стрілка"]   # it grows out of its tail: at the start the tail is where it ends
+        glued = clips["K002 акцент 1 стрілка"]
+        tail, head = montage_ops._arrow_ends(store.resolve_asset(current, glued["asset_id"])["path"])
+        def tail_at(clip, local):
+            x, y, s = (montage_ops.keyframe_value(clip, prop, local) for prop in ("x", "y", "scale"))
+            return x * 1920 + tail[0] * s, y * 1080 + tail[1] * s
+        first = tail_at(arrow, 0)
+        later = tail_at(glued, float(arrow["start"]) - float(glued["start"]))
+        self.assertAlmostEqual(first[0], later[0], delta=3)
+        self.assertAlmostEqual(first[1], later[1], delta=3)
+        self.assertLess(montage_ops.keyframe_value(arrow, "scale", 0), .4)
         circle = clips["K002 акцент 0 коло"]
         mid = [montage_ops.keyframe_value(circle, prop, 2) for prop in ("x", "y")]
         self.assertAlmostEqual(mid[0] * 1920, 900, delta=.6)   # at the middle moment it is where it was asked
@@ -151,7 +169,7 @@ class AgentToolsTest(unittest.TestCase):
         status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"dry_run": True, "ops": [
             {"op": "accent", "frame": 1, "kind": "card", "at": [400, 300], "size": [300, 90], "appear": 1}]})
         self.assertEqual((status, result["applied"]), (200, 0))
-        self.assertEqual([a["type"] for a in result["actions"]], ["add_clip", "reorder_stack"])
+        self.assertEqual([a["type"] for a in result["actions"]], ["add_clip", "add_clip", "reorder_stack"])   # the card and its entrance
         self.assertEqual(store.load_project(project["id"])["revision"], project["revision"])
         status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"expected_revision": project["revision"] - 1, "ops": [
             {"op": "accent", "frame": 1, "kind": "card", "at": [400, 300]}]})

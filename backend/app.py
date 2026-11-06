@@ -40,6 +40,7 @@ import space
 import production
 import thumbnail_gen
 import languages
+import language_mix
 import agent_runtime
 import agent_storage
 import credentials
@@ -601,6 +602,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             job["status"] = "complete"
             job["output_path"] = str(destination)
             job["progress"] = 100
+        # the film is final: its language soundtracks follow the timeline's sound (music, effects, video sound)
+        language_mix.refresh_later(job["project_id"], "export")
     except Exception as exc:
         with JOBS_LOCK:
             if not entry['cancel']:
@@ -1681,6 +1684,8 @@ def main():
     threading.Thread(target=topics.update_all, daemon=True).start()
     # a run that ended while an older version was running (or the studio was down) still gets its spend report
     threading.Thread(target=spend_report.backfill_all, daemon=True).start()
+    # language soundtracks saved before the timeline got its music and effects are mixed again (local, free)
+    threading.Thread(target=language_mix.refresh_all, daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()

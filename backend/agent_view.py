@@ -114,7 +114,7 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                 problems.append(f"ключі після кінця «{clip.get('title')}»")
             if clip.get("text_words") and any(float(w["start"]) > float(clip["duration"]) for w in clip["text_words"]):
                 problems.append(f"слова після кінця «{clip.get('title')}»")
-            if montage_ops.is_accent(clip):
+            if montage_ops.is_accent(clip) and not montage_ops.is_entrance(clip):
                 accents[str(clip.get("title", "")).split()[-1]] += 1
         uncovered = _uncovered(project, main) if main else None
         if uncovered:

@@ -75,14 +75,10 @@ class FrameMotionTest(unittest.TestCase):
         self.assertGreaterEqual(abs(host["keyframes"][0]["scale"] - host["keyframes"][1]["scale"]), .1)
 
 
-class AccentPopTest(unittest.TestCase):
-    """Accents spring in and pulse once, following the photo's glued scale (user, 5 November 2026)."""
+class BackgroundIsNotThePhotoTest(unittest.TestCase):
+    """Accents glue to the photo, never to its blurred copy (user, 6 November 2026)."""
 
-    def test_pop_follows_the_glued_scale(self):
-        points = [{"time": 0.0, "x": .5, "scale": 1.0, "opacity": 0}, {"time": 2.0, "opacity": 0}, {"time": 2.29, "opacity": 1}, {"time": 8.0, "scale": 1.2}]
-        out = montage_ops.pop(points, 2.04, 8.0)
-        scales = {round(p["time"], 2): p["scale"] for p in out if "scale" in p}
-        self.assertLess(scales[2.0], .7)
-        self.assertGreater(scales[2.2], 1.1)
-        self.assertAlmostEqual(scales[8.0], 1.2)
-        self.assertTrue(any(abs(t - 3.49) < .01 for t in scales))   # the pulse a second later
+    def test_main_picture_skips_the_blurred_copy(self):
+        frame = {"clips": [{"title": "K012 фон", "kind": "image", "asset_id": "a", "width": 1, "height": 1},
+                           {"title": "K012 кадр", "kind": "image", "asset_id": "a", "width": 1, "height": 1}]}
+        self.assertEqual(montage_ops.main_picture({}, frame)["title"], "K012 кадр")
