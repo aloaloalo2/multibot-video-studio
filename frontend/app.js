@@ -631,7 +631,7 @@ function renderProject() {
     const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати випуск «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати випуск «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(slash,name);
   }
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
-  $('save-state').textContent=state.project?'● Локально збережено':'';
+  $('save-state').textContent='';
   $('channel-overview').hidden=!!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
@@ -1051,7 +1051,7 @@ async function action(type,payload,message,options={}) {
     if(state.project?.id!==projectId)return result.project;
     state.project=result.project;
     if(options.preserveInspector){
-      $('save-state').textContent='● Локально збережено';$('undo').disabled=!state.project.can_undo;$('redo').disabled=!state.project.can_redo;
+      $('save-state').textContent='';$('undo').disabled=!state.project.can_undo;$('redo').disabled=!state.project.can_redo;
       renderTimeline();renderPreview();
     }else{buildAudioNodes();renderProject();}
     status(message || 'Зміну збережено.');
@@ -1224,7 +1224,7 @@ function updateExportLock(){
   $('export-open').classList.toggle('export-busy',locked);$('export-open').setAttribute('aria-busy',String(locked));
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
   if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
-  else if(state.project)$('save-state').textContent='● Локально збережено';
+  else if(state.project)$('save-state').textContent='';
 }
 function exportActions(){
   const actions=[{label:'Закрити вікно',run:closeModal}];
