@@ -19,7 +19,9 @@ DELIVERY = {'neutral': '', 'conversational': '[Warm, conversational tone] ', 'ca
 DEFAULT_TEXT = 'Давайте спокойно разберёмся, что здесь происходит. На первый взгляд всё кажется довольно простым. Но есть одна деталь, на которую стоит обратить внимание. Сейчас я объясню её на обычном примере.'
 DEFAULTS = {'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
             'stability': .5, 'similarity_boost': .75, 'fish_engine': languages.FISH_ENGINE,
-            'temperature': .7, 'top_p': .7, 'text': DEFAULT_TEXT}
+            'temperature': .7, 'top_p': .7, 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
+PREPARATION_VERSION = 1
+NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
 
@@ -37,6 +39,13 @@ def validated(raw):
     if raw is not None and not isinstance(raw, dict):
         raise store.StudioError('Невірні налаштування голосу')
     data = {**DEFAULTS, **{k: v for k, v in (raw or {}).items() if k in DEFAULTS}}
+    if type(data['noise_cleanup']) is not bool:
+        raise store.StudioError('Очищення шуму має бути увімкнене або вимкнене')
+    if type(data['chunk_length']) is not int or not 100 <= data['chunk_length'] <= 300:
+        raise store.StudioError('Розмір частини Fish має бути від 100 до 300')
+    if not isinstance(data['direction'], str) or len(data['direction']) > 160 or re.search(r'[\[\]\r\n]', data['direction']):
+        raise store.StudioError('Опишіть подачу одним рядком, до 160 символів, без квадратних дужок')
+    data['direction'] = data['direction'].strip()
     if (data['provider'] not in {'elevenlabs', 'fishaudio'} or data['fish_engine'] not in languages.FISH_ENGINES
         or data['language'] not in languages.LANGUAGES or data['model'] not in MODELS or data['delivery'] not in DELIVERY):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
@@ -46,8 +55,7 @@ def validated(raw):
             raise store.StudioError('Параметри голосу мають бути від 0 до 100%')
     if not isinstance(data['text'], str) or not 10 <= len(data['text'].strip()) <= 2000:
         raise store.StudioError('Для зразка введіть від 10 до 2000 символів')
-    parts = store.planner.split_sentences(data['text'].strip())
-    data['text'] = ' '.join(parts[:4])
+    data['text'] = data['text'].strip()
     return data
 
 
@@ -61,14 +69,49 @@ def reference(cid):
 
 
 def fingerprint(settings, ref):
+    # Preparation affects the remote reference, never overwrite/reuse a sample of the original recording.
+    reference_key = ref['sha256'] + (f':clean-{PREPARATION_VERSION}' if settings['noise_cleanup'] else '')
     if settings['provider'] == 'elevenlabs':
         # Retain existing ElevenLabs samples when adding a second provider.
         effective = {k: settings[k] for k in ['language', 'model', 'delivery', 'stability', 'similarity_boost', 'text']}
-        return hashlib.sha256(json.dumps({'settings': effective, 'reference': ref['sha256'], 'version': 1}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-    fields = ['provider', 'language', 'text'] + (['fish_engine', 'temperature', 'top_p'] if settings['provider'] == 'fishaudio'
-                                               else ['model', 'delivery', 'stability', 'similarity_boost'])
+        if settings['direction']: effective['direction'] = settings['direction']
+        return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 1}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    fields = ['provider', 'language', 'text', 'fish_engine', 'temperature', 'top_p']
     effective = {k: settings[k] for k in fields}
-    return hashlib.sha256(json.dumps({'settings': effective, 'reference': ref['sha256'], 'version': 2}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    if settings['chunk_length'] != 200: effective['chunk_length'] = settings['chunk_length']
+    return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 2}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def delivery_prefix(settings):
+    return '[' + settings['direction'] + '] ' if settings.get('direction') else DELIVERY[settings['delivery']]
+
+
+def prepared_key(ref):
+    return hashlib.sha256((ref['sha256'] + f':clean-{PREPARATION_VERSION}').encode()).hexdigest()
+
+
+def prepared_source(cid, settings, ref):
+    """Fast local denoise of a bounded clone reference. The complete original stays untouched."""
+    root = folder(cid)
+    if not settings['noise_cleanup']: return root / 'reference.mp3'
+    target = root / 'prepared' / (prepared_key(ref) + '.mp3')
+    receipt = store.read_json(target.with_suffix('.json'), {})
+    if target.is_file() and receipt.get('status') == 'done': return target
+    target.parent.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=root) as tmp:
+        source = eleven_voices.clone_files(root / 'reference.mp3', Path(tmp))[0]
+        pending = Path(tmp) / 'clean.mp3'
+        languages.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(source), '-t', '70', '-vn',
+                       '-af', NOISE_FILTER, '-ar', '44100', '-ac', '1', '-b:a', '128k', '-map_metadata', '-1', str(pending)],
+                      'очистити шум прикладу голосу')
+        duration = store.media_duration(pending) or 0
+        expected = min(store.media_duration(source) or 0, 70)
+        if duration < 5 or abs(duration - expected) > .2:
+            raise RuntimeError('Не вдалося перевірити очищений запис. Оригінал збережено.')
+        pending.replace(target)
+        store.atomic_json(target.with_suffix('.json'), {'status': 'done', 'duration': duration,
+            'source_sha256': ref['sha256'], 'version': PREPARATION_VERSION})
+    return target
 
 
 def estimate(settings):
@@ -77,7 +120,7 @@ def estimate(settings):
         rate = spec['promo'][0] if spec.get('promo') and time.time() < spec['promo'][1] else spec['per_char']
         return {'unit': 'usd', 'amount': len(settings['text'].encode('utf-8')) * rate}
     rate = eleven_api.STUDIO_ESTIMATE_RATES.get(settings['model'], .5)
-    return {'unit': 'credits', 'amount': math.ceil(len(DELIVERY[settings['delivery']] + settings['text']) * rate)}
+    return {'unit': 'credits', 'amount': math.ceil(len(delivery_prefix(settings) + settings['text']) * rate)}
 
 
 def snapshot(cid):
@@ -91,6 +134,7 @@ def snapshot(cid):
     if job.get('status') == 'done' and job.get('fingerprint') != current:
         job = {}
     receipt = store.read_json(root / 'samples' / (current + '.json'), {}) if current else {}
+    prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and settings['noise_cleanup'] else None
     return {'settings': settings, 'reference': ref, 'job': job,
             'sample_matches_settings': bool(current and job.get('fingerprint') == current),
             'cached_sample': bool(current and receipt.get('status') == 'done' and (root / 'samples' / (current + '.mp3')).is_file()),
@@ -98,6 +142,7 @@ def snapshot(cid):
             'fish_models': [{'id': k, 'name': v['name'], 'rate': estimate({**settings, 'provider': 'fishaudio', 'fish_engine': k})['amount'] / max(1, len(settings['text'].encode('utf-8')))} for k, v in languages.FISH_ENGINES.items()],
             'languages': [{'code': k, 'name': v[0]} for k, v in languages.LANGUAGES.items()],
             'estimate': estimate(settings),
+            'prepared_reference': {'key': prepared.stem} if prepared and prepared.is_file() else None,
             'estimate_rate': eleven_api.STUDIO_ESTIMATE_RATES.get(settings['model'], .5)}
 
 
@@ -147,21 +192,22 @@ def remove(cid):
 
 def clone(cid, settings, ref):
     root = folder(cid)
+    source = Path(ref.get('prepared_path') or root / 'reference.mp3')
     secret = languages.key('elevenlabs')
     def create(ordinal):
         meta = languages.eleven_voice_metadata({'channel_id': cid}, settings['language'], ordinal)
         with tempfile.TemporaryDirectory(dir=root) as tmp:
-            files = eleven_voices.clone_files(root / 'reference.mp3', Path(tmp))
+            files = eleven_voices.clone_files(source, Path(tmp))
             body, mime = languages.multipart({'name': meta['name'][:90], 'description': meta['description'],
                 'labels': json.dumps(meta['labels']), 'remove_background_noise': 'false'}, [('files', p, 'audio/mpeg') for p in files])
             result = languages.request(languages.ELEVEN + '/voices/add', body, {'xi-api-key': secret, 'Content-Type': mime}, 'ElevenLabs (клон голосу)')
         return json.loads(result).get('voice_id')
-    voice = eleven_voices.resolve(secret, cid, settings['language'], (root / 'reference.mp3').read_bytes(), None, create)
+    voice = eleven_voices.resolve(secret, cid, settings['language'], source.read_bytes(), None, create)
     return secret, voice
 
 
 def synthesis(secret, voice, settings):
-    text = DELIVERY[settings['delivery']] + settings['text']
+    text = delivery_prefix(settings) + settings['text']
     params = {k: settings[k] for k in ['stability', 'similarity_boost']}
     if settings['model'] == 'eleven_v4_turbo':
         return eleven_api.streamed_dialogue(secret, voice, text, settings['model'], voice_settings=params)
@@ -173,11 +219,13 @@ def synthesis(secret, voice, settings):
 def fish_reference(cid, settings, ref):
     """One short local reference, recognised once. No remote model creation or fallback billing."""
     root = folder(cid)
-    key = hashlib.sha256((ref['sha256'] + ':' + settings['language']).encode()).hexdigest()
+    source = Path(ref.get('prepared_path') or root / 'reference.mp3')
+    source_key = prepared_key(ref) if settings['noise_cleanup'] else ref['sha256']
+    key = hashlib.sha256((source_key + ':' + settings['language']).encode()).hexdigest()
     target = root / ('fish-reference-' + key + '.mp3')
     meta = store.read_json(target.with_suffix('.json'), {})
     if not target.is_file() or not meta.get('text'):
-        languages.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(root / 'reference.mp3'),
+        languages.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(source),
                        '-t', '30', '-vn', '-ac', '1', '-b:a', '128k', str(target)], 'підготувати приклад Fish Audio')
         text = languages.heard(target, store.media_duration(target) or 30, settings['language'])
         if not text:
@@ -188,7 +236,7 @@ def fish_reference(cid, settings, ref):
 
 def fish_synthesis(secret, voice, settings):
     body = {'text': settings['text'], 'references': [voice], 'format': 'mp3', 'mp3_bitrate': 128,
-            'normalize': True, 'language': settings['language'], 'latency': 'normal', 'chunk_length': 200,
+            'normalize': True, 'language': settings['language'], 'latency': 'normal', 'chunk_length': settings['chunk_length'],
             'temperature': settings['temperature'], 'top_p': settings['top_p']}
     return languages.request(languages.FISH + '/v1/tts', languages.msgpack(body),
         {'Authorization': 'Bearer ' + secret, 'Content-Type': 'application/msgpack', 'model': settings['fish_engine']}, 'Fish Audio')
@@ -198,6 +246,9 @@ def run(cid, settings, ref, job):
     root = folder(cid)
     try:
         fish = settings['provider'] == 'fishaudio'
+        ref = {**ref, 'prepared_path': str(prepared_source(cid, settings, ref))}
+        with LOCK:
+            job['stage'] = 'reference' if fish else 'clone';store.atomic_json(root / 'job.json', job)
         if fish:
             secret = languages.key('fishaudio')
             voice = fish_reference(cid, settings, ref)
@@ -249,7 +300,7 @@ def start(cid, raw, client_id):
             return snapshot(cid)
         # Save the reservation before either cloning or speech. Restart never replays a paid call.
         cost = estimate(settings)
-        job = {'status': 'running', 'stage': 'reference' if settings['provider'] == 'fishaudio' else 'clone',
+        job = {'status': 'running', 'stage': 'cleanup' if settings['noise_cleanup'] else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),
                'provider': settings['provider'], 'client_id': client_id, 'fingerprint': key, 'started_at': time.time(),
                'settings': settings.copy(),
                'estimate': cost, 'estimated_credits': cost['amount'] if cost['unit'] == 'credits' else None}
@@ -265,6 +316,8 @@ def audio_file(cid, kind, fingerprint=None):
     if kind == 'reference': target = root / 'reference.mp3'
     elif kind == 'sample' and re.fullmatch(r'[0-9a-f]{64}', fingerprint or ''):
         target = root / 'samples' / (fingerprint + '.mp3')
+    elif kind == 'prepared' and re.fullmatch(r'[0-9a-f]{64}', fingerprint or ''):
+        target = root / 'prepared' / (fingerprint + '.mp3')
     else: raise store.StudioError('Аудіо не знайдено', 404)
     if not target.is_file(): raise store.StudioError('Аудіо не знайдено', 404)
     return target

@@ -1946,3 +1946,5 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:620px){.voice-lab-sliders{grid-template-columns:1fr}}
 
 .channel-voice-lab [data-provider][hidden]{display:none}
+
+.channel-voice-lab label.voice-lab-cleanup{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;margin:10px 0}.channel-voice-lab .voice-lab-cleanup input{width:15px;min-width:15px;height:15px;flex:none;accent-color:#b5b8c1}.voice-lab-cleanup small,.voice-lab-tuning small,.voice-lab-direction small{font-size:11px;color:#92959f}.voice-lab-tuning{margin:10px 0}.voice-lab-tuning label{font-size:12px;color:#b5b8c1}.voice-lab-tuning label span{display:flex;align-items:center;gap:12px}.voice-lab-tuning input{flex:1;min-width:0}.voice-lab-tuning output{width:32px;font-size:12px}.voice-lab-direction{display:grid;gap:6px;font-size:12px;margin:10px 0}.voice-lab-direction input{width:100%;box-sizing:border-box}.voice-lab-prepared:empty{display:none}.voice-lab-prepared .voice-player{margin:6px 0}

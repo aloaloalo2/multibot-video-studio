@@ -1,6 +1,9 @@
 import sys
 import tempfile
 import unittest
+import subprocess
+import wave
+import numpy as np
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,7 +17,8 @@ class ImmediateThread:
 class VoiceLabTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
-        self.patches=[patch.object(store,'DATA_ROOT',self.root),patch.object(store,'get_channel_folder',return_value=self.root)]
+        self.patches=[patch.object(store,'DATA_ROOT',self.root),patch.object(store,'get_channel_folder',return_value=self.root),
+                      patch.object(lab,'prepared_source',side_effect=lambda cid,*args:lab.folder(cid)/'reference.mp3')]
         for p in self.patches:p.start()
         self.cid=lab.TRIAL_CHANNEL;lab.ACTIVE.clear()
     def tearDown(self):
@@ -27,10 +31,11 @@ class VoiceLabTests(unittest.TestCase):
     def test_only_trial_channel_and_supported_settings(self):
         with self.assertRaises(store.StudioError):lab.snapshot('0'*16)
         for change in [{'stability':float('nan')},{'similarity_boost':2},{'model':'fake'}, {'language':'xx'},
-                       {'provider':'unknown'}, {'fish_engine':'unknown'}, {'temperature':-1}, {'top_p':True}]:
+                       {'provider':'unknown'}, {'fish_engine':'unknown'}, {'temperature':-1}, {'top_p':True},
+                       {'chunk_length':99},{'chunk_length':301},{'chunk_length':True},{'direction':'[text]'}, {'noise_cleanup':'yes'}]:
             with self.assertRaises(store.StudioError):lab.validated({**lab.DEFAULTS,**change})
         text='One sentence. Another sentence. Third sentence. Fourth sentence. Fifth sentence.'
-        self.assertNotIn('Fifth',lab.validated({'text':text})['text'])
+        self.assertEqual(lab.validated({'text':text})['text'],text)
     def test_sample_reuses_audio_and_request_nonce(self):
         self.reference()
         with patch.object(lab.threading,'Thread',ImmediateThread),patch.object(lab,'clone',return_value=('secret','voice')) as clone, \
@@ -62,6 +67,47 @@ class VoiceLabTests(unittest.TestCase):
         store.atomic_json(lab.folder(self.cid)/'job.json',old);lab.ACTIVE.add(self.cid)
         with self.assertRaises(store.StudioError) as error:lab.start(self.cid,settings,'b'*20)
         self.assertEqual(error.exception.status,409)
+
+    def test_preparation_chunk_and_direction_separate_caches_and_reach_provider(self):
+        ref={'sha256':'reference'};fish={**lab.DEFAULTS,'provider':'fishaudio'}
+        for field,value in [('chunk_length',300),('noise_cleanup',False)]:
+            self.assertNotEqual(lab.fingerprint(fish,ref),lab.fingerprint({**fish,field:value},ref))
+        with patch.object(lab.languages,'request',return_value=b'audio') as request, \
+             patch.object(lab.languages,'msgpack',return_value=b'packed') as pack:
+            lab.fish_synthesis('secret',{'audio':b'voice','text':'reference'},{**fish,'chunk_length':300})
+            self.assertEqual(pack.call_args.args[0]['chunk_length'],300)
+        directed={**lab.DEFAULTS,'direction':'Warm, casual, measured pace'}
+        with patch.object(lab.eleven_api,'streamed_dialogue',return_value=b'audio') as request:
+            lab.synthesis('secret','id',directed)
+            self.assertTrue(request.call_args.args[2].startswith('[Warm, casual, measured pace] '))
+        self.assertNotEqual(lab.fingerprint(directed,ref),lab.fingerprint(lab.DEFAULTS,ref))
+
+    def test_local_cleanup_preserves_source_duration_and_reuses_prepared_copy(self):
+        self.patches[-1].stop()  # exercise the actual local FFmpeg path
+        root=lab.folder(self.cid);source=root/'reference.mp3'
+        sr=16000;t=np.arange(sr*8)/sr
+        active=((t>1)&(t<3))|((t>4)&(t<7))
+        rng=np.random.default_rng(31)
+        signal=(.18*np.sin(2*np.pi*180*t)+.1*np.sin(2*np.pi*440*t))*active + rng.normal(0,.01,len(t))
+        wav=root/'input.wav'
+        with wave.open(str(wav),'wb') as out:
+            out.setnchannels(1);out.setsampwidth(2);out.setframerate(sr);out.writeframes((signal*32767).astype('<i2').tobytes())
+        subprocess.run(['ffmpeg','-v','error','-y','-i',str(wav),'-b:a','128k',str(source)],check=True)
+        original=source.read_bytes();ref={'sha256':'synthetic'}
+        with patch.object(lab.eleven_voices,'clone_files',return_value=[source]):
+            cleaned=lab.prepared_source(self.cid,lab.DEFAULTS,ref)
+            self.assertEqual(source.read_bytes(),original)
+            stamp=cleaned.stat().st_mtime_ns
+            self.assertEqual(cleaned,lab.prepared_source(self.cid,lab.DEFAULTS,ref))
+            self.assertEqual(cleaned.stat().st_mtime_ns,stamp)
+        self.assertLess(abs(store.media_duration(source)-store.media_duration(cleaned)),.15)
+        def ratio(path):
+            out=subprocess.run(['ffmpeg','-v','error','-i',str(path),'-ac','1','-ar',str(sr),'-f','f32le','pipe:1'],capture_output=True,check=True)
+            a=np.frombuffer(out.stdout,dtype='<f4')[:len(t)]
+            quiet=a[int(.25*sr):int(.75*sr)];speech=a[int(1.5*sr):int(2.5*sr)]
+            self.assertTrue(np.isfinite(a).all());self.assertLess(np.max(np.abs(a)),1)
+            return np.sqrt(np.mean(quiet**2))/np.sqrt(np.mean(speech**2))
+        self.assertLess(ratio(cleaned),ratio(source)*.85)
     def test_remove_keeps_previous_recording_and_does_not_delete_cloud_voice(self):
         self.reference();lab.remove(self.cid)
         self.assertIsNone(lab.reference(self.cid))

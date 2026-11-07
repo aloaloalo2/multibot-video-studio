@@ -26,3 +26,11 @@ test('removing a stale sample stops its audio before discarding the player',()=>
   context.voiceLabClearSample({querySelectorAll:()=>[{pause(){events.push('pause');},removeAttribute(k){events.push(k);},load(){events.push('load');}}],replaceChildren(){events.push('remove');}});
   assert.deepEqual(events,['pause','src','load','remove']);
 });
+test('reference cleanup, Fish chunk length and Eleven delivery instructions select new samples',()=>{
+  const clean={...settings,noise_cleanup:true,direction:''};
+  const data={...ready,settings:clean};
+  assert.equal(context.voiceLabSampleState({...clean,noise_cleanup:false},data).cached,false);
+  assert.equal(context.voiceLabSampleState({...clean,direction:'Warm conversational tone'},data).cached,false);
+  const fish={...clean,provider:'fishaudio',chunk_length:200,fish_engine:'s2.1-pro-free',temperature:.7,top_p:.7};
+  assert.equal(context.voiceLabSampleState({...fish,chunk_length:300},{...data,settings:fish}).cached,false);
+});
