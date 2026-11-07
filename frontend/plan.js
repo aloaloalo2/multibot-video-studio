@@ -115,12 +115,21 @@ function renderNarrationGeneration(panel){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
       if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
-      else if(job?.status==='done'&&busy){info.textContent='Озвучка готова. Розпізнаємо й додаємо до плану…';await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:text.value});await selectProject(pid,{view:'plan'});}
+      else if(job?.status==='done'){
+        busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        if(!box.querySelector('.narration-ready')){
+          const ready=document.createElement('div');ready.className='narration-ready';
+          ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:'Готова озвучка',playLabel:'Прослухати озвучку'}));
+          const plan=document.createElement('button');plan.type='button';plan.className='secondary';plan.textContent='Створити план кадрів';
+          plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){info.textContent=error.message;plan.disabled=false;}};
+          ready.append(plan);box.append(ready);
+        }
+      }
       else if(job?.status==='cancelled'){busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
       else if(job?.status==='failed'){stop.hidden=true;busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
     }catch(error){info.textContent=error.message;button.disabled=false;}
   }
-  button.onclick=async()=>{if(busy)return;button.disabled=true;try{
+  button.onclick=async()=>{if(busy)return;button.disabled=true;box.querySelector('.narration-ready')?.remove();try{
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
