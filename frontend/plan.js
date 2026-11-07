@@ -65,10 +65,22 @@ function planFrameWord(count){
 const voiceScriptDraft={};
 function narrationChoices(panel,ready){
   const choices=document.createElement('div');choices.className='narration-choices';
-  choices.innerHTML=`<button type="button" class="secondary"><span aria-hidden="true">♬</span><strong>Озвучити сценарій</strong><small>Голос і налаштування каналу</small></button><button type="button" class="secondary"><span aria-hidden="true">↑</span><strong>Готова озвучка</strong><small>Додати аудіо або відео</small></button>`;
+  choices.innerHTML=`<button type="button" class="secondary"><span class="narration-choice-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 27H7V4h14l5 5v6M21 4v6h5M11 12h6M11 17h7M11 22h4"/><path d="M22 20h3l4-3v12l-4-3h-3z"/></svg></span><strong>Озвучити сценарій</strong><small>Вставте текст, студія створить голос</small></button><button type="button" class="secondary"><span class="narration-choice-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 27H6V4h14l6 6v7M20 4v7h6M10 16v5m4-8v11m4-7v4M25 29V19m-4 4 4-4 4 4"/></svg></span><strong>Додати аудіо або відео</strong><small>Використати готову озвучку з файлу</small></button>`;
   const buttons=choices.querySelectorAll('button');
   buttons[0].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[0].classList.add('selected');ready(false);};
   buttons[1].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[1].classList.add('selected');ready(true);};
+  const voiceCard=document.createElement('div');voiceCard.className='narration-voice-choice';
+  buttons[0].before(voiceCard);voiceCard.append(buttons[0]);
+  const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';voiceCard.append(details);
+  const cid=state.project.channel_id;
+  api(`/api/channels/${cid}/voice-lab`).then(data=>{
+    if(!details.isConnected)return;details.replaceChildren();
+    if(data.reference){const player=voicePlayer(null,`/api/channels/${cid}/voice-lab/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Прослухати голос каналу'});details.append(player);}
+    else{const missing=document.createElement('small');missing.textContent='Додайте зразок голосу в налаштуваннях каналу';details.append(missing);}
+    const settings=data.settings||{},service=settings.provider==='fishaudio'?'Fish Audio':'ElevenLabs';
+    const model=(settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
+    const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
+  }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   panel.append(choices);
 }
 function renderNarrationGeneration(panel){
