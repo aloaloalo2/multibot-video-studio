@@ -10,6 +10,29 @@ function load(api,running=()=>false){
   return context;
 }
 
+test('an empty script card starts translation directly once and shows pending progress',async()=>{
+  const context=load(()=>assert.fail('No direct API call expected'));
+  let finish;const pending=new Promise(resolve=>finish=resolve),calls=[];
+  context.state={project:{id:'p'}};context.langData={items:[{code:'uk',name:'Українська',text:''}]};
+  context.langStart=async(...args)=>{calls.push(args);await pending;return true;};
+  context.langOpenScript=()=>assert.fail('Empty cards must not open an editor');context.langPaintScriptJobs=()=>{};
+  const label={},progress={hidden:true,removeAttribute(){}},attributes={};
+  const button={disabled:false,setAttribute:(k,v)=>attributes[k]=v,removeAttribute:k=>delete attributes[k],querySelector:selector=>selector==='progress'?progress:label};
+  const run=context.langActivateScript('p','uk',button);
+  await context.langActivateScript('p','uk',button);
+  assert.deepEqual(calls,[['p','translate','uk']]);assert.equal(button.disabled,true);assert.equal(progress.hidden,false);
+  assert.match(label.textContent,/Запускаємо переклад/);assert.equal(context.langScriptStatus(context.langData.items[0]).kind,'working');
+  finish();await run;assert.equal(button.disabled,false);assert.equal(attributes['aria-busy'],undefined);
+});
+
+test('existing scripts and active translations still open their details without starting paid work',async()=>{
+  for(const item of [{code:'uk',text:'Готовий текст'},{code:'uk',text:'',translation_resumable:true}]){
+    const context=load(()=>assert.fail('Must not start API requests'));context.state={project:{id:'p'}};context.langData={items:[item]};
+    const opened=[];context.langOpenScript=(...args)=>opened.push(args);context.langStart=()=>assert.fail('Must preserve saved translations');
+    await context.langActivateScript('p','uk',{});assert.deepEqual(opened,[['p','uk']]);
+  }
+});
+
 test('selected languages start independently, once, with no voice requests',async()=>{
   const calls=[],started=new Set();let release;
   const pending=new Promise(resolve=>release=resolve);

@@ -1,5 +1,6 @@
 // All translated scripts are available together, independently of the voice tab.
 const langScriptDrafts=new Map();
+const langScriptStarting=new Set();
 let langScriptDialog=null;
 const langTranslateIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 9 10M13 5c-1 5-4 8-9 10M13 21l4-10 4 10m-6.7-3h5.4"/></svg>';
 const langScriptCheck='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';
@@ -81,6 +82,7 @@ function langTranslationProgress(job,now=Date.now()/1000){
 }
 
 function langScriptStatus(item){
+  if(typeof state!=='undefined'&&langScriptStarting.has(`${state.project?.id}:${item.code}`))return {kind:'working',label:'Запускаємо переклад…',progress:0,indeterminate:true};
   const job=langScriptJob(item.code);
   if(job?.status==='running')return {kind:'working',...langTranslationProgress(job)};
   if(job?.status==='failed'||item.translation_resumable)return {kind:'attention',label:item.translation_resumable?'Переклад призупинено':'Перевірити переклад'};
@@ -88,10 +90,25 @@ function langScriptStatus(item){
   return item.text?{kind:'ready',label:'Перекладено'}:{kind:'empty',label:'Перекласти'};
 }
 
+async function langActivateScript(id,code,button){
+  if(state.project?.id!==id)return;
+  const item=langData?.items.find(entry=>entry.code===code);if(!item)return;
+  const key=`${id}:${code}`;if(langScriptStarting.has(key))return;
+  if(item.text||item.translation_resumable||langRunning(code,'voice'))return langOpenScript(id,code);
+  langScriptStarting.add(key);button.disabled=true;button.setAttribute('aria-busy','true');
+  button.querySelector('.lang-script-status-label').textContent='Запускаємо переклад…';
+  const progress=button.querySelector('progress');progress.hidden=false;progress.removeAttribute('value');
+  try{await langStart(id,'translate',code);}
+  finally{
+    langScriptStarting.delete(key);button.disabled=false;button.removeAttribute('aria-busy');
+    if(state.project?.id===id)langPaintScriptJobs();
+  }
+}
+
 function langScriptLibrary(id,holder,data){
   holder.innerHTML=`<div class="lang-language-board"><div class="lang-original-slot"></div><div class="lang-translations-carousel"><div class="lang-script-grid">${data.items.map(item=>{
     const status=langScriptStatus(item);
-    return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><div class="lang-script-entry"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="Відкрити переклад: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
+    return `<div class="lang-language-column" data-language="${item.code}"><h3 class="lang-language-heading">${langFlag(item.code)}${esc(item.name)}</h3><div class="lang-script-entry"><button type="button" class="lang-script-file ${status.kind}" data-script-code="${item.code}" aria-label="${status.kind==='empty'?'Перекласти':'Відкрити переклад'}: ${esc(item.name)}" title="${esc(item.name)}: ${status.label}">
       <span class="lang-script-file-head">${langTranslateIcon}<strong>Переклад</strong><span class="lang-script-fold" aria-hidden="true"></span></span>
       <span class="lang-script-file-title">${esc(item.title||(status.kind==='working'?'Створюємо переклад сценарію…':'Сценарій ролика'))}</span>
       <span class="lang-script-metrics">${langScriptCharacters(item)}<span class="lang-script-job-detail" title="Фрази, узгоджені за довжиною"${status.kind==='working'?'':' hidden'}>${esc(status.compact||'')}</span></span>
@@ -99,7 +116,7 @@ function langScriptLibrary(id,holder,data){
       <progress max="100"${status.indeterminate?'':` value="${status.progress||0}"`}${status.kind==='working'?'':' hidden'}></progress></button><div class="lang-script-controls" data-script-controls="${item.code}"></div></div><button type="button" class="lang-language-remove" data-code="${item.code}" aria-label="Прибрати мову ${esc(item.name)}" title="Прибрати мову">${langIcons.trash}</button><div class="lang-setup-slot"></div></div>`;
   }).join('')}</div></div></div>`;
   holder.querySelectorAll('[data-script-code]').forEach(button=>{
-    button.addEventListener('click',()=>langOpenScript(id,button.dataset.scriptCode));
+    button.addEventListener('click',()=>langActivateScript(id,button.dataset.scriptCode,button));
     const cost=button.querySelector('.lang-script-cost');
     const open=event=>{event.preventDefault();event.stopPropagation();langOpenTranslationCost(id,button.dataset.scriptCode);};
     cost.addEventListener('click',open);cost.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key))open(event);});
@@ -184,6 +201,7 @@ function langPaintScriptJobs(){
   document.querySelectorAll('#project-langs [data-script-code]').forEach(button=>{
     const item=langData?.items.find(entry=>entry.code===button.dataset.scriptCode);if(!item)return;
     const status=langScriptStatus(item);
+    button.setAttribute('aria-label',`${status.kind==='empty'?'Перекласти':'Відкрити переклад'}: ${item.name}`);
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
     button.querySelector('.lang-script-status-label').textContent=status.label;
     button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';

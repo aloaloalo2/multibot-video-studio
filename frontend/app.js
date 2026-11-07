@@ -609,6 +609,7 @@ function renderProject() {
   $('channel-overview').hidden=!!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
+  $('editor-workspace').classList.toggle('animation-workspace',!!state.project&&projectAnimated());
   $('editor-timeline').hidden=!state.project || state.view!=='editor';
   $('project-plan').hidden=!state.project || state.view!=='plan';
   $('project-agent').hidden=!state.project || state.view!=='agent';
@@ -692,6 +693,9 @@ function layoutPreview(){
   const panel=document.querySelector('.preview-panel');
   const ratio=Number(state.project.width || 1920)/Number(state.project.height || 1080);
   const frameHeight=Math.max(80,height-20-panel.querySelector('.panel-title').offsetHeight-panel.querySelector('.transport').offsetHeight-26);
+  if(projectAnimated()){
+    workspace.classList.add('fitted-preview');workspace.style.setProperty('--preview-frame-width',Math.round(frameHeight*ratio)+'px');return;
+  }
   const panelWidth=Math.max(260,Math.min(width-410,frameHeight*ratio+26));
   workspace.classList.add('fitted-preview');workspace.style.setProperty('--preview-panel-width',Math.round(panelWidth)+'px');
 }
