@@ -105,7 +105,7 @@ class ExportControlTest(unittest.TestCase):
             self.assertEqual(job['progress'],100)
             self.assertGreater(Path(job['output_path']).stat().st_size,1024)
 
-    def test_gpu_fallback_resets_progress_and_keeps_project_locked(self):
+    def test_gpu_fallback_preserves_progress_and_keeps_project_locked(self):
         project = store.create_project(store.channel_id(self.channel), 'GPU fallback')
         script = Path(self.tmp.name) / 'gpu_fallback_engine.py'
         script.write_text('import json,time\n'
@@ -125,7 +125,7 @@ class ExportControlTest(unittest.TestCase):
             self.assertTrue(job.get('gpu_fallback'))
             self.assertEqual(job.get('gpu_fallback_reason'),'test')
             self.assertEqual(job['render_mode'],'standard')
-            self.assertEqual(job['progress'],0)
+            self.assertEqual(job['progress'],64)
             self.assertIsNone(job['remaining_seconds'])
             self.assertEqual(self.request('/api/projects/'+project['id']+'/actions','POST',{'type':'undo'})[0],423)
             app.cancel_export(job['id'])
@@ -151,6 +151,39 @@ class ExportControlTest(unittest.TestCase):
             deadline=time.monotonic()+5
             while time.monotonic()<deadline and app.load_job(job['id'])['status']!='cancelled':time.sleep(.02)
             self.assertEqual(app.load_job(job['id'])['status'],'cancelled')
+
+    def test_mixed_export_keeps_one_progress_scale_through_both_render_processes(self):
+        import sys
+        project=store.create_project(store.channel_id(self.channel),'Mixed progress')
+        frames=Path(self.tmp.name)/'frames_progress.py'
+        frames.write_text('import json\nfor p in (0,.5,1):print(json.dumps({"stage":"razgon","progress":p,"completed":int(p*2),"total":2}),flush=True)\nprint(json.dumps({"stage":"razgon_frames_done","clips":{}}),flush=True)\n')
+        engine=Path(self.tmp.name)/'mixed_engine.py'
+        engine.write_text('import json,sys\nfrom pathlib import Path\nfor e in ({"stage":"validated"},{"stage":"gpu_start"},{"stage":"scene_done","rendered_duration":1,"total_duration":2},{"stage":"compose","progress":1},{"stage":"verify","progress":1}):print(json.dumps(e),flush=True)\nPath(sys.argv[sys.argv.index("--output")+1]).write_bytes(b"test")\n')
+        ready={'export_ready':True,'plan_ready':True,'stage':'audio_synced'}
+        snapshots=[];save=app.save_job
+        def record(job):
+            snapshots.append((job['progress'],job['status']))
+            save(job)
+        with patch.object(app,'ENGINE_SCRIPT',engine), patch.object(store,'plan_readiness',return_value=ready), \
+             patch.object(app,'normalize_for_engine',return_value={'timeline_layers':[]}), \
+             patch.object(app.razgon_export,'export_job',return_value={'mixed':True,'blocks':{'a':1,'b':2}}), \
+             patch.object(app.razgon_export,'frames_command',return_value=[sys.executable,str(frames)]), \
+             patch.object(app.razgon_export,'point_blocks_at_clips'), patch.object(app,'_check_render'), \
+             patch.object(app.language_mix,'refresh_later'),patch.object(app,'save_job',side_effect=record):
+            job=app.start_export(project,True)
+            deadline=time.monotonic()+5
+            while time.monotonic()<deadline:
+                job=app.load_job(job['id'])
+                if job['status'] in {'complete','failed','cancelled'}:break
+                time.sleep(.02)
+            self.assertEqual(job['status'],'complete',job)
+        values=[p for p,status in snapshots]
+        self.assertEqual(values,sorted(values),snapshots)
+        self.assertIn(20,values)
+        self.assertIn(40,values)
+        self.assertTrue(any(40<p<98 for p in values),snapshots)
+        self.assertTrue(all(p<100 for p,status in snapshots if status!='complete'),snapshots)
+        self.assertEqual(values[-1],100)
 
     def test_export_estimates_time_from_rendered_duration(self):
         project = store.create_project(store.channel_id(self.channel), 'Export estimate')

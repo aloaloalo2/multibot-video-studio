@@ -184,7 +184,17 @@ class RazgonExportTest(unittest.TestCase):
         project["scene_groups"] = [{"id": "g1", "title": "Кадр 1", "clip_ids": ["f1"], "role": "scene"}, {"id": "g2", "title": "Кадр 2", "clip_ids": ["f2"], "role": "scene"}]
         project["join_transitions"] = [{"id": "j", "from_ref": "group:g1", "to_ref": "group:g2", "type": "crossfade", "duration": .2, "seam": .4}]
         store.save_project(project)
-        job = self.export(store.load_project(project["id"]), plan, engine=True)
+        snapshots=[]
+        save=app.save_job
+        def record(job):
+            snapshots.append((job['progress'],job['status']))
+            save(job)
+        with patch.object(app,'save_job',side_effect=record):
+            job = self.export(store.load_project(project["id"]), plan, engine=True)
+        values=[progress for progress,status in snapshots]
+        self.assertEqual(values,sorted(values),snapshots)
+        self.assertIn(40,values)
+        self.assertTrue(all(progress<100 for progress,status in snapshots if status!='complete'),snapshots)
         self.assertEqual([item[0] for item in self.renders(film)], ["0.0", "1.4"])   # only the code blocks were drawn
         self.assertEqual((job["razgon_completed"], job["razgon_total"]), (2, 2))
         self.assertTrue((film / "build" / "studio" / "frame_001_tail.mp4").is_file())   # the held tail for the transition out of it

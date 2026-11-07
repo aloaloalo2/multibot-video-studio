@@ -472,7 +472,7 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
                     if entry['cancel']:
                         break
                     share = max(0.0, min(1.0, float(event.get('progress', 0))))
-                    job.update(stage='razgon_frames', progress=min(99, round(99 * share)), razgon_completed=int(event.get('completed', 0)), razgon_total=int(event.get('total', 0)))
+                    job.update(stage='razgon_frames', progress=max(job['progress'], round(40 * share)), razgon_completed=int(event.get('completed', 0)), razgon_total=int(event.get('total', 0)))
                     elapsed = time.monotonic() - started_at
                     job['remaining_seconds'] = round(elapsed * (1 - share) / share) if share >= .02 else None
                     save_job(job)
@@ -487,8 +487,8 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
     razgon_export.point_blocks_at_clips(manifest, mixed, clips)
     store.atomic_json(render_manifest, manifest)
     with JOBS_LOCK:
-        # the engine's own progress starts over from 0 for the whole timeline
-        job.update(stage='preparing', progress=0, remaining_seconds=None)
+        # Code frames are the first 40% of this export; the engine continues from here.
+        job.update(stage='preparing', progress=max(job['progress'],40), remaining_seconds=None)
         save_job(job)
 
 
@@ -578,8 +578,9 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         render_error = None
         verification_started_at = None
         current_scene = None
+        render_floor = 40 if mixed else 0
         try:
-            progress_from = None
+            progress_from = render_floor if mixed else None
             for line in process.stdout:
                 try:
                     event = json.loads(line)
@@ -610,6 +611,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     job['render_mode']='standard'
                     job['gpu_fallback']=True
                     job['gpu_fallback_reason']=str(event.get('message') or '')[:2000]
+                    render_floor = max(render_floor,job['progress'])
+                    progress_from = render_floor
                     started_at=time.monotonic()
                 elif event.get("stage") == "scene_done":
                     rendered = float(event.get('rendered_duration', 0))
@@ -635,9 +638,11 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     stage = 'verifying'
                 else:
                     continue
+                if event.get('stage') != 'verify':
+                    progress = round(render_floor + (98-render_floor)*max(0,min(98,progress))/98)
                 with JOBS_LOCK:
                     if not entry['cancel']:
-                        job['progress'] = progress if event.get('stage') == 'gpu_fallback' else max(job['progress'],progress)
+                        job['progress'] = max(job['progress'],progress)
                         job['stage'] = stage
                         elapsed = max(0.0, time.monotonic() - started_at)
                         if stage == 'verifying':
