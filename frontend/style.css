@@ -891,6 +891,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-voice-block.open .episode-voice-toggle svg{transform:rotate(180deg)}
 .episode-voice-body{padding:2px 12px 8px;border-top:1px solid #2c2c31}
 .episode-voice-body[hidden]{display:none}
+.episode-voice-body>.voice-player{margin:8px 0 10px}
 .episode-voice-body .episode-fold{margin:8px 0}
 .episode-director-report:empty,.episode-make-report:empty{display:none}
 .episode-make-report{margin-top:12px}.episode-make-report .episode-fold{margin:0}

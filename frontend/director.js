@@ -82,7 +82,8 @@ function arrangeEpisode(episode){
   const voice=document.createElement('div');voice.className='episode-voice';voice.setAttribute('aria-live','polite');
   const body=document.createElement('div');body.className='episode-voice-body';body.id=`episode-voice-body-${id}`;body.hidden=!voiceOpen[id];
   const player=voicePlayer(id);
-  stage.append(voice,...(player?[player]:[]),body);
+  if(player)body.append(player);
+  stage.append(voice,body);
   episode.append(stage);
   if(!direct){
     const director=document.createElement('section');director.className='episode-director';director.hidden=true;
