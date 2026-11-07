@@ -65,13 +65,17 @@ function planFrameWord(count){
 const voiceScriptDraft={};
 function narrationChoices(panel,ready){
   const choices=document.createElement('div');choices.className='narration-choices';
-  choices.innerHTML=`<button type="button" class="secondary"><span class="narration-choice-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 27H7V4h14l5 5v6M21 4v6h5M11 12h6M11 17h7M11 22h4"/><path d="M22 20h3l4-3v12l-4-3h-3z"/></svg></span><strong>Озвучити сценарій</strong><small>Вставте текст, студія створить голос</small></button><button type="button" class="secondary"><span class="narration-choice-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 27H6V4h14l6 6v7M20 4v7h6M10 16v5m4-8v11m4-7v4M25 29V19m-4 4 4-4 4 4"/></svg></span><strong>Додати аудіо або відео</strong><small>Використати готову озвучку з файлу</small></button>`;
+  choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
   const buttons=choices.querySelectorAll('button');
   buttons[0].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[0].classList.add('selected');ready(false);};
   buttons[1].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[1].classList.add('selected');ready(true);};
-  const voiceCard=document.createElement('div');voiceCard.className='narration-voice-choice';
-  buttons[0].before(voiceCard);voiceCard.append(buttons[0]);
-  const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';voiceCard.append(details);
+  panel.append(choices);
+}
+function renderNarrationGeneration(panel){
+  const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
+  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small>Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><p role="status"></p><button class="secondary" type="button">Згенерувати озвучку</button>`;
+  panel.append(box);
+  const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
   const cid=state.project.channel_id;
   api(`/api/channels/${cid}/voice-lab`).then(data=>{
     if(!details.isConnected)return;details.replaceChildren();
@@ -81,12 +85,7 @@ function narrationChoices(panel,ready){
     const model=(settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
-  panel.append(choices);
-}
-function renderNarrationGeneration(panel){
-  const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small>Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><p role="status"></p><button class="secondary" type="button">Згенерувати озвучку</button>`;
-  panel.append(box);const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');
+  const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');
   text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
   text.oninput=()=>{voiceScriptDraft[pid]=text.value;};
   let busy=false;
