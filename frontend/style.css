@@ -920,10 +920,15 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-make-hint{flex:1;min-width:220px;margin:0;font-size:12.5px;line-height:1.45;color:#f0c967}
 .episode-make-hint[hidden]{display:none}
 .episode-make-start{transition:background-color .15s,box-shadow .2s}
-.episode-make-start:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
-.episode-make-start:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+.episode-make-start:not(:disabled){box-shadow:none}
+.episode-make-start:not(:disabled):hover{box-shadow:none}
 .episode-make-start.loading{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;opacity:1;cursor:progress}
-.episode-make-start.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,#fff6 50%,transparent 80%);transform:translateX(-100%);animation:button-sweep 1.6s ease-in-out infinite}
+.episode-make-start.loading::after{content:none}
+.episode-make-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.episode-make-count{flex:none;margin-left:auto;font-variant-numeric:tabular-nums;color:#a8abb4;font-size:.9em}
+.episode-make-start.loading .export-spinner{width:15px;height:15px}
+.episode-make-actions .production-control{color:#c5c7ce;background:#2b2b30;border-color:#47474d}
+.episode-make-actions .production-control:hover{background:#3a3a40;box-shadow:none}
 .episode-make-start.loading svg{width:15px;height:15px;flex:none}
 .episode-make-feed:empty{display:none}
 .episode-make-feed{margin-top:12px}.episode-make-feed>.plan-note{margin:0 0 8px}

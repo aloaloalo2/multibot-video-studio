@@ -299,7 +299,7 @@ function buildMake(make){
   const read=document.createElement('p');read.className='frame-plan-read';
   const actions=document.createElement('div');actions.className='episode-make-actions';
   const hint=document.createElement('p');hint.className='episode-make-hint';
-  const start=document.createElement('button');start.type='button';start.className='primary episode-make-start';start.textContent='Почати створення ролика';
+  const start=document.createElement('button');start.type='button';start.className='secondary episode-make-start';start.textContent='Почати створення ролика';
   actions.append(hint,start);
   const feed=document.createElement('div');feed.className='episode-make-feed';
   const report=document.createElement('div');report.className='episode-make-report';
@@ -432,18 +432,17 @@ function fillMake(make){
   hint.textContent=blocked;hint.hidden=!blocked||working||paused;
   feed.replaceChildren();
   make.querySelector('.production-control')?.remove();
-  // While the agent works the button turns into its progress; the steps of the work read in the feed below.
+  // Show the current activity in one muted status control, without a live work log.
   start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked;
   if(working){
     // the whole asked film with every frame made so far, earlier runs too: «86 з 107», never counted from the first gap
     const done=[...made].filter(index=>index<request.frames).length,total=request.frames;
     start.disabled=true;start.classList.add('loading');
-    start.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span>Створюємо кадри · ${done} з ${total}</span>`;
+    renderMakeStatus(start,id,request,done,total);
     start.after(productionControl(id,true));
-    renderTeam(feed,'production',id,true);
     productionTimer=setTimeout(()=>pollProduction(id),8000);
   }else if(paused){
-    start.disabled=false;start.classList.add('glow-action');
+    start.disabled=false;
     start.textContent=`Продовжити кадри ${Math.min(floor+1,request.frames)}–${request.frames}`;
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
@@ -575,6 +574,33 @@ function humanStep(text){
 // The Studio only receives what the director writes into it, so every step once credited to it is the director's.
 function humanFeed(steps){const out=[];for(const raw of steps){const step=raw.who==='studio'?{...raw,who:'opus'}:raw;const text=humanStep(step.text);if(out[out.length-1]?.text===text&&out[out.length-1].who===step.who)continue;out.push({...step,text});}return out;}
 const teamFeeds={};
+function makeActivityLabel(text){
+  text=humanStep(text);
+  if(/стик|перех[оі]д/i.test(text))return /перевір/i.test(text)?'Перевіряє переходи':'Налаштовує переходи';
+  if(/пробні кадри|переглядає кадри|перевір.*кадр/i.test(text))return 'Перевіряє кадри';
+  if(/таймлайн/i.test(text))return 'Додає кадри в ролик';
+  if(/на якому кроці|записався результат|результат заміру/i.test(text))return 'Перевіряє результат';
+  if(/допоміжні файли|вивчає матеріали|читає |описує предмети/i.test(text))return 'Готує матеріали';
+  if(/пише сцени|пише режисуру/i.test(text))return 'Створює кадри';
+  return text;
+}
+function renderMakeStatus(button,id,request,done,total){
+  const run=Number(request.started_at || request.created_at || 0);
+  const current=()=>state.project?.id===id&&['requested','in_progress'].includes(state.project.production_request?.status)
+    &&Number(state.project.production_request.started_at || state.project.production_request.created_at || 0)===run;
+  const draw=()=>{
+    if(!current())return;
+    const steps=humanFeed(teamFeeds['production'+id] || []).filter(step=>!run||Number(step.t)>=run);
+    const text=steps.length?makeActivityLabel(steps.at(-1).text):(request.status==='requested'?'Готує матеріали':'Створює кадри');
+    button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span><span class="episode-make-count">${done} з ${total}</span>`;
+    button.setAttribute('aria-live','polite');button.title=text;
+  };
+  draw();
+  api(`/api/projects/${encodeURIComponent(id)}/activity/production`).then(({activity})=>{
+    if(!button.isConnected||!current())return;
+    teamFeeds['production'+id]=activity;draw();
+  }).catch(()=>{});
+}
 function renderTeam(info,kind,id,live){
   if(!info)return;
   const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
