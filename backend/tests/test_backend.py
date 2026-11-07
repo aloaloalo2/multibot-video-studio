@@ -958,6 +958,7 @@ class BackendTest(unittest.TestCase):
         self.assertTrue(output.is_file())
         self.assertGreater(output.stat().st_size, 1024)
         self.assertEqual(output.parent.resolve(), (self.channel / "Render Test" / "Ready").resolve())
+        self.assertEqual(output.name, 'v1_Render Test.mp4')
 
 
 if __name__ == "__main__":

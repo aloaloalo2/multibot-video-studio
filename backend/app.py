@@ -53,6 +53,7 @@ import topics
 import audio_level
 import waveforms
 import joins
+import export_names
 import agent_view
 import montage_ops
 import thumbnails
@@ -712,8 +713,6 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
         output_folder = output_folder / export_subfolder
     if not store.under(output_folder, Path(project["episode_path"])):
         raise store.StudioError("Папка експорту поза випуском")
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    destination = output_folder / ("Video Studio " + timestamp + "-" + jid[:6] + ".mp4")
     render_dir = store.cache_dir(project) / "renders"
     render_dir.mkdir(parents=True, exist_ok=True)
     # An export needs room for its chunks, the joined picture and the final file (about three times the film) and the
@@ -755,8 +754,12 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
         try:
             if store.load_project(project['id']).get('revision', 0) != project.get('revision', 0):
                 raise store.StudioError("Проєкт змінився перед експортом. Спробуйте ще раз.", 409)
+            destination = export_names.destination(output_folder, project.get('name'),
+                [entry['destination'] for entry in ACTIVE_EXPORTS.values() if entry.get('destination')])
+            job['export_filename'] = destination.name
             save_job(job)
-            ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False, 'project_guard': guard}
+            ACTIVE_EXPORTS[jid] = {'job': job, 'process': None, 'cancel': False, 'project_guard': guard,
+                                   'destination': str(destination)}
             _export_queue_positions()
             command = razgon_export.command(manifest_path, staging) if razgon else None
             threading.Thread(target=_queued_render_worker, args=(job, manifest_path, staging, destination, command, mixed), daemon=True).start()
