@@ -12,7 +12,7 @@ function projectPlanMode(project=state.project){
 function directMontage(project=state.project){return projectPlanMode(project)==='direct';}
 function sourceForProject(result,project=state.project){return directMontage(project)?result.source || result.plan:result.plan;}
 // Direct montage starts on an empty timeline; planned episodes keep their existing frame gate.
-function editorUnlocked(project=state.project){return !!project && (directMontage(project) || filmClips(project).length>0);}
+function editorUnlocked(project=state.project){return !!project && (projectAnimated(project) || directMontage(project) || filmClips(project).length>0);}
 const editorLockedHint='Монтаж відкриється з першими кадрами ролика';
 
 async function setProjectView(view){

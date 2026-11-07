@@ -42,6 +42,21 @@ function episodeFold(title){
 }
 
 const makeCount={},stripZoom={};
+function renderMontageMake(){
+  const panel=$('editor-production'),workspace=$('editor-workspace');
+  const enabled=!!state.project&&state.view==='editor'&&projectAnimated();
+  panel.hidden=!enabled;workspace.classList.toggle('creation-workspace',enabled);
+  if(!enabled){panel.replaceChildren();delete panel.dataset.planKey;return;}
+  const id=state.project.id,frames=state.plan?.frames || [];
+  const key=JSON.stringify([id,frames.map(frame=>[frame.number,frame.start,frame.end,frame.format]),state.plan?.timing?.status,state.plan?.timing?.audio?.asset_id,directMontage()]);
+  if(panel.dataset.planKey!==key){
+    panel.replaceChildren();panel.dataset.planKey=key;renderPlanSwitch(panel);
+    if(frames.length||(directMontage()&&(state.plan?.timing?.audio||state.plan?.timing?.status==='audio_synced')))renderEpisode(panel);else renderVoiceStart(panel);
+  }else{
+    const episode=panel.querySelector('.episode');if(episode)refreshEpisode(episode);
+  }
+}
+
 function renderEpisode(panel){
   if(!state.project)return;
   const id=state.project.id;
@@ -112,7 +127,7 @@ const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l1
 // on the timeline with the same bytes, the one the Studio levels to 100% (project.audio_gain, backend/audio_level.py).
 function voiceAssetId(plan,project){
   const planned=plan?.timing?.audio?.asset_id;
-  if(!planned)return null;
+  if(!planned)return Object.keys(project?.audio_gain || {})[0] || null;
   if((project?.assets || []).some(asset=>asset.id===planned))return planned;
   return Object.keys(project?.audio_gain || {})[0] || planned;
 }
@@ -137,7 +152,7 @@ function voicePlayer(id,src=null,options={}){
   bar.addEventListener('input',()=>{audio.currentTime=Number(bar.value);paint();});
   // ±5 s with the arrow keys on the bar comes from the range itself; the voice stops when the page changes
   const stop=()=>{if(!box.isConnected){audio.pause();audio.removeAttribute('src');audio.load();observer.disconnect();}};
-  const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan, .lang-view');if(root)observer.observe(root,{childList:true});});
+  const observer=new MutationObserver(stop);queueMicrotask(()=>{const root=box.closest('.project-plan, .lang-view, .animation-production');if(root)observer.observe(root,{childList:true});});
   // the volume: a speaker that mutes and a short slider, remembered for the next voice
   const speaker=document.createElement('button');speaker.type='button';speaker.className='voice-player-mute';
   const level=document.createElement('input');level.type='range';level.min='0';level.max='1';level.step='0.05';level.className='voice-player-volume';level.setAttribute('aria-label','Гучність озвучки');
@@ -173,6 +188,7 @@ function setVoiceOpen(stage,id,open){
 function episodeAnalysis(){return state.analysis?.job?.project_id===state.project?.id?state.analysis:null;}
 
 function refreshEpisode(episode=document.querySelector('.episode')){
+  if(state.view==='editor'&&!episode?.closest('#editor-production')){renderMontageMake();return;}
   if(!episode?.isConnected||episode.dataset.project!==state.project?.id)return;
   fillVoiceLine(episode.querySelector('.episode-voice'));
   if(directMontage())return;
@@ -459,8 +475,12 @@ async function startMaking(button){
   const first=(Number(button.closest('.episode-make')?.dataset.floor) || 0)+1,many=count-first+1;
   button.disabled=true;
   try{
-    await api(`/api/projects/${encodeURIComponent(id)}/production-request`,'POST',{frames:count});
+    const result=await api(`/api/projects/${encodeURIComponent(id)}/production-request`,'POST',{frames:count});
     delete makeCount[id];
+    if(button.closest('#editor-production')){
+      if(state.project?.id===id){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
+      return;
+    }
     showProjectList();status(`Агент почав створювати ${many} ${planFrameWord(many)}${first>1?` (кадри ${first}–${count})`:''}. Хід видно на картці випуску.`);
   }catch(error){button.disabled=false;status(error.message,true);}
 }
@@ -468,8 +488,8 @@ async function startMaking(button){
 // The director's report belongs to the voice stage, the agent's to «Створення ролика».
 function fillReports(episode){
   const directorSlot=episode?.querySelector('.episode-director-report'),agentSlot=episode?.querySelector('.episode-make-report');
-  if(!directorSlot||!agentSlot)return;
-  directorSlot.replaceChildren();agentSlot.replaceChildren();
+  if(!agentSlot)return;
+  directorSlot?.replaceChildren();agentSlot.replaceChildren();
   const id=state.project.id,request=state.project.production_request;
   const add=(slot,title,text,cost)=>{const fold=episodeFold(title);const body=document.createElement('div');body.className='plan-script-text';body.textContent=text;fold.append(body);
     if(cost){const line=document.createElement('p');line.className='plan-note episode-fold-cost';line.textContent=cost.text;line.title=cost.title;fold.append(line);}
@@ -484,8 +504,9 @@ function fillReports(episode){
 async function resumeFrames(id,button){
   button.disabled=true;
   try{
-    await api(`/api/projects/${encodeURIComponent(id)}/production-resume`,'POST',{});
+    const result=await api(`/api/projects/${encodeURIComponent(id)}/production-resume`,'POST',{});
     if(state.project?.id!==id)return;
+    if(button.closest('#editor-production')){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();return;}
     showProjectList();status('Агент продовжує створювати кадри. Хід видно на картці випуску.');
   }catch(error){button.disabled=false;status(error.message,true);}
 }
@@ -520,7 +541,7 @@ async function loadDrawn(id){
   const before=[...(drawnFrames[id] || [])].join();drawnFrames[id]=new Set(numbers);
   if(state.project?.id!==id || before===numbers.join())return;
   if(state.view==='plan')refreshEpisode();
-  if(state.view==='editor'&&typeof renderTimeline==='function')renderTimeline();
+  if(state.view==='editor'){renderMontageMake();if(typeof renderTimeline==='function')renderTimeline();}
 }
 
 async function pollDirector(id){
@@ -529,6 +550,9 @@ async function pollDirector(id){
   if(state.project?.id!==id)return;
   // The frames arrive with the finished run: reload the plan so the new frames show at once.
   if(before!==run.status && run.status==='done' && state.view==='plan'){await setProjectView('plan');return;}
+  if(before!==run.status && run.status==='done' && state.view==='editor'){
+    try{const result=await api(`/api/projects/${encodeURIComponent(id)}/plan`);if(state.project?.id!==id)return;state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;renderMontageMake();}catch{}
+  }
   refreshEpisode();
 }
 
@@ -567,7 +591,11 @@ function renderTeam(info,kind,id,live){
 async function pollProduction(id){
   if(state.project?.id!==id)return;
   try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
-    // «Монтаж» shows no request: the poll ends there and starts again with the plan page, the author's edits untouched
+    // Refresh the creation controls in the montage without replacing the author's current timeline or selection.
+    if(state.view==='editor'&&projectAnimated()&&!directMontage()){
+      state.project={...state.project,production_request:project.production_request,production:project.production};
+      loadDrawn(id);renderMontageMake();return;
+    }
     if(state.view!=='plan')return;
     const before=state.project.production_request?.status;
     state.project=project;

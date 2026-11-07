@@ -269,7 +269,29 @@ button.danger:hover:not(:disabled){background:#523034}
 .workspace.animation-workspace{grid-template-columns:minmax(180px,22%) minmax(260px,1fr)}
 .workspace.animation-workspace .inspector-panel{display:none}
 .workspace.animation-workspace.fitted-preview .preview-surface{width:min(calc(100% - 24px),var(--preview-frame-width));margin-inline:auto}
+.workspace.creation-workspace{grid-template-columns:minmax(360px,44%) minmax(260px,1fr)}
+.workspace.creation-workspace .library-panel{display:none}
+.animation-production{min-width:0;min-height:0;overflow:auto;padding:16px;background:#111112}
+.animation-production .episode-make{padding:0;border:0;border-radius:0;box-shadow:none;background:none}
+.animation-production .episode-make-head h2{font-size:16px}
+.animation-production .frame-strip-row{flex-wrap:wrap;gap:8px}
+.animation-production .frame-strip-scroll{flex-basis:100%;min-width:0}
+.animation-production .frame-strip-zoom{margin-left:auto}
+.animation-production .episode-make-actions{align-items:center;gap:9px}
+.animation-production .episode-make-hint{flex-basis:100%;min-width:0}
+.animation-production .episode-make-start{flex:1;min-width:0;width:auto}
+.animation-production .frame-strip-row,.animation-production .frame-strip-legend,.animation-production .frame-plan-read{display:none}
+.animation-production .project-plan-heading{margin:0 0 16px}
+.animation-production .project-plan-heading h1{font-size:18px}
+.animation-production .episode{gap:16px}
+.animation-production .voice-start{width:100%;margin:0;padding:0;border:0;box-shadow:none;background:none}
+.animation-production .voice-start h1{font-size:18px}
+.animation-production .episode-make{margin-top:0}
+.animation-production .episode-make-readout{display:none}
+.animation-production .episode-voice{flex-wrap:wrap}
+.animation-production .episode-voice-toggle{margin-left:auto}
 @media(max-width:760px){.workspace.animation-workspace{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:900px){.workspace.creation-workspace{grid-template-columns:minmax(0,1fr)}.animation-production{max-height:360px}}
 .panel,.timeline-panel{background:#181819;border:1px solid #303034;border-radius:14px;min-width:0;overflow:hidden}
 .panel{display:flex;flex-direction:column}
 .panel-title,.library-tabs,.transition-shelf,.search,.transport{flex-shrink:0}
