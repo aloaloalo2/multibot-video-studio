@@ -1,10 +1,11 @@
-"""Opt-in original-voice playground for one trial channel. No automatic paid work."""
+"""Saved original-voice settings for Studio channels. No automatic paid work."""
 from __future__ import annotations
 import hashlib
 import json
 import math
 from pathlib import Path
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -28,8 +29,6 @@ ACTIVE = set()
 
 def folder(cid):
     store.get_channel_folder(cid)
-    if cid != TRIAL_CHANNEL:
-        raise store.StudioError('Тест голосу поки доступний лише для каналу Валентина Чичваркіна', 404)
     target = store.DATA_ROOT / 'channels' / cid / 'voice-lab'
     target.mkdir(parents=True, exist_ok=True)
     return target
@@ -153,6 +152,30 @@ def save(cid, settings):
     return snapshot(cid)
 
 
+def copy_profile(source_cid, target_cid):
+    """Explicitly reuse a voice and its existing cloud identity in another channel. No API calls."""
+    source, target = folder(source_cid), folder(target_cid)
+    with LOCK:
+        if source_cid in ACTIVE or target_cid in ACTIVE:
+            raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        if (target / 'reference.mp3').exists():
+            raise store.StudioError('У каналі вже є голос', 409)
+        ref = reference(source_cid)
+        if not ref: raise store.StudioError('У вихідному каналі немає прикладу голосу')
+        for name in ['settings.json', 'reference.mp3', 'reference.json']:
+            shutil.copy2(source / name, target / name)
+        meta = store.read_json(target / 'reference.json', {})
+        meta['clone_owner'] = meta.get('clone_owner') or source_cid
+        store.atomic_json(target / 'reference.json', meta)
+        for name in ['prepared', 'samples']:
+            if (source / name).is_dir(): shutil.copytree(source / name, target / name, dirs_exist_ok=True)
+        for file in source.glob('fish-reference-*'):
+            if file.is_file(): shutil.copy2(file, target / file.name)
+        job = store.read_json(source / 'job.json', {})
+        if job.get('status') == 'done': store.atomic_json(target / 'job.json', {**job, 'cached': True})
+    return snapshot(target_cid)
+
+
 def upload(cid, stream, size, filename):
     root = folder(cid)
     if not 0 < size <= 200 * 1024 * 1024:
@@ -172,8 +195,15 @@ def upload(cid, stream, size, filename):
             duration = store.media_duration(converted) or 0
             if duration < 10: raise store.StudioError('Потрібно хоча б 10 секунд чистого голосу')
             digest = hashlib.sha256(converted.read_bytes()).hexdigest()
+            previous = store.read_json(root / 'reference.json', {})
             converted.replace(root / 'reference.mp3')
-            store.atomic_json(root / 'reference.json', {'filename': Path(filename).name[:200], 'duration': duration, 'sha256': digest})
+            metadata = {'filename': Path(filename).name[:200], 'duration': duration, 'sha256': digest}
+            if previous.get('sha256') == digest and previous.get('clone_owner'):
+                metadata['clone_owner'] = previous['clone_owner']
+            store.atomic_json(root / 'reference.json', metadata)
+        settings = validated(store.read_json(root / 'settings.json', {}))
+        if settings['noise_cleanup']:
+            prepared_source(cid, settings, reference(cid))
     return snapshot(cid)
 
 
@@ -202,7 +232,8 @@ def clone(cid, settings, ref):
                 'labels': json.dumps(meta['labels']), 'remove_background_noise': 'false'}, [('files', p, 'audio/mpeg') for p in files])
             result = languages.request(languages.ELEVEN + '/voices/add', body, {'xi-api-key': secret, 'Content-Type': mime}, 'ElevenLabs (клон голосу)')
         return json.loads(result).get('voice_id')
-    voice = eleven_voices.resolve(secret, cid, settings['language'], source.read_bytes(), None, create)
+    owner = store.read_json(root / 'reference.json', {}).get('clone_owner') or cid
+    voice = eleven_voices.resolve(secret, owner, settings['language'], source.read_bytes(), None, create)
     return secret, voice
 
 
@@ -300,7 +331,9 @@ def start(cid, raw, client_id):
             return snapshot(cid)
         # Save the reservation before either cloning or speech. Restart never replays a paid call.
         cost = estimate(settings)
-        job = {'status': 'running', 'stage': 'cleanup' if settings['noise_cleanup'] else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),
+        prepared = root / 'prepared' / (prepared_key(ref) + '.mp3')
+        needs_cleanup = settings['noise_cleanup'] and not (prepared.is_file() and store.read_json(prepared.with_suffix('.json'), {}).get('status') == 'done')
+        job = {'status': 'running', 'stage': 'cleanup' if needs_cleanup else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),
                'provider': settings['provider'], 'client_id': client_id, 'fingerprint': key, 'started_at': time.time(),
                'settings': settings.copy(),
                'estimate': cost, 'estimated_credits': cost['amount'] if cost['unit'] == 'credits' else None}

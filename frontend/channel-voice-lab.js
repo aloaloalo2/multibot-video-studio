@@ -1,4 +1,4 @@
-// Original voice trial. Upload is local; a paid request starts only from Listen.
+// Saved channel voice. Upload is local; synthesis starts only from the sample button.
 // Compare the parameters that actually reach the selected service.
 function voiceLabSampleKey(s){
   const fields=['provider','language','text','noise_cleanup',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p','chunk_length']:['model','delivery','stability','similarity_boost','direction'])];
@@ -13,9 +13,8 @@ function voiceLabSampleState(selected,data){
   return {cached:same&&!!data.cached_sample,matches:same&&!!data.sample_matches_settings};
 }
 async function bindChannelVoiceLab(channel){
-  if(channel.id!=='b012a0e49c3b1c18')return;
   const box=document.createElement('section');box.className='settings-section channel-voice-lab';
-  box.innerHTML='<h3>Голос <small>Тест</small></h3><p role="status">Завантажуємо налаштування…</p>';
+  box.innerHTML='<h3>Голос</h3><p role="status">Завантажуємо налаштування…</p>';
   document.querySelector('.logo-section').after(box);
   const base=`/api/channels/${channel.id}/voice-lab`;
   let data,signature='',timer;
@@ -58,7 +57,7 @@ async function bindChannelVoiceLab(channel){
       message(data.job.cached?'Зразок із кешу. Повторної оплати немає.':'Зразок готовий. Можна прослухати та змінити налаштування.');
     }else if(data.job?.status==='failed')message(data.job.error||'Не вдалося створити зразок',true);
     else if(data.job?.status==='running'){
-      const state=box.querySelector('.voice-lab-status');state.innerHTML=`${exportSpinner}<span>${data.job.stage==='cleanup'?'Очищуємо шум на комп’ютері':data.job.stage==='reference'?'Розпізнаємо приклад для Fish Audio':data.job.stage==='clone'?'Готуємо клон голосу':'Озвучуємо зразок'}…</span>`;
+      const state=box.querySelector('.voice-lab-status');state.innerHTML=`${exportSpinner}<span>${data.job.stage==='cleanup'?'Очищуємо шум на комп’ютері':data.job.stage==='reference'?'Розпізнаємо приклад для Fish Audio':data.job.stage==='clone'?'Підключаємо голос':'Озвучуємо зразок'}…</span>`;
     }else if(!matches&&data.job?.status==='done')message('Налаштування змінено. Створіть новий зразок, щоб почути результат.');
     estimate();
   };
@@ -70,7 +69,7 @@ async function bindChannelVoiceLab(channel){
   const draw=()=>{
     if(!current())return;
     const s=data.settings;
-    box.innerHTML=`<h3>Голос <small>Тест</small></h3><p>Власний голос зі звичайною розмовною подачею. Налаштуйте й прослухайте свій текст.</p>
+    box.innerHTML=`<h3>Голос</h3><p>Власний голос зі звичайною розмовною подачею. Налаштуйте й прослухайте свій текст.</p>
       <div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload">${data.reference?'Замінити запис':'Додати аудіо або відео'}<input type="file" accept="audio/*,video/*" hidden></label>${data.reference?`<button type="button" class="voice-lab-remove" aria-label="Прибрати приклад голосу">${trashIcon}</button>`:''}</div>
       <label class="voice-lab-cleanup"><input name="noise_cleanup" type="checkbox" ${s.noise_cleanup?'checked':''}>Очищати шум перед клонуванням <small>Локально · безкоштовно</small></label>
       <div class="voice-lab-prepared"></div>
@@ -94,12 +93,12 @@ async function bindChannelVoiceLab(channel){
     box.querySelector('.voice-lab-remove')?.addEventListener('click',async()=>{try{data=await api(base+'/reference/remove','POST',{});draw();}catch(error){message(error.message,true);}});
     box.querySelector('input[type=file]').addEventListener('change',async event=>{
       const file=event.target.files[0];if(!file)return;
-      const label=event.target.closest('label');label.classList.add('is-off');message('Завантажуємо запис і готуємо MP3…');
+      const label=event.target.closest('label');label.classList.add('is-off');message(read().noise_cleanup?'Завантажуємо запис і очищуємо шум на комп’ютері…':'Завантажуємо запис і готуємо MP3…');
       try{
         await api(base,'POST',{settings:read()});
         const response=await fetch(base+'/reference',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
         const result=await response.json();if(!response.ok)throw new Error(result.error||'Не вдалося завантажити запис');
-        data=result;draw();message('Запис збережено. Можна створити зразок у вибраному сервісі.');
+        data=result;draw();message('Запис підготовлено. Можна створити зразок у вибраному сервісі.');
       }catch(error){message(error.message,true);label.classList.remove('is-off');}
     });
     box.querySelector('.voice-lab-listen').addEventListener('click',async()=>{

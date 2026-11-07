@@ -25,8 +25,8 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
-    def test_voice_lab_http_settings_and_trial_scope(self):
-        with patch.object(app.channel_voice_lab, 'TRIAL_CHANNEL', store.channel_id(self.channel)):
+    def test_voice_lab_http_settings_for_existing_channels(self):
+        with patch.object(app.channel_voice_lab, 'ACTIVE', set()):
             base = '/api/channels/' + store.channel_id(self.channel) + '/voice-lab'
             status, result = self.request(base)
             self.assertEqual(status, 200)
@@ -42,7 +42,7 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(persisted['estimate'], {'unit': 'usd', 'amount': 0})
             status, _ = self.request(base + '/sample', 'POST', {'settings': settings, 'client_id': 'a' * 20})
             self.assertEqual(status, 400)  # no reference, no paid call
-        status, _ = self.request(base)
+        status, _ = self.request('/api/channels/' + '0' * 16 + '/voice-lab')
         self.assertEqual(status, 404)
 
     def test_completion_notice_clears_on_open_without_changing_project(self):

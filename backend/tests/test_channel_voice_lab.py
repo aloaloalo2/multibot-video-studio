@@ -28,8 +28,8 @@ class VoiceLabTests(unittest.TestCase):
     def reference(self):
         root=lab.folder(self.cid);(root/'reference.mp3').write_bytes(b'preserved reference')
         store.atomic_json(root/'reference.json',{'filename':'test.mp3','sha256':'same','duration':30})
-    def test_only_trial_channel_and_supported_settings(self):
-        with self.assertRaises(store.StudioError):lab.snapshot('0'*16)
+    def test_existing_channels_and_supported_settings(self):
+        self.assertIn('settings',lab.snapshot('0'*16))
         for change in [{'stability':float('nan')},{'similarity_boost':2},{'model':'fake'}, {'language':'xx'},
                        {'provider':'unknown'}, {'fish_engine':'unknown'}, {'temperature':-1}, {'top_p':True},
                        {'chunk_length':99},{'chunk_length':301},{'chunk_length':True},{'direction':'[text]'}, {'noise_cleanup':'yes'}]:
@@ -112,6 +112,31 @@ class VoiceLabTests(unittest.TestCase):
         self.reference();lab.remove(self.cid)
         self.assertIsNone(lab.reference(self.cid))
         self.assertTrue(list((lab.folder(self.cid)/'previous').glob('*reference.mp3')))
+
+    def test_copy_profile_reuses_cloud_owner_reference_and_cached_audio_without_remote_calls(self):
+        self.reference();lab.save(self.cid,lab.DEFAULTS)
+        root=lab.folder(self.cid);key=lab.fingerprint(lab.DEFAULTS,lab.reference(self.cid))
+        (root/'samples').mkdir();(root/'samples'/(key+'.mp3')).write_bytes(b'saved audio')
+        job={'status':'done','fingerprint':key};store.atomic_json(root/'samples'/(key+'.json'),job);store.atomic_json(root/'job.json',job)
+        with patch.object(lab.languages,'request') as request:
+            result=lab.copy_profile(self.cid,'0'*16)
+            self.assertTrue(result['cached_sample']);self.assertTrue(result['job']['cached']);request.assert_not_called()
+            self.assertEqual(store.read_json(lab.folder('0'*16)/'reference.json',{})['clone_owner'],self.cid)
+        with patch.object(lab.languages,'key',return_value='secret'),patch.object(lab.eleven_voices,'resolve',return_value='old-id') as resolve:
+            lab.clone('0'*16,lab.DEFAULTS,lab.reference('0'*16))
+            self.assertEqual(resolve.call_args.args[1],self.cid)
+        with self.assertRaises(store.StudioError):lab.copy_profile(self.cid,'0'*16)
+
+    def test_ready_preparation_is_not_labelled_as_noise_cleanup_again(self):
+        self.reference();ref=lab.reference(self.cid);root=lab.folder(self.cid)
+        path=root/'prepared'/(lab.prepared_key(ref)+'.mp3');path.parent.mkdir();path.write_bytes(b'ready')
+        store.atomic_json(path.with_suffix('.json'),{'status':'done'})
+        class PendingThread:
+            def __init__(self,**kwargs):pass
+            def start(self):pass
+        with patch.object(lab.threading,'Thread',PendingThread),patch.object(lab.languages.language_quality,'require'):
+            result=lab.start(self.cid,lab.DEFAULTS,'a'*20)
+            self.assertEqual(result['job']['stage'],'clone')
 
     def test_fish_routes_to_connected_service_and_keeps_separate_sample_cache(self):
         self.reference()

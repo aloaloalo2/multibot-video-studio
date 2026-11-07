@@ -1413,9 +1413,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|copy))?', path)
         if match and method == 'POST':
             cid, action = match.groups()
+            if action == 'copy':return self.json_response(channel_voice_lab.copy_profile(body.get('source_channel'), cid))
             if action == 'sample':
                 return self.json_response(channel_voice_lab.start(cid, body.get('settings'), body.get('client_id')), 202)
             if action == 'reference/remove':return self.json_response(channel_voice_lab.remove(cid))
