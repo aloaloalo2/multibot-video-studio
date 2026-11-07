@@ -61,12 +61,19 @@ def select_source(pid, mode):
 
 def recorded_speed(pid, job):
     if job.get('speed') is not None:return job['speed']
-    project=store.load_project(pid);settings=lab.snapshot(project['channel_id'])['settings']
-    ref=lab.effective_reference(project['channel_id'],settings)
+    project=store.load_project(pid);cid=project['channel_id']
+    candidates=[job.get('render_settings') or lab.snapshot(cid)['settings']]
+    # Legacy jobs predate stored rendering settings. Sample receipts retain the exact profile
+    # even when the user has since adjusted the channel sliders.
+    for path in (lab.folder(cid)/'samples').glob('*.json'):
+        saved=store.read_json(path,{}).get('settings')
+        if saved:candidates.append(lab.validated(saved))
     entries=store.read_json(root(pid)/'phrases.json',[])
-    if entries and ref:
-        for pct in range(90,111):
-            if lab.fingerprint({**settings,'text':entries[0]['text'],'speed':pct/100},ref)==entries[0]['key']:return pct/100
+    for settings in candidates:
+        ref=lab.effective_reference(cid,settings)
+        if entries and ref:
+            for pct in range(90,111):
+                if all(lab.fingerprint({**settings,'text':e['text'],'speed':pct/100},ref)==e['key'] for e in entries[:3]):return pct/100
     raise store.StudioError('Не вдалося визначити початковий темп готової озвучки')
 
 def change_speed(pid, speed):
@@ -134,7 +141,7 @@ def start(project,text,resume=False):
         if (root(pid)/'cancel').exists() and resume is not True:raise store.StudioError('Озвучення зупинено користувачем. Для нового запуску потрібне явне підтвердження resume=true.',409)
         if pid in ACTIVE or cid in lab.ACTIVE:raise store.StudioError('Голос уже використовується. Дочекайтеся завершення.',409)
         settings,ref,entries,quote=spec(project,text)
-        job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed']}
+        job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed'],'render_settings':settings.copy()}
         (root(pid)/'cancel').unlink(missing_ok=True)
         ACTIVE.add(pid);lab.ACTIVE.add(cid);store.atomic_json(root(pid)/'job.json',job)
     threading.Thread(target=run,args=(project,text,settings,ref,entries,job),daemon=True).start()
