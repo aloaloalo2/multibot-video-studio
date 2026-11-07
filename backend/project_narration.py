@@ -59,6 +59,13 @@ def select_source(pid, mode):
     return snapshot(pid)
 
 
+def completed_job_current(project, job):
+    if job.get('status')!='done':return True
+    if project.get('restarted_at',0)>job.get('started_at',0):return False
+    asset=next((a for a in project.get('assets',[]) if a['id']==job.get('asset_id')),None)
+    return bool(asset and asset.get('path') and Path(asset['path']).is_file())
+
+
 def recorded_speed(pid, job):
     if job.get('speed') is not None:return job['speed']
     project=store.load_project(pid);cid=project['channel_id']
@@ -84,6 +91,7 @@ def change_speed(pid, speed):
         if pid in ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE:raise store.StudioError('Дочекайтеся завершення поточної роботи проєкту',409)
         folder=root(pid);job=store.read_json(folder/'job.json',{})
         if job.get('status')!='done':raise store.StudioError('Спочатку завершіть озвучення')
+        if not completed_job_current(store.load_project(pid),job):raise store.StudioError('Цю озвучку вже прибрано з проєкту',409)
         current=recorded_speed(pid,job)
         if abs(current-speed)<.00001:return snapshot(pid)
         project=store.load_project(pid)
@@ -117,6 +125,7 @@ def snapshot(pid):
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     project=store.load_project(pid)
+    if not completed_job_current(project,job):job={}
     if job.get('status')=='done' and 'speed' not in job:
         try:job['speed']=recorded_speed(pid,job)
         except store.StudioError:pass

@@ -86,6 +86,9 @@ function narrationChoices(panel,ready,restore=true){
     if(running){buttons.forEach(button=>button.disabled=true);choices.setAttribute('aria-busy','true');}
   }).catch(error=>{if(choices.isConnected)status(error.message,true);});
 }
+function narrationResultVisible(job,project,justGenerated=false){
+  return job?.status==='done' && (project?.restarted_at||0)<=(job.started_at||0) && (justGenerated || (project?.assets||[]).some(asset=>asset.id===job.asset_id));
+}
 function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('div');ready.className='narration-ready';
   ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:'Готова озвучка',playLabel:'Прослухати озвучку'}));
@@ -127,7 +130,7 @@ function renderNarrationGeneration(panel){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
       if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
-      else if(job?.status==='done'){
+      else if(narrationResultVisible(job,state.project,busy)){
         busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         if(!box.querySelector('.narration-ready')){
           appendReadyNarration(box,pid,job,info,poll);
@@ -277,7 +280,7 @@ function renderPlanSwitch(panel){
   if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced'){
     const completed=document.createElement('section');completed.className='narration-completed';panel.append(completed);
     const info=document.createElement('p');info.className='muted';info.setAttribute('role','status');
-    const refresh=async()=>{try{const {job}=await api(`/api/projects/${id}/narration`);if(!completed.isConnected||state.project?.id!==id)return;if(job?.status==='done'){completed.replaceChildren(info);info.textContent='Готова озвучка';appendReadyNarration(completed,id,job,info,refresh);}}catch(error){info.textContent=error.message;}};
+    const refresh=async()=>{try{const {job}=await api(`/api/projects/${id}/narration`);if(!completed.isConnected||state.project?.id!==id)return;if(narrationResultVisible(job,state.project)){completed.replaceChildren(info);info.textContent='Готова озвучка';appendReadyNarration(completed,id,job,info,refresh);}}catch(error){info.textContent=error.message;}};
     refresh();
     const fold=document.createElement('details');fold.className='narration-change-fold';
     const summary=document.createElement('summary');summary.textContent='Змінити озвучку або сценарій';fold.append(summary);panel.append(fold);

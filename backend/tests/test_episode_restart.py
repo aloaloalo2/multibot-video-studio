@@ -60,6 +60,15 @@ class EpisodeRestartTest(unittest.TestCase):
         self.assertFalse((self.folder / "history").exists())
         self.assertIsNone(store.load_project_source(PID))
 
+    def test_restart_archives_narration_result_and_keeps_phrase_cache(self):
+        folder=self.folder/'narration';folder.mkdir()
+        (folder/'job.json').write_text(json.dumps({'status':'done','asset_id':'voice','started_at':1}))
+        (folder/'phrase.mp3').write_bytes(b'cached')
+        episode_restart.restart(PID)
+        self.assertFalse((folder/'job.json').exists())
+        self.assertEqual((folder/'phrase.mp3').read_bytes(),b'cached')
+        backup=next((self.folder/'restarts').iterdir())
+        self.assertEqual(json.loads((backup/'job.json').read_text())['asset_id'],'voice')
     def test_a_running_agent_is_stopped_and_writes_nothing_back(self):
         director.ACTIVE.add(PID)
         self.addCleanup(director.ACTIVE.discard, PID)

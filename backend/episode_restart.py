@@ -43,7 +43,9 @@ def restart(pid: str) -> dict:
     pointer = store.read_json(folder / "analysis-state.json", {}) or {}
     if pointer.get("job_id") in analysis_jobs.ACTIVE_JOBS:
         raise store.StudioError("Студія ще розпізнає озвучку. Зачекайте, доки вона закінчить, і почніть заново", 409)
-    import thumbnail_gen
+    import thumbnail_gen, project_narration
+    if pid in project_narration.ACTIVE:
+        raise store.StudioError("Спочатку зупиніть озвучення й дочекайтеся його завершення",409)
     if pid in thumbnail_gen.ACTIVE:
         raise store.StudioError("Студія ще малює прев'ю цього випуску. Зачекайте, доки воно буде готове, і почніть заново", 409)
     stop_runs(pid)
@@ -59,7 +61,7 @@ def restart(pid: str) -> dict:
             plan = store.project_plan_file(project)
         except store.StudioError:
             plan = None
-        files = [folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json",
+        files = [folder / "narration" / "job.json", folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json",
                  store.history_folder(pid), director.state_path(pid), folder / "director.log",
                  director.activity_path(pid, "director"), director.activity_path(pid, "production"),
                  *sorted(folder.glob("production-*.log"))]

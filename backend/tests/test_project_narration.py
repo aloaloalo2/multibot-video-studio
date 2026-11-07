@@ -37,6 +37,17 @@ class NarrationTests(unittest.TestCase):
                 self.assertFalse(paid.called)
                 for speed in [True,None,.89,1.11,float('nan')]:
                     with self.assertRaises(store.StudioError):narration.change_speed(project['id'],speed)
+    def test_removed_or_pre_restart_audio_cannot_return_or_change_speed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp);audio=folder/'voice.mp3';audio.write_bytes(b'audio')
+            project={'id':'0'*24,'channel_id':'1'*16,'restarted_at':20,'assets':[{'id':'voice','path':str(audio)}]}
+            job={'status':'done','asset_id':'voice','started_at':10,'speed':1.}
+            with patch.object(store,'project_dir',return_value=folder),patch.object(store,'load_project',return_value=project):
+                store.atomic_json(narration.root(project['id'])/'job.json',job)
+                self.assertEqual(narration.snapshot(project['id'])['job'],{})
+                with self.assertRaises(store.StudioError):narration.change_speed(project['id'],1.1)
+                project.pop('restarted_at');project['assets']=[]
+                self.assertEqual(narration.snapshot(project['id'])['job'],{})
     def test_invalid_text_rejected_before_paid_work(self):
         for text in [None,'',123,'x'*200001]:
             with self.assertRaises(store.StudioError):narration.phrases(text)
