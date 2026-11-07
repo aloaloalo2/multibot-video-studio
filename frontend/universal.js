@@ -180,7 +180,7 @@ function visualGaps(){
     const fps=Number(state.project.fps || 25),frame=time=>Math.floor(Number(time)*fps+.5+1e-8);
     const groups=sceneGroups().filter(group=>group.role!=='overlay');
     const sceneIds=groups.length?new Set(groups.flatMap(group=>group.clip_ids)):null;
-    const spans=universalClips().filter(clip=>clip.kind!=='audio'&&(!sceneIds||sceneIds.has(clip.id))).map(clip=>[frame(clip.start),frame(Number(clip.start)+Number(clip.duration))]).sort((a,b)=>a[0]-b[0]);
+    const spans=universalClips().filter(clip=>clip.kind!=='audio'&&(!sceneIds||sceneIds.has(clip.id))).map(clip=>[frame(clipRenderStart(clip)),frame(clipRenderEnd(clip))]).sort((a,b)=>a[0]-b[0]);
     // Export rounds the output length upward and holds the final composition
     // through a fractional audio sample (engine/render.py timeline_plan).
     const total=Math.ceil(Number(duration())*fps-1e-8),gaps=[];let covered=0;
