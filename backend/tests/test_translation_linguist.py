@@ -53,8 +53,42 @@ class LinguistTest(unittest.TestCase):
     def test_wrong_year_or_foreign_language_cannot_be_approved_by_supervisor(self):
         self.options['validate']=lambda text:not translation_budget.missing_source_years(self.options['source'],text,'es')
         with self.assertRaises(linguist.Unresolved):
-            self.run_decisions([{'id':3,'action':'replace','text':'En dos mil quince estudiaron ratones.','reason':'Fine'}])
+            self.run_decisions([{'id':3,'action':'replace','text':'En dos mil quince estudiaron ratones.','reason':'Fine'}]*2)
         self.assertEqual(self.ledger['3']['status'],'blocked')
+        with self.assertRaises(linguist.Unresolved):self.run_decisions([])
+        self.assertEqual(len(self.calls),2)
+
+    def test_local_guard_gives_one_precise_correction_then_reuses_the_saved_result(self):
+        self.options['validate']=lambda text:not translation_budget.missing_source_years(self.options['source'],text,'es')
+        self.options['validation_issue']=lambda text:'Preserve source year 2014.'
+        text=self.run_decisions([
+            {'id':3,'action':'replace','text':'En dos mil quince estudiaron ratones.','reason':'Fixed year.'},
+            {'id':3,'action':'replace','text':'En dos mil catorce estudiaron ratones.','reason':'Correct year.'}])
+        self.assertIn('dos mil catorce',text)
+        self.assertEqual(json.loads(self.calls[-1][1][1]['content'])['validation_error'],'Preserve source year 2014.')
+        self.assertEqual(self.run_decisions([]),text)
+        self.assertEqual(len(self.calls),2)
+
+    def test_unknown_guard_request_is_not_replayed(self):
+        self.options['validate']=lambda text:False
+        def request(model,messages,tokens):
+            if self.ledger.get('3',{}).get('guard_requested'):raise RuntimeError('Timeout')
+            return json.dumps({'id':3,'action':'replace','text':'Wrong.','reason':'Fixed.'})
+        with self.assertRaisesRegex(RuntimeError,'Timeout'):linguist.resolve(**self.options,request=request)
+        with self.assertRaises(linguist.Unresolved):self.run_decisions([])
+        self.assertEqual(self.calls,[])
+
+    def test_saved_locally_rejected_decision_gets_one_targeted_guard_correction(self):
+        self.options.update(language='ru',language_name='Russian',source='In spring of 2000, their son woke up.',
+            current='Весной две тысячи первого года сын просыпался.')
+        self.options['validate']=lambda text:not translation_budget.missing_source_years(self.options['source'],text,'ru')
+        self.ledger['3']={'fingerprint':recovery.fingerprint(['linguist-v1','ru',self.options['source'],self.options['current']]),
+            'status':'blocked','error':'Рішення лінгвіста не пройшло перевірку мови, чисел або точних років.',
+            'candidate':'Весной две тысячи второго года сын просыпался.',
+            'decision':{'id':3,'action':'replace','text':'Весной две тысячи второго года сын просыпался.','reason':'Fixed to 2000.'}}
+        text=self.run_decisions([{'id':3,'action':'replace','text':'Весной двухтысячного года сын просыпался.','reason':'Source says 2000.'}])
+        self.assertIn('двухтысячного',text)
+        self.assertEqual(len(self.calls),1)
 
     def test_number_restoration_does_not_guess_unknown_values_or_ambiguous_forms(self):
         self.assertEqual(linguist.restore_number_words('En 2015.','En dos mil catorce.','es'),'En 2015.')
@@ -71,6 +105,8 @@ class LinguistTest(unittest.TestCase):
             self.assertEqual(translation_budget.missing_source_years('In 2000.',text,'uk'),[])
         self.assertEqual(translation_budget.missing_source_years('In 2009.',"Двохтисячного дев’ятого року.",'uk'),[])
         self.assertEqual(translation_budget.missing_source_years('In 2000.','Весной две тысячи первого года.','ru'),['2000'])
+        self.assertEqual(translation_budget.missing_source_years('In 2000.','Весной две тысячи двухсотого года.','ru'),['2000'])
+        self.assertEqual(translation_budget.missing_source_years('In 2000.','Весной двухтысячного года.','ru'),[])
 
     def test_saved_linguist_decision_survives_a_studio_restart(self):
         with tempfile.TemporaryDirectory() as folder:

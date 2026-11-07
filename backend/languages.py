@@ -1216,7 +1216,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         values = list(values)
         audited = draft.data.setdefault('audited', {})
         for round_number in range(1):
-            pending = [i for i in (range(len(values)) if indexes is None else indexes) if audited.get(str(i)) != audit_key(i, values[i])]
+            pending = [i for i in (range(len(values)) if indexes is None else indexes)
+                if audited.get(str(i)) != audit_key(i, values[i]) or not valid_line(values[i])
+                or translation_budget.missing_source_years(source_units[i],values[i],code)]
             if not pending:
                 return values
             issues = {}
@@ -1374,13 +1376,19 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 return answer
             def validate(value):
                 return bool(value) and valid_line(value) and not translation_budget.missing_source_years(source_units[i],value,code)
+            def validation_issue(value):
+                missing=translation_budget.missing_source_years(source_units[i],value,code)
+                if missing:
+                    return 'The replacement has the wrong or missing source year(s): '+', '.join(missing)+'. Spell these exact years in natural target-language words. Do not substitute a different year.'
+                return 'The replacement contains foreign-language text, unspoken numerals/symbols, or is empty. Use complete native-language narration with every number in words.'
             try:
                 candidate[i]=translation_linguist.resolve(index=i,language=code,language_name=ENGLISH[code],
                     source=source_units[i],current=candidate[i],issue=unresolved[i],
                     context={'before':source_units[i-1][-500:] if i else '',
                              'after':source_units[i+1][:500] if i+1<len(source_units) else ''},
                     ledger=ledger,save=lambda:draft.save(linguist=ledger),request=request,validate=validate,
-                    linguist_model=TRANSLATION_REPAIR_MODEL,translation_model=DEFAULT_TRANSLATION_MODEL)
+                    linguist_model=TRANSLATION_REPAIR_MODEL,translation_model=DEFAULT_TRANSLATION_MODEL,
+                    validation_issue=validation_issue)
                 draft.data.setdefault('audited',{})[str(i)]=audit_key(i,candidate[i])
                 del unresolved[i]
                 draft.save(lines=candidate,audited=draft.data['audited'],semantic_issues={str(k):v for k,v in unresolved.items()})

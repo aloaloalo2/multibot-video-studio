@@ -43,8 +43,13 @@ def digit_value(text, language):
 
 
 def slavic_spans(text, language):
-    """Polish cardinal/declined numbers and Ukrainian compound ordinal years."""
-    if language == 'uk':
+    """Polish cardinal/declined numbers and Slavic compound ordinal years."""
+    if language == 'ru':
+        cardinal,scales=number_text.CARDINAL,number_text.SCALE
+        roots={**number_text.RU_ROOTS,'двухсот':200,'трехсот':300,'четырехсот':400,
+            'пятисот':500,'шестисот':600,'семисот':700,'восьмисот':800,'девятисот':900}
+        endings=('ый','ий','ой','ого','ому','ым','им','ом','ем','ая','яя','ую','юю','ое','ее')
+    elif language == 'uk':
         cardinal, scales = number_text.CARDINAL, number_text.SCALE
         roots = {'перш': 1, 'друг': 2, 'трет': 3, 'четверт': 4, "п'ят": 5, 'шост': 6,
                  'сьом': 7, 'восьм': 8, "дев'ят": 9, 'десят': 10, 'одинадцят': 11,
@@ -95,7 +100,8 @@ def slavic_spans(text, language):
                 separator=text[tokens[i-1].end():tokens[i].start()]
                 if not separator.isspace() or '\n' in separator:break
             value=cardinal.get(word); ordinal=ordinals.get(word); scale=scales.get(word)
-            compound_year=language=='uk' and bool(re.fullmatch(r'дво(?:х)?тисячн(?:ий|ого|ому|им|ім|а|ої|ій|ою|е)',word))
+            compound_year=bool((language=='uk' and re.fullmatch(r'дво(?:х)?тисячн(?:ий|ого|ому|им|ім|а|ої|ій|ою|е)',word))
+                or (language=='ru' and re.fullmatch(r'двухтысячн(?:ый|ого|ому|ым|ом|ая|ой|ую|ое)',word)))
             if value is None and ordinal is not None:value=ordinal
             if compound_year and i==start:
                 total=2000;group=0;last=None;has_ordinal=True
@@ -163,7 +169,7 @@ def normalized(text: str, language: str):
         for a,b,value in number_text.replacements(text,language):
             match=re.fullmatch(r'(\d+(?:[.,]\d+)?(?:/\d+)?)(?:st|nd|rd|th|-[^\W\d_]+|\.)?',value)
             if match:spans.append((a,b,digit_value(match[1],language)))
-        if language=='uk':spans+=slavic_spans(text,language)
+        if language in {'uk','ru'}:spans+=slavic_spans(text,language)
         if language=='en':
             try:spans += [s for s in latin_spans(text,language) if '-' in text[s[0]:s[1]]]
             except ImportError:pass
