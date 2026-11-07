@@ -1420,9 +1420,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
-        narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start)', path)
+        narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source)', path)
         if narration and method == 'POST':
             pid, mode = narration.groups(); project = store.load_project(pid)
+            if mode == 'source':return self.json_response(project_narration.select_source(pid, body.get('source')))
             if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
             return self.json_response(project_narration.start(project, body.get('text')), 202)
 

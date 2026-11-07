@@ -33,14 +33,35 @@ def spec(project, text):
         params={**settings,'text':part}
         key=lab.fingerprint(params,ref)
         entries.append({'text':part,'key':key,'cached':(root(project['id'])/(key+'.mp3')).is_file()})
-    count=sum(len(x['text']) for x in entries if not x['cached'])
-    return settings,ref,entries,{'total':len(entries),'cached':sum(x['cached'] for x in entries),'characters':count,'provider':settings['provider'],'estimated_credits':round(count*.26) if settings['provider']=='elevenlabs' else None}
+    missing={x['key']:x for x in entries if not x['cached']}.values()
+    count=sum(len(x['text']) for x in missing)
+    amount=sum(lab.estimate({**settings,'text':x['text']})['amount'] for x in missing)
+    credits=amount if settings['provider']=='elevenlabs' else None
+    usd=amount if credits is None else None
+    if credits is not None:
+        rate=store.read_json(store.DATA_ROOT/'eleven-credit-usd.json',{}).get('credit_usd_rate')
+        if not rate:rate=lab.eleven_api.balance().get('credit_usd_rate')
+        if rate:usd=credits*rate*1.20
+        if credits==0:usd=0
+    return settings,ref,entries,{'total':len(entries),'cached':sum(x['cached'] for x in entries),'characters':count,'provider':settings['provider'],'estimated_credits':credits,'estimated_usd':round(usd,6) if usd is not None else None,'tax_included':credits is not None}
+
+def select_source(pid, mode):
+    if mode not in {'script','file'}:raise store.StudioError('Виберіть script або file')
+    with LOCK,store.LOCK:
+        if pid in ACTIVE:raise store.StudioError('Дочекайтеся завершення озвучення',409)
+        project=store.load_project(pid);project['narration_source']=mode;project['revision']+=1;store.save_project(project)
+    return snapshot(pid)
+
 
 def snapshot(pid):
     job=store.read_json(root(pid)/'job.json',{})
     if job.get('status')=='running' and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
-    return {'job':job}
+    project=store.load_project(pid)
+    return {'job':job,'source':project.get('narration_source'),
+            'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start'},
+                       {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':f'/api/projects/{pid}/plan/analyze'}],
+            'source_endpoint':f'/api/projects/{pid}/narration/source'}
 
 def start(project,text):
     pid=project['id'];cid=project['channel_id']

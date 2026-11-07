@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """One entry point for agents working with VideoKey Studio: short answers, few calls, no clicking.
 
+Original narration source selection and synthesis: docs/original-narration-api.md.
+Read GET /api/projects/<id>/narration for available choices before choosing script or file.
+
     python3 tools/studio.py status                          # what runs now (exports, recognition, director, …)
     python3 tools/studio.py projects [words]                # projects whose channel, folder or name hold all the words
     python3 tools/studio.py summary P [--frames 10-20] [--issues] [--json]

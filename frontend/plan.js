@@ -67,7 +67,8 @@ function narrationChoices(panel,ready){
   const choices=document.createElement('div');choices.className='narration-choices';
   choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
   const buttons=choices.querySelectorAll('button');
-  function choose(index){
+  async function choose(index){
+    try{await api(`/api/projects/${state.project.id}/narration/source`,'POST',{source:index===1?'file':'script'});}catch(error){status(error.message,true);return;}
     choices.classList.add('has-selection');
     buttons.forEach((button,i)=>{button.classList.toggle('selected',i===index);button.setAttribute('aria-pressed',String(i===index));});
     ready(index===1);
@@ -91,7 +92,12 @@ function renderNarrationGeneration(panel){
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');
   text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
-  text.oninput=()=>{voiceScriptDraft[pid]=text.value;};
+  const estimate=document.createElement('small');estimate.className='narration-cost';button.after(estimate);
+  let quoteTimer=null,quoteVersion=0;
+  const priceLabel=q=>{const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
+  async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
+  text.oninput=()=>{voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
+  updateQuote();
   let busy=false;
   async function poll(){
     if(!box.isConnected || state.project?.id!==pid)return;
@@ -104,7 +110,7 @@ function renderNarrationGeneration(panel){
   button.onclick=async()=>{if(busy)return;button.disabled=true;try{
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
-    const cost=quote.estimated_credits===null?`${quote.characters} символів через Fish Audio`:`≈ ${quote.estimated_credits.toLocaleString('uk-UA')} кредитів ElevenLabs`;
+    const cost=priceLabel(quote);estimate.textContent=cost;
     if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
     await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value});busy=true;await poll();
   }catch(error){info.textContent=error.message;button.disabled=false;}};
