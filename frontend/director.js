@@ -603,9 +603,9 @@ function renderMakeStatus(button,id,request,done,total){
     const text=`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
     const age=Math.max(0,Date.now()/1000-(Number(step?.t)||run));
     const idle=age>=120?`Без нових дій ${Math.floor(age/60)} хв`:'';
-    const count=request.repair_frames?.length?`${request.repair_frames.length===1?'Кадр':'Кадри'} ${request.repair_frames.join(', ')}`:`${done} з ${total}`;
+    const count=request.repair_frames?.length?(request.repair_frames.length>3?`${request.repair_frames.length} кадрів`:`${request.repair_frames.length===1?'Кадр':'Кадри'} ${request.repair_frames.join(', ')}`):`${done} з ${total}`;
     button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span>${idle?`<span class="episode-make-idle">${idle}</span>`:''}<span class="episode-make-count">${esc(count)}</span>`;
-    button.setAttribute('aria-live','polite');button.title=text+(idle?` · ${idle}. Час завершення ще невідомий.`:'');
+    button.setAttribute('aria-live','polite');button.title=text+(idle?` · ${idle}. Час завершення ще невідомий.`:'')+(request.repair_frames?.length?` · Кадри: ${request.repair_frames.join(', ')}`:'');
   };
   draw();
   api(`/api/projects/${encodeURIComponent(id)}/activity/production`).then(({activity})=>{
