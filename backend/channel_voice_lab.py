@@ -13,6 +13,7 @@ import store
 import languages
 import eleven_api
 import eleven_voices
+import voice_reference_drafts as reference_drafts
 
 TRIAL_CHANNEL = 'b012a0e49c3b1c18'
 MODELS = {'eleven_v4_turbo': 'Eleven v4 Turbo', 'eleven_v4': 'Eleven v4'}
@@ -64,6 +65,7 @@ def reference(cid):
     if not file.is_file(): return None
     meta = store.read_json(root / 'reference.json', {})
     return {'filename': meta.get('filename', 'Приклад голосу.mp3'), 'duration': meta.get('duration', 0),
+            'approved': bool(meta.get('approved')), 'cleanup_applied': bool(meta.get('cleanup_applied')),
             'stamp': file.stat().st_mtime_ns, 'sha256': meta.get('sha256') or hashlib.sha256(file.read_bytes()).hexdigest()}
 
 
@@ -92,7 +94,7 @@ def prepared_key(ref):
 def prepared_source(cid, settings, ref):
     """Fast local denoise of a bounded clone reference. The complete original stays untouched."""
     root = folder(cid)
-    if not settings['noise_cleanup']: return root / 'reference.mp3'
+    if ref.get('approved') or not settings['noise_cleanup']: return root / 'reference.mp3'
     target = root / 'prepared' / (prepared_key(ref) + '.mp3')
     receipt = store.read_json(target.with_suffix('.json'), {})
     if target.is_file() and receipt.get('status') == 'done': return target
@@ -177,33 +179,25 @@ def copy_profile(source_cid, target_cid):
 
 
 def upload(cid, stream, size, filename):
-    root = folder(cid)
-    if not 0 < size <= 200 * 1024 * 1024:
-        raise store.StudioError('Запис порожній або перевищує 200 МБ', 413)
     with LOCK:
         if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
-        with tempfile.TemporaryDirectory(dir=root) as tmp:
-            raw, converted = Path(tmp) / 'source', Path(tmp) / 'reference.mp3'
-            with raw.open('wb') as out:
-                left = size
-                while left:
-                    chunk = stream.read(min(left, 1024 * 1024))
-                    if not chunk: raise store.StudioError('Файл завантажився не повністю')
-                    out.write(chunk);left -= len(chunk)
-            languages.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(raw), '-vn', '-af', languages.EXAMPLE_FILTER,
-                           '-ac', '1', '-b:a', '128k', str(converted)], 'підготувати приклад голосу')
-            duration = store.media_duration(converted) or 0
-            if duration < 10: raise store.StudioError('Потрібно хоча б 10 секунд чистого голосу')
-            digest = hashlib.sha256(converted.read_bytes()).hexdigest()
-            previous = store.read_json(root / 'reference.json', {})
-            converted.replace(root / 'reference.mp3')
-            metadata = {'filename': Path(filename).name[:200], 'duration': duration, 'sha256': digest}
-            if previous.get('sha256') == digest and previous.get('clone_owner'):
-                metadata['clone_owner'] = previous['clone_owner']
-            store.atomic_json(root / 'reference.json', metadata)
-        settings = validated(store.read_json(root / 'settings.json', {}))
-        if settings['noise_cleanup']:
-            prepared_source(cid, settings, reference(cid))
+        return {'draft': reference_drafts.upload(folder(cid), stream, size, filename)}
+
+
+def preview_reference(cid, token):
+    with LOCK:
+        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        return {'draft': reference_drafts.clean(folder(cid), token)}
+
+
+def accept_reference(cid, token, cleaned):
+    with LOCK:
+        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        root = folder(cid)
+        reference_drafts.accept(root, token, cleaned)
+        settings = validated(store.read_json(root/'settings.json', {}))
+        settings['noise_cleanup'] = False  # the approved file is final; never process it again
+        store.atomic_json(root/'settings.json', settings)
     return snapshot(cid)
 
 
@@ -227,7 +221,7 @@ def clone(cid, settings, ref):
     def create(ordinal):
         meta = languages.eleven_voice_metadata({'channel_id': cid}, settings['language'], ordinal)
         with tempfile.TemporaryDirectory(dir=root) as tmp:
-            files = eleven_voices.clone_files(source, Path(tmp))
+            files = (reference_drafts.transport(source, Path(tmp)) if ref.get('approved') else eleven_voices.clone_files(source, Path(tmp)))
             body, mime = languages.multipart({'name': meta['name'][:90], 'description': meta['description'],
                 'labels': json.dumps(meta['labels']), 'remove_background_noise': 'false'}, [('files', p, 'audio/mpeg') for p in files])
             result = languages.request(languages.ELEVEN + '/voices/add', body, {'xi-api-key': secret, 'Content-Type': mime}, 'ElevenLabs (клон голосу)')

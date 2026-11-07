@@ -3,6 +3,8 @@ import tempfile
 import unittest
 import subprocess
 import wave
+import io
+import shutil
 import numpy as np
 from pathlib import Path
 from unittest.mock import patch
@@ -137,6 +139,46 @@ class VoiceLabTests(unittest.TestCase):
         with patch.object(lab.threading,'Thread',PendingThread),patch.object(lab.languages.language_quality,'require'):
             result=lab.start(self.cid,lab.DEFAULTS,'a'*20)
             self.assertEqual(result['job']['stage'],'clone')
+
+    def draft_recording(self):
+        stream=io.BytesIO()
+        with wave.open(stream,'wb') as out:
+            out.setnchannels(1);out.setsampwidth(2);out.setframerate(16000)
+            t=np.arange(16000*11)/16000
+            out.writeframes((np.sin(2*np.pi*220*t)*3000).astype('<i2').tobytes())
+        return stream.getvalue()
+
+    def test_draft_is_local_until_approval_and_only_selected_audio_is_attached(self):
+        self.reference();lab.save(self.cid,lab.DEFAULTS)
+        before=(lab.folder(self.cid)/'reference.mp3').read_bytes();raw=self.draft_recording()
+        with patch.object(lab.languages,'request',side_effect=AssertionError('No remote API during audition')):
+            draft=lab.upload(self.cid,io.BytesIO(raw),len(raw),'new.wav')['draft']
+            self.assertEqual((lab.folder(self.cid)/'reference.mp3').read_bytes(),before)
+            with self.assertRaises(store.StudioError):lab.accept_reference(self.cid,draft['id'],True)
+            with patch.object(lab.reference_drafts.voice_cleanup,'enhance',side_effect=lambda a,b:shutil.copy2(a,b)):
+                lab.preview_reference(self.cid,draft['id'])
+            self.assertEqual((lab.folder(self.cid)/'reference.mp3').read_bytes(),before)
+            selected=lab.reference_drafts.audio_file(lab.folder(self.cid),draft['id'],True).read_bytes()
+            result=lab.accept_reference(self.cid,draft['id'],True)
+            self.assertEqual((lab.folder(self.cid)/'reference.mp3').read_bytes(),selected)
+            self.assertTrue(result['reference']['approved']);self.assertTrue(result['reference']['cleanup_applied'])
+            self.assertFalse(result['settings']['noise_cleanup'])
+            with self.assertRaises(store.StudioError):lab.accept_reference(self.cid,draft['id'],False)
+
+    def test_cancelled_draft_does_not_change_current_voice_and_cannot_escape_storage(self):
+        self.reference();raw=self.draft_recording();root=lab.folder(self.cid)
+        draft=lab.upload(self.cid,io.BytesIO(raw),len(raw),'new.wav')['draft']
+        lab.reference_drafts.discard(root,draft['id'])
+        self.assertEqual((root/'reference.mp3').read_bytes(),b'preserved reference')
+        with self.assertRaises(store.StudioError):lab.reference_drafts.folder(root,'../reference')
+
+    def test_approved_reference_is_never_denoised_again(self):
+        self.reference();meta=store.read_json(lab.folder(self.cid)/'reference.json',{});meta['approved']=True
+        store.atomic_json(lab.folder(self.cid)/'reference.json',meta)
+        self.patches[-1].stop()
+        with patch.object(lab.languages,'run') as run:
+            path=lab.prepared_source(self.cid,lab.DEFAULTS,lab.reference(self.cid))
+            self.assertEqual(path,lab.folder(self.cid)/'reference.mp3');run.assert_not_called()
 
     def test_fish_routes_to_connected_service_and_keeps_separate_sample_cache(self):
         self.reference()

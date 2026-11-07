@@ -22,7 +22,7 @@ HINTS = {"stock_video": "реальне відео зі стоків: люди, 
          "generated_photo": "картинка, яку згенерують саме під цю репліку, коли стоку не знайти",
          "generated_video": "відео, яке згенерують під репліку",
          "razgon_2d": "процес чи механізм у русі, намальований кодом",
-         "animation": "анімована схема чи інфографіка",
+         "animation": "вільна кодова анімація: схеми, діаграми, рухомі фігури, підписи й асети; окремий формат від Razgon",
          "text": "коротка важлива теза текстом на весь кадр",
          "host": "кадр із ведучим"}
 
@@ -86,6 +86,7 @@ def sentences(pid: str) -> dict:
                           for number, (text, timing) in enumerate(zip(texts, timings), 1)],
             "duration": float(plan["timing"]["audio"]["duration"]), "shares": targets,
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
+            "generated_image_style": settings.get("generated_image_style", ""),
             "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,
             "opening": {"format": first, "count": count} if first else None,
             "host_rules": {"first_frame": True, "last_frame": True, "no_consecutive": True, "even_distribution": True}

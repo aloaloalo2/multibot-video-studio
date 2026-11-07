@@ -1095,9 +1095,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft))?', path)
         if match:
             cid, kind = match.groups()
+            if kind == 'draft':
+                return self.serve_media(channel_voice_lab.reference_drafts.audio_file(channel_voice_lab.folder(cid), (query.get('id') or [None])[0], (query.get('clean') or ['0'])[0] == '1'))
             if kind:
                 return self.serve_media(channel_voice_lab.audio_file(cid, kind, (query.get('key') or [None])[0]))
             return self.json_response(channel_voice_lab.snapshot(cid))
@@ -1413,9 +1415,15 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|copy))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy))?', path)
         if match and method == 'POST':
             cid, action = match.groups()
+            if action == 'reference/discard':
+                with channel_voice_lab.LOCK:
+                    channel_voice_lab.reference_drafts.discard(channel_voice_lab.folder(cid), body.get('draft_id'))
+                return self.json_response({'discarded': True})
+            if action == 'reference/preview':return self.json_response(channel_voice_lab.preview_reference(cid, body.get('draft_id')))
+            if action == 'reference/accept':return self.json_response(channel_voice_lab.accept_reference(cid, body.get('draft_id'), body.get('cleaned')))
             if action == 'copy':return self.json_response(channel_voice_lab.copy_profile(body.get('source_channel'), cid))
             if action == 'sample':
                 return self.json_response(channel_voice_lab.start(cid, body.get('settings'), body.get('client_id')), 202)

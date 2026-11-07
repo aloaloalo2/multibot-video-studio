@@ -21,7 +21,7 @@ async function bindChannelVoiceLab(channel){
   const current=()=>box.isConnected;
   const settingsKey=value=>JSON.stringify(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)));
   const read=()=>({provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
-    noise_cleanup:box.querySelector('[name=noise_cleanup]').checked,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
+    noise_cleanup:data.settings.noise_cleanup,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
   const clearSample=()=>voiceLabClearSample(box.querySelector('.voice-lab-result'));
@@ -66,12 +66,42 @@ async function bindChannelVoiceLab(channel){
     try{const wasRunning=data.job?.status==='running';data=await api(base);if(!current())return;sample();if(data.job?.status==='running')timer=setTimeout(poll,1600);else if(wasRunning&&data.job?.status==='done')playSample();}
     catch(error){message(error.message,true);}
   };
+  const audition=async draft=>{
+    const dialog=document.createElement('dialog');dialog.className='voice-reference-dialog';
+    dialog.innerHTML=`<h3>Підготувати запис</h3><p>${esc(draft.filename)}</p><div class="reference-preview-player"></div><label class="reference-clean-choice"><input type="checkbox">Очистити шум</label><p class="reference-preview-status">Прослухайте запис. За бажанням увімкніть очищення.</p><div class="reference-preview-actions"><button type="button" class="secondary reference-preview-cancel">Скасувати</button><button type="button" class="secondary reference-preview-accept">Використовувати аудіо</button></div>`;
+    document.body.append(dialog);dialog.showModal();
+    const output=dialog.querySelector('.reference-preview-player'),choice=dialog.querySelector('input'),accept=dialog.querySelector('.reference-preview-accept'),note=dialog.querySelector('.reference-preview-status');
+    let cleanPromise=null,accepted=false;
+    const switchPreview=clean=>{
+      const before=output.querySelector('audio'),at=before?.currentTime||0,playing=before&&!before.paused;
+      voiceLabClearSample(output);
+      output.append(voicePlayer(null,`${base}/draft?id=${draft.id}&clean=${clean?1:0}`,{filename:clean?'Очищена версія':'Початковий запис',playLabel:'Прослухати вибрану версію'}));
+      const audio=output.querySelector('audio');audio.addEventListener('loadedmetadata',()=>{audio.currentTime=Math.min(at,audio.duration||at);if(playing)audio.play().catch(()=>{});},{once:true});
+    };
+    switchPreview(false);
+    choice.addEventListener('change',async()=>{
+      if(!choice.checked){switchPreview(false);accept.disabled=false;note.textContent='Початковий запис. Гучність не підсилюється.';return;}
+      accept.disabled=true;note.textContent='Очищуємо шум локально…';
+      try{
+        cleanPromise ||= api(base+'/reference/preview','POST',{draft_id:draft.id});
+        await cleanPromise;if(!dialog.open||!choice.checked)return;
+        switchPreview(true);accept.disabled=false;note.textContent='Порівняйте результат. Зніміть галочку, щоб повернути початковий запис.';
+      }catch(error){cleanPromise=null;choice.checked=false;accept.disabled=false;note.textContent=error.message;switchPreview(false);}
+    });
+    dialog.querySelector('.reference-preview-cancel').addEventListener('click',()=>dialog.close());
+    dialog.addEventListener('close',()=>{voiceLabClearSample(output);dialog.remove();if(!accepted){message('Новий запис не прикріплено.');api(base+'/reference/discard','POST',{draft_id:draft.id}).catch(()=>{});}});
+    accept.addEventListener('click',async()=>{
+      accept.disabled=true;
+      try{data=await api(base+'/reference/accept','POST',{draft_id:draft.id,cleaned:choice.checked});accepted=true;dialog.close();draw();message('Вибрану версію прикріплено. Саме вона використовуватиметься для голосу.');}
+      catch(error){note.textContent=error.message;accept.disabled=false;}
+    });
+  };
   const draw=()=>{
     if(!current())return;
     const s=data.settings;
     box.innerHTML=`<h3>Голос</h3><p>Власний голос зі звичайною розмовною подачею. Налаштуйте й прослухайте свій текст.</p>
-      <div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload">${data.reference?'Замінити запис':'Додати аудіо або відео'}<input type="file" accept="audio/*,video/*" hidden></label>${data.reference?`<button type="button" class="voice-lab-remove" aria-label="Прибрати приклад голосу">${trashIcon}</button>`:''}</div>
-      <label class="voice-lab-cleanup"><input name="noise_cleanup" type="checkbox" ${s.noise_cleanup?'checked':''}>Очищати шум перед клонуванням <small>Локально · безкоштовно</small></label>
+      <div class="voice-lab-reference"><span class="voice-lab-reference-player"></span>${data.reference?`<button type="button" class="secondary voice-lab-replace">Замінити запис</button>`:''}<label class="secondary voice-lab-upload" ${data.reference?'hidden':''}>Додати аудіо або відео<input type="file" accept="audio/*,video/*" hidden></label>${data.reference?`<button type="button" class="voice-lab-remove" aria-label="Прибрати приклад голосу">${trashIcon}</button>`:''}</div>
+<small class="voice-lab-preparation-status" ${data.reference?'':'hidden'}>${data.reference?.cleanup_applied?'Вибрано очищену версію':'Запис прикріплено'}</small>
       <div class="voice-lab-prepared"></div>
       <div class="settings-three-column"><label>Сервіс<select name="provider"><option value="elevenlabs" ${s.provider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="fishaudio" ${s.provider==='fishaudio'?'selected':''}>Fish Audio</option></select></label><label>Мова голосу<select name="language">${data.languages.map(l=>`<option value="${l.code}" ${l.code===s.language?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Модель<select name="model">${data.models.map(m=>`<option value="${m.id}" ${m.id===s.model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
@@ -88,17 +118,18 @@ async function bindChannelVoiceLab(channel){
 
     signature=settingsKey(read());
     box.saveVoiceSettings=async()=>{data=await api(base,'POST',{settings:read()});return data;};
-    box.querySelectorAll('select,input:not([type=file]),textarea').forEach(input=>input.addEventListener('input',()=>{clearSample();if(input.name==='noise_cleanup'){const output=box.querySelector('.voice-lab-prepared');voiceLabClearSample(output);delete output.dataset.key;preparedPlayer();}message('Налаштування змінено. Створіть зразок із цими параметрами.');estimate();}));
+    box.querySelectorAll('select,input:not([type=file]),textarea').forEach(input=>input.addEventListener('input',()=>{clearSample();message('Налаштування змінено. Створіть зразок із цими параметрами.');estimate();}));
     box.querySelector('.voice-lab-save').addEventListener('click',async()=>{try{data=await api(base,'POST',{settings:read()});draw();message('Налаштування голосу збережено.');}catch(error){message(error.message,true);}});
+    box.querySelector('.voice-lab-replace')?.addEventListener('click',()=>{box.querySelector('.voice-lab-upload').hidden=false;box.querySelector('.voice-lab-preparation-status').hidden=true;box.querySelector('.voice-lab-replace').hidden=true;});
     box.querySelector('.voice-lab-remove')?.addEventListener('click',async()=>{try{data=await api(base+'/reference/remove','POST',{});draw();}catch(error){message(error.message,true);}});
     box.querySelector('input[type=file]').addEventListener('change',async event=>{
       const file=event.target.files[0];if(!file)return;
-      const label=event.target.closest('label');label.classList.add('is-off');message(read().noise_cleanup?'Завантажуємо запис і очищуємо шум на комп’ютері…':'Завантажуємо запис і готуємо MP3…');
+      const label=event.target.closest('label');label.classList.add('is-off');message('Завантажуємо запис для попереднього прослуховування…');
       try{
         await api(base,'POST',{settings:read()});
         const response=await fetch(base+'/reference',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
         const result=await response.json();if(!response.ok)throw new Error(result.error||'Не вдалося завантажити запис');
-        data=result;draw();message('Запис підготовлено. Можна створити зразок у вибраному сервісі.');
+        label.classList.remove('is-off');await audition(result.draft);event.target.value='';
       }catch(error){message(error.message,true);label.classList.remove('is-off');}
     });
     box.querySelector('.voice-lab-listen').addEventListener('click',async()=>{

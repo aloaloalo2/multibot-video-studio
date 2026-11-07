@@ -13,7 +13,7 @@ SETTING_DEFAULTS = {
     "short_sentence_words": 5, "max_sentences_per_scene": 4,
     "words_per_minute": 145, "first_clip_seconds": 0,
     "first_clip_format": "auto", "first_clip_count": 1,
-    "motion_easing": "ease_in_out",
+    "motion_easing": "ease_in_out", "generated_image_style": "",
 }
 
 
@@ -32,7 +32,7 @@ LABELS = {
     "stock_video": "Стокове відео",
     "generated_photo": "Створені зображення",
     "stock_photo": "Стокове фото",
-    "animation": "Анімація / схема",
+    "animation": "Кодова анімація",
     "razgon_2d": "2D-анімація Razgon",
     "text": "Текстова сцена",
     "host": "Ведучий",
