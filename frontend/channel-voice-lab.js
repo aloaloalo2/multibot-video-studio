@@ -1,7 +1,7 @@
 // Saved channel voice. Upload is local; synthesis starts only from the sample button.
 // Compare the parameters that actually reach the selected service.
 function voiceLabSampleKey(s){
-  const fields=['provider','language','text','noise_cleanup',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p','chunk_length','speed']:['model','delivery','stability','similarity_boost','direction'])];
+  const fields=['provider','language','text','noise_cleanup',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p','chunk_length','speed']:['model','delivery','stability','similarity_boost','direction','speed'])];
   return JSON.stringify(fields.map(k=>[k,k==='speed'?(s[k]??1):s[k]]));
 }
 function voiceLabClearSample(output){
@@ -35,7 +35,8 @@ async function bindChannelVoiceLab(channel){
     const fishRate=data.fish_models.find(m=>m.id===settings.fish_engine)?.rate||0;
     const sameOriginal=voiceLabSampleKey({...settings,speed:1})===voiceLabSampleKey({...data.settings,speed:1});
     const usd=data.cached_fish_original&&sameOriginal?0:new TextEncoder().encode(settings.text).length*fishRate;
-    const price=fish?(usd?`≈ $${usd.toFixed(4)}`:'безкоштовно'):`≈ ${Math.ceil(count*rate).toLocaleString('uk-UA')} кредитів`;
+    const freeOriginal=data.cached_original&&voiceLabSampleKey({...settings,speed:1})===voiceLabSampleKey({...data.settings,speed:1});
+    const price=freeOriginal?'безкоштовно':fish?(usd?`≈ $${usd.toFixed(4)}`:'безкоштовно'):`≈ ${Math.ceil(count*rate).toLocaleString('uk-UA')} кредитів`;
     box.querySelectorAll('[data-provider]').forEach(el=>{el.hidden=el.dataset.provider!==settings.provider;});
     box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
     box.querySelector('.voice-lab-listen').disabled=!data.reference||data.job?.status==='running';
@@ -108,8 +109,8 @@ async function bindChannelVoiceLab(channel){
       <label data-provider="elevenlabs">Модель<select name="model">${data.models.map(m=>`<option value="${m.id}" ${m.id===s.model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
-      <div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
-      <div class="voice-lab-sliders" data-provider="fishaudio"><label>Швидкість · у студії<span><input name="speed" type="range" min="90" max="110" step="1" value="${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}"><output>${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}%</output></span></label>${[['temperature','Виразність'],['top_p','Варіативність']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
+      <div class="voice-lab-sliders"><label>Швидкість · у студії<span><input name="speed" type="range" min="90" max="110" step="1" value="${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}"><output>${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}%</output></span></label></div><div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
+      <div class="voice-lab-sliders" data-provider="fishaudio">${[['temperature','Виразність'],['top_p','Варіативність']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
       <label class="voice-lab-direction" data-provider="elevenlabs">Побажання до подачі<input name="direction" type="text" maxlength="160" value="${esc(s.direction)}" placeholder="Спокійно, тепло, без дикторської подачі"><small>Необов’язково. Якщо заповнено, застосовується замість вибраної подачі.</small></label>
       <label class="voice-lab-text">Текст зразка<textarea rows="3" maxlength="2000">${esc(s.text)}</textarea></label>
       <div class="voice-lab-actions"><button type="button" class="secondary voice-lab-listen"></button><button type="button" class="secondary voice-lab-save">Зберегти голос</button></div>

@@ -14,7 +14,7 @@ class NarrationTests(unittest.TestCase):
             path=Path(tmp);settings=lab.validated({'text':'Some sample text.'})
             profile={'settings':settings,'reference':{'sha256':'voice'}}
             project={'id':'0'*24,'channel_id':'1'*16}
-            with patch.object(store,'project_dir',return_value=path),patch.object(lab,'snapshot',return_value=profile),patch.object(lab.eleven_api,'balance',return_value={'credit_usd_rate':.00022}):
+            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'snapshot',return_value=profile),patch.object(lab.eleven_api,'balance',return_value={'credit_usd_rate':.00022}):
                 _,_,entries,_=narration.spec(project,'First sentence. Second sentence.')
                 for entry in entries:(narration.root(project['id'])/(entry['key']+'.mp3')).write_bytes(b'cached')
                 _,_,updated,quote=narration.spec(project,'First sentence. Changed sentence.')
@@ -31,7 +31,7 @@ class NarrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);project={'id':'0'*24,'channel_id':'1'*16};settings=lab.validated({})
             entries=[{'key':'a','text':'First.'},{'key':'b','text':'Second.'}]
-            with patch.object(store,'project_dir',return_value=path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=[b'audio',RuntimeError('provider failed')]) as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
+            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=[b'audio',RuntimeError('provider failed')]) as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
                 narration.run(project,'First. Second.',settings,{'sha256':'ref'},[{**e,'cached':False} for e in entries],{'status':'running'})
                 self.assertEqual(synth.call_count,2)
                 self.assertTrue((path/'narration'/'a.mp3').is_file())

@@ -36,7 +36,7 @@ def spec(project, text):
     for part in parts:
         params={**settings,'text':part}
         key=lab.fingerprint(params,ref)
-        entries.append({'text':part,'key':key,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':settings['provider']=='fishaudio' and lab.fish_raw_path(params,ref).is_file()})
+        entries.append({'text':part,'key':key,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':lab.original_path(params,ref).is_file() or (settings['provider']=='elevenlabs' and (root(project['id'])/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')).is_file())})
     missing={x['key']:x for x in entries if not x['cached'] and not x['raw_cached']}.values()
     count=sum(len(x['text']) for x in missing)
     amount=sum(lab.estimate({**settings,'text':x['text']})['amount'] for x in missing)
@@ -106,9 +106,14 @@ def run(project,text,settings,ref,entries,job):
             target=folder/(entry['key']+'.mp3')
             if not target.is_file():
                 params={**settings,'text':entry['text']}
-                raw_cached=fish and lab.fish_raw_path(params,ref).is_file()
-                audio=lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.synthesis(secret,voice,params)
-                cost={'unit':'usd','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
+                raw_cached=lab.original_path(params,ref).is_file()
+                if not fish and not raw_cached:
+                    previous=folder/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')
+                    if previous.is_file():
+                        import shutil
+                        source=lab.original_path(params,ref);source.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,source);raw_cached=True
+                audio=lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
+                cost={'unit':'usd' if fish else 'credits','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
                 receipt={'identity':identity,'provider':settings['provider'],'amount':cost['amount'],'estimated':True,'phrase_key':entry['key'],'created_at':time.time()}
                 receipts=folder/'receipts';receipts.mkdir(exist_ok=True)
                 store.atomic_json(receipts/(identity+'.json'),receipt)

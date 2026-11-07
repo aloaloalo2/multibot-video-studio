@@ -47,6 +47,16 @@ class VoiceLabTests(unittest.TestCase):
             signal=np.frombuffer(raw,dtype='<f4');freq=np.fft.rfftfreq(len(signal),1/24000)[np.argmax(abs(np.fft.rfft(signal)))]
             self.assertAlmostEqual(freq,440,delta=4)
 
+    def test_eleven_speed_uses_one_standard_original(self):
+        settings=lab.validated({'speed':.9});ref={'sha256':'reference'}
+        with patch.object(lab,'synthesis',return_value=b'original') as synth,patch.object(store,'media_duration',return_value=2),patch.object(lab,'paced_audio',side_effect=lambda path,speed:path.read_bytes()) as pace:
+            lab.eleven_local_synthesis('secret','voice',settings,ref)
+            lab.eleven_local_synthesis('secret','voice',{**settings,'speed':1.1},ref)
+            synth.assert_called_once()
+            self.assertEqual(synth.call_args.args[2]['speed'],1.)
+            self.assertEqual([call.args[1] for call in pace.call_args_list],[.9,1.1])
+        self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.1},ref))
+
     def test_fish_speed_validation_and_cache(self):
         for speed in [True, float('nan'), .89, 1.11, '1']:
             with self.assertRaises(store.StudioError):lab.validated({'speed':speed})

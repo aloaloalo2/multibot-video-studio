@@ -51,7 +51,7 @@ def validated(raw):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
     speed=data['speed']
     if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9 <= speed <= 1.1:
-        raise store.StudioError('Швидкість Fish має бути від 90% до 110%')
+        raise store.StudioError('Швидкість має бути від 90% до 110%')
     for key in ['stability', 'similarity_boost', 'temperature', 'top_p']:
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
@@ -79,6 +79,7 @@ def fingerprint(settings, ref):
         # Retain existing ElevenLabs samples when adding a second provider.
         effective = {k: settings[k] for k in ['language', 'model', 'delivery', 'stability', 'similarity_boost', 'text']}
         if settings['direction']: effective['direction'] = settings['direction']
+        if settings.get('speed',1.) != 1.:effective['speed']=settings['speed']
         return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 1}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     fields = ['provider', 'language', 'text', 'fish_engine', 'temperature', 'top_p']
     effective = {k: settings[k] for k in fields}
@@ -143,6 +144,7 @@ def snapshot(cid):
     receipt = store.read_json(root / 'samples' / (current + '.json'), {}) if current else {}
     prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and settings['noise_cleanup'] else None
     return {'settings': settings, 'reference': ref, 'job': job,
+            'cached_original': bool(ref and (original_path(settings,ref).is_file() or (settings['provider']=='elevenlabs' and (root/'samples'/(fingerprint({**settings,'speed':1.},ref)+'.mp3')).is_file()))),
             'cached_fish_original': bool(ref and settings['provider']=='fishaudio' and fish_raw_path(settings,ref).is_file()),
             'sample_matches_settings': bool(current and job.get('fingerprint') == current),
             'cached_sample': bool(current and receipt.get('status') == 'done' and (root / 'samples' / (current + '.mp3')).is_file()),
@@ -266,6 +268,29 @@ def fish_reference(cid, settings, ref):
     return {'audio': target.read_bytes(), 'text': meta['text']}
 
 
+def original_path(settings, ref):
+    provider='fish' if settings['provider']=='fishaudio' else 'eleven'
+    return store.DATA_ROOT/(provider+'-originals')/(fingerprint({**settings,'speed':1.},ref)+'.mp3')
+
+
+def paced_audio(source, speed):
+    if speed==1.:return source.read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        output=Path(tmp)/'paced.mp3'
+        languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(source),'-af',f'atempo={speed:.6f}','-b:a','128k',str(output)],'змінити темп без зміни тону')
+        return output.read_bytes()
+
+
+def eleven_local_synthesis(secret, voice, settings, ref):
+    source=original_path(settings,ref);source.parent.mkdir(parents=True,exist_ok=True)
+    if not source.is_file():
+        audio=synthesis(secret,voice,{**settings,'speed':1.})
+        pending=source.with_suffix('.pending.mp3');pending.write_bytes(audio)
+        if not (store.media_duration(pending) or 0)>0:raise RuntimeError('ElevenLabs повернув неповний звук')
+        pending.replace(source)
+    return paced_audio(source,settings.get('speed',1.))
+
+
 def fish_raw_path(settings, ref):
     key=fingerprint({**settings,'speed':1.},ref)
     return store.DATA_ROOT/'fish-originals'/(key+'.mp3')
@@ -306,7 +331,7 @@ def run(cid, settings, ref, job):
             secret, voice = clone(cid, settings, ref)
         with LOCK:
             job['stage'] = 'speech';store.atomic_json(root / 'job.json', job)
-        audio = fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else synthesis(secret, voice, settings)
+        audio = fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else eleven_local_synthesis(secret, voice, settings,ref)
         target = root / 'samples' / (job['fingerprint'] + '.mp3')
         target.parent.mkdir(exist_ok=True)
         temporary = target.with_suffix('.pending.mp3');temporary.write_bytes(audio)
@@ -333,6 +358,11 @@ def start(cid, raw, client_id):
         ref = reference(cid)
         if not ref: raise store.StudioError('Додайте приклад голосу')
         key = fingerprint(settings, ref)
+        original=original_path(settings,ref)
+        # Existing 100% samples are already valid originals. Preserve their paid generation.
+        previous=root/'samples'/(fingerprint({**settings,'speed':1.},ref)+'.mp3')
+        if settings['provider']=='elevenlabs' and previous.is_file() and not original.is_file():
+            original.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,original)
         if cid in ACTIVE:
             if old.get('fingerprint') != key:
                 raise store.StudioError('Ще створюється зразок із попередніми налаштуваннями. Дочекайтеся його завершення й створіть новий.', 409)
@@ -349,7 +379,7 @@ def start(cid, raw, client_id):
             store.atomic_json(root / 'job.json', {**cached, 'client_id': client_id, 'cached': True})
             return snapshot(cid)
         # Save the reservation before either cloning or speech. Restart never replays a paid call.
-        cost = {'unit':'usd','amount':0} if settings['provider']=='fishaudio' and fish_raw_path(settings,ref).is_file() else estimate(settings)
+        cost = {'unit':'usd' if settings['provider']=='fishaudio' else 'credits','amount':0} if original_path(settings,ref).is_file() else estimate(settings)
         prepared = root / 'prepared' / (prepared_key(ref) + '.mp3')
         needs_cleanup = settings['noise_cleanup'] and not (prepared.is_file() and store.read_json(prepared.with_suffix('.json'), {}).get('status') == 'done')
         job = {'status': 'running', 'stage': 'cleanup' if needs_cleanup else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),
