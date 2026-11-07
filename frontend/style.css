@@ -2062,8 +2062,8 @@ select option{background:#232327;color:#f1f1f2}
 .creation-workspace .animation-production .narration-choice-art{transform:scale(.8);height:85px}
 @media(max-width:900px){.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(0,1fr)}}
 
-.timeline-zoom{display:inline-flex;align-items:center;flex:none;gap:0;padding:0;overflow:hidden;border:1px solid #ffffff0d;border-radius:9px;background:#222328}
-.timeline-toolbar .timeline-zoom button{position:relative;display:grid;place-items:center;height:27px;border:0;border-radius:7px;background:transparent;color:#aeb1ba;transition:background .15s,color .15s}
+.timeline-zoom{display:inline-flex;align-items:center;flex:none;gap:0;margin:2px 3px;padding:0;overflow:hidden;border:1px solid #ffffff0d;border-radius:9px;background:#222328}
+.timeline-toolbar .timeline-zoom button{position:relative;display:grid;place-items:center;height:25px;border:0;border-radius:7px;background:transparent;color:#aeb1ba;transition:background .15s,color .15s}
 .timeline-toolbar .timeline-zoom #zoom-out,.timeline-toolbar .timeline-zoom #zoom-in{width:29px;padding:5px}
 .timeline-zoom svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .timeline-toolbar .timeline-zoom #zoom-value{min-width:48px;padding:4px 7px;font-size:10px;font-weight:500;font-variant-numeric:tabular-nums}
