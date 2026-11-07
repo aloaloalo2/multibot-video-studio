@@ -5,6 +5,8 @@ import re
 import planner
 import threading
 import time
+import uuid
+import project_costs
 from pathlib import Path
 import store
 import languages
@@ -12,6 +14,8 @@ import channel_voice_lab as lab
 
 LOCK = threading.Lock()
 ACTIVE = set()
+
+class Cancelled(Exception):pass
 
 def root(pid):
     path = store.project_dir(pid) / 'narration';path.mkdir(exist_ok=True)
@@ -57,18 +61,31 @@ def snapshot(pid):
     job=store.read_json(root(pid)/'job.json',{})
     if job.get('status')=='running' and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
+    if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     project=store.load_project(pid)
     return {'job':job,'source':project.get('narration_source'),
             'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start'},
                        {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':f'/api/projects/{pid}/plan/analyze'}],
             'source_endpoint':f'/api/projects/{pid}/narration/source'}
 
-def start(project,text):
+def cancel(pid):
+    store.load_project(pid)
+    with LOCK:
+        (root(pid)/'cancel').touch()
+        job=store.read_json(root(pid)/'job.json',{})
+        job['status']='cancelling' if pid in ACTIVE else 'cancelled'
+        store.atomic_json(root(pid)/'job.json',job)
+    return snapshot(pid)
+
+
+def start(project,text,resume=False):
     pid=project['id'];cid=project['channel_id']
     with LOCK,lab.LOCK:
+        if (root(pid)/'cancel').exists() and resume is not True:raise store.StudioError('Озвучення зупинено користувачем. Для нового запуску потрібне явне підтвердження resume=true.',409)
         if pid in ACTIVE or cid in lab.ACTIVE:raise store.StudioError('Голос уже використовується. Дочекайтеся завершення.',409)
         settings,ref,entries,quote=spec(project,text)
         job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text}
+        (root(pid)/'cancel').unlink(missing_ok=True)
         ACTIVE.add(pid);lab.ACTIVE.add(cid);store.atomic_json(root(pid)/'job.json',job)
     threading.Thread(target=run,args=(project,text,settings,ref,entries,job),daemon=True).start()
     return {'job':job}
@@ -76,6 +93,8 @@ def start(project,text):
 def run(project,text,settings,ref,entries,job):
     pid=project['id'];cid=project['channel_id'];folder=root(pid)
     try:
+        job['cost_receipts_version']=1
+        store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
         fish=settings['provider']=='fishaudio'
         if missing:
@@ -83,20 +102,28 @@ def run(project,text,settings,ref,entries,job):
             if fish:secret=languages.key('fishaudio');voice=lab.fish_reference(cid,settings,ref)
             else:secret,voice=lab.clone(cid,settings,ref)
         for i,entry in enumerate(entries):
+            if (folder/'cancel').exists():raise Cancelled()
             target=folder/(entry['key']+'.mp3')
             if not target.is_file():
                 params={**settings,'text':entry['text']}
                 audio=lab.fish_synthesis(secret,voice,params) if fish else lab.synthesis(secret,voice,params)
+                cost=lab.estimate(params);identity='narration-'+uuid.uuid4().hex
+                receipt={'identity':identity,'provider':settings['provider'],'amount':cost['amount'],'estimated':True,'phrase_key':entry['key'],'created_at':time.time()}
+                receipts=folder/'receipts';receipts.mkdir(exist_ok=True)
+                store.atomic_json(receipts/(identity+'.json'),receipt)
+                project_costs.record_at(store.project_dir(pid),settings['provider'],cost['amount'],identity=identity,category='narration',estimated=True)
                 pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
                 if not (store.media_duration(pending) or 0)>0:raise store.StudioError('Сервіс повернув порожню фразу')
                 pending.replace(target)
             job['completed']=i+1;store.atomic_json(folder/'job.json',job)
+        if (folder/'cancel').exists():raise Cancelled()
         listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
         target=folder/'Озвучка.mp3'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
         asset=store.import_asset_file(store.load_project(pid),target,'narration')
         store.atomic_json(folder/'phrases.json',entries)
         job.update(status='done',asset_id=asset['id'],finished_at=time.time())
+    except Cancelled:job.update(status='cancelled',finished_at=time.time())
     except Exception as error:job.update(status='failed',error=str(error))
     finally:
         store.atomic_json(folder/'job.json',job)

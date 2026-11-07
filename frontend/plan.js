@@ -108,13 +108,16 @@ function renderNarrationGeneration(panel){
   async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
   text.oninput=()=>{voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
+  const stop=document.createElement('button');stop.type='button';stop.className='secondary narration-stop';stop.textContent='Зупинити озвучення';stop.hidden=true;button.after(stop);
+  stop.onclick=async()=>{stop.disabled=true;try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});info.textContent='Зупиняємо. Поточний запит може завершитися, нові не запускатимуться.';}catch(error){info.textContent=error.message;stop.disabled=false;}};
   let busy=false;
   async function poll(){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
-      if(job?.status==='running'){if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
+      if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
       else if(job?.status==='done'&&busy){info.textContent='Озвучка готова. Розпізнаємо й додаємо до плану…';await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:text.value});await selectProject(pid,{view:'plan'});}
-      else if(job?.status==='failed'){busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
+      else if(job?.status==='cancelled'){busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
+      else if(job?.status==='failed'){stop.hidden=true;busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
     }catch(error){info.textContent=error.message;button.disabled=false;}
   }
   button.onclick=async()=>{if(busy)return;button.disabled=true;try{
@@ -122,7 +125,7 @@ function renderNarrationGeneration(panel){
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
     if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
-    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value});busy=true;await poll();
+    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});busy=true;await poll();
   }catch(error){info.textContent=error.message;button.disabled=false;}};
   poll();return box;
 }

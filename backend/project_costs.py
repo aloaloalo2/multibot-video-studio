@@ -104,6 +104,19 @@ def collect(root: Path, data: dict) -> dict:
                 put(key, "claude_code", row.get("cost_usd"), estimated=not row.get("cost_measured"))
                 events[f"claude_code:{key}"]["modified"] = stamp
 
+    for path in (root/'narration/receipts').glob('*.json'):
+        row=read(path)
+        if isinstance(row,dict) and row.get('provider') in {'elevenlabs','fishaudio'}:
+            put(row['identity'],row['provider'],row.get('amount'),category='narration',estimated=True)
+    # Recover completed runs predating per-request receipts without charging cache hits twice.
+    narration=store.read_json(root/'narration/job.json',{}) or {}
+    if narration.get('status')=='done' and not narration.get('cost_receipts_version'):
+        provider=narration.get('provider')
+        if provider in {'elevenlabs','fishaudio'}:
+            amount=narration.get('estimated_credits' if provider=='elevenlabs' else 'estimated_usd')
+            if narration.get('characters')==0:amount=0
+            put('legacy-narration:'+str(narration.get('started_at')),provider,amount,category='narration',estimated=True)
+
     roots = list((root / "languages").glob("*/parts/requests.json"))
     roots += list((root / "languages").glob("*/voice-history/*/parts/requests.json"))
     roots += list((root / "languages").glob("*/sample-parts/*/requests.json"))
@@ -130,7 +143,7 @@ def collect(root: Path, data: dict) -> dict:
 
 def totals(data: dict, credit_rate=None) -> dict:
     result = {name: {"amount": 0., "unknown": 0, "estimated": False, "requests": 0}
-              for name in ("openrouter", "claude_code", "elevenlabs")}
+              for name in ("openrouter", "claude_code", "elevenlabs", "fishaudio")}
     language_usd = 0.
     for event in data.get("events", {}).values():
         if event.get("provider") not in result:

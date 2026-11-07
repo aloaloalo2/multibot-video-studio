@@ -1970,3 +1970,5 @@ select option{background:#232327;color:#f1f1f2}
 
 .narration-change-fold{margin:8px 0 16px;color:#989ca6;font-size:12px}.narration-change-fold>summary{cursor:pointer;width:fit-content;padding:6px 0}.narration-change-fold>summary:hover{color:#d5d8df}.episode-director.working,.episode-director-state.working{background:#1d1e23;border-color:#363840}.episode-director-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.episode-director-line strong{display:flex;align-items:center;gap:8px}
 .episode-director.working .episode-director-line strong::before{display:none;content:none}.episode-director .episode-director-line{align-items:flex-start;margin:0}.episode-director .episode-director-line strong{justify-content:flex-start}
+
+.narration-stop{margin-left:8px}.narration-stop[hidden]{display:none!important}

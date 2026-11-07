@@ -22,6 +22,19 @@ class ProjectCostsTest(unittest.TestCase):
     def collect(self,data=None):
         return project_costs.collect(self.root,data or {})
 
+    def test_original_voice_receipts_and_legacy_recovery_are_idempotent(self):
+        self.save('narration/receipts/fish.json',{'identity':'fish-1','provider':'fishaudio','amount':.12})
+        self.save('narration/receipts/eleven.json',{'identity':'eleven-1','provider':'elevenlabs','amount':100})
+        self.save('narration/job.json',{'status':'done','cost_receipts_version':1,'provider':'elevenlabs','estimated_credits':100,'started_at':1})
+        data=self.collect();data=self.collect(data)
+        totals=project_costs.totals(data,.0002)['providers']
+        self.assertEqual(totals['fishaudio']['requests'],1)
+        self.assertEqual(totals['fishaudio']['usd'],.12)
+        self.assertEqual(totals['elevenlabs']['amount'],100)
+        self.assertAlmostEqual(totals['elevenlabs']['usd'],.024)
+        self.save('narration/job.json',{'status':'done','provider':'elevenlabs','estimated_credits':20,'started_at':2})
+        self.assertEqual(project_costs.totals(self.collect(data),.0002)['providers']['elevenlabs']['amount'],120)
+
     def test_usage_deduplication_and_claude_reports_are_separate(self):
         receipt={'request_id':'or1','usage':{'cost':.02}}
         self.save('languages/es/translation-attempts/a/1.json',receipt)
