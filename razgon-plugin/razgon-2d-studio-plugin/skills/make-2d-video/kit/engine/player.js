@@ -14,6 +14,17 @@ const errors = (window.ERRORS = []);
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
 async function loadFonts() {
+  // Bundled, glyph-verified families work offline in all Studio languages.
+  try {
+    const families = await (await fetch('/engine/fonts/manifest.json')).json();
+    for (const family of families.filter(f => Object.values(FONTS).includes(f.name))) {
+      for (const face of family.faces) {
+        const font = new FontFace(family.name, `url(/engine/fonts/${face.file})`, {weight:'100 900',unicodeRange:face.range});
+        await font.load();document.fonts.add(font);
+      }
+    }
+  } catch(error) { console.warn('Studio font load failed',error); }
+
   const F = [['Fredoka', '600', 'fredoka/files/fredoka-latin-600-normal.woff2'], ['Fredoka', '700', 'fredoka/files/fredoka-latin-700-normal.woff2'],
     ['Nunito', '800', 'nunito/files/nunito-latin-800-normal.woff2'], ['Nunito', '900', 'nunito/files/nunito-latin-900-normal.woff2'],
     ['Playfair Display', '900', 'playfair-display/files/playfair-display-latin-900-italic.woff2', 'italic'],

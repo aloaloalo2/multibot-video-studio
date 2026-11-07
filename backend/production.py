@@ -20,6 +20,7 @@ from pathlib import Path
 
 import director
 import frame_progress
+import channel_branding
 import logo_layer
 import production_context
 import razgon_sound
@@ -140,6 +141,9 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 («{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). Великі документи самої
 студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: це зайві токени, а все потрібне для кадрів є тут і в навиках. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, де випуск.
 
+Зона логотипа, яку треба залишити вільною від тексту й важливих об’єктів: {channel_branding.reserved_zone(project)}.
+Якщо зона задана, розташовуй заголовки, підписи, стрілки й ключові об’єкти поза нею у всіх кадрах, включно з Razgon.
+На перевірці початку, середини й кінця кадру враховуй накладений логотип. Якщо він перекриває зміст, змісти зміст; логотип не пересувай.
 {remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
@@ -291,6 +295,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Правила студії, які легко порушити: кожен кадр стоїть у свій час плану (place робить це сам); озвучку й плашку каналу не чіпай;
 у кадрі одна головна картинка чи відео; стокове відео не коротше за кадр (place перевіряє); експорт запускає тільки автор.
 
+Зона логотипа, яку треба залишити вільною від тексту й важливих об’єктів: {channel_branding.reserved_zone(project)}.
+Якщо зона задана, розташовуй заголовки, підписи, стрілки й ключові об’єкти поза нею у всіх кадрах, включно з Razgon.
+На перевірці початку, середини й кінця кадру враховуй накладений логотип. Якщо він перекриває зміст, змісти зміст; логотип не пересувай.
 {remarks}Твоє завдання: кадри 1–{request['frames']}, кожен за своїм форматом у плані і за змістом своїх слів.
 {PHOTO_STYLE_WISH}
 Пріоритет автора для створених зображень Codex: {store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}).get('generated_image_style') or 'Стиль за змістом кадру'}.

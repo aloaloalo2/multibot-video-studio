@@ -1,0 +1,507 @@
+[
+  {
+    "name": "Montserrat",
+    "weight": 700,
+    "files": [
+      "montserrat-latin-700-normal.woff2",
+      "montserrat-latin-ext-700-normal.woff2",
+      "montserrat-cyrillic-700-normal.woff2",
+      "montserrat-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/montserrat/-/montserrat-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "montserrat-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-AC,U+AE-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+329,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215"
+      },
+      {
+        "file": "montserrat-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+100-130,U+132-151,U+154-183,U+186-18C,U+18E-194,U+196-1A1,U+1A4-1A6,U+1A9,U+1AC-1B9,U+1C0-1F5,U+1F8-220,U+222-223,U+226-233,U+237,U+23A-23E,U+241-251,U+253-254,U+256-259,U+25B-25C,U+25F-260,U+263-266,U+268-26C,U+26F,U+271-272,U+274-275,U+27D-27E,U+280,U+283,U+287-28C,U+28E,U+292,U+294-295,U+298,U+29D,U+2B0,U+2B7-2BA,U+2BC-2C1,U+2C7-2CC,U+2D7,U+2DD,U+2EC,U+2EE,U+2FB-2FC,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1D3A,U+1D43,U+1D49,U+1D4B,U+1D52-1D53,U+1D58,U+1D5B,U+1D7B,U+1D7D-1D7E,U+1D91,U+1DA4,U+1DB6,U+1DBB,U+1DBF,U+1E00-1E9B,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6-20A7,U+20A9,U+20AB,U+20AD-20AE,U+20B1-20B2,U+20B4-20B5,U+20B8-20BA,U+20BC-20BD,U+20BF,U+2113,U+2C60-2C66,U+2C6D-2C6F,U+2C72-2C73,U+A726-A727,U+A740-A741,U+A789-A78D,U+A792-A793,U+A7A8-A7AB,U+A7AD-A7AE,U+A7B1-A7B9,U+A7C7-A7C8,U+A7CB-A7CD,U+A7DA-A7DC"
+      },
+      {
+        "file": "montserrat-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "montserrat-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4FF,U+510-513,U+51A-51D,U+524-529,U+52E-52F,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Nunito",
+    "weight": 700,
+    "files": [
+      "nunito-latin-700-normal.woff2",
+      "nunito-latin-ext-700-normal.woff2",
+      "nunito-cyrillic-700-normal.woff2",
+      "nunito-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/nunito/-/nunito-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "nunito-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "nunito-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+100-130,U+132,U+134-151,U+154-17E,U+181,U+18A,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1B3-1B4,U+1C4-1CE,U+1D4,U+1E5-1E7,U+1E9-1EB,U+1EF,U+1FA-21B,U+21F,U+226-228,U+22A-22D,U+230-233,U+237,U+253,U+257,U+259,U+292,U+2B9-2BA,U+2BC,U+2BE-2BF,U+2C7-2CC,U+2DD,U+300-301,U+303-304,U+308-309,U+323,U+1E08-1E09,U+1E0C-1E0F,U+1E14-1E17,U+1E1C-1E1D,U+1E20-1E21,U+1E24-1E25,U+1E2A-1E2B,U+1E2E-1E2F,U+1E36-1E37,U+1E3A-1E3B,U+1E42-1E49,U+1E4C-1E53,U+1E5A-1E5B,U+1E5E-1E69,U+1E6C-1E6F,U+1E78-1E7B,U+1E80-1E85,U+1E8E-1E8F,U+1E92-1E93,U+1E97,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6-20A7,U+20A9,U+20AB,U+20AD-20AE,U+20B1-20B2,U+20B4-20B5,U+20B8-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "nunito-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "nunito-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+48A-48F,U+492-4A5,U+4A8-4AF,U+4B2-4FF,U+510-513,U+51A-51D,U+524-529,U+52E-52F,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Roboto",
+    "weight": 700,
+    "files": [
+      "roboto-latin-700-normal.woff2",
+      "roboto-latin-ext-700-normal.woff2",
+      "roboto-cyrillic-700-normal.woff2",
+      "roboto-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/roboto/-/roboto-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "roboto-latin-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303,U+309,U+323,U+2002,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD"
+      },
+      {
+        "file": "roboto-latin-ext-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+100-130,U+132-151,U+154-17F,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1F0,U+1FA-1FF,U+218-21B,U+237,U+259,U+2BC,U+2C7,U+2C9,U+2DD,U+2F3,U+300-301,U+303,U+309,U+323,U+1E00-1E01,U+1E3E-1E3F,U+1E80-1E85,U+1E9E,U+1EF2-1EF9,U+2020,U+20A3-20A4,U+20A6-20AB,U+20B1,U+20B9-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "roboto-cyrillic-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "roboto-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+460-486,U+488-48F,U+492-4AF,U+4B2-513"
+      }
+    ]
+  },
+  {
+    "name": "Open Sans",
+    "weight": 700,
+    "files": [
+      "open-sans-latin-700-normal.woff2",
+      "open-sans-latin-ext-700-normal.woff2",
+      "open-sans-cyrillic-700-normal.woff2",
+      "open-sans-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/open-sans/-/open-sans-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "open-sans-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+2002,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215,U+FEFF,U+FFFD"
+      },
+      {
+        "file": "open-sans-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+100-130,U+132-151,U+154-17F,U+192,U+1A0-1A1,U+1AF-1B0,U+1EA-1ED,U+1F0,U+1FA-1FF,U+218-21B,U+237,U+259,U+2BC,U+2C7,U+2C9,U+2DD,U+2F3,U+300-301,U+303-304,U+308-309,U+323,U+1E00-1E01,U+1E3E-1E3F,U+1E80-1E85,U+1E9E,U+1EF2-1EF9,U+2020,U+20A3-20A4,U+20A7,U+20AA-20AB,U+2113,U+A7B3-A7B5"
+      },
+      {
+        "file": "open-sans-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "open-sans-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+460-486,U+488-48F,U+492-4AF,U+4B2-513"
+      }
+    ]
+  },
+  {
+    "name": "Noto Sans",
+    "weight": 700,
+    "files": [
+      "noto-sans-latin-700-normal.woff2",
+      "noto-sans-latin-ext-700-normal.woff2",
+      "noto-sans-cyrillic-700-normal.woff2",
+      "noto-sans-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/noto-sans/-/noto-sans-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "noto-sans-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+329,U+2002,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD"
+      },
+      {
+        "file": "noto-sans-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+100-130,U+132-151,U+154-2BA,U+2BC-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-301,U+303-304,U+308-309,U+323,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7CA,U+A7D0-A7D1,U+A7D3,U+A7D5-A7D9,U+A7F2-A7FF"
+      },
+      {
+        "file": "noto-sans-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "noto-sans-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+460-48F,U+492-4AF,U+4B2-52F,U+1C80-1C88,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+      }
+    ]
+  },
+  {
+    "name": "Noto Serif",
+    "weight": 700,
+    "files": [
+      "noto-serif-latin-700-normal.woff2",
+      "noto-serif-latin-ext-700-normal.woff2",
+      "noto-serif-cyrillic-700-normal.woff2",
+      "noto-serif-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/noto-serif/-/noto-serif-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "noto-serif-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+329,U+2002,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD"
+      },
+      {
+        "file": "noto-serif-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+100-130,U+132-151,U+154-2BA,U+2BC-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-301,U+303-304,U+308-309,U+323,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7CA,U+A7D0-A7D1,U+A7D3,U+A7D5-A7D9,U+A7F2-A7FF"
+      },
+      {
+        "file": "noto-serif-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "noto-serif-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+A0,U+460-48F,U+492-4AF,U+4B2-52F,U+1C80-1C88,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+      }
+    ]
+  },
+  {
+    "name": "Oswald",
+    "weight": 700,
+    "files": [
+      "oswald-latin-700-normal.woff2",
+      "oswald-latin-ext-700-normal.woff2",
+      "oswald-cyrillic-700-normal.woff2",
+      "oswald-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/oswald/-/oswald-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "oswald-latin-700-normal.woff2",
+        "range": "U+D,U+20-7E,U+A0-AC,U+AE-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "oswald-latin-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+100-130,U+132-151,U+154-17F,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1B7,U+1C4-1CE,U+1D3-1D4,U+1E4-1EB,U+1EE-1EF,U+1F1-1F5,U+1FA-21B,U+21E-21F,U+22A-22D,U+230-233,U+237,U+259,U+292,U+2BC,U+2C7,U+2C9,U+2DD,U+300-301,U+303-304,U+308-309,U+323,U+1E02-1E03,U+1E0A-1E0B,U+1E1E-1E1F,U+1E40-1E41,U+1E56-1E57,U+1E60-1E61,U+1E6A-1E6B,U+1E80-1E85,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6-20A7,U+20A9,U+20AB,U+20AD-20AE,U+20B1-20B2,U+20B4-20B5,U+20B8-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "oswald-cyrillic-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "oswald-cyrillic-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4FF,U+510-513,U+51C-51D,U+524-529,U+52E-52F,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Roboto Condensed",
+    "weight": 700,
+    "files": [
+      "roboto-condensed-latin-700-normal.woff2",
+      "roboto-condensed-latin-ext-700-normal.woff2",
+      "roboto-condensed-cyrillic-700-normal.woff2",
+      "roboto-condensed-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/roboto-condensed/-/roboto-condensed-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "roboto-condensed-latin-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303,U+309,U+323,U+2002,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD"
+      },
+      {
+        "file": "roboto-condensed-latin-ext-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+100-130,U+132-151,U+154-17F,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1F0,U+1FA-1FF,U+218-21B,U+237,U+259,U+2BC,U+2C7,U+2C9,U+2DD,U+2F3,U+300-301,U+303,U+309,U+323,U+1E00-1E01,U+1E3E-1E3F,U+1E80-1E85,U+1EF2-1EF9,U+2020,U+20A3-20A4,U+20A6-20AB,U+20B1,U+20B9-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "roboto-condensed-cyrillic-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "roboto-condensed-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+2,U+D,U+20,U+A0,U+460-486,U+488-48F,U+492-4AF,U+4B2-513"
+      }
+    ]
+  },
+  {
+    "name": "Ubuntu",
+    "weight": 700,
+    "files": [
+      "ubuntu-latin-700-normal.woff2",
+      "ubuntu-latin-ext-700-normal.woff2",
+      "ubuntu-cyrillic-700-normal.woff2",
+      "ubuntu-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/ubuntu/-/ubuntu-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "ubuntu-latin-700-normal.woff2",
+        "range": "U+0,U+8-9,U+D,U+1D,U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "ubuntu-latin-ext-700-normal.woff2",
+        "range": "U+0,U+8-9,U+D,U+1D,U+20,U+A0,U+100-130,U+132-151,U+154-24F,U+292,U+2BC,U+2C7,U+2C9,U+2DD,U+1E80-1E85,U+1EF2-1EF3,U+2020,U+20AE,U+20B4,U+20B9,U+2113"
+      },
+      {
+        "file": "ubuntu-cyrillic-700-normal.woff2",
+        "range": "U+0,U+8-9,U+D,U+1D,U+20,U+A0,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "ubuntu-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+8-9,U+D,U+1D,U+20,U+A0,U+462-463,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4F9,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Rubik",
+    "weight": 700,
+    "files": [
+      "rubik-latin-700-normal.woff2",
+      "rubik-latin-ext-700-normal.woff2",
+      "rubik-cyrillic-700-normal.woff2",
+      "rubik-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/rubik/-/rubik-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "rubik-latin-700-normal.woff2",
+        "range": "U+20-7E,U+A0-FF,U+102,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "rubik-latin-ext-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+100-130,U+132-151,U+154-161,U+164-17F,U+192,U+1FC-1FF,U+218-21B,U+237,U+2BC,U+2C7,U+2DD,U+300-301,U+303-304,U+308,U+1E80-1E85,U+1E9E,U+1EF2-1EF3,U+2020,U+20AA,U+20AE,U+20B4,U+20B8-20B9,U+20BD"
+      },
+      {
+        "file": "rubik-cyrillic-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "rubik-cyrillic-ext-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+492-49D,U+4A0-4A5,U+4AA-4AB,U+4AE-4AF,U+4B6-4BB,U+4C0-4C2,U+4CB-4CC,U+4CF-4D9,U+4DC-4DF,U+4E2-4E9,U+4EE-4F9,U+51A-51D,U+524-525,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Manrope",
+    "weight": 700,
+    "files": [
+      "manrope-latin-700-normal.woff2",
+      "manrope-latin-ext-700-normal.woff2",
+      "manrope-cyrillic-700-normal.woff2",
+      "manrope-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/manrope/-/manrope-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "manrope-latin-700-normal.woff2",
+        "range": "U+D,U+20-7E,U+A0-FF,U+102,U+131,U+152-153,U+2C6,U+2DA,U+2DC,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215"
+      },
+      {
+        "file": "manrope-latin-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+100-113,U+116-12B,U+12E-130,U+134-137,U+139-13E,U+141-148,U+14A-14D,U+150-151,U+154-17E,U+192,U+1A0-1A1,U+1AF-1B0,U+218-21B,U+259,U+2C7,U+2DD,U+1E80-1E85,U+1E9E,U+1EF2-1EF9,U+2020,U+20A3,U+20A9-20AB,U+20AE,U+20B1,U+20B4,U+20B9-20BA,U+20BD,U+20BF"
+      },
+      {
+        "file": "manrope-cyrillic-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+400-45F,U+490-491,U+2116"
+      },
+      {
+        "file": "manrope-cyrillic-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+4AE-4AF,U+4BA-4BB,U+4E8-4E9,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Exo 2",
+    "weight": 700,
+    "files": [
+      "exo-2-latin-700-normal.woff2",
+      "exo-2-latin-ext-700-normal.woff2",
+      "exo-2-cyrillic-700-normal.woff2",
+      "exo-2-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/exo-2/-/exo-2-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "exo-2-latin-700-normal.woff2",
+        "range": "U+D,U+20-7E,U+A0-AC,U+AE-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+2009,U+200B,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "exo-2-latin-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+100-130,U+132-148,U+14A-151,U+154-17E,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1C4-1CC,U+1E6-1E7,U+1EA-1EB,U+1FA-21B,U+22A-22D,U+230-233,U+237,U+259,U+2B9-2BA,U+2BC,U+2BE-2BF,U+2C7-2CC,U+2DD,U+300-301,U+303-304,U+308-309,U+323,U+1E08-1E09,U+1E0C-1E0F,U+1E14-1E17,U+1E1C-1E1D,U+1E20-1E21,U+1E24-1E25,U+1E2A-1E2B,U+1E2E-1E2F,U+1E36-1E37,U+1E3A-1E3B,U+1E42-1E49,U+1E4C-1E53,U+1E5A-1E5B,U+1E5E-1E69,U+1E6C-1E6F,U+1E78-1E7B,U+1E80-1E85,U+1E8E-1E8F,U+1E92-1E93,U+1E97,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6-20A7,U+20A9,U+20AB,U+20AD,U+20B1-20B2,U+20B5,U+20B9-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "exo-2-cyrillic-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "exo-2-cyrillic-ext-700-normal.woff2",
+        "range": "U+D,U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4FF,U+510-513,U+51A-51D,U+524-529,U+52E-52F"
+      }
+    ]
+  },
+  {
+    "name": "Comfortaa",
+    "weight": 700,
+    "files": [
+      "comfortaa-latin-700-normal.woff2",
+      "comfortaa-latin-ext-700-normal.woff2",
+      "comfortaa-cyrillic-700-normal.woff2",
+      "comfortaa-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/comfortaa/-/comfortaa-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "comfortaa-latin-700-normal.woff2",
+        "range": "U+0,U+D,U+20-7E,U+A0-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2032-2033,U+2039-203A,U+2044,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215"
+      },
+      {
+        "file": "comfortaa-latin-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+100-130,U+132-148,U+14A-151,U+154-17F,U+18F,U+192,U+1A0-1A1,U+1AF-1B0,U+1CE,U+1D4,U+1E6-1E7,U+1EA-1EB,U+1FA-21B,U+22A-22D,U+230-233,U+237,U+259,U+2BC,U+2C7,U+2C9,U+2DD,U+300-301,U+303-304,U+308-309,U+323,U+1E80-1E85,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6-20A7,U+20A9,U+20AB,U+20AD-20AE,U+20B1-20B2,U+20B4-20B5,U+20B8-20BA,U+20BC-20BD,U+2113"
+      },
+      {
+        "file": "comfortaa-cyrillic-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "comfortaa-cyrillic-ext-700-normal.woff2",
+        "range": "U+0,U+D,U+20,U+41,U+A0,U+C1,U+102,U+462-463,U+46A-46B,U+472-475,U+492-49D,U+4A0-4A5,U+4AA-4AB,U+4AE-4AF,U+4B6-4BB,U+4C0-4C2,U+4CB-4CC,U+4CF-4D9,U+4DC-4DF,U+4E2-4E9,U+4EE-4F9,U+51A-51D,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "PT Sans",
+    "weight": 700,
+    "files": [
+      "pt-sans-latin-700-normal.woff2",
+      "pt-sans-latin-ext-700-normal.woff2",
+      "pt-sans-cyrillic-700-normal.woff2",
+      "pt-sans-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/pt-sans/-/pt-sans-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "pt-sans-latin-700-normal.woff2",
+        "range": "U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+301,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "pt-sans-latin-ext-700-normal.woff2",
+        "range": "U+20,U+A0,U+100-109,U+10C-113,U+116-11F,U+122-127,U+12A-12B,U+12E-130,U+134-137,U+139-13E,U+141-148,U+14C-14D,U+150-151,U+154-165,U+16A-173,U+178-17F,U+192,U+1F4-1F5,U+218-21B,U+237,U+2BC,U+2C7,U+2DD,U+301,U+1E30-1E31,U+1E3E-1E3F,U+1E54-1E55,U+1E9E,U+2020,U+20B4,U+20B6-20B7,U+20B9-20C0,U+2113,U+2C67-2C68"
+      },
+      {
+        "file": "pt-sans-cyrillic-700-normal.woff2",
+        "range": "U+20,U+A0,U+301,U+401-40C,U+40E-44F,U+451-45C,U+45E-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "pt-sans-cyrillic-ext-700-normal.woff2",
+        "range": "U+20,U+A0,U+462-463,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4C0,U+4C3-4F9,U+4FC-4FD,U+510-513,U+51C-51D,U+524-527,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "PT Serif",
+    "weight": 700,
+    "files": [
+      "pt-serif-latin-700-normal.woff2",
+      "pt-serif-latin-ext-700-normal.woff2",
+      "pt-serif-cyrillic-700-normal.woff2",
+      "pt-serif-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/pt-serif/-/pt-serif-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "pt-serif-latin-700-normal.woff2",
+        "range": "U+20-7E,U+A0-FF,U+131,U+152-153,U+2BC,U+2C6,U+2DA,U+2DC,U+301,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2212,U+2215"
+      },
+      {
+        "file": "pt-serif-latin-ext-700-normal.woff2",
+        "range": "U+20,U+A0,U+100-109,U+10C-113,U+116-11F,U+122-127,U+12A-12B,U+12E-130,U+134-137,U+139-13E,U+141-148,U+14C-14D,U+150-151,U+154-165,U+16A-173,U+178-17F,U+192,U+1F4-1F5,U+218-21B,U+237,U+2BC,U+2C7,U+2C9,U+2DD,U+301,U+1E30-1E31,U+1E3E-1E3F,U+1E54-1E55,U+1E9E,U+2020,U+20B4,U+20B6-20B7,U+20B9-20C0,U+2113,U+2C67-2C68"
+      },
+      {
+        "file": "pt-serif-cyrillic-700-normal.woff2",
+        "range": "U+20,U+A0,U+301,U+401-40C,U+40E-44F,U+451-45C,U+45E-45F,U+490-491,U+4B0-4B1,U+2116"
+      },
+      {
+        "file": "pt-serif-cyrillic-ext-700-normal.woff2",
+        "range": "U+20,U+A0,U+462-463,U+472-475,U+48A-48F,U+492-4AF,U+4B2-4C0,U+4C3-4F9,U+4FC-4FD,U+510-513,U+51C-51D,U+524-527,U+20B4"
+      }
+    ]
+  },
+  {
+    "name": "Russo One",
+    "weight": 400,
+    "files": [
+      "russo-one-latin-400-normal.woff2",
+      "russo-one-latin-ext-400-normal.woff2",
+      "russo-one-cyrillic-400-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/russo-one/-/russo-one-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "russo-one-latin-400-normal.woff2",
+        "range": "U+20-7E,U+A0-FF,U+131,U+152-153,U+2C6,U+2DA,U+2DC,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+20AC,U+2122"
+      },
+      {
+        "file": "russo-one-latin-ext-400-normal.woff2",
+        "range": "U+20,U+A0,U+100-107,U+10C-113,U+116-11B,U+11E-11F,U+122-123,U+127-12B,U+12E-130,U+133-13E,U+140-148,U+14C-14D,U+150-151,U+154-15B,U+15E-165,U+16A-16B,U+16E-173,U+178-17E,U+192,U+218-219,U+2C7,U+2DD,U+2020"
+      },
+      {
+        "file": "russo-one-cyrillic-400-normal.woff2",
+        "range": "U+20,U+A0,U+401-40C,U+40E-44F,U+451-45C,U+45E-45F,U+490-491,U+2116"
+      }
+    ]
+  },
+  {
+    "name": "Unbounded",
+    "weight": 700,
+    "files": [
+      "unbounded-latin-700-normal.woff2",
+      "unbounded-latin-ext-700-normal.woff2",
+      "unbounded-cyrillic-700-normal.woff2",
+      "unbounded-cyrillic-ext-700-normal.woff2"
+    ],
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource/unbounded/-/unbounded-5.3.0.tgz",
+    "faces": [
+      {
+        "file": "unbounded-latin-700-normal.woff2",
+        "range": "U+20-7E,U+A0-B4,U+B6-FF,U+102,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+300-301,U+303-304,U+308-309,U+323,U+329,U+2013-2014,U+2018-201A,U+201C-201E,U+2022,U+2026,U+2039-203A,U+2044,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215"
+      },
+      {
+        "file": "unbounded-latin-ext-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+100-130,U+132-151,U+154-181,U+186-18A,U+18E-194,U+196-1A1,U+1A4-1A5,U+1A9-1AA,U+1AC-1B9,U+1C0-1F5,U+1F8-220,U+226-233,U+237-23E,U+241-254,U+256-257,U+259,U+25B,U+25F-261,U+263-26A,U+26C,U+26F,U+271-272,U+275,U+278,U+27D-27E,U+283-284,U+288-28C,U+28E,U+292,U+294-295,U+298,U+29D,U+2A7,U+2B0-2B3,U+2B7-2B9,U+2BC,U+2BE-2C1,U+2C7-2C9,U+2DD,U+2E1-2E3,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1D7D,U+1DBB,U+1DBF,U+1E00-1E9B,U+1E9E,U+1EF2-1EF9,U+2020,U+20A1,U+20A3-20A4,U+20A6,U+20A9,U+20AB,U+20AD,U+20B1-20B2,U+20B4-20B5,U+20B8-20BA,U+20BC-20BD,U+2C63-2C66,U+2C6D-2C70,U+2C72-2C73,U+A726-A727,U+A78B-A78D,U+A798-A799,U+A7AA,U+A7AC-A7AE,U+A7B2-A7B7"
+      },
+      {
+        "file": "unbounded-cyrillic-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+102,U+301,U+400-45F,U+490-491,U+2116"
+      },
+      {
+        "file": "unbounded-cyrillic-ext-700-normal.woff2",
+        "range": "U+20,U+41,U+A0,U+C1,U+102,U+20B4"
+      }
+    ]
+  }
+]

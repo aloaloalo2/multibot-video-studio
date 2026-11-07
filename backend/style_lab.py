@@ -16,7 +16,8 @@ import style_copy
 
 LOCK = threading.Lock()
 SAMPLES = (0.2, 0.5, 0.8)
-TITLE_FONTS = ("Fredoka", "Baloo 2", "Lilita One", "Bangers", "Bebas Neue", "Montserrat", "Permanent Marker", "Nunito", "Playfair Display")
+LEGACY_FONTS = ("Fredoka", "Baloo 2", "Lilita One", "Bangers", "Bebas Neue", "Montserrat", "Permanent Marker", "Nunito", "Playfair Display")
+TITLE_FONTS = ('Montserrat', 'Nunito', 'Roboto', 'Open Sans', 'Noto Sans', 'Noto Serif', 'Oswald', 'Roboto Condensed', 'Ubuntu', 'Rubik', 'Manrope', 'Exo 2', 'Comfortaa', 'PT Sans', 'PT Serif', 'Russo One', 'Unbounded')
 STYLE_ID = re.compile(r"[a-z0-9_-]{1,40}")
 HEX = re.compile(r"#[0-9a-fA-F]{6}")
 
@@ -71,7 +72,7 @@ def validate(animation) -> None:
         raise StyleLabError("Невідомий стиль анімації")
     if "assets" in animation and not isinstance(animation["assets"], bool):
         raise StyleLabError("Невірний перемикач асетів")
-    if "title_font" in animation and animation["title_font"] not in TITLE_FONTS:
+    if "title_font" in animation and animation["title_font"] not in TITLE_FONTS + LEGACY_FONTS:
         raise StyleLabError("Невідомий шрифт заголовків")
     if "accent" in animation and not (isinstance(animation["accent"], str) and HEX.fullmatch(animation["accent"])):
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
@@ -88,7 +89,7 @@ def razgon_text(animation: dict | None) -> dict:
     animation = animation or {}
     extra = {}
     if animation.get("title_font"):
-        extra["fonts"] = {"title": animation["title_font"]}
+        extra["fonts"] = {key: animation["title_font"] for key in ("title", "ui", "serif")}
     if animation.get("accent"):
         extra["ui"] = {"accent": animation["accent"]}
     return extra
@@ -143,7 +144,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     scene, moment = card_scene(root, kind)
     template = Path(__file__).with_name("style_card_info.js") if kind == "regular" and scene.name == "style-card-info" else None
     revision = hashlib.sha256(template.read_bytes()).hexdigest() if template else None
-    key_parts = ["full-frame-v2", scene.name, moment, font, assets, ids, stamp, definition]
+    key_parts = ["all-fonts-full-frame-v3", scene.name, moment, font, assets, ids, stamp, definition]
     if revision:
         key_parts.append(revision)
     key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:20]
@@ -184,7 +185,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
         (folder / "assets" / "index.json").write_text("[]")
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
     config["bars"] = "none"
-    config["fonts"] = {"title": font}
+    config["fonts"] = {key: font for key in ("title", "ui", "serif")}
     config["assets"] = assets
     if definition:
         config.update(style=ids[0], styleDef=definition)

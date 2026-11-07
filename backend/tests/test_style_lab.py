@@ -46,7 +46,7 @@ class StyleLabTest(unittest.TestCase):
                 style_lab.validate(bad)
         with self.assertRaises(channel_branding.BrandingError):
             channel_branding.validate({"animation": {"accent": "pink"}})
-        self.assertEqual(style_lab.razgon_text({"title_font": "Nunito", "accent": "#112233"}), {"fonts": {"title": "Nunito"}, "ui": {"accent": "#112233"}})
+        self.assertEqual(style_lab.razgon_text({"title_font": "Nunito", "accent": "#112233"}), {"fonts": {"title": "Nunito", "ui": "Nunito", "serif": "Nunito"}, "ui": {"accent": "#112233"}})
         self.assertEqual(style_lab.razgon_text(None), {})
 
     def test_presets_times_and_lab_project(self):

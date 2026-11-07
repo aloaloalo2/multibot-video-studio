@@ -160,3 +160,19 @@ def overlay_png(cid: str, logo: dict | None, frame: tuple[int, int], target: Pat
     target.parent.mkdir(parents=True, exist_ok=True)
     result.save(target, format="PNG")
     return target
+
+
+def reserved_zone(project: dict) -> dict | None:
+    """Actual logo footprint plus a small safe margin, for authoring and review briefs."""
+    cid=project.get('channel_id')
+    if not cid:return None
+    try:folder=store.get_channel_folder(cid,include_disabled=True)
+    except store.StudioError:return None
+    settings=store.read_json(folder/store.PLAN_CONFIG,{})
+    spec=placement(settings.get('logo'));path=logo_path(cid)
+    if not spec['enabled'] or not path.is_file():return None
+    frame=(int(project.get('width') or 1920),int(project.get('height') or 1080))
+    with Image.open(path) as image:rect=box(spec,image.size,frame)
+    pad=round(frame[0]*.015);x,y,w,h=rect
+    left,top=max(0,x-pad),max(0,y-pad);right,bottom=min(frame[0],x+w+pad),min(frame[1],y+h+pad)
+    return {'position':spec['position'],'x':left,'y':top,'width':right-left,'height':bottom-top,'frame_width':frame[0],'frame_height':frame[1]}

@@ -11,6 +11,7 @@ every synced plan, and the frames keep their groups through later recognitions (
 """
 from __future__ import annotations
 
+import channel_branding
 import planner
 import store
 
@@ -85,6 +86,7 @@ def sentences(pid: str) -> dict:
     return {"sentences": [{"number": number, "text": text, "start": timing["start"], "end": timing["end"]}
                           for number, (text, timing) in enumerate(zip(texts, timings), 1)],
             "duration": float(plan["timing"]["audio"]["duration"]), "shares": targets,
+            "logo_reserved_zone": channel_branding.reserved_zone(project),
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "generated_image_style": settings.get("generated_image_style", ""),
             "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,

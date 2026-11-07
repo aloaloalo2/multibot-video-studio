@@ -224,7 +224,7 @@ def prepare(args) -> None:
         "sfx": {"enabled": True, "gainDb": -6}, "loudness": -14}
     if fresh:
         if animation.get("title_font"):
-            config["fonts"] = {"title": animation["title_font"]}
+            config["fonts"] = {key: animation["title_font"] for key in ("title", "ui", "serif")}
         if animation.get("accent"):
             config["ui"] = {"accent": animation["accent"]}
         # Whether the film uses picture props (library and generated) or draws everything with shapes.
