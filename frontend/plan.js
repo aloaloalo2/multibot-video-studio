@@ -90,20 +90,25 @@ function narrationResultVisible(job,project,justGenerated=false){
   return job?.status==='done' && (project?.restarted_at||0)<=(job.started_at||0) && (justGenerated || (project?.assets||[]).some(asset=>asset.id===job.asset_id));
 }
 function appendReadyNarration(panel,pid,job,info,refresh){
-  const ready=document.createElement('div');ready.className='narration-ready';
+  const ready=document.createElement('section');ready.className='narration-ready';
+  const cost=job.estimated_usd===0?'Безкоштовно':job.estimated_usd!=null?`≈ $${job.estimated_usd.toFixed(3)}`:'';
+  ready.innerHTML=`<header class="narration-ready-heading"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><small>${esc(cost)}</small></header>`;
+  const headline=ready.querySelector('strong');
+  const note=message=>{info.textContent=message;headline.textContent=message;};
   ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:`Озвучка · ${Math.round((job.speed||1)*100)}%`,playLabel:'Прослухати готову озвучку'}));
-  const plan=document.createElement('button');plan.type='button';plan.className='secondary';plan.textContent='Створити план кадрів';
-  plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){info.textContent=error.message;plan.disabled=false;}};
+  const plan=document.createElement('button');plan.type='button';plan.className='secondary narration-plan-action';plan.textContent='Створити план кадрів';
+  plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){note(error.message);plan.disabled=false;}};
   const tempo=document.createElement('div');tempo.className='narration-tempo';
-  tempo.innerHTML=`<label>Швидкість <output>${Math.round((job.speed||1)*100)}%</output><input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"></label><button type="button" class="secondary">Застосувати швидкість</button><small>Застосовано ${Math.round((job.speed||1)*100)}% · без зміни тону</small>`;
+  tempo.innerHTML=`<label>Швидкість<input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"><output>${Math.round((job.speed||1)*100)}%</output></label><button type="button" class="secondary" hidden>Застосувати</button><small>Використовується швидкість ${Math.round((job.speed||1)*100)}% · без зміни тону</small>`;
   const range=tempo.querySelector('input'),apply=tempo.querySelector('button');
-  range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';plan.disabled=Number(range.value)!==Math.round((job.speed||1)*100);};
-  apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;info.textContent='Змінюємо швидкість…';try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await refresh();}catch(error){info.textContent=error.message;apply.disabled=false;range.disabled=false;plan.disabled=false;}};
-  ready.append(tempo,plan);panel.append(ready);return ready;
+  range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';const changed=Number(range.value)!==Math.round((job.speed||1)*100);plan.disabled=changed;apply.hidden=!changed;apply.disabled=false;tempo.querySelector('small').textContent=changed?`Використовується ${Math.round((job.speed||1)*100)}% · обрано ${range.value}%`:`Використовується швидкість ${Math.round((job.speed||1)*100)}% · без зміни тону`;};
+  apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;note('Змінюємо швидкість…');try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await refresh();}catch(error){note(error.message);apply.disabled=false;range.disabled=false;}};
+  const actions=document.createElement('footer');actions.className='narration-ready-actions';actions.append(plan);
+  ready.append(tempo,actions);panel.classList.add('has-ready-narration');panel.append(ready);return ready;
 }
 function renderNarrationGeneration(panel){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small class="narration-cache-note">Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
+  box.innerHTML=`<div class="voice-start-head narration-script-heading"><h1>Озвучка сценарію</h1><p>Прослухайте готову озвучку й налаштуйте швидкість перед створенням кадрів.</p></div><label class="voice-script"><span>Текст озвучки</span><textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small class="narration-cache-note">Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
   panel.append(box);
   const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
   const cid=state.project.channel_id;let profile=null,currentJob=null;
@@ -116,7 +121,7 @@ function renderNarrationGeneration(panel){
     const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
-  const text=box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('p');
+  const text=box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
   text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
   const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
   const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
@@ -124,7 +129,7 @@ function renderNarrationGeneration(panel){
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{if(q.estimated_usd===0)return 'Безкоштовно';const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
   async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
-  text.oninput=()=>{button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
+  text.oninput=()=>{box.classList.remove('has-ready-narration');button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
   let busy=false;
   function actionState(mode='idle'){
@@ -172,7 +177,7 @@ function renderNarrationGeneration(panel){
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
     if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
-    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});box.querySelector('.narration-ready')?.remove();busy=true;await poll();
+    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
   }catch(error){info.textContent=error.message;button.disabled=false;}};
   poll();return box;
 }
