@@ -80,10 +80,10 @@ function narrationChoices(panel,ready,restore=true){
   panel.append(choices);
   if(restore)api(`/api/projects/${pid}/narration`).then(data=>{
     if(!choices.isConnected||state.project?.id!==pid)return;
-    const running=data.job?.status==='running';
+    const running=['running','cancelling'].includes(data.job?.status);
     const mode=running?'script':data.source || (data.job?.script?'script':null);
     if(mode)showSelection(mode==='file'?1:0);
-    if(running){buttons.forEach(button=>button.disabled=true);choices.setAttribute('aria-busy','true');}
+    if(running){choices.hidden=true;choices.setAttribute('aria-busy','true');}
   }).catch(error=>{if(choices.isConnected)status(error.message,true);});
 }
 function narrationResultVisible(job,project,justGenerated=false){
@@ -103,11 +103,12 @@ function appendReadyNarration(panel,pid,job,info,refresh){
 }
 function renderNarrationGeneration(panel){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small>Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><p role="status"></p><button class="secondary" type="button">Згенерувати озвучку</button>`;
+  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small class="narration-cache-note">Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
   panel.append(box);
   const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
-  const cid=state.project.channel_id;
+  const cid=state.project.channel_id;let profile=null,currentJob=null;
   api(`/api/channels/${cid}/voice-lab`).then(data=>{
+    profile=data;if(currentJob)renderRunning(currentJob);
     if(!details.isConnected)return;details.replaceChildren();
     if(data.reference){const player=voicePlayer(null,`/api/channels/${cid}/voice-lab/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Прослухати голос каналу'});details.append(player);}
     else{const missing=document.createElement('small');missing.textContent='Додайте зразок голосу в налаштуваннях каналу';details.append(missing);}
@@ -115,32 +116,54 @@ function renderNarrationGeneration(panel){
     const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
-  const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');
+  const text=box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('p');
   text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
-  const estimate=document.createElement('small');estimate.className='narration-cost';button.after(estimate);
+  const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').after(estimate);
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
   async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
   text.oninput=()=>{voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
-  const stop=document.createElement('button');stop.type='button';stop.className='secondary narration-stop';stop.textContent='Зупинити озвучення';stop.hidden=true;button.after(stop);
-  stop.onclick=async()=>{stop.disabled=true;try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});info.textContent='Зупиняємо. Поточний запит може завершитися, нові не запускатимуться.';}catch(error){info.textContent=error.message;stop.disabled=false;}};
   let busy=false;
+  function actionState(mode='idle'){
+    const running=mode==='running',waiting=mode==='cancelling';
+    const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Згенерувати озвучку';
+    button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting;
+    button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z" fill="currentColor"/></svg>';
+    const choices=panel.querySelector('.narration-choices');if(choices)choices.hidden=running||waiting;
+    box.classList.toggle('is-generating',running||waiting);text.readOnly=running||waiting;
+  }
+  function renderRunning(job){
+    const settings=job.render_settings||{...profile?.settings,provider:job.provider};
+    const service={heygen:'HeyGen',fishaudio:'Fish Audio',elevenlabs:'ElevenLabs'}[settings.provider]||settings.provider||'';
+    const key=settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model;
+    const models=[...(profile?.heygen_models||[]),...(profile?.fish_models||[]),...(profile?.models||[])];
+    const model=models.find(m=>m.id===key)?.name||key||'';
+    const percent=job.total>0?Math.min(99,Math.max(0,Math.floor((job.completed||0)/job.total*100))):0;
+    info.innerHTML=`${exportSpinner}<span>${esc([service,model].filter(Boolean).join(' · '))}<strong>${job.status==='cancelling'?'Зупиняємо':'Озвучуємо'} · ${percent}%</strong><small>${job.completed||0} з ${job.total||0} фраз</small></span>`;
+    estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);
+  }
+  actionState();
   async function poll(){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
-      if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.total>0?Math.min(99,Math.max(0,Math.floor((job.completed||0)/job.total*100))):0}% · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
+      if(['running','cancelling'].includes(job?.status)){
+        if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);
+        if(typeof projectActivities!=='undefined')projectActivities.set(pid,{kind:'озвучення сценарію',progress:job.total>0?Math.min(99,Math.floor((job.completed||0)/job.total*100)):0});
+        if(!busy&&job.script)text.value=job.script;
+        currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);setTimeout(poll,1500);
+      }
       else if(narrationResultVisible(job,state.project,busy)){
-        busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script)text.value=job.script;estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         if(!box.querySelector('.narration-ready')){
           appendReadyNarration(box,pid,job,info,poll);
         }
       }
-      else if(job?.status==='cancelled'){busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
-      else if(job?.status==='failed'){stop.hidden=true;busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
+      else if(job?.status==='cancelled'){busy=false;currentJob=null;actionState();info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
+      else if(job?.status==='failed'){busy=false;currentJob=null;actionState();info.textContent=job.error;}
     }catch(error){info.textContent=error.message;button.disabled=false;}
   }
-  button.onclick=async()=>{if(busy)return;button.disabled=true;box.querySelector('.narration-ready')?.remove();try{
+  button.onclick=async()=>{if(busy){actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}button.disabled=true;box.querySelector('.narration-ready')?.remove();try{
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
