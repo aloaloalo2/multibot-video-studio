@@ -30,6 +30,13 @@ class VoiceLabTests(unittest.TestCase):
     def reference(self):
         root=lab.folder(self.cid);(root/'reference.mp3').write_bytes(b'preserved reference')
         store.atomic_json(root/'reference.json',{'filename':'test.mp3','sha256':'same','duration':30})
+    def test_fish_speed_validation_and_cache(self):
+        for speed in [True, float('nan'), .49, 2.1, '1']:
+            with self.assertRaises(store.StudioError):lab.validated({'speed':speed})
+        ref={'sha256':'ref'};base=lab.validated({'provider':'fishaudio'})
+        self.assertNotEqual(lab.fingerprint(base,ref),lab.fingerprint({**base,'speed':1.1},ref))
+        self.assertEqual(lab.validated({'speed':1.1})['speed'],1.1)
+
     def test_existing_channels_and_supported_settings(self):
         self.assertIn('settings',lab.snapshot('0'*16))
         for change in [{'stability':float('nan')},{'similarity_boost':2},{'model':'fake'}, {'language':'xx'},
@@ -215,6 +222,6 @@ class VoiceLabTests(unittest.TestCase):
              patch.object(lab.languages,'msgpack',return_value=b'packed') as pack:
             lab.fish_synthesis('mock',voice,settings)
             body=pack.call_args.args[0]
-            self.assertEqual(body['references'],[voice]);self.assertEqual(body['temperature'],.4);self.assertEqual(body['top_p'],.6)
+            self.assertEqual(body['prosody'],{'speed':1.});self.assertEqual(body['references'],[voice]);self.assertEqual(body['temperature'],.4);self.assertEqual(body['top_p'],.6)
             self.assertEqual(body['text'],settings['text']);self.assertEqual(body['language'],'ru')
             self.assertEqual(request.call_args.args[2]['model'],'s2.1-pro-free')

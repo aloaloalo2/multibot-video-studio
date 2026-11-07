@@ -21,7 +21,7 @@ DELIVERY = {'neutral': '', 'conversational': '[Warm, conversational tone] ', 'ca
 DEFAULT_TEXT = 'Давайте спокойно разберёмся, что здесь происходит. На первый взгляд всё кажется довольно простым. Но есть одна деталь, на которую стоит обратить внимание. Сейчас я объясню её на обычном примере.'
 DEFAULTS = {'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
             'stability': .5, 'similarity_boost': .75, 'fish_engine': languages.FISH_ENGINE,
-            'temperature': .7, 'top_p': .7, 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
+            'temperature': .7, 'top_p': .7, 'speed': 1., 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
 PREPARATION_VERSION = 1
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
@@ -49,6 +49,9 @@ def validated(raw):
     if (data['provider'] not in {'elevenlabs', 'fishaudio'} or data['fish_engine'] not in languages.FISH_ENGINES
         or data['language'] not in languages.LANGUAGES or data['model'] not in MODELS or data['delivery'] not in DELIVERY):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
+    speed=data['speed']
+    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .5 <= speed <= 2:
+        raise store.StudioError('Швидкість Fish має бути від 0,5 до 2')
     for key in ['stability', 'similarity_boost', 'temperature', 'top_p']:
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
@@ -79,6 +82,7 @@ def fingerprint(settings, ref):
         return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 1}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     fields = ['provider', 'language', 'text', 'fish_engine', 'temperature', 'top_p']
     effective = {k: settings[k] for k in fields}
+    if settings.get('speed',1.) != 1.:effective['speed'] = settings['speed']
     if settings['chunk_length'] != 200: effective['chunk_length'] = settings['chunk_length']
     return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 2}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -260,7 +264,7 @@ def fish_reference(cid, settings, ref):
 
 
 def fish_synthesis(secret, voice, settings):
-    body = {'text': settings['text'], 'references': [voice], 'format': 'mp3', 'mp3_bitrate': 128,
+    body = {'text': settings['text'], 'references': [voice], 'prosody': {'speed': settings.get('speed',1.)}, 'format': 'mp3', 'mp3_bitrate': 128,
             'normalize': True, 'language': settings['language'], 'latency': 'normal', 'chunk_length': settings['chunk_length'],
             'temperature': settings['temperature'], 'top_p': settings['top_p']}
     return languages.request(languages.FISH + '/v1/tts', languages.msgpack(body),
