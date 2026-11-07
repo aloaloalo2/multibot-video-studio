@@ -122,7 +122,12 @@ function renderNarrationGeneration(panel){
           ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:'Готова озвучка',playLabel:'Прослухати озвучку'}));
           const plan=document.createElement('button');plan.type='button';plan.className='secondary';plan.textContent='Створити план кадрів';
           plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){info.textContent=error.message;plan.disabled=false;}};
-          ready.append(plan);box.append(ready);
+          const tempo=document.createElement('div');tempo.className='narration-tempo';
+          tempo.innerHTML=`<label>Швидкість <output>${Math.round((job.speed||1)*100)}%</output><input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"></label><button type="button" class="secondary">Застосувати швидкість</button><small>Безкоштовно · без зміни тону</small>`;
+          const range=tempo.querySelector('input'),apply=tempo.querySelector('button');
+          range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';};
+          apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;info.textContent='Змінюємо швидкість…';try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await poll();}catch(error){info.textContent=error.message;apply.disabled=false;range.disabled=false;plan.disabled=false;}};
+          ready.append(tempo,plan);box.append(ready);
         }
       }
       else if(job?.status==='cancelled'){busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}

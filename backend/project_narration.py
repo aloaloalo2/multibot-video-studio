@@ -1,4 +1,6 @@
 """Original narration with immutable phrase cache and explicit paid starts."""
+import math
+import shutil
 import hashlib
 import json
 import re
@@ -57,12 +59,60 @@ def select_source(pid, mode):
     return snapshot(pid)
 
 
+def recorded_speed(pid, job):
+    if job.get('speed') is not None:return job['speed']
+    project=store.load_project(pid);settings=lab.snapshot(project['channel_id'])['settings']
+    ref=lab.effective_reference(project['channel_id'],settings)
+    entries=store.read_json(root(pid)/'phrases.json',[])
+    if entries and ref:
+        for pct in range(90,111):
+            if lab.fingerprint({**settings,'text':entries[0]['text'],'speed':pct/100},ref)==entries[0]['key']:return pct/100
+    raise store.StudioError('Не вдалося визначити початковий темп готової озвучки')
+
+def change_speed(pid, speed):
+    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9<=speed<=1.1:
+        raise store.StudioError('Швидкість має бути від 90 до 110%')
+    import director,production
+    with LOCK:
+        if pid in ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE:raise store.StudioError('Дочекайтеся завершення поточної роботи проєкту',409)
+        folder=root(pid);job=store.read_json(folder/'job.json',{})
+        if job.get('status')!='done':raise store.StudioError('Спочатку завершіть озвучення')
+        current=recorded_speed(pid,job)
+        if abs(current-speed)<.00001:return snapshot(pid)
+        project=store.load_project(pid)
+        asset=next((a for a in project.get('assets',[]) if a['id']==job.get('asset_id')),None)
+        if not asset or not Path(asset['path']).is_file():raise store.StudioError('Готовий аудіофайл не знайдено')
+        # Always derive from one immutable completed take, never compound re-encodes.
+        baseline=folder/'speed-original.mp3';metadata=folder/'speed-original.json'
+        if not baseline.is_file():
+            shutil.copy2(asset['path'],baseline);store.atomic_json(metadata,{'speed':current})
+        base_speed=store.read_json(metadata,{})['speed']
+        output=folder/f'Озвучка-{round(speed*100)}.mp3'
+        output.write_bytes(lab.paced_audio(baseline,speed/base_speed))
+        if not (store.media_duration(output) or 0)>0:raise store.StudioError('Не вдалося змінити темп')
+        updated=store.import_asset_file(project,output,'narration')
+        with store.LOCK:
+            project=store.load_project(pid)
+            for track in project.get('tracks',[]):
+                for clip in track.get('clips',[]):
+                    if clip.get('asset_id')==asset['id']:
+                        clip['asset_id']=updated['id']
+                        clip['duration']=min(updated['duration'],clip.get('duration',asset['duration'])*current/speed)
+            project['revision']+=1;store.save_project(project)
+        job.update(asset_id=updated['id'],speed=speed,duration=updated['duration'])
+        store.atomic_json(folder/'job.json',job)
+    return snapshot(pid)
+
+
 def snapshot(pid):
     job=store.read_json(root(pid)/'job.json',{})
     if job.get('status')=='running' and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     project=store.load_project(pid)
+    if job.get('status')=='done' and 'speed' not in job:
+        try:job['speed']=recorded_speed(pid,job)
+        except store.StudioError:pass
     return {'job':job,'source':project.get('narration_source'),
             'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start'},
                        {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':f'/api/projects/{pid}/plan/analyze'}],
@@ -84,7 +134,7 @@ def start(project,text,resume=False):
         if (root(pid)/'cancel').exists() and resume is not True:raise store.StudioError('Озвучення зупинено користувачем. Для нового запуску потрібне явне підтвердження resume=true.',409)
         if pid in ACTIVE or cid in lab.ACTIVE:raise store.StudioError('Голос уже використовується. Дочекайтеся завершення.',409)
         settings,ref,entries,quote=spec(project,text)
-        job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text}
+        job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed']}
         (root(pid)/'cancel').unlink(missing_ok=True)
         ACTIVE.add(pid);lab.ACTIVE.add(cid);store.atomic_json(root(pid)/'job.json',job)
     threading.Thread(target=run,args=(project,text,settings,ref,entries,job),daemon=True).start()
@@ -110,7 +160,6 @@ def run(project,text,settings,ref,entries,job):
                 if settings['provider']=='elevenlabs' and not raw_cached:
                     previous=folder/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')
                     if previous.is_file():
-                        import shutil
                         source=lab.original_path(params,ref);source.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,source);raw_cached=True
                 audio=lab.heygen_synthesis(params,ref) if settings['provider']=='heygen' else lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
                 cost={'unit':'credits' if settings['provider']=='elevenlabs' else 'usd','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
@@ -127,6 +176,7 @@ def run(project,text,settings,ref,entries,job):
         target=folder/'Озвучка.mp3'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
         asset=store.import_asset_file(store.load_project(pid),target,'narration')
+        shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
         store.atomic_json(folder/'phrases.json',entries)
         job.update(status='done',asset_id=asset['id'],finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())

@@ -24,6 +24,19 @@ class NarrationTests(unittest.TestCase):
                 settings['stability']=.95
                 _,_,_,quote=narration.spec(project,'First sentence. Second sentence.')
                 self.assertEqual(quote['cached'],0)
+    def test_completed_speed_uses_same_original_and_never_synthesizes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp);source=folder/'ready.mp3';source.write_bytes(b'original')
+            project={'id':'0'*24,'channel_id':'1'*16,'revision':1,'assets':[{'id':'old','path':str(source),'duration':10}], 'tracks':[{'clips':[{'asset_id':'old','duration':10}]}]}
+            with patch.object(store,'project_dir',return_value=folder),patch.object(store,'load_project',return_value=project),patch.object(store,'save_project'),patch.object(store,'media_duration',return_value=9),patch.object(store,'import_asset_file',return_value={'id':'new','duration':9}),patch.object(lab,'paced_audio',return_value=b'paced') as pace,patch.object(lab,'fish_synthesis') as paid,patch.object(narration,'snapshot',return_value={}):
+                store.atomic_json(narration.root(project['id'])/'job.json',{'status':'done','speed':1.,'asset_id':'old'})
+                narration.change_speed(project['id'],1.1)
+                self.assertEqual(pace.call_args.args[1],1.1)
+                self.assertEqual(pace.call_args.args[0].read_bytes(),b'original')
+                self.assertEqual(project['tracks'][0]['clips'][0]['asset_id'],'new')
+                self.assertFalse(paid.called)
+                for speed in [True,None,.89,1.11,float('nan')]:
+                    with self.assertRaises(store.StudioError):narration.change_speed(project['id'],speed)
     def test_invalid_text_rejected_before_paid_work(self):
         for text in [None,'',123,'x'*200001]:
             with self.assertRaises(store.StudioError):narration.phrases(text)
