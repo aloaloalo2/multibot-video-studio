@@ -6,11 +6,11 @@ const vm=require('node:vm');
 const director=fs.readFileSync(path.join(__dirname,'../director.js'),'utf8');
 const plan=fs.readFileSync(path.join(__dirname,'../plan.js'),'utf8');
 
-test('animation creation progress refreshes without replacing timeline edits or selection',async()=>{
+test('universal creation progress refreshes without replacing timeline edits or selection',async()=>{
   const tracks=[{id:'local-edit'}],request={status:'in_progress',frames:45};let refreshed=0,drawn=0;
   const state={view:'editor',project:{id:'p',tracks,production_request:{status:'requested'}},selected:'clip-a'};
   const c=vm.createContext({state,api:async()=>({project:{id:'p',tracks:[{id:'server-copy'}],production_request:request,production:{plan_ready:true}}}),
-    projectAnimated:()=>true,directMontage:()=>false,loadDrawn:()=>drawn++,renderMontageMake:()=>refreshed++});
+    projectAnimated:()=>false,directMontage:()=>false,loadDrawn:()=>drawn++,renderMontageMake:()=>refreshed++});
   vm.runInContext(director.slice(director.indexOf('async function pollProduction('),director.indexOf('async function startDirector(')),c);
   await c.pollProduction('p');
   assert.equal(state.project.tracks,tracks);assert.equal(state.selected,'clip-a');assert.equal(state.project.production_request,request);
@@ -29,7 +29,8 @@ test('an empty animation can open the combined audio, plan and montage workspace
   const state={channels:[],project:null};const c=vm.createContext({state,projectAnimated:p=>p?.project_kind==='animated'});
   vm.runInContext(plan.slice(0,plan.indexOf('const editorLockedHint=')),c);
   assert.equal(c.editorUnlocked({project_kind:'animated',tracks:[]}),true);
-  assert.equal(c.editorUnlocked({project_kind:'regular',tracks:[]}),false);
+  assert.equal(c.editorUnlocked({project_kind:'regular',tracks:[]}),true);
+  assert.equal(c.editorUnlocked(null),false);
   assert.equal(c.editorUnlocked({project_kind:'regular',plan_mode:'direct',tracks:[]}),true);
 });
 

@@ -2033,3 +2033,15 @@ select option{background:#232327;color:#f1f1f2}
 .narration-ready button[hidden]{display:none!important}.narration-ready .narration-tempo:has(>button[hidden]){grid-template-columns:minmax(0,1fr)}
 
 .narration-generation>.voice-script{margin-top:18px;font-size:13px;gap:8px}.narration-generation>.voice-script>span{font-size:13px;font-weight:650;color:#e6e7ec}.narration-generation>.voice-script textarea{background:#1d1d21;border:1px solid #3c3c43;border-radius:12px;padding:13px 14px;line-height:1.5}.narration-generation.is-generating>.narration-script-heading{display:none}.narration-script-heading p{font-size:14px}
+
+/* All projects share one plan + montage workspace. */
+.workspace.creation-workspace .inspector-panel{display:none}
+.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(360px,44%) minmax(260px,1fr)}
+.workspace.creation-workspace.fitted-preview .preview-panel{width:100%;height:auto;align-self:center;justify-self:center;min-width:0}
+.workspace.creation-workspace.fitted-preview .preview-surface{width:100%;margin:0}
+.creation-workspace .animation-production .narration-generation,.creation-workspace .animation-production .narration-completed{max-width:100%;margin:0}
+.creation-workspace .animation-production .voice-start-head h1{font-size:18px}
+.creation-workspace .animation-production .narration-choices{max-width:100%;margin:0}
+.creation-workspace .animation-production .narration-choices>button{height:180px;padding:12px 8px;gap:8px}
+.creation-workspace .animation-production .narration-choice-art{transform:scale(.8);height:85px}
+@media(max-width:900px){.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(0,1fr)}}

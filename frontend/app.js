@@ -307,7 +307,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   // a link with ?t=83.4 opens the montage at that moment (tools/studio.py still prints one beside the export's still)
   const requested=Number(new URLSearchParams(location.search).get('t'));if(!updateUrl&&requested>0&&Number.isFinite(requested))state.playhead=requested;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
-  state.plan=sourceForProject(plan);state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='editor' && !editorUnlocked()?'plan':view;
+  state.plan=sourceForProject(plan);state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='plan'?'editor':view;
   if(updateUrl)syncRoute();
   buildAudioNodes();
   renderProject(); status('');if(state.job)pollJob();
@@ -326,7 +326,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   loadAnalysis(id).then(analysis=>{
     if(!current() || state.analysis!==null)return;
     state.analysis=analysis;
-    if(state.view==='plan' && typeof renderSpeechReport==='function')renderSpeechReport($('project-plan'));
+    if(state.view==='editor'){delete $('editor-production').dataset.planKey;renderMontageMake();}
   }).catch(error=>console.warn('Не вдалося завантажити аналіз озвучки',error));
   state.exportWatch=setInterval(async()=>{
     if(!state.project || state.project.id!==id || exportIsActive())return;
@@ -473,7 +473,7 @@ function productionControl(id,working){
     try{
       const result=await api(`/api/projects/${encodeURIComponent(id)}/production-${working?'pause':'resume'}`,'POST',{});
       if(state.project?.id===id){
-        if(state.view==='editor'&&projectAnimated()&&!directMontage()){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
+        if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
       else if(!state.project)await refreshProjects();
@@ -608,8 +608,7 @@ function saveMonitorSettings(){
 }
 
 function renderProject() {
-  if(state.plan && state.project && !projectAnimated() && !directMontage() && !state.project.production?.plan_ready && state.view==='editor')state.view='plan';
-  if(state.project&&projectAnimated()&&state.view==='plan'){state.view='editor';syncRoute();}
+  if(state.project&&state.view==='plan'){state.view='editor';syncRoute();}
   updateMonitorControls();
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
@@ -617,7 +616,7 @@ function renderProject() {
   // The Studio agent tab is put away for now on every channel (user, 31 October 2026: «поки прибери вкладку «Агент»,
   // поки нам це не потрібно»); an animated film has its own agents on the plan (director, frames) anyway.
   const agentTab=false;
-  if(!agentTab && state.view==='agent')state.view=projectAnimated()?'editor':'plan';
+  if(!agentTab && state.view==='agent')state.view='editor';
   document.querySelector('.app-shell').classList.toggle('agent-open',!!state.project && state.view==='agent');
   $('channel-sidebar').hidden=!!state.project;
   $('editor-brand').hidden=!state.project;
@@ -642,8 +641,8 @@ function renderProject() {
   $('project-agent').hidden=!state.project || state.view!=='agent';
   $('project-views').hidden=!state.project;
   $('view-agent').hidden=!agentTab;
-  $('view-plan').hidden=!!state.project&&projectAnimated();
-  $('view-editor-label').textContent=state.project&&projectAnimated()?'Анімація':'Монтаж';
+  $('view-plan').hidden=true;
+  $('view-editor-label').textContent='Монтаж';
   document.querySelectorAll('.editor-only').forEach(element=>element.hidden=!state.project || state.view!=='editor');
   // Export appears once the video exists: a picture on the timeline. An animated film's frames are code blocks until
   // they are drawn, and a voice alone is not a video either.
@@ -730,7 +729,7 @@ function layoutPreview(){
   const inset=element=>{const s=getComputedStyle(element);return parseFloat(s.paddingTop)+parseFloat(s.paddingBottom)+parseFloat(s.borderTopWidth)+parseFloat(s.borderBottomWidth);};
   const surfaceStyle=getComputedStyle($('preview-surface'));
   const frameHeight=Math.max(80,height-inset(workspace)-inset(panel)-parseFloat(surfaceStyle.marginTop)-parseFloat(surfaceStyle.marginBottom));
-  if(projectAnimated()){
+  if(workspace.classList.contains('creation-workspace')){
     workspace.classList.add('fitted-preview');workspace.style.setProperty('--preview-frame-width',Math.round(frameHeight*ratio)+'px');return;
   }
   const panelWidth=Math.max(260,Math.min(width-410,frameHeight*ratio+2));

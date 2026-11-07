@@ -44,11 +44,11 @@ function episodeFold(title){
 const makeCount={},stripZoom={};
 function renderMontageMake(){
   const panel=$('editor-production'),workspace=$('editor-workspace');
-  const enabled=!!state.project&&state.view==='editor'&&projectAnimated();
+  const enabled=!!state.project&&state.view==='editor';
   panel.hidden=!enabled;workspace.classList.toggle('creation-workspace',enabled);
   if(!enabled){panel.replaceChildren();delete panel.dataset.planKey;return;}
   const id=state.project.id,frames=state.plan?.frames || [];
-  const key=JSON.stringify([id,frames.map(frame=>[frame.number,frame.start,frame.end,frame.format]),state.plan?.timing?.status,state.plan?.timing?.audio?.asset_id,directMontage()]);
+  const key=JSON.stringify([id,frames.map(frame=>[frame.number,frame.start,frame.end,frame.format]),state.plan?.timing?.status,state.plan?.timing?.audio?.asset_id,state.analysis?.status,state.analysis?.job_id,directMontage()]);
   if(panel.dataset.planKey!==key){
     panel.replaceChildren();panel.dataset.planKey=key;renderPlanSwitch(panel);
     if(frames.length||(directMontage()&&(state.plan?.timing?.audio||state.plan?.timing?.status==='audio_synced')))renderEpisode(panel);else renderVoiceStart(panel);
@@ -629,7 +629,7 @@ async function pollProduction(id){
   if(state.project?.id!==id)return;
   try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
     // Refresh the creation controls in the montage without replacing the author's current timeline or selection.
-    if(state.view==='editor'&&projectAnimated()&&!directMontage()){
+    if(state.view==='editor'){
       state.project={...state.project,production_request:project.production_request,production:project.production};
       loadDrawn(id);renderMontageMake();return;
     }
