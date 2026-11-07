@@ -1998,3 +1998,5 @@ select option{background:#232327;color:#f1f1f2}
 .narration-generation.is-generating{padding-top:0}
 .narration-generation.is-generating textarea{height:clamp(180px,30vh,300px);min-height:180px;resize:vertical;padding:14px 16px;line-height:1.65}
 @media(max-width:480px){.narration-status-row{padding:12px;gap:8px 10px}.narration-generation.is-generating textarea{height:220px}}
+
+.narration-action-icon[hidden]{display:none!important}

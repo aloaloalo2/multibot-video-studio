@@ -91,13 +91,13 @@ function narrationResultVisible(job,project,justGenerated=false){
 }
 function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('div');ready.className='narration-ready';
-  ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:'Готова озвучка',playLabel:'Прослухати озвучку'}));
+  ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:`Озвучка · ${Math.round((job.speed||1)*100)}%`,playLabel:'Прослухати готову озвучку'}));
   const plan=document.createElement('button');plan.type='button';plan.className='secondary';plan.textContent='Створити план кадрів';
   plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){info.textContent=error.message;plan.disabled=false;}};
   const tempo=document.createElement('div');tempo.className='narration-tempo';
-  tempo.innerHTML=`<label>Швидкість <output>${Math.round((job.speed||1)*100)}%</output><input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"></label><button type="button" class="secondary">Застосувати швидкість</button><small>Безкоштовно · без зміни тону</small>`;
+  tempo.innerHTML=`<label>Швидкість <output>${Math.round((job.speed||1)*100)}%</output><input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"></label><button type="button" class="secondary">Застосувати швидкість</button><small>Застосовано ${Math.round((job.speed||1)*100)}% · без зміни тону</small>`;
   const range=tempo.querySelector('input'),apply=tempo.querySelector('button');
-  range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';};
+  range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';plan.disabled=Number(range.value)!==Math.round((job.speed||1)*100);};
   apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;info.textContent='Змінюємо швидкість…';try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await refresh();}catch(error){info.textContent=error.message;apply.disabled=false;range.disabled=false;plan.disabled=false;}};
   ready.append(tempo,plan);panel.append(ready);return ready;
 }
@@ -122,16 +122,16 @@ function renderNarrationGeneration(panel){
   const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
   const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
   let quoteTimer=null,quoteVersion=0;
-  const priceLabel=q=>{const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
+  const priceLabel=q=>{if(q.estimated_usd===0)return 'Безкоштовно';const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
   async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
-  text.oninput=()=>{voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
+  text.oninput=()=>{button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
   let busy=false;
   function actionState(mode='idle'){
     const running=mode==='running',waiting=mode==='cancelling';
     const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Згенерувати озвучку';
-    button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting;
-    button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z" fill="currentColor"/></svg>';
+    button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting;
+    button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
     const choices=panel.querySelector('.narration-choices');if(choices)choices.hidden=running||waiting;
     box.classList.toggle('is-generating',running||waiting);text.readOnly=running||waiting;
   }
@@ -158,7 +158,7 @@ function renderNarrationGeneration(panel){
         currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);setTimeout(poll,1500);
       }
       else if(narrationResultVisible(job,state.project,busy)){
-        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script)text.value=job.script;estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script)text.value=job.script;button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         if(!box.querySelector('.narration-ready')){
           appendReadyNarration(box,pid,job,info,poll);
         }
@@ -167,12 +167,12 @@ function renderNarrationGeneration(panel){
       else if(job?.status==='failed'){busy=false;currentJob=null;actionState();info.textContent=job.error;}
     }catch(error){info.textContent=error.message;button.disabled=false;}
   }
-  button.onclick=async()=>{if(busy){actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}button.disabled=true;box.querySelector('.narration-ready')?.remove();try{
+  button.onclick=async()=>{if(busy){actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}button.disabled=true;try{
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
     if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
-    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});busy=true;await poll();
+    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});box.querySelector('.narration-ready')?.remove();busy=true;await poll();
   }catch(error){info.textContent=error.message;button.disabled=false;}};
   poll();return box;
 }
