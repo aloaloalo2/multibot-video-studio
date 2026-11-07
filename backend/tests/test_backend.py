@@ -25,6 +25,26 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_voice_lab_http_settings_and_trial_scope(self):
+        with patch.object(app.channel_voice_lab, 'TRIAL_CHANNEL', store.channel_id(self.channel)):
+            base = '/api/channels/' + store.channel_id(self.channel) + '/voice-lab'
+            status, result = self.request(base)
+            self.assertEqual(status, 200)
+            self.assertIsNone(result['reference'])
+            settings = {**result['settings'], 'stability': .35}
+            status, result = self.request(base, 'POST', {'settings': settings})
+            self.assertEqual((status, result['settings']['stability']), (200, .35))
+            settings.update(provider='fishaudio', fish_engine='s2.1-pro-free', temperature=.6)
+            status, result = self.request(base, 'POST', {'settings': settings})
+            self.assertEqual((status, result['settings']['provider']), (200, 'fishaudio'))
+            _, persisted = self.request(base)
+            self.assertEqual(persisted['settings']['temperature'], .6)
+            self.assertEqual(persisted['estimate'], {'unit': 'usd', 'amount': 0})
+            status, _ = self.request(base + '/sample', 'POST', {'settings': settings, 'client_id': 'a' * 20})
+            self.assertEqual(status, 400)  # no reference, no paid call
+        status, _ = self.request(base)
+        self.assertEqual(status, 404)
+
     def test_completion_notice_clears_on_open_without_changing_project(self):
         project = store.create_project(store.channel_id(self.channel), 'Unread completion')
         project['production_request'] = {'status': 'done', 'finished_at': time.time() - 1}

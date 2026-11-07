@@ -1079,6 +1079,8 @@ function openChannelSettings(channel) {
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       const memory=$('channel-agent-memory').value;
       if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});
+      const voiceLab=document.querySelector('.channel-voice-lab');
+      if(voiceLab?.saveVoiceSettings)await voiceLab.saveVoiceSettings();
       const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;closeModal();renderChannels();
       if(state.project?.channel_id===channel.id && (original.plan_mode || 'director')!==settings.plan_mode){
         await selectProject(state.project.id,{view:state.view});
@@ -1096,6 +1098,7 @@ function openChannelSettings(channel) {
   };
   $('settings-plan-mode').addEventListener('change',showPlanMode);showPlanMode();
   brandingValues=bindBranding(channel);
+  if(typeof bindChannelVoiceLab==='function')bindChannelVoiceLab(channel);
   if(typeof bindChannelVoices==='function')bindChannelVoices(channel);
   const memoryField=$('channel-agent-memory'),memoryFeedback=$('channel-agent-memory-feedback');
   api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`).then(data=>{if($('channel-agent-memory')!==memoryField)return;savedMemory=data.memory || '';memoryField.value=savedMemory;memoryField.disabled=false;memoryFeedback.textContent='';}).catch(error=>{if($('channel-agent-memory')===memoryField)memoryFeedback.textContent=error.message;});

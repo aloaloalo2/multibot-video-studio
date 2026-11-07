@@ -423,7 +423,7 @@ def settings(mid: str) -> dict:
     return out
 
 
-def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str) -> bytes:
+def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str, voice_settings=None) -> bytes:
     """Turbo uses the documented Text to Dialogue WebSocket, with one registered voice."""
     try:
         from websockets.sync.client import connect
@@ -435,7 +435,7 @@ def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str) -> bytes:
     deadline, audio, complete = time.monotonic() + 300, [], False
     try:
         with connect(url, open_timeout=20, max_size=16 * 1024 * 1024) as socket:
-            socket.send(json.dumps({"voices": [voice_id], "xi_api_key": secret, "settings": settings(mid)}))
+            socket.send(json.dumps({"voices": [voice_id], "xi_api_key": secret, "settings": voice_settings if voice_settings is not None else settings(mid)}))
             socket.send(json.dumps({"inputs": [{"text": text, "voice_id": voice_id, "new_turn": True}]}))
             socket.send(json.dumps({"close_socket": True}))
             while time.monotonic() < deadline:

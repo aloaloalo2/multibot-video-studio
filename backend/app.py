@@ -55,6 +55,7 @@ import waveforms
 import joins
 import export_names
 import completion_notices
+import channel_voice_lab
 import agent_view
 import montage_ops
 import thumbnails
@@ -108,6 +109,7 @@ def prepare_local_restart():
     with UPDATE_MUTEX:
         if UPDATE_RESTARTING:raise store.StudioError('Студія вже готується до перезапуску.',409)
         if IN_FLIGHT>1:raise store.StudioError('Студія зараз зберігає зміни. Дочекайтеся завершення.',409)
+        if channel_voice_lab.ACTIVE:raise store.StudioError('Генерується зразок голосу. Дочекайтеся завершення.',409)
         with JOBS_LOCK:exports=[dict(x['job']) for x in ACTIVE_EXPORTS.values()]
         busy=agent_view.studio_status(exports,project_jobs,busy_candidates())['busy']
         if busy:raise store.StudioError('Перезапуск перерве поточну роботу. '+busy_words(busy),409)
@@ -124,6 +126,7 @@ def begin_update():
     with UPDATE_MUTEX:
         if UPDATE_RESTARTING:
             raise store.StudioError('Студія вже оновлюється.', 409)
+        if channel_voice_lab.ACTIVE:raise store.StudioError('Генерується зразок голосу. Дочекайтеся завершення.',409)
         if not IN_FLIGHT_DONE.wait_for(lambda: IN_FLIGHT <= 1, timeout=30):
             raise store.StudioError('Зараз студія зберігає зміни', 409)
         with JOBS_LOCK:
@@ -1031,6 +1034,10 @@ class Handler(BaseHTTPRequestHandler):
                 if project_match and not notice_only and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
                 shared = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})", path)
+                voice_reference = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab/reference', path)
+                if method == 'POST' and voice_reference:
+                    return self.json_response(channel_voice_lab.upload(voice_reference.group(1), self.rfile,
+                        int(self.headers.get('Content-Length', '0')), urllib.parse.unquote(self.headers.get('X-File-Name', 'Приклад голосу'))))
                 if method == "POST" and shared:
                     size = int(self.headers.get("Content-Length", "0"))
                     return self.json_response(languages.save_channel_voice(shared.group(1), shared.group(2), self.rfile, size,
@@ -1088,6 +1095,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample))?', path)
+        if match:
+            cid, kind = match.groups()
+            if kind:
+                return self.serve_media(channel_voice_lab.audio_file(cid, kind, (query.get('key') or [None])[0]))
+            return self.json_response(channel_voice_lab.snapshot(cid))
         edit_match=re.fullmatch(r'/api/projects/([0-9a-f]{24})/production-edits',path)
         if edit_match:
             import production_edits
@@ -1122,7 +1135,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/studio/status":
             with JOBS_LOCK:
                 jobs = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
-            return self.json_response(agent_view.studio_status(jobs, project_jobs, busy_candidates()))
+            result = agent_view.studio_status(jobs, project_jobs, busy_candidates())
+            result['busy'] += ['озвучення: тест голосу каналу' for _ in channel_voice_lab.ACTIVE.copy()]
+            return self.json_response(result)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
         if match:
             return self.json_response({'job': active_export(match.group(1))})
@@ -1398,6 +1413,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove))?', path)
+        if match and method == 'POST':
+            cid, action = match.groups()
+            if action == 'sample':
+                return self.json_response(channel_voice_lab.start(cid, body.get('settings'), body.get('client_id')), 202)
+            if action == 'reference/remove':return self.json_response(channel_voice_lab.remove(cid))
+            return self.json_response(channel_voice_lab.save(cid, body.get('settings')))
         match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
         if match and method == 'POST':
             store.load_project(match.group(1))

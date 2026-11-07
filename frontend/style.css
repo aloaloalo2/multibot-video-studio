@@ -1933,3 +1933,16 @@ select option{background:#232327;color:#f1f1f2}
 
 .modal-body .settings-section .voice-player-bar{flex:1 1 0;width:0;min-width:48px}
 .modal-body .settings-section .voice-player-volume{flex:0 0 64px;width:64px}
+
+.channel-voice-lab h3{display:flex;align-items:center;gap:10px}.channel-voice-lab h3 small{font-size:10px;font-weight:400;color:#90939e}
+.voice-lab-reference{display:flex;align-items:center;gap:8px;margin:12px 0 16px;flex-wrap:wrap}.voice-lab-reference-player{flex:1;min-width:150px;color:#979ba5;font-size:12px}
+.voice-lab-reference .voice-player{margin:0;min-width:0}.voice-lab-reference .voice-player-filename{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.voice-lab-reference .voice-player-play,.voice-lab-result .voice-player-play{background:#373941;color:#dedfe5;width:30px;height:30px}
+.voice-lab-reference .voice-player-time{font-size:10px}.voice-lab-upload{margin:0!important;display:inline-flex!important;align-items:center;cursor:pointer;padding:8px 11px;border:1px solid #42444c;border-radius:10px;font-size:12px!important}.voice-lab-upload.is-off{pointer-events:none;opacity:.5}
+.voice-lab-remove{display:grid;place-items:center;width:28px;height:28px;padding:5px;background:transparent;border:0;color:#9b9faa}.voice-lab-remove svg{width:16px;height:16px}
+.voice-lab-sliders{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:12px 0}.voice-lab-sliders label{min-width:0}.voice-lab-sliders label>span{display:flex;align-items:center;gap:10px}.voice-lab-sliders input{flex:1}.voice-lab-sliders output{min-width:36px;color:#b7bac3;font-size:12px}
+.voice-lab-text textarea{width:100%;resize:vertical;min-height:80px}.voice-lab-actions{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}.voice-lab-actions button{display:inline-flex;align-items:center;gap:7px;font-size:12px}.voice-lab-listen svg{width:13px;height:13px;fill:currentColor}
+.voice-lab-status{display:flex;align-items:center;gap:8px;color:#a1a5b0;font-size:12px;margin-top:10px;line-height:1.5}.voice-lab-status.error{color:#e5a6a6}.voice-lab-result .voice-player{margin:10px 0 0}.voice-lab-result .voice-player-filename{color:#bfc2cb;font-size:12px;flex:1}
+@media(max-width:620px){.voice-lab-sliders{grid-template-columns:1fr}}
+
+.channel-voice-lab [data-provider][hidden]{display:none}
