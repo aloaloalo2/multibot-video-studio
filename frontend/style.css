@@ -2061,3 +2061,11 @@ select option{background:#232327;color:#f1f1f2}
 .creation-workspace .animation-production .narration-choices>button{height:180px;padding:12px 8px;gap:8px}
 .creation-workspace .animation-production .narration-choice-art{transform:scale(.8);height:85px}
 @media(max-width:900px){.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(0,1fr)}}
+
+.timeline-zoom{display:inline-flex;align-items:stretch;flex:none;overflow:hidden;border:1px solid #3a3b42;border-radius:9px;background:#25262b}
+.timeline-toolbar .timeline-zoom button{border:0;border-radius:0;background:transparent;height:27px;display:grid;place-items:center;color:#bfc2cb}
+.timeline-toolbar .timeline-zoom button+button{border-left:1px solid #3a3b42}
+.timeline-toolbar .timeline-zoom #zoom-out,.timeline-toolbar .timeline-zoom #zoom-in{width:29px;padding:5px}
+.timeline-zoom svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+.timeline-toolbar .timeline-zoom #zoom-value{min-width:48px;padding:4px 7px}
+.timeline-toolbar .timeline-zoom button:hover:not(:disabled){background:#36373e;color:#f0f1f4}
