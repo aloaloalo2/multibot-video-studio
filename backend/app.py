@@ -1431,9 +1431,10 @@ class Handler(BaseHTTPRequestHandler):
             if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
             return self.json_response(project_narration.start(project, body.get('text'), body.get('resume') is True), 202)
 
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy|heygen-clone))?', path)
         if match and method == 'POST':
             cid, action = match.groups()
+            if action == 'heygen-clone':return self.json_response(channel_voice_lab.create_heygen_voice(cid, body.get('settings')))
             if action == 'reference/discard':
                 with channel_voice_lab.LOCK:
                     channel_voice_lab.reference_drafts.discard(channel_voice_lab.folder(cid), body.get('draft_id'))

@@ -23,6 +23,24 @@ class HeyGenTests(unittest.TestCase):
         with patch.object(hg,'call',return_value={'data':{'status':'ACTIVE','mode':'professional'}}) as call:
             with self.assertRaises(store.StudioError):hg.synthesize(settings)
         self.assertEqual(call.call_count,1)
+    def test_validation_reason_is_visible_and_secret_is_redacted(self):
+        import urllib.error
+        body=b'{"error":{"param":"voice_id","message":"This voice is not compatible with heygen-voice-1-turbo-free. Create a new instant voice."}}'
+        error=urllib.error.HTTPError('https://api.heygen.com',400,'Bad request',{},io.BytesIO(body))
+        with patch.object(hg,'key',return_value='test-secret'),patch.object(hg.urllib.request,'urlopen',side_effect=error):
+            with self.assertRaises(store.StudioError) as caught:hg.call('/v3/models/audio/tts',{})
+        self.assertIn('несумісний',str(caught.exception))
+        self.assertNotIn('test-secret',str(caught.exception))
+    def test_clone_is_explicit_instant_with_stable_idempotency(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'ref.mp3';path.write_bytes(b'audio')
+            with patch.object(hg,'call',return_value={'data':{'voice_id':'created'}}) as call:
+                self.assertEqual(hg.clone_instant(path,'Narrator','ru','stable-key'),'created')
+                payload=call.call_args.args[1]
+                self.assertEqual(payload['mode'],'instant')
+                self.assertEqual(payload['audio'][0]['type'],'base64')
+                self.assertFalse(payload['remove_background_noise'])
+                self.assertEqual(call.call_args.kwargs['idempotency_key'],'stable-key')
     def test_voice_pages_and_pending_filter(self):
         with patch.object(hg,'call',side_effect=[{}, {'data':[{'voice_id':'a','status':'PENDING'}],'has_more':True,'next_token':'next'}, {'data':[{'voice_id':'b','status':'ACTIVE'}]}, {'data':[{'voice_id':'c','status':'ACTIVE'}]}]) as call:
             self.assertEqual([v['voice_id'] for v in hg.voices()['voices']],['b','c'])

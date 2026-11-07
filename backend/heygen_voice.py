@@ -17,15 +17,30 @@ def key():
     try:return credentials.vault().read(credentials.service_name('heygen'))
     except RuntimeError:raise store.StudioError('Додайте ключ HeyGen у загальних налаштуваннях студії') from None
 
-def call(path,body=None):
+def call(path,body=None,*,idempotency_key=None):
     data=json.dumps(body).encode() if body is not None else None
-    request=urllib.request.Request(API+path,data=data,headers={'X-Api-Key':key(),'Content-Type':'application/json'})
+    headers={'X-Api-Key':key(),'Content-Type':'application/json'}
+    if idempotency_key:headers['Idempotency-Key']=idempotency_key
+    request=urllib.request.Request(API+path,data=data,headers=headers)
     try:
         with urllib.request.urlopen(request,timeout=240) as response:return json.load(response)
     except urllib.error.HTTPError as error:
-        # Never include credential-bearing headers or a returned download URL in errors.
+        # Retain the provider's validation reason, never credentials or download URLs.
+        detail=''
+        try:
+            returned=json.loads(error.read(16384)).get('error',{})
+            if isinstance(returned,dict):
+                reason=str(returned.get('message') or '')[:600]
+                param=str(returned.get('param') or '')[:80]
+                import re
+                reason=re.sub(r'https?://\S+','[посилання]',reason)
+                reason=reason.replace(key(),'[ключ]')
+                if param=='voice_id' and 'not compatible' in reason:
+                    reason='Цей голос несумісний із вибраною моделлю. Натисніть «Створити голос із запису» для нового instant-клону.'
+                detail=(' ('+param+')' if param else '')+(': '+reason if reason else '')
+        except (ValueError,TypeError,AttributeError):pass
         messages={401:'Перевірте ключ HeyGen',402:'Недостатньо коштів HeyGen',403:'Ключ HeyGen не має доступу',429:'Ліміт HeyGen. Спробуйте пізніше; платного повтору не буде'}
-        raise store.StudioError(messages.get(error.code,f'HeyGen: помилка {error.code}. Автоматичного повтору немає')) from None
+        raise store.StudioError(messages.get(error.code,f'HeyGen: помилка {error.code}{detail}. Автоматичного повтору немає')) from None
 
 def voices():
     call('/v3/users/me')
@@ -59,3 +74,15 @@ def synthesize(settings):
         audio=response.read(100*1024*1024+1)
     if len(audio)>100*1024*1024:raise store.StudioError('Аудіофайл HeyGen завеликий')
     return audio
+
+
+def clone_instant(path, name, language, identity):
+    import base64
+    audio=path.read_bytes()
+    if len(audio)>16*1024*1024:raise store.StudioError('Приклад голосу завеликий')
+    result=call('/v3/models/audio/voices',{'mode':'instant','name':name[:64],
+        'language':language,'remove_background_noise':False,
+        'audio':[{'type':'base64','media_type':'audio/mpeg','data':base64.b64encode(audio).decode()}]},idempotency_key=identity)
+    voice_id=(result.get('data') or {}).get('voice_id')
+    if not voice_id:raise store.StudioError('HeyGen не повернув ID нового голосу')
+    return voice_id

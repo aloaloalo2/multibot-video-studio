@@ -432,3 +432,28 @@ def audio_file(cid, kind, fingerprint=None):
     else: raise store.StudioError('Аудіо не знайдено', 404)
     if not target.is_file(): raise store.StudioError('Аудіо не знайдено', 404)
     return target
+
+
+def create_heygen_voice(cid, raw):
+    settings=validated(raw);root=folder(cid);ref=reference(cid)
+    if not ref:raise store.StudioError('Спочатку додайте запис голосу')
+    with LOCK:
+        if cid in ACTIVE:raise store.StudioError('Дочекайтеся завершення зразка',409)
+        ACTIVE.add(cid)
+    try:
+        identity=hashlib.sha256(('heygen-instant-v1:'+ref['sha256']+':'+settings['language']).encode()).hexdigest()
+        cache=store.DATA_ROOT/'heygen-clones'/ (identity+'.json');saved=store.read_json(cache,{})
+        voice_id=saved.get('voice_id')
+        if not voice_id:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                target=Path(tmp)/'reference.mp3'
+                languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(root/'reference.mp3'),'-t','180','-vn','-ac','1','-ar','44100','-b:a','128k',str(target)],'підготувати запис для HeyGen')
+                channel=store.channel_record(store.get_channel_folder(cid))
+                voice_id=heygen_voice.clone_instant(target,channel.get('name','Голос каналу')+' '+settings['language'],settings['language'],identity)
+                cache.parent.mkdir(parents=True,exist_ok=True);store.atomic_json(cache,{'voice_id':voice_id})
+        settings.update(provider='heygen',heygen_voice_id=voice_id)
+        store.atomic_json(root/'settings.json',settings)
+    finally:
+        with LOCK:ACTIVE.discard(cid)
+    return snapshot(cid)
