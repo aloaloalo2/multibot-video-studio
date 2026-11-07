@@ -11,7 +11,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import razgon_bridge
 
@@ -38,6 +38,23 @@ class FakeStudio:
 
 
 class FrameSlotsTest(unittest.TestCase):
+    def test_channel_plate_already_grouped_by_studio_is_not_grouped_twice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "plate.png").write_bytes(b"fixture")
+            (root / "config.json").write_text(json.dumps({"overlay": "plate.png"}))
+            initial = {"id": "p", "tracks": [], "scene_groups": []}
+            layer = {"id": "t", "name": razgon_bridge.OVERLAY_TITLE, "clips": []}
+            added_layer = {**initial, "tracks": [layer]}
+            clip = {"id": "c", "title": razgon_bridge.OVERLAY_TITLE, "start": 0, "duration": 10}
+            grouped = {**initial, "tracks": [{**layer, "clips": [clip]}],
+                       "scene_groups": [{"id": "managed", "role": "overlay", "clip_ids": ["c"]}]}
+            studio = SimpleNamespace(import_file=Mock(return_value={"id": "a"}), project=Mock(return_value=initial),
+                                     batch=Mock(side_effect=[added_layer, grouped]))
+            self.assertIs(razgon_bridge.ensure_overlay(studio, root, initial, 10), grouped)
+            self.assertEqual(studio.batch.call_count, 2)
+            self.assertFalse(any(a["type"] == "group_clips" for call in studio.batch.call_args_list for a in call.args[1]))
+
     def test_reset_frames_go_back_from_a_rendered_clip_to_a_code_block(self):
         link = {"project_id": "p" * 24, "fps": 25, "duration": 10.0,
                 "frames": [{"number": 1, "start": 0.0, "end": 4.0}, {"number": 2, "start": 4.0, "end": 10.0}]}

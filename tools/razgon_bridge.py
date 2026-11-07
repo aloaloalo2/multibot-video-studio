@@ -658,6 +658,9 @@ def ensure_overlay(studio: "Studio", razgon: Path, project: dict, duration: floa
     project = studio.batch(project, [{"type": "add_clip", "payload": {"layer_id": layer["id"], "kind": "image", "asset_id": asset["id"],
                                                                       "start": 0, "duration": duration, "title": OVERLAY_TITLE}}])
     clip = next(clip for _, clip in all_clips(project) if clip.get("title") == OVERLAY_TITLE)
+    # Studio may already attach the channel plate to its managed overlay group when adding the clip.
+    if any(clip["id"] in group.get("clip_ids", []) for group in project.get("scene_groups", [])):
+        return project
     return studio.batch(project, [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": OVERLAY_TITLE, "role": "overlay"}}])
 
 

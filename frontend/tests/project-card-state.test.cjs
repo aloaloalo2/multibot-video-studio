@@ -6,6 +6,24 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
 const stateSource=source.slice(source.indexOf('function projectProductionCardState('),source.indexOf('function renderOverview()'));
 const exportSource=source.slice(source.indexOf('function updateOverviewExports()'),source.indexOf('let overviewExportRequest='));
+const activitySource=source.slice(source.indexOf('function renderProjectActivities()'),source.indexOf('async function pollChannelActivity()'));
+
+test('recognition and director status is replaced once and cleared when work ends',()=>{
+  const classes=new Set(),children=[],attributes={},activities=new Map([['p','розпізнавання озвучки']]);
+  const open={insertBefore:node=>children.push(node),querySelector:()=>({})};
+  const card={dataset:{projectId:'p'},classList:{toggle:(key,on)=>on?classes.add(key):classes.delete(key),contains:key=>classes.has(key)},
+    setAttribute:(key,value)=>attributes[key]=value,querySelector:()=>open,querySelectorAll:()=>[...children]};
+  const document={querySelectorAll:()=>[card],createElement:()=>({setAttribute(){},remove(){children.splice(children.indexOf(this),1);}})};
+  const c=vm.createContext({document,projectActivities:activities,exportSpinner:'spinner'});
+  vm.runInContext(activitySource,c);
+  const render=()=>vm.runInContext('renderProjectActivities()',c);
+  render();render();
+  assert.equal(children.length,1);assert.equal(classes.has('stage-working'),true);assert.equal(attributes['aria-busy'],'true');
+  assert.match(children[0].innerHTML,/Розпізнаємо озвучку/);
+  activities.set('p','режисура');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/Режисер складає план/);
+  activities.clear();render();assert.equal(children.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
+  classes.add('exporting');render();assert.equal(attributes['aria-busy'],'true');
+});
 
 test('an old failed job with every frame made no longer shows a stopped warning',()=>{
   const c=vm.createContext({});vm.runInContext(stateSource,c);

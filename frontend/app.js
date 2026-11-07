@@ -167,9 +167,12 @@ const channelActivity=new Set(),projectActivities=new Map();
 let channelActivityPending=false;
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
-    card.querySelector('.project-stage-job')?.remove();
-    const kind=projectActivities.get(card.dataset.projectId);if(!kind)continue;
-    const open=card.querySelector('.project-open');if(!open)continue;
+    for(const previous of card.querySelectorAll('.project-stage-job'))previous.remove();
+    const kind=projectActivities.get(card.dataset.projectId),open=card.querySelector('.project-open');
+    const working=!!kind&&!!open;
+    card.classList.toggle('stage-working',working);
+    card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
+    if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
     open.insertBefore(box,open.querySelector('.project-meta'));
@@ -459,7 +462,7 @@ function exportQueueLabel(job){return `Експорт у черзі${Number(job?
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
     const job=state.projectExports.get(card.dataset.projectId),active=!!job&&['queued','running','cancelling'].includes(job.status);
-    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')));
+    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')||card.classList.contains('stage-working')));
     const making=card.querySelector('.project-making');if(making)making.hidden=active;
     const control=card.querySelector('.project-production-control');if(control)control.hidden=active;
     for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active;
