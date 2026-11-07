@@ -174,7 +174,7 @@ function renderProjectActivities(){
     card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='озвучення сценарію'?'Озвучуємо сценарій':kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
 }
@@ -184,8 +184,14 @@ async function pollChannelActivity(){
   channelActivityPending=true;
   try{
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
-    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
-    for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
+    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
+    for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
+    // Read known narration jobs directly as well, so an already running server needs no disruptive restart.
+    let watched=[];try{watched=JSON.parse(localStorage.getItem('narration-active-projects')||'[]');}catch{}
+    if(state.project?.id&&!watched.some(x=>x.id===state.project.id))watched.push({id:state.project.id,channel_id:state.project.channel_id});
+    const running=[];
+    await Promise.all(watched.map(async project=>{try{const data=await api(`/api/projects/${project.id}/narration`);if(data.job?.status==='running'){running.push(project);projectActivities.set(project.id,'озвучення сценарію');channelActivity.add(project.channel_id);}}catch{}}));
+    try{localStorage.setItem('narration-active-projects',JSON.stringify(running));}catch{}
     renderProjectActivities();
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);

@@ -66,15 +66,25 @@ const voiceScriptDraft={};
 function narrationChoices(panel,ready){
   const choices=document.createElement('div');choices.className='narration-choices';
   choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
-  const buttons=choices.querySelectorAll('button');
-  async function choose(index){
-    try{await api(`/api/projects/${state.project.id}/narration/source`,'POST',{source:index===1?'file':'script'});}catch(error){status(error.message,true);return;}
+  const buttons=choices.querySelectorAll('button'),pid=state.project.id;
+  function showSelection(index){
     choices.classList.add('has-selection');
     buttons.forEach((button,i)=>{button.classList.toggle('selected',i===index);button.setAttribute('aria-pressed',String(i===index));});
     ready(index===1);
   }
+  async function choose(index){
+    try{await api(`/api/projects/${state.project.id}/narration/source`,'POST',{source:index===1?'file':'script'});}catch(error){status(error.message,true);return;}
+    showSelection(index);
+  }
   buttons.forEach((button,index)=>{button.setAttribute('aria-pressed','false');button.onclick=()=>choose(index);});
   panel.append(choices);
+  api(`/api/projects/${pid}/narration`).then(data=>{
+    if(!choices.isConnected||state.project?.id!==pid)return;
+    const running=data.job?.status==='running';
+    const mode=running?'script':data.source || (data.job?.script?'script':null);
+    if(mode)showSelection(mode==='file'?1:0);
+    if(running){buttons.forEach(button=>button.disabled=true);choices.setAttribute('aria-busy','true');}
+  }).catch(error=>{if(choices.isConnected)status(error.message,true);});
 }
 function renderNarrationGeneration(panel){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
@@ -102,7 +112,7 @@ function renderNarrationGeneration(panel){
   async function poll(){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
-      if(job?.status==='running'){if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
+      if(job?.status==='running'){if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
       else if(job?.status==='done'&&busy){info.textContent='Озвучка готова. Розпізнаємо й додаємо до плану…';await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:text.value});await selectProject(pid,{view:'plan'});}
       else if(job?.status==='failed'){busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
     }catch(error){info.textContent=error.message;button.disabled=false;}

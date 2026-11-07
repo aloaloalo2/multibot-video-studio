@@ -789,7 +789,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (director.ACTIVE.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
+    return (project_narration.ACTIVE.copy() | director.ACTIVE.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -801,7 +801,8 @@ def project_jobs(pid: str) -> dict:
             return (read() or {}).get("status")
         except (store.StudioError, OSError, ValueError, KeyError):
             return None
-    return {"розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
+    return {"озвучення сценарію": status(lambda: project_narration.snapshot(pid).get("job")),
+            "розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
             "музика й ефекти": status(lambda: razgon_sound.state(pid)),
