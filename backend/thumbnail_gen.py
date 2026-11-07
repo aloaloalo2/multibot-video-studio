@@ -377,13 +377,12 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
         name = f"Превью v{number}.png"
         hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
+        channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
             refs, answer = [version_file(pid, base)], {}
             written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
-            settings = director.channel_settings(project)
-            channel_wishes = str(settings.get("thumbnail_wishes") or "").strip()
             if channel_wishes:
                 wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
@@ -399,6 +398,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 note = ("[DeepSeek] " if writer == "deepseek" else "") + written
         if hero:
             refs = [hero, *refs]
+        if channel_wishes and channel_wishes not in written:
+            preferences = "\nChannel thumbnail preferences (apply these; specific wishes for this thumbnail take priority):\n" + channel_wishes + "\n"
+            written += preferences
+            note += preferences
         written += hero_rules
         note += hero_rules
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")

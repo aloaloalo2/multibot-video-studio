@@ -100,6 +100,7 @@ class ThumbnailTest(unittest.TestCase):
                     command,sent=self.calls[-1]
                     self.assertEqual(str(hero) in command,enabled)
                     self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',sent['input'])
+                    self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
                     prompt_writer=claude if writer=='claude' else deepseek if writer=='deepseek' else None
                     if prompt_writer:
                         self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',prompt_writer.call_args.args[0])
