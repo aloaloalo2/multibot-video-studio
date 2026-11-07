@@ -58,3 +58,12 @@ test('export leaves thumbnail creation available while destructive card actions 
   jobs.clear();c.updateOverviewExports();
   assert.ok(buttons.every(button=>!button.disabled));
 });
+
+test('completion marks use gray for work and gold for export, with no mark after acknowledgement',()=>{
+  const block=source.slice(source.indexOf('function completionMark('),source.indexOf('async function markProjectSeen('));
+  const c=vm.createContext({});vm.runInContext(block,c);
+  assert.equal(c.completionMark({}), '');
+  assert.match(c.completionMark({completion_notice:{kind:'process'}}),/Роботу завершено/);
+  assert.doesNotMatch(c.completionMark({completion_notice:{kind:'process'}}),/is-exported/);
+  assert.match(c.completionMark({completion_notice:{kind:'export'}}),/is-exported/);
+});

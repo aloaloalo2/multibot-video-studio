@@ -54,6 +54,7 @@ import audio_level
 import waveforms
 import joins
 import export_names
+import completion_notices
 import agent_view
 import montage_ops
 import thumbnails
@@ -424,6 +425,10 @@ def load_job(jid: str) -> dict:
 def save_job(job: dict) -> None:
     with JOBS_LOCK:
         store.atomic_json(job_path(job["id"]), job)
+        try:
+            completion_notices.record(job)
+        except (OSError, ValueError, store.StudioError) as error:
+            print(f'Completion notice not saved: {error}', flush=True)
 
 
 def _check_render(path: Path) -> None:
@@ -1020,9 +1025,10 @@ class Handler(BaseHTTPRequestHandler):
                 # the «Мови» tab works beside the montage: a translated voice and thumbnail change nothing in it
                 # Original covers also live separately from the frozen export manifest and media.
                 thumbnail_only = method == 'POST' and re.fullmatch(r'/api/projects/[0-9a-f]{24}/thumbnail(?:/choose)?', path)
-                if project_match and not thumbnail_only and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
+                notice_only = method == 'POST' and path.endswith('/completion/seen')
+                if project_match and not (thumbnail_only or notice_only) and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
-                if project_match and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
+                if project_match and not notice_only and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
                 shared = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})", path)
                 if method == "POST" and shared:
@@ -1102,9 +1108,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/elevenlabs/balance':
             return self.json_response(languages.eleven_api.balance(refresh=(query.get('refresh') or [''])[0]=='1'))
         if path == "/api/projects":
+            completion_notices.index_exports(JOBS_ROOT)
             projects = store.list_projects((query.get("channel") or [None])[0])
             for item in projects:
                 item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
+                item['completion_notice'] = completion_notices.notice(store.listed_project(store.project_dir(item['id']) / 'project.json'))
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
@@ -1390,6 +1398,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
+        if match and method == 'POST':
+            store.load_project(match.group(1))
+            completion_notices.seen(match.group(1))
+            return self.json_response({'seen': True})
         if method == "PATCH" and path == "/api/channels/order":
             return self.json_response({"channels": store.reorder_channels(body.get("ids"))})
         if method=='POST' and path=='/api/studio/restart/prepare':

@@ -150,6 +150,9 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card .project-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
 .project-created{color:#96989f;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-created time{white-space:nowrap;font-variant-numeric:tabular-nums}
+.project-completion{display:inline-flex;vertical-align:middle;margin-left:6px;color:#b2b5bd;line-height:1}
+.project-completion.is-exported{color:#f0b429}
+.project-completion svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .project-card.has-cover{background:#0c0c0f}
 .project-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;opacity:0;transition:opacity .35s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
 .project-card.cover-ready .project-cover{opacity:1}

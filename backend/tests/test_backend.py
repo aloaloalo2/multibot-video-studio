@@ -25,6 +25,22 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_completion_notice_clears_on_open_without_changing_project(self):
+        project = store.create_project(store.channel_id(self.channel), 'Unread completion')
+        project['production_request'] = {'status': 'done', 'finished_at': time.time() - 1}
+        store.save_project(project)
+        revision = project['revision']
+        status, listed = self.request('/api/projects?channel=' + project['channel_id'])
+        self.assertEqual(status, 200)
+        item = next(item for item in listed['projects'] if item['id'] == project['id'])
+        self.assertEqual(item['completion_notice']['kind'], 'process')
+        with patch.object(app, 'active_export', return_value={'status': 'running'}):
+            status, response = self.request('/api/projects/' + project['id'] + '/completion/seen', 'POST', {})
+        self.assertEqual((status, response['seen']), (200, True))
+        self.assertEqual(store.load_project(project['id'])['revision'], revision)
+        status, listed = self.request('/api/projects?channel=' + project['channel_id'])
+        self.assertIsNone(next(item for item in listed['projects'] if item['id'] == project['id'])['completion_notice'])
+
     def test_thumbnails_during_export_keep_montage_locked(self):
         project = store.create_project(store.channel_id(self.channel), 'Cover during export')
         base = '/api/projects/' + project['id']
