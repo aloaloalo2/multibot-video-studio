@@ -309,13 +309,7 @@ function renderPlanSwitch(panel){
   if(input.disabled)heading.title='Перемикач запрацює після безпечного перезапуску студії';
   input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
   panel.append(heading);
-  if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced'){
-    const completed=document.createElement('section');completed.className='narration-completed';panel.append(completed);
-    const info=document.createElement('p');info.className='muted';info.setAttribute('role','status');
-    const refresh=async()=>{try{const {job}=await api(`/api/projects/${id}/narration`);if(!completed.isConnected||state.project?.id!==id)return;if(narrationResultVisible(job,state.project)){completed.replaceChildren(info);info.textContent='Готова озвучка';appendReadyNarration(completed,id,job,info,refresh);}}catch(error){info.textContent=error.message;}};
-    refresh();
 
-  }
 }
 
 function projectAnimated(project=state.project){const kind=project?.project_kind ?? state.channel?.settings?.channel_kind;return kind==='animated';}
