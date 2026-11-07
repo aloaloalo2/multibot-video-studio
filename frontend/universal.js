@@ -33,7 +33,7 @@ function addLayerSoundControl(heading,layer){
 }
 function layerTime(event,lane){const rect=lane.getBoundingClientRect();return timelineOrigin()+Math.max(0,Math.round(((event.clientX-rect.left)/rect.width)*timelineSpan()*10)/10);}
 
-function selectUniversalClip(id,seek=true){const chosen=universalClips().find(clip=>clip.id===id);if(!chosen)return;state.selectedTransition=null;state.selectedStack=null;state.selected=id;state.activeLayer=layers().find(layer=>(layer.clips || []).some(clip=>clip.id===id))?.id || state.activeLayer;state.replaceMode=false;if(seek)state.playhead=seconds(chosen.start);renderTimeline();renderInspector();renderPreview();status(`Вибрано кліп «${clipLabel(chosen)}».`);}
+function selectUniversalClip(id,seek=false){const chosen=universalClips().find(clip=>clip.id===id);if(!chosen)return;state.selectedTransition=null;state.selectedStack=null;state.selected=id;state.activeLayer=layers().find(layer=>(layer.clips || []).some(clip=>clip.id===id))?.id || state.activeLayer;state.replaceMode=false;if(seek)state.playhead=seconds(chosen.start);renderTimeline();renderInspector();renderPreview();status(`Вибрано кліп «${clipLabel(chosen)}».`);}
 
 function renderUniversalTimeline(){
   renderGroupingControls();

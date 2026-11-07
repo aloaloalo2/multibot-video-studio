@@ -84,7 +84,7 @@ function createSelectedGroup(){
   modal('Згрупувати кадр','<label>Назва кадру<input id="new-frame-name" value="Новий кадр" maxlength="120"></label>',[{label:'Скасувати',run:closeModal},{label:'Згрупувати',primary:true,run:async()=>{try{await action('group_clips',{clip_ids:clipIds,title:$('new-frame-name').value},'Кадр згруповано.');state.multiSelection=[];state.compactTimeline=true;closeModal();renderTimeline();}catch(error){status(error.message,true);}}}]);
 }
 
-function selectFrameGroup(group){clearTransitionSelection();state.selectedStack=null;state.selected=null;state.selectedGroup=group.id;state.playhead=groupBounds(group).start;state.multiSelection=[];renderGroupingControls();for(const node of document.querySelectorAll('[data-group-id]'))node.classList.toggle('selected',node.dataset.groupId===group.id);renderInspector();renderPreview();}
+function selectFrameGroup(group){clearTransitionSelection();state.selectedStack=null;state.selected=null;state.selectedGroup=group.id;state.multiSelection=[];renderGroupingControls();for(const node of document.querySelectorAll('[data-group-id]'))node.classList.toggle('selected',node.dataset.groupId===group.id);renderInspector();renderPreview();}
 function expandFrameGroup(group){
   state.selectedTransition=null;
   if(!state.expandedGroup)state.groupPreviousZoom=state.zoom;

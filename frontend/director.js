@@ -493,17 +493,8 @@ async function startMaking(button){
 // The director's report belongs to the voice stage, the agent's to «Створення ролика».
 function fillReports(episode){
   const directorSlot=episode?.querySelector('.episode-director-report'),agentSlot=episode?.querySelector('.episode-make-report');
-  if(!agentSlot)return;
-  directorSlot?.replaceChildren();agentSlot.replaceChildren();
-  const id=state.project.id,request=state.project.production_request;
-  const add=(slot,title,text,cost)=>{const fold=episodeFold(title);const body=document.createElement('div');body.className='plan-script-text';body.textContent=text;fold.append(body);
-    if(cost){const line=document.createElement('p');line.className='plan-note episode-fold-cost';line.textContent=cost.text;line.title=cost.title;fold.append(line);}
-    slot.append(fold);return fold;};
-  // the director's report is not shown: the author does not need it (user, 1 November 2026)
-  if(request?.summary&&!['requested','in_progress'].includes(request.status)){
-    const fold=add(agentSlot,'Звіт агента',request.summary,request.cost_usd?{text:spentLine(request),title:`Кадри створюються за підпискою Claude; сума показує, скільки це коштувало б через API.${spentTokens(request)}`}:null);
-    renderTeam(fold,'production',id,false);
-  }
+  // Reports stay in project storage; the compact workflow does not display them.
+  directorSlot?.replaceChildren();agentSlot?.replaceChildren();
 }
 
 async function resumeFrames(id,button){
