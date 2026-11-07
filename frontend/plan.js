@@ -304,8 +304,8 @@ $('view-agent').addEventListener('click',()=>setProjectView('agent'));
 function renderPlanSwitch(panel){
   const heading=document.createElement('div');heading.className='project-plan-heading';
   const started=!!(state.plan?.frames?.length || filmClips().length || state.project.production_request);
-  if(started){heading.innerHTML='<h1>Сценарій і озвучка</h1>';panel.append(heading);return;}
-  heading.innerHTML=`<h1>Сценарій і озвучка</h1><label class="project-plan-switch"><input type="checkbox" role="switch" aria-label="Увімкнути план ролика" ${directMontage()?'':'checked'}><span aria-hidden="true"></span></label>`;
+  if(started){heading.innerHTML='<h1>Озвучка</h1>';panel.append(heading);return;}
+  heading.innerHTML=`<h1>Озвучка</h1><label class="project-plan-switch"><input type="checkbox" role="switch" aria-label="Увімкнути план ролика" ${directMontage()?'':'checked'}><span aria-hidden="true"></span></label>`;
   const input=heading.querySelector('input'),id=state.project.id;
   input.disabled=state.project.plan_mode_editable!==true;
   if(input.disabled)heading.title='Перемикач запрацює після безпечного перезапуску студії';
