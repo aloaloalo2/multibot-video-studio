@@ -118,7 +118,9 @@ function renderNarrationGeneration(panel){
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   const text=box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('p');
   text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
-  const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').after(estimate);
+  const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
+  const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
+  const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
   async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
@@ -140,7 +142,9 @@ function renderNarrationGeneration(panel){
     const models=[...(profile?.heygen_models||[]),...(profile?.fish_models||[]),...(profile?.models||[])];
     const model=models.find(m=>m.id===key)?.name||key||'';
     const percent=job.total>0?Math.min(99,Math.max(0,Math.floor((job.completed||0)/job.total*100))):0;
-    info.innerHTML=`${exportSpinner}<span>${esc([service,model].filter(Boolean).join(' · '))}<strong>${job.status==='cancelling'?'Зупиняємо':'Озвучуємо'} · ${percent}%</strong><small>${job.completed||0} з ${job.total||0} фраз</small></span>`;
+    info.innerHTML=`<span class="narration-engine">${esc([service,model].filter(Boolean).join(' · '))}</span><span class="narration-progress-title">${exportSpinner}<strong>${job.status==='cancelling'?'Зупиняємо':'Озвучуємо'}</strong><b>${percent}%</b></span>`;
+    count.textContent=`${job.completed||0} із ${job.total||0} фраз`;
+    progress.setAttribute('aria-valuenow',String(percent));progress.firstElementChild.style.width=percent+'%';
     estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);
   }
   actionState();

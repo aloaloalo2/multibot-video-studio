@@ -1975,4 +1975,26 @@ select option{background:#232327;color:#f1f1f2}
 
 .narration-ready{display:grid;gap:12px;margin-top:14px;min-width:0}.narration-tempo{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px}.narration-tempo label{display:flex;align-items:center;gap:10px;color:#b9bdc6;font-size:13px}.narration-tempo output{min-width:38px;font-variant-numeric:tabular-nums}.narration-tempo input{width:140px;accent-color:#b9bdc6}.narration-tempo small{color:#858994;font-size:12px}
 
-.narration-choices[hidden]{display:none!important}.narration-generation.is-generating>.narration-choice-profile,.narration-generation.is-generating>.narration-cache-note{display:none}.narration-status-row{display:flex;align-items:center;gap:12px;margin-top:14px}.narration-status-row p{flex:1;min-width:0;margin:0;color:#aeb3be;font-size:13px}.narration-status-row p>span{min-width:0}.narration-status-row strong{display:block;color:#d6d9e0;font-size:14px;font-weight:600;margin-top:4px}.narration-status-row small{display:block;color:#868b96;font-size:12px;margin-top:4px}.narration-action-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;min-width:40px;padding:0!important;border-radius:50%}.narration-action-icon svg{width:20px;height:20px}.narration-generation textarea[readonly]{color:#c2c5cd;opacity:1}.narration-generation.is-generating{padding-top:0}.narration-status-row~.narration-cost{margin-top:6px}
+.narration-choices[hidden]{display:none!important}
+.narration-generation.is-generating>.narration-choice-profile,.narration-generation.is-generating>.narration-cache-note{display:none}
+.narration-status-row{display:grid;grid-template-columns:minmax(0,1fr) 40px;grid-template-areas:"info action" "count cost" "progress progress";align-items:center;gap:10px 14px;margin-top:14px;padding:14px 16px;background:#191a1e;border:1px solid #303239;border-radius:14px;min-width:0}
+.narration-status-row p{grid-area:info;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;margin:0;color:#aeb3be;font-size:13px}
+.narration-engine{color:#969ca8;font-size:12px;line-height:1.4;max-width:100%;overflow-wrap:anywhere}
+.narration-progress-title{display:flex;align-items:center;gap:8px;color:#d6d9e0;line-height:1.5}
+.narration-progress-title strong{font-size:14px;font-weight:600}
+.narration-progress-title b{font-size:13px;font-weight:500;color:#bfc4ce;font-variant-numeric:tabular-nums;margin-left:4px}
+.narration-progress-title svg{width:14px;height:14px;flex:none}
+.narration-action-icon{grid-area:action;display:grid;place-items:center;width:36px;height:36px;min-width:36px;min-height:36px;padding:0!important;border-radius:50%;background:#2b2d34;border:1px solid #3c3f48;color:#d5d8e0;box-shadow:none;justify-self:end;margin:0}
+.narration-action-icon:hover{background:#383b44;border-color:#525662}
+.narration-action-icon svg{width:17px;height:17px}
+.narration-phrase-count{grid-area:count;color:#858c99;font-size:12px;line-height:1.4;font-variant-numeric:tabular-nums}
+.narration-status-row .narration-cost{grid-area:cost;justify-self:end;color:#9ca3af;font-size:12px;line-height:1.4;white-space:nowrap}
+.narration-progress-track{grid-area:progress;height:3px;overflow:hidden;border-radius:4px;background:#30333b;margin-top:2px}
+.narration-progress-track>span{display:block;height:100%;width:0;background:#959eaf;border-radius:inherit;transition:width .35s ease}
+.narration-generation:not(.is-generating) .narration-phrase-count,.narration-generation:not(.is-generating) .narration-progress-track{display:none}
+.narration-generation:not(.is-generating) .narration-status-row{grid-template-areas:"info action" "cost cost"}
+.narration-generation:not(.is-generating) .narration-status-row .narration-cost{justify-self:start;white-space:normal}
+.narration-generation textarea[readonly]{color:#bdc1cb;opacity:1}
+.narration-generation.is-generating{padding-top:0}
+.narration-generation.is-generating textarea{height:clamp(180px,30vh,300px);min-height:180px;resize:vertical;padding:14px 16px;line-height:1.65}
+@media(max-width:480px){.narration-status-row{padding:12px;gap:8px 10px}.narration-generation.is-generating textarea{height:220px}}
