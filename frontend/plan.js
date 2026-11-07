@@ -129,7 +129,7 @@ function renderNarrationGeneration(panel){
   async function poll(){
     if(!box.isConnected || state.project?.id!==pid)return;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
-      if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
+      if(['running','cancelling'].includes(job?.status)){stop.hidden=false;stop.disabled=job.status==='cancelling';if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);if(typeof projectActivities!=='undefined')projectActivities.set(pid,'озвучення сценарію');if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.total>0?Math.min(99,Math.max(0,Math.floor((job.completed||0)/job.total*100))):0}% · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
       else if(narrationResultVisible(job,state.project,busy)){
         busy=false;stop.hidden=true;button.disabled=false;text.disabled=false;info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         if(!box.querySelector('.narration-ready')){

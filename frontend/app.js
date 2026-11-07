@@ -168,13 +168,14 @@ let channelActivityPending=false;
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
     for(const previous of card.querySelectorAll('.project-stage-job'))previous.remove();
-    const kind=projectActivities.get(card.dataset.projectId),open=card.querySelector('.project-open');
+    const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
+    const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
     const working=!!kind&&!!open;
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='озвучення сценарію'?'Озвучуємо сценарій':kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
 }
@@ -189,8 +190,9 @@ async function pollChannelActivity(){
     // Read known narration jobs directly as well, so an already running server needs no disruptive restart.
     let watched=[];try{watched=JSON.parse(localStorage.getItem('narration-active-projects')||'[]');}catch{}
     if(state.project?.id&&!watched.some(x=>x.id===state.project.id))watched.push({id:state.project.id,channel_id:state.project.channel_id});
+    for(const [id,kind] of projectActivities)if(kind==='озвучення сценарію'&&!watched.some(x=>x.id===id))watched.push({id});
     const running=[];
-    await Promise.all(watched.map(async project=>{try{const data=await api(`/api/projects/${project.id}/narration`);if(data.job?.status==='running'){running.push(project);projectActivities.set(project.id,'озвучення сценарію');channelActivity.add(project.channel_id);}}catch{}}));
+    await Promise.all(watched.map(async project=>{try{const data=await api(`/api/projects/${project.id}/narration`);if(['running','cancelling'].includes(data.job?.status)){running.push(project);const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(project.id,{kind:'озвучення сценарію',progress});channelActivity.add(project.channel_id);}}catch{}}));
     try{localStorage.setItem('narration-active-projects',JSON.stringify(running));}catch{}
     renderProjectActivities();
     for(const id of activity.active_channels||[])channelActivity.add(id);
