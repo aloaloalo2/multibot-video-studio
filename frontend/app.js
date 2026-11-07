@@ -468,7 +468,7 @@ function updateOverviewExports(){
     card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')||card.classList.contains('stage-working')));
     const making=card.querySelector('.project-making');if(making)making.hidden=active;
     const control=card.querySelector('.project-production-control');if(control)control.hidden=active;
-    for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active;
+    for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active&&!button.classList.contains('thumbnail');
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));

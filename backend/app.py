@@ -1018,7 +1018,9 @@ class Handler(BaseHTTPRequestHandler):
                 # the live preview only starts a viewer of the Razgon code and changes nothing in the project
                 # a still only reads the project, as the live preview does
                 # the «Мови» tab works beside the montage: a translated voice and thumbnail change nothing in it
-                if project_match and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
+                # Original covers also live separately from the frozen export manifest and media.
+                thumbnail_only = method == 'POST' and re.fullmatch(r'/api/projects/[0-9a-f]{24}/thumbnail(?:/choose)?', path)
+                if project_match and not thumbnail_only and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
                 if project_match and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)

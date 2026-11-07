@@ -44,3 +44,17 @@ test('export progress takes the single status slot and restores production statu
   jobs.clear();vm.runInContext('updateOverviewExports()',c);
   assert.equal(making.hidden,false);assert.equal(control.hidden,false);assert.equal(box.hidden,true);
 });
+
+test('export leaves thumbnail creation available while destructive card actions stay locked',()=>{
+  const buttons=['thumbnail','delete','space','rename'].map(kind=>({kind,disabled:false,classList:{contains:name=>name===kind}}));
+  const box={replaceChildren(){}};
+  const card={dataset:{projectId:'p'},classList:{toggle(){},contains:()=>false},setAttribute(){},
+    querySelectorAll:()=>buttons,querySelector:s=>s==='.project-export-state'?box:null};
+  const jobs=new Map([['p',{status:'queued',queue_position:1}]]);
+  const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner',exportQueueLabel:()=> 'У черзі'});
+  vm.runInContext(exportSource,c);c.updateOverviewExports();
+  assert.equal(buttons[0].disabled,false);
+  assert.ok(buttons.slice(1).every(button=>button.disabled));
+  jobs.clear();c.updateOverviewExports();
+  assert.ok(buttons.every(button=>!button.disabled));
+});

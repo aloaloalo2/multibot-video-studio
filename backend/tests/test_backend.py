@@ -25,6 +25,24 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_thumbnails_during_export_keep_montage_locked(self):
+        project = store.create_project(store.channel_id(self.channel), 'Cover during export')
+        base = '/api/projects/' + project['id']
+        with patch.object(app, 'active_export', return_value={'status': 'running'}), \
+             patch.object(app.thumbnail_gen, 'start', return_value={'status': 'running'}) as start, \
+             patch.object(app.thumbnail_gen, 'choose', return_value={'versions': []}) as choose:
+            code, _ = self.request(base + '/thumbnail', 'POST', {'title': 'Cover'})
+            self.assertEqual(code, 202)
+            start.assert_called_once()
+            code, _ = self.request(base + '/thumbnail/choose', 'POST', {'name': 'Превью v1.png'})
+            self.assertEqual(code, 200)
+            choose.assert_called_once()
+            code, _ = self.request(base, 'PATCH', {'name': 'Changed'})
+            self.assertEqual(code, 423)
+            code, _ = self.request(base + '/actions', 'POST', {'type': 'add_layer', 'payload': {}})
+            self.assertEqual(code, 423)
+        self.assertEqual(store.load_project(project['id'])['name'], project['name'])
+
     def test_project_cover_uses_scene_media_and_ignores_unused_assets(self):
         project = {"assets": [{"id": "brand", "kind": "image"}, {"id": "scene", "kind": "video"}, {"id": "unused", "kind": "image"}],
                    "tracks": [{"clips": [{"id": "logo", "asset_id": "brand", "kind": "image", "start": 0}, {"id": "frame", "asset_id": "scene", "kind": "video", "start": 2}]}],
