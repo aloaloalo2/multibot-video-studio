@@ -564,6 +564,7 @@ const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],
 // The author never sees file names or the agent's English notes: reading and preparing read as one plain line, files
 // written read as what they are for, and real steps keep their own words.
 function humanStep(text){
+  if(/рендер.*(?:аркуш|пробні кадри)|готую стоп-кадри/i.test(text))return 'Готує стоп-кадри для перевірки';
   const own=/^Команда: (.*)/.exec(text);
   if(own)return /[а-яіїєґ]/i.test(own[1])?own[1]:'Вивчає матеріали й готує роботу';
   if(/^Читає /.test(text))return 'Вивчає матеріали й готує роботу';

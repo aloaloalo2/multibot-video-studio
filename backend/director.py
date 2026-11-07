@@ -177,8 +177,8 @@ COMMANDS = [("razgon_bridge.py prepare", "opus", "Готує проєкт Razgon
             ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
             ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py slots", "opus", "Ставить кадри кодом на таймлайн"),
             ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
-            ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Рендерить аркуш кадрів для перевірки"),
-            ("render.mjs", "razgon", "Рендерить пробні кадри"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
+            ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Готує стоп-кадри для перевірки"),
+            ("render.mjs", "razgon", "Готує стоп-кадри для перевірки"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
             ("frame_review", "opus", "Переглядає кадри")]
 
 
