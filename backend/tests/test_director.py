@@ -1,5 +1,6 @@
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -95,6 +96,32 @@ class DirectorTest(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertEqual(command[command.index('--disallowedTools') + 1:command.index('--disallowedTools') + 3], ['Agent', 'Task'])
         self.assertNotIn('Agent', director.ALLOWED)
+
+    def test_terminal_result_finishes_even_when_a_background_tool_keeps_stdout_open(self):
+        cli=Path(self.tmp.name)/'fake-claude'
+        child_pid=Path(self.tmp.name)/'background.pid'
+        result={'type':'result','subtype':'success','is_error':False,'result':'45 frames ready','total_cost_usd':1.25}
+        cli.write_text(f'#!{sys.executable}\nimport subprocess,sys,time,json\n'
+            f'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(60)"],start_new_session=True)\n'
+            f'open({str(child_pid)!r},"w").write(str(child.pid))\n'
+            f'print({json.dumps(json.dumps(result))},flush=True)\n'
+            'time.sleep(60)\n')
+        cli.chmod(0o700)
+        started=time.monotonic()
+        with patch.object(director,'RESULT_EXIT_GRACE',.1),patch('spend_report.record_later'):
+            code,answer=director.claude(cli,'brief',Path(self.tmp.name)/'stream.log',Path(self.tmp.name)/'activity.json',3)
+        self.assertLess(time.monotonic()-started,2)
+        self.assertEqual(code,0)
+        self.assertEqual(answer,result)
+        self.assertNotIn(str(Path(self.tmp.name)/'activity.json'),director.RUNNING)
+        pid=int(child_pid.read_text())
+        for _ in range(30):
+            try:os.kill(pid,0)
+            except ProcessLookupError:break
+            time.sleep(.05)
+        else:
+            os.kill(pid,signal.SIGKILL)
+            self.fail('The background tool survived the terminal result')
 
     def test_a_run_left_by_a_restart_reads_as_failed(self):
         director.save(PROJECT["id"], {"status": "running", "started_at": time.time()})

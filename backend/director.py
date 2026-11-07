@@ -23,6 +23,7 @@ import store
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
 TIMEOUT = 3 * 3600
+RESULT_EXIT_GRACE = 3
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 NO_RENDER = "MULTIBOT_RENDER_ON_EXPORT"   # set for the agents; tools/razgon_bridge.py then refuses push and final
@@ -227,6 +228,7 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
     watchdog.start()
     answer, steps = {}, []
+    stopped_after_result = False
     store.atomic_json(activity, [])
     try:
         process.stdin.write(prompt)
@@ -234,12 +236,18 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
         with log.open("w", encoding="utf-8") as out:
             for line in process.stdout:
                 out.write(line)
+                out.flush()
                 try:
                     event = json.loads(line)
                 except ValueError:
                     continue
                 if event.get("type") == "result":
                     answer = event
+                    watchdog.cancel()
+                    # A terminal result closes the model turn. Background tools
+                    # can inherit stdout and keep both the CLI and this reader
+                    # waiting indefinitely after the work has already finished.
+                    break
                 if event.get("type") != "assistant":
                     continue
                 for part in (event.get("message") or {}).get("content") or []:
@@ -247,15 +255,28 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
                     if action and (not steps or steps[-1]["text"] != action[1]):
                         steps = (steps + [{"t": time.time(), "who": action[0], "text": action[1]}])[-40:]
                         store.atomic_json(activity, steps)
-        process.wait()
+        if answer:
+            try:
+                process.wait(timeout=RESULT_EXIT_GRACE)
+            except subprocess.TimeoutExpired:
+                stopped_after_result = True
+                kill(process)
+                try:
+                    process.wait(timeout=RESULT_EXIT_GRACE)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        else:
+            process.wait()
     finally:
         watchdog.cancel()
+        process.stdout.close()
         RUNNING.pop(str(activity), None)
         import spend_report   # where this run spent the limits, saved beside the project once the log is complete
         spend_report.record_later(log)
     if expired.is_set():
         raise subprocess.TimeoutExpired(command, timeout)
-    return process.returncode, answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
+    return (0 if stopped_after_result else process.returncode), answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
 
 
 def limit_stop(answer: dict) -> str | None:

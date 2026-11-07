@@ -918,6 +918,8 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-make-readout{display:flex;align-items:baseline;gap:8px;color:#a8a395;font-size:12.5px;font-variant-numeric:tabular-nums}
 .episode-make-readout strong{font-size:24px;line-height:1;color:#ffd166}
 .episode-make-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;margin-top:12px}
+.episode-make-actions[hidden]{display:none}
+.episode-make>.episode-make-hint{margin:14px 0 0}
 .episode-make-hint{flex:1;min-width:220px;margin:0;font-size:12.5px;line-height:1.45;color:#f0c967}
 .episode-make-hint[hidden]{display:none}
 .episode-make-start{transition:background-color .15s,box-shadow .2s}
@@ -927,6 +929,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-make-start.loading::after{content:none}
 .episode-make-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
 .episode-make-count{flex:none;margin-left:auto;font-variant-numeric:tabular-nums;color:#a8abb4;font-size:.9em}
+.episode-make-idle{flex:none;color:#d2b97e;font-size:.8em;font-weight:400}
 .episode-make-start.loading .export-spinner{width:15px;height:15px}
 .episode-make-actions .production-control{color:#c5c7ce;background:#2b2b30;border-color:#47474d}
 .episode-make-actions .production-control:hover{background:#3a3a40;box-shadow:none}

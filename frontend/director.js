@@ -411,7 +411,7 @@ function fillMake(make){
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
     :directorAwaited()?'Кадри з’являться, коли режисер розкладе озвучку.'
-    :floor>=frames.length?'Усі кадри створені. Готовий ролик збирає «Експорт MP4» у «Монтажі».':'';
+    :floor>=frames.length?'Усі кадри створені. Ролик можна експортувати кнопкою «Експорт MP4».':'';
   const locked=working||paused||!!blocked;
   make.classList.toggle('locked',locked);make.dispatchEvent(new Event('episode-refresh'));make.classList.toggle('waiting',directorAwaited());
   const count=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,Number(makeCount[id]) || frames.length));
@@ -431,6 +431,10 @@ function fillMake(make){
     :`<strong>${shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · до ${clock(end)} з ${clock(all)}</span>`;
   fillLegend(legend,frames,made.size);
   hint.textContent=blocked;hint.hidden=!blocked||working||paused;
+  const completed=request?.status==='done'&&floor>=frames.length;
+  const actions=make.querySelector('.episode-make-actions');
+  actions.hidden=completed;start.hidden=completed;
+  if(completed)make.append(hint);else actions.prepend(hint);
   feed.replaceChildren();
   make.querySelector('.production-control')?.remove();
   // Show the current activity in one muted status control, without a live work log.
@@ -449,7 +453,8 @@ function fillMake(make){
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
     const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
   }else{
-    start.textContent='Почати створення ролика';
+    start.textContent=request?.status==='done'&&floor>=frames.length?`Кадри створені · ${made.size} з ${frames.length}`:'Почати створення ролика';
+    if(request?.status==='done'&&request.completion_note){const note=document.createElement('p');note.className='plan-note';note.textContent=request.completion_note;feed.append(note);}
     if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();
       note.textContent=`Кадри ${first}–${request.frames} не вдалися. ${error}${/почніть ще раз/.test(error)?'':' Виберіть кадри й почніть ще раз.'}`;feed.append(note);}
   }
@@ -593,11 +598,13 @@ function renderMakeStatus(button,id,request,done,total){
     if(!current())return;
     const steps=humanFeed(teamFeeds['production'+id] || []).filter(step=>!run||Number(step.t)>=run);
     const step=steps.at(-1);
-    const action=step?makeActivityLabel(step.text):(request.status==='requested'?'Готує матеріали':'Створює кадри');
+    const action=step?makeActivityLabel(step.text):(done>=total?'Кадри створені':request.status==='requested'?'Готує матеріали':'Створює кадри');
     const role=teamRoles[step?.who]?.[0] || (step?'Агент':'Режисер');
     const text=`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
-    button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span><span class="episode-make-count">${done} з ${total}</span>`;
-    button.setAttribute('aria-live','polite');button.title=text;
+    const age=Math.max(0,Date.now()/1000-(Number(step?.t)||run));
+    const idle=age>=120?`Без нових дій ${Math.floor(age/60)} хв`:'';
+    button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span>${idle?`<span class="episode-make-idle">${idle}</span>`:''}<span class="episode-make-count">${done} з ${total}</span>`;
+    button.setAttribute('aria-live','polite');button.title=text+(idle?` · ${idle}. Час завершення ще невідомий.`:'');
   };
   draw();
   api(`/api/projects/${encodeURIComponent(id)}/activity/production`).then(({activity})=>{
