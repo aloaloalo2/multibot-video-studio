@@ -63,7 +63,7 @@ function planFrameWord(count){
 }
 
 const voiceScriptDraft={};
-function narrationChoices(panel,ready){
+function narrationChoices(panel,ready,restore=true){
   const choices=document.createElement('div');choices.className='narration-choices';
   choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
   const buttons=choices.querySelectorAll('button'),pid=state.project.id;
@@ -78,7 +78,7 @@ function narrationChoices(panel,ready){
   }
   buttons.forEach((button,index)=>{button.setAttribute('aria-pressed','false');button.onclick=()=>choose(index);});
   panel.append(choices);
-  api(`/api/projects/${pid}/narration`).then(data=>{
+  if(restore)api(`/api/projects/${pid}/narration`).then(data=>{
     if(!choices.isConnected||state.project?.id!==pid)return;
     const running=data.job?.status==='running';
     const mode=running?'script':data.source || (data.job?.script?'script':null);
@@ -255,7 +255,11 @@ function renderPlanSwitch(panel){
   input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
   panel.append(heading);
   if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced'){
-    let generation=null;narrationChoices(panel,upload=>{if(upload){if(generation)generation.hidden=true;openNarrationBinding();}else{if(!generation)generation=renderNarrationGeneration(panel);generation.hidden=false;}});
+    const fold=document.createElement('details');fold.className='narration-change-fold';
+    const summary=document.createElement('summary');summary.textContent='Змінити озвучку або сценарій';fold.append(summary);panel.append(fold);
+    fold.addEventListener('toggle',()=>{if(!fold.open||fold.dataset.loaded)return;fold.dataset.loaded='true';
+      let generation=null;narrationChoices(fold,upload=>{if(upload){if(generation)generation.hidden=true;openNarrationBinding();}else{if(!generation)generation=renderNarrationGeneration(fold);generation.hidden=false;}},false);
+    });
   }
 }
 

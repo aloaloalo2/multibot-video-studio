@@ -263,9 +263,10 @@ function fillDirectorLine(box){
     // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
-    line('Режисер розкладає озвучку на кадри',`Claude Opus 5.5. Скільки буде кадрів, вирішить режисер: «Створення ролика» з’явиться, щойно він закінчить.${took}`);
+    line('Режисер складає план',took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
-    renderTeam(box,'director',id,true);
+    // Keep the current stage compact; the work log stays out of the main plan.
+
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='failed'){
     // the subscription limit only pauses the director: once it resets, the same button goes on
