@@ -30,8 +30,8 @@ def phrases(text):
 
 def spec(project, text):
     parts = phrases(text);cid=project['channel_id'];profile=lab.snapshot(cid)
-    if not profile.get('reference'):raise store.StudioError('Додайте голос у налаштуваннях каналу')
-    settings=profile['settings'];ref=profile['reference']
+    settings=profile['settings'];ref=lab.effective_reference(cid,settings) if settings['provider']=='heygen' else profile['reference']
+    if not ref:raise store.StudioError('Додайте або виберіть голос у налаштуваннях каналу')
     entries=[]
     for part in parts:
         params={**settings,'text':part}
@@ -97,7 +97,7 @@ def run(project,text,settings,ref,entries,job):
         store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
         fish=settings['provider']=='fishaudio'
-        if missing:
+        if missing and settings['provider']!='heygen':
             ref={**ref,'prepared_path':str(lab.prepared_source(cid,settings,ref))}
             if fish:secret=languages.key('fishaudio');voice=lab.fish_reference(cid,settings,ref)
             else:secret,voice=lab.clone(cid,settings,ref)
@@ -107,13 +107,13 @@ def run(project,text,settings,ref,entries,job):
             if not target.is_file():
                 params={**settings,'text':entry['text']}
                 raw_cached=lab.original_path(params,ref).is_file()
-                if not fish and not raw_cached:
+                if settings['provider']=='elevenlabs' and not raw_cached:
                     previous=folder/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')
                     if previous.is_file():
                         import shutil
                         source=lab.original_path(params,ref);source.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,source);raw_cached=True
-                audio=lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
-                cost={'unit':'usd' if fish else 'credits','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
+                audio=lab.heygen_synthesis(params,ref) if settings['provider']=='heygen' else lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
+                cost={'unit':'credits' if settings['provider']=='elevenlabs' else 'usd','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
                 receipt={'identity':identity,'provider':settings['provider'],'amount':cost['amount'],'estimated':True,'phrase_key':entry['key'],'created_at':time.time()}
                 receipts=folder/'receipts';receipts.mkdir(exist_ok=True)
                 store.atomic_json(receipts/(identity+'.json'),receipt)

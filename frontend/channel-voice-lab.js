@@ -1,6 +1,7 @@
 // Saved channel voice. Upload is local; synthesis starts only from the sample button.
 // Compare the parameters that actually reach the selected service.
 function voiceLabSampleKey(s){
+  if(s.provider==='heygen')return JSON.stringify(['provider','language','text','heygen_model','heygen_voice_id','speed'].map(k=>[k,s[k]]));
   const fields=['provider','language','text','noise_cleanup',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p','chunk_length','speed']:['model','delivery','stability','similarity_boost','direction','speed'])];
   return JSON.stringify(fields.map(k=>[k,k==='speed'?(s[k]??1):s[k]]));
 }
@@ -20,7 +21,7 @@ async function bindChannelVoiceLab(channel){
   let data,signature='',timer;
   const current=()=>box.isConnected;
   const settingsKey=value=>JSON.stringify(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)));
-  const read=()=>({provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
+  const read=()=>({heygen_model:box.querySelector('[name=heygen_model]').value,heygen_voice_id:box.querySelector('[name=heygen_voice_id]').value.trim(),provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
     speed:Number(box.querySelector('[name=speed]').value)/100,noise_cleanup:data.settings.noise_cleanup,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
@@ -36,10 +37,12 @@ async function bindChannelVoiceLab(channel){
     const sameOriginal=voiceLabSampleKey({...settings,speed:1})===voiceLabSampleKey({...data.settings,speed:1});
     const usd=data.cached_fish_original&&sameOriginal?0:new TextEncoder().encode(settings.text).length*fishRate;
     const freeOriginal=data.cached_original&&voiceLabSampleKey({...settings,speed:1})===voiceLabSampleKey({...data.settings,speed:1});
-    const price=freeOriginal?'безкоштовно':fish?(usd?`≈ $${usd.toFixed(4)}`:'безкоштовно'):`≈ ${Math.ceil(count*rate).toLocaleString('uk-UA')} кредитів`;
+    box.querySelector('.voice-lab-reference').hidden=settings.provider==='heygen';
+    const heygen=settings.provider==='heygen',heygenCost=[...settings.text].length*(data.heygen_models?.find(m=>m.id===settings.heygen_model)?.rate||0);
+    const price=freeOriginal?'безкоштовно':heygen?(heygenCost?`≈ $${heygenCost.toFixed(4)}`:'безкоштовно'):fish?(usd?`≈ $${usd.toFixed(4)}`:'безкоштовно'):`≈ ${Math.ceil(count*rate).toLocaleString('uk-UA')} кредитів`;
     box.querySelectorAll('[data-provider]').forEach(el=>{el.hidden=el.dataset.provider!==settings.provider;});
     box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
-    box.querySelector('.voice-lab-listen').disabled=!data.reference||data.job?.status==='running';
+    box.querySelector('.voice-lab-listen').disabled=!(heygen?settings.heygen_voice_id:data.reference)||data.job?.status==='running';
     box.querySelector('.voice-lab-save').disabled=same;
     box.querySelectorAll('input[type=range]').forEach(input=>{input.nextElementSibling.textContent=input.value+'%';});
   };
@@ -104,10 +107,10 @@ async function bindChannelVoiceLab(channel){
     box.innerHTML=`<h3>Голос</h3><p>Власний голос зі звичайною розмовною подачею. Налаштуйте й прослухайте свій текст.</p>
       <div class="voice-lab-reference"><span class="voice-lab-reference-player"></span>${data.reference?`<button type="button" class="secondary voice-lab-replace">Замінити запис</button>`:''}<label class="secondary voice-lab-upload" ${data.reference?'hidden':''}>Додати аудіо або відео<input type="file" accept="audio/*,video/*" hidden></label>${data.reference?`<button type="button" class="voice-lab-remove" aria-label="Прибрати приклад голосу">${trashIcon}</button>`:''}</div>
 <small class="voice-lab-preparation-status" ${data.reference?'':'hidden'}>${data.reference?.cleanup_applied?'Вибрано очищену версію':'Запис прикріплено'}</small>
-      <div class="voice-lab-prepared"></div>
-      <div class="settings-three-column"><label>Сервіс<select name="provider"><option value="elevenlabs" ${s.provider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="fishaudio" ${s.provider==='fishaudio'?'selected':''}>Fish Audio</option></select></label><label>Мова голосу<select name="language">${data.languages.map(l=>`<option value="${l.code}" ${l.code===s.language?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
+      <div class="voice-lab-prepared"></div><div data-provider="heygen"><label>Голос HeyGen<input name="heygen_voice_id" value="${esc(s.heygen_voice_id||'')}" placeholder="ID голосу з вашого акаунта"><select class="heygen-voice-list" hidden></select></label><button type="button" class="secondary heygen-load-voices">Вибрати голос HeyGen</button><small>Використовується голос HeyGen. Локальний запис автоматично не надсилається.</small></div>
+      <div class="settings-three-column"><label>Сервіс<select name="provider"><option value="elevenlabs" ${s.provider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="fishaudio" ${s.provider==='fishaudio'?'selected':''}>Fish Audio</option><option value="heygen" ${s.provider==='heygen'?'selected':''}>HeyGen</option></select></label><label>Мова голосу<select name="language">${data.languages.map(l=>`<option value="${l.code}" ${l.code===s.language?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Модель<select name="model">${data.models.map(m=>`<option value="${m.id}" ${m.id===s.model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
-      <label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
+      <label data-provider="heygen">Модель<select name="heygen_model">${(data.heygen_models||[]).map(m=>`<option value="${m.id}" ${m.id===s.heygen_model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
       <div class="voice-lab-sliders"><label>Швидкість · у студії<span><input name="speed" type="range" min="90" max="110" step="1" value="${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}"><output>${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}%</output></span></label></div><div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
       <div class="voice-lab-sliders" data-provider="fishaudio">${[['temperature','Виразність'],['top_p','Варіативність']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
@@ -118,6 +121,7 @@ async function bindChannelVoiceLab(channel){
     if(data.reference)box.querySelector('.voice-lab-reference-player').replaceChildren(voicePlayer(null,`${base}/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Відтворити приклад голосу'}));
     else box.querySelector('.voice-lab-reference-player').textContent='Приклад для клонування';
 
+    box.querySelector('.heygen-load-voices').onclick=async()=>{try{const result=await api(base+'/heygen-voices');const select=box.querySelector('.heygen-voice-list');select.innerHTML='<option value="">Оберіть голос</option>'+result.voices.map(v=>`<option value="${esc(v.voice_id)}">${esc(v.name||v.voice_id)} · ${esc(v.mode||'')}</option>`).join('');select.hidden=false;select.onchange=()=>{box.querySelector('[name=heygen_voice_id]').value=select.value;clearSample();estimate();};}catch(error){message(error.message,true);}};
     signature=settingsKey(read());
     box.saveVoiceSettings=async()=>{data=await api(base,'POST',{settings:read()});return data;};
     box.querySelectorAll('select,input:not([type=file]),textarea').forEach(input=>input.addEventListener('input',()=>{clearSample();message('Налаштування змінено. Створіть зразок із цими параметрами.');estimate();}));

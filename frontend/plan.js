@@ -96,8 +96,8 @@ function renderNarrationGeneration(panel){
     if(!details.isConnected)return;details.replaceChildren();
     if(data.reference){const player=voicePlayer(null,`/api/channels/${cid}/voice-lab/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Прослухати голос каналу'});details.append(player);}
     else{const missing=document.createElement('small');missing.textContent='Додайте зразок голосу в налаштуваннях каналу';details.append(missing);}
-    const settings=data.settings||{},service=settings.provider==='fishaudio'?'Fish Audio':'ElevenLabs';
-    const model=(settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
+    const settings=data.settings||{},service=settings.provider==='heygen'?'HeyGen':settings.provider==='fishaudio'?'Fish Audio':'ElevenLabs';
+    const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');

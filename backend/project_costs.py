@@ -106,13 +106,13 @@ def collect(root: Path, data: dict) -> dict:
 
     for path in (root/'narration/receipts').glob('*.json'):
         row=read(path)
-        if isinstance(row,dict) and row.get('provider') in {'elevenlabs','fishaudio'}:
+        if isinstance(row,dict) and row.get('provider') in {'elevenlabs','fishaudio','heygen'}:
             put(row['identity'],row['provider'],row.get('amount'),category='narration',estimated=True)
     # Recover completed runs predating per-request receipts without charging cache hits twice.
     narration=store.read_json(root/'narration/job.json',{}) or {}
     if narration.get('status')=='done' and not narration.get('cost_receipts_version'):
         provider=narration.get('provider')
-        if provider in {'elevenlabs','fishaudio'}:
+        if provider in {'elevenlabs','fishaudio','heygen'}:
             amount=narration.get('estimated_credits' if provider=='elevenlabs' else 'estimated_usd')
             if narration.get('characters')==0:amount=0
             put('legacy-narration:'+str(narration.get('started_at')),provider,amount,category='narration',estimated=True)
@@ -143,7 +143,7 @@ def collect(root: Path, data: dict) -> dict:
 
 def totals(data: dict, credit_rate=None) -> dict:
     result = {name: {"amount": 0., "unknown": 0, "estimated": False, "requests": 0}
-              for name in ("openrouter", "claude_code", "elevenlabs", "fishaudio")}
+              for name in ("openrouter", "claude_code", "elevenlabs", "fishaudio", "heygen")}
     language_usd = 0.
     for event in data.get("events", {}).values():
         if event.get("provider") not in result:

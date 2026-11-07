@@ -7,7 +7,7 @@ import platform
 import store
 
 
-DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}, {"id": "openrouter", "name": "OpenRouter"}, {"id": "elevenlabs", "name": "ElevenLabs"}, {"id": "fishaudio", "name": "Fish Audio"}]
+DEFAULTS = [{"id": "pixabay", "name": "Pixabay"}, {"id": "pexels", "name": "Pexels"}, {"id": "unsplash", "name": "Unsplash"}, {"id": "openrouter", "name": "OpenRouter"}, {"id": "elevenlabs", "name": "ElevenLabs"}, {"id": "fishaudio", "name": "Fish Audio"}, {"id": "heygen", "name": "HeyGen"}]
 _keychain = None
 
 
@@ -93,7 +93,9 @@ def metadata_path():
 def providers():
     custom = store.read_json(metadata_path(), [])
     result = []
+    default_names={p['name'].casefold() for p in DEFAULTS}
     for provider in DEFAULTS + custom:
+        if provider['id'].startswith('custom-') and provider['name'].casefold() in default_names:continue
         try:
             configured = vault().configured(service_name(provider["id"]))
         except RuntimeError:

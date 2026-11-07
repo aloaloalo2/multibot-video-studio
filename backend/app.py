@@ -1101,9 +1101,10 @@ class Handler(BaseHTTPRequestHandler):
         if narration:
             store.load_project(narration.group(1))
             return self.json_response(project_narration.snapshot(narration.group(1)))
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft|heygen-voices))?', path)
         if match:
             cid, kind = match.groups()
+            if kind=='heygen-voices':return self.json_response(channel_voice_lab.heygen_voice.voices())
             if kind == 'draft':
                 return self.serve_media(channel_voice_lab.reference_drafts.audio_file(channel_voice_lab.folder(cid), (query.get('id') or [None])[0], (query.get('clean') or ['0'])[0] == '1'))
             if kind:
