@@ -22,7 +22,7 @@ async function bindChannelVoiceLab(channel){
   const current=()=>box.isConnected;
   const settingsKey=value=>JSON.stringify(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)));
   const read=()=>({provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
-    noise_cleanup:box.querySelector('[name=noise_cleanup]').checked,chunk_length:Number(box.querySelector('[name=chunk_length]').value),direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
+    noise_cleanup:box.querySelector('[name=noise_cleanup]').checked,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
   const clearSample=()=>voiceLabClearSample(box.querySelector('.voice-lab-result'));
@@ -40,7 +40,7 @@ async function bindChannelVoiceLab(channel){
     box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
     box.querySelector('.voice-lab-listen').disabled=!data.reference||data.job?.status==='running';
     box.querySelector('.voice-lab-save').disabled=same;
-    box.querySelectorAll('input[type=range]').forEach(input=>{input.nextElementSibling.textContent=input.value+(input.name==='chunk_length'?'':'%');});
+    box.querySelectorAll('input[type=range]').forEach(input=>{input.nextElementSibling.textContent=input.value+'%';});
   };
   const preparedPlayer=()=>{
     const output=box.querySelector('.voice-lab-prepared'),key=data.prepared_reference?.key;
@@ -80,7 +80,6 @@ async function bindChannelVoiceLab(channel){
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
       <div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
       <div class="voice-lab-sliders" data-provider="fishaudio">${[['temperature','Виразність'],['top_p','Варіативність']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
-      <div class="voice-lab-tuning" data-provider="fishaudio"><label>Розмір частини тексту<span><input name="chunk_length" type="range" min="100" max="300" step="10" value="${s.chunk_length}"><output>${s.chunk_length}</output></span></label><small>Fish ділить текст на частини. 100: коротші, 300: довші. Більше значення може зробити подачу зв’язнішою.</small></div>
       <label class="voice-lab-direction" data-provider="elevenlabs">Побажання до подачі<input name="direction" type="text" maxlength="160" value="${esc(s.direction)}" placeholder="Спокійно, тепло, без дикторської подачі"><small>Необов’язково. Якщо заповнено, застосовується замість вибраної подачі.</small></label>
       <label class="voice-lab-text">Текст зразка<textarea rows="3" maxlength="2000">${esc(s.text)}</textarea></label>
       <div class="voice-lab-actions"><button type="button" class="secondary voice-lab-listen"></button><button type="button" class="secondary voice-lab-save">Зберегти голос</button></div>
