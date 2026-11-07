@@ -143,7 +143,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     scene, moment = card_scene(root, kind)
     template = Path(__file__).with_name("style_card_info.js") if kind == "regular" and scene.name == "style-card-info" else None
     revision = hashlib.sha256(template.read_bytes()).hexdigest() if template else None
-    key_parts = [scene.name, moment, font, assets, ids, stamp, definition]
+    key_parts = ["full-frame-v2", scene.name, moment, font, assets, ids, stamp, definition]
     if revision:
         key_parts.append(revision)
     key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:20]
@@ -161,6 +161,14 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
                 shutil.copyfile(template, folder / "scenes/shots/01_info.js")
             elif not (template and name == "assets"):
                 os.symlink(scene / name, folder / name)
+    # Style samples always show the full frame, including shots that requested cinematic bars.
+    if (folder / 'story').is_symlink():
+        (folder / 'story').unlink();shutil.copytree(scene / 'story', folder / 'story')
+    shots_path = folder / 'story' / 'shots.json'
+    if shots_path.is_file():
+        story = json.loads(shots_path.read_text())
+        for shot in story.get('shots', []):shot['bars'] = 'none'
+        shots_path.write_text(json.dumps(story, ensure_ascii=False))
     if template:
         (folder / "assets").mkdir(exist_ok=True)
         names = []
@@ -175,6 +183,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
         (folder / "assets").mkdir()
         (folder / "assets" / "index.json").write_text("[]")
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
+    config["bars"] = "none"
     config["fonts"] = {"title": font}
     config["assets"] = assets
     if definition:

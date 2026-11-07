@@ -83,6 +83,9 @@ class StyleLabTest(unittest.TestCase):
             seen=[]
             def render(root,folder,ids,times):
                 seen.append(json.loads((folder/"assets/index.json").read_text()))
+                self.assertEqual(json.loads((folder/"config.json").read_text())["bars"], "none")
+                self.assertTrue(all(shot["bars"] == "none" for shot in json.loads((folder/"story/shots.json").read_text())["shots"]))
+                self.assertFalse((folder/"story").is_symlink())
                 self.assertIn("picture(g, 'brain'",(folder/"scenes/shots/01_info.js").read_text())
                 out=folder/"build/styles";out.mkdir();(out/"neon_2.0s_2.00.jpeg").write_bytes(b"rendered")
                 return out

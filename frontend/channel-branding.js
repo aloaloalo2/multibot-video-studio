@@ -50,7 +50,7 @@ function brandingSections(channel,projectDefaults=''){
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-        <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}</option>`).join('')}</select></label>
+        <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option value="${esc(font)}" ${(animation.title_font || 'Fredoka')===font?'selected':''}>${font}${['Montserrat','Nunito'].includes(font)?' · УКР / РУС':''}</option>`).join('')}</select><small id="style-font-note"></small></label>
           <label class="logo-toggle" title="Предмети в кадрах 2D-анімації для універсальних і анімаційних проєктів. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> Готові картинки предметів</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div></section>`;
@@ -184,7 +184,9 @@ function bindBranding(channel){
     }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
   });
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
-  const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
+  const fontNote=()=>{const note=$('style-font-note');if(note)note.textContent=['Montserrat','Nunito'].includes($('style-title-font').value)?'Підтримує українські й російські літери':'Для українських і російських літер використовується Nunito. Виберіть Montserrat або Nunito, щоб змінити їх вигляд.';};
+  fontNote();
+  const swap=()=>{fontNote();for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
   const loadStyles=async(announce=true)=>{
     const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
