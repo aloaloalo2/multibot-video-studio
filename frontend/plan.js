@@ -314,11 +314,7 @@ function renderPlanSwitch(panel){
     const info=document.createElement('p');info.className='muted';info.setAttribute('role','status');
     const refresh=async()=>{try{const {job}=await api(`/api/projects/${id}/narration`);if(!completed.isConnected||state.project?.id!==id)return;if(narrationResultVisible(job,state.project)){completed.replaceChildren(info);info.textContent='Готова озвучка';appendReadyNarration(completed,id,job,info,refresh);}}catch(error){info.textContent=error.message;}};
     refresh();
-    const fold=document.createElement('details');fold.className='narration-change-fold';
-    const summary=document.createElement('summary');summary.textContent='Змінити озвучку або сценарій';fold.append(summary);panel.append(fold);
-    fold.addEventListener('toggle',()=>{if(!fold.open||fold.dataset.loaded)return;fold.dataset.loaded='true';
-      let generation=null;narrationChoices(fold,upload=>{if(upload){if(generation)generation.hidden=true;openNarrationBinding();}else{if(!generation)generation=renderNarrationGeneration(fold);generation.hidden=false;}},false);
-    });
+
   }
 }
 
