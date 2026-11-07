@@ -1443,9 +1443,10 @@ select option{background:#232327;color:#f1f1f2}
 .channel-voice-defaults-values{display:flex;align-items:center;flex-wrap:wrap;gap:8px 24px}
 .channel-voice-defaults-values>span{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:5px 8px;color:#9a9ca4;font-size:13px}
 .channel-voice-defaults-values strong{font-weight:600;color:#eeeef1}
-.channel-voice{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.channel-voice{display:grid;grid-template-columns:130px minmax(0,1fr) 28px;align-items:center;gap:12px}
 .channel-voice-name{min-width:130px;font-weight:600}
-.channel-voice .voice-player{flex:1;min-width:240px;margin:0}
+.channel-voice .voice-player{min-width:0;max-width:100%;margin:0;gap:8px}
+@media(max-width:620px){.channel-voice{grid-template-columns:minmax(0,1fr) 28px;gap:8px}.channel-voice-name{grid-column:1/-1}}
 .channel-voice-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .channel-voice-add select{background:#1d1d21;border:1px solid #3c3c43;border-radius:12.5px;color:#f2f2f3;font:inherit;padding:8px 10px;min-width:220px}
 /* the settings window styles its inputs as fields: its players and recording buttons keep their own look */
@@ -1831,7 +1832,8 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:700px){.logo-section .logo-place-controls{grid-template-columns:1fr}.logo-section .logo-file{grid-template-columns:64px minmax(0,1fr)}}
 
 /* Consistent settings controls, including logo ranges. */
-.modal-body .settings-section input[type=range]{appearance:none;-webkit-appearance:none;min-width:0;width:100%;height:24px;padding:0;border:0;background:transparent;cursor:pointer;accent-color:#c4c6cf}
+.modal-body .settings-section input[type=range]{appearance:none;-webkit-appearance:none;min-width:0;height:24px;padding:0;border:0;background:transparent;cursor:pointer;accent-color:#c4c6cf}
+.modal-body .settings-section input[type=range]:not(.voice-player-bar):not(.voice-player-volume){width:100%}
 .modal-body .settings-section input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:4px;background:#4b4d56}
 .modal-body .settings-section input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border:1px solid #d9dbe1;border-radius:50%;background:#c4c6cf;box-shadow:none;transition:background .15s,box-shadow .15s}
 .modal-body .settings-section input[type=range]::-moz-range-track{height:4px;border-radius:4px;background:#4b4d56}
@@ -1925,3 +1927,6 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:760px){.thumb-modal-open #modal-actions>.thumb-hero-choice{flex-basis:100%;padding:4px 0 8px}}
 @media(hover:none){.logo-tile-remove{opacity:1}}
 @media(max-width:640px){.logo-compact-body{align-items:flex-start}.logo-section .logo-place-controls{grid-template-columns:1fr}.logo-section .logo-sliders{grid-template-columns:repeat(3,minmax(0,1fr))}.logo-slider output{min-width:28px}}
+
+.modal-body .settings-section .voice-player-bar{flex:1 1 0;width:0;min-width:48px}
+.modal-body .settings-section .voice-player-volume{flex:0 0 64px;width:64px}
