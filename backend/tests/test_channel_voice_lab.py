@@ -53,6 +53,15 @@ class VoiceLabTests(unittest.TestCase):
             self.assertEqual(result['job']['status'],'failed')
             lab.start(self.cid,lab.DEFAULTS,'a'*20)
             self.assertEqual(clone.call_count,1)
+    def test_changed_settings_are_sent_to_eleven_and_busy_old_sample_is_not_substituted(self):
+        self.reference();settings={**lab.DEFAULTS,'stability':.85,'similarity_boost':.95}
+        with patch.object(lab.eleven_api,'streamed_dialogue',return_value=b'audio') as request:
+            lab.synthesis('mock','voice',settings)
+            self.assertEqual(request.call_args.kwargs['voice_settings'],{'stability':.85,'similarity_boost':.95})
+        old={'status':'running','fingerprint':lab.fingerprint(lab.DEFAULTS,lab.reference(self.cid))}
+        store.atomic_json(lab.folder(self.cid)/'job.json',old);lab.ACTIVE.add(self.cid)
+        with self.assertRaises(store.StudioError) as error:lab.start(self.cid,settings,'b'*20)
+        self.assertEqual(error.exception.status,409)
     def test_remove_keeps_previous_recording_and_does_not_delete_cloud_voice(self):
         self.reference();lab.remove(self.cid)
         self.assertIsNone(lab.reference(self.cid))

@@ -90,8 +90,10 @@ def snapshot(cid):
     current = fingerprint(settings, ref) if ref else None
     if job.get('status') == 'done' and job.get('fingerprint') != current:
         job = {}
+    receipt = store.read_json(root / 'samples' / (current + '.json'), {}) if current else {}
     return {'settings': settings, 'reference': ref, 'job': job,
-            'cached_sample': bool(current and (root / 'samples' / (current + '.mp3')).is_file()),
+            'sample_matches_settings': bool(current and job.get('fingerprint') == current),
+            'cached_sample': bool(current and receipt.get('status') == 'done' and (root / 'samples' / (current + '.mp3')).is_file()),
             'models': [{'id': k, 'name': v} for k, v in MODELS.items()],
             'fish_models': [{'id': k, 'name': v['name'], 'rate': estimate({**settings, 'provider': 'fishaudio', 'fish_engine': k})['amount'] / max(1, len(settings['text'].encode('utf-8')))} for k, v in languages.FISH_ENGINES.items()],
             'languages': [{'code': k, 'name': v[0]} for k, v in languages.LANGUAGES.items()],
@@ -227,10 +229,13 @@ def start(cid, raw, client_id):
         raise store.StudioError('Немає ідентифікатора запиту')
     with LOCK:
         old = store.read_json(root / 'job.json', {})
-        if cid in ACTIVE: return snapshot(cid)
         ref = reference(cid)
         if not ref: raise store.StudioError('Додайте приклад голосу')
         key = fingerprint(settings, ref)
+        if cid in ACTIVE:
+            if old.get('fingerprint') != key:
+                raise store.StudioError('Ще створюється зразок із попередніми налаштуваннями. Дочекайтеся його завершення й створіть новий.', 409)
+            return snapshot(cid)
         if old.get('client_id') == client_id:
             if old.get('fingerprint') != key:
                 raise store.StudioError('Цей запит уже використано з іншими налаштуваннями', 409)
@@ -246,6 +251,7 @@ def start(cid, raw, client_id):
         cost = estimate(settings)
         job = {'status': 'running', 'stage': 'reference' if settings['provider'] == 'fishaudio' else 'clone',
                'provider': settings['provider'], 'client_id': client_id, 'fingerprint': key, 'started_at': time.time(),
+               'settings': settings.copy(),
                'estimate': cost, 'estimated_credits': cost['amount'] if cost['unit'] == 'credits' else None}
         store.atomic_json(root / 'settings.json', settings)
         store.atomic_json(root / 'job.json', job)

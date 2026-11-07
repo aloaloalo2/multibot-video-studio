@@ -1,4 +1,17 @@
 // Original voice trial. Upload is local; a paid request starts only from Listen.
+// Compare the parameters that actually reach the selected service.
+function voiceLabSampleKey(s){
+  const fields=['provider','language','text',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p']:['model','delivery','stability','similarity_boost'])];
+  return JSON.stringify(fields.map(k=>[k,s[k]]));
+}
+function voiceLabClearSample(output){
+  output.querySelectorAll('audio').forEach(audio=>{audio.pause();audio.removeAttribute('src');audio.load();});
+  output.replaceChildren();
+}
+function voiceLabSampleState(selected,data){
+  const same=voiceLabSampleKey(selected)===voiceLabSampleKey(data.settings);
+  return {cached:same&&!!data.cached_sample,matches:same&&!!data.sample_matches_settings};
+}
 async function bindChannelVoiceLab(channel){
   if(channel.id!=='b012a0e49c3b1c18')return;
   const box=document.createElement('section');box.className='settings-section channel-voice-lab';
@@ -12,36 +25,41 @@ async function bindChannelVoiceLab(channel){
     temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
+  const clearSample=()=>voiceLabClearSample(box.querySelector('.voice-lab-result'));
+  const playSample=()=>{const selected=box.querySelector('.voice-lab-result audio');if(!selected)return;document.querySelectorAll('.voice-player audio').forEach(other=>{if(other!==selected)other.pause();});selected.play().catch(()=>{});};
   const message=(text,error=false)=>{const el=box.querySelector('.voice-lab-status');if(el){el.textContent=text;el.classList.toggle('error',error);}};
   const estimate=()=>{
     const settings=read(),fish=settings.provider==='fishaudio',rate=settings.model==='eleven_v4_turbo'?.26:.5;
     const same=settingsKey(settings)===signature;
-    const cached=same&&data.cached_sample;
+    const {cached}=voiceLabSampleState(settings,data);
     const count=[...settings.text].length+(settings.delivery==='neutral'?0:settings.delivery==='calm'?22:28);
     const fishRate=data.fish_models.find(m=>m.id===settings.fish_engine)?.rate||0;
     const usd=new TextEncoder().encode(settings.text).length*fishRate;
     const price=fish?(usd?`≈ $${usd.toFixed(4)}`:'безкоштовно'):`≈ ${Math.ceil(count*rate).toLocaleString('uk-UA')} кредитів`;
     box.querySelectorAll('[data-provider]').forEach(el=>{el.hidden=el.dataset.provider!==settings.provider;});
-    box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>Прослухати · ${cached?'безкоштовно':price}</span>`;
+    box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
     box.querySelector('.voice-lab-listen').disabled=!data.reference||data.job?.status==='running';
     box.querySelector('.voice-lab-save').disabled=same;
     box.querySelectorAll('input[type=range]').forEach(input=>{input.nextElementSibling.textContent=input.value+'%';});
   };
   const sample=()=>{
-    const output=box.querySelector('.voice-lab-result');output.replaceChildren();
-    if(data.job?.status==='done'){
+    const output=box.querySelector('.voice-lab-result');clearSample();
+    const {matches}=voiceLabSampleState(read(),data);
+    if(data.job?.status==='done'&&matches){
       const player=voicePlayer(null,`${base}/sample?key=${data.job.fingerprint}`,{filename:'Зразок голосу.mp3',playLabel:'Відтворити зразок голосу'});
       output.append(player);
+      const used=data.job.settings||data.settings;
+      const caption=document.createElement('small');caption.textContent=used.provider==='elevenlabs'?`Стабільність ${Math.round(used.stability*100)}% · Схожість ${Math.round(used.similarity_boost*100)}%`:`Виразність ${Math.round(used.temperature*100)}% · Варіативність ${Math.round(used.top_p*100)}%`;output.append(caption);
       message(data.job.cached?'Зразок із кешу. Повторної оплати немає.':'Зразок готовий. Можна прослухати та змінити налаштування.');
     }else if(data.job?.status==='failed')message(data.job.error||'Не вдалося створити зразок',true);
     else if(data.job?.status==='running'){
       const state=box.querySelector('.voice-lab-status');state.innerHTML=`${exportSpinner}<span>${data.job.stage==='reference'?'Розпізнаємо приклад для Fish Audio':data.job.stage==='clone'?'Готуємо клон голосу':'Озвучуємо зразок'}…</span>`;
-    }
+    }else if(!matches&&data.job?.status==='done')message('Налаштування змінено. Створіть новий зразок, щоб почути результат.');
     estimate();
   };
   const poll=async()=>{
     if(!current())return;
-    try{const wasRunning=data.job?.status==='running';data=await api(base);if(!current())return;sample();if(data.job?.status==='running')timer=setTimeout(poll,1600);else if(wasRunning&&data.job?.status==='done')box.querySelector('.voice-lab-result audio')?.play().catch(()=>{});}
+    try{const wasRunning=data.job?.status==='running';data=await api(base);if(!current())return;sample();if(data.job?.status==='running')timer=setTimeout(poll,1600);else if(wasRunning&&data.job?.status==='done')playSample();}
     catch(error){message(error.message,true);}
   };
   const draw=()=>{
@@ -62,7 +80,7 @@ async function bindChannelVoiceLab(channel){
     else box.querySelector('.voice-lab-reference-player').textContent='Приклад для клонування';
     signature=settingsKey(read());
     box.saveVoiceSettings=async()=>{data=await api(base,'POST',{settings:read()});return data;};
-    box.querySelectorAll('select,input[type=range],textarea').forEach(input=>input.addEventListener('input',()=>{box.querySelector('.voice-lab-result').replaceChildren();estimate();}));
+    box.querySelectorAll('select,input[type=range],textarea').forEach(input=>input.addEventListener('input',()=>{clearSample();message('Налаштування змінено. Створіть зразок із цими параметрами.');estimate();}));
     box.querySelector('.voice-lab-save').addEventListener('click',async()=>{try{data=await api(base,'POST',{settings:read()});draw();message('Налаштування голосу збережено.');}catch(error){message(error.message,true);}});
     box.querySelector('.voice-lab-remove')?.addEventListener('click',async()=>{try{data=await api(base+'/reference/remove','POST',{});draw();}catch(error){message(error.message,true);}});
     box.querySelector('input[type=file]').addEventListener('change',async event=>{
@@ -81,7 +99,7 @@ async function bindChannelVoiceLab(channel){
         data=await api(base+'/sample','POST',{settings:read(),client_id:crypto.randomUUID()});
         signature=settingsKey(data.settings);sample();
         if(data.job?.status==='running')timer=setTimeout(poll,1000);
-        else box.querySelector('.voice-lab-result audio')?.play().catch(()=>{});
+        else playSample();
       }catch(error){message(error.message,true);estimate();}
     });
     sample();
