@@ -55,6 +55,7 @@ import waveforms
 import joins
 import export_names
 import completion_notices
+import project_narration
 import channel_voice_lab
 import agent_view
 import montage_ops
@@ -1095,6 +1096,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
+        if narration:
+            store.load_project(narration.group(1))
+            return self.json_response(project_narration.snapshot(narration.group(1)))
         match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft))?', path)
         if match:
             cid, kind = match.groups()
@@ -1415,6 +1420,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start)', path)
+        if narration and method == 'POST':
+            pid, mode = narration.groups(); project = store.load_project(pid)
+            if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
+            return self.json_response(project_narration.start(project, body.get('text')), 202)
+
         match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy))?', path)
         if match and method == 'POST':
             cid, action = match.groups()

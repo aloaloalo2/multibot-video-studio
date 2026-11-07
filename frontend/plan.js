@@ -63,6 +63,38 @@ function planFrameWord(count){
 }
 
 const voiceScriptDraft={};
+function narrationChoices(panel,ready){
+  const choices=document.createElement('div');choices.className='narration-choices';
+  choices.innerHTML=`<button type="button" class="secondary"><span aria-hidden="true">♬</span><strong>Озвучити сценарій</strong><small>Голос і налаштування каналу</small></button><button type="button" class="secondary"><span aria-hidden="true">↑</span><strong>Готова озвучка</strong><small>Додати аудіо або відео</small></button>`;
+  const buttons=choices.querySelectorAll('button');
+  buttons[0].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[0].classList.add('selected');ready(false);};
+  buttons[1].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[1].classList.add('selected');ready(true);};
+  panel.append(choices);
+}
+function renderNarrationGeneration(panel){
+  const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
+  box.innerHTML=`<label>Сценарій<textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small>Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><p role="status"></p><button class="secondary" type="button">Згенерувати озвучку</button>`;
+  panel.append(box);const text=box.querySelector('textarea'),button=box.querySelector('button'),info=box.querySelector('p');
+  text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
+  text.oninput=()=>{voiceScriptDraft[pid]=text.value;};
+  let busy=false;
+  async function poll(){
+    if(!box.isConnected || state.project?.id!==pid)return;
+    try{const {job}=await api(`/api/projects/${pid}/narration`);
+      if(job?.status==='running'){if(!busy&&job.script)text.value=job.script;busy=true;button.disabled=true;text.disabled=true;info.innerHTML=`${exportSpinner}<span>Озвучуємо · ${job.completed} з ${job.total} фраз</span>`;setTimeout(poll,1500);}
+      else if(job?.status==='done'&&busy){info.textContent='Озвучка готова. Розпізнаємо й додаємо до плану…';await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:text.value});await selectProject(pid,{view:'plan'});}
+      else if(job?.status==='failed'){busy=false;button.disabled=false;text.disabled=false;info.textContent=job.error;}
+    }catch(error){info.textContent=error.message;button.disabled=false;}
+  }
+  button.onclick=async()=>{if(busy)return;button.disabled=true;try{
+    const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
+    info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
+    const cost=quote.estimated_credits===null?`${quote.characters} символів через Fish Audio`:`≈ ${quote.estimated_credits.toLocaleString('uk-UA')} кредитів ElevenLabs`;
+    if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
+    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value});busy=true;await poll();
+  }catch(error){info.textContent=error.message;button.disabled=false;}};
+  poll();return box;
+}
 function renderVoiceStart(panel){
   const project=state.project,direct=directMontage();
   const section=document.createElement('section');section.className='voice-start';
@@ -73,6 +105,8 @@ function renderVoiceStart(panel){
     <label class="voice-script"><span>Текст озвучки <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
       <small>${direct?'Сценарій допоможе точніше розпізнати озвучку й звірити текст.':'Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.'}</small></label>
     <div class="voice-start-actions"><div class="voice-progress" aria-live="polite"></div><button type="button" class="primary" disabled>Розпізнати озвучку</button></div>`;
+  section.hidden=true;let generated=null;
+  narrationChoices(panel,upload=>{section.hidden=!upload;if(generated)generated.hidden=upload;if(!upload&&!generated)generated=renderNarrationGeneration(panel);});
   panel.append(section);
   const drop=section.querySelector('.voice-drop'),input=drop.querySelector('input'),fileLabel=drop.querySelector('.voice-drop-file');
   const text=section.querySelector('textarea'),start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
@@ -189,6 +223,9 @@ function renderPlanSwitch(panel){
   if(input.disabled)heading.title='Перемикач запрацює після безпечного перезапуску студії';
   input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
   panel.append(heading);
+  if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced'){
+    let generation=null;narrationChoices(panel,upload=>{if(upload){if(generation)generation.hidden=true;openNarrationBinding();}else{if(!generation)generation=renderNarrationGeneration(panel);generation.hidden=false;}});
+  }
 }
 
 function projectAnimated(project=state.project){const kind=project?.project_kind ?? state.channel?.settings?.channel_kind;return kind==='animated';}
