@@ -699,7 +699,9 @@ function layoutPreview(){
   if(width<800){workspace.classList.remove('fitted-preview');return;}
   const panel=document.querySelector('.preview-panel');
   const ratio=Number(state.project.width || 1920)/Number(state.project.height || 1080);
-  const frameHeight=Math.max(80,height-20-panel.querySelector('.panel-title').offsetHeight-panel.querySelector('.transport').offsetHeight-26);
+  const inset=element=>{const s=getComputedStyle(element);return parseFloat(s.paddingTop)+parseFloat(s.paddingBottom)+parseFloat(s.borderTopWidth)+parseFloat(s.borderBottomWidth);};
+  const surfaceStyle=getComputedStyle($('preview-surface'));
+  const frameHeight=Math.max(80,height-inset(workspace)-inset(panel)-panel.querySelector('.panel-title').offsetHeight-panel.querySelector('.transport').offsetHeight-parseFloat(surfaceStyle.marginTop)-parseFloat(surfaceStyle.marginBottom));
   if(projectAnimated()){
     workspace.classList.add('fitted-preview');workspace.style.setProperty('--preview-frame-width',Math.round(frameHeight*ratio)+'px');return;
   }

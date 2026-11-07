@@ -304,7 +304,8 @@ function buildMake(make){
   actions.append(hint,start);
   const feed=document.createElement('div');feed.className='episode-make-feed';
   const report=document.createElement('div');report.className='episode-make-report';
-  make.append(row,legend,read,actions,feed,report);
+  const edits=document.createElement('div');edits.className='frame-edit-queue';
+  make.append(row,legend,read,actions,feed,report,edits);
   if(!frames.length)return;
   const total=Number(frames[frames.length-1].end) || 1,id=state.project.id;
   const at=event=>{const box=strip.getBoundingClientRect(),time=Math.max(0,Math.min(1,(event.clientX-box.left)/box.width))*total;
@@ -401,6 +402,7 @@ function fillMake(make){
   // (an unknown run is waited for too: renderEpisode asks for it, so a working director never flashes the strip)
   make.hidden=directorAwaited()||!directorRuns[id]||['queued','running'].includes(directorRuns[id].status);
   if(!frames.length||!start||make.hidden)return;
+  refreshFrameEdits(make,id);
   const made=madeSet(frames);
   let floor=0;while(made.has(floor))floor++;
   make.dataset.floor=String(floor);
@@ -454,7 +456,10 @@ function fillMake(make){
     const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
   }else{
     start.textContent=request?.status==='done'&&floor>=frames.length?`Кадри створені · ${made.size} з ${frames.length}`:'Почати створення ролика';
-    if(request?.status==='done'&&request.completion_note){const note=document.createElement('p');note.className='plan-note';note.textContent=request.completion_note;feed.append(note);}
+    if(completed){
+      hint.hidden=true;
+      feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Перевірки потребують уваги</strong><span>${esc(/швидкості/.test(request.completion_note)&&/[Оо]дин перехід/.test(request.completion_note)?'Швидкодія анімації · один перехід':request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;
+    }
     if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();
       note.textContent=`Кадри ${first}–${request.frames} не вдалися. ${error}${/почніть ще раз/.test(error)?'':' Виберіть кадри й почніть ще раз.'}`;feed.append(note);}
   }
@@ -574,7 +579,8 @@ const teamFeeds={};
 function makeActivityLabel(text){
   text=humanStep(text);
   if(/стик|перех[оі]д/i.test(text))return /перевір/i.test(text)?'Перевіряє переходи':'Налаштовує переходи';
-  if(/пробні кадри|переглядає кадри|перевір.*кадр/i.test(text))return 'Перевіряє кадри';
+  if(/пробні кадри|рендер.*аркуш/i.test(text))return 'Готує стоп-кадри для перевірки';
+  if(/переглядає кадри|перевір.*кадр/i.test(text))return 'Перевіряє кадри';
   if(/таймлайн/i.test(text))return 'Додає кадри в ролик';
   if(/на якому кроці|записався результат|результат заміру/i.test(text))return 'Перевіряє результат';
   if(/допоміжні файли|вивчає матеріали|читає |описує предмети/i.test(text))return 'Готує матеріали';
@@ -589,12 +595,14 @@ function renderMakeStatus(button,id,request,done,total){
     if(!current())return;
     const steps=humanFeed(teamFeeds['production'+id] || []).filter(step=>!run||Number(step.t)>=run);
     const step=steps.at(-1);
-    const action=step?makeActivityLabel(step.text):(done>=total?'Кадри створені':request.status==='requested'?'Готує матеріали':'Створює кадри');
-    const role=teamRoles[step?.who]?.[0] || (step?'Агент':'Режисер');
+    let action=step?makeActivityLabel(step.text):(done>=total?'Кадри створені':request.status==='requested'?'Готує матеріали':'Створює кадри');
+    if(request.repair_frames?.length&&['Створює кадри','Кадри створені'].includes(action))action='Вносить правки';
+    const role=step?.who==='razgon'?'Режисер':teamRoles[step?.who]?.[0] || (step?'Агент':'Режисер');
     const text=`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
     const age=Math.max(0,Date.now()/1000-(Number(step?.t)||run));
     const idle=age>=120?`Без нових дій ${Math.floor(age/60)} хв`:'';
-    button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span>${idle?`<span class="episode-make-idle">${idle}</span>`:''}<span class="episode-make-count">${done} з ${total}</span>`;
+    const count=request.repair_frames?.length?`Правки: ${request.repair_frames.join(', ')}`:`${done} з ${total}`;
+    button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span>${idle?`<span class="episode-make-idle">${idle}</span>`:''}<span class="episode-make-count">${esc(count)}</span>`;
     button.setAttribute('aria-live','polite');button.title=text+(idle?` · ${idle}. Час завершення ще невідомий.`:'');
   };
   draw();

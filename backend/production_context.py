@@ -58,10 +58,17 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
                      "made": f["number"] in made, "takes": takes,
                      "missing_takes": [t for t in takes if not owners.get(t)],
                      "scene_files": sorted({str(Path(p).relative_to(razgon)) for t in takes for p in owners.get(t, [])})})
-    targets = [r["number"] for r in rows if not r["made"]]
+    selected=set(request.get('repair_frames') or [])
+    targets = sorted(selected) if selected else [r["number"] for r in rows if not r["made"]]
+    if selected:
+        context=set(selected)
+        for i,row in enumerate(rows):
+            if row['number'] in selected:
+                context.update(r['number'] for r in rows[max(0,i-1):i+2])
+        rows=[{**r,'editable':r['number'] in selected} for r in rows if r['number'] in context]
     return {"schema": 1, "project_id": pid, "request_id": request["id"],
             "mode": "continue" if request.get("continuation_mode") == "handoff" else "repair" if repair else "build",
-            "task_notes": str(request.get("task_notes") or "")[:4000],
+            "task_notes": str(request.get("task_notes") or "")[:4000],"repair_frames":sorted(selected),
             "previous_summary": str(request.get("summary") or "")[-1200:],
             "plan_sha256": digest(plan.get("frames", [])),
             "script_sha256": plan.get("script_sha256"), "razgon_project": str(razgon) if razgon else None,
@@ -80,7 +87,7 @@ def write(project: dict, request: dict, *, repair: bool = False) -> tuple[Path, 
     short = path.with_suffix(".txt")
     short.write_text(text(packet), encoding="utf-8")
     pending = ",".join(map(str, packet["pending_frames"])) or "немає"
-    summary = f"Єдина карта роботи: {short}\nКадри без готового монтажу: {pending}."
+    summary = f"Єдина карта роботи: {short}\n{'Кадри для правок' if packet.get('repair_frames') else 'Кадри без готового монтажу'}: {pending}."
     return path, summary
 
 
@@ -90,12 +97,14 @@ def text(packet: dict) -> str:
              "Повний зміст конкретних кадрів: tools/studio.py plan <id> --frames N-M."]
     if packet.get("task_notes"):
         lines += ["Збережені побажання автора:", packet["task_notes"]]
+    if packet.get('repair_frames'):
+        lines += ['Правки ЛИШЕ до кадрів: '+', '.join(map(str,packet['repair_frames']))+'. Решта рядків лише для контексту.']
     if packet.get("previous_summary"):
         lines += ["Короткий підсумок попередньої роботи:", packet["previous_summary"]]
     for index, batch in enumerate(packet.get("frame_batches", []), 1):
         lines.append(f"Пакет {index}: " + ", ".join(map(str, batch)))
     for f in packet["frames"]:
-        state = "готовий" if f["made"] else "зробити"
+        state = ('виправити' if f.get('editable') else 'контекст') if packet.get('repair_frames') else "готовий" if f["made"] else "зробити"
         missing = ",".join(f.get("missing_takes", [])) or "немає"
         lines.append(f"{f['number']:03d} {f['start']:.2f}-{f['end']:.2f} {state} {f['format']} "
                      + ",".join(f["takes"]) + " | " + ", ".join(f["scene_files"]) + " | відсутні дублі: " + missing)
@@ -104,7 +113,13 @@ def text(packet: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def instructions(summary: str) -> str:
+def instructions(summary: str, *, scoped=False) -> str:
+    if scoped:
+        return f"""\nКоротка карта авторських правок\n{summary}
+Прочитай її першою. Лише рядки «виправити» входять у завдання; рядки «контекст» показують сусідів.
+Збережи номери, таймінги, звук і невибрані кадри. Не запускай початковий цикл створення чи перевірку всього фільму.
+Якщо залежність поза вибраною областю потребує зміни, повідом про неї, не розширюй завдання самостійно.
+Наявні сцени й предмети використай повторно. Перед відповіддю перевір тільки змінене та дочекайся завершення команд."""
     return f"""\n\nПередача роботи студією
 {summary}
 Прочитай цю коротку карту першою. Вона посилається на чинний план, шоти й файли сцен.

@@ -1077,6 +1077,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        edit_match=re.fullmatch(r'/api/projects/([0-9a-f]{24})/production-edits',path)
+        if edit_match:
+            import production_edits
+            return self.json_response(production_edits.overview(edit_match.group(1)))
         if path == '/api/update':
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
@@ -1497,7 +1501,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-fix", path)
         if match and method == "POST":
-            return self.json_response({"project": production.fix(match.group(1), body.get("notes"))})
+            return self.json_response({"project": production.fix(match.group(1), body.get("notes"),frame_numbers=body.get('frame_numbers'))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-edits(?:/([0-9a-f]{16})/cancel)?", path)
+        if match and method=='POST':
+            import production_edits
+            return self.json_response(production_edits.cancel(match.group(1),match.group(2)) if match.group(2) else
+                production_edits.enqueue(match.group(1),body.get('notes'),body.get('frame_numbers'),body.get('client_id')),202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
         if match and method == "POST":
             return self.json_response({"project": production.pause(match.group(1))})
@@ -1753,6 +1762,19 @@ def tidy_project(pid: str) -> None:
         print(f"Cleanup of {pid} failed: {error}", flush=True)
 
 
+def production_edits_loop():
+    import production_edits
+    while True:
+        time.sleep(2)
+        try:
+            with UPDATE_MUTEX:
+                if UPDATE_RESTARTING or IN_FLIGHT:continue
+                with JOBS_LOCK:blocked={entry['job']['project_id'] for entry in ACTIVE_EXPORTS.values()}
+                production_edits.tick(blocked)
+        except Exception:
+            traceback.print_exc()
+
+
 def main():
     parser = argparse.ArgumentParser(description="VideoKey Studio local server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1769,6 +1791,7 @@ def main():
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
+    threading.Thread(target=production_edits_loop,daemon=True).start()
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
     # projects an earlier version hid when their episode folder was gone come back to the list
     threading.Thread(target=store.restore_hidden_projects, daemon=True).start()

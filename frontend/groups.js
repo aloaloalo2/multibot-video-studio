@@ -62,6 +62,12 @@ function renderGroupingControls(){
   let box=$('timeline-group-controls');
   if(!box){box=document.createElement('div');box.id='timeline-group-controls';box.className='timeline-group-controls';toolbar.insertBefore(box,toolbar.querySelector('.timeline-spacer'));}
   box.replaceChildren();
+  const repairFrames=selectedRepairFrames();
+  if(repairFrames.length){
+    const repair=document.createElement('button');repair.type='button';repair.id='repair-selected-frames';repair.className='secondary';
+    repair.textContent='Внести правки';repair.title=repairFrames.length===1?`Правки до кадру ${repairFrames[0]}`:`Правки до ${repairFrames.length} кадрів`;
+    repair.addEventListener('click',()=>openFrameRepair(repairFrames));box.append(repair);
+  }
   const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Видалити виділене',true);remove.disabled=state.busy || !(state.selected || state.selectedGroup || state.multiSelection?.length);remove.addEventListener('click',deleteTimelineSelection);
   box.append(remove);
 
@@ -198,11 +204,77 @@ function renderGroupInspector(){
 }
 
 function selectTimelineIds(ids,append=false){
+  const previousGroup=sceneGroups().find(group=>group.id===state.selectedGroup);
   clearTransitionSelection();state.selectedGroup=null;state.selectedStack=null;
-  const chosen=new Set(append?[...(state.multiSelection || []),...(state.selected?[state.selected]:[])]:[]);
+  const chosen=new Set(append?[...(state.multiSelection || []),...(state.selected?[state.selected]:[]),...(previousGroup?.clip_ids || [])]:[]);
   for(const id of ids)chosen.add(id);
   state.selected=null;state.multiSelection=[...chosen];
   renderTimeline();renderInspector();
+}
+
+function selectedRepairFrames(){
+  if(!state.project?.production_request)return [];
+  const selected=new Set([...(state.multiSelection || []),...(state.selected?[state.selected]:[])]);
+  const clips=new Map(universalClips().map(clip=>[clip.id,clip]));
+  const valid=new Set((state.plan?.frames || []).map(frame=>Number(frame.number)));
+  const numbers=[];
+  for(const group of sceneGroups()){
+    if(group.role==='overlay'||!(group.id===state.selectedGroup||group.clip_ids.some(id=>selected.has(id))))continue;
+    const source=group.clip_ids.map(id=>clips.get(id)?.title || '').find(title=>/^Razgon · кадр \d+/.test(title));
+    const n=Number(source?.match(/кадр (\d+)/)?.[1] || group.title.match(/^Кадр\s+(\d+)$/)?.[1]);
+    if(valid.has(n))numbers.push(n);
+  }
+  return [...new Set(numbers)].sort((a,b)=>a-b);
+}
+
+function openFrameRepair(numbers=selectedRepairFrames()){
+  if(!numbers.length)return;
+  const pid=state.project.id,clientId=crypto.randomUUID();
+  modal(numbers.length===1?`Правки до кадру ${numbers[0]}`:'Правки до вибраних кадрів',
+    `<div class="frame-repair-dialog"><div class="frame-repair-numbers">${numbers.map(n=>`<span>Кадр ${n}</span>`).join('')}</div><label for="frame-repair-notes">Що змінити?</label><textarea id="frame-repair-notes" rows="5" maxlength="4000" placeholder="Опишіть, що виправити у вибраних кадрах…"></textarea><p>Режисер отримає вибрані кадри та готові матеріали проєкту.</p><p class="frame-repair-error" role="status"></p></div>`,
+    [{label:'Додати в чергу',primary:true,run:async()=>{
+      const field=$('frame-repair-notes'),error=document.querySelector('.frame-repair-error');
+      if(state.project?.id!==pid)return;
+      const notes=field.value.trim();if(!notes){error.textContent='Опишіть потрібні зміни.';field.focus();return;}
+      const button=$('modal-actions').querySelector('button');button.disabled=true;button.textContent='Надсилаємо…';
+      try{
+        await api(`/api/projects/${encodeURIComponent(pid)}/production-edits`,'POST',{notes,frame_numbers:numbers,client_id:clientId});
+        if(state.project?.id!==pid)return;
+        delete frameEditQueueReads[pid];clearTimeout(frameEditQueueTimers[pid]);
+        closeModal();renderGroupingControls();renderMontageMake();status('Правки збережено в черзі. Режисер виконає їх по черзі.');
+      }catch(e){if(state.project?.id!==pid)return;error.textContent=e.message;button.disabled=false;button.textContent='Додати в чергу';}
+    }}]);
+}
+
+const frameEditQueueReads={},frameEditQueueTimers={};
+function refreshFrameEdits(make,pid){
+  const slot=make.querySelector('.frame-edit-queue');if(!slot)return;
+  const cached=frameEditQueueReads[pid];
+  const draw=data=>{
+    slot.replaceChildren();
+    for(const job of data.jobs.filter(j=>['queued','starting','running','failed'].includes(j.status)).slice(-5)){
+      const row=document.createElement('div');row.className='frame-edit-queue-row';
+      const label=document.createElement('span');label.textContent=`${job.status==='queued'?'У черзі':job.status==='failed'?'Не виконано':'В роботі'} · кадри ${job.frame_numbers.join(', ')}`;
+      const note=document.createElement('span');note.className='frame-edit-queue-note';note.textContent=job.error || job.notes;note.title=note.textContent;
+      row.append(label,note);
+      if(job.status==='queued'){
+        const cancel=document.createElement('button');cancel.type='button';cancel.textContent='×';cancel.setAttribute('aria-label',`Прибрати правки до кадрів ${job.frame_numbers.join(', ')}`);
+        cancel.addEventListener('click',async()=>{cancel.disabled=true;try{const data=await api(`/api/projects/${pid}/production-edits/${job.id}/cancel`,'POST',{});if(state.project?.id!==pid)return;frameEditQueueReads[pid]={data,at:Date.now()};draw(data);}catch(e){cancel.disabled=false;status(e.message,true);}});row.append(cancel);
+      }
+      slot.append(row);
+    }
+  };
+  if(cached?.data)draw(cached.data);
+  if(cached?.pending||Date.now()-(cached?.at || 0)<2000)return;
+  frameEditQueueReads[pid]={...cached,pending:true};
+  api(`/api/projects/${pid}/production-edits`).then(data=>{
+    frameEditQueueReads[pid]={data,at:Date.now()};
+    if(state.project?.id!==pid||!slot.isConnected)return;
+    draw(data);clearTimeout(frameEditQueueTimers[pid]);
+    if(data.jobs.some(j=>['queued','starting','running'].includes(j.status))){
+      frameEditQueueTimers[pid]=setTimeout(()=>{if(state.project?.id===pid){refreshFrameEdits(make,pid);pollProduction(pid);}},3000);
+    }
+  }).catch(()=>{frameEditQueueReads[pid]={...cached,at:Date.now()};});
 }
 function selectEntireTimeline(){selectTimelineIds(universalClips().filter(clip=>!state.expandedGroup || sceneGroups().find(g=>g.id===state.expandedGroup)?.clip_ids.includes(clip.id)).map(clip=>clip.id));}
 async function deleteTimelineSelection(){

@@ -936,6 +936,33 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .episode-make-start.loading svg{width:15px;height:15px;flex:none}
 .episode-make-feed:empty{display:none}
 .episode-make-feed{margin-top:12px}.episode-make-feed>.plan-note{margin:0 0 8px}
+.production-finished{border:1px solid #343439;border-radius:14px;background:#1b1b1e;overflow:hidden}
+.production-finished-main{display:flex;align-items:center;gap:12px;padding:15px}
+.production-finished-icon{display:grid;place-items:center;flex:none;width:31px;height:31px;border-radius:50%;background:#303037;color:#d2d4dc;font-size:17px}
+.production-finished-main>div,.production-finished-review>div{display:grid;gap:4px;min-width:0}
+.production-finished-main strong,.production-finished-review strong{font-size:13px;color:#dddfe5;font-weight:600}
+.production-finished-main div>span,.production-finished-review div>span{font-size:12px;color:#979ba6;line-height:1.4}
+.production-finished-count{margin-left:auto;white-space:nowrap;font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;color:#e0e2e8}
+.production-finished-count small{font-size:13px;font-weight:400;color:#8c909a}
+.production-finished-review{display:flex;align-items:center;gap:12px;padding:12px 15px;border-top:1px solid #303036}
+.production-finished-review>span{width:31px;text-align:center;color:#c2a66f;font-size:18px}
+.production-finished-export{padding:10px 15px;border-top:1px solid #303036;color:#979ba6;font-size:12px}
+.frame-repair-dialog{display:grid;gap:12px}.frame-repair-numbers{display:flex;gap:6px;flex-wrap:wrap}
+.frame-repair-numbers>span{padding:5px 9px;border:1px solid #45454c;border-radius:7px;background:#2a2a30;font-size:12px;color:#c6c8d0}
+.frame-repair-dialog label{font-weight:600}.frame-repair-dialog textarea{width:100%;resize:vertical;min-height:120px}
+.frame-repair-dialog p{margin:0;color:#9ea2ad;font-size:13px}.frame-repair-dialog .frame-repair-error{color:#e7a5a5}
+.frame-edit-queue:empty{display:none}.frame-edit-queue{display:grid;gap:6px;margin-top:10px}
+.frame-edit-queue-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#222226;font-size:11px;color:#bec1ca}
+.frame-edit-queue-row>span:first-child{flex:none}.frame-edit-queue-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9398a3}
+.frame-edit-queue-row button{margin-left:auto;border:0;background:transparent;color:#a6aab5;padding:0 3px;cursor:pointer}
+.preview-panel>.panel-title{min-height:36px;padding:5px 10px;gap:6px}
+.preview-panel>.panel-title h2{font-size:14px}
+.preview-panel .preview-tools{gap:7px}.preview-panel .preview-zoom button{min-width:26px;height:25px}
+.preview-panel .preview-surface{margin:6px 8px;width:calc(100% - 16px)}
+.workspace.animation-workspace.fitted-preview .preview-surface{width:min(calc(100% - 16px),var(--preview-frame-width))}
+.preview-panel .transport{gap:7px;padding:2px 8px 7px;flex-wrap:nowrap}
+.preview-panel .transport button{width:27px;height:27px;border-radius:7px;flex:none}
+.preview-panel .transport #monitor-volume{width:55px}
 .episode-make.locked .frame-strip{cursor:default}
 .episode-make.locked .frame-strip-max{opacity:.55}
 .episode-make.waiting .frame-strip{opacity:.5}

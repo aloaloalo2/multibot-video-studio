@@ -48,6 +48,35 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text())["mode"], "repair")
         self.assertEqual(json.dumps(self.plan), before)
 
+    def test_selected_repair_targets_ready_frames_and_only_keeps_neighbours_as_context(self):
+        packet=context.build(self.project,{**self.request,'repair_frames':[2]},repair=True)
+        self.assertEqual(packet['pending_frames'],[2])
+        self.assertEqual(packet['frame_batches'],[[2]])
+        self.assertEqual([(f['number'],f['editable']) for f in packet['frames']],[(1,False),(2,True),(3,False)])
+        self.assertIn('Правки ЛИШЕ до кадрів: 2',context.text(packet))
+
+    def test_repair_stores_valid_selected_frames_and_uses_a_compact_scoped_brief(self):
+        self.project['production_request']={**self.request,'status':'done','session_id':'previous'}
+        with patch.object(store,'load_project',return_value=self.project),patch.object(store,'save_project'),patch.object(production,'start') as start:
+            production.fix('test','Make the caption larger',frame_numbers=[2,2])
+            kept=self.project['production_request']
+            self.assertEqual(kept['repair_frames'],[2])
+            self.assertEqual(kept['previous_session_id'],'previous')
+            self.assertFalse(kept['continue_session'])
+            brief=production.repair_brief(self.project,kept,'Make the caption larger')
+            self.assertIn('ЛИШЕ до кадрів: 2',brief)
+            self.assertIn('Make the caption larger',brief)
+            self.assertLess(len(brief),2000)
+            start.assert_called_once()
+
+    def test_invalid_repair_scope_never_starts_paid_work(self):
+        self.project['production_request']={**self.request,'status':'done'}
+        with patch.object(store,'load_project',return_value=self.project),patch.object(production,'start') as start:
+            for selected in [[],[0],[4],[True],[2.0],'2']:
+                with self.subTest(selected=selected),self.assertRaises(store.StudioError):
+                    production.fix('test','Fix',frame_numbers=selected)
+            start.assert_not_called()
+
     def test_batches_only_include_unfinished_frames_in_groups_of_five(self):
         self.request['frames'] = 13
         self.plan['frames'] = [dict(self.plan['frames'][0], number=n) for n in range(1, 14)]
