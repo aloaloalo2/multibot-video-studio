@@ -285,7 +285,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .animation-production .episode-make-start{flex:1;min-width:0;width:auto}
 .animation-production .frame-strip-row,.animation-production .frame-strip-legend,.animation-production .frame-plan-read{display:none}
 .animation-production .project-plan-heading{margin:0 0 16px}
-.animation-production .project-plan-heading h1{font-size:18px}
+.animation-production .project-plan-heading h1{font-size:16px}
 .animation-production .episode{gap:16px}
 .animation-production .voice-start{width:100%;margin:0;padding:0;border:0;box-shadow:none;background:none}
 .animation-production .voice-start h1{font-size:18px}
