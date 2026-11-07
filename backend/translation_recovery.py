@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from pathlib import Path
 
@@ -76,6 +77,12 @@ class InvalidAudit(RuntimeError):
     """The reply did not supply a complete, consistent validation result."""
 
 
+def contradictory_reason(reason):
+    """A checker explicitly concluding 'no error' has not supplied evidence of an error."""
+    return bool(re.search(r'(?:actually correct|no (?:actual |factual |grammatical )?errors?|'
+                          r'(?:the )?translation is correct|помилки немає|помилок немає|ошибки нет)\s*[.!]*\s*$',reason,re.I))
+
+
 def audit(answer, ids, *, strict=False):
     """Strict audit contract: contradictory or incomplete evidence cannot approve text."""
     invalid = {i: 'Перевірка змісту не підтвердила цю фразу. Звірте її з оригіналом.' for i in ids}
@@ -99,6 +106,7 @@ def audit(answer, ids, *, strict=False):
             if (not isinstance(issue, dict) or type(issue.get('id')) is not int or issue['id'] not in ids
                     or issue['id'] in result or not isinstance(issue.get('reason'), str) or not issue['reason'].strip()):
                 return invalid_reply()
+            if contradictory_reason(issue['reason']):return invalid_reply()
             result[issue['id']] = issue['reason']
         return result
     except (ValueError, TypeError, AttributeError):
@@ -115,14 +123,17 @@ def audit_evidence(answer, ids):
                 or len(set(checked))!=len(checked) or not isinstance(entries,list)
                 or (ok and entries) or (not ok and not entries)):
             raise ValueError('Invalid audit coverage')
-        failed={}
+        failed={};inconclusive=set()
         for issue in entries:
             i=issue.get('id');reason=issue.get('reason')
             if (type(i) is not int or i not in checked or i in failed
                     or not isinstance(reason,str) or not reason.strip()):
                 raise ValueError('Invalid audit issue')
-            failed[i]=reason
-        return failed,list(checked)
+            if contradictory_reason(reason):inconclusive.add(i)
+            else:failed[i]=reason
+        covered=[i for i in checked if i not in inconclusive]
+        if not covered:raise ValueError('Contradictory audit')
+        return failed,covered
     except (ValueError,TypeError,AttributeError):
         raise InvalidAudit('Модель не повернула придатну перевірку змісту.') from None
 
@@ -175,6 +186,10 @@ class Draft:
                     self.data['single_pass_repairs'] = {k:v for k,v in ledger.items()
                         if isinstance(k,str) and k.isdecimal() and int(k)<self.size and isinstance(v,dict)
                         and v.get('status') in ('requested','returned','unusable')}
+                if isinstance(saved.get('linguist'),dict):
+                    self.data['linguist']={k:v for k,v in saved['linguist'].items()
+                        if isinstance(k,str) and k.isdecimal() and int(k)<self.size and isinstance(v,dict)
+                        and isinstance(v.get('fingerprint'),str) and isinstance(v.get('status'),str)}
                 rejected = saved.get('rejected')
                 if isinstance(rejected, dict):
                     self.data['rejected'] = {k: [entry for entry in entries[-3:]

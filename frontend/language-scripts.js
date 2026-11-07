@@ -53,7 +53,7 @@ function langTranslationProgress(job,now=Date.now()/1000){
   const reviewing=job.status==='running'&&Number(job.progress)===95;
   let label='Перекладаємо',detail=job.stage||'Перекладаємо…';
   if(reviewing){
-    label=({audit:'Перевірка',meaning:'Уточнення',length:'Узгодження',pacing:'Темп голосу'})[review?.phase]||'Уточнення';
+    label=({audit:'Перевірка',meaning:'Уточнення',length:'Узгодження',pacing:'Темп голосу',linguist:'Лінгвіст'})[review?.phase]||'Уточнення';
     const parts=[];
     if(comparison?.available&&Number.isInteger(comparison.total)&&Number.isInteger(comparison.outside_count)){
       parts.push(`Довжина узгоджена: ${comparison.total-comparison.outside_count} з ${comparison.total} фраз`);
@@ -85,8 +85,8 @@ function langScriptStatus(item){
   if(typeof state!=='undefined'&&langScriptStarting.has(`${state.project?.id}:${item.code}`))return {kind:'working',label:'Запускаємо переклад…',progress:0,indeterminate:true};
   const job=langScriptJob(item.code);
   if(job?.status==='running')return {kind:'working',...langTranslationProgress(job)};
-  if(job?.status==='failed'||item.translation_resumable)return {kind:'attention',label:item.translation_resumable?'Переклад призупинено':'Перевірити переклад'};
-  if(item.language_check&&item.language_check.state!=='ok')return {kind:'attention',label:'Потрібна перевірка'};
+  if(job?.status==='failed'||item.translation_resumable)return {kind:'attention',label:item.translation_resumable?'Переклад призупинено':'Переклад не завершено'};
+  if(item.language_check&&item.language_check.state!=='ok')return {kind:'attention',label:'Потрібно оновити переклад'};
   return item.text?{kind:'ready',label:'Перекладено'}:{kind:'empty',label:'Перекласти'};
 }
 
@@ -266,7 +266,7 @@ function langOpenScript(id,code){
     action.hidden=busy||starting;
     action.classList.toggle('primary',!item.text);action.classList.toggle('secondary',!!item.text);
     action.title=item.translation_resumable?'Продовжує автоматичну перевірку й точкові виправлення. Це не схвалення тексту й не запуск озвучення.':'';
-    action.querySelector('span').textContent=item.translation_resumable?'Продовжити перевірку':item.text?'Перекласти заново':'Перекласти';
+    action.querySelector('span').textContent=item.translation_resumable?'Продовжити переклад':item.text?'Перекласти заново':'Перекласти';
     dialog.querySelector('.lang-script-dialog-status span').textContent=status.label;
     dialog.querySelector('.lang-script-dialog-status').hidden=status.kind==='ready';
     dialog.querySelector('.lang-script-fields').hidden=!item.text&&!draft;

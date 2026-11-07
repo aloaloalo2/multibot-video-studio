@@ -103,6 +103,41 @@ class ContinuationTest(unittest.TestCase):
                                              return_value={'available': False, 'ids': []}))
         self.job = {'translation_model': languages.DEFAULT_TRANSLATION_MODEL}
 
+    def test_linguist_finishes_only_the_disputed_phrase_after_failed_ordinary_repair(self):
+        requests=[]
+        def ask(messages,max_tokens=12000):
+            system=messages[0]['content'];items=json.loads(messages[1]['content']);requests.append((system,items))
+            if 'senior native' in system:
+                self.assertEqual(items['id'],1)
+                return json.dumps({'id':1,'action':'replace','text':'Correct native phrase.','reason':'Preserved original meaning.'}),.001
+            ids=[x['id'] for x in items]
+            if 'Independently compare' in system:
+                return json.dumps({'ok':False,'ids':ids,'issues':[{'id':1,'reason':'Wrong fact.'}]}),.001
+            return json.dumps({'1':'Wrong phrase.'}),.001
+        with patch.object(languages,'ask',side_effect=ask):
+            values,cost=languages.before_translate('p','es',{'script':'First. Second.'},
+                ['Good phrase.','Wrong phrase.'],['First.','Second.'],self.job)
+        self.assertEqual(values,['Good phrase.','Correct native phrase.'])
+        self.assertEqual(len(requests),4)
+        self.assertAlmostEqual(cost,.004)
+        self.assertEqual(self.job['translation_linguist']['resolved'],1)
+
+    def test_numeric_spelling_does_not_discard_a_successful_semantic_repair(self):
+        calls=[]
+        def ask(messages,max_tokens=12000):
+            system=messages[0]['content'];items=json.loads(messages[1]['content']);calls.append(system)
+            if 'Independently compare' in system:
+                bad='ratonesuccessfully' in items[0]['translation']
+                return json.dumps({'ok':not bad,'ids':[0],'issues':[{'id':0,'reason':'Corrupted token.'}] if bad else []}),0
+            return json.dumps({'0':'En 2014 estudiaron crías de ratón.'}),0
+        source='In 2014 they studied baby mice.'
+        with patch.object(languages,'ask',side_effect=ask):
+            values,_=languages.before_translate('p','es',{'script':source},
+                ['En dos mil catorce estudiaron ratonesuccessfully bebés.'],[source],self.job)
+        self.assertEqual(values,['En dos mil catorce estudiaron crías de ratón.'])
+        self.assertEqual(len(calls),3)
+        self.assertFalse(any('senior native' in x for x in calls))
+
     def test_missing_id_retry_does_not_repeat_good_neighbour(self):
         requests, audits = [], []
         def ask(messages, max_tokens=12000):
@@ -139,7 +174,7 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(audits, [[0, 1], [1]])
         self.assertEqual(lines, ['a'*49, 'c'*90])
         models=[call.kwargs.get('request_model') for call in self.trace.call_args_list]
-        self.assertEqual(models,[languages.DEFAULT_TRANSLATION_MODEL,
+        self.assertEqual(models,[languages.TRANSLATION_REPAIR_MODEL,
             languages.TRANSLATION_REPAIR_MODEL,languages.TRANSLATION_REPAIR_MODEL])
 
     def test_uncertain_provider_failure_resumes_without_repeating_any_repair(self):

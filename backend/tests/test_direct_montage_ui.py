@@ -13,7 +13,7 @@ import preview_js
 class DirectMontageUITest(unittest.TestCase):
     def test_empty_direct_project_opens_editor_but_planned_project_keeps_gate(self):
         prelude = "const state={channel:{id:'c',settings:{plan_mode:'direct'}},channels:[]};"
-        result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'editorUnlocked'], """
+        result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'projectAnimated', 'editorUnlocked'], """
             console.log(JSON.stringify([
               editorUnlocked({channel_id:'c',tracks:[]}),
               editorUnlocked({channel_id:'c',plan_mode:'director',tracks:[]}),
@@ -27,7 +27,7 @@ class DirectMontageUITest(unittest.TestCase):
 
     def test_legacy_mode_and_branding_overlay_do_not_unlock_planned_editor(self):
         prelude = "const state={channel:{id:'c',settings:{}},channels:[]};"
-        result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'editorUnlocked'], """
+        result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'projectAnimated', 'editorUnlocked'], """
             const p={channel_id:'c',scene_groups:[{role:'overlay',clip_ids:['plate']}],
               tracks:[{clips:[{id:'plate',kind:'image'}]}]};
             console.log(JSON.stringify([projectPlanMode(p),editorUnlocked(p),

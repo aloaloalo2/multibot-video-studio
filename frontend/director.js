@@ -127,7 +127,7 @@ const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l1
 // on the timeline with the same bytes, the one the Studio levels to 100% (project.audio_gain, backend/audio_level.py).
 function voiceAssetId(plan,project){
   const planned=plan?.timing?.audio?.asset_id;
-  if(!planned)return Object.keys(project?.audio_gain || {})[0] || null;
+  if(!planned)return plan?.timing?.audio?(Object.keys(project?.audio_gain || {})[0] || null):null;
   if((project?.assets || []).some(asset=>asset.id===planned))return planned;
   return Object.keys(project?.audio_gain || {})[0] || planned;
 }

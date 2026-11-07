@@ -198,7 +198,7 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
                     'issues':[{'id':0,'reason':'Required source fact is missing.'}]}), .001
             return json.dumps({'0':'t'*100}), .001
         self.ask.side_effect = rejected
-        with self.assertRaisesRegex(RuntimeError,'Потрібно перевірити фрази: 1'):
+        with self.assertRaisesRegex(RuntimeError,'Не завершено фрази: 1'):
             languages._translate('test','es',self.job)
         self.assertEqual(self.job['translation_issues'][0]['phrase'],1)
         draft=languages.translation_draft('test','es',self.source,
@@ -346,7 +346,8 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.ask.side_effect = rejected
         with self.assertRaisesRegex(RuntimeError, 'змісту'):
             languages._translate('test', 'es', self.job)
-        self.assertEqual(self.ask.call_count, 3)
+        self.assertEqual(self.ask.call_count, 4)
+        self.assertIn('senior native',self.ask.call_args.args[0][0]['content'])
         prompt = self.ask.call_args_list[0].args[0][0]['content']
         for evidence in ('proper names','quantities','units','negation','Equivalent digit','Character length is not a meaning error'):
             self.assertIn(evidence,prompt)
@@ -372,11 +373,13 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
     def test_revised_numbers_must_remain_spoken_words(self):
         self.initial.return_value = (['t'*97+' 13'], .1)
         def invalid_number(messages, max_tokens=12000):
+            if 'senior native' in messages[0]['content']:
+                return json.dumps({'id':0,'action':'keep','reason':'Consider it correct.'}),.01
             if 'Independently compare' in messages[0]['content']:
                 return json.dumps({'ok': True, 'ids': [0]}), .01
             return json.dumps({'0': 't'*97+' 13'}), .02
         self.ask.side_effect = invalid_number
-        with self.assertRaisesRegex(RuntimeError, 'числа'):
+        with self.assertRaisesRegex(RuntimeError, 'чис(?:ел|ла)'):
             languages._translate('test', 'es', self.job)
         self.save.assert_not_called()
         self.speak.assert_not_called()

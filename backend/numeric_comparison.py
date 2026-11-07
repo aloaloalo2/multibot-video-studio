@@ -95,8 +95,11 @@ def slavic_spans(text, language):
                 separator=text[tokens[i-1].end():tokens[i].start()]
                 if not separator.isspace() or '\n' in separator:break
             value=cardinal.get(word); ordinal=ordinals.get(word); scale=scales.get(word)
+            compound_year=language=='uk' and bool(re.fullmatch(r'дво(?:х)?тисячн(?:ий|ого|ому|им|ім|а|ої|ій|ою|е)',word))
             if value is None and ordinal is not None:value=ordinal
-            if scale is not None:
+            if compound_year and i==start:
+                total=2000;group=0;last=None;has_ordinal=True
+            elif scale is not None:
                 total+=(group or 1)*scale;group=0;last=None
             elif value is not None:
                 if last is not None and (last<20 or (last<100 and value>=10) or (last>=100 and value>=100)):break

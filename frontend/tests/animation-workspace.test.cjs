@@ -39,6 +39,7 @@ test('an imported plan without an audio asset ID uses the original narration on 
   assert.equal(c.voiceAssetId({timing:{audio:{duration:815}}},{audio_gain:{original:1}}),'original');
   assert.equal(c.voiceAssetId({timing:{audio:{asset_id:'saved'}}},{assets:[{id:'saved'}],audio_gain:{original:1}}),'saved');
   assert.equal(c.voiceAssetId({timing:{audio:{duration:815}}},{}),null);
+  assert.equal(c.voiceAssetId({timing:{}},{audio_gain:{music:1}}),null);
 });
 
 test('starting frames from Animation stays in the combined workspace and sends one request',async()=>{

@@ -49,6 +49,7 @@ import narration_profile
 import numeric_comparison
 import translation_budget
 import translation_recovery
+import translation_linguist
 import translation_costs
 import store
 
@@ -1125,7 +1126,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             job['translation_issues'] = [{'phrase': int(i)+1, 'reason': detail}
                                          for i, detail in issues.items()]
             numbers = ', '.join(str(item['phrase']) for item in job['translation_issues'][:8])
-            reason += f' Потрібно перевірити фрази: {numbers}.'
+            reason += f' Не завершено фрази: {numbers}.'
         draft.save(issue=reason, resumable=True)
         job['translation_resume'] = {'available': True, 'reason': reason, 'path': str(draft.path)}
         raise RuntimeError(reason+' Чернетку й готові частини збережено; продовження не перекладатиме їх заново.')
@@ -1149,7 +1150,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                                  for i, value in enumerate(values))}
         job['translation_review'] = review
         labels = {'meaning': 'Виправляємо зміст', 'length': 'Уточнюємо довжину',
-                  'audit': 'Перевіряємо зміст', 'pacing': 'Узгоджуємо темп'}
+                  'audit': 'Перевіряємо зміст', 'pacing': 'Узгоджуємо темп', 'linguist': 'Лінгвіст перевіряє переклад'}
         try:
             progress(pid, job, 95, f"{labels[phase]}: опрацьовуємо {len(group)} фраз. Очікуємо відповідь {model_name}.")
             yield
@@ -1166,8 +1167,10 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             key = str(i)
             previous = ledger.get(key)
             if previous:
-                if isinstance(previous.get('value'), str) and valid_line(previous['value']):
-                    result[i] = previous['value']
+                saved=previous.get('value') or previous.get('returned_value')
+                if isinstance(saved,str):
+                    saved=translation_linguist.restore_number_words(saved,current[i],code)
+                    if valid_line(saved):result[i]=saved
                 continue
             detail = reasons[i]
             left, right = numeric_comparison.paired_forms(source_units[i], current[i], source_language, code)
@@ -1195,6 +1198,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             found, issue = translation_recovery.answers(answer, [i])
             value = found.get(i)
             ledger[key].update(status='returned', issue=issue)
+            if value:
+                ledger[key]['returned_value']=value
+                value=translation_linguist.restore_number_words(value,current[i],code)
             if value and valid_line(value):
                 ledger[key]['value'] = value
                 result[i] = value
@@ -1214,14 +1220,14 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             if not pending:
                 return values
             issues = {}
-            # A phrase already rejected by MiniMax gets an independent DeepSeek
-            # check. Keep cached good neighbours out of these corrective calls.
+            # DeepSeek is the native-language checker for both new and revised
+            # phrases. Keep cached good neighbours out of corrective calls.
             prior=draft.data.get('rejected') or {}
             revised=draft.data.get('single_pass_repairs') or {}
             ordinary=[i for i in pending if not prior.get(str(i)) and str(i) not in revised]
             disputed=[i for i in pending if prior.get(str(i)) or str(i) in revised]
             audit_queue = [(group,0,model) for ids,model in
-                ((ordinary,resolved_translation_model(job.get('translation_model'))),
+                ((ordinary,TRANSLATION_REPAIR_MODEL),
                  (disputed,TRANSLATION_REPAIR_MODEL)) for group in batches_for(values,ids)]
             if review_model:audit_queue=[(group,0,review_model) for group in batches_for(values,pending)]
             while audit_queue:
@@ -1232,6 +1238,10 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     answer, cost = ask([{'role': 'system', 'content': target_rule(code)+
                         '\nIndependently compare EVERY translation with its ORIGINAL SOURCE. Check essential facts, '
                         'proper names, quantities, units, chronology, negation, uncertainty and natural grammar. '
+                        'Act as the native-language linguist: require simple, fluent spoken phrasing, native idioms, '
+                        'established localized names and titles, and natural date/year grammar. Literal calques or '
+                        'awkward syntax should be fixed with short faithful wording. Natural subjects/pronouns '
+                        'referring to people already present in the source are acceptable adaptation. '
                         'Approve idiomatic adaptation and removal of nonessential filler, praise and repetition. '
                         'List only ACTUAL factual or grammatical errors. Equivalent correct wording is OK. '
                         'Do not list tentative suspicions, acceptable alternatives or reasons saying there is no error. '
@@ -1250,7 +1260,9 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     # An empty/incomplete checker response is not evidence of
                     # bad translation. Retry smaller checks, preserving wording.
                     if attempt >= 1:
-                        pause(f'Фраза №{group[0]+1}: модель не повернула повну перевірку змісту. Текст збережено без змін.')
+                        issues.update({i:'Перевіряльник не надав однозначної оцінки. Лінгвіст має звірити фразу з оригіналом.' for i in group})
+                        draft.save(semantic_issues={str(i):text for i,text in issues.items()})
+                        continue
                     size = max(1, len(group)//2)
                     audit_queue[:0] = [(group[n:n+size], attempt+1,TRANSLATION_REPAIR_MODEL) for n in range(0, len(group), size)]
                     continue
@@ -1274,8 +1286,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                            semantic_issues={str(i): text for i, text in issues.items()})
                 if missing_checks:
                     if attempt>=1:
-                        pause('Не підтверджено перевірку фраз: '+', '.join(str(i+1) for i in missing_checks)+'. Відомі помилки й перевірені фрази збережено.')
-                    audit_queue[:0]=[(missing_checks,attempt+1,TRANSLATION_REPAIR_MODEL)]
+                        issues.update({i:'Перевіряльник пропустив фразу. Лінгвіст має перевірити її зміст.' for i in missing_checks})
+                    else:audit_queue[:0]=[(missing_checks,attempt+1,TRANSLATION_REPAIR_MODEL)]
 
             if not issues:
                 return values
@@ -1309,7 +1321,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         reason['issue'] += f' Measured narration pacing: target about {target} spoken-text letters; shorten by {abs(percent):g}%.'
         if reason.get('percent') is None or percent<reason['percent']:
             reason['percent']=percent
-    candidates=replacements(current,reasons)
+    candidates=replacements(current,{i:reason for i,reason in reasons.items() if not issues.get(i,'').startswith('Перевіряльник')})
     changed={i:value for i,value in candidates.items() if value!=current[i]}
     if plan.get('available'):
         proposed=translation_budget.number_refinement_plan(src['script'],
@@ -1336,7 +1348,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             del unresolved[i]
     if unresolved:
         peers=draft.data.setdefault('audit_peers',{})
-        pending=[i for i in unresolved if (peers.get(str(i)) or {}).get('fingerprint')!=audit_key(i,candidate[i])]
+        pending=[i for i in unresolved if not unresolved[i].startswith('Перевіряльник')
+                 and (peers.get(str(i)) or {}).get('fingerprint')!=audit_key(i,candidate[i])]
         if pending:
             peer=validate_final(candidate,review_model=DEFAULT_TRANSLATION_MODEL,indexes=pending)
             peer_issues={} if isinstance(peer,list) else peer['issues']
@@ -1349,8 +1362,34 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             if evidence.get('fingerprint')==audit_key(i,candidate[i]) and evidence.get('passed'):
                 del unresolved[i]
     if unresolved:
+        ledger=draft.data.setdefault('linguist',{})
+        for i in list(unresolved):
+            if (draft.data.get('single_pass_repairs',{}).get(str(i)) or {}).get('status')=='requested':
+                unresolved[i]='Попередній запит виправлення не має збереженої відповіді. Повторне списання автоматично не запускається.'
+                continue
+            def request(model,messages,max_tokens):
+                with review_request('linguist',candidate,[i],model),translation_trace(pid,code,job,i,request_model=model):
+                    answer,cost=ask(messages,max_tokens)
+                charge(cost)
+                return answer
+            def validate(value):
+                return bool(value) and valid_line(value) and not translation_budget.missing_source_years(source_units[i],value,code)
+            try:
+                candidate[i]=translation_linguist.resolve(index=i,language=code,language_name=ENGLISH[code],
+                    source=source_units[i],current=candidate[i],issue=unresolved[i],
+                    context={'before':source_units[i-1][-500:] if i else '',
+                             'after':source_units[i+1][:500] if i+1<len(source_units) else ''},
+                    ledger=ledger,save=lambda:draft.save(linguist=ledger),request=request,validate=validate,
+                    linguist_model=TRANSLATION_REPAIR_MODEL,translation_model=DEFAULT_TRANSLATION_MODEL)
+                draft.data.setdefault('audited',{})[str(i)]=audit_key(i,candidate[i])
+                del unresolved[i]
+                draft.save(lines=candidate,audited=draft.data['audited'],semantic_issues={str(k):v for k,v in unresolved.items()})
+                job['translation_linguist']={'model':TRANSLATION_REPAIR_MODEL,'resolved':sum(r.get('status')=='resolved' for r in ledger.values())}
+            except translation_linguist.Unresolved as error:
+                unresolved[i]=str(error)
+    if unresolved:
         draft.save(lines=candidate,semantic_issues={str(i):reason for i,reason in unresolved.items()})
-        pause('Одноразове виправлення не пройшло перевірку змісту окремих фраз: '+ '; '.join(unresolved.values()))
+        pause('Лінгвіст не підтвердив перевірку змісту окремих фраз: '+ '; '.join(unresolved.values()))
     current=candidate
     final_plan=translation_budget.number_refinement_plan(src['script'],current,source_units,source_language,code)
     state=translation_budget.assessment(src['script'],'\n'.join(current),source_language,code,

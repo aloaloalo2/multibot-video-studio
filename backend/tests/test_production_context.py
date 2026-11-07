@@ -55,6 +55,8 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(packet['batch_size'], 5)
         self.assertEqual(packet['frame_batches'], [[3,4,5,6,7], [8,9,10,11,12], [13]])
         self.assertIn('Пакет 1: 3, 4, 5, 6, 7', context.text(packet))
+        self.assertIn('рівно 5',context.instructions(context.text(packet)))
+        self.assertNotIn('пакет до 5',context.instructions(context.text(packet)))
 
     def test_mismatched_plan_refuses_handoff_before_model(self):
         linked = json.loads((self.rz / "story/studio_frames.json").read_text())

@@ -86,6 +86,13 @@ test('translation cost is rounded to three dollars decimals and unknown cost sta
   }
 });
 
+test('disputed phrase supervision is labelled as the linguist with the actual model name',()=>{
+  const context=load(()=>assert.fail('Rendering progress must not call the API'));
+  const status=context.langTranslationProgress({status:'running',progress:95,
+    translation_review:{phase:'linguist',total:125,batch_size:1,waiting:true,model_name:'DeepSeek',request_started_at:100}},105);
+  assert.equal(status.label,'Лінгвіст');assert.match(status.detail,/DeepSeek/);assert.match(status.detail,/1 фраз/);
+});
+
 test('script size uses compact K formatting without changing exact counts',()=>{
   const context=load(()=>assert.fail('A count must not start a request'));
   assert.equal(context.langShortCharacters(5600),'5,6K');
