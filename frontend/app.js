@@ -1164,9 +1164,8 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 
 async function openStudioSettings(){
   try{
-    const result=await api('/api/settings');const settings=result.settings || {};
-    modal('Загальні налаштування студії',`<section class="settings-section"><h3>Збереження відео</h3><label>Папка для готових MP4 всередині випуску<input id="studio-export-folder" type="text" placeholder="Прямо у папку випуску" value="${esc(settings.export_subfolder || '')}"></label><p>Якщо поле порожнє, готовий файл потрапить прямо у папку випуску.</p></section>${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
-      try{if(typeof saveTypedServiceKeys==='function')await saveTypedServiceKeys();const next={export_subfolder:$('studio-export-folder').value.trim()};await api('/api/settings','PATCH',{settings:next});closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
+    modal('Загальні налаштування студії',`${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+      try{if(typeof saveTypedServiceKeys==='function')await saveTypedServiceKeys();closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
     fillExtension();
