@@ -20,7 +20,7 @@ TRIAL_CHANNEL = 'b012a0e49c3b1c18'
 MODELS = {'eleven_v4_turbo': 'Eleven v4 Turbo', 'eleven_v4': 'Eleven v4'}
 DELIVERY = {'neutral': '', 'conversational': '[Warm, conversational tone] ', 'calm': '[Calm, relaxed voice] '}
 DEFAULT_TEXT = 'Давайте спокойно разберёмся, что здесь происходит. На первый взгляд всё кажется довольно простым. Но есть одна деталь, на которую стоит обратить внимание. Сейчас я объясню её на обычном примере.'
-DEFAULTS = {'heygen_model':'heygen-voice-1-turbo-free', 'heygen_voice_id':'', 'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
+DEFAULTS = {'heygen_expressiveness':.5, 'heygen_model':'heygen-voice-1-turbo-free', 'heygen_voice_id':'', 'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
             'stability': .5, 'similarity_boost': .75, 'fish_engine': languages.FISH_ENGINE,
             'temperature': .7, 'top_p': .7, 'speed': 1., 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
 PREPARATION_VERSION = 1
@@ -54,7 +54,7 @@ def validated(raw):
     speed=data['speed']
     if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9 <= speed <= 1.1:
         raise store.StudioError('Швидкість має бути від 90% до 110%')
-    for key in ['stability', 'similarity_boost', 'temperature', 'top_p']:
+    for key in ['stability', 'similarity_boost', 'temperature', 'top_p', 'heygen_expressiveness']:
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
             raise store.StudioError('Параметри голосу мають бути від 0 до 100%')
@@ -77,6 +77,7 @@ def reference(cid):
 def fingerprint(settings, ref):
     if settings['provider']=='heygen':
         effective={k:settings[k] for k in ['heygen_model','heygen_voice_id','language','text','speed']}
+        if settings.get('heygen_expressiveness',.5)!=.5:effective['heygen_expressiveness']=settings['heygen_expressiveness']
         return hashlib.sha256(json.dumps(effective,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     # Preparation affects the remote reference, never overwrite/reuse a sample of the original recording.
     reference_key = ref['sha256'] + (f':clean-{PREPARATION_VERSION}' if settings['noise_cleanup'] else '')

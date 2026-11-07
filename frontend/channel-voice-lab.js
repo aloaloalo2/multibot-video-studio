@@ -1,7 +1,7 @@
 // Saved channel voice. Upload is local; synthesis starts only from the sample button.
 // Compare the parameters that actually reach the selected service.
 function voiceLabSampleKey(s){
-  if(s.provider==='heygen')return JSON.stringify(['provider','language','text','heygen_model','heygen_voice_id','speed'].map(k=>[k,s[k]]));
+  if(s.provider==='heygen')return JSON.stringify(['provider','language','text','heygen_model','heygen_voice_id','speed',...((s.heygen_expressiveness??.5)!==.5?['heygen_expressiveness']:[])].map(k=>[k,s[k]]));
   const fields=['provider','language','text','noise_cleanup',...(s.provider==='fishaudio'?['fish_engine','temperature','top_p','chunk_length','speed']:['model','delivery','stability','similarity_boost','direction','speed'])];
   return JSON.stringify(fields.map(k=>[k,k==='speed'?(s[k]??1):s[k]]));
 }
@@ -21,7 +21,7 @@ async function bindChannelVoiceLab(channel){
   let data,signature='',timer;
   const current=()=>box.isConnected;
   const settingsKey=value=>JSON.stringify(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)));
-  const read=()=>({heygen_model:box.querySelector('[name=heygen_model]').value,heygen_voice_id:box.querySelector('[name=heygen_voice_id]').value.trim(),provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
+  const read=()=>({heygen_expressiveness:Number(box.querySelector('[name=heygen_expressiveness]').value)/100,heygen_model:box.querySelector('[name=heygen_model]').value,heygen_voice_id:box.querySelector('[name=heygen_voice_id]').value.trim(),provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
     speed:Number(box.querySelector('[name=speed]').value)/100,noise_cleanup:data.settings.noise_cleanup,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
@@ -57,7 +57,7 @@ async function bindChannelVoiceLab(channel){
       const player=voicePlayer(null,`${base}/sample?key=${data.job.fingerprint}`,{filename:'Зразок голосу.mp3',playLabel:'Відтворити зразок голосу'});
       output.append(player);
       const used=data.job.settings||data.settings;
-      const caption=document.createElement('small');caption.textContent=used.provider==='elevenlabs'?`Стабільність ${Math.round(used.stability*100)}% · Схожість ${Math.round(used.similarity_boost*100)}%`:`Виразність ${Math.round(used.temperature*100)}% · Варіативність ${Math.round(used.top_p*100)}%`;output.append(caption);
+      const caption=document.createElement('small');caption.textContent=used.provider==='heygen'?`Виразність ${Math.round((used.heygen_expressiveness??.5)*100)}%`:used.provider==='elevenlabs'?`Стабільність ${Math.round(used.stability*100)}% · Схожість ${Math.round(used.similarity_boost*100)}%`:`Виразність ${Math.round(used.temperature*100)}% · Варіативність ${Math.round(used.top_p*100)}%`;output.append(caption);
       message(data.job.cached?'Зразок із кешу. Повторної оплати немає.':'Зразок готовий. Можна прослухати та змінити налаштування.');
     }else if(data.job?.status==='failed')message(data.job.error||'Не вдалося створити зразок',true);
     else if(data.job?.status==='running'){
@@ -112,6 +112,7 @@ async function bindChannelVoiceLab(channel){
       <label data-provider="heygen">Модель<select name="heygen_model">${(data.heygen_models||[]).map(m=>`<option value="${m.id}" ${m.id===s.heygen_model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
       <div class="voice-lab-sliders"><label>Швидкість · у студії<span><input name="speed" type="range" min="90" max="110" step="1" value="${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}"><output>${Math.max(90,Math.min(110,Math.round((s.speed??1)*100)))}%</output></span></label></div><div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
+      <div class="voice-lab-sliders" data-provider="heygen"><label>Виразність<span><input name="heygen_expressiveness" type="range" min="0" max="100" step="5" value="${Math.round((s.heygen_expressiveness??.5)*100)}"><output>${Math.round((s.heygen_expressiveness??.5)*100)}%</output></span><small>Від стриманої до виразнішої подачі. Застосовується під час нової генерації instant-голосу.</small></label></div>
       <div class="voice-lab-sliders" data-provider="fishaudio">${[['temperature','Виразність'],['top_p','Варіативність']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
       <label class="voice-lab-direction" data-provider="elevenlabs">Побажання до подачі<input name="direction" type="text" maxlength="160" value="${esc(s.direction)}" placeholder="Спокійно, тепло, без дикторської подачі"><small>Необов’язково. Якщо заповнено, застосовується замість вибраної подачі.</small></label>
       <label class="voice-lab-text">Текст зразка<textarea rows="3" maxlength="2000">${esc(s.text)}</textarea></label>

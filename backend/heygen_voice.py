@@ -66,7 +66,7 @@ def synthesize(settings):
     payload={'model':settings['heygen_model'],'voice_id':settings['heygen_voice_id'],
         'text':settings['text'],'language':settings['language'],
         'output_format':{'encoding':'mp3','sample_rate_hertz':44100,'bitrate_bps':128000}}
-    if voice.get('mode')!='professional':payload['expressiveness_boost']=.5
+    if voice.get('mode')!='professional':payload['expressiveness_boost']=settings.get('heygen_expressiveness',.5)
     result=call('/v3/models/audio/tts',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')

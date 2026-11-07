@@ -34,3 +34,9 @@ test('reference cleanup, Fish chunk length and Eleven delivery instructions sele
   const fish={...clean,provider:'fishaudio',chunk_length:200,fish_engine:'s2.1-pro-free',temperature:.7,top_p:.7};
   assert.equal(context.voiceLabSampleState({...fish,chunk_length:300},{...data,settings:fish}).cached,false);
 });
+test('HeyGen expression change invalidates the ready sample while unrelated sliders do not',()=>{
+  const heygen={...settings,provider:'heygen',heygen_model:'heygen-voice-1-turbo-free',heygen_voice_id:'voice',speed:1,heygen_expressiveness:.5};
+  const saved={...ready,settings:heygen};
+  assert.equal(context.voiceLabSampleState({...heygen,heygen_expressiveness:.85},saved).cached,false);
+  assert.equal(context.voiceLabSampleState({...heygen,stability:.85},saved).cached,true);
+});

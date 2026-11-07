@@ -11,13 +11,23 @@ import store
 
 class HeyGenTests(unittest.TestCase):
     def test_explicit_model_and_no_api_speed(self):
-        settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice','speed':1.1})
+        settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice','speed':1.1,'heygen_expressiveness':.85})
         with patch.object(hg,'call',side_effect=[{'data':{'status':'ACTIVE','mode':'instant'}},{'data':{'audio_url':'https://audio.example/test.mp3'}}]) as call,patch.object(hg.urllib.request,'urlopen',return_value=io.BytesIO(b'audio')):
             self.assertEqual(hg.synthesize(settings),b'audio')
         payload=call.call_args.args[1]
         self.assertEqual(payload['model'],'heygen-voice-1-turbo-free')
         self.assertNotIn('speed',payload)
+        self.assertEqual(payload['expressiveness_boost'],.85)
         self.assertEqual(call.call_count,2)
+    def test_expression_changes_synthesis_cache_but_not_other_providers(self):
+        original=lab.validated({'provider':'heygen','heygen_voice_id':'voice'});ref={'sha256':'voice'}
+        changed={**original,'heygen_expressiveness':.85}
+        self.assertNotEqual(lab.fingerprint(original,ref),lab.fingerprint(changed,ref))
+        self.assertNotEqual(lab.original_path(original,ref),lab.original_path(changed,ref))
+        for provider in ['elevenlabs','fishaudio']:
+            self.assertEqual(lab.fingerprint({**original,'provider':provider},ref),lab.fingerprint({**changed,'provider':provider},ref))
+        for value in [-.1,1.1,True,float('nan')]:
+            with self.assertRaises(store.StudioError):lab.validated({'heygen_expressiveness':value})
     def test_turbo_rejects_professional_without_paid_fallback(self):
         settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice'})
         with patch.object(hg,'call',return_value={'data':{'status':'ACTIVE','mode':'professional'}}) as call:
