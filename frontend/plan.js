@@ -67,8 +67,12 @@ function narrationChoices(panel,ready){
   const choices=document.createElement('div');choices.className='narration-choices';
   choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
   const buttons=choices.querySelectorAll('button');
-  buttons[0].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[0].classList.add('selected');ready(false);};
-  buttons[1].onclick=()=>{buttons.forEach(b=>b.classList.remove('selected'));buttons[1].classList.add('selected');ready(true);};
+  function choose(index){
+    choices.classList.add('has-selection');
+    buttons.forEach((button,i)=>{button.classList.toggle('selected',i===index);button.setAttribute('aria-pressed',String(i===index));});
+    ready(index===1);
+  }
+  buttons.forEach((button,index)=>{button.setAttribute('aria-pressed','false');button.onclick=()=>choose(index);});
   panel.append(choices);
 }
 function renderNarrationGeneration(panel){
