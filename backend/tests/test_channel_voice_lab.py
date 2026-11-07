@@ -35,12 +35,12 @@ class VoiceLabTests(unittest.TestCase):
         with wave.open(buf,'wb') as out:
             out.setnchannels(1);out.setsampwidth(2);out.setframerate(24000)
             out.writeframes((np.sin(np.arange(48000)*2*np.pi*440/24000)*16000).astype('<i2').tobytes())
-        settings=lab.validated({'provider':'fishaudio','speed':.8})
+        settings=lab.validated({'provider':'fishaudio','speed':.9})
         with patch.object(lab.languages,'request',return_value=buf.getvalue()) as request:
             slow=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},settings,raw_key='test-original')
-            fast=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},{**settings,'speed':1.25},raw_key='test-original')
+            fast=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},{**settings,'speed':1.1},raw_key='test-original')
             request.assert_called_once()
-        for name,audio,wanted in [('slow',slow,2.5),('fast',fast,1.6)]:
+        for name,audio,wanted in [('slow',slow,2/.9),('fast',fast,2/1.1)]:
             target=self.root/(name+'.mp3');target.write_bytes(audio)
             self.assertAlmostEqual(store.media_duration(target),wanted,delta=.12)
             raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(target),'-ar','24000','-f','f32le','pipe:1'])
@@ -48,7 +48,7 @@ class VoiceLabTests(unittest.TestCase):
             self.assertAlmostEqual(freq,440,delta=4)
 
     def test_fish_speed_validation_and_cache(self):
-        for speed in [True, float('nan'), .49, 2.1, '1']:
+        for speed in [True, float('nan'), .89, 1.11, '1']:
             with self.assertRaises(store.StudioError):lab.validated({'speed':speed})
         ref={'sha256':'ref'};base=lab.validated({'provider':'fishaudio'})
         self.assertNotEqual(lab.fingerprint(base,ref),lab.fingerprint({**base,'speed':1.1},ref))

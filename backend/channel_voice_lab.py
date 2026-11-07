@@ -50,8 +50,8 @@ def validated(raw):
         or data['language'] not in languages.LANGUAGES or data['model'] not in MODELS or data['delivery'] not in DELIVERY):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
     speed=data['speed']
-    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .5 <= speed <= 2:
-        raise store.StudioError('Швидкість Fish має бути від 0,5 до 2')
+    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9 <= speed <= 1.1:
+        raise store.StudioError('Швидкість Fish має бути від 90% до 110%')
     for key in ['stability', 'similarity_boost', 'temperature', 'top_p']:
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
@@ -130,7 +130,9 @@ def estimate(settings):
 
 def snapshot(cid):
     root = folder(cid)
-    settings = validated(store.read_json(root / 'settings.json', {}))
+    saved = store.read_json(root / 'settings.json', {})
+    if isinstance(saved.get('speed'), (int,float)) and not isinstance(saved.get('speed'),bool):saved['speed']=max(.9,min(1.1,saved['speed']))
+    settings = validated(saved)
     ref = reference(cid)
     job = store.read_json(root / 'job.json', {})
     if job.get('status') == 'running' and cid not in ACTIVE:
