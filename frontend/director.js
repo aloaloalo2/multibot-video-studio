@@ -458,7 +458,7 @@ function fillMake(make){
     start.textContent=request?.status==='done'&&floor>=frames.length?`Кадри створені · ${made.size} з ${frames.length}`:'Почати створення ролика';
     if(completed){
       hint.hidden=true;
-      feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Перевірки потребують уваги</strong><span>${esc(/швидкості/.test(request.completion_note)&&/[Оо]дин перехід/.test(request.completion_note)?'Швидкодія анімації · один перехід':request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;
+      feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Примітка перевірки</strong><span>${esc(request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;
     }
     if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();
       note.textContent=`Кадри ${first}–${request.frames} не вдалися. ${error}${/почніть ще раз/.test(error)?'':' Виберіть кадри й почніть ще раз.'}`;feed.append(note);}
@@ -601,7 +601,7 @@ function renderMakeStatus(button,id,request,done,total){
     const text=`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
     const age=Math.max(0,Date.now()/1000-(Number(step?.t)||run));
     const idle=age>=120?`Без нових дій ${Math.floor(age/60)} хв`:'';
-    const count=request.repair_frames?.length?`Правки: ${request.repair_frames.join(', ')}`:`${done} з ${total}`;
+    const count=request.repair_frames?.length?`${request.repair_frames.length===1?'Кадр':'Кадри'} ${request.repair_frames.join(', ')}`:`${done} з ${total}`;
     button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span>${idle?`<span class="episode-make-idle">${idle}</span>`:''}<span class="episode-make-count">${esc(count)}</span>`;
     button.setAttribute('aria-live','polite');button.title=text+(idle?` · ${idle}. Час завершення ще невідомий.`:'');
   };

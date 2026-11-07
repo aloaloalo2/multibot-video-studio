@@ -953,16 +953,26 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-repair-dialog p{margin:0;color:#9ea2ad;font-size:13px}.frame-repair-dialog .frame-repair-error{color:#e7a5a5}
 .frame-edit-queue:empty{display:none}.frame-edit-queue{display:grid;gap:6px;margin-top:10px}
 .frame-edit-queue-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#222226;font-size:11px;color:#bec1ca}
-.frame-edit-queue-row>span:first-child{flex:none}.frame-edit-queue-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9398a3}
+.frame-edit-queue-label{flex:none}.frame-edit-queue-row .frame-edit-queue-spinner{width:11px;height:11px;border-width:1.5px;color:#bfc3ce;flex:none}
+.frame-edit-queue-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9398a3}
 .frame-edit-queue-row button{margin-left:auto;border:0;background:transparent;color:#a6aab5;padding:0 3px;cursor:pointer}
-.preview-panel>.panel-title{min-height:36px;padding:5px 10px;gap:6px}
-.preview-panel>.panel-title h2{font-size:14px}
-.preview-panel .preview-tools{gap:7px}.preview-panel .preview-zoom button{min-width:26px;height:25px}
-.preview-panel .preview-surface{margin:6px 8px;width:calc(100% - 16px)}
-.workspace.animation-workspace.fitted-preview .preview-surface{width:min(calc(100% - 16px),var(--preview-frame-width))}
-.preview-panel .transport{gap:7px;padding:2px 8px 7px;flex-wrap:nowrap}
-.preview-panel .transport button{width:27px;height:27px;border-radius:7px;flex:none}
-.preview-panel .transport #monitor-volume{width:55px}
+.preview-panel{position:relative;justify-content:center;align-items:center;overflow:hidden;background:#0a0b0c}
+.preview-panel .preview-surface{margin:0;width:100%;border-radius:0}
+.workspace.animation-workspace.fitted-preview .preview-panel{width:min(100%,var(--preview-frame-width));height:auto;aspect-ratio:var(--preview-ratio,16/9);align-self:center;justify-self:center}
+.workspace.animation-workspace.fitted-preview .preview-surface{width:min(100%,var(--preview-frame-width))}
+.preview-settings{position:absolute;right:10px;top:10px;z-index:45;opacity:0;transition:opacity .18s ease;pointer-events:none}
+.preview-settings>summary{display:grid;place-items:center;width:30px;height:30px;list-style:none;border:1px solid #ffffff18;border-radius:9px;background:#17181dcc;color:#c9ccd3;cursor:pointer;backdrop-filter:blur(12px)}
+.preview-settings>summary::-webkit-details-marker{display:none}.preview-settings>summary svg{width:17px;height:17px}
+.preview-settings>summary:hover{background:#35363ce6;color:#fff}.preview-settings>summary:focus-visible{outline:2px solid #aeb4c2;outline-offset:2px}
+.preview-settings .preview-tools{position:absolute;right:0;top:37px;display:flex;flex-direction:column;align-items:stretch;gap:10px;margin:0;padding:12px;border:1px solid #ffffff15;border-radius:12px;background:#1c1d23f2;box-shadow:0 6px 24px #0007;backdrop-filter:blur(16px)}
+.preview-settings .preview-zoom{justify-content:center}.preview-settings .preview-zoom button{min-width:36px;height:28px}
+.preview-panel .transport{position:absolute;bottom:0;left:0;right:0;z-index:40;gap:8px;padding:22px 12px 10px;flex-wrap:nowrap;color:#e0e2e8;background:linear-gradient(transparent,#090a0dd9);opacity:0;pointer-events:none;transition:opacity .18s ease}
+.preview-panel .transport button{width:30px;height:30px;border-radius:50%;flex:none;background:#33353de6;color:#e0e2e8}
+.preview-panel .transport #monitor-audio{background:#33353de6;color:#e0e2e8}
+.preview-panel .transport input{accent-color:#c4c8d1}.preview-panel .transport #monitor-volume{width:55px}
+.preview-panel:hover .transport,.preview-panel:focus-within .transport,.preview-panel:hover .preview-settings,.preview-panel:focus-within .preview-settings,.preview-settings[open]{opacity:1;pointer-events:auto}
+@media(hover:none){.preview-panel .transport,.preview-panel .preview-settings{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.preview-panel .transport,.preview-settings{transition:none}}
 .episode-make.locked .frame-strip{cursor:default}
 .episode-make.locked .frame-strip-max{opacity:.55}
 .episode-make.waiting .frame-strip{opacity:.5}
@@ -1044,7 +1054,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 @media(max-width:900px){
   .editor-open .main{overflow-y:auto}
   .editor-open .workspace{flex:none;overflow:visible;grid-template-columns:1fr;grid-auto-rows:min-content}
-  .editor-open .preview-panel{order:-1;min-height:calc((100vw - 40px) * 9 / 16 + 96px)}
+  .editor-open .preview-panel{order:-1;min-height:calc((100vw - 40px) * 9 / 16)}
   .editor-open .library-panel{min-height:200px;max-height:320px}
   .editor-open .inspector-panel{grid-column:1;min-height:0}
 }

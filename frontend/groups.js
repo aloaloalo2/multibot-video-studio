@@ -253,8 +253,9 @@ function refreshFrameEdits(make,pid){
   const draw=data=>{
     slot.replaceChildren();
     for(const job of data.jobs.filter(j=>['queued','starting','running','failed'].includes(j.status)).slice(-5)){
-      const row=document.createElement('div');row.className='frame-edit-queue-row';
-      const label=document.createElement('span');label.textContent=`${job.status==='queued'?'У черзі':job.status==='failed'?'Не виконано':'В роботі'} · кадри ${job.frame_numbers.join(', ')}`;
+      const row=document.createElement('div');row.className='frame-edit-queue-row';row.dataset.status=job.status;
+      if(['starting','running'].includes(job.status)){const spinner=document.createElement('span');spinner.className='export-spinner frame-edit-queue-spinner';spinner.setAttribute('aria-hidden','true');row.append(spinner);}
+      const label=document.createElement('span');label.className='frame-edit-queue-label';label.textContent=`${job.status==='queued'?'У черзі':job.status==='failed'?'Не виконано':'В роботі'} · ${job.frame_numbers.length===1?'кадр':'кадри'} ${job.frame_numbers.join(', ')}`;
       const note=document.createElement('span');note.className='frame-edit-queue-note';note.textContent=job.error || job.notes;note.title=note.textContent;
       row.append(label,note);
       if(job.status==='queued'){
