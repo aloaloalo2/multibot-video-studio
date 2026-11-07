@@ -514,6 +514,8 @@ button.danger:hover:not(:disabled){background:#523034}
 .settings-import-row button:disabled{opacity:.45;cursor:default}
 #settings-import-feedback.invalid{color:#f1a3a9}
 .modal-body .weight-row{display:grid;grid-template-columns:22px minmax(0,1fr) 72px;align-items:center;gap:9px;background:#333339;border:1px solid #47474e;padding:8px 9px;border-radius:9px;color:#d9dadd}
+.weight-name{min-width:0}
+.modal-body .weight-name small{display:block;margin-top:3px;color:#a0a2ab;font-size:11px;font-weight:400;line-height:1.35}
 .weight-dot{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:6.5px;border:2px solid #08080a;color:#111116;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums}
 .weight-input{display:flex;align-items:center;gap:3px}
 .modal-body .weight-input input{padding:7px;text-align:right;font-variant-numeric:tabular-nums}

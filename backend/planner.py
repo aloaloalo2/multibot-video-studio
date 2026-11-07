@@ -30,7 +30,7 @@ def settings_signature(settings: dict) -> str:
 LABELS = {
     "generated_video": "Створене відео",
     "stock_video": "Стокове відео",
-    "generated_photo": "Створене фото",
+    "generated_photo": "Створені зображення",
     "stock_photo": "Стокове фото",
     "animation": "Анімація / схема",
     "razgon_2d": "2D-анімація Razgon",

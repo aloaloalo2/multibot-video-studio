@@ -1022,7 +1022,7 @@ async function action(type,payload,message,options={}) {
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
   const allKeys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
-  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створене фото','animation':'Анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
+  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створені зображення','animation':'Анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
   const allColors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
   // «Анімація» (the old generated scheme) is retired: its row stays only for a channel that still has a share in it
   const shown=allKeys.map((key,index)=>index).filter(index=>allKeys[index]!=='animation'||Number(weights.animation)>0);
@@ -1071,7 +1071,7 @@ function openChannelSettings(channel) {
     $('settings-video-note').textContent='Нові випуски каналу створюються з цією роздільністю й частотою кадрів; уже створені лишаються як є. Якість — стартовий вибір у вікні експорту.'+(big||!fast?' Увага: швидкий експорт на відеокарті Mac працює до Full HD і 30 кадрів/с, тож такий ролик експортуватиметься в кілька разів довше.':'');};
   for(const id of ['settings-video-size','settings-video-fps'])$(id).addEventListener('change',videoNote);videoNote();
   const box=$('settings-weights');
-  keys.forEach((key,index)=>{const row=document.createElement('label');row.className='weight-row';row.innerHTML=`<span class="weight-dot" style="background:${colors[index]}" aria-hidden="true">${index+1}</span><span>${names[key]}</span><span class="weight-input"><input type="number" min="0" max="100" step="1" value="${Number.isFinite(values[key])?values[key]:0}" data-weight="${key}" aria-label="${names[key]}, відсотків"><span>%</span></span>`;row.querySelector('input').addEventListener('input',event=>{values[key]=event.target.value===''?NaN:Number(event.target.value);drawSummary();});box.append(row);});
+  keys.forEach((key,index)=>{const row=document.createElement('label');row.className='weight-row';row.innerHTML=`<span class="weight-dot" style="background:${colors[index]}" aria-hidden="true">${index+1}</span><span class="weight-name">${names[key]}${key==='generated_photo'?'<small title="Фото, інфографіка, схеми, рентген та інші стилі зображень">Codex · будь-який стиль</small>':''}</span><span class="weight-input"><input type="number" min="0" max="100" step="1" value="${Number.isFinite(values[key])?values[key]:0}" data-weight="${key}" aria-label="${names[key]}, відсотків"><span>%</span></span>`;row.querySelector('input').addEventListener('input',event=>{values[key]=event.target.value===''?NaN:Number(event.target.value);drawSummary();});box.append(row);});
   $('settings-source-channel').addEventListener('change',event=>{$('settings-import').disabled=!event.target.value;});
   $('settings-import').addEventListener('click',async()=>{
     const sourceId=$('settings-source-channel').value,button=$('settings-import'),feedback=$('settings-import-feedback');
