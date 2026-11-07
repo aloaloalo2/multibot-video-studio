@@ -33,6 +33,15 @@ class DirectorTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         director.ACTIVE.clear()
 
+    def test_saved_channel_preferences_reach_the_director(self):
+        with patch.object(director, "channel_settings", return_value={"accents": True, "generated_image_style": "Наукові схеми"}), \
+                patch.object(director.agent_storage, "get_memory", return_value="Сині плашки для важливих тез") as memory:
+            text = director.brief(PROJECT)
+        memory.assert_called_once_with(PROJECT["channel_id"])
+        self.assertIn("Наукові схеми", text)
+        self.assertIn("Сині плашки", text)
+        self.assertIn("Акценти на кадрах увімкнені", text)
+
     def test_brief_names_the_episode_steps_and_the_limits(self):
         text = director.brief(PROJECT)
         for part in (PROJECT["id"], "What If/05 Test", 'tools/razgon_bridge.py" prepare', "gen_shots.py", "direction_check.py",

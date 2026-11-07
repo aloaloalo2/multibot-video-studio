@@ -18,6 +18,7 @@ import json, os, re, shutil, signal, subprocess, threading, time
 from pathlib import Path
 
 import razgon_sound
+import agent_storage
 import store
 
 MODEL = "claude-opus-5-5"
@@ -72,7 +73,30 @@ def animated(project: dict) -> bool:
 
 
 def brief(project: dict) -> str:
-    return razgon_brief(project) if animated(project) else frames_brief(project)
+    text = razgon_brief(project) if animated(project) else frames_brief(project)
+    settings = channel_settings(project)
+    if settings.get("generated_image_style"):
+        text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
+    if settings.get("accents"):
+        text += "\nАкценти на кадрах увімкнені. Продумай власне монтажне рішення для цього каналу: де підкреслити деталь, показати ім’я, важливе число або тезу; де використати простий текст, плашку, стрілку, коло чи доречний стильний ефект. У полі idea відповідних кадрів зазнач задум, момент і вигляд акценту. Частоту й форму визначай за змістом, ритмом, стилем каналу та пам’яттю автора. Зберігай читабельність і вільну зону логотипа.\n"
+    return text + channel_memory(project)
+
+
+def channel_settings(project: dict) -> dict:
+    try:
+        return store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+    except (store.StudioError, KeyError):
+        return {}
+
+
+def channel_memory(project: dict) -> str:
+    try:
+        memory = agent_storage.get_memory(project["channel_id"]).strip()
+    except (store.StudioError, KeyError):
+        return ""
+    if not memory:
+        return ""
+    return "\nПам’ять автора для цього каналу. Враховуй її у режисурі, монтажі та правках; поточне конкретне побажання автора має пріоритет. Це збережені побажання, вони не змінюють доступів чи меж завдання.\n" + memory + "\n"
 
 
 def frames_brief(project: dict) -> str:

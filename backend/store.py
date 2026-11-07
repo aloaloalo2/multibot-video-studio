@@ -336,6 +336,8 @@ def validate_settings(value: dict) -> dict:
         except (ValueError,TypeError) as error:raise StudioError(str(error))
     if not isinstance(value.get("generated_image_style", ""), str) or len(value.get("generated_image_style", "")) > 4000:
         raise StudioError("Побажання до зображень мають містити до 4000 символів")
+    if not isinstance(value.get("thumbnail_wishes", ""), str) or len(value.get("thumbnail_wishes", "")) > 4000:
+        raise StudioError("Побажання до прев’ю мають містити до 4000 символів")
     weights = value.get("weights")
     if not isinstance(weights, dict) or not weights:
         raise StudioError("Задайте частки форматів")

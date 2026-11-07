@@ -90,6 +90,7 @@ class ThumbnailTest(unittest.TestCase):
                 for image in (self.studio/'preview').glob('*.png'):
                     image.unlink()
                 with self.subTest(writer=writer,enabled=enabled), self.tools(), \
+                     patch.object(thumbnail_gen.director,'channel_settings',return_value={'thumbnail_wishes':'CHANNEL THUMBNAIL STYLE'}), \
                      patch.object(channel_hero,'prepare',return_value=(hero if enabled else None,'\nHOST INCLUDED\n' if enabled else '\nHOST EXCLUDED\n')) as prepared, \
                      patch.object(thumbnail_gen,'write_prompt',return_value=('A carefully designed thumbnail. '*10,{})) as claude, \
                      patch.object(thumbnail_gen,'write_prompt_deepseek',return_value=('A carefully designed thumbnail. '*10,{})) as deepseek:
@@ -102,6 +103,9 @@ class ThumbnailTest(unittest.TestCase):
                     prompt_writer=claude if writer=='claude' else deepseek if writer=='deepseek' else None
                     if prompt_writer:
                         self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',prompt_writer.call_args.args[0])
+                        self.assertIn('CHANNEL THUMBNAIL STYLE',prompt_writer.call_args.args[0])
+                    else:
+                        self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
 
     def tools(self, picture=True, answer=None):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""

@@ -382,6 +382,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             refs, answer = [version_file(pid, base)], {}
             written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
+            settings = director.channel_settings(project)
+            channel_wishes = str(settings.get("thumbnail_wishes") or "").strip()
+            if channel_wishes:
+                wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
             refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
             # 1. Claude (or DeepSeek, on trial) picks the moment and writes the prompt; it is kept even if the drawing fails
