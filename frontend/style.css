@@ -291,6 +291,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .animation-production .voice-start h1{font-size:18px}
 .animation-production .episode-make{margin-top:0}
 .animation-production .episode-make-readout{display:none}
+.animation-production .episode-voice-block{container-type:inline-size}
 .animation-production .episode-voice{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px 10px}
 .animation-production .episode-voice-icon{grid-column:1;grid-row:1}
 .animation-production .episode-voice-text{grid-column:2;grid-row:1}
@@ -299,6 +300,15 @@ button.danger:hover:not(:disabled){background:#523034}
 .animation-production .episode-voice-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .animation-production .episode-voice-toggle svg{flex:none}
 .animation-production .episode-voice>button:not(.episode-voice-toggle){grid-column:3;grid-row:1}
+@container(min-width:620px){
+  .animation-production .episode-voice{grid-template-columns:30px minmax(0,1fr) minmax(0,270px) auto}
+  .animation-production .episode-voice-toggle{grid-column:3;grid-row:1;justify-self:end}
+  .animation-production .episode-voice>button:not(.episode-voice-toggle){grid-column:4}
+}
+@container(max-width:380px){
+  .animation-production .episode-voice{padding:10px;gap:7px}
+  .animation-production .episode-voice-toggle{grid-column:1 / -1;justify-self:stretch;justify-content:space-between}
+}
 @media(max-width:760px){.workspace.animation-workspace{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:900px){.workspace.creation-workspace{grid-template-columns:minmax(0,1fr)}.animation-production{max-height:360px}}
 .panel,.timeline-panel{background:#181819;border:1px solid #303034;border-radius:14px;min-width:0;overflow:hidden}
