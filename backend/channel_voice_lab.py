@@ -84,7 +84,7 @@ def fingerprint(settings, ref):
     effective = {k: settings[k] for k in fields}
     if settings.get('speed',1.) != 1.:effective['speed'] = settings['speed']
     if settings['chunk_length'] != 200: effective['chunk_length'] = settings['chunk_length']
-    return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 2}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 3}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def delivery_prefix(settings):
@@ -141,6 +141,7 @@ def snapshot(cid):
     receipt = store.read_json(root / 'samples' / (current + '.json'), {}) if current else {}
     prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and settings['noise_cleanup'] else None
     return {'settings': settings, 'reference': ref, 'job': job,
+            'cached_fish_original': bool(ref and settings['provider']=='fishaudio' and fish_raw_path(settings,ref).is_file()),
             'sample_matches_settings': bool(current and job.get('fingerprint') == current),
             'cached_sample': bool(current and receipt.get('status') == 'done' and (root / 'samples' / (current + '.mp3')).is_file()),
             'models': [{'id': k, 'name': v} for k, v in MODELS.items()],
@@ -263,12 +264,30 @@ def fish_reference(cid, settings, ref):
     return {'audio': target.read_bytes(), 'text': meta['text']}
 
 
-def fish_synthesis(secret, voice, settings):
-    body = {'text': settings['text'], 'references': [voice], 'prosody': {'speed': settings.get('speed',1.)}, 'format': 'mp3', 'mp3_bitrate': 128,
+def fish_raw_path(settings, ref):
+    key=fingerprint({**settings,'speed':1.},ref)
+    return store.DATA_ROOT/'fish-originals'/(key+'.mp3')
+
+
+def fish_synthesis(secret, voice, settings, raw_key=None):
+    body = {'text': settings['text'], 'references': [voice], 'prosody': {'speed': 1.}, 'format': 'mp3', 'mp3_bitrate': 128,
             'normalize': True, 'language': settings['language'], 'latency': 'normal', 'chunk_length': settings['chunk_length'],
             'temperature': settings['temperature'], 'top_p': settings['top_p']}
-    return languages.request(languages.FISH + '/v1/tts', languages.msgpack(body),
-        {'Authorization': 'Bearer ' + secret, 'Content-Type': 'application/msgpack', 'model': settings['fish_engine']}, 'Fish Audio')
+    packed=languages.msgpack(body)
+    target=store.DATA_ROOT/'fish-originals'/((raw_key or hashlib.sha256(packed).hexdigest())+'.mp3')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    if not target.is_file():
+        audio=languages.request(languages.FISH+'/v1/tts',packed,
+            {'Authorization':'Bearer '+secret,'Content-Type':'application/msgpack','model':settings['fish_engine']},'Fish Audio')
+        pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
+        if not (store.media_duration(pending) or 0)>0:raise RuntimeError('Fish повернув неповний звук')
+        pending.replace(target)
+    speed=settings.get('speed',1.)
+    if speed==1.:return target.read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        output=Path(tmp)/'paced.mp3'
+        languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(target),'-af',f'atempo={speed:.6f}','-b:a','128k',str(output)],'змінити темп без зміни тону')
+        return output.read_bytes()
 
 
 def run(cid, settings, ref, job):
@@ -285,7 +304,7 @@ def run(cid, settings, ref, job):
             secret, voice = clone(cid, settings, ref)
         with LOCK:
             job['stage'] = 'speech';store.atomic_json(root / 'job.json', job)
-        audio = fish_synthesis(secret, voice, settings) if fish else synthesis(secret, voice, settings)
+        audio = fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else synthesis(secret, voice, settings)
         target = root / 'samples' / (job['fingerprint'] + '.mp3')
         target.parent.mkdir(exist_ok=True)
         temporary = target.with_suffix('.pending.mp3');temporary.write_bytes(audio)
@@ -328,7 +347,7 @@ def start(cid, raw, client_id):
             store.atomic_json(root / 'job.json', {**cached, 'client_id': client_id, 'cached': True})
             return snapshot(cid)
         # Save the reservation before either cloning or speech. Restart never replays a paid call.
-        cost = estimate(settings)
+        cost = {'unit':'usd','amount':0} if settings['provider']=='fishaudio' and fish_raw_path(settings,ref).is_file() else estimate(settings)
         prepared = root / 'prepared' / (prepared_key(ref) + '.mp3')
         needs_cleanup = settings['noise_cleanup'] and not (prepared.is_file() and store.read_json(prepared.with_suffix('.json'), {}).get('status') == 'done')
         job = {'status': 'running', 'stage': 'cleanup' if needs_cleanup else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),

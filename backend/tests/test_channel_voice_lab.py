@@ -30,6 +30,23 @@ class VoiceLabTests(unittest.TestCase):
     def reference(self):
         root=lab.folder(self.cid);(root/'reference.mp3').write_bytes(b'preserved reference')
         store.atomic_json(root/'reference.json',{'filename':'test.mp3','sha256':'same','duration':30})
+    def test_fish_local_speed_reuses_original_and_preserves_pitch(self):
+        buf=io.BytesIO()
+        with wave.open(buf,'wb') as out:
+            out.setnchannels(1);out.setsampwidth(2);out.setframerate(24000)
+            out.writeframes((np.sin(np.arange(48000)*2*np.pi*440/24000)*16000).astype('<i2').tobytes())
+        settings=lab.validated({'provider':'fishaudio','speed':.8})
+        with patch.object(lab.languages,'request',return_value=buf.getvalue()) as request:
+            slow=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},settings,raw_key='test-original')
+            fast=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},{**settings,'speed':1.25},raw_key='test-original')
+            request.assert_called_once()
+        for name,audio,wanted in [('slow',slow,2.5),('fast',fast,1.6)]:
+            target=self.root/(name+'.mp3');target.write_bytes(audio)
+            self.assertAlmostEqual(store.media_duration(target),wanted,delta=.12)
+            raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(target),'-ar','24000','-f','f32le','pipe:1'])
+            signal=np.frombuffer(raw,dtype='<f4');freq=np.fft.rfftfreq(len(signal),1/24000)[np.argmax(abs(np.fft.rfft(signal)))]
+            self.assertAlmostEqual(freq,440,delta=4)
+
     def test_fish_speed_validation_and_cache(self):
         for speed in [True, float('nan'), .49, 2.1, '1']:
             with self.assertRaises(store.StudioError):lab.validated({'speed':speed})
@@ -82,7 +99,7 @@ class VoiceLabTests(unittest.TestCase):
         for field,value in [('chunk_length',300),('noise_cleanup',False)]:
             self.assertNotEqual(lab.fingerprint(fish,ref),lab.fingerprint({**fish,field:value},ref))
         with patch.object(lab.languages,'request',return_value=b'audio') as request, \
-             patch.object(lab.languages,'msgpack',return_value=b'packed') as pack:
+             patch.object(lab.languages,'msgpack',return_value=b'packed') as pack, patch.object(store,'media_duration',return_value=2):
             lab.fish_synthesis('secret',{'audio':b'voice','text':'reference'},{**fish,'chunk_length':300})
             self.assertEqual(pack.call_args.args[0]['chunk_length'],300)
         directed={**lab.DEFAULTS,'direction':'Warm, casual, measured pace'}
@@ -219,7 +236,7 @@ class VoiceLabTests(unittest.TestCase):
             lab.fish_reference(self.cid,settings,lab.reference(self.cid));heard.assert_called_once()
             self.assertEqual(voice['text'],'Words actually in reference')
         with patch.object(lab.languages,'request',return_value=b'audio') as request, \
-             patch.object(lab.languages,'msgpack',return_value=b'packed') as pack:
+             patch.object(lab.languages,'msgpack',return_value=b'packed') as pack, patch.object(store,'media_duration',return_value=2):
             lab.fish_synthesis('mock',voice,settings)
             body=pack.call_args.args[0]
             self.assertEqual(body['prosody'],{'speed':1.});self.assertEqual(body['references'],[voice]);self.assertEqual(body['temperature'],.4);self.assertEqual(body['top_p'],.6)
