@@ -291,8 +291,14 @@ button.danger:hover:not(:disabled){background:#523034}
 .animation-production .voice-start h1{font-size:18px}
 .animation-production .episode-make{margin-top:0}
 .animation-production .episode-make-readout{display:none}
-.animation-production .episode-voice{flex-wrap:wrap}
-.animation-production .episode-voice-toggle{margin-left:auto}
+.animation-production .episode-voice{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px 10px}
+.animation-production .episode-voice-icon{grid-column:1;grid-row:1}
+.animation-production .episode-voice-text{grid-column:2;grid-row:1}
+.animation-production .episode-voice-text b{flex-basis:100%}
+.animation-production .episode-voice-toggle{grid-column:2 / -1;grid-row:2;justify-self:start;max-width:100%;min-width:0;margin:0}
+.animation-production .episode-voice-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.animation-production .episode-voice-toggle svg{flex:none}
+.animation-production .episode-voice>button:not(.episode-voice-toggle){grid-column:3;grid-row:1}
 @media(max-width:760px){.workspace.animation-workspace{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:900px){.workspace.creation-workspace{grid-template-columns:minmax(0,1fr)}.animation-production{max-height:360px}}
 .panel,.timeline-panel{background:#181819;border:1px solid #303034;border-radius:14px;min-width:0;overflow:hidden}
@@ -954,10 +960,10 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-repair-numbers>span{padding:5px 9px;border:1px solid #45454c;border-radius:7px;background:#2a2a30;font-size:12px;color:#c6c8d0}
 .frame-repair-dialog label{font-weight:600}.frame-repair-dialog textarea{width:100%;resize:vertical;min-height:120px}
 .frame-repair-dialog p{margin:0;color:#9ea2ad;font-size:13px}.frame-repair-dialog .frame-repair-error{color:#e7a5a5}
-.frame-edit-queue:empty{display:none}.frame-edit-queue{display:grid;gap:6px;margin-top:10px}
-.frame-edit-queue-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#222226;font-size:11px;color:#bec1ca}
+.frame-edit-queue:empty{display:none}.frame-edit-queue{display:grid;min-width:0;max-width:100%;overflow:hidden;gap:6px;margin-top:10px}
+.frame-edit-queue-row{min-width:0;overflow:hidden;display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#222226;font-size:11px;color:#bec1ca}
 .frame-edit-queue-label{flex:none}.frame-edit-queue-row .frame-edit-queue-spinner{width:11px;height:11px;border-width:1.5px;color:#bfc3ce;flex:none}
-.frame-edit-queue-note{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9398a3}
+.frame-edit-queue-note{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9398a3}
 .frame-edit-queue-row button{margin-left:auto;border:0;background:transparent;color:#a6aab5;padding:0 3px;cursor:pointer}
 .preview-panel{position:relative;justify-content:center;align-items:center;overflow:hidden;background:#0a0b0c}
 .preview-panel .preview-surface{margin:0;width:100%;border-radius:0}

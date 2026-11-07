@@ -69,7 +69,7 @@ function renderGroupingControls(){
     repair.addEventListener('click',()=>openFrameRepair(repairFrames));box.append(repair);
   }
   const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Видалити виділене',true);remove.disabled=state.busy || !(state.selected || state.selectedGroup || state.multiSelection?.length);remove.addEventListener('click',deleteTimelineSelection);
-  box.append(remove);
+  if(state.selected || state.selectedGroup || state.multiSelection?.length)box.append(remove);
 
   if(!state.expandedGroup && (state.multiSelection?.length || 0)>=2 && state.multiSelection.length<=200 && !sceneGroups().some(group=>group.clip_ids.some(id=>state.multiSelection.includes(id)))){const group=document.createElement('button');group.type='button';group.id='group-selection';group.textContent='Згрупувати ('+state.multiSelection.length+')';group.addEventListener('click',()=>createSelectedGroup());box.append(group);}
 }
