@@ -272,7 +272,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .workspace.animation-workspace{grid-template-columns:minmax(180px,22%) minmax(260px,1fr)}
 .workspace.animation-workspace .inspector-panel{display:none}
 .workspace.animation-workspace.fitted-preview .preview-surface{width:min(calc(100% - 24px),var(--preview-frame-width));margin-inline:auto}
-.workspace.creation-workspace{grid-template-columns:minmax(360px,44%) minmax(260px,1fr)}
+.workspace.creation-workspace{grid-template-columns:minmax(320px,36%) minmax(0,1fr)}
 .workspace.creation-workspace .library-panel{display:none}
 .animation-production{min-width:0;min-height:0;overflow:auto;padding:16px;background:#111112}
 .animation-production .episode-make{padding:0;border:0;border-radius:0;box-shadow:none;background:none}
@@ -2036,8 +2036,8 @@ select option{background:#232327;color:#f1f1f2}
 
 /* All projects share one plan + montage workspace. */
 .workspace.creation-workspace .inspector-panel{display:none}
-.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(360px,44%) minmax(260px,1fr)}
-.workspace.creation-workspace.fitted-preview .preview-panel{width:100%;height:auto;align-self:center;justify-self:center;min-width:0}
+.workspace.creation-workspace.fitted-preview{grid-template-columns:minmax(320px,36%) minmax(0,1fr)}
+.workspace.creation-workspace.fitted-preview .preview-panel{width:min(100%,var(--preview-frame-width));height:auto;aspect-ratio:var(--preview-ratio,16/9);align-self:center;justify-self:center;min-width:0}
 .workspace.creation-workspace.fitted-preview .preview-surface{width:100%;margin:0}
 .creation-workspace .animation-production .narration-generation,.creation-workspace .animation-production .narration-completed{max-width:100%;margin:0}
 .creation-workspace .animation-production .voice-start-head h1{font-size:18px}
