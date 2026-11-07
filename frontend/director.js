@@ -591,7 +591,10 @@ function renderMakeStatus(button,id,request,done,total){
   const draw=()=>{
     if(!current())return;
     const steps=humanFeed(teamFeeds['production'+id] || []).filter(step=>!run||Number(step.t)>=run);
-    const text=steps.length?makeActivityLabel(steps.at(-1).text):(request.status==='requested'?'Готує матеріали':'Створює кадри');
+    const step=steps.at(-1);
+    const action=step?makeActivityLabel(step.text):(request.status==='requested'?'Готує матеріали':'Створює кадри');
+    const role=teamRoles[step?.who]?.[0] || (step?'Агент':'Режисер');
+    const text=`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
     button.innerHTML=`${typeof exportSpinner==='string'?exportSpinner:''}<span class="episode-make-status">${esc(text)}</span><span class="episode-make-count">${done} з ${total}</span>`;
     button.setAttribute('aria-live','polite');button.title=text;
   };
