@@ -31,6 +31,10 @@ def path(cid):
 def read(cid):
     with LOCK:
         data = store.read_json(path(cid), {}) or {}
+        for item in data.get('ideas', []):
+            for field in ('title', 'uk'):
+                if isinstance(item.get(field), str):
+                    item[field] = clean_title(item[field])
         if data.get('status') == 'running' and cid not in ACTIVE:
             data.update(status='failed', error='Роботу перервано перезапуском. Збережені результати доступні; повторний запит запускається лише вручну.')
         data['stale'] = data.get('day') != today() and (data.get('completed') or data.get('stage') in {None, 'ideas'})
@@ -94,14 +98,21 @@ def opus(prompt, root, identity, cid):
     return unpack(answer.get('result') or '')
 
 
+def clean_title(text):
+    # Remove list markers, preserving numbers belonging to the title itself.
+    return re.sub(r'^(?:\s*\d+[.)]\s+)+', '', text.strip()).strip()
+
+
 def validate_titles(result, ctx):
     titles = result.get('ideas')
     if not isinstance(titles, list) or len(titles) != 5: raise ValueError('DeepSeek не повернув список нових тем')
-    existing = {re.sub(r'\W', '', t).casefold() for t in ctx['previous_titles']}
+    existing = {re.sub(r'\W', '', clean_title(t)).casefold() for t in ctx['previous_titles']}
     accepted = []
     for item in titles:
         title, uk = item.get('title'), item.get('uk', '')
-        if not isinstance(title, str) or not 5 <= len(title.strip()) <= 100 or not isinstance(uk, str) or re.search(r'[:：\-–—]', title): continue
+        if not isinstance(title, str) or not isinstance(uk, str): continue
+        title, uk = clean_title(title), clean_title(uk)
+        if not 5 <= len(title) <= 100 or re.search(r'[:：\-–—]', title): continue
         key = re.sub(r'\W', '', title).casefold()
         if key in existing: continue
         existing.add(key)
@@ -158,7 +169,7 @@ def work(cid, data):
                  'Use simple, vivid conversational language. Do not copy previous episodes.\n' + json.dumps(ctx, ensure_ascii=False))
         if stage == 'ideas':
             result = deepseek(brief + '\nPropose exactly 5 fresh, distinct video topics matching the title structure and audience. '
-                'Exclude earlier topics and close paraphrases. Titles must contain no colon and no dash or hyphen of any kind. Infer language from scripts/titles. For every non-Ukrainian/non-Russian '
+                'Exclude earlier topics and close paraphrases. Return plain titles and translations without list numbering or list markers. Preserve meaningful numbers within titles. Titles must contain no colon and no dash or hyphen of any kind. Infer language from scripts/titles. For every non-Ukrainian/non-Russian '
                 'title add a Ukrainian reading translation in uk, otherwise uk="". Return JSON only {"ideas":[{"title":"...","uk":"..."}]}.', root, identity)
             data['ideas'] = validate_titles(result, ctx)
         else:

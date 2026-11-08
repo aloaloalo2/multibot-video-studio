@@ -21,7 +21,7 @@ async function openNewEpisodeWizard(){
     const topic=data.ideas[index];
     input.value=topic.title;input.readOnly=true;
     $('modal-actions').querySelector('button').hidden=true;
-    root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">Скасувати</button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити задачу · Opus</span></button></div>`;
+    root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">Скасувати</button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#ideas-back').onclick=()=>{input.value='';draw(data);};
     root.querySelector('#ideas-create-openings').onclick=()=>request({action:'openings',index,target_words:Number(root.querySelector('#idea-words').value)});
   }

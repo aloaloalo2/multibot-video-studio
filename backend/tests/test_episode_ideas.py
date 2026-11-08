@@ -5,6 +5,21 @@ import test_backend as fixtures
 import store
 import episode_ideas as ideas
 
+class TitleCleanupTest(unittest.TestCase):
+    def test_numbered_suggestions_keep_title_counts_and_ukrainian_translation(self):
+        rows = [{'title': f'{i + 1}. {i + 5} Geräusche am Auto!',
+                 'uk': f'{i + 1}) {i + 5} звуків в авто!'} for i in range(5)]
+        accepted = ideas.validate_titles({'ideas': rows}, {'previous_titles': []})
+        self.assertEqual(accepted[0], {'title': '5 Geräusche am Auto!', 'uk': '5 звуків в авто!'})
+        self.assertEqual(accepted[4]['title'], '9 Geräusche am Auto!')
+        self.assertEqual(ideas.clean_title('1.5 Liter im Motor?'), '1.5 Liter im Motor?')
+
+    def test_numbering_cannot_hide_a_previous_title(self):
+        rows = [{'title': f'{i + 1}. {i + 5} Geräusche am Auto!'} for i in range(5)]
+        with self.assertRaises(ValueError):
+            ideas.validate_titles({'ideas': rows}, {'previous_titles': ['1. 5 Geräusche am Auto!']})
+
+
 class EpisodeIdeasTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -17,6 +32,15 @@ class EpisodeIdeasTest(unittest.TestCase):
         ideas.ACTIVE.clear()
         ideas.path(self.cid).unlink(missing_ok=True)
     request = fixtures.BackendTest.request
+    def test_saved_suggestions_are_cleaned_without_resetting_work(self):
+        saved = {'status':'done', 'stage':'ideas', 'id':'saved-draft', 'target_words':1200,
+                 'ideas':[{'title':'1. 7 Geräusche am Auto!', 'uk':'1. 7 звуків в авто!'}]}
+        store.atomic_json(ideas.path(self.cid), saved)
+        current = ideas.read(self.cid)
+        self.assertEqual(current['ideas'][0]['title'], '7 Geräusche am Auto!')
+        self.assertEqual(current['ideas'][0]['uk'], '7 звуків в авто!')
+        self.assertEqual((current['id'], current['target_words'], current['status']),
+                         ('saved-draft',1200,'done'))
     def test_http_stage_is_reserved_once_and_hides_private_context(self):
         with patch.object(ideas,'Thread') as thread:
             code,data=self.request('/api/channels/'+self.cid+'/episode-ideas','POST',{'action':'ideas'})
