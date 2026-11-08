@@ -20,6 +20,7 @@ from pathlib import Path
 import razgon_sound
 import agent_storage
 import store
+import motion_direction
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
@@ -153,6 +154,7 @@ def frames_brief(project: dict) -> str:
    generated_photo означає створене Codex зображення будь-якого стилю: фото, інфографіка, схема, рентген чи ілюстрація. Вибирай стиль за змістом репліки.
    У полі idea одним реченням опиши, що глядач бачить у кадрі.
    Якщо sentences повертає host_rules, перший і останній кадри обов’язково host, ведучий ніколи не йде два кадри підряд, його появи рівномірно розподілені по всій тривалості.
+{motion_direction.PLANNING}
 3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "..."}}]}}.
    Перевір їх командою python3 "{studio}/tools/studio.py" frames {project['id']} "{answer}" --dry-run: студія перевіряє речення,
    кількість речень у кадрі, частки форматів і чергування та пише, що виправити. Коли перевірка проходить, запусти ту саму
@@ -174,6 +176,8 @@ def razgon_brief(project: dict) -> str:
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
+
+{motion_direction.PLANNING}
 
 Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'} і навик режисури Razgon
 ({store.razgon_rel()}/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).

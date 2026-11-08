@@ -199,7 +199,7 @@ class AgentToolsTest(unittest.TestCase):
                 "timing": {"status": "audio_synced"}, "script_sha256": "x"}
         with patch.object(store, "load_project_plan", return_value=plan):
             status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [
-                {"op": "place", "frame": 2, "path": str(episode / "other.png")}, {"op": "place", "frame": 3, "text": True}]})
+                {"op": "place", "frame": 2, "path": str(episode / "other.png"), "motion": "zoom_in"}, {"op": "place", "frame": 3, "text": True}]})
             self.assertEqual(status, 200, result)
             current = store.load_project(project["id"])
             clips = self.clips(project["id"])
@@ -207,7 +207,7 @@ class AgentToolsTest(unittest.TestCase):
             self.assertIn(clips["K002 кадр"]["id"], groups["Кадр 2"]["clip_ids"])
             self.assertIn(clips["K003 кадр"]["id"], groups["Кадр 3"]["clip_ids"])
             self.assertEqual((clips["K002 кадр"]["start"], clips["K002 кадр"]["duration"]), (4.0, 4.0))
-            scales = [k["scale"] for k in clips["K002 кадр"]["keyframes"]]   # every picture moves by about 12% (user, 5 November 2026)
+            scales = [k["scale"] for k in clips["K002 кадр"]["keyframes"]]   # the move the agent named (the studio moves nothing by itself)
             self.assertGreaterEqual(abs(scales[0] - scales[1]), .1)
             self.assertEqual(clips["K003 кадр"]["text_role"], "full_frame")
             # a frame already on the timeline is changed with replace, not placed twice

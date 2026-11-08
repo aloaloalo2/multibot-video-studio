@@ -19,6 +19,7 @@ import json, subprocess, threading, time
 from pathlib import Path
 
 import director
+import motion_direction
 import frame_progress
 import channel_branding
 import logo_layer
@@ -157,6 +158,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
 3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
    Переглянь аркуші й познач результат через mark; direction_check.py без FAIL. Один набір аркушів для перевірки композиції й логіки.
+{motion_direction.EXECUTION}
 {QUALITY.replace("<студія>", store.APP_ROOT.name)}
 4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
@@ -291,6 +293,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 На перевірці початку, середини й кінця кадру враховуй накладений логотип. Якщо він перекриває зміст, змісти зміст; логотип не пересувай.
 {remarks}Твоє завдання: кадри 1–{request['frames']}, кожен за своїм форматом у плані і за змістом своїх слів.
 {PHOTO_STYLE_WISH}
+{motion_direction.EXECUTION}
 Пріоритет автора для створених зображень Codex: {director.channel_settings(project).get('generated_image_style') or 'Стиль за змістом кадру'}.
 Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
 1. Картинки автора першими: якщо автор сам поклав картинки чи відео в папку випуску (find "{rel}" -maxdepth 2 -type f),
@@ -324,7 +327,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
    python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
    python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>: блоки-код стануть лише на кадри формату razgon_2d.
-   Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> [--motion zoom_in|zoom_out|none].
+   Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> --motion zoom_in|zoom_out|pan_left|pan_right|none.
+   Без --motion картинка лишається нерухомою. Пресет застосовуй лише коли він відповідає постановці цього кадру;
+   власний напрямок, масштаб, час і рух окремих елементів задавай явно через keyframes API.
 5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN --small: половинний розмір, учетверо дешевший на
    перегляд; повний розмір лише коли береш координати для акценту) ти переглядаєш очима: картинка відповідає словам кадру,

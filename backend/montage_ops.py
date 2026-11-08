@@ -13,8 +13,8 @@ POST /api/projects/<id>/ops {"ops": [...], "expected_revision": n, "dry_run": fa
 - {"op": "transitions", "share": 0.7, ...} designs about that share of the seams between frames by the channel rules.
 - {"op": "remove", "frame": 12} takes the frame off the timeline with its whole group.
 - {"op": "place", "frame": 12, "path": file | "asset_id": id | "text": true, "motion": "zoom_in"} puts a frame of the
-  plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video (a photo gets a slow
-  zoom unless "motion": "none"), or with "text" the frame's own spoken words as a full-frame text. The frame agent of
+  plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video, still unless the director
+  explicitly names its motion, or with "text" the frame's own spoken words as a full-frame text. The frame agent of
   the photo channels (backend/production.py) builds the film with it.
 
 The answer is short (the report lines and the new revision), so an agent does not have to read the whole project back.
@@ -646,11 +646,12 @@ def replace(ctx: Context, spec: dict) -> None:
 
 FRAME_CLIP = "K{:03d} кадр"
 MOTIONS = {"zoom_in": (1.0, 1.12), "zoom_out": (1.12, 1.0), "pan_left": (1.22, 1.24), "pan_right": (1.22, 1.24), "none": None}
-# Every frame moves from its first moment to its last (user, 5 November 2026: «Якщо нема руху, це є проблема… скучно
-# дивитися»): pictures take turns to zoom in, drift sideways and zoom out by about 12%, a vertical photo sits on a blurred
-# copy of itself, and a host frame zooms in or out by 12% («якщо диктора ми вибираємо… приближення… або віддалення… 10-15%»).
-PICTURE_CYCLE = ["zoom_in", "pan_right", "zoom_out", "pan_left"]
 PAN = .07     # the centre travels 14% of the frame's width; a 1.22 scale keeps the picture over the edges
+# The studio moves nothing by itself (user, 8 November 2026: «це має робити не студія, а… режисер… прибери в студії
+# взагалі можливість самій змінювати рух… всю постановку відео має робити» режисер, after automatic pans cropped the text
+# of infographics and moved animation frames he had not asked to move). `place` puts a picture still unless the agent
+# names its move (`motion`: zoom_in, zoom_out, pan_left, pan_right, or its own keyframes through the actions API);
+# a vertical photo still gets its blurred copy behind it, standing still.
 
 
 def _aspect(path) -> float | None:
@@ -711,16 +712,10 @@ def place(ctx: Context, spec: dict) -> None:
         aspect = _aspect(asset.get("path") or spec.get("path")) if kind == "image" else None
         vertical = aspect is not None and aspect < 1.6      # 3:4 and 4:3 sit in the frame with fields beside them
         cover = max((ctx.W / ctx.H) / aspect, 1.0) * 1.02 if aspect and not vertical else 1.0   # a wide photo fills the frame before it drifts
-        host = planned.get("format") == "host"
-        if spec.get("motion"):
-            name = spec["motion"]
-        elif kind == "image":
-            name = ("zoom_in", "zoom_out")[number % 2] if vertical else PICTURE_CYCLE[number % len(PICTURE_CYCLE)]
-        elif host:
-            name = ("zoom_in", "zoom_out")[number % 2]
-        else:
-            name = "none"
-        motion = MOTIONS.get(name, MOTIONS["zoom_in"])
+        name = spec.get("motion") or "none"
+        if name not in MOTIONS:
+            raise OpError("Рух: zoom_in, zoom_out, pan_left, pan_right або none")
+        motion = MOTIONS[name]
         if motion:
             first, last = {"time": 0.0, "scale": motion[0] * cover}, {"time": length, "scale": motion[1] * cover}
             if name in ("pan_left", "pan_right"):
@@ -728,14 +723,15 @@ def place(ctx: Context, spec: dict) -> None:
                 first["x"], last["x"] = .5 - sign * PAN, .5 + sign * PAN
                 payload["x"] = first["x"]
             payload.update(scale=first["scale"], easing=ctx.easing, keyframes=[first, last])
+        elif cover != 1.0:
+            payload["scale"] = cover
         if vertical:
-            # the black fields beside a vertical photo are its own blurred copy, slowly moving the other way
+            # the black fields beside a vertical photo are its own blurred copy, standing still
             title_bg = f"K{number:03d} фон"
             fill = max((ctx.W / ctx.H) / aspect, aspect / (ctx.W / ctx.H)) * 1.06
             ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": end - start,
                                                                  "title": title_bg, "kind": "image", "asset_id": asset["id"], "blur": 30, "opacity": .9,
-                                                                 "scale": fill * 1.08, "easing": ctx.easing,
-                                                                 "keyframes": [{"time": 0.0, "scale": fill * 1.08}, {"time": length, "scale": fill}],
+                                                                 "scale": fill,
                                                                  **({"group_id": have["group"]["id"]} if have else {})}})
             if not have:
                 ctx.groups[title_bg] = f"Кадр {number}"

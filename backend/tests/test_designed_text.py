@@ -45,7 +45,7 @@ if __name__ == "__main__":
 class FrameMotionTest(unittest.TestCase):
     """Every picture and host frame moves (user, 5 November 2026)."""
 
-    def place(self, fmt, aspect, number=7):
+    def place(self, fmt, aspect, number=7, motion=None):
         import tempfile
         from PIL import Image
         folder = tempfile.mkdtemp()
@@ -56,23 +56,31 @@ class FrameMotionTest(unittest.TestCase):
         ctx.plan = {"frames": [{"number": number, "start": 10.0, "end": 16.0, "format": fmt, "sentences": ["x"]}]}
         ctx.project["fps"] = 25
         with mock.patch.object(montage_ops.store, "media_duration", return_value=60.0):
-            montage_ops.place(ctx, {"frame": number, "asset_id": "a"})
+            montage_ops.place(ctx, {"frame": number, "asset_id": "a", **({"motion": motion} if motion else {})})
         return ctx.actions
 
     def test_vertical_photo_moves_on_its_blurred_copy(self):
-        actions = self.place("generated_photo", .75)
+        actions = self.place("generated_photo", .75, motion="zoom_in")
         self.assertEqual(len(actions), 2)
         background, photo = (a["payload"] for a in actions)
         self.assertGreater(background["blur"], 10)
+        self.assertNotIn("keyframes", background)   # the copy behind stands still
         self.assertGreaterEqual(abs(photo["keyframes"][0]["scale"] - photo["keyframes"][1]["scale"]), .1)
 
-    def test_wide_photo_drifts_or_zooms_and_host_zooms(self):
-        for number in range(4):
-            photo = self.place("stock_photo", 16 / 9, number)[-1]["payload"]
+    def test_the_agent_names_the_move(self):
+        for number, name in enumerate(("zoom_in", "pan_right", "zoom_out", "pan_left")):
+            photo = self.place("stock_photo", 16 / 9, number, motion=name)[-1]["payload"]
             a, b = photo["keyframes"]
             self.assertTrue(abs(a["scale"] - b["scale"]) >= .1 or abs(a.get("x", .5) - b.get("x", .5)) >= .1)
-        host = self.place("host", 16 / 9)[-1]["payload"]
+        host = self.place("host", 16 / 9, motion="zoom_in")[-1]["payload"]
         self.assertGreaterEqual(abs(host["keyframes"][0]["scale"] - host["keyframes"][1]["scale"]), .1)
+
+    def test_the_studio_moves_nothing_by_itself(self):
+        """User, 8 November 2026: «прибери в студії взагалі можливість самій змінювати рух… це має робити режисер»."""
+        for fmt, aspect in (("generated_photo", 16 / 9), ("generated_photo", .75), ("stock_video", 16 / 9), ("host", 16 / 9)):
+            for payload in (a["payload"] for a in self.place(fmt, aspect)):
+                self.assertNotIn("keyframes", payload)
+        self.assertNotIn("motion", montage_ops.OPS)
 
 
 class BackgroundIsNotThePhotoTest(unittest.TestCase):
