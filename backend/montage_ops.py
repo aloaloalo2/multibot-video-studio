@@ -21,7 +21,6 @@ The answer is short (the report lines and the new revision), so an agent does no
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import os
@@ -35,7 +34,6 @@ from PIL import Image, ImageDraw
 
 import display_text
 import joins
-import number_text
 import store
 import typography
 import word_timing

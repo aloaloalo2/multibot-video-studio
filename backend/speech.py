@@ -8,7 +8,6 @@ import platform
 import sys
 import threading
 import types
-import unicodedata
 import re
 import bisect
 
@@ -48,7 +47,7 @@ def transcript_script(words):
     return text
 
 
-def compare_script(script, words, duration):
+def _compare_in_order(script, words, duration):
     sentences = planner.split_sentences(script)
     locale = number_text.detect_locale(script)
     reference, ranges, chunks, token_chunks = [], [], [], []
@@ -239,8 +238,5 @@ def transcribe(path, duration, progress, language=None):
 
 # A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
 # comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
-_compare_in_order = compare_script
-
-
 def compare_script(script, words, duration):
     return speech_order.mark(script, words, _compare_in_order(script, words, duration), BLOCKING_ISSUES)

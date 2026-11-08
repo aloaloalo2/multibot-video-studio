@@ -3,7 +3,7 @@ from preview_js import run
 
 
 class TrackPositionTest(unittest.TestCase):
-    def test_open_properties_keeps_position_but_clip_click_seeks(self):
+    def test_open_properties_and_clip_selection_keep_playhead_position(self):
         result = run(['stackOpen', 'selectUniversalClip'], """
 stackOpen({clip,layer:{id:'audio'}});
 const properties=state.playhead;
@@ -16,7 +16,7 @@ function clearTransitionSelection(){}function seconds(n){return n;}
 function renderTimeline(){}function renderInspector(){}function renderPreview(){}
 function status(){}function clipLabel(){return 'Voice';}
 """)
-        self.assertEqual(result, [120, 0, 'voice'])
+        self.assertEqual(result, [120, 120, 'voice'])
 
     def test_double_click_on_track_controls_does_not_open_track(self):
         result = run(['addStackTools'], """

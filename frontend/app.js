@@ -50,6 +50,7 @@ let restoreGeneration=0,restoreTimer=null;
 function cancelLocationRestore(){restoreGeneration++;if(restoreTimer!==null){clearTimeout(restoreTimer);restoreTimer=null;}state.restoringProject=false;$('project-loading').hidden=true;}
 async function restoreCurrentLocation(){
   cancelLocationRestore();
+  ++state.navigation;
   state.restoringProject=!!locationRoute()?.projectId;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   if(state.restoringProject && !state.project)$('channel-overview').hidden=true;
@@ -139,7 +140,9 @@ $('modal-body').addEventListener('keydown',event=>{
 
 async function loadChannels(preferred,{restoreLocation=false}={}) {
   const route=restoreLocation?locationRoute():null;
+  const generation=restoreGeneration,path=location.pathname;
   const [health,data] = await Promise.all([api('/api/health'),api('/api/channels')]);
+  if(restoreLocation&&(generation!==restoreGeneration||path!==location.pathname))return false;
   if(health.api_version!==2 || health.layer_mode!=='item' || health.plan_workflow!=='audio_required')throw new Error('Запущена стара копія студії. Потрібен перезапуск студії та оновлення сторінки.');
   state.channels = data.channels || [];
   renderChannels();
@@ -188,13 +191,9 @@ async function pollChannelActivity(){
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
     for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
-    // Read known narration jobs directly as well, so an already running server needs no disruptive restart.
-    let watched=[];try{watched=JSON.parse(localStorage.getItem('narration-active-projects')||'[]');}catch{}
-    if(state.project?.id&&!watched.some(x=>x.id===state.project.id))watched.push({id:state.project.id,channel_id:state.project.channel_id});
-    for(const [id,kind] of projectActivities)if(kind==='озвучення сценарію'&&!watched.some(x=>x.id===id))watched.push({id});
-    const running=[];
-    await Promise.all(watched.map(async project=>{try{const data=await api(`/api/projects/${project.id}/narration`);if(['running','cancelling'].includes(data.job?.status)){running.push(project);const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(project.id,{kind:'озвучення сценарію',progress});channelActivity.add(project.channel_id);}}catch{}}));
-    try{localStorage.setItem('narration-active-projects',JSON.stringify(running));}catch{}
+    // Only active narration needs a separate phrase-progress read.
+    const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
+    await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress});}else projectActivities.delete(id);}catch{}}));
     renderProjectActivities();
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
@@ -229,9 +228,8 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
   const data=loadProjects?await api(`/api/projects?channel=${encodeURIComponent(id)}`):{projects:[]};
   if(navigation!==state.navigation)return false;
   state.channel=channel;
-  state.project=null; state.selected=null;state.selectedTransition=null; state.assets=[]; state.pixabay=[];state.projects=[];
-  renderChannels(); renderProject();
-  state.projects=data.projects || [];
+  state.project=null; state.selected=null;state.selectedTransition=null; state.assets=[]; state.pixabay=[];state.projects=data.projects || [];
+  renderChannels();
   if(updateUrl)syncRoute();
   renderProject();
   status('');
@@ -241,7 +239,7 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
 function projectActions(project){
   const actions=document.createElement('div');actions.className='project-actions';
   const canCreateThumbnail=project.episode_path&&thumbnailReady(project);
-  const icons={rename:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>',delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
+  const icons={delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(canCreateThumbnail)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;
   for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(project)]]:[]),['delete','Видалити випуск',()=>deleteProject(project)]]){
@@ -534,7 +532,11 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollOvervi
 
 function scenes() {return Array.isArray(state.project?.scenes) ? [...state.project.scenes].sort((a,b)=>seconds(a.start)-seconds(b.start)) : [];}
 function allTracks() {return Array.isArray(state.project?.tracks) ? state.project.tracks : [];}
-function assetById(id) {return state.assets.find(asset=>asset.id===id);}
+let indexedAssets=null,indexedAssetCount=0,assetLookup=new Map();
+function assetById(id) {
+  if(indexedAssets!==state.assets||indexedAssetCount!==state.assets.length){indexedAssets=state.assets;indexedAssetCount=state.assets.length;assetLookup=new Map(state.assets.map(asset=>[asset.id,asset]));}
+  return assetLookup.get(id);
+}
 function buildAudioNodes() {
   const container=$('preview-audio-container'),previous=new Map(state.audioNodes.map(item=>[item.clip.id,item]));state.audioNodes=[];
   if(isUniversal()){
@@ -649,7 +651,7 @@ function renderProject() {
   // they are drawn, and a voice alone is not a video either.
   const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=projectAnimated();
   // «Експорт MP4» belongs to «Монтаж» only (user, 31 October 2026)
-  $('export-open').hidden=state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
+  $('export-open').hidden=!state.project || state.restoringProject || state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   renderPlan();
   if(typeof renderThumbView==='function')renderThumbView();
   if(typeof renderLangView==='function')renderLangView();

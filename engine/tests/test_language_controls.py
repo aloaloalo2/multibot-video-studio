@@ -66,7 +66,7 @@ const document={querySelectorAll:()=>[]};function clock(){return '00:00';}functi
         self.assertIn('Audio unavailable',result['errors'][0])
 
     def test_ready_current_audio_shows_status_and_stale_audio_still_offers_rebuild(self):
-        result=run(['langVoiceStatus'], """
+        result=run(['langVoiceStatus','langVoiceDurationIssue'], """
 const voice={files:{voice:true},voice_current:true,voice:{provider:'elevenlabs'},saved_mix:{state:'saved'}};
 console.log(JSON.stringify([
 langVoiceStatus(voice,{id:'elevenlabs'}),
@@ -74,7 +74,7 @@ langVoiceStatus({...voice,saved_mix:{state:'outdated'}},{id:'elevenlabs'}),
 langVoiceStatus({...voice,voice_current:false},{id:'elevenlabs'}),
 langVoiceStatus(voice,{id:'fishaudio'}),
 langVoiceStatus({...voice,voice_language_check:{state:'wrong_language'}},{id:'elevenlabs'})]));
-""")
+""",prelude="const langData={};")
         self.assertEqual(result,['Озвучку збережено ✓','Озвучка готова ✓','','',''])
 
     def test_slow_old_project_response_cannot_replace_open_project(self):
@@ -87,9 +87,10 @@ finish({job:{status:'running',code:'es'}});await start;
 console.log(JSON.stringify({afterLoad,afterStart:langData.project,draws}));
 })();
 """,prelude="""
-let finish,draws=0,langData={project:'second',provider:'elevenlabs'};
+let finish,draws=0,langData={project:'second',provider:'elevenlabs',items:[{code:'es'}]};
 const state={project:{id:'first'},view:'langs'};
 function api(){return new Promise(resolve=>finish=resolve);}function drawLangs(){draws++;}function langBusy(){return false;}
+function langSpec(){return {id:'elevenlabs'};}
 """)
         self.assertEqual(result,{'afterLoad':'second','afterStart':'second','draws':0})
 
@@ -127,26 +128,16 @@ langThumbnailFlag({flag_country:null})]));
         self.assertNotIn(' checked',html[1])
         self.assertIn(' disabled',html[1])
         self.assertIn('немає однозначного прапора',html[1])
-    def test_review_links_show_time_and_both_directions_of_tempo(self):
-        html=run(['langFitReview'], """
-console.log(JSON.stringify(langFitReview({review:[
-{index:0,start:20,end:24,speed:1.1,shift:0,text:'Words'},
-{index:1,start:40,end:44,speed:.9,shift:1,text:'More'}]})));
-""",prelude="function esc(x){return x;}function clock(x){return '00:'+x;}")
-        self.assertIn('Прискорено на 10%',html)
-        self.assertIn('Уповільнено на 10%',html)
-        self.assertIn('data-start="20"',html)
-        self.assertIn('Зміщено на 1,0 с пізніше',html)
     def test_voice_reference_and_model_are_visible_before_translation(self):
-        result=run(['langCard','langTranslationInfo'], """
-const card=langCard('project',{code:'ru',text:'',prices:{},files:{samples:[],voice:false,thumbnail:false}},
- {id:'elevenlabs',name:'ElevenLabs',configured:true,engines:[{id:'eleven_v4_turbo',name:'Eleven v4 Turbo'}],engine:'eleven_v4_turbo'});
+        result=run(['langVoiceSetup'], """
+const card=langVoiceSetup('project',{code:'ru',text:'',prices:{},files:{samples:[],voice:false,thumbnail:false}});
 console.log(JSON.stringify({reference:card.innerHTML.includes('lang-reference-panel'),model:card.innerHTML.includes('Eleven v4 Turbo'),synthesize:card.innerHTML.includes('lang-voice-run'),off:card.innerHTML.includes('lang-step is-off')}));
 """, prelude="""
 const langDrafts={},langData={source:{voice:true},defaults:{saved:true},providers:[{id:'elevenlabs',name:'ElevenLabs'}],openrouter:true,thumbnail:false};
 const document={createElement:()=>({dataset:{},innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]})};
-function esc(s){return String(s??'');}function langOwnBlock(){return 'voice-reference';}function langOwnWire(){}function langWireReview(){}function langFitReview(){return "";}function langApplyQuality(){}
-const langIcons={redo:''};
+function esc(s){return String(s??'');}function langOwnBlock(){return 'voice-reference';}function langOwnWire(){}function langApplyQuality(){}
+function langSpec(){return {id:'elevenlabs',name:'ElevenLabs',configured:true,engines:[{id:'eleven_v4_turbo',name:'Eleven v4 Turbo'}],engine:'eleven_v4_turbo'};}
+function langWirePlayers(){}function langWireSample(){}
 """)
         self.assertEqual(result,{'reference':True,'model':True,'synthesize':False,'off':False})
 
@@ -157,9 +148,10 @@ jobs[0].status='done';showLangJob();console.log(JSON.stringify([during,row.hidde
 """, prelude="""
 const row={hidden:false,querySelector:()=>null},jobs=[{kind:'voice',code:'es',status:'running'}];
 const state={project:{id:'project'}},langUploads=new Map();
-const steps=[0,1,2].map(()=>({querySelector:()=>null}));
+const steps=[0,1,2].map(index=>({dataset:{langStep:String(index)},querySelector:()=>null}));
 const card={dataset:{code:'es'},querySelector:()=>row,querySelectorAll:s=>s==='.lang-step'?steps:[]};
-const document={querySelectorAll:s=>s==='#project-langs .lang-card[data-code]'?[card]:[]};
+const document={querySelectorAll:s=>s.includes('#project-langs .lang-card[data-code]')?[card]:[]};
 function langJobs(){return jobs;}
+function langPaintScriptJobs(){}function langPaintVoiceSetups(){}function langPaintVoiceTiles(){}
 """)
         self.assertEqual(result,[True,False])

@@ -37,17 +37,6 @@ function appendSpeechReport(target,report,{transcript:withTranscript=true}={}){
   if(withTranscript){  const transcript=document.createElement('details');transcript.className='speech-issues';const label=document.createElement('summary');label.textContent='Повна розшифровка';const text=document.createElement('p');text.textContent=report.recognized_text;transcript.append(label,text);box.append(transcript);}target.append(box);
 }
 
-// The recognition report lives folded at the bottom of the plan (director.js «Текст озвучки й розпізнавання»): once the
-// analysis arrives it fills that fold and the voice line.
-function renderSpeechReport(panel){
-  const episode=panel?.querySelector('.episode');
-  if(!episode || state.analysis?.job?.project_id!==state.project?.id)return;
-  const slot=episode.querySelector('.episode-report'),heard=episode.querySelector('.episode-heard'),report=state.analysis.report;
-  if(report&&heard)heard.textContent=report.recognized_text || '';
-  if(slot&&!slot.children.length&&report)appendSpeechReport(slot,report,{transcript:false});
-  refreshEpisode(episode);
-}
-
 async function openMediaTimingImport(){
   if(!state.project || !state.plan)return;
   const project=state.project,plan=state.plan;

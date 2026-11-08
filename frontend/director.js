@@ -1,10 +1,5 @@
-// director.js — the plan page of an episode, the same for photo and animated channels, in one column: a short voice
-// line on top (file, length, recognition and «почати заново»), the director's state while Claude Opus 5.5 splits an
-// animated film into frames (backend/director.py), then «Створення ролика»: the film as a strip of its frames, the
-// count picked by a drag across it (all frames by default), «Макс» and «Почати створення ролика», which hands the
-// frames to the frame agent (backend/production.py) and goes back to the channel's projects, where the card shows the
-// progress. The voice line opens to the script, the recognised text, the frame table and the director's report;
-// the agent's report closes «Створення ролика». The film is exported by the header's «Експорт MP4».
+// Voice, direction and frame creation share the montage workspace.
+// Only the latest activity is shown; frame edits and export keep their separate controls.
 const directorRuns={};
 let directorTimer=null,productionTimer=null;
 
@@ -27,12 +22,6 @@ async function loadDirector(id){
   catch{directorRuns[id]=directorRuns[id] || {status:'none'};}
   return directorRuns[id];
 }
-
-// Money and time only; the token counts stay in the tooltip for whoever watches the limits.
-function spentLine(run){return `Витрачено $${Number(run.cost_usd).toFixed(2)}${run.minutes?` · ${run.minutes} хв`:''}`;}
-function spentTokens(run){return run.tokens_in?` ${tokenCount(run.tokens_in)} на вхід, ${tokenCount(run.tokens_out)} на вихід.`:'';}
-function tokenCount(value){return value>=1e6?`${(value/1e6).toFixed(1).replace('.',',')} млн токенів`:`${Math.round(value/1000)} тис. токенів`;}
-function directorTime(seconds){return new Date(seconds*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'});}
 
 function stepButton(label,run,primary=false){const b=document.createElement('button');b.type='button';b.className=primary?'primary':'secondary';b.textContent=label;b.addEventListener('click',run);return b;}
 
@@ -620,18 +609,6 @@ function renderMakeStatus(button,id,request,done,total){
     teamFeeds['production'+id]=activity;draw();
   }).catch(()=>{});
 }
-function renderTeam(info,kind,id,live){
-  if(!info)return;
-  const box=document.createElement('div');box.className='team';box.dataset.kind=kind;info.append(box);
-  const draw=()=>{
-    const steps=humanFeed(teamFeeds[kind+id] || []);
-    if(!steps.length&&!live){box.remove();return;}
-    box.innerHTML=(steps.length?`<ol class="team-feed">${steps.slice(-6).reverse().map(step=>`<li><time>${directorTime(step.t)}</time><b>${teamRoles[step.who]?.[0] || ''}</b>${esc(step.text)}</li>`).join('')}</ol>`:`<p class="plan-note">${live?'Агент тільки починає, перші дії з’являться за кілька секунд.':''}</p>`);
-  };
-  draw();
-  api(`/api/projects/${encodeURIComponent(id)}/activity/${kind}`).then(({activity})=>{teamFeeds[kind+id]=activity;if(box.isConnected)draw();}).catch(()=>{});
-}
-
 // While the agent works, the project is read again now and then: the request carries its state and spend.
 async function pollProduction(id){
   if(state.project?.id!==id)return;

@@ -772,7 +772,7 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     over it; the Studio export renders the blocks. The frames in `reset` go back from a rendered clip to a block, so a
     changed scene is drawn live and rendered again by the export (a clip it rendered before stays in build/studio and
     is reused while the scene is unchanged)."""
-    pid, fps = link["project_id"], int(link["fps"])
+    fps = int(link["fps"])
     # the blocks follow the plan: a block whose frame is gone (the director joined takes) or whose frame moved is removed
     # and put back at the frame's place below
     # a block only on the frames Razgon draws: a mixed episode's photo, stock and text frames get none

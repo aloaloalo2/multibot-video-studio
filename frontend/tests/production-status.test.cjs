@@ -11,7 +11,7 @@ function setup(){
   const state={project:{id:'p',production_request:request}};
   const c=vm.createContext({state,Date:{now:()=>400000},esc:text=>text,exportSpinner:'<i></i>',
     api:()=>new Promise(resolve=>reply=resolve)});
-  vm.runInContext(source.slice(source.indexOf('const teamRoles='),source.indexOf('function renderTeam(')),c);
+  vm.runInContext(source.slice(source.indexOf('const teamRoles='),source.indexOf('async function pollProduction(')),c);
   const button={isConnected:true,setAttribute(){}};
   return {c,state,request,button,reply:value=>reply(value)};
 }

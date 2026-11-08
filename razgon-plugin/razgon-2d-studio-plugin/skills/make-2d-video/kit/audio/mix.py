@@ -155,7 +155,10 @@ def beds(P, cfg, story, n, v_rms, env, music=True, sfx=True):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--project", required=True); ap.add_argument("--video"); ap.add_argument("--no-music", action="store_true"); ap.add_argument("--no-sfx", action="store_true"); ap.add_argument("--out")
     a = ap.parse_args(); P = a.project
-    cfg = json.load(open(os.path.join(P, "config.json"), encoding="utf-8")); story = json.load(open(os.path.join(P, "story", "shots.json"), encoding="utf-8"))
+    with open(os.path.join(P, "config.json"), encoding="utf-8") as config_file:
+        cfg = json.load(config_file)
+    with open(os.path.join(P, "story", "shots.json"), encoding="utf-8") as story_file:
+        story = json.load(story_file)
     total = story.get("duration") or story["shots"][-1]["end"]; n = secs(total)
     voice = fit(load_any(os.path.join(P, cfg["voiceover"])), n)
     v_rms, env = voice_level(voice)

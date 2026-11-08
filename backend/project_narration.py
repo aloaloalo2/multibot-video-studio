@@ -1,9 +1,6 @@
 """Original narration with immutable phrase cache and explicit paid starts."""
 import math
 import shutil
-import hashlib
-import json
-import re
 import planner
 import threading
 import time

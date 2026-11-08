@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import re
-import unicodedata
 from collections import defaultdict
 import number_text
 

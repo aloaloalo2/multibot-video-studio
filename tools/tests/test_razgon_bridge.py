@@ -338,6 +338,8 @@ class KitBedTest(unittest.TestCase):
             import scipy  # noqa: F401
         except ImportError:
             self.skipTest("numpy and scipy are needed for the kit's mix")
+        sys.path.insert(0, str(razgon_bridge.STUDIO_BACKEND))
+        import audio_level
         kit = Path(razgon_bridge.__file__).resolve().parents[1] / "razgon-plugin" / "razgon-2d-studio-plugin" / "skills" / "make-2d-video" / "kit"
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -352,8 +354,10 @@ class KitBedTest(unittest.TestCase):
                      {"id": "e02", "start": 6.0, "end": 12.0, "amb": {"name": "city", "gain": -24}}]
             (razgon / "story" / "shots.json").write_text(json.dumps({"duration": 12.0, "shots": shots,
                 "music": [{"start": 0, "end": 12, "mood": "calm", "intensity": 0.4}], "sfx": [{"t": 9.5, "name": "ding", "gain": -10}]}))
-            (razgon / "config.json").write_text(json.dumps({"voiceover": "input/voice.wav", "music": {"gainDb": -13}, "sfx": {"gainDb": -6}}))
-            parts = razgon_bridge.render_bed(razgon)
+            (razgon / "config.json").write_text(json.dumps({"voiceover": "input/voice.wav", "music": {"gainDb": audio_level.MUSIC_DB}, "sfx": {"gainDb": audio_level.SFX_DB}}))
+            # Compare identical mix levels; voice normalization has separate audio-level tests.
+            with patch.object(audio_level, "measure", return_value=None):
+                parts = razgon_bridge.render_bed(razgon)
             lean = np.frombuffer(parts.read_bytes()[44:], np.int16).copy()
             import mix as MIX
             whole = razgon_bridge._bed_from_whole_mix(razgon, MIX)

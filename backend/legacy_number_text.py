@@ -63,7 +63,7 @@ ENDINGS={"ый":"й","ий":"й","ой":"й","ая":"я","ое":"е","ые":"е"
 for root,value in RU_ROOTS.items():
     for ending,suffix in ENDINGS.items(): ORDINAL[root+ending]=(value,"-"+suffix)
 for value,root in [(1,"перш"),(2,"друг"),(3,"трет"),(4,"четверт"),(5,"п'ят"),(6,"шост"),(7,"сьом"),(8,"восьм"),(9,"дев'ят"),(10,"десят")]:
-    for ending,suffix in {"ий":"й","ій":"й","а":"а","я":"я","е":"е","є":"є","у":"у","ю":"ю","ого":"го","ому":"му","им":"м","ім":"м","ої":"ї","ій":"й","их":"х"}.items(): ORDINAL[root+ending]=(value,"-"+suffix)
+    for ending,suffix in {"ий":"й","ій":"й","а":"а","я":"я","е":"е","є":"є","у":"у","ю":"ю","ого":"го","ому":"му","им":"м","ім":"м","ої":"ї","их":"х"}.items(): ORDINAL[root+ending]=(value,"-"+suffix)
 DENOM = {}
 for value,words in [(2,"половина половины половину половиной половини half halves hälfte halb halbe halben"),
     (3,"треть трети третьих третью третей третина третини третіх third thirds drittel"),

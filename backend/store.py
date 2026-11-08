@@ -875,7 +875,6 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
     fps = plan_config.get("video_fps", DEFAULT_VIDEO_FPS)
     with LOCK:
         folder.mkdir(parents=True, exist_ok=False)
-        global_defaults = global_settings()
         project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
         project["plan_mode"] = "direct" if plan_config.get("plan_mode") == "direct" else "director"
         project["project_kind"] = "animated" if plan_config.get("channel_kind") == "animated" else "regular"
@@ -1008,7 +1007,7 @@ def load_project_plan(pid: str) -> dict | None:
 
 def load_project_source(pid: str) -> dict | None:
     """Real narration/transcription metadata, separate from any director's frame plan."""
-    project = load_project(pid)
+    load_project(pid)
     source = read_json(project_dir(pid) / "source-timing.json")
     return source if isinstance(source, dict) else None
 

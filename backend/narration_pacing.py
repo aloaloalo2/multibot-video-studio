@@ -6,7 +6,7 @@ from numeric_comparison import comparison_chars as letter_count
 from statistics import median
 
 import dubbing_fit
-from dubbing_fit import MAX_SPEED, MAX_SHIFT, join_gaps
+from dubbing_fit import MAX_SPEED as MAX_SPEED, MAX_SHIFT, join_gaps
 
 CALIBRATION = 5
 BLOCK = 10

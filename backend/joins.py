@@ -1,5 +1,4 @@
 """Validated transitions attached to actual touching scene/clip boundaries."""
-import copy
 import uuid
 import json
 from pathlib import Path

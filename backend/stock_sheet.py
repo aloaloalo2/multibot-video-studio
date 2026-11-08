@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import io
 import urllib.request
-from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
