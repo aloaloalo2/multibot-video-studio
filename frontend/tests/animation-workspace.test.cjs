@@ -82,3 +82,16 @@ test('Whisper progress replaces the ready label and prevents starting another an
   assert.equal(c.renderNarrationAnalysis(panel,'p'),false);assert.equal(planButton.disabled,false);assert.equal(text.readOnly,false);
   assert.equal(note.textContent,'Recognition stopped');
 });
+
+test('Create video submits one combined action and rejects an older server before starting work',async()=>{
+  const calls=[],c=vm.createContext({directMontage:()=>false,api:async(path,method,body)=>{calls.push({path,method,body});return path==='/api/health'?{create_video:true}:{job:{id:'j'}};}});
+  vm.runInContext(plan.slice(plan.indexOf('function videoCreationCopy('),plan.indexOf('function narrationChoices(')),c);
+  assert.equal(c.videoCreationCopy().label,'Створити відео');
+  assert.match(c.videoCreationCopy().note,/розпізнає аудіо, складе план і створить усі кадри/);
+  await c.startVideoCreation('p',{asset_id:'voice',script:'text'});
+  assert.equal(calls.length,2);assert.equal(calls[1].path,'/api/projects/p/create-video');assert.equal(calls[1].body.asset_id,'voice');
+  calls.length=0;c.api=async path=>{calls.push(path);return {};};
+  await assert.rejects(c.startVideoCreation('p',{asset_id:'voice'}),/перезапуску/);assert.equal(calls.length,1);
+  c.directMontage=()=>true;calls.length=0;await c.startVideoCreation('p',{asset_id:'voice'});
+  assert.equal(calls[0],'/api/projects/p/plan/analyze');
+});

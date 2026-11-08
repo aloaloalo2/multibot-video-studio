@@ -1122,7 +1122,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/update':
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
-            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True})
+            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True, "create_video": True})
         if path == "/api/channels":
             return self.json_response({"channels": store.list_channels()})
         if path == "/api/extension":
@@ -1417,6 +1417,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)
         if match:
             return self.json_response({"job": load_job(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/create-video", path)
+        if match:
+            return self.json_response(analysis_jobs.creation_status(store.load_project(match.group(1)), load_job))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-link", path)
         if match:
             return self.json_response(store.razgon_link(store.load_project(match.group(1))) or {})
@@ -1485,6 +1488,13 @@ class Handler(BaseHTTPRequestHandler):
             project = store.request_production(match.group(1), body.get("frames"))
             production.start(project["id"])   # Claude Opus starts on the frames at once
             return self.json_response({"project": store.load_project(project["id"])})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/create-video", path)
+        if match and method == "POST":
+            project = store.load_project(match.group(1))
+            if store.project_plan_mode(project) == 'direct':
+                raise store.StudioError('У цьому проєкті вибрано монтаж без плану. Додайте матеріали на таймлайн.', 409)
+            job = analysis_jobs.create_video(project, body.get('asset_id'), save_job, load_job, body.get('script'))
+            return self.json_response({'job': job}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan/analyze", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))

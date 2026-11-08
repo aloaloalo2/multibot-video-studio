@@ -125,13 +125,15 @@ def snapshot(pid):
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     project=store.load_project(pid)
+    creation=f'/api/projects/{pid}/plan/analyze' if store.project_plan_mode(project)=='direct' else f'/api/projects/{pid}/create-video'
     if not completed_job_current(project,job):job={}
     if job.get('status')=='done' and 'speed' not in job:
         try:job['speed']=recorded_speed(pid,job)
         except store.StudioError:pass
     return {'job':job,'source':project.get('narration_source'),
-            'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start'},
-                       {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':f'/api/projects/{pid}/plan/analyze'}],
+            'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start','create_video':creation},
+                       {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':creation}],
+            'create_video_endpoint':creation,
             'source_endpoint':f'/api/projects/{pid}/narration/source'}
 
 def cancel(pid):

@@ -268,6 +268,9 @@ function fillDirectorLine(box){
     // Keep the current stage compact; the work log stays out of the main plan.
 
     directorTimer=setTimeout(()=>pollDirector(id),8000);
+  }else if(run.creation_error&&!state.project.production_request){
+    line('Не вдалося продовжити створення відео',run.creation_error);
+    box.append(stepButton('Продовжити створення',async()=>{try{await startVideoCreation(id,{asset_id:voiceAssetId(state.plan,state.project)});await selectProject(id,{view:'editor'});}catch(error){status(error.message,true);}}));
   }else if(run.status==='failed'){
     // the subscription limit only pauses the director: once it resets, the same button goes on
     line(run.limit?'Режисер на паузі: закінчився ліміт підписки':'Режисура не вдалася',run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
@@ -406,6 +409,10 @@ function fillMake(make){
   refreshFrameEdits(make,id);
   const made=madeSet(frames);
   let floor=0;while(made.has(floor))floor++;
+  if(directorRuns[id]?.create_video&&!directorRuns[id].creation_error&&!request&&floor<frames.length){
+    start.disabled=true;start.innerHTML=`${exportSpinner}<span>Починаємо створення кадрів</span>`;
+    hint.hidden=true;productionTimer=setTimeout(()=>pollProduction(id),1200);return;
+  }
   make.dataset.floor=String(floor);
   const working=['requested','in_progress'].includes(request?.status);
   // a run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up
@@ -553,7 +560,7 @@ async function pollDirector(id){
   // The frames arrive with the finished run: reload the plan so the new frames show at once.
   if(before!==run.status && run.status==='done' && state.view==='plan'){await setProjectView('plan');return;}
   if(before!==run.status && run.status==='done' && state.view==='editor'){
-    try{const result=await api(`/api/projects/${encodeURIComponent(id)}/plan`);if(state.project?.id!==id)return;state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;renderMontageMake();renderTimeline();renderPreview();}catch{}
+    try{const result=await api(`/api/projects/${encodeURIComponent(id)}/plan`);if(state.project?.id!==id)return;state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;if(run.create_video)await pollProduction(id);renderMontageMake();renderTimeline();renderPreview();}catch{}
   }
   refreshEpisode();
 }

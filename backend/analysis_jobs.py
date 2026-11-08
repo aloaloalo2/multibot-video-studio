@@ -48,7 +48,53 @@ def latest(pid, load_job):
     return {"job": job, "report": report}
 
 
-def start(project, asset_id, save_job, load_job, script=None):
+def create_video(project, asset_id, save_job, load_job, script=None):
+    """One explicit author action: recognise once, direct, then create the complete film's frames."""
+    with store.LOCK:
+        current = latest(project['id'], load_job)
+        job, report = current.get('job') or {}, current.get('report') or {}
+        source = store.resolve_asset(project, asset_id)
+        script_hashes = {report.get('script_sha256'), report.get('studio_script_sha256')}
+        same_script = not isinstance(script, str) or not script.strip() or hashlib.sha256(script.strip().encode()).hexdigest() in script_hashes
+        same_audio = report.get('source', {}).get('asset_id') == asset_id and report.get('source', {}).get('sha256') == store.audio_fingerprint(Path(source['path']))
+        narration = store.load_project_narration(project['id']) or {}
+        current_script = narration.get('script_sha256') in script_hashes
+        if job.get('status') == 'complete' and report.get('applied') and same_audio and same_script and current_script:
+            store.atomic_json(store.project_dir(project['id']) / 'analysis-state.json', {'job_id': job['id'], 'create_video': True})
+            director.after_voice(project['id'], create_video=True)
+            return {**job, 'create_video': True}
+        return start(project, asset_id, save_job, load_job, script, create_video=True)
+
+
+def creation_status(project, load_job):
+    pointer = store.read_json(store.project_dir(project['id']) / 'analysis-state.json', {})
+    if not pointer.get('create_video'):
+        return {'status': 'idle', 'stage': None}
+    analysis = latest(project['id'], load_job)
+    job = analysis.get('job') or {}
+    if job.get('status') in {'queued', 'running'}:
+        return {'status': job['status'], 'stage': 'recognizing', 'progress': job.get('progress', 0), 'job': job}
+    if job.get('status') == 'failed' or not (analysis.get('report') or {}).get('applied'):
+        return {'status': 'failed', 'stage': 'recognizing', 'error': job.get('error') or 'Текст не збігся з озвучкою'}
+    direction = director.state(project['id']) or {}
+    if direction.get('status') in {'queued', 'running'}:
+        return {'status': direction['status'], 'stage': 'planning'}
+    request = project.get('production_request') or {}
+    if request:
+        status = {'requested':'queued', 'in_progress':'running'}.get(request.get('status'), request.get('status'))
+        return {'status': status, 'stage': 'creating', 'frames': request.get('frames'), 'error': request.get('error')}
+    if direction.get('creation_error'):
+        return {'status': 'failed', 'stage': 'creating', 'error': direction['creation_error']}
+    if direction.get('status') == 'failed':
+        return {'status': 'failed', 'stage': 'planning', 'error': direction.get('error')}
+    plan = store.load_project_plan(project['id']) or {}
+    count = len(plan.get('frames') or [])
+    if count and set(range(1, count + 1)) <= set(store.made_frames(project, plan)):
+        return {'status':'done', 'stage':'creating', 'frames':count}
+    return {'status': 'queued', 'stage': 'creating'}
+
+
+def start(project, asset_id, save_job, load_job, script=None, create_video=False):
     """Recognise a voice. The text comes from the author's script when there is one, else from the voice itself."""
     import director, production
     if project["id"] in director.ACTIVE or project["id"] in production.ACTIVE:
@@ -72,16 +118,19 @@ def start(project, asset_id, save_job, load_job, script=None):
         active = latest(project["id"], load_job)["job"]
         if active and active["status"] in {"queued", "running"}:
             if active.get("source_asset_id") == asset_id:
+                if create_video:
+                    store.atomic_json(store.project_dir(project['id']) / 'analysis-state.json', {'job_id': active['id'], 'create_video': True})
+                    return {**active, 'create_video': True}
                 return active
             raise store.StudioError("У цьому випуску вже обробляється інший файл", 409)
         job = {"id": uuid.uuid4().hex[:24], "type": "speech", "project_id": project["id"],
                "source_asset_id": asset_id, "source_name": asset["name"], "status": "queued",
                "progress": 0, "stage": "queued", "error": None, "created_at": time.time(), "owner_pid": os.getpid(),
-               "script_from": script_from}
+               "script_from": script_from, "create_video": bool(create_video)}
         save_job(job)
         ACTIVE_JOBS.add(job["id"])
         ACTIVE_PROJECTS[job["id"]] = project["id"]
-        store.atomic_json(store.project_dir(project["id"]) / "analysis-state.json", {"job_id": job["id"]})
+        store.atomic_json(store.project_dir(project["id"]) / "analysis-state.json", {"job_id": job["id"], "create_video": bool(create_video)})
     threading.Thread(target=worker, args=(job, script, save_job), daemon=True).start()
     return job
 
@@ -170,7 +219,14 @@ def worker(job, script, save_job):
             try:
                 import keep
                 threading.Thread(target=keep.keep_project, args=(project["id"],), daemon=True).start()
-                director.after_voice(project["id"])
+                # Publish completion and hand off under the same gate as a joining click.
+                with store.LOCK:
+                    save_job(job)
+                    pointer = store.read_json(store.project_dir(project['id']) / 'analysis-state.json', {})
+                    if pointer.get('job_id') == job['id'] and pointer.get('create_video'):
+                        director.after_voice(project['id'], create_video=True)
+                    else:
+                        director.after_voice(project["id"])
             except Exception:   # the voice is recognised and applied already: a director that cannot start never fails it
                 import traceback
                 traceback.print_exc()

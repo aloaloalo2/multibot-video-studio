@@ -25,6 +25,34 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_create_video_http_is_one_action_with_a_shared_status(self):
+        project=store.create_project(store.channel_id(self.channel),'One-step film')
+        base='/api/projects/'+project['id']+'/create-video'
+        with patch.object(app.analysis_jobs,'create_video',return_value={'id':'j','status':'queued','create_video':True}) as start:
+            code,result=self.request(base,'POST',{'asset_id':'voice','script':'Saved text.'})
+            self.assertEqual(code,202);self.assertTrue(result['job']['create_video'])
+            self.assertEqual(start.call_args.args[1],'voice');self.assertEqual(start.call_args.args[4],'Saved text.')
+        with patch.object(app.analysis_jobs,'creation_status',return_value={'status':'running','stage':'planning'}):
+            code,result=self.request(base)
+            self.assertEqual((code,result['stage']),(200,'planning'))
+
+    def test_combined_creation_keeps_intent_from_whisper_to_director(self):
+        project=store.create_project(store.channel_id(self.channel),'Automatic stages')
+        source=Path(project['episode_path'])/'voice.wav';source.parent.mkdir(parents=True,exist_ok=True)
+        with wave.open(str(source),'wb') as audio:
+            audio.setnchannels(1);audio.setsampwidth(2);audio.setframerate(8000);audio.writeframes(b'\0\0'*16000)
+        asset=store.asset_record(source,project['id']);script='First complete sentence. Second complete sentence.'
+        words=[{'text':text,'start':i*.2,'end':i*.2+.15,'probability':.99} for i,text in enumerate(speech.tokens(script))]
+        with patch.object(speech,'transcribe',return_value=(words,{'engine':'test','local':True})),patch.object(app.analysis_jobs.speech_repair,'repair',side_effect=lambda path,w,language:(w,[])):
+            code,result=self.request('/api/projects/'+project['id']+'/create-video','POST',{'asset_id':asset['id'],'script':script})
+            self.assertEqual(code,202);self.assertTrue(result['job']['create_video'])
+            for _ in range(100):
+                _,result=self.request('/api/projects/'+project['id']+'/analysis')
+                if result['job']['status'] in {'complete','failed'}:break
+                time.sleep(.02)
+        self.assertEqual(result['job']['status'],'complete',result['job'].get('error'))
+        self.assertIn((project['id'],'create_video'),self.director_starts)
+
     def test_voice_lab_http_settings_for_existing_channels(self):
         with patch.object(app.channel_voice_lab, 'ACTIVE', set()):
             base = '/api/channels/' + store.channel_id(self.channel) + '/voice-lab'

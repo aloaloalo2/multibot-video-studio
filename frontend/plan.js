@@ -63,6 +63,14 @@ function planFrameWord(count){
 }
 
 const voiceScriptDraft={};
+const createVideoIcon='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 20 11-11 3 3L7 23zM12 12l3 3M5 3v4M3 5h4M19 2v4M17 4h4M20 16v4M18 18h4"/></svg>';
+function videoCreationCopy(){return directMontage()?{label:'Розпізнати аудіо',note:'Натисніть, щоб студія розпізнала аудіо й зберегла текст із таймінгами.'}:{label:'Створити відео',note:'Натисніть «Створити відео». Студія розпізнає аудіо, складе план і створить усі кадри.'};}
+async function startVideoCreation(pid,payload){
+  if(directMontage())return api(`/api/projects/${pid}/plan/analyze`,'POST',payload);
+  const capabilities=await api('/api/health');
+  if(!capabilities.create_video)throw new Error('Створення відео одним кроком стане доступним після безпечного перезапуску студії. Поточна робота продовжується.');
+  return api(`/api/projects/${pid}/create-video`,'POST',payload);
+}
 function narrationChoices(panel,ready,restore=true){
   const choices=document.createElement('div');choices.className='narration-choices';
   choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
@@ -121,14 +129,15 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   const headline=ready.querySelector('strong');
   const note=message=>{info.textContent=message;headline.textContent=message;};
   ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{filename:`Озвучка · ${Math.round((job.speed||1)*100)}%`,playLabel:'Прослухати готову озвучку'}));
-  const plan=document.createElement('button');plan.type='button';plan.className='secondary narration-plan-action';plan.textContent='Створити план кадрів';
-  plan.onclick=async()=>{plan.disabled=true;try{await api(`/api/projects/${pid}/plan/analyze`,'POST',{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){note(error.message);plan.disabled=false;}};
+  const copy=videoCreationCopy(),plan=document.createElement('button');plan.type='button';plan.className='secondary narration-plan-action';plan.innerHTML=createVideoIcon+`<span>${copy.label}</span>`;
+  plan.onclick=async()=>{plan.disabled=true;try{await startVideoCreation(pid,{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){note(error.message);plan.disabled=false;}};
   const tempo=document.createElement('div');tempo.className='narration-tempo';
   tempo.innerHTML=`<label>Швидкість<input type="range" min="90" max="110" step="1" value="${Math.round((job.speed||1)*100)}"><output>${Math.round((job.speed||1)*100)}%</output></label><button type="button" class="secondary" hidden>Застосувати</button><small>Використовується швидкість ${Math.round((job.speed||1)*100)}% · без зміни тону</small>`;
   const range=tempo.querySelector('input'),apply=tempo.querySelector('button');
   range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';const changed=Number(range.value)!==Math.round((job.speed||1)*100);plan.disabled=changed;apply.hidden=!changed;apply.disabled=false;tempo.querySelector('small').textContent=changed?`Використовується ${Math.round((job.speed||1)*100)}% · обрано ${range.value}%`:`Використовується швидкість ${Math.round((job.speed||1)*100)}% · без зміни тону`;};
   apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;note('Змінюємо швидкість…');try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await refresh();}catch(error){note(error.message);apply.disabled=false;range.disabled=false;}};
-  const actions=document.createElement('footer');actions.className='narration-ready-actions';actions.append(plan);
+  const actions=document.createElement('footer');actions.className='narration-ready-actions';
+  const description=document.createElement('p');description.className='narration-create-note';description.textContent=copy.note;actions.append(description,plan);
   ready.append(tempo,actions);panel.classList.add('has-ready-narration');panel.append(ready);renderNarrationAnalysis(panel,pid);return ready;
 }
 function renderNarrationGeneration(panel){
@@ -215,7 +224,7 @@ function renderVoiceStart(panel){
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
     <label class="voice-script"><span>Сценарій <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
       <small>${direct?'Сценарій допоможе точніше розпізнати озвучку й звірити текст.':'Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.'}</small></label>
-    <div class="voice-start-actions"><div class="voice-progress" aria-live="polite"></div><button type="button" class="primary" disabled>Розпізнати озвучку</button></div>`;
+    <div class="voice-start-actions"><p class="narration-create-note">${videoCreationCopy().note}</p><div class="voice-progress" aria-live="polite"></div><button type="button" class="secondary" disabled>${createVideoIcon}<span>${videoCreationCopy().label}</span></button></div>`;
   section.hidden=true;let generated=null;
   narrationChoices(panel,upload=>{section.hidden=!upload;if(generated)generated.hidden=upload;if(!upload&&!generated)generated=renderNarrationGeneration(panel);});
   panel.append(section);
@@ -243,7 +252,7 @@ function renderVoiceStart(panel){
       const result=await response.json();if(!response.ok)throw new Error(result.error || 'Не вдалося додати файл');
       // The saved script of an animated episode goes untouched; only an edited text is sent as the voice text.
       const payload={asset_id:result.asset.id},typed=text.value.trim();if(typed && typed!==(project.voice_script?.text || '').trim())payload.script=typed;
-      await api(`/api/projects/${encodeURIComponent(project.id)}/plan/analyze`,'POST',payload);await poll();
+      await startVideoCreation(project.id,payload);await poll();
     }catch(error){lock(false);show(error.message);}
   });
   async function poll(){

@@ -509,6 +509,29 @@ def pause(pid: str) -> dict:
     return store.load_project(pid)
 
 
+def start_from_plan(pid: str) -> dict:
+    """Continue the author's one-step creation once direction is complete, without replaying frame jobs."""
+    with store.LOCK:
+        project = store.load_project(pid)
+        plan = store.load_project_plan(pid) or {}
+        request = project.get('production_request') or {}
+        if pid in ACTIVE or request.get('status') in {'requested', 'in_progress'}:
+            return project
+        count = len(plan.get('frames') or [])
+        if count and set(range(1, count + 1)) <= set(store.made_frames(project, plan)):
+            return project
+        if request.get('paused') or request.get('status') == 'failed' and request.get('script_sha256') == plan.get('script_sha256'):
+            raise store.StudioError('Створення кадрів призупинено. Продовжіть збережену роботу кнопкою продовження.', 409)
+        project = store.request_production(pid, count)
+    start(pid)
+    # A corrected explicit retry replaces the previous handoff error in the shared process status.
+    direction = director.state(pid) or {}
+    if direction.get('creation_error'):
+        direction.pop('creation_error')
+        director.save(pid, direction)
+    return project
+
+
 def start(pid: str, notes: str = "") -> None:
     """Start making the requested frames on any channel; a request already in work is left to its run."""
     project = store.load_project(pid)

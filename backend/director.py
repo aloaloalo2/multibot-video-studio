@@ -401,6 +401,14 @@ def run(pid: str, cli: Path) -> None:
     finally:
         with LOCK:
             ACTIVE.discard(pid)
+        data = state(pid) or {}
+        if data.get('status') == 'done' and data.get('create_video'):
+            try:
+                import production
+                production.start_from_plan(pid)
+            except (OSError, store.StudioError) as error:
+                data['creation_error'] = str(error)
+                save(pid, data)
 
 
 def _run(pid: str, cli: Path) -> None:
@@ -408,7 +416,7 @@ def _run(pid: str, cli: Path) -> None:
     try:
         data = state(pid) or {}
         project = store.load_project(pid)
-        data.update(status="running", started_at=time.time(), model=MODEL, effort=store.channel_effort(project), error=None, summary=None, limit=False)
+        data.update(status="running", started_at=time.time(), model=MODEL, effort=store.channel_effort(project), error=None, creation_error=None, summary=None, limit=False)
         save(pid, data)
         code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT, effort=data["effort"])
         plan = store.load_project_plan(pid) or {}
@@ -429,11 +437,15 @@ def _run(pid: str, cli: Path) -> None:
         data.update(status="failed", error=str(error))
     finally:
         if not cancelled(pid, "director"):
-            data["finished_at"] = time.time()
-            try:
-                save(pid, data)
-            except OSError:
-                pass
+            with LOCK:
+                # A second click can join an already-running direction with automatic frame creation.
+                if (state(pid) or {}).get('create_video'):
+                    data['create_video'] = True
+                data["finished_at"] = time.time()
+                try:
+                    save(pid, data)
+                except OSError:
+                    pass
             if data.get("status") == "done":
                 # the shots and their sound cues are written: the film's music and effects go on the timeline at once
                 # (razgon_sound.py; a photo channel's film is not due and is left alone)
@@ -453,34 +465,53 @@ def start(pid: str, reason: str = "voice") -> dict:
         raise store.StudioError("Агент саме створює кадри цього випуску. Дочекайтеся, поки він закінчить", 409)
     with LOCK:
         if pid in ACTIVE:
+            if reason == 'create_video':
+                data = state(pid) or {}
+                data['create_video'] = True
+                save(pid, data)
             return state(pid)
         try:
             cli = executable()
         except RuntimeError as error:
             raise store.StudioError(str(error), 503) from None
         ACTIVE.add(pid)
-        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": store.channel_effort(project)}
+        previous = state(pid) or {}
+        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": store.channel_effort(project),
+                "create_video": reason == 'create_video' or previous.get('status') == 'failed' and bool(previous.get('create_video'))}
         save(pid, data)
     threading.Thread(target=run, args=(pid, cli), daemon=True).start()
     return data
 
 
-def after_voice(pid: str) -> None:
+def after_voice(pid: str, create_video=False) -> None:
     """Called when a voice analysis has been applied to the plan: the episode goes on to direction by itself."""
     try:
         if store.project_plan_mode(store.load_project(pid)) == "direct":
             return
+        if create_video and pid in ACTIVE:
+            start(pid, 'create_video')
+            return
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
+            if create_video:
+                import production
+                production.start_from_plan(pid)
             return
         project = store.load_project(pid)
         # a photo episode already cut on an older plan keeps that montage: new frames would no longer match its clips
         if not animated(project) and plan.get("frame_source") != "razgon-direction" and montage_started(project):
+            if create_video:
+                import production
+                production.start_from_plan(pid)
             return
-        start(pid, "voice")
-    except store.StudioError:
-        pass
+        start(pid, "create_video" if create_video else "voice")
+    except store.StudioError as error:
+        if create_video:
+            data = state(pid) or {}
+            data['creation_error'] = str(error)
+            save(pid, data)
+            raise
 
 
 def montage_started(project: dict) -> bool:

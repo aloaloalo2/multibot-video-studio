@@ -288,6 +288,10 @@ button.danger:hover:not(:disabled){background:#523034}
 .animation-production .project-plan-heading h1{font-size:16px}
 .project-plan-heading h1{display:flex;align-items:center;gap:8px}
 .narration-heading-icon{width:20px;height:20px;flex:none;fill:none;stroke:#979ca6;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.narration-create-note{flex-basis:100%;width:100%;margin:0;color:#989da7;font-size:12px;line-height:1.55;text-align:left}
+.narration-ready-actions,.voice-start-actions{flex-wrap:wrap;gap:12px}
+.narration-plan-action,.voice-start-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.narration-plan-action svg,.voice-start-actions>button svg{width:17px;height:17px;flex:none}
 .animation-production .episode{gap:16px}
 .animation-production .voice-start{width:100%;margin:0;padding:0;border:0;box-shadow:none;background:none}
 .animation-production .voice-start h1{font-size:18px}
