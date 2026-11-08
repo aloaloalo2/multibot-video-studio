@@ -16,7 +16,8 @@ function voiceLabSampleState(selected,data){
 async function bindChannelVoiceLab(channel){
   const box=document.createElement('section');box.className='settings-section channel-voice-lab';
   box.innerHTML='<h3>Голос</h3><p role="status">Завантажуємо налаштування…</p>';
-  document.querySelector('.logo-section').after(box);
+  const slot=document.getElementById('channel-voice-settings');
+  if(slot)slot.append(box);else document.querySelector('.logo-section').after(box);
   const base=`/api/channels/${channel.id}/voice-lab`;
   let data,signature='',timer;
   const current=()=>box.isConnected;
