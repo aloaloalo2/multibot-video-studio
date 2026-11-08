@@ -1,5 +1,6 @@
 """Saved original-voice settings for Studio channels. No automatic paid work."""
 from __future__ import annotations
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -27,6 +28,36 @@ PREPARATION_VERSION = 1
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
+NARRATIONS = {}  # project id -> channel id; samples keep their own ACTIVE entries
+_AUDIO_LOCK = threading.Lock()
+_AUDIO_USERS = {}
+
+
+def in_use(cid):
+    with LOCK:
+        return cid in ACTIVE or cid in NARRATIONS.values()
+
+
+@contextmanager
+def audio_guard(path):
+    """Share one immutable take across concurrent jobs, including its failure, without paid retries."""
+    with _AUDIO_LOCK:
+        entry = _AUDIO_USERS.setdefault(path, {'lock': threading.RLock(), 'users': 0, 'error': None})
+        entry['users'] += 1
+    try:
+        with entry['lock']:
+            if entry['error'] is not None:
+                raise entry['error']
+            try:
+                yield
+            except Exception as error:
+                entry['error'] = error
+                raise
+    finally:
+        with _AUDIO_LOCK:
+            entry['users'] -= 1
+            if not entry['users']:
+                _AUDIO_USERS.pop(path)
 
 
 def folder(cid):
@@ -184,7 +215,7 @@ def copy_profile(source_cid, target_cid):
     """Explicitly reuse a voice and its existing cloud identity in another channel. No API calls."""
     source, target = folder(source_cid), folder(target_cid)
     with LOCK:
-        if source_cid in ACTIVE or target_cid in ACTIVE:
+        if in_use(source_cid) or in_use(target_cid):
             raise store.StudioError('Дочекайтеся завершення зразка', 409)
         if (target / 'reference.mp3').exists():
             raise store.StudioError('У каналі вже є голос', 409)
@@ -206,19 +237,19 @@ def copy_profile(source_cid, target_cid):
 
 def upload(cid, stream, size, filename):
     with LOCK:
-        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        if in_use(cid): raise store.StudioError('Дочекайтеся завершення озвучення цього каналу', 409)
         return {'draft': reference_drafts.upload(folder(cid), stream, size, filename)}
 
 
 def preview_reference(cid, token):
     with LOCK:
-        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        if in_use(cid): raise store.StudioError('Дочекайтеся завершення озвучення цього каналу', 409)
         return {'draft': reference_drafts.clean(folder(cid), token)}
 
 
 def accept_reference(cid, token, cleaned):
     with LOCK:
-        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        if in_use(cid): raise store.StudioError('Дочекайтеся завершення озвучення цього каналу', 409)
         root = folder(cid)
         reference_drafts.accept(root, token, cleaned)
         settings = validated(store.read_json(root/'settings.json', {}))
@@ -230,7 +261,7 @@ def accept_reference(cid, token, cleaned):
 def remove(cid):
     root = folder(cid)
     with LOCK:
-        if cid in ACTIVE: raise store.StudioError('Дочекайтеся завершення зразка', 409)
+        if in_use(cid): raise store.StudioError('Дочекайтеся завершення озвучення цього каналу', 409)
         for name in ['reference.mp3', 'reference.json']:
             file = root / name
             if file.exists():
@@ -306,21 +337,23 @@ def paced_audio(source, speed):
 
 def eleven_local_synthesis(secret, voice, settings, ref):
     source=original_path(settings,ref);source.parent.mkdir(parents=True,exist_ok=True)
-    if not source.is_file():
-        audio=synthesis(secret,voice,{**settings,'speed':1.})
-        pending=source.with_suffix('.pending.mp3');pending.write_bytes(audio)
-        if not (store.media_duration(pending) or 0)>0:raise RuntimeError('ElevenLabs повернув неповний звук')
-        pending.replace(source)
+    with audio_guard(source):
+        if not source.is_file():
+            audio=synthesis(secret,voice,{**settings,'speed':1.})
+            pending=source.with_suffix('.pending.mp3');pending.write_bytes(audio)
+            if not (store.media_duration(pending) or 0)>0:raise RuntimeError('ElevenLabs повернув неповний звук')
+            pending.replace(source)
     return paced_audio(source,settings.get('speed',1.))
 
 
 def heygen_synthesis(settings,ref):
     source=original_path(settings,ref);source.parent.mkdir(parents=True,exist_ok=True)
-    if not source.is_file():
-        audio=heygen_voice.synthesize(settings)
-        pending=source.with_suffix('.pending.mp3');pending.write_bytes(audio)
-        if not (store.media_duration(pending) or 0)>0:raise RuntimeError('HeyGen повернув неповний звук')
-        pending.replace(source)
+    with audio_guard(source):
+        if not source.is_file():
+            audio=heygen_voice.synthesize(settings)
+            pending=source.with_suffix('.pending.mp3');pending.write_bytes(audio)
+            if not (store.media_duration(pending) or 0)>0:raise RuntimeError('HeyGen повернув неповний звук')
+            pending.replace(source)
     return paced_audio(source,settings.get('speed',1.))
 
 
@@ -336,12 +369,13 @@ def fish_synthesis(secret, voice, settings, raw_key=None):
     packed=languages.msgpack(body)
     target=store.DATA_ROOT/'fish-originals'/((raw_key or hashlib.sha256(packed).hexdigest())+'.mp3')
     target.parent.mkdir(parents=True,exist_ok=True)
-    if not target.is_file():
-        audio=languages.request(languages.FISH+'/v1/tts',packed,
-            {'Authorization':'Bearer '+secret,'Content-Type':'application/msgpack','model':settings['fish_engine']},'Fish Audio')
-        pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
-        if not (store.media_duration(pending) or 0)>0:raise RuntimeError('Fish повернув неповний звук')
-        pending.replace(target)
+    with audio_guard(target):
+        if not target.is_file():
+            audio=languages.request(languages.FISH+'/v1/tts',packed,
+                {'Authorization':'Bearer '+secret,'Content-Type':'application/msgpack','model':settings['fish_engine']},'Fish Audio')
+            pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
+            if not (store.media_duration(pending) or 0)>0:raise RuntimeError('Fish повернув неповний звук')
+            pending.replace(target)
     speed=settings.get('speed',1.)
     if speed==1.:return target.read_bytes()
     with tempfile.TemporaryDirectory() as tmp:
@@ -354,20 +388,24 @@ def run(cid, settings, ref, job):
     root = folder(cid)
     try:
         fish = settings['provider'] == 'fishaudio'
-        if settings['provider']=='heygen':
-            audio=heygen_synthesis(settings,ref)
-        else:
-            ref = {**ref, 'prepared_path': str(prepared_source(cid, settings, ref))}
-            with LOCK:
-                job['stage'] = 'reference' if fish else 'clone';store.atomic_json(root / 'job.json', job)
-            if fish:
-                secret = languages.key('fishaudio')
-                voice = fish_reference(cid, settings, ref)
-            else:
-                secret, voice = clone(cid, settings, ref)
+        if settings['provider']!='heygen':
+            with audio_guard(root / 'reference.mp3'):
+                ref = {**ref, 'prepared_path': str(prepared_source(cid, settings, ref))}
+                with LOCK:
+                    job['stage'] = 'reference' if fish else 'clone';store.atomic_json(root / 'job.json', job)
+                if fish:
+                    secret = languages.key('fishaudio')
+                    voice = fish_reference(cid, settings, ref)
+                else:
+                    secret, voice = clone(cid, settings, ref)
             with LOCK:
                 job['stage'] = 'speech';store.atomic_json(root / 'job.json', job)
-            audio = fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else eleven_local_synthesis(secret, voice, settings,ref)
+        with audio_guard(original_path(settings,ref)):
+            cached=original_path(settings,ref).is_file()
+            audio = heygen_synthesis(settings,ref) if settings['provider']=='heygen' else fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else eleven_local_synthesis(secret, voice, settings,ref)
+            if cached:
+                job['estimate']={**job['estimate'],'amount':0}
+                if settings['provider']=='elevenlabs':job['estimated_credits']=0
         target = root / 'samples' / (job['fingerprint'] + '.mp3')
         target.parent.mkdir(exist_ok=True)
         temporary = target.with_suffix('.pending.mp3');temporary.write_bytes(audio)
@@ -445,7 +483,7 @@ def create_heygen_voice(cid, raw):
     settings=validated(raw);root=folder(cid);ref=reference(cid)
     if not ref:raise store.StudioError('Спочатку додайте запис голосу')
     with LOCK:
-        if cid in ACTIVE:raise store.StudioError('Дочекайтеся завершення зразка',409)
+        if in_use(cid):raise store.StudioError('Дочекайтеся завершення озвучення цього каналу',409)
         ACTIVE.add(cid)
     try:
         identity=hashlib.sha256(('heygen-instant-v1:'+ref['sha256']+':'+settings['language']).encode()).hexdigest()

@@ -55,7 +55,7 @@ class NarrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);project={'id':'0'*24,'channel_id':'1'*16};settings=lab.validated({})
             entries=[{'key':'a','text':'First.'},{'key':'b','text':'Second.'}]
-            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=[b'audio',RuntimeError('provider failed')]) as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
+            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=[b'audio',RuntimeError('provider failed')]) as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
                 narration.run(project,'First. Second.',settings,{'sha256':'ref'},[{**e,'cached':False} for e in entries],{'status':'running'})
                 self.assertEqual(synth.call_count,2)
                 self.assertTrue((path/'narration'/'a.mp3').is_file())
