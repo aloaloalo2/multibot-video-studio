@@ -73,6 +73,18 @@ class ReviewTest(unittest.TestCase):
             review.sheets(self.proj, self.root, args)
             self.assertEqual(review.status(self.proj), 0)  # identical pixels retain the visual verdict
 
+    def test_scoped_status_rejects_missing_stills_and_unknown_ids(self):
+        self.calls=0
+        with patch.object(review.subprocess,'run',side_effect=self.render), contextlib.redirect_stdout(io.StringIO()):
+            review.sheets(self.proj,self.root,SimpleNamespace(frames='1',scale=.34,all=False))
+            review.mark(self.proj,SimpleNamespace(frames='1',verdict='ok',note=''))
+            self.assertEqual(review.status(self.proj,'1'),0)
+            self.assertEqual(review.status(self.proj,'1,999'),1)
+            self.assertEqual(review.status(self.proj,'0'),1)
+            self.assertEqual(review.status(self.proj),1)
+            next((self.proj/'build/review/frames').glob('*.png')).unlink()
+            self.assertEqual(review.status(self.proj,'1'),1)
+
     def test_deleted_still_forces_render(self):
         self.calls = 0
         args = SimpleNamespace(frames="1", scale=.34, all=False)

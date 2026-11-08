@@ -4,6 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,19 +25,26 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.settings = lab.validated({'provider': 'heygen', 'heygen_voice_id': 'saved-voice', 'heygen_model': 'heygen-voice-1'})
         self.workers = []
         self.release = threading.Event()
+        duration = store.media_duration
         patches = [patch.object(store, 'DATA_ROOT', self.root),
                    patch.object(store, 'project_dir', side_effect=self.project_dir),
                    patch.object(store, 'load_project', side_effect=lambda pid: self.projects[pid]),
                    patch.object(store, 'get_channel_folder', return_value=self.root),
-                   patch.object(store, 'media_duration', return_value=1),
+                   patch.object(store, 'media_duration', side_effect=lambda path: duration(path) if Path(path).suffix=='.flac' else 1),
                    patch.object(store, 'import_asset_file', side_effect=self.import_audio),
-                   patch.object(narration.languages, 'run', side_effect=lambda command, *args: Path(command[-1]).write_bytes(b'assembled')),
+                   patch.object(narration.languages, 'run', side_effect=self.assemble),
                    patch.object(lab, 'snapshot', side_effect=lambda cid: {'settings': self.settings.copy(), 'reference': {'sha256': 'reference', 'approved': True}}),
                    patch.object(narration, 'ACTIVE', set()), patch.object(lab, 'ACTIVE', set()),
                    patch.object(lab, 'NARRATIONS', {}), patch.object(lab, '_AUDIO_USERS', {}),
                    patch.object(narration.threading, 'Thread', side_effect=self.worker)]
         for item in patches:
             self.stack.enter_context(item)
+
+    def assemble(self, command, *args):
+        # Real silence lets the local closing-pause code decode the assembled fixture.
+        with wave.open(str(command[-1]),'wb') as audio:
+            audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(8000)
+            audio.writeframes(b'\0\0'*8000)
 
     def tearDown(self):
         self.release.set()

@@ -44,6 +44,9 @@ def restart(pid: str) -> dict:
     if pointer.get("job_id") in analysis_jobs.ACTIVE_JOBS:
         raise store.StudioError("Студія ще розпізнає озвучку. Зачекайте, доки вона закінчить, і почніть заново", 409)
     import thumbnail_gen, project_narration
+    import episode_ideas
+    if pid in episode_ideas.ACTIVE:
+        raise store.StudioError('Спочатку зупиніть роботу Opus й дочекайтеся завершення', 409)
     if pid in project_narration.ACTIVE:
         raise store.StudioError("Спочатку зупиніть озвучення й дочекайтеся його завершення",409)
     if pid in thumbnail_gen.ACTIVE:

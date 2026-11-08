@@ -26,6 +26,7 @@ class ProductionTest(unittest.TestCase):
         for item in (patch.object(store, "load_project", side_effect=lambda pid: json.loads(json.dumps(self.project))),
                      patch.object(store, "save_project", side_effect=lambda project: self.project.update(project)),
                      patch.object(store, "project_dir", return_value=base),
+                     patch.object(store, "load_project_plan", return_value={'frames':[{'number':n,'start':(n-1)*2,'end':n*2} for n in (1,2,3)]}),
                      patch.object(store, "project_animated", side_effect=lambda project: self.animated)):
             item.start()
             self.addCleanup(item.stop)
@@ -147,6 +148,32 @@ class ProductionTest(unittest.TestCase):
         production.settle(self.project["id"])
         self.assertEqual(self.project["production_request"]["status"], "in_progress")  # a live run is left alone
         production.ACTIVE.clear()
+
+    def test_quality_failure_cannot_finish_or_be_bypassed_after_restart(self):
+        pid=self.project['id']
+        self.project['tracks']=[{'clips':[{'kind':'animation','title':f'Razgon · кадр {n:03d}'} for n in (1,2,3)]}]
+        rejected={'passed':False,'frames':[3],'errors':['Кадр 3 ще не перевірено']}
+        phase={'finished':False}
+        def model(*args,**kwargs):
+            phase['finished']=True
+            return 0,{'result':'Done'}
+        with patch.object(production.director,'claude',side_effect=model), \
+                patch.object(production.frame_progress,'drawn',side_effect=lambda pid:[1,2,3] if phase['finished'] else [1,2]), \
+                patch.object(production.production_quality,'check',return_value=rejected) as gate:
+            production.run(pid,Path('claude'))
+        request=self.project['production_request']
+        self.assertEqual(request['review_frames'],[3])
+        self.assertEqual(request['status'],'failed')
+        self.assertFalse(request['quality']['passed'])
+        self.project['production_request']['status']='in_progress'
+        with patch.object(production.frame_progress,'drawn',return_value=[1,2,3]), \
+                patch.object(production.production_quality,'check',return_value=rejected) as gate:
+            production.settle(pid)
+        gate.assert_called_once()
+        self.assertEqual(self.project['production_request']['status'],'failed')
+        with patch.object(store,'listed_plan',return_value={}),patch.object(store,'made_frames',return_value=[1,2,3]):
+            state=store.production_state(self.project)
+        self.assertEqual(state['quality'],{'passed':False})
 
     def test_accents_follow_the_channel_setting(self):
         with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \

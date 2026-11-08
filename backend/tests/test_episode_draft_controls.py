@@ -27,7 +27,7 @@ class EpisodeDraftControlsTest(unittest.TestCase):
         self.context = patch.object(ideas, 'context', return_value=self.ctx)
         self.context.start()
         self.addCleanup(self.context.stop)
-        self.hooks = [{'text':f'Opening {n}. ' + 'Natural complete spoken words. '*10,'uk':''} for n in range(5)]
+        self.hooks = [{'text':f'Opening {n}. ' + 'Natural complete spoken words. '*10,'uk':''} for n in range(4)]
         self.topics = {'id':'topics-fixture', 'ideas':[{'title':f'A fresh topic number {n}', 'uk':''} for n in range(5)],
                        'day':ideas.today(), 'target_words':1200, 'sample_count':0, 'context':self.ctx, 'status':'done', 'stage':'ideas'}
         store.atomic_json(ideas.path(self.cid), self.topics)
@@ -202,6 +202,31 @@ class EpisodeDraftControlsTest(unittest.TestCase):
                 ideas.start_project(data['project_id'], {'action':'openings','refresh':True})
         thread.assert_not_called()
         self.assertEqual(store.load_project(data['project_id'])['voice_script']['text'], 'Saved author script.')
+
+    def test_cancel_running_job_rejects_overlap_and_discards_late_answer(self):
+        data = self.begin()
+        live = ideas.ACTIVE[data['project_id']]
+        with patch.object(ideas,'Thread') as worker:
+            result = ideas.start_project(data['project_id'],{'action':'cancel'})
+            self.assertEqual(result['status'],'cancelling')
+            self.assertIn(data['project_id'],ideas.ACTIVE)
+            with self.assertRaises(store.StudioError):
+                ideas.start_project(data['project_id'],{'action':'openings','refresh':True})
+            with patch.object(ideas,'opus') as provider:
+                ideas.work(self.cid,live)
+            provider.assert_not_called()
+            worker.assert_not_called()
+        self.assertNotIn(data['project_id'],ideas.ACTIVE)
+        self.assertEqual(ideas.read_project(data['project_id'])['status'],'cancelled')
+        self.assertNotIn('openings',ideas.read_project(data['project_id']))
+
+    def test_failed_persistence_cannot_leave_worker_permanently_active(self):
+        data=self.begin()
+        with patch.object(ideas,'opus',return_value={'openings':self.hooks}), \
+                patch.object(ideas,'save_draft',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                ideas.work(self.cid,ideas.ACTIVE[data['project_id']])
+        self.assertNotIn(data['project_id'],ideas.ACTIVE)
 
 
 if __name__ == '__main__': unittest.main()

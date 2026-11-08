@@ -9,11 +9,11 @@ const exportSource=source.slice(source.indexOf('function updateOverviewExports()
 const activitySource=source.slice(source.indexOf('function renderProjectActivities()'),source.indexOf('async function pollChannelActivity()'));
 
 test('recognition and director status is replaced once and cleared when work ends',()=>{
-  const classes=new Set(),children=[],attributes={},activities=new Map([['p','розпізнавання озвучки']]);
+  const classes=new Set(),children=[],actions=[],attributes={},activities=new Map([['p','розпізнавання озвучки']]);
   const open={insertBefore:node=>children.push(node),querySelector:()=>({})};
   const card={dataset:{projectId:'p'},classList:{toggle:(key,on)=>on?classes.add(key):classes.delete(key),contains:key=>classes.has(key)},
-    setAttribute:(key,value)=>attributes[key]=value,querySelector:()=>open,querySelectorAll:()=>[...children]};
-  const document={querySelectorAll:()=>[card],createElement:()=>({setAttribute(){},remove(){children.splice(children.indexOf(this),1);}})};
+    setAttribute:(key,value)=>attributes[key]=value,querySelector:s=>s==='.project-actions'?{append:n=>actions.push(n)}:open,querySelectorAll:()=>[...children,...actions]};
+  const document={querySelectorAll:()=>[card],createElement:()=>({setAttribute(){},remove(){const list=actions.includes(this)?actions:children;list.splice(list.indexOf(this),1);}})};
   const c=vm.createContext({document,projectActivities:activities,exportSpinner:'spinner'});
   vm.runInContext(activitySource,c);
   const render=()=>vm.runInContext('renderProjectActivities()',c);
@@ -23,8 +23,9 @@ test('recognition and director status is replaced once and cleared when work end
   activities.set('p','режисура');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/Режисер складає план/);
   activities.set('p',{kind:'озвучення сценарію',progress:42});render();assert.match(children[0].innerHTML,/Озвучуємо сценарій · 42%/);
   activities.set('p','створення сценарію');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/spinner/);assert.match(children[0].innerHTML,/Opus пише сценарій/);
+  assert.equal(actions.length,1);render();assert.equal(actions.length,1);
   activities.set('p','створення зачинів');render();assert.match(children[0].innerHTML,/Opus готує зачини/);
-  activities.clear();render();assert.equal(children.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
+  activities.clear();render();assert.equal(children.length,0);assert.equal(actions.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
   classes.add('exporting');render();assert.equal(attributes['aria-busy'],'true');
 });
 
@@ -33,6 +34,7 @@ test('an old failed job with every frame made no longer shows a stopped warning'
   const read=r=>JSON.parse(JSON.stringify(vm.runInContext(`projectProductionCardState(${JSON.stringify(r)})`,c)));
   assert.equal(read({status:'failed',frames:107,made:107}).stopped,false);
   assert.equal(read({status:'failed',frames:107,made:86}).stopped,true);
+  assert.equal(read({status:'failed',frames:107,made:107,quality:{passed:false}}).stopped,true);
   assert.equal(read({status:'in_progress',frames:107,made:107}).working,true);
 });
 test('export progress takes the single status slot and restores production status when export ends',()=>{

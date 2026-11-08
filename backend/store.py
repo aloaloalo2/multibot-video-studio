@@ -735,6 +735,8 @@ def production_state(project: dict) -> dict | None:
         return None
     state = {"status": request["status"], "frames": int(request.get("frames") or 0), "first": int(request.get("first") or 1),
              "limit": bool(request.get("limit")), "paused": bool(request.get("paused"))}
+    if request.get('quality'):
+        state['quality'] = {'passed': request['quality'].get('passed')}
     if request["status"] in {"requested", "in_progress", "failed"}:
         try:
             plan = listed_plan(project)

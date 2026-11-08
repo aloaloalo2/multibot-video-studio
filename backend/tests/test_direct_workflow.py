@@ -6,6 +6,7 @@ import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -171,21 +172,26 @@ class DirectWorkflowTest(unittest.TestCase):
         current["plan_source"] = str(obsolete)
         store.save_project(current)
         audio = {'id': 'a' * 20, 'name': 'voice.wav', 'kind': 'audio', 'path': str(Path(self.tmp.name) / 'voice.wav')}
-        Path(audio['path']).write_bytes(b'fixture')
+        with wave.open(audio['path'],'wb') as wav:
+            wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(8000); wav.writeframes(b'\0\0'*48000)
+        original=Path(audio['path']).read_bytes()
+        audio=store.import_asset_file(store.load_project(self.pid), Path(audio['path']), 'upload')
         job = {'id': 'b' * 24, 'project_id': self.pid, 'source_asset_id': audio['id'], 'script_from': 'request'}
-        report = {'status': 'matched', 'timings': self.timings}
-        with patch.object(store, 'resolve_asset', return_value=audio), \
-             patch.object(store, 'media_duration', return_value=6), \
-             patch.object(analysis_jobs.speech, 'transcribe', return_value=([], {'language': 'en'})), \
+        report = {'status': 'matched', 'timings': {**self.timings,'duration':7.5}}
+        with patch.object(analysis_jobs.speech, 'transcribe', return_value=([], {'language': 'en'})), \
              patch.object(analysis_jobs.speech_repair, 'repair', return_value=([], [])), \
              patch.object(analysis_jobs.speech, 'compare_script', return_value=report), \
              patch.object(analysis_jobs.threading, 'Thread') as thread, \
              patch.object(director, 'start') as start:
             analysis_jobs.worker(job, self.script, lambda value: None)
-        self.assertEqual(job['status'], 'complete')
+        self.assertEqual(job['status'], 'complete', job.get('error'))
         self.assertTrue(job['applied'])
         self.assertEqual(obsolete.read_text(), "{broken")
-        self.assertEqual(store.load_project_source(self.pid)['timing']['audio']['asset_id'], audio['id'])
+        prepared_id=store.load_project_source(self.pid)['timing']['audio']['asset_id']
+        prepared=next(a for a in store.load_project(self.pid)['assets'] if a['id']==prepared_id)
+        self.assertEqual(prepared['narration_ending']['seconds'],1.5)
+        self.assertAlmostEqual(prepared['duration'],7.5,places=2)
+        self.assertEqual((Path(self.tmp.name)/'voice.wav').read_bytes(),original)
         start.assert_not_called()
 
     def test_http_project_and_source_routes_reflect_current_mode(self):

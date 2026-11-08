@@ -1,0 +1,67 @@
+"""Read cached visual review and check changed native labels before declaring a run done."""
+import subprocess
+import sys
+
+import frame_progress
+import montage_ops
+import native_animation
+import store
+
+
+def check(project, request):
+    try:
+        return _check(project, request)
+    except (OSError, ValueError, TypeError, KeyError, store.StudioError) as error:
+        # Recovery and project-list reads must survive malformed saved layer data.
+        return {'passed': False, 'frames': [], 'errors': ['Не вдалося перевірити кадри: ' + str(error)[:400]]}
+
+
+def _check(project, request):
+    plan = store.load_project_plan(project['id']) or {}
+    wanted = set(request['review_frames'] if 'review_frames' in request else
+                 request.get('repair_frames') or range(1, int(request['frames']) + 1))
+    frames = [f for f in plan.get('frames', []) if f['number'] in wanted]
+    missing = wanted - {f['number'] for f in frames}
+    errors = ['Кадри відсутні у плані: ' + ', '.join(map(str, sorted(missing)))] if missing else []
+    native = {f['number'] for f in frames if f.get('format') == 'animation'}
+    if native:
+        fps = int(project.get('fps') or 25)
+        groups = montage_ops.frame_groups(project, plan)
+        absent = native - {f['number'] for f in groups}
+        if absent:
+            errors.append('Не знайдено шарів анімації кадрів: ' + ', '.join(map(str, sorted(absent))))
+        for frame in groups:
+            if frame['number'] not in native:
+                continue
+            for clip in frame['clips']:
+                if clip.get('kind') == 'text' or clip.get('content_type') == 'text':
+                    try:
+                        native_animation.validate_label(clip, project, frame['number'], fps)
+                    except store.StudioError as error:
+                        errors.append(str(error))
+    razgon_numbers = sorted(f['number'] for f in frames if f.get('format') == 'razgon_2d')
+    if razgon_numbers:
+        root = store.YOUTUBE_ROOT / store.razgon_rel()
+        linked = frame_progress.razgon_project(project)
+        if linked is None:
+            errors.append('Не знайдено сцени Razgon для перевірки.')
+        else:
+            try:
+                result = subprocess.run([sys.executable, str(root / 'tools/frame_review.py'), '--project', str(linked),
+                    'status', '--frames', ','.join(map(str, razgon_numbers))], cwd=root,
+                    capture_output=True, text=True, timeout=30)
+                if result.returncode:
+                    errors.append('Перевірка кадрів Razgon не підтверджена: ' + (result.stdout + result.stderr).strip()[-1200:])
+            except (OSError, subprocess.TimeoutExpired) as error:
+                errors.append('Не вдалося прочитати перевірку кадрів Razgon: ' + str(error)[:200])
+    return {'passed': not errors, 'frames': sorted(wanted), 'errors': errors,
+            'native_labels': len(native), 'visual_review': razgon_numbers}
+
+
+INSTRUCTIONS = '''
+Перед завершенням студія перевіряє актуальність збереженого візуального схвалення кадрів Razgon.
+Для нових або змінених кадрів Razgon виконай frame_review.py sheets --frames <номери>, подивись один аркуш
+і познач перевірені кадри через mark. Студія звірить відбитки коду, асетів і кешованих стоп-кадрів.
+Для локальних правок перевір лише вибрані кадри; незмінені перевірки повторно не запускай.
+Нові відеофайли для цієї перевірки не потрібні. Звичайні статичні фази для читання дозволені.
+'''

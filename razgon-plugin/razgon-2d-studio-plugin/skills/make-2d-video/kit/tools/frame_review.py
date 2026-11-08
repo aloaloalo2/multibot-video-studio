@@ -77,7 +77,7 @@ def same_picture(a, b) -> bool:
     return sum(ImageChops.difference(a, b).histogram()[11:]) <= 3
 
 
-def pick(spec: str, total: int) -> set[int]:
+def pick(spec: str, total: int | None) -> set[int]:
     out = set()
     for part in spec.split(","):
         part = part.strip()
@@ -86,7 +86,7 @@ def pick(spec: str, total: int) -> set[int]:
             out |= set(range(int(a), int(b) + 1))
         elif part:
             out.add(int(part))
-    return {n for n in out if 1 <= n <= total}
+    return out if total is None else {n for n in out if 1 <= n <= total}
 
 
 def load_state(path: Path) -> dict:
@@ -204,16 +204,28 @@ def mark(proj: Path, a) -> None:
     print(f"Marked {a.frames} {a.verdict}" + (f": {a.note}" if a.note else ""))
 
 
-def status(proj: Path) -> int:
+def status(proj: Path, selected: str = "") -> int:
     state = load_state(proj / "build" / "review" / "review.json")
     units = frames_of(proj)
+    available = {f["n"] for f in units}
+    try:
+        wanted = pick(selected, None) if selected else available
+    except ValueError:
+        print("Invalid frame selection")
+        return 1
+    if wanted - available or (selected and not wanted):
+        print("Unknown frames: " + ",".join(map(str, sorted(wanted - available))))
+        return 1
+    units = [f for f in units if f["n"] in wanted]
     total = len(units)
-    frames = state.get("frames", {})
+    frames = {str(f["n"]): state.get("frames", {}).get(str(f["n"]), {}) for f in units}
     bugs = [(n, e.get("note", "")) for n, e in frames.items() if e.get("verdict") == "bug"]
-    unseen = [n for n in range(1, total + 1) if frames.get(str(n), {}).get("verdict") is None]
+    unseen = [f["n"] for f in units if not frames.get(str(f["n"]), {}).get("verdict")]
     sources = fingerprints(proj, proj.parent.parent, units)
     stale = [f["n"] for f in units if frames.get(str(f["n"]), {}).get("source") != sources[f["n"]]]
-    errors = state.get("errors") or []
+    errors = sorted({error for entry in frames.values() for error in entry.get("errors", [])})
+    if not selected: errors = sorted(set(errors) | set(state.get("errors") or []))
+    missing = [f["n"] for f in units if not frames[str(f["n"])].get("times") or not all((proj / "build/review/frames" / f"{t:.2f}.png").is_file() for t in frames[str(f["n"])].get("times", []))]
     ok = total - len(bugs) - len(unseen)
     print(f"Frames reviewed ok: {ok}/{total}")
     for n, note in sorted(bugs, key=lambda x: int(x[0])):
@@ -224,7 +236,8 @@ def status(proj: Path) -> int:
         print("  changed frames needing fresh stills: " + ",".join(map(str, stale)))
     for e in errors[:8]:
         print(f"  RENDER ERROR  {e}")
-    return 0 if not bugs and not unseen and not stale and not errors else 1
+    if missing: print("  missing cached stills: " + ",".join(map(str, missing)))
+    return 0 if units and not bugs and not unseen and not stale and not errors and not missing else 1
 
 
 def main() -> None:
@@ -234,7 +247,7 @@ def main() -> None:
     s = sub.add_parser("sheets"); s.add_argument("--frames", default=""); s.add_argument("--scale", type=float, default=0.34)
     s.add_argument("--all", action="store_true", help="force new stills even when source content is unchanged")
     m = sub.add_parser("mark"); m.add_argument("frames"); m.add_argument("verdict", choices=["ok", "bug"]); m.add_argument("note", nargs="?", default="")
-    sub.add_parser("status")
+    sub.add_parser("status").add_argument("--frames", default="")
     a = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     proj = (root / a.project).resolve() if not Path(a.project).is_absolute() else Path(a.project)
@@ -243,7 +256,7 @@ def main() -> None:
     elif a.cmd == "mark":
         mark(proj, a)
     else:
-        sys.exit(status(proj))
+        sys.exit(status(proj, a.frames))
 
 
 if __name__ == "__main__":

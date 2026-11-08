@@ -142,9 +142,10 @@ def validate_label(part, project, number, fps):
     width=store.finite_float(part.get('width',1),.01,4)
     height=store.finite_float(part.get('height',1),.01,4)
     duration=float(part['duration'])
+    peak=max([visible_opacity(part,0), *[float(k['opacity']) for k in part.get('keyframes',[]) if 'opacity' in k]])
     for index in range(max(1,math.ceil(duration*fps))):
         t=index/fps
-        if visible_opacity(part,t)<.95:continue  # a deliberate fade-in/out may cross the screen edge
+        if visible_opacity(part,t)<max(.001,peak*.95):continue  # only the transient part of an actual fade may cross the edge
         x=value_at(part,'x',t,.5);y=value_at(part,'y',t,.5);scale=value_at(part,'scale',t,1)
         if x-width*scale/2 < -.001 or x+width*scale/2 > 1.001 or y-height*scale/2 < -.001 or y+height*scale/2 > 1.001:
             raise store.StudioError(f'Кадр {number}: текст виходить за екран на {t:.2f} с. Зменште або перемістіть його блок.',400)

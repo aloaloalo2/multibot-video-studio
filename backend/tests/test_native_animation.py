@@ -87,6 +87,14 @@ class SeamProtectionTest(NativeAnimationTest):
             'keyframes':[{'time':0,'x':-.2,'opacity':0},{'time':.4,'x':.5,'opacity':1}]}]})
         self.assertEqual(len(ctx.actions),3)
 
+    def test_permanently_translucent_text_cannot_bypass_geometry(self):
+        for opacity in (.4, .9):
+            ctx=self.context()
+            with self.subTest(opacity=opacity), self.assertRaises(store.StudioError):
+                native_animation.place(ctx, {'frame':3, 'clips':[{'kind':'text','text':'Label',
+                    'x':.99, 'width':.3, 'height':.15, 'opacity':opacity}]})
+            self.assertEqual(ctx.actions,[])
+
     def test_one_frame_tail_is_closed_before_placement(self):
         ctx=self.context();ctx.plan['frames'][0].update(start=54.36,end=62.16)
         native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Content','duration':7.76}]})

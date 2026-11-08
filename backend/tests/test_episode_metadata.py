@@ -91,3 +91,38 @@ class MetadataTest(unittest.TestCase):
             result = ideas.start_project(self.pid, {'action': 'metadata'})
             thread.assert_not_called()
             self.assertTrue(result['metadata_saved'])
+
+    def test_optional_correction_failure_keeps_original_and_recovers_metadata_locally(self):
+        data = self.draft()
+        with patch.object(ideas, 'opus', side_effect=[{'script':self.script, 'metadata':self.value}, RuntimeError('offline')]), \
+                patch.object(ideas.author_rules, 'check', return_value=(False,'Concrete issue')):
+            ideas.work(self.cid, data)
+        self.assertEqual(data['status'], 'failed')
+        self.assertEqual(store.load_project(self.pid)['voice_script']['text'], self.script.strip())
+        saved = store.read_json(store.project_dir(self.pid)/'script-draft.json')
+        self.assertEqual(saved['metadata'], self.value)
+        with patch.object(ideas, 'opus') as model, patch.object(ideas, 'Thread') as worker:
+            result = ideas.start_project(self.pid, {'action':'metadata'})
+        model.assert_not_called(); worker.assert_not_called()
+        self.assertTrue(result['metadata_saved'])
+        self.assertFalse(result['check']['passed'])
+
+    def test_missing_checker_requires_review_without_paid_correction(self):
+        data = self.draft()
+        with patch.object(ideas,'opus',return_value={'script':self.script,'metadata':self.value}) as model, \
+                patch.object(ideas.author_rules,'check',return_value=(None,'Unavailable')):
+            ideas.work(self.cid,data)
+        model.assert_called_once()
+        self.assertTrue(data['review_required'])
+        self.assertTrue(data['completed'])
+
+    def test_author_edit_during_check_cannot_be_overwritten(self):
+        data = self.draft()
+        def check(*args):
+            store.save_project_source(store.load_project(self.pid),'Author changed this script.')
+            return True,'OK'
+        with patch.object(ideas,'opus',return_value={'script':self.script,'metadata':self.value}), \
+                patch.object(ideas.author_rules,'check',side_effect=check):
+            ideas.work(self.cid,data)
+        self.assertEqual(data['status'],'failed')
+        self.assertEqual(store.load_project(self.pid)['voice_script']['text'],'Author changed this script.')

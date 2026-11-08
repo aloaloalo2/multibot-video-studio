@@ -20,7 +20,10 @@ class LivePortTest(unittest.TestCase):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
         (self.root/'tools').mkdir()
-        source=Path(__file__).resolve().parents[2]/'razgon-2d-studio'/'tools'/'live.mjs'
+        app=Path(__file__).resolve().parents[2]
+        source=app/'razgon-2d-studio'/'tools'/'live.mjs'
+        if not source.is_file():
+            source=app/'razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/live.mjs'
         shutil.copy2(source,self.root/'tools'/'live.mjs')
         (self.root/'live.html').write_text('<html>Live preview</html>')
         self.projects={}

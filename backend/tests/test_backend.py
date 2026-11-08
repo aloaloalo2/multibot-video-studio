@@ -436,7 +436,8 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(code, 202)
             for _ in range(100):
                 code, analysis = self.request("/api/projects/" + pid + "/analysis")
-                if analysis["job"]["status"] in {"complete", "failed"}: break
+                if analysis["job"]["status"] == "failed": break
+                if analysis["job"]["status"] == "complete" and (pid, "voice") in self.director_starts: break
                 time.sleep(.02)
         self.assertEqual(analysis["job"]["status"], "complete", analysis["job"].get("error"))
         self.assertTrue(analysis["report"]["applied"])

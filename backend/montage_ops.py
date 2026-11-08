@@ -896,57 +896,6 @@ def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:
     return True
 
 
-def motion(ctx: Context, spec: dict) -> None:
-    """Give the placed frames the moves `place` gives a new one now: a picture zooms or drifts, a vertical or 4:3 photo
-    sits on its blurred copy, a host frame zooms 12%. Frames with accents keep theirs (the accents ride the photo's move)."""
-    wanted = set(spec.get("frames") or [])
-    plan_frames = {int(f.get("number", 0)): f for f in (ctx.plan or {}).get("frames", [])}
-    changed = 0
-    # new clips need a layer that stays: the voice's (a picture's own layer goes when the picture is laid again)
-    tracks = ctx.project["tracks"]
-    anchor = next((tr["id"] for tr in tracks if any(c.get("kind") == "audio" for c in tr["clips"])), tracks[-1]["id"])
-    for frame in ctx.frames:
-        number = frame.get("number")
-        if number is None or (wanted and number not in wanted) or number not in plan_frames:
-            continue
-        if any(is_accent(c) for c in frame["clips"]) or _full_frame_text(frame):
-            continue
-        clip = main_picture(ctx.project, frame)
-        host = plan_frames[number].get("format") == "host"
-        if not clip or not (clip.get("kind") == "image" or host and clip.get("kind") == "video"):
-            continue
-        asset = next((a for a in ctx.project.get("assets", []) if a.get("id") == clip.get("asset_id")), {})
-        aspect = _aspect(asset.get("path")) if clip.get("kind") == "image" else None
-        vertical = aspect is not None and aspect < 1.6
-        cover = max((ctx.W / ctx.H) / aspect, 1.0) * 1.02 if aspect and not vertical else 1.0
-        name = ("zoom_in", "zoom_out")[number % 2] if vertical or host else PICTURE_CYCLE[number % len(PICTURE_CYCLE)]
-        a, b = MOTIONS[name]
-        length = math.floor(float(clip["duration"]) * 1000) / 1000
-        first, last = {"time": 0.0, "scale": a * cover}, {"time": length, "scale": b * cover}
-        patch = {"scale": first["scale"], "x": .5, "y": .5}
-        if name in ("pan_left", "pan_right"):
-            sign = 1 if name == "pan_right" else -1
-            first["x"], last["x"] = .5 - sign * PAN, .5 + sign * PAN
-            patch["x"] = first["x"]
-        patch["keyframes"] = [first, last]
-        needs_background = vertical and not any(str(c.get("title", "")).endswith(" фон") for c in frame["clips"])
-        if not needs_background:
-            ctx.actions.append({"type": "update_clip", "payload": {"clip_id": clip["id"], "patch": patch}})
-        if needs_background:
-            fill = max((ctx.W / ctx.H) / aspect, aspect / (ctx.W / ctx.H)) * 1.06
-            ctx.actions.append({"type": "add_clip", "payload": {"layer_id": anchor, "group_id": frame["group"]["id"],
-                                                                 "start": float(clip["start"]), "duration": float(clip["duration"]), "title": f"K{number:03d} фон",
-                                                                 "kind": "image", "asset_id": clip["asset_id"], "blur": 30, "opacity": .9, "scale": fill * 1.08,
-                                                                 "easing": ctx.easing, "keyframes": [{"time": 0.0, "scale": fill * 1.08}, {"time": length, "scale": fill}]}})
-            # a new clip opens the top layer: the photo is laid again after its blurred copy, so it stays above it
-            ctx.actions.append({"type": "delete_clip", "payload": {"clip_id": clip["id"]}})
-            again = {k: clip[k] for k in ("kind", "asset_id", "start", "duration", "title", "volume", "trim_start", "width", "height", "opacity") if k in clip}
-            ctx.actions.append({"type": "add_clip", "payload": {**again, **patch, "layer_id": anchor, "group_id": frame["group"]["id"],
-                                                                 "easing": clip.get("easing", ctx.easing)}})
-        changed += 1
-    ctx.report.append(f"рух оновлено в кадрах: {changed}")
-
-
 def reglue(ctx: Context, spec: dict) -> None:
     """Glue the accents of a frame to its photo again, where they stand at the frame's middle moment (an accent glued to
     the blurred background copy drifted against the photo; user, 6 November 2026: «акцент двигается не синхронно»),
@@ -1006,7 +955,7 @@ def reglue(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
+OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

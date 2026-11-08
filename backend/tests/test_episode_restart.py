@@ -80,6 +80,15 @@ class EpisodeRestartTest(unittest.TestCase):
         self.assertTrue(director.cancelled(PID, "director"))      # its run ends without saving its state
         self.assertFalse(director.cancelled(PID, "director"))
 
+    def test_running_author_cannot_write_into_restarted_project(self):
+        import episode_ideas
+        before=(self.folder/'project.json').read_bytes()
+        with patch.dict(episode_ideas.ACTIVE,{PID:{'status':'running'}}), \
+                self.assertRaisesRegex(store.StudioError,'Opus'):
+            episode_restart.restart(PID)
+        self.assertEqual((self.folder/'project.json').read_bytes(),before)
+        self.assertFalse((self.folder/'restarts').exists())
+
     def test_waits_for_a_recognition_in_progress(self):
         (self.folder / "analysis-state.json").write_text(json.dumps({"job_id": "job1"}))
         analysis_jobs.ACTIVE_JOBS.add("job1")

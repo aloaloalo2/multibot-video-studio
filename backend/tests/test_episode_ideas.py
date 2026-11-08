@@ -71,7 +71,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertNotIn('context', ideas.public(data))
         data = self.begin({'action':'openings','index':2,'target_words':1500})
         pid = data['project_id']
-        hooks=[{'text':('Opening number '+str(i)+' with meaningful vivid words and natural spoken detail. ')*4,'uk':''} for i in range(5)]
+        hooks=[{'text':('Opening number '+str(i)+' with meaningful vivid words and natural spoken detail. ')*4,'uk':''} for i in range(4)]
         with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
             data=self.finish(data)
             self.assertIn('1500', model.call_args.args[0])
@@ -126,7 +126,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertEqual(ideas.read(self.cid)['status'],'failed')
     def test_existing_script_is_never_overwritten(self):
         self.topics();data=self.begin({'action':'openings','index':0});pid=data['project_id']
-        hooks=[{'text':'A meaningful opening with enough words. '*5,'uk':''}]*5
+        hooks=[{'text':'A meaningful opening with enough words. '*5,'uk':''}]*4
         with patch.object(ideas,'opus',return_value={'openings':hooks}): self.finish(data)
         store.save_project_source(store.load_project(pid),'Author text already saved.')
         with patch.object(ideas,'Thread') as thread:

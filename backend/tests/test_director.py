@@ -52,7 +52,9 @@ class DirectorTest(unittest.TestCase):
         import production
         settings={'animation':{'style':'care','title_font':'Noto Serif','assets':False}}
         request={'frames':1,'total_frames':1,'start':0,'end':10}
-        with patch.object(director,'channel_settings',return_value=settings):
+        import style_lab
+        with patch.object(director,'channel_settings',return_value=settings), \
+                patch.object(style_lab,'presets',return_value=[{'id':'care','desc':'pastel fixture style'}]):
             text=director.brief(PROJECT)
             self.assertIn('pastel',text)
             self.assertIn('"style": "care"',text)

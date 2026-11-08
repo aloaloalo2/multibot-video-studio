@@ -164,7 +164,7 @@ const channelActivity=new Set(),projectActivities=new Map();
 let channelActivityPending=false;
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
-    for(const previous of card.querySelectorAll('.project-stage-job'))previous.remove();
+    for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
     const working=!!kind&&!!open;
@@ -173,6 +173,11 @@ function renderProjectActivities(){
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    if(['створення зачинів','створення сценарію','створення метаданих'].includes(kind)){
+      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title='Зупинити роботу Opus';stop.setAttribute('aria-label','Зупинити роботу Opus');
+      stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
+      (card.querySelector('.project-actions')||card).append(stop);
+    }
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
 }
@@ -393,7 +398,7 @@ function projectCardHeading(project){
 function projectProductionCardState(request){
   const total=Math.max(0,Number(request?.frames)||0),done=Math.max(0,Math.min(total,Number(request?.made)||0));
   return {total,done,working:['requested','in_progress'].includes(request?.status),
-    stopped:request?.status==='failed'&&done<total};
+    stopped:request?.status==='failed'&&(done<total||request?.quality?.passed===false)};
 }
 
 function renderOverview() {

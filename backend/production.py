@@ -21,6 +21,7 @@ from pathlib import Path
 import director
 import motion_direction
 import frame_progress
+import production_quality
 import channel_branding
 import logo_layer
 import production_context
@@ -357,13 +358,22 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             log = run_log(pid, request)
             started = time.time()
             effort = store.channel_effort(project)
-            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=effort, error=None, limit=False, paused=False)
+            if request.get('repair_frames'):
+                review_frames = request['repair_frames']
+            else:
+                existing = set(store.made_frames(project, store.load_project_plan(pid)))
+                pending = set(request.get('review_frames', [])) if request.get('quality_version') == 1 else set()
+                review_frames = sorted(pending | (set(range(1, int(request['frames']) + 1)) - existing))
+            request.update(quality_version=1, review_frames=review_frames)
+            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=effort, error=None,
+                        limit=False, paused=False, quality_version=1, review_frames=review_frames)
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         text = repair_brief(project,request,notes) if request.get('repair_frames') else brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
         text += mixed_assets_step(project) + director.sound_brief(project, scoped=bool(request.get("repair_frames"))) + director.animation_style(project) + director.channel_memory(project)
         _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
         text += production_context.instructions(handoff,scoped=bool(request.get('repair_frames')))
+        text += production_quality.INSTRUCTIONS
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
                                        resume=None, effort=effort)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
@@ -378,11 +388,14 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                        else "Не всі вибрані кадри стоять на таймлайні студії")
             fields.update(status="failed", error=(answer.get("result") or missing)[-600:])
         else:
-            fields.update(status="done")
             try:
                 logo_layer.place(pid)   # the channel logo from the settings goes over the new frames
             except (OSError, store.StudioError):
                 pass
+            review = production_quality.check(store.load_project(pid), request)
+            fields.update(quality=review, status='done' if review['passed'] else 'failed')
+            if not review['passed']:
+                fields['error'] = ' '.join(review['errors'])[:1600]
     except subprocess.TimeoutExpired:
         fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
     except (OSError, store.StudioError, KeyError) as error:
@@ -544,6 +557,10 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
         made = False
     fields = {"status": "done", "error": None} if made else {
         "status": "failed", "error": "Агент зупинився, не закінчивши кадри. Виберіть кадри й почніть ще раз."}
+    if made and request.get('quality_version') == 1:
+        review = production_quality.check(project, request)
+        fields.update(quality=review, status='done' if review['passed'] else 'failed',
+                      error=None if review['passed'] else ' '.join(review['errors'])[:1600])
     return set_request(pid, finished_at=time.time(), **fields)
 
 

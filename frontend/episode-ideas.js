@@ -61,11 +61,18 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
       projectActivities.set(data.project_id,'створення сценарію');
       closeModal();showProjectList();pollChannelActivity();return;
     }
-    if(data.completed&&projectId){closeModal();selectProject(projectId).catch(error=>status(error.message,true));return;}
+    if(data.completed&&projectId){
+      if(data.review_required||data.check?.passed===false){
+        root.innerHTML='<p class="episode-error" role="alert">Сценарій збережено. Перевірка потребує уваги.</p>'+errorBox(data.check?.report||'Автоматична перевірка недоступна.')+'<button class="secondary" id="script-open">Відкрити випуск</button>';
+        root.querySelector('#script-open').onclick=()=>{closeModal();selectProject(projectId).catch(error=>status(error.message,true));};return;
+      }
+      closeModal();selectProject(projectId).catch(error=>status(error.message,true));return;
+    }
     if(data.stale&&!projectId&&data.status!=='failed'&&!passive){request({action:'ideas',refresh:true});return;}
     if(data.status==='running'){
       const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage];
       root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.target_words?data.target_words.toLocaleString('uk-UA')+' слів':'Для збереженого сценарію'}</small></div></div>`;
+      if(projectId){root.innerHTML+='<button class="secondary" id="writing-cancel">Зупинити</button>';root.querySelector('#writing-cancel').onclick=()=>request({action:'cancel'});}
       timer=setTimeout(poll,2000);return;
     }
     const error=data.status==='failed'?errorBox(data.error||'Запит не завершено'):'';
