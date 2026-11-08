@@ -163,7 +163,6 @@ function bindBranding(channel){
   };
   let busy=false;
   const removeStyle=async style=>{
-    if(!confirm(`Видалити стиль «${style.name}»? Ролики, які вже в ньому, не зміняться.`))return;
     try{
       await api(`/api/channels/${encodeURIComponent(channel.id)}/custom-styles/${encodeURIComponent(style.id)}`,'DELETE');
       styles=styles.filter(item=>item.id!==style.id);
@@ -245,7 +244,6 @@ function bindBranding(channel){
   for(const name of ['dragleave','drop'])tile.addEventListener(name,()=>tile.classList.remove('is-over'));
   tile.addEventListener('drop',event=>{event.preventDefault();upload(event.dataTransfer.files[0]);});
   $('logo-remove').addEventListener('click',async()=>{
-    if(!confirm('Видалити логотип каналу? Нові експорти вийдуть без нього.'))return;
     try{await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'DELETE');version=Date.now();present=false;draw();feedback.textContent='Логотип видалено.';}catch(error){feedback.textContent=error.message;}
   });
   let loadedKind=null;

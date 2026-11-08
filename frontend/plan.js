@@ -211,7 +211,6 @@ function renderNarrationGeneration(panel){
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
-    if(!window.confirm(`Озвучити ${quote.total-quote.cached} нових або змінених фраз? ${cost}. Готові фрагменти використаємо з кешу.`)){button.disabled=false;return;}
     await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
   }catch(error){info.textContent=error.message;button.disabled=false;}};
   poll();return box;

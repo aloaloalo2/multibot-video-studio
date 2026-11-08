@@ -29,7 +29,6 @@ async function openNewEpisodeWizard(){
   function draw(data){
     if(!root.isConnected||$('modal-backdrop').hidden||state.channel?.id!==cid)return;
     // Opus has the saved title/opening already. Closing never discards or cancels its server job.
-    if(data.project_id)modalDirty=false;
     if(data.status==='running'&&data.stage==='script'&&data.project_id){
       projectActivities.set(data.project_id,'створення сценарію');
       closeModal();showProjectList();pollChannelActivity();return;

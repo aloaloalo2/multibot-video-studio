@@ -113,7 +113,7 @@ function modal(title, body, actions=[]) {
     button.addEventListener('click', action.run);
     box.append(button);
   }
-  $('modal-backdrop').hidden=false;modalDirty=false;
+  $('modal-backdrop').hidden=false;
   // the name field of a small dialog is ready to type into; a long form keeps the page's focus where it is
   const field=$('modal-body').querySelector('input[type=text]:not([disabled]),input:not([type]):not([disabled])');
   if(field&&$('modal-body').querySelectorAll('input,select,textarea').length<=3)setTimeout(()=>field.focus(),0);
@@ -121,16 +121,9 @@ function modal(title, body, actions=[]) {
 }
 function stopModalMedia() {$('modal-body').querySelectorAll('audio,video').forEach(media=>media.pause());}
 function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open','thumb-modal-open','channel-settings-open','episode-ideas-open');}
-// A dialog with something typed or changed in it asks before ×, Escape or a click beside it throws that away; its own
-// «Скасувати» means it and closes at once.
-let modalDirty=false;
-const marksDirty=event=>!(event.target instanceof HTMLInputElement&&event.target.name==='export-quality');   // a choice, not an edit
-$('modal-body').addEventListener('input',event=>{if(marksDirty(event))modalDirty=true;});
-$('modal-body').addEventListener('change',event=>{if(marksDirty(event))modalDirty=true;});
-function leaveModal(){if(modalDirty&&!confirm('Закрити без збереження? Зміни в цьому вікні пропадуть.'))return;closeModal();}
-$('modal-close').addEventListener('click',leaveModal);
-$('modal-backdrop').addEventListener('click', event => {if (event.target === $('modal-backdrop')) leaveModal();});
-document.addEventListener('keydown', event => {if (event.key==='Escape' && !$('modal-backdrop').hidden) leaveModal();});
+$('modal-close').addEventListener('click',closeModal);
+$('modal-backdrop').addEventListener('click', event => {if (event.target === $('modal-backdrop')) closeModal();});
+document.addEventListener('keydown', event => {if (event.key==='Escape' && !$('modal-backdrop').hidden) closeModal();});
 // Enter in a one-line field does what the dialog's main button does
 $('modal-body').addEventListener('keydown',event=>{
   if(event.key!=='Enter'||event.isComposing||!(event.target instanceof HTMLInputElement)||!['text','search','number',''].includes(event.target.type))return;

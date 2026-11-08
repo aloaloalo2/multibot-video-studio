@@ -627,7 +627,6 @@ async function pollProduction(id){
 }
 
 async function startDirector(id){
-  if(directorDone()&&!confirm('Переробити режисуру? Режисер заново розіб’є озвучку на кадри й перезапише план кадрів цього випуску.'))return;
   try{
     directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`,'POST',{})).director;
     refreshEpisode();
