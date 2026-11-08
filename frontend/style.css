@@ -2143,3 +2143,27 @@ select option{background:#232327;color:#f1f1f2}
 .channel-sound-group[open] summary::before{transform:rotate(90deg)}
 .channel-sound-group summary small{margin-left:auto;color:#9398a3;font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
 .channel-sound-group>.check{margin:12px 0 6px}
+
+.episode-wizard{width:100%;min-width:0}
+.episode-ideas-head,.episode-word-count{display:flex;align-items:center;gap:12px;margin:14px 0 8px}
+.episode-ideas-head button{margin-left:auto;padding:4px 10px}
+.episode-word-count input{width:110px;margin:0;padding:7px 10px}
+.episode-wizard .muted{font-size:13px;color:var(--muted);line-height:1.5}
+.episode-options{display:grid;gap:9px;max-height:48vh;overflow:auto;padding:2px}
+.episode-options button{text-align:left;display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 16px;background:#28292e;border:1px solid #3c3e46;border-radius:12px;color:#dddfe5;font-size:14px;line-height:1.5}
+.episode-options button:hover{background:#33353d;border-color:#797e8a}
+.episode-options button[data-opening]{display:grid;gap:8px}
+.episode-options small,.episode-writing small{display:block;font-size:12px;color:#a4a8b2;margin-top:5px}
+.episode-options .idea-length{white-space:nowrap;font-variant-numeric:tabular-nums}
+.episode-writing{display:flex;align-items:center;gap:14px;padding:20px 0}
+.episode-error{color:#f1aaa9;font-size:14px}
+@media(max-width:600px){.episode-options button{flex-direction:column;gap:5px}.episode-word-count{flex-wrap:wrap}}
+.episode-ideas-open .modal{width:min(900px,calc(100vw - 40px))}
+.episode-wizard label.episode-word-count{display:flex;flex-direction:row;align-items:center}
+
+.episode-ideas-head strong{display:flex;align-items:center;gap:8px;font-size:14px}
+.idea-provider-icon{width:22px;height:22px;color:#aeb3bf;flex:none}
+.episode-ideas-open .modal-body{display:block;width:100%;box-sizing:border-box}
+.episode-ideas-open .modal{width:min(760px,calc(100vw - 32px))}
+.episode-options button strong{font-weight:550}
+.episode-wizard .episode-word-count{margin-bottom:14px;font-size:12px;color:#979daa}

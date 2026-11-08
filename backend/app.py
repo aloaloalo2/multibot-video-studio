@@ -111,7 +111,7 @@ def prepare_local_restart():
         if IN_FLIGHT>1:raise store.StudioError('Студія зараз зберігає зміни. Дочекайтеся завершення.',409)
         if channel_voice_lab.ACTIVE:raise store.StudioError('Генерується зразок голосу. Дочекайтеся завершення.',409)
         with JOBS_LOCK:exports=[dict(x['job']) for x in ACTIVE_EXPORTS.values()]
-        busy=agent_view.studio_status(exports,project_jobs,busy_candidates())['busy']
+        busy=studio_work_status(exports)['busy']
         if busy:raise store.StudioError('Перезапуск перерве поточну роботу. '+busy_words(busy),409)
         UPDATE_RESTARTING=True
         def expire():
@@ -136,7 +136,7 @@ def begin_update():
                 raise store.StudioError('Зараз розпізнається озвучка', 409)
         # the restart would also cut the director, the frame agent, a thumbnail or the studio's agent mid-run, the same
         # work studio_restart.py waits for
-        busy = agent_view.studio_status([], project_jobs, busy_candidates())["busy"]
+        busy = studio_work_status([])["busy"]
         if busy:
             # a short line by the update button, without episode names or ids (user, 1 November 2026)
             raise store.StudioError(busy_words(busy), 409)
@@ -816,6 +816,18 @@ def project_jobs(pid: str) -> dict:
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
 
 
+def studio_work_status(exports):
+    result = agent_view.studio_status(exports, project_jobs, busy_candidates())
+    import episode_ideas
+    for cid in episode_ideas.ACTIVE.copy():
+        data = episode_ideas.read(cid)
+        result['busy'].append('створення сценарію: ' + cid)
+        result['active_channels'] = sorted(set(result['active_channels']) | {cid})
+        if data.get('project_id'):
+            result['activities'].append({'project_id': data['project_id'], 'channel_id': cid, 'kind': 'створення сценарію', 'status': 'running'})
+    return result
+
+
 def recent_exports(pid: str, limit: int = 5) -> list[dict]:
     """The project's latest export jobs, newest first (running, finished, failed or cancelled)."""
     found = []
@@ -1122,6 +1134,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True, "create_video": True})
+        ideas_match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/episode-ideas", path)
+        if ideas_match:
+            import episode_ideas
+            return self.json_response(episode_ideas.public(episode_ideas.read(ideas_match.group(1))))
         if path == "/api/sound-effects":
             import sound_settings
             return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog()})
@@ -1159,7 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/studio/status":
             with JOBS_LOCK:
                 jobs = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
-            result = agent_view.studio_status(jobs, project_jobs, busy_candidates())
+            result = studio_work_status(jobs)
             result['busy'] += ['озвучення: тест голосу каналу' for _ in channel_voice_lab.ACTIVE.copy()]
             return self.json_response(result)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)
@@ -1703,6 +1719,10 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/projects/from-plan":
             project = store.project_from_plan(body["channel_id"], body["name"], body["episode_path"], body["plan"])
             return self.json_response({"project": project, "plan_url": f"/channels/{project['channel_id']}/projects/{project['id']}/plan"})
+        ideas_match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/episode-ideas", path)
+        if ideas_match and method == "POST":
+            import episode_ideas
+            return self.json_response(episode_ideas.public(episode_ideas.start(ideas_match.group(1), body)), 202)
         if method == "POST" and path == "/api/projects":
             project = store.create_project(body["channel_id"], body["name"], body.get("episode_path"))
             return self.json_response({"project": project}, 201)
@@ -1874,6 +1894,8 @@ def main():
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
     server = StudioHTTPServer((args.host, args.port), Handler)
+    import episode_ideas
+    episode_ideas.start_daily()
     for pid, result in technical_files.migrate_all().items():
         if isinstance(result, dict) and result.get("error"):
             print(f"Technical file migration of {pid}: {result['error']}", flush=True)

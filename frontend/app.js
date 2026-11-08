@@ -99,7 +99,7 @@ function status(message, error=false) {
 
 function modal(title, body, actions=[]) {
   stopModalMedia();
-  $('modal-backdrop').classList.remove('channel-settings-open');
+  $('modal-backdrop').classList.remove('channel-settings-open','episode-ideas-open');
   $('modal-title').textContent = title;
   $('modal-body').innerHTML = body;
   const box = $('modal-actions'); box.replaceChildren();
@@ -120,7 +120,7 @@ function modal(title, body, actions=[]) {
   else if(document.activeElement instanceof HTMLElement)document.activeElement.blur();
 }
 function stopModalMedia() {$('modal-body').querySelectorAll('audio,video').forEach(media=>media.pause());}
-function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open','thumb-modal-open','channel-settings-open');}
+function closeModal() {stopModalMedia();$('modal-backdrop').hidden=true;$('modal-backdrop').classList.remove('settings-modal-open','thumb-modal-open','channel-settings-open','episode-ideas-open');}
 // A dialog with something typed or changed in it asks before ×, Escape or a click beside it throws that away; its own
 // «Скасувати» means it and closes at once.
 let modalDirty=false;
@@ -1325,7 +1325,7 @@ async function pollJob(){
 $('add-channel').addEventListener('click',()=>{modal('Додати канал','<p>Новий канал: введіть назву й натисніть «Створити канал», студія створить його папку в YOUTUBE.</p><label>Назва нового каналу<input id="new-channel-name" type="text" maxlength="100" placeholder="Назва каналу"></label><p class="add-channel-or">Канал уже має свою папку? Натисніть «Додати наявну папку» й виберіть її.</p>',[{label:'Скасувати',run:closeModal},{label:'Додати наявну папку',run:async()=>{try{const result=await api('/api/channels/pick','POST',{});if(!result.channel)throw new Error('Папку не додано.');closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» додано.`);}catch(error){status(error.message,true);}}},{label:'Створити канал',primary:true,run:async()=>{try{const name=$('new-channel-name').value.trim();if(!name)throw new Error('Введіть назву каналу.');const result=await api('/api/channels/create','POST',{name});closeModal();await loadChannels(result.channel.id);status(`Канал «${result.channel.name}» створено.`);}catch(error){status(error.message,true);}}}]);});
 for(const logo of document.querySelectorAll('.brand-logo')){logo.addEventListener('click',showProjectList);logo.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showProjectList();}});}
 $('overview-channel-settings').addEventListener('click',()=>{if(state.channel)openChannelSettings(state.channel);});
-$('overview-create').addEventListener('click',()=>{if(!state.channel){status('Спершу додайте канал.',true);return;}modal('Новий випуск','<label>Назва випуску<input id="new-project-name" type="text" placeholder="Назва ролика"></label>',[{label:'Скасувати',run:closeModal},{label:'Створити',primary:true,run:async()=>{try{const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');const result=await api('/api/projects','POST',{channel_id:state.channel.id,name});closeModal();await selectChannel(state.channel.id);if(result.project?.id)await selectProject(result.project.id,{view:directMontage(result.project)?'editor':'plan'});}catch(error){status(error.message,true);}}}]);});
+$('overview-create').addEventListener('click',()=>openNewEpisodeWizard());
 $('global-settings').addEventListener('click',openStudioSettings);
 $('asset-search').addEventListener('input',event=>{state.search=event.target.value;renderAssets();if(state.libraryTab==='pixabay')debouncedPixabay();});
 let searchTimer;

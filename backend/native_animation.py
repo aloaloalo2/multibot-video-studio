@@ -38,6 +38,9 @@ def place(ctx, spec: dict) -> None:
         if not isinstance(part, dict):
             raise store.StudioError('Невірний шар анімації', 400)
         part = dict(part)
+        foreground = part.pop('foreground', False)
+        if type(foreground) is not bool:
+            raise store.StudioError('foreground має бути увімкнено або вимкнено', 400)
         kind = part.get('kind', 'animation')
         content = part.get('content_type', 'shape') if kind == 'animation' else kind
         if kind not in {'animation', 'image', 'text'} or content not in {'shape', 'gradient', 'image', 'text'}:
@@ -61,9 +64,23 @@ def place(ctx, spec: dict) -> None:
         length = store.finite_float(part.get('duration', duration - local), .001, duration)
         if local + length > duration + .001:
             raise store.StudioError('Шар виходить за межі кадру', 400)
+        # A long layer anchored to the scene must not vanish one output frame before its background.
+        # Keep intentional shorter events; hold the final pose of scene-spanning layers to the common seam.
+        if local < .001 and length >= 1 and 0 < duration - length <= 1 / fps + 1e-6:
+            length = duration
+        part['_foreground'] = foreground or content == 'text'
         part.update(start=local, duration=length)
         store.validated_keyframes(part.get('keyframes', []), length)
         prepared.append(part)
+    # The generated backing colour alone never counts as a completed animation frame.
+    # Validate each output frame before changing any timeline clips.
+    for index in range(max(1, round(duration * fps))):
+        moment = index / fps
+        if not any(float(p['start']) <= moment < float(p['start']) + float(p['duration']) - 1e-8
+                   and visible_opacity(p, moment - float(p['start'])) > .001 for p in prepared[1:]):
+            raise store.StudioError(f'Кадр {number}: на {moment:.2f} с лишається тільки фон. Основний візуал має покривати весь кадр.', 400)
+    # Text and explicitly marked label images stay above chart bars and decorative shapes.
+    prepared = [prepared[0]] + sorted(prepared[1:], key=lambda p: p.pop('_foreground', False))
     # Add new layers before removing the old ones to preserve the scene group and its transitions.
     for index, part in enumerate(prepared):
         local = float(part.pop('start')); length = float(part.pop('duration'))
@@ -80,3 +97,15 @@ def place(ctx, spec: dict) -> None:
         ctx.actions.extend({'type': 'delete_clip', 'payload': {'clip_id': c['id']}} for c in existing['clips'])
     ctx._native_frames = getattr(ctx, '_native_frames', set()) | {number}
     ctx.report.append(f'кадр {number}: анімація наживо, {len(parts)} шарів, без рендеру відео')
+
+
+def visible_opacity(part, local):
+    points = sorted((float(k['time']), float(k['opacity'])) for k in part.get('keyframes', []) if 'opacity' in k)
+    base = float(part.get('opacity', 1))
+    if not points: return base
+    if points[0][0] > 0: points.insert(0, (0, base))
+    if local <= points[0][0]: return points[0][1]
+    for (a, av), (b, bv) in zip(points, points[1:]):
+        if local < b:
+            return av + (bv-av) * ((local-a)/(b-a))
+    return points[-1][1]

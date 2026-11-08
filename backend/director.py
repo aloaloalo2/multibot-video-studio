@@ -79,7 +79,8 @@ def brief(project: dict) -> str:
         text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
     if settings.get("accents"):
         text += "\nАкценти на кадрах увімкнені. Продумай власне монтажне рішення для цього каналу: де підкреслити деталь, показати ім’я, важливе число або тезу; де використати простий текст, плашку, стрілку, коло чи доречний стильний ефект. У полі idea відповідних кадрів зазнач задум, момент і вигляд акценту. Частоту й форму визначай за змістом, ритмом, стилем каналу та пам’яттю автора. Зберігай читабельність і вільну зону логотипа.\n"
-    return text + sound_brief(project) + animation_style(project) + channel_memory(project)
+    import animation_preferences
+    return text + animation_preferences.instructions(project, planning=True) + sound_brief(project) + animation_style(project) + channel_memory(project)
 
 
 def sound_brief(project: dict, *, scoped=False, include_workflow=True) -> str:

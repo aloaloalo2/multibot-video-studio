@@ -68,3 +68,18 @@ class NativeAnimationTest(unittest.TestCase):
         with self.assertRaisesRegex(store.StudioError,'op: animation'):
             montage_ops.replace(ctx,{'clip':'old','path':'rendered-again.mp4'})
         self.assertEqual(ctx.actions,[])
+
+class SeamProtectionTest(NativeAnimationTest):
+    def test_one_frame_tail_is_closed_before_placement(self):
+        ctx=self.context();ctx.plan['frames'][0].update(start=54.36,end=62.16)
+        native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Content','duration':7.76}]})
+        self.assertEqual(ctx.actions[1]['payload']['duration'],7.8)
+    def test_background_only_frame_is_rejected_without_timeline_mutation(self):
+        ctx=self.context()
+        with self.assertRaisesRegex(store.StudioError,'тільки фон'):
+            native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Too short','duration':5.8}]})
+        self.assertEqual(ctx.actions,[])
+    def test_labels_stay_above_later_chart_shapes(self):
+        ctx=self.context()
+        native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Label'}, {'kind':'animation','title':'Bar'}]})
+        self.assertEqual(ctx.actions[-1]['payload']['text'],'Label')
