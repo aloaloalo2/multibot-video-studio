@@ -11,10 +11,15 @@ import store
 class PeopleStyleTest(unittest.TestCase):
     """A channel chooses how people look in its pictures (user, 5 November 2026)."""
 
-    def rules(self, settings):
+    def rules(self, settings, kind='animated'):
         with mock.patch.object(store, "get_channel_folder", return_value=Path("/nowhere")), \
              mock.patch.object(store, "read_json", return_value=settings):
-            return production.people_rules({"channel_id": "c"})
+            return production.people_rules({"channel_id": "c", 'project_kind':kind})
+
+    def test_universal_projects_exclude_stickmen_even_with_a_legacy_stickman_choice(self):
+        for settings in ({},{'people_style':'stickman'},{'people_style':'real'}):
+            self.assertIs(self.rules(settings,'regular')['rule'],production.PEOPLE_REAL)
+        self.assertIs(self.rules({'people_style':'real_older'},'regular')['rule'],production.PEOPLE_REAL_OLDER)
 
     def test_stick_figures_stay_the_default(self):
         for settings in ({}, {"people_style": "doodle"}):

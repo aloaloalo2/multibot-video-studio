@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from PIL import ImageColor
+from functools import lru_cache
+from PIL import ImageColor, ImageFont
+import font_catalog
+import graphics
 import store
 
 
@@ -71,6 +74,8 @@ def place(ctx, spec: dict) -> None:
         part['_foreground'] = foreground or content == 'text'
         part.update(start=local, duration=length)
         store.validated_keyframes(part.get('keyframes', []), length)
+        if content == 'text':
+            validate_label(part, ctx.project, number, fps)
         prepared.append(part)
     # The generated backing colour alone never counts as a completed animation frame.
     # Validate each output frame before changing any timeline clips.
@@ -109,3 +114,53 @@ def visible_opacity(part, local):
         if local < b:
             return av + (bv-av) * ((local-a)/(b-a))
     return points[-1][1]
+
+
+@lru_cache(maxsize=64)
+def label_font(family, weight, size):
+    return ImageFont.truetype(str(font_catalog.font_path(family, weight)), size)
+
+
+def value_at(part, key, moment, default):
+    points=sorted((float(k['time']),float(k[key])) for k in part.get('keyframes',[]) if key in k)
+    base=float(part.get(key,default))
+    if not points:return base
+    if points[0][0]>0:points.insert(0,(0,base))
+    if moment<=points[0][0]:return points[0][1]
+    for (a,av),(b,bv) in zip(points,points[1:]):
+        if moment<b:return av+(bv-av)*(moment-a)/(b-a)
+    return points[-1][1]
+
+
+def validate_label(part, project, number, fps):
+    """Cheap preflight at output-frame times; no model or video render is needed."""
+    try:
+        style=graphics.validate(part)
+    except (ValueError,TypeError) as error:
+        raise store.StudioError(str(error),400) from None
+    size=store.finite_float(part.get('font_size',54),8,300)
+    width=store.finite_float(part.get('width',1),.01,4)
+    height=store.finite_float(part.get('height',1),.01,4)
+    duration=float(part['duration'])
+    for index in range(max(1,math.ceil(duration*fps))):
+        t=index/fps
+        if visible_opacity(part,t)<.95:continue  # a deliberate fade-in/out may cross the screen edge
+        x=value_at(part,'x',t,.5);y=value_at(part,'y',t,.5);scale=value_at(part,'scale',t,1)
+        if x-width*scale/2 < -.001 or x+width*scale/2 > 1.001 or y-height*scale/2 < -.001 or y+height*scale/2 > 1.001:
+            raise store.StudioError(f'Кадр {number}: текст виходить за екран на {t:.2f} с. Зменште або перемістіть його блок.',400)
+    if part.get('text_words'):return
+    font=label_font(project.get('font_family') or style.get('font_family','Arial'),style.get('font_weight',400),round(size))
+    available=width*float(project.get('width') or 1920)
+    lines=[]
+    for paragraph in str(part.get('text','')).splitlines():
+        current=''
+        for word in paragraph.split():
+            if font.getlength(word)>available:
+                raise store.StudioError(f'Кадр {number}: слово не вміщується в текстовий блок. Збільште ширину або змініть текст.',400)
+            candidate=word if not current else current+' '+word
+            if current and font.getlength(candidate)>available:lines.append(current);current=word
+            else:current=candidate
+        lines.append(current)
+    required=len(lines)*size*style.get('line_height',1.28)
+    if required>height*float(project.get('height') or 1080)+1:
+        raise store.StudioError(f'Кадр {number}: текст не вміщується по висоті. Збільште блок або скоротіть підпис.',400)

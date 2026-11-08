@@ -224,7 +224,7 @@ function renderNarrationGeneration(panel){
 function renderVoiceStart(panel){
   const project=state.project,direct=directMontage();
   const section=document.createElement('section');section.className='voice-start';
-  section.innerHTML=`<div class="voice-start-head"><h1>Додайте озвучку ролика</h1><p>${direct?'Студія розпізнає озвучку й збереже текст із таймінгами. Монтаж уже доступний.':'Студія локально розпізнає мову, режисер розіб’є ролик на кадри, а ви оберете, скільки кадрів створити першими.'}</p></div>
+  section.innerHTML=`
     <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
       <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>

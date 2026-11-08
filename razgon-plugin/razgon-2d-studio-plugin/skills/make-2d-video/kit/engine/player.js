@@ -121,7 +121,10 @@ function state3D(shot, def, info) {
   const st = def.init(three, info); cache3D.set(shot.id, st); return st;
 }
 function drawShot(buf, shot, lt) {
-  const g = buf.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.filter = 'none';
+  const g = buf.getContext('2d');
+  // Clear clip paths, shadows and the save stack, including after a faulty previous scene.
+  if (typeof g.reset === 'function') g.reset(); else buf.width = buf.width;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.filter = 'none';
   g.fillStyle = '#000'; g.fillRect(0, 0, buf.width, buf.height); g.setTransform(E.PX, 0, 0, E.PX, 0, 0);
   const def = getShot(shot.id); const dur = shot.end - shot.start;
   const info = { ...(shot.params || {}), shot, dur, globalT: shot.start + lt, p: clamp(lt / dur), line: shot.line };

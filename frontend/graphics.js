@@ -16,7 +16,7 @@ function applyGraphicStyle(wrapper,clip,frameWidth){
   const blur=Number(clip.blur||0)+Number(effect.blur||0);if(blur)wrapper.style.filter=(wrapper.style.filter==='none'?'':wrapper.style.filter+' ')+`blur(${blur*k}px)`;
   const media=wrapper.querySelector('img,video,canvas') || shape;if(media)media.style.filter=typeof visualEffectFilter==='function'?visualEffectFilter(effect):'none';
   if(text){text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);}
-  if(text && !clip.text_words?.length){text.style.lineHeight=String(clip.line_height || 1.28);text.style.textAlign=clip.text_align || 'center';if(clip.text_align && clip.text_align!=='center'){text.style.display='flex';text.style.justifyContent=clip.text_align==='left'?'flex-start':'flex-end';text.style.alignItems='center';text.style.padding='0';}}
+  if(text && !clip.text_words?.length){text.style.lineHeight=String(clip.line_height || 1.28);text.style.textAlign=clip.text_align || 'center';text.style.display='flex';text.style.justifyContent=clip.text_align==='left'?'flex-start':clip.text_align==='right'?'flex-end':'center';text.style.alignItems='center';text.style.padding='0';}
 }
 
 // The share of its box a picture takes when it keeps its shape (object-fit: contain): engine/render.py contained.

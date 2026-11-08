@@ -108,7 +108,7 @@ class ProductionTest(unittest.TestCase):
     def test_a_photo_channel_gets_its_own_brief_and_is_done_when_its_frames_stand_on_the_timeline(self):
         self.animated = False
         text = production.photo_brief(self.project, REQUEST)
-        for part in ("кадри студії 1–3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "стикмени",
+        for part in ("кадри студії 1–3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "без стикменів",
                      "razgon_bridge.py", "Не запускай експорт"):
             self.assertIn(part, text)
         plan = {"frames": [{"number": n, "start": 2.0 * (n - 1), "end": 2.0 * n} for n in range(1, 4)]}

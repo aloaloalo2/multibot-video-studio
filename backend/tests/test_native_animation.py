@@ -70,6 +70,23 @@ class NativeAnimationTest(unittest.TestCase):
         self.assertEqual(ctx.actions,[])
 
 class SeamProtectionTest(NativeAnimationTest):
+    def test_text_overflow_is_rejected_before_timeline_actions(self):
+        bad=[{'kind':'text','text':'Важливо','width':.4,'height':.1,'x':.9},
+             {'kind':'text','text':'Довгий підпис у вузькому рядку','width':.12,'height':.02,'font_size':42},
+             {'kind':'text','text':'Заголовок','width':.2,'height':.1,'keyframes':[{'time':0,'x':.5},{'time':3,'x':1.}]}]
+        for part in bad:
+            ctx=self.context()
+            with self.subTest(part=part),self.assertRaises(store.StudioError):
+                native_animation.place(ctx,{'frame':3,'clips':[part]})
+            self.assertEqual(ctx.actions,[])
+
+    def test_hidden_offscreen_entrance_is_allowed_when_readable_pose_fits(self):
+        ctx=self.context()
+        native_animation.place(ctx,{'frame':3,'clips':[{'kind':'animation','width':.2,'height':.2},
+            {'kind':'text','text':'Назва','width':.3,'height':.15,
+            'keyframes':[{'time':0,'x':-.2,'opacity':0},{'time':.4,'x':.5,'opacity':1}]}]})
+        self.assertEqual(len(ctx.actions),3)
+
     def test_one_frame_tail_is_closed_before_placement(self):
         ctx=self.context();ctx.plan['frames'][0].update(start=54.36,end=62.16)
         native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Content','duration':7.76}]})
