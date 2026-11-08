@@ -17,6 +17,14 @@ async function openNewEpisodeWizard(){
     try{draw(await api(endpoint,'POST',body));}catch(error){if(root.isConnected)root.innerHTML=`<p class="episode-error">${esc(error.message)}</p><button id="ideas-reload">Спробувати ще раз</button>`;root.querySelector('#ideas-reload')?.addEventListener('click',()=>request(body));}
     finally{sending=false;}
   }
+  function chooseTopic(data,index){
+    const topic=data.ideas[index];
+    input.value=topic.title;input.readOnly=true;
+    $('modal-actions').querySelector('button').hidden=true;
+    root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label>${data.sample_count?`<p class="muted">Рекомендовано за попередніми сценаріями каналу.</p>`:''}<div class="episode-topic-actions"><button class="secondary" id="ideas-back">До тем</button><button class="secondary" id="ideas-create-openings">Створити зачини</button></div>`;
+    root.querySelector('#ideas-back').onclick=()=>{input.value='';draw(data);};
+    root.querySelector('#ideas-create-openings').onclick=()=>request({action:'openings',index,target_words:Number(root.querySelector('#idea-words').value)});
+  }
   async function poll(){if(!root.isConnected||$('modal-backdrop').hidden)return;try{draw(await api(endpoint));}catch(error){if(root.isConnected){root.innerHTML=`<p class="episode-error">${esc(error.message)}</p><button id="ideas-status">Оновити стан</button>`;root.querySelector('#ideas-status').addEventListener('click',poll);}}}
   function draw(data){
     if(!root.isConnected)return;
@@ -45,10 +53,9 @@ async function openNewEpisodeWizard(){
       root.querySelectorAll('[data-opening]').forEach(b=>b.onclick=()=>request({action:'script',index:Number(b.dataset.opening)}));return;
     }
     if(!data.ideas){request({action:'ideas'});return;}
-    root.innerHTML=error+`<div class="episode-ideas-head"><strong><svg class="idea-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-label="DeepSeek"><path d="M3 11c3-5 8-6 12-2l6-4-2 8c-1 6-10 8-14 3l-2-5Z"/><circle cx="12" cy="11" r=".6"/><path d="m15 15 3 4m-9-1-1 3"/></svg> Нові теми</strong><button class="secondary" id="ideas-refresh" title="Запросити інші ідеї" aria-label="Інші ідеї">↻</button></div><label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-options">${data.ideas.map((row,i)=>`<button data-idea="${i}"><span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span><small class="idea-length">≈ ${data.target_words.toLocaleString('uk-UA')} слів</small></button>`).join('')}</div>`;
+    root.innerHTML=error+`<div class="episode-ideas-head"><strong><svg class="idea-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-label="DeepSeek"><path d="M3 11c3-5 8-6 12-2l6-4-2 8c-1 6-10 8-14 3l-2-5Z"/><circle cx="12" cy="11" r=".6"/><path d="m15 15 3 4m-9-1-1 3"/></svg> Нові теми</strong><button class="secondary" id="ideas-refresh" title="Запросити інші ідеї" aria-label="Інші ідеї">↻</button></div><div class="episode-options">${data.ideas.map((row,i)=>`<button data-idea="${i}"><span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>`;
     root.querySelector('#ideas-refresh').onclick=()=>request({action:'ideas',refresh:true});
-    root.querySelector('#idea-words').oninput=e=>root.querySelectorAll('.idea-length').forEach(el=>el.textContent='≈ '+Number(e.target.value).toLocaleString('uk-UA')+' слів');
-    root.querySelectorAll('[data-idea]').forEach(b=>b.onclick=()=>request({action:'openings',index:Number(b.dataset.idea),target_words:Number(root.querySelector('#idea-words').value)}));
+    root.querySelectorAll('[data-idea]').forEach(b=>b.onclick=()=>chooseTopic(data,Number(b.dataset.idea)));
   }
   try{draw(await api(endpoint));}catch(error){if(root.isConnected)root.innerHTML=`<p class="episode-error">${esc(error.message)}</p>`;}
 }

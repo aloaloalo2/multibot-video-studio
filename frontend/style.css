@@ -2167,3 +2167,4 @@ select option{background:#232327;color:#f1f1f2}
 .episode-ideas-open .modal{width:min(760px,calc(100vw - 32px))}
 .episode-options button strong{font-weight:550}
 .episode-wizard .episode-word-count{margin-bottom:14px;font-size:12px;color:#979daa}
+.episode-topic-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px}
