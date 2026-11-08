@@ -608,6 +608,45 @@ class LanguagesTest(unittest.TestCase):
         self.assertEqual(languages.thumbnail_options(self.pid),{'add_flag':True})
         self.assertEqual((languages.work_dir(self.pid,'pl')/'thumbnail-prompt.txt').read_text(),prompts[-1])
 
+    def test_thumbnail_edit_keeps_the_selected_language_version_without_original_cover(self):
+        from PIL import Image
+        import thumbnail_gen
+        import language_thumbnails
+        languages.add(self.pid,'es')
+        work=languages.work_dir(self.pid,'es');work.mkdir(parents=True,exist_ok=True)
+        legacy=work/'thumbnail.png';Image.new('RGB',(64,36),'red').save(legacy)
+        old=legacy.read_bytes();calls=[]
+        class Codex:
+            def __init__(self,command,cwd,**kwargs):
+                self.cwd,self.returncode,self.pid=Path(cwd),0,0
+                calls.append(command)
+            def communicate(self,prompt,timeout=None):
+                calls.append(prompt)
+                attached=Path(calls[0][calls[0].index('-i')+1])
+                self_check=attached.read_bytes()
+                assert self_check==old
+                Image.new('RGB',(64,36),'blue').save(self.cwd/'thumbnail-new.png')
+                return '',''
+        with patch.object(thumbnail_gen,'CODEX',self.voice),patch.object(languages.subprocess,'Popen',Codex), \
+             patch('channel_hero.prepare') as hero:
+            languages.start(self.pid,'thumbnail','es',wishes='Make the phone larger',base='v1.png')
+            result=self.wait('es|thumbnail')
+        self.assertEqual(result['status'],'done',result)
+        hero.assert_not_called()
+        self.assertEqual(calls[0].count('-i'),1)
+        self.assertIn('Edit the attached',calls[1])
+        self.assertIn('Make the phone larger',calls[1])
+        self.assertNotIn('translate every word',calls[1])
+        self.assertEqual(language_thumbnails.version_file(self.pid,'es','v1.png').read_bytes(),old)
+        versions=language_thumbnails.versions(self.pid,'es')
+        self.assertEqual([item['number'] for item in versions],[2,1])
+        self.assertEqual(versions[0]['base'],'v1.png')
+        for value in ('../thumbnail.png','missing.png',123,''):
+            with self.subTest(base=value),self.assertRaises(store.StudioError):
+                languages.start(self.pid,'thumbnail','es',wishes='Change',base=value)
+        with self.assertRaises(store.StudioError):
+            languages.start(self.pid,'thumbnail','es',wishes='',base='v1.png')
+
     def test_thumbnail_flag_choice_is_channel_scoped_and_shared_languages_never_inherit_a_flag(self):
         self.assertEqual(languages.thumbnail_options(self.pid),{'add_flag':False})
         languages.save_thumbnail_options(self.pid,True)

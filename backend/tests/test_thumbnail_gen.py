@@ -108,6 +108,41 @@ class ThumbnailTest(unittest.TestCase):
                     else:
                         self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
 
+    def test_edit_uses_only_selected_image_and_preserves_old_versions(self):
+        work=thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
+        selected=work/'Превью v1.png';Image.new('RGB',(16,9),'red').save(selected)
+        Image.new('RGB',(16,9),'green').save(work/'Превью v2.png')
+        original=selected.read_bytes();calls=[]
+        def draw(command,**kwargs):
+            calls.append((command,kwargs['input']))
+            Image.new('RGB',(16,9),'blue').save(work/'Превью v3.png')
+            return subprocess.CompletedProcess(command,0,'','')
+        with patch.object(subprocess,'run',side_effect=draw),patch.object(thumbnail_gen,'write_prompt') as writer, \
+             patch.object(thumbnail_gen.director,'channel_settings',return_value={'thumbnail_wishes':'DO NOT ADD THIS TO EDITS'}):
+            thumbnail_gen.run(self.project['id'],'T','S','Make the phone larger',base=selected.name)
+        writer.assert_not_called()
+        self.assertEqual(len(calls),1)
+        command,prompt=calls[0]
+        self.assertEqual(command.count('-i'),1)
+        self.assertEqual(command[command.index('-i')+1],str(selected))
+        self.assertIn('Make the phone larger',prompt)
+        self.assertNotIn('DO NOT ADD THIS',prompt)
+        self.assertEqual(selected.read_bytes(),original)
+        self.assertEqual([item['number'] for item in thumbnail_gen.versions(self.project['id'])],[3,2,1])
+        self.assertEqual(thumbnail_gen.state(self.project['id'])['status'],'done')
+
+    def test_edit_current_cover_is_archived_without_requiring_video_frames(self):
+        Image.new('RGB',(16,9),'red').save(self.episode/'Превью.png')
+        with patch.object(thumbnail_gen,'CODEX',Path(sys.executable)),patch.object(thumbnail_gen.threading,'Thread') as thread:
+            job=thumbnail_gen.start(self.project['id'],'T','S','Bigger title',base='current')
+        self.assertEqual(job['base'],'Превью до v1.png')
+        self.assertTrue(thumbnail_gen.version_file(self.project['id'],job['base']).is_file())
+        self.assertEqual(thread.call_args.kwargs['args'][5],job['base'])
+        thumbnail_gen.ACTIVE.clear()
+        for base in ('../Превью.png',123,''):
+            with self.subTest(base=base),self.assertRaises(store.StudioError):
+                thumbnail_gen.start(self.project['id'],'T','S','Change',base=base)
+
     def tools(self, picture=True, answer=None):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""
         self.calls = []

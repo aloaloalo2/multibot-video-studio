@@ -8,13 +8,13 @@ const open=source.slice(source.indexOf('async function openThumbnail('),source.i
 const generation=source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
 test('Codex action sends wishes to trending mode and Claude remains primary on the right',async()=>{
-  let actions;const calls=[];
+  let actions;const calls=[];let heading;
   const c=vm.createContext({api:async()=>({title:'¿Qué pasaría?',script:'Texto español.'}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
-    modal:(title,body,buttons)=>{actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
+    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',dataset:{},classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
     document:{querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
     generateThumbnail:(...args)=>calls.push(args),status(){}});
   vm.runInContext(open,c);await vm.runInContext("openThumbnail({id:'p',name:'Spanish video'})",c);
-  assert.equal(actions.length,3);assert.equal(actions[1].label,'Створити з Codex');assert.equal(actions[2].label,'Створити з Claude');assert.equal(actions[2].primary,true);
+  assert.equal(heading,'New Preview');assert.equal(actions.length,3);assert.equal(actions[1].label,'Створити з Codex');assert.equal(actions[2].label,'Створити з Claude');assert.equal(actions[2].primary,true);
   actions[1].run();assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
 });
 test('trending request preserves source title/script and creates a new image without a base',async()=>{

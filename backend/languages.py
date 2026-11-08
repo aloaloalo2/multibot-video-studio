@@ -2750,7 +2750,8 @@ and reply only with the saved path."""
 def thumbnail(pid: str, code: str, job: dict) -> None:
     import thumbnail_gen
     project = store.load_project(pid)
-    base = cover(project)
+    selected = job.get('base')
+    base = language_thumbnails.version_file(pid, code, selected) if selected else cover(project)
     if not base:
         raise RuntimeError("У випуску ще немає прев'ю")
     if not thumbnail_gen.CODEX.is_file():
@@ -2761,10 +2762,20 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
     name = "thumbnail-new.png"
     (work / name).unlink(missing_ok=True)
     title = ((load_state(pid).get("languages") or {}).get(code) or {}).get("title")
-    prompt=thumbnail_brief(code,title,str(job.get('wishes') or ''),job.get('add_flag') is True,name)
-    import channel_hero
-    hero,hero_rules=channel_hero.prepare(project,work,job.get('use_hero'))
-    prompt+=hero_rules
+    if selected:
+        # Freeze the legacy input too, before publication replaces thumbnail.png.
+        snapshot = work / 'thumbnail-edit-base.png'
+        shutil.copy2(base, snapshot)
+        base = snapshot
+        prompt = thumbnail_gen.editing(str(job.get('wishes') or ''), name)
+        prompt += f"\nKeep existing text in {LANGUAGES[code][1]} unless the author explicitly requests a text change."
+        hero = None
+        progress(pid, job, 20, 'Codex вносить правки у вибране прев’ю')
+    else:
+        prompt=thumbnail_brief(code,title,str(job.get('wishes') or ''),job.get('add_flag') is True,name)
+        import channel_hero
+        hero,hero_rules=channel_hero.prepare(project,work,job.get('use_hero'))
+        prompt+=hero_rules
     (work/'thumbnail-prompt.txt').write_text(prompt,encoding='utf-8')
     command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base)]
     if hero:command.extend(['-i',str(hero)])
@@ -2795,7 +2806,7 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
 
 def publish_thumbnail(pid: str, code: str, source: Path, job: dict, prompt: str) -> dict:
     result=language_thumbnails.publish(pid,code,source,
-        {'job_started':job.get('started_at'),'add_flag':job.get('add_flag') is True,
+        {'job_started':job.get('started_at'),**({'base':job['base']} if job.get('base') else {}),'add_flag':job.get('add_flag') is True,
          'country':THUMBNAIL_FLAGS[code]['code'] if job.get('add_flag') else None},prompt)
     update(pid,lambda data:data.setdefault('languages',{}).setdefault(code,{}).update(
         thumbnail_settings_used={'add_flag':job.get('add_flag') is True,
@@ -3005,7 +3016,13 @@ def cancel(pid: str, slot: str | None = None) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False, use_hero: bool | None = None) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False, use_hero: bool | None = None, base: str | None = None) -> dict:
+    if base is not None:
+        if kind != 'thumbnail' or not isinstance(base, str) or not base:
+            raise store.StudioError('Оберіть прев’ю для правок',400)
+        if not str(wishes or '').strip():
+            raise store.StudioError('Напишіть, що змінити в прев’ю',400)
+        language_thumbnails.version_file(pid,code,base)
     if use_hero is not None and not isinstance(use_hero,bool):raise store.StudioError('Оберіть, чи використовувати головного героя',400)
     if not isinstance(preserve_text,bool):
         raise store.StudioError('Оберіть, чи зберігати перевірені формулювання.',400)
@@ -3052,7 +3069,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
             raise store.StudioError(str(error), 409) from None
         if not source(project)["script"]:
             raise store.StudioError("У випуску ще немає тексту озвучки", 409)
-    if kind == "thumbnail" and not cover(project):
+    if kind == "thumbnail" and not base and not cover(project):
         raise store.StudioError("У випуску ще немає прев'ю: створіть його на вкладці «Прев'ю»", 409)
     if kind=='thumbnail':
         if add_flag is not None and not isinstance(add_flag,bool):raise store.StudioError('Оберіть, чи додавати прапор.',400)
@@ -3076,6 +3093,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
                "slot": f"{code}|{group}", "key": job_key(pid, code, group),
                "what": NAMES[kind], "started_at": time.time(),
                **({'add_flag':flag,'use_hero':use_hero} if kind=='thumbnail' else {}),
+               **({'base':base} if base else {}),
                **({"wishes": str(wishes).strip()[:1500]} if kind == "thumbnail" and str(wishes or "").strip() else {}),
                **({"sentences": int(sentences)} if kind == "sample" and str(sentences or "").isdigit() and int(sentences) in SAMPLE_SENTENCES else {})}
         if kind=='thumbnail' and code in THUMBNAIL_FLAGS and add_flag is not None:
@@ -3194,4 +3212,5 @@ def thumbnail_gallery(pid: str) -> dict:
         for version in language_thumbnails.versions(pid,code):
             items.append({"code":code,"name":LANGUAGES[code][0],"label":LANGUAGES[code][1],
                           "version_name":version['name'],"number":version['number'],"stamp":version['stamp'],"current":version['current']})
-    return {"translated_thumbnails":items,"original_language":data.get("original_language")}
+    return {"translated_thumbnails":items,"original_language":data.get("original_language"),
+            "thumbnail_jobs":[job for job in data.get("jobs",{}).values() if job.get("kind")=="thumbnail"]}

@@ -25,6 +25,19 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_thumbnail_edit_http_forwards_the_selected_base(self):
+        project=store.create_project(store.channel_id(self.channel),'Thumbnail edits')
+        root='/api/projects/'+project['id']
+        with patch.object(app.languages,'start',return_value={'status':'running'}) as start:
+            code,_=self.request(root+'/languages/es/thumbnail','POST',{'base':'v2.png','wishes':'Bigger phone'})
+            self.assertEqual(code,202)
+            self.assertEqual(start.call_args.kwargs['base'],'v2.png')
+            self.assertEqual(start.call_args.args[4],'Bigger phone')
+        with patch.object(app.thumbnail_gen,'start',return_value={'status':'running'}) as start:
+            code,_=self.request(root+'/thumbnail','POST',{'title':'T','base':'Превью v3.png','wishes':'Bigger phone'})
+            self.assertEqual(code,202)
+            self.assertEqual(start.call_args.kwargs.get('base',start.call_args.args[5] if len(start.call_args.args)>5 else None),'Превью v3.png')
+
     def test_create_video_http_is_one_action_with_a_shared_status(self):
         project=store.create_project(store.channel_id(self.channel),'One-step film')
         base='/api/projects/'+project['id']+'/create-video'

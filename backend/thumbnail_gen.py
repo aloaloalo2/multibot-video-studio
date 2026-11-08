@@ -131,7 +131,7 @@ def defaults(pid: str) -> dict:
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES,
-            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"],
+            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"], "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
 
@@ -361,7 +361,7 @@ def editing(notes: str, name: str) -> str:
 {notes.strip()}
 
 Keep everything else as it is: the composition, the characters and their look, the style, the colours, the text that is not
-asked to change. Keep the top right corner empty for the channel logo and the bottom right free for the video length.
+asked to change. Preserve the image dimensions and all existing branding.
 Use the built-in image generation tool and make exactly one image. Save it in the current working directory as "{name}"
 and reply only with the saved path."""
 
@@ -374,7 +374,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         folder = Path(project["episode_path"])
         work = keep_dir(pid)
         work.mkdir(exist_ok=True)
-        number = 1 + max([int(m.group(1)) for p in work.glob("Превью v*.png") if (m := re.match(r"Превью v(\d+)", p.stem))] or [0])
+        number = 1 + max([int(m.group(1)) for p in work.glob("Превью *.png") if (m := VERSION.fullmatch(p.name))] or [0])
         name = f"Превью v{number}.png"
         hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
         channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
@@ -398,7 +398,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 note = ("[DeepSeek] " if writer == "deepseek" else "") + written
         if hero:
             refs = [hero, *refs]
-        if channel_wishes and channel_wishes not in written:
+        if not base and channel_wishes and channel_wishes not in written:
             preferences = "\nChannel thumbnail preferences (apply these; specific wishes for this thumbnail take priority):\n" + channel_wishes + "\n"
             written += preferences
             note += preferences
@@ -451,21 +451,35 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
     writer = writer if writer in {"deepseek", "trending"} else "claude"
     if writer == "trending" and base:
         raise store.StudioError("Трендове прев’ю створюється як нова версія, без бази для редагування", 400)
+    if base is not None and (not isinstance(base, str) or not base):
+        raise store.StudioError("Оберіть прев’ю для правок", 400)
     if base:
-        version_file(pid, base)
+        if base != "current":
+            version_file(pid, base)
         if not str(wishes or "").strip():
             raise store.StudioError("Напишіть, що змінити в прев'ю")
     project = store.load_project(pid)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")
-    if store.picture_count(project) < MIN_FRAMES:
+    if not base and store.picture_count(project) < MIN_FRAMES:
         raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {MIN_FRAMES} кадри ролику: з них береться стиль", 409)
     if not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)
     with LOCK:
         if pid in ACTIVE:
             return state(pid)
+        if base == "current":
+            source = preview(project)
+            if not source:
+                raise store.StudioError("Прев’ю не знайдено", 404)
+            existing = next((item['name'] for item in versions(pid) if item['current']), None)
+            if existing:
+                base = existing
+            else:
+                number = 1 + max((item['number'] for item in versions(pid)), default=0)
+                base = f"Превью до v{number}.png"
+                shutil.copy2(source, keep_dir(pid) / base)
         ACTIVE.add(pid)
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
                 "writer": writer, "use_hero": use_hero, **({"base": base} if base else {})}
