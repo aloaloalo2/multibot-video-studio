@@ -85,6 +85,19 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertEqual(store.load_project(pid)['voice_script']['text'],script.strip())
         self.assertFalse(store.load_project(pid).get('plan_source'))
         self.assertEqual(store.read_json(store.project_dir(pid)/'source-timing.json')['timing']['status'],'awaiting_voice')
+        with self.assertRaises(store.StudioError):
+            self.begin({'action':'openings','index':2,'new_episode':True})
+        finished_id = data['id']
+        next_episode = self.begin({'action':'openings','index':1,'target_words':1400,'new_episode':True})
+        self.assertNotEqual(next_episode['project_id'], pid)
+        self.assertNotEqual(next_episode['id'], finished_id)
+        self.assertEqual(next_episode['used_idea_indexes'], [2])
+        self.assertEqual(store.load_project(pid)['voice_script']['text'], script.strip())
+        self.assertTrue((ideas.path(self.cid).parent/'idea-runs'/finished_id/'finished.json').is_file())
+        with patch.object(ideas,'Thread') as thread:
+            duplicate = ideas.start(self.cid,{'action':'openings','index':1,'new_episode':True})
+        self.assertEqual(duplicate['project_id'], next_episode['project_id'])
+        thread.assert_not_called()
     def test_duplicates_fail_without_automatic_second_paid_call(self):
         ctx={'previous_titles':['Same title']}
         with self.assertRaises(ValueError): ideas.validate_titles({'ideas':[{'title':'Same title'}]*8},ctx)

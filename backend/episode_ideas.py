@@ -135,6 +135,15 @@ def start(cid, body):
         elif action == 'openings':
             index = body.get('index')
             if type(index) is not int or not 0 <= index < len(data.get('ideas', [])): raise store.StudioError('Виберіть тему зі списку')
+            if data.get('completed') and body.get('new_episode') is True:
+                used = sorted(set(data.get('used_idea_indexes', [])) | {data['selected_index']})
+                if index in used: raise store.StudioError('Цю тему вже використано. Виберіть іншу або оновіть теми.')
+                # Keep the finished script and its receipts attached to its original episode.
+                store.atomic_json(path(cid).parent / 'idea-runs' / data['id'] / 'finished.json', data)
+                ctx = context(cid)
+                data = {'id': uuid.uuid4().hex, 'context': ctx, 'ideas': data['ideas'],
+                        'day': data.get('day'), 'attempt_day': data.get('attempt_day'), 'stale': False,
+                        'target_words': ctx['target_words'], 'sample_count': ctx['sample_count'], 'used_idea_indexes': used}
             if data.get('openings') and data.get('selected_index') == index: return data
             reuse = data.get('project_id') and data.get('status') == 'failed' and data.get('selected_index') == index
             if data.get('project_id') and not reuse: raise store.StudioError('Сценарій для вибраної теми вже розпочато. Відкрийте випуск або запросіть нові ідеї.')

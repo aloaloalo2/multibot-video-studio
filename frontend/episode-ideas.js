@@ -23,7 +23,7 @@ async function openNewEpisodeWizard(){
     $('modal-actions').querySelector('button').hidden=true;
     root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">Скасувати</button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#ideas-back').onclick=()=>{input.value='';draw(data);};
-    root.querySelector('#ideas-create-openings').onclick=()=>request({action:'openings',index,target_words:Number(root.querySelector('#idea-words').value)});
+    root.querySelector('#ideas-create-openings').onclick=()=>request({action:'openings',index,target_words:Number(root.querySelector('#idea-words').value),...(data.new_episode?{new_episode:true}:{})});
   }
   async function poll(){if(!root.isConnected||$('modal-backdrop').hidden)return;try{draw(await api(endpoint));}catch(error){if(root.isConnected){root.innerHTML=`<p class="episode-error">${esc(error.message)}</p><button id="ideas-status">Оновити стан</button>`;root.querySelector('#ideas-status').addEventListener('click',poll);}}}
   function draw(data){
@@ -33,14 +33,14 @@ async function openNewEpisodeWizard(){
       projectActivities.set(data.project_id,'створення сценарію');
       closeModal();showProjectList();pollChannelActivity();return;
     }
+    if(data.completed){
+      data={...data,completed:false,selected:null,project_id:null,openings:null,status:'done',stage:'ideas',new_episode:true,
+        used_idea_indexes:[...(data.used_idea_indexes||[]),data.selected_index]};
+      input.value='';
+    }
     input.readOnly=!!data.selected;
     $('modal-actions').querySelector('button').hidden=!!data.project_id;
     if(data.stale){request({action:'ideas',refresh:true});return;}
-    if(data.completed){
-      root.innerHTML=`<p>Сценарій готовий · ${data.actual_words.toLocaleString('uk-UA')} слів</p><button id="ideas-open">Відкрити випуск</button><button id="ideas-again">Нові ідеї</button>`;
-      root.querySelector('#ideas-open').onclick=async()=>{closeModal();await selectChannel(cid);await selectProject(data.project_id,{view:'editor'});};
-      root.querySelector('#ideas-again').onclick=()=>request({action:'ideas',refresh:true});return;
-    }
     if(data.status==='running'){
       const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує п’ять зачинів',script:'Opus пише сценарій'}[data.stage];
       if(data.selected)input.value=data.selected.title;
@@ -58,7 +58,7 @@ async function openNewEpisodeWizard(){
       root.querySelectorAll('[data-opening]').forEach(b=>b.onclick=()=>request({action:'script',index:Number(b.dataset.opening)}));return;
     }
     if(!data.ideas){request({action:'ideas'});return;}
-    root.innerHTML=error+`<div class="episode-ideas-head"><strong><svg class="idea-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-label="DeepSeek"><path d="M3 11c3-5 8-6 12-2l6-4-2 8c-1 6-10 8-14 3l-2-5Z"/><circle cx="12" cy="11" r=".6"/><path d="m15 15 3 4m-9-1-1 3"/></svg> Нові теми</strong><button class="secondary" id="ideas-refresh" title="Запросити інші ідеї" aria-label="Інші ідеї">↻</button></div><div class="episode-options">${data.ideas.map((row,i)=>`<button data-idea="${i}"><span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>`;
+    root.innerHTML=error+`<div class="episode-ideas-head"><strong><svg class="idea-provider-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-label="DeepSeek"><path d="M3 11c3-5 8-6 12-2l6-4-2 8c-1 6-10 8-14 3l-2-5Z"/><circle cx="12" cy="11" r=".6"/><path d="m15 15 3 4m-9-1-1 3"/></svg> Нові теми</strong><button class="secondary" id="ideas-refresh" title="Запросити інші ідеї" aria-label="Інші ідеї">↻</button></div><div class="episode-options">${data.ideas.map((row,i)=>(data.used_idea_indexes||[]).includes(i)?'':`<button data-idea="${i}"><span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>${(data.used_idea_indexes||[]).length>=data.ideas.length?'<p class="muted">Усі ці теми вже використані. Натисніть ↻, щоб отримати нові.</p>':''}`;
     root.querySelector('#ideas-refresh').onclick=()=>request({action:'ideas',refresh:true});
     root.querySelectorAll('[data-idea]').forEach(b=>b.onclick=()=>chooseTopic(data,Number(b.dataset.idea)));
   }
