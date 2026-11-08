@@ -163,6 +163,36 @@ function renderGroupedTimeline(){
   try{return renderGroupedTimelineWithIndex();}finally{groupedRenderIndex=previousIndex;}
 }
 
+function compactSoundRows(entries){
+  const rows=[],families=new Map();
+  for(const entry of entries){
+    const clip=entry.clip,title=clip?.title||'';
+    const family=clip?.kind==='audio'&&entry.layer.clips.every(c=>c.kind==='audio')
+      ? /^(?:Звук ролика · )?(?:музика|музыка|music)(?:\s|$)/iu.test(title)?'music'
+        : /^Звук (?:ролика|переходу) · /u.test(title)?'effects':null : null;
+    if(!family){rows.push(entry);continue;}
+    let row=families.get(family);
+    if(!row){row={title:family==='music'?'Музика':'Звук ролика',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
+    row.soundItems.push(entry);row.z=Math.max(row.z,entry.z);
+  }
+  for(const row of families.values())row.soundItems.sort((a,b)=>Number(a.clip.start)-Number(b.clip.start));
+  return rows;
+}
+
+function appendGroupedMediaClip(lane,{clip,layer}){
+  const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);button.setAttribute('aria-label',clipLabel(clip));Object.assign(button.style,{left:((Number(clip.start)-timelineOrigin())/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);if(layer.muted)button.style.opacity='.45';lane.append(button);
+}
+
+function soundLane(entry){
+  const row=document.createElement('div');row.className='track-row universal-row soundtrack-row';
+  const label=document.createElement('div');label.className='layer-heading group-heading';
+  const title=document.createElement('button');title.type='button';title.className='layer-name';title.textContent=entry.title;title.title=`${entry.soundItems.length} звукових фрагментів`;
+  title.addEventListener('click',event=>selectTimelineIds(entry.soundItems.map(item=>item.clip.id),event.metaKey||event.ctrlKey||event.shiftKey));label.append(title);
+  const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
+  for(const item of entry.soundItems)appendGroupedMediaClip(lane,item);
+  row.append(label,lane);addLayerSoundControl(label,[...new Set(entry.soundItems.map(item=>item.layer))],entry.title);return row;
+}
+
 function renderGroupedTimelineWithIndex(){
   const ruler=$('time-ruler'),tracks=$('timeline-tracks');ruler.replaceChildren();tracks.replaceChildren();ruler.className='time-ruler universal-ruler';
   const label=document.createElement('div');label.className='track-label';ruler.append(label);
@@ -170,19 +200,21 @@ function renderGroupedTimelineWithIndex(){
   renderTimelineRulerMarks(marks,timelineSpan(),timelineWidth());ruler.append(marks);
   const scenes=sceneGroups().filter(g=>g.role!=='overlay').sort((a,b)=>groupBounds(a).start-groupBounds(b).start);
   const index=new Map();layers().forEach((layer,i)=>{for(const c of layer.clips || [])index.set(c.id,i);});
-  const rows=[];
+  let rows=[];
   if(scenes.length||plannedTimelineFrames().length)rows.push({title:'Кадри · '+Math.max(scenes.length,plannedTimelineFrames().length),groups:scenes,ref:'scenes',z:scenes.length?Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1))):-1});
   for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:group.title,groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});
   // the higher the row, the higher its layer in the picture; sound rows go under all of them (universal.js timelineRowOrder)
-  const sound=entry=>!entry.groups&&entry.clip.kind==='audio';
+  rows=compactSoundRows(rows);
+  const sound=entry=>entry.soundItems?(entry.soundFamily==='music'?2:3):!entry.groups&&entry.clip.kind==='audio'?1:0;
   rows.sort((a,b)=>sound(a)-sound(b) || b.z-a.z);
   for(const entry of rows){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
+    if(entry.soundItems){tracks.append(soundLane(entry));continue;}
     const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
-    const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);Object.assign(button.style,{left:(Number(clip.start)/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);lane.append(button);row.append(label,lane);tracks.append(row);
+    appendGroupedMediaClip(lane,entry);row.append(label,lane);tracks.append(row);
   }
 }
 

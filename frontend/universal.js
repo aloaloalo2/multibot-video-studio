@@ -27,9 +27,12 @@ function addLayerEyeControl(heading,target,name){
     (edits.length===1?action(edits[0].type,edits[0].payload,message):action('batch',{actions:edits},message)).catch(()=>{});});
   heading.append(button);heading.closest('.track-row')?.classList.toggle('layer-hidden',hidden);
 }
-function addLayerSoundControl(heading,layer){
-  if(!layer?.clips.some(c=>c.kind==='audio'||c.kind==='video'))return;
-  const button=document.createElement('button');button.type='button';button.className='layer-sound'+(layer.muted?' is-muted':'');button.draggable=false;button.setAttribute('aria-label',(layer.muted?'Увімкнути':'Вимкнути')+' звук доріжки '+layer.name);button.setAttribute('aria-pressed',String(layer.muted===true));button.title=layer.muted?'Доріжку вимкнено':'Звук доріжки ввімкнено';button.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 4 6 8H3v8h3l5 4z"/>'+(layer.muted?'<path d="m16 9 5 6m0-6-5 6"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>')+'</svg>';button.addEventListener('click',event=>{event.stopPropagation();action('set_layer_mute',{layer_id:layer.id,muted:!layer.muted},layer.muted?'Звук доріжки ввімкнено.':'Звук доріжки вимкнено.').catch(()=>{});});heading.append(button);heading.closest('.track-row')?.classList.toggle('sound-muted',layer.muted===true);
+function addLayerSoundControl(heading,target,name){
+  const targets=(Array.isArray(target)?target:[target]).filter(layer=>layer?.clips.some(c=>c.kind==='audio'||c.kind==='video'));
+  if(!targets.length)return;
+  const muted=targets.every(layer=>layer.muted===true),label=name||targets[0].name;
+  const button=document.createElement('button');button.type='button';button.className='layer-sound'+(muted?' is-muted':'');button.draggable=false;button.setAttribute('aria-label',(muted?'Увімкнути':'Вимкнути')+' звук доріжки '+label);button.setAttribute('aria-pressed',String(muted));button.title=muted?'Доріжку вимкнено':'Звук доріжки ввімкнено';button.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 4 6 8H3v8h3l5 4z"/>'+(muted?'<path d="m16 9 5 6m0-6-5 6"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>')+'</svg>';
+  button.addEventListener('click',event=>{event.stopPropagation();const edits=targets.map(layer=>({type:'set_layer_mute',payload:{layer_id:layer.id,muted:!muted}})),message=muted?'Звук доріжки ввімкнено.':'Звук доріжки вимкнено.';(edits.length===1?action(edits[0].type,edits[0].payload,message):action('batch',{actions:edits},message)).catch(()=>{});});heading.append(button);heading.closest('.track-row')?.classList.toggle('sound-muted',muted);
 }
 function layerTime(event,lane){const rect=lane.getBoundingClientRect();return timelineOrigin()+Math.max(0,Math.round(((event.clientX-rect.left)/rect.width)*timelineSpan()*10)/10);}
 
@@ -44,7 +47,11 @@ function renderUniversalTimeline(){
   const label=document.createElement('div');label.className='track-label';ruler.append(label);
   const marks=document.createElement('div');marks.className='time-ruler-marks';marks.style.width=width+'px';
   renderTimelineRulerMarks(marks,total,width);ruler.append(marks);
+  const soundRows=state.expandedGroup?[]:compactSoundRows(layers().filter(layer=>layer.clips?.length===1)
+    .map((layer,z)=>({layer,clip:layer.clips[0],z}))).filter(entry=>entry.soundItems);
+  const compactLayers=new Set(soundRows.flatMap(entry=>entry.soundItems.map(item=>item.layer.id)));
   for(const layer of timelineRowOrder(layers())){
+    if(compactLayers.has(layer.id))continue;
     if(state.expandedGroup && !sceneGroups().find(g=>g.id===state.expandedGroup)?.clip_ids.some(id=>(layer.clips || []).some(c=>c.id===id)))continue;
     const index=layers().findIndex(item=>item.id===layer.id);
     const row=document.createElement('div');row.className='track-row universal-row'+(state.activeLayer===layer.id?' active-layer':'');
@@ -82,6 +89,7 @@ function renderUniversalTimeline(){
     lane.addEventListener('drop',event=>dropOnUniversalLane(event,lane));
     row.append(heading,lane);tracks.append(row);
   }
+  for(const entry of soundRows.sort((a,b)=>(a.soundFamily==='effects')-(b.soundFamily==='effects')))tracks.append(soundLane(entry));
 }
 
 async function dropOnUniversalLane(event,lane){

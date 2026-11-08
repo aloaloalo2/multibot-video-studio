@@ -274,6 +274,10 @@ function fillDirectorLine(box){
 }
 
 // «Створення ролика»: the strip, the count, «Макс» and the start button, built once and refreshed by fillMake.
+function productionStartLabel(request,made=0){
+  return request||made>0?'Продовжити створення ролика':'Почати створення ролика';
+}
+
 function buildMake(make){
   make.innerHTML='<div class="episode-make-head"><h2>Створення ролика</h2><div class="episode-make-readout" aria-live="polite"></div></div>';
   const frames=state.plan?.frames || [];
@@ -293,7 +297,7 @@ function buildMake(make){
   const read=document.createElement('p');read.className='frame-plan-read';
   const actions=document.createElement('div');actions.className='episode-make-actions';
   const hint=document.createElement('p');hint.className='episode-make-hint';
-  const start=document.createElement('button');start.type='button';start.className='secondary episode-make-start';start.textContent='Почати створення ролика';
+  const start=document.createElement('button');start.type='button';start.className='secondary episode-make-start';start.textContent=productionStartLabel(state.project.production_request);
   actions.append(hint,start);
   const feed=document.createElement('div');feed.className='episode-make-feed';
   const report=document.createElement('div');report.className='episode-make-report';
@@ -447,12 +451,12 @@ function fillMake(make){
     productionTimer=setTimeout(()=>pollProduction(id),8000);
   }else if(paused){
     start.disabled=false;
-    start.textContent=`Продовжити кадри ${Math.min(floor+1,request.frames)}–${request.frames}`;
+    start.textContent='Продовжити створення ролика';
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
-    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити кадри».`;feed.append(note);
+    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
   }else{
-    start.textContent=request?.status==='done'&&floor>=frames.length?`Кадри створені · ${made.size} з ${frames.length}`:'Почати створення ролика';
+    start.textContent=completed?`Кадри створені · ${made.size} з ${frames.length}`:productionStartLabel(request,made.size);
     if(completed){
       hint.hidden=true;
       feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Примітка перевірки</strong><span>${esc(request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;

@@ -751,6 +751,10 @@ Channel settings group «Звук ролика» stores `sound.music.enabled`, `
 
 For ordinary projects `/ops` operation `soundtrack` places locally generated music and allowed timed cues as ordinary audio clips, outside scene groups, under the same undo/revision guard. Generation is bounded to a reusable music segment, repeated on the timeline, and existing music or identical cue clips are reused. Disabled choices never start synthesis. The transitions operation uses the separate transition preferences described below, reuses matching cues and removes its own sounds when a join becomes a cut. Frame repairs preserve existing sound.
 
+The compact timeline presents owned soundtrack and transition effect clips on one horizontal «Звук ролика» row. Music segments share one «Музика» row, and narration stays separate. Preserve each clip's real timing, overlap, volume, source and independent selection; this is display grouping, not a remix or a new render. Muting the shared row batches its audio layers in one undoable action and leaves narration alone. This presentation applies to existing and future projects.
+
+Once a project has a production request or any made frames, the idle/paused creation button reads «Продовжити створення ролика». A first launch reads «Почати створення ролика». Original narration without an effective channel voice shows «Зразок голосу» and «Немає голосу каналу», with no misleading default provider/model. Disable its generation button until a reference (or selected HeyGen voice) is configured. Running narration must always retain its stop action. Omit the explanatory cache paragraph; preserve actual caching.
+
 When reattaching accents, captions in the side fields and their cards/underlines share the caption's fixed coordinates. Do not attach a side-field underline to the moving photograph. Rebuild the entrance from those same coordinates so it meets the steady underline without a jump.
 
 
