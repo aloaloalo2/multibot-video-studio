@@ -13,7 +13,7 @@ from backend.tests import test_backend as support
 app, store = support.app, support.store
 import razgon_export  # noqa: E402
 
-RAZGON = razgon_export.BRIDGE.parents[1] / "What If" / "razgon-2d-studio"
+RAZGON = razgon_export.BRIDGE.parents[1] / "razgon-2d-studio"
 FPS = 25
 # Stands in for Razgon's renderer: every rendered frame clip is plain red, and each render logs its start and end time.
 # A file "fail" in the project makes the render of the frame starting at 1.4 s fail.
@@ -59,6 +59,12 @@ def audio_hash(path):
 def ssim(a, b):
     log = subprocess.run(["ffmpeg", "-nostats", "-i", str(a), "-i", str(b), "-lavfi", "ssim", "-f", "null", "-"], capture_output=True, text=True).stderr
     return float(log.rsplit("All:", 1)[1].split()[0])
+
+
+class SlotRoundingTest(unittest.TestCase):
+    def test_slot_matches_preview_at_half_frame_seams(self):
+        self.assertEqual(razgon_export._slot(199.34,207.7,25),(4984,5193))
+        self.assertEqual(razgon_export._slot(207.7-1e-12,213.3,25),(5193,5333))
 
 
 @unittest.skipUnless(shutil.which("node") and shutil.which("ffmpeg") and (RAZGON / "audio" / "mix.py").is_file(), "Razgon 2D Studio, node and ffmpeg required")

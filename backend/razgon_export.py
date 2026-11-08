@@ -12,6 +12,7 @@ its rendered clip.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -33,7 +34,7 @@ class NotTheFilm(Exception):
 
 def _slot(start: float, end: float, fps: int) -> tuple[int, int]:
     # start + duration carries float noise (276.90000000000003 for 276.9), which tips a half-frame edge to the next frame
-    return int(round(round(start, 6) * fps)), int(round(round(end, 6) * fps))
+    return tuple(math.floor(float(t) * fps + .5 + 1e-8) for t in (start, end))
 
 
 def _as_is(clip: dict) -> bool:

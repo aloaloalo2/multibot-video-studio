@@ -92,19 +92,26 @@ const fontOf = (italic, weight, size, font) => `${italic ? 'italic ' : ''}${weig
 // how light a colour looks: sRGB luma, 0 black … 1 white (its alpha is ignored; a colour rgb() cannot read counts as light)
 export function luma(c) { try { const [r, g, b] = rgb(c); return Number.isFinite(r + g + b) ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 : 0.8; } catch { return 0.8; } }
 
-// Text over the picture must read on any background (user, 5 November 2026: «текст, цифри… на фоні чогось, де не видно
-// нічого… зливаються з фоном»). text(g, s, x, y, { contrast: true }), which label(), badges, readouts and callouts use:
-// - a soft shadow under the letters: dark under light text, light under dark text. Two layers, a close one that keeps the
-//   edges of the letters and a wide faint one; no plate, no outline, no halo around the letters (What If's rule);
-// - the tone: the GPU measures how much of the picture under the letters is about as light as the letters or lighter (for
-//   dark text: as dark or darker), and when that is a large part of it, light text turns to a dark tone of its own colour
-//   (dark text to a light one). A share, not the mean brightness: a bright spot on a purple wall keeps the neon colour, a
-//   light sky or a pink wall under pink letters does not.
-//   It cross-fades over a narrow band, so a moving background never makes it blink, and no pixel is read back to the CPU
-//   (render speed).
-// Mid-tone text (a saturated red, a pink) keeps its colour and gets the dark shadow. { contrast: 'shadow' } gives the shadow
-// alone. The tone is OFF by default since 5 November 2026 (it blinked on moving pictures); config.json "textTone": true
-// turns it on for a film that really needs it.
+// Stable palette contrast, chosen from the saved style, never from moving pixels.
+export function textContrast(foreground, background) {
+  const lum = color => rgb(color).slice(0, 3).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+    .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+  const a = lum(foreground), b = lum(background);
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+}
+export function readableTextColor(color, background, minimum = 4.5) {
+  if (textContrast(color, background) >= minimum) return color;
+  const target = textContrast('#000000', background) > textContrast('#ffffff', background) ? '#000000' : '#ffffff';
+  for (let step = 1; step <= 20; step++) {
+    const candidate = mix(color, target, step / 20);
+    if (textContrast(candidate, background) >= minimum) return candidate;
+  }
+  return target;
+}
+
+// Text has clean edges by default. A shadow is explicit artwork, not a side
+// effect of contrast=true. The optional GPU tone switch stays off unless a film
+// explicitly enables textTone; moving backgrounds must not recolor labels.
 const LIGHT_TEXT = 0.45, DARK_TEXT = 0.3;
 // a pixel is too close to the letters when its luma comes within .27 of theirs (wholly within .17), or passes it; the opposite
 // tone fades in while such pixels cover 42 % to 48 % of the box of the letters
@@ -217,10 +224,10 @@ export function text(g, str, x, y, o = {}) {
   // maxWidth: shrink the font until the line fits its container (a notebook page, a card, the frame) — text never overflows
   if (maxWidth > 0) { const w = measure(g, str, size, font, weight) + spacing * Math.max(0, String(str).length - 1); if (w > maxWidth) size *= maxWidth / w; }
   const kind = contrast ? textKind(color) : null;
-  const shadow = o.shadow ? [].concat(o.shadow) : contrast ? legibleShadow(size, kind !== 'dark') : [];
+  const shadow = o.shadow ? [].concat(o.shadow) : [];
   // the tone switch is off unless a film asks for it ("textTone": true): on a moving picture it flipped letters between
   // light and dark (user, 5 November 2026: «блимає то чорний, то білий… забудь про такий метод»); the shadow alone keeps
-  // white text readable
+  // the selected palette readable
   const toned = contrast && contrast !== 'shadow' && kind !== 'mid' && E.cfg?.textTone === true;
   g.save(); g.globalAlpha *= a; g.font = fontOf(italic, weight, size, font); g.textAlign = align; g.textBaseline = base;
   if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`;

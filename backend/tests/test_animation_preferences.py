@@ -18,3 +18,12 @@ class AnimationPreferencesTest(unittest.TestCase):
             self.assertIn('kind=image',production.mixed_assets_step(project))
         with patch.object(pref.store,'get_channel_folder',return_value=Path('/tmp/channel')),patch.object(pref.store,'read_json',return_value={'animation':{'assets':False}}):
             self.assertIn('вимкнені',production.mixed_assets_step(project))
+
+    def test_stable_readable_text_rules_reach_both_asset_modes(self):
+        for enabled in [True,False]:
+            with patch.object(pref.store,'get_channel_folder',return_value=Path('/tmp/channel')),patch.object(pref.store,'read_json',return_value={'animation':{'assets':enabled}}):
+                for planning in [True,False]:
+                    brief=pref.instructions({'channel_id':'test'},planning=planning)
+                    self.assertIn('Заголовки закріплюй',brief)
+                    self.assertIn('разом із цим предметом',brief)
+                    self.assertIn('Тінь або сяйво не додавай',brief)

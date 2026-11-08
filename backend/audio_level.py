@@ -142,6 +142,11 @@ def voice_gains(project: dict, plan: dict | None = None) -> dict:
 def voice_file(project: dict, aid: str, path: Path, wait: bool = False) -> Path:
     """The file a player or the export plays for this asset: the voice's leveled copy when it carries the timed voice
     (made now with wait=True, as the export does; else started in the background), any other file as it is."""
+    # Image/animation requests must not reload the narration and compare audio
+    # fingerprints. A long live montage can request dozens of these per second.
+    if not any(clip.get('kind') == 'audio' and clip.get('asset_id') == aid
+               for track in project.get('tracks', []) for clip in track.get('clips', [])):
+        return path
     return leveled(path, wait=wait) if aid in _voice_paths(project) else path
 
 

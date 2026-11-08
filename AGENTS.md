@@ -771,3 +771,11 @@ The new-episode dialog keeps an empty title field and «Створити вип�
 Choosing a proposed topic first opens a local confirmation step with the exact title and editable recommended word count. Do not call Opus or create a project merely on selecting the card. «Створити зачини · Opus» explicitly starts the five openings; adjacent «Скасувати» returns to the list without a model request. Use the same highlighted Claude icon/button as preview generation. Omit the recommendation explanation. Keep the title field empty on the initial list and show word-count editing only in the selected-topic step.
 
 Topic cards contain plain titles and Ukrainian reading translations, with no list-number prefixes. Strip enumeration markers such as `1. ` or `2) ` while preserving meaningful leading title counts such as `7 Geräusche`. Normalize cached suggestions and duplicate comparisons with the same rule. Export remains an explicit author action after project review.
+
+## Preview loading and readable labels (8 November 2026)
+
+Media file requests reuse a bounded, project-file-versioned read-only snapshot in `media_delivery.py`. Resolve and validate the actual file path on every request. Timeline edits/deletion invalidate it immediately; a new derived channel-logo ID refreshes metadata. Visual files must never enter voice matching, load narration or compute audio fingerprints. Prioritize the current picture above upcoming images.
+
+Use the same half-up output-frame index in the Razgon bridge, mixed export and native montage. At 25 fps the shared 207.7-second seam is frame 5193, never frame 5192. Correct old code-block ends against the actual plan rather than hiding real timeline gaps.
+
+Plain contrast labels have no automatic shadow or halo. Caption text and cards use the same selected palette; legacy dark cards must not remain behind a light style's dark text. Light palette label colors meet a stable 4.5 contrast ratio against its card. This is a palette choice, never a moving-background color switch. Screen-space titles stay at a fixed anchor with no continuous zoom/drift. Object labels may move with their object in one group. `animation_preferences.TEXT_RULES` reaches planning and frame agents for both PNG modes. Preserve explicit authored dim text effects and picture shadows.

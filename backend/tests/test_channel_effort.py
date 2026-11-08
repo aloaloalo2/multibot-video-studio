@@ -1,6 +1,8 @@
 import unittest
+import sys
 from pathlib import Path
 from unittest.mock import patch
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import store
 import production
 import agent_view
@@ -20,7 +22,7 @@ class ChannelEffortTest(unittest.TestCase):
 
     def test_universal_brief_exposes_both_asset_modes(self):
         with patch.object(store,'get_channel_folder',return_value=Path('/tmp')):
-            for enabled,expected in [(True,'PNG-предмети'),(False,'малюй кодом')]:
+            for enabled,expected in [(True,'PNG асети'),(False,'малюй кодом')]:
                 with patch.object(store,'read_json',return_value={'animation':{'assets':enabled}}):
                     self.assertIn(expected,production.mixed_assets_step({'channel_id':'channel'}))
 

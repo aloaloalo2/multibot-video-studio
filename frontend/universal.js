@@ -241,7 +241,7 @@ function renderUniversalPreview(){
       let element;
       const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
       if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
-      else if(mediaKind==='image'){element=document.createElement('img');element.decoding='async';element.alt='';}
+      else if(mediaKind==='image'){element=document.createElement('img');element.decoding='async';element.fetchPriority=shown.has(clip.id)?'high':'low';element.alt='';}
       else if(mediaKind==='video'){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});}
       else if(mediaKind==='text'){element=document.createElement('div');element.className='composition-text';element.textContent=clip.text || clip.title || '';element.style.color=clip.color || '#ffffff';}
       else {element=document.createElement('div');element.className='composition-shape';element.style.background=clip.color || '#f0b429';}
@@ -265,6 +265,7 @@ function renderUniversalPreview(){
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;
       const foreground=clip.kind==='text' && clip.text_role==='full_frame' && incoming && now>=incoming.seam && now<incoming.seam+incoming.duration;
       node.style.zIndex=String(foreground?foregroundZ:order.get(clip.id)*4);node.hidden=!shown.has(clip.id);
+      const image=node.querySelector('img');if(image)image.fetchPriority=node.hidden?'low':'high';
       if(foreground)node.dataset.transitionForeground='true';else delete node.dataset.transitionForeground;
       if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node.querySelector('video');if(video&&!video.paused)video.pause();}
   }

@@ -1436,8 +1436,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_media(path,cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/([0-9a-f]{20})/file", path)
         if match:
-            project = store.load_project(match.group(1))
-            asset = store.resolve_asset(project, match.group(2))
+            import media_delivery
+            project, asset = media_delivery.resolve(*match.groups())
             # the voice plays its copy at the standard level once it is made (audio_level.leveled)
             return self.serve_media(audio_level.voice_file(project, match.group(2), Path(asset["path"])))
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)

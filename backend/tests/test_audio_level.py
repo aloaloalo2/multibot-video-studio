@@ -11,6 +11,16 @@ import audio_level  # noqa: E402
 
 
 class AudioLevelTest(unittest.TestCase):
+    def test_visual_media_never_loads_narration_or_measures_audio(self):
+        project={'tracks':[{'clips':[{'kind':'image','asset_id':'picture'},
+                                    {'kind':'audio','asset_id':'voice'}]}]}
+        with patch.object(audio_level, '_voice_paths', side_effect=AssertionError('visual request read narration')):
+            self.assertEqual(audio_level.voice_file(project,'picture',Path('scene.png')),Path('scene.png'))
+        with patch.object(audio_level,'_voice_paths',return_value={'voice':Path('voice.mp4')}), \
+             patch.object(audio_level,'leveled',return_value=Path('leveled.flac')) as level:
+            self.assertEqual(audio_level.voice_file(project,'voice',Path('voice.mp4')),Path('leveled.flac'))
+            level.assert_called_once_with(Path('voice.mp4'),wait=False)
+
     def test_gain_brings_the_voice_to_the_standard_level_under_the_peak_ceiling(self):
         # a loud HeyGen voice (GORBUNOV-23): its peaks at 0 dBFS decide, −1.5 dB
         self.assertAlmostEqual(audio_level.gain({"lufs": -15.1, "peak": 0.0}), 10 ** (-1.5 / 20), places=3)

@@ -43,10 +43,10 @@ import word_timing
 YELLOW, NAVY, INK, WHITE = "#ffd23a", "#0b2f78", "#101418", "#ffffff"
 ENTRANCES = ["up", "pop", "blur_up", "fade"]
 STYLES = {   # text colour, card colour (None: no card), shadow of the text
-    "card": (WHITE, NAVY, {"color": "#000000", "opacity": .25, "blur": 6, "x": 0, "y": 3}),
-    "tag": (NAVY, WHITE, {"color": "#000000", "opacity": .25, "blur": 6, "x": 0, "y": 3}),
-    "yellow": (YELLOW, None, {"color": "#000000", "opacity": .75, "blur": 14, "x": 0, "y": 3}),
-    "white": (WHITE, None, {"color": "#000000", "opacity": .75, "blur": 14, "x": 0, "y": 3}),
+    "card": (WHITE, NAVY, None),
+    "tag": (NAVY, WHITE, None),
+    "yellow": (YELLOW, None, None),
+    "white": (WHITE, None, None),
 }
 # The channel rule (AGENTS.md, 28 October 2026): about 70% of the seams between frames get a designed transition, varied
 # but calm; a full-frame text frame starts with a cut, its first word must show at once.
@@ -800,7 +800,7 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
             stub["text_words"][0]["start"] = min(stub["text_words"][0]["start"], .12)   # the frame opens on its first word
         payload.update(width=box / ctx.W, height=760 / ctx.H, x=.5, y=.5, font_size=stub["font_size"], font_family=family, font_weight=700,
                        text_words=stub["text_words"], word_entrance={"type": look["entrance"], "duration": .26, "distance": 16},
-                       color=look["color"], shadow={"color": "#000000" if look["color"] != "#0e1a33" else "#ffffff", "opacity": .45, "blur": 10, "x": 0, "y": 3})
+                       color=look["color"], shadow=None)
     background = _text_background(ctx, number)
     if background is None:
         return

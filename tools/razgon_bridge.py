@@ -27,6 +27,7 @@ import functools
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -143,7 +144,7 @@ def write_json(path: Path, value) -> None:
 
 
 def frame_index(seconds: float, fps: int) -> int:
-    return int(round(seconds * fps))
+    return math.floor(seconds * fps + .5 + 1e-8)
 
 
 def sha256(path: Path) -> str:
@@ -792,7 +793,7 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     drawn = drawn_frames(link)
     want = {FRAME_TITLE.format(f["number"]): (frame_index(f["start"], fps), frame_index(f["end"], fps)) for f in drawn}
     stale = [clip for _, clip in all_clips(project) if re.fullmatch(r"Razgon · кадр \d{3}", clip.get("title", ""))
-             and (clip["title"] not in want or (round(clip["start"] * fps), round((clip["start"] + clip["duration"]) * fps)) != want[clip["title"]]
+             and (clip["title"] not in want or (frame_index(clip["start"], fps), frame_index(clip["start"] + clip["duration"], fps)) != want[clip["title"]]
                   or (int(clip["title"][-3:]) in reset and clip.get("kind") != "animation"))]
     if stale:
         project = studio.batch(project, [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in stale])

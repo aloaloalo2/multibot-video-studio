@@ -38,6 +38,11 @@ class FakeStudio:
 
 
 class FrameSlotsTest(unittest.TestCase):
+    def test_half_frame_boundaries_match_native_montage(self):
+        self.assertEqual(razgon_bridge.frame_index(207.7,25),5193)
+        self.assertEqual(razgon_bridge.frame_index(207.7-1e-12,25),5193)
+        self.assertEqual(razgon_bridge.frame_index(199.34,25),4984)
+
     def test_reused_scene_configuration_takes_current_channel_style_and_all_fonts(self):
         old={'style':'neon','styleDef':{'old':True},'fonts':{'title':'Fredoka','ui':'Nunito'},'duration':10,'music':{'gainDb':-17}}
         current={'style':'care','title_font':'Noto Serif','assets':False}

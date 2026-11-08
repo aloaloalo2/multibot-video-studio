@@ -1,5 +1,5 @@
 // engine/ui2d.js — on-screen graphics: titles, data cards, counters, callouts, blueprint diagrams, end screen, captions.
-import { E, S, V, clamp, lerp, prog, ease, alpha, shade, mix, seg, circle, ring, rr, poly, text, measure, glow, linGrad, FONTS } from './core.js';
+import { E, S, V, clamp, lerp, prog, ease, alpha, shade, mix, seg, circle, ring, rr, poly, text, measure, glow, linGrad, FONTS, luma, readableTextColor } from './core.js';
 import { drawFigure, POSES } from './rig2d.js';
 
 const fadeIO = (t, dur, inT = 0.35, outT = 0.35) => clamp(Math.min(t / inT, (dur - t) / outT));
@@ -8,8 +8,8 @@ const fadeIO = (t, dur, inT = 0.35, outT = 0.35) => clamp(Math.min(t / inT, (dur
 export function titleCard(g, t, o = {}) {
   const { lines = ['WHAT IF', 'TITLE GOES HERE?'], sub = null, dur = 4, y = E.H / 2 } = o; const ui = S().ui;
   const a = fadeIO(t, dur, 0.5, 0.5); if (a <= 0) return;
-  const s = 1 + 0.025 * t, big = V(96, 92), small = V(54, 52);
-  g.save(); g.globalAlpha *= a; g.translate(E.W / 2, y); g.scale(s, s);
+  const big = V(96, 92), small = V(54, 52);
+  g.save(); g.globalAlpha *= a; g.translate(E.W / 2, y);
   const fit = (str, size) => Math.min(size, (E.W * 0.86) / Math.max(1, measure(g, str, size) / size));
   const sizes = lines.map((ln, i) => fit(ln, i === lines.length - 1 ? big : small));
   const gaps = sizes.slice(1).map((s2, i) => (sizes[i] + s2) * 0.62), totalH = gaps.reduce((a, b) => a + b, 0);
@@ -18,15 +18,17 @@ export function titleCard(g, t, o = {}) {
   if (sub) { g.fillStyle = alpha(ui.cream, 0.55); g.fillRect(-E.W * 0.22, yy - big * 0.32, E.W * 0.44, 3); text(g, sub, 0, yy + big * 0.32, { size: small * 1.05, color: ui.accent, glow: 24, glowColor: 'rgba(255,80,60,.7)', spacing: 3, contrast: true }); }
   g.restore();
 }
-// A line of text in the picture as plain text (user, 30 October 2026: no plate, no solid or dark backing at all, the text
-// appears as text). It reads on any background (user, 5 November 2026): a soft shadow under the letters, and on a picture
-// as light as the letters it turns to a dark tone of its own colour (core.js text, { contrast: true }). It rises into
-// place as it fades in, so it appears rather than switches on.
+// Labels fade at their own fixed anchor. An object's parent transform can move
+// its attached label, while screen-space headings remain still. Light palettes
+// use stable readable colors without a decorative halo.
 export function label(g, str, x, y, a = 1, o = {}) {
-  if (a <= 0) return; const size = o.size ?? V(44, 38), color = o.color || S().ui.gold, k = clamp(a);
+  if (a <= 0) return; const size = o.size ?? V(44, 38), k = clamp(a);
+  const background = o.background || S().ui.card;
+  const lightPalette = background && luma(background) > .65 && o.contrast !== false;
+  const color = lightPalette ? readableTextColor(o.color || S().ui.gold, background) : o.color || S().ui.gold;
   g.save(); g.globalAlpha *= k;
-  text(g, str, x, y + (1 - ease.out(k)) * size * 0.35, { size, color, font: o.font || FONTS.ui, weight: 900, align: o.align || 'center',
-    spacing: o.spacing ?? 1, contrast: o.contrast ?? true, maxWidth: o.maxW ?? E.W * 0.86 });
+  text(g, str, x, y, { size, color, font: o.font || FONTS.ui, weight: 900, align: o.align || 'center',
+    spacing: o.spacing ?? 1, contrast: o.contrast ?? true, ...(lightPalette ? { shadow: [] } : {}), maxWidth: o.maxW ?? E.W * 0.86 });
   g.restore();
 }
 // Glowing single question / chapter line ("IS ANY OF THIS REAL?")
