@@ -290,7 +290,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   if (state.exportWatch) {clearInterval(state.exportWatch);state.exportWatch=null;}
   stopPlayback();
   const projectPath=`/api/projects/${encodeURIComponent(id)}`;
-  const [data,plan,exportState]=await Promise.all([api(projectPath),api(`${projectPath}/plan`),api(`${projectPath}/export/active`)]);
+  const [data,plan,exportState,draft]=await Promise.all([api(projectPath),api(`${projectPath}/plan`),api(`${projectPath}/export/active`),api(`${projectPath}/episode-draft`)]);
   if(navigation!==state.navigation)return false;
   if(data.project?.channel_id!==state.channel?.id)throw new Error('Випуск належить іншому каналу.');
   state.project=data.project;
@@ -339,6 +339,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
       renderPreview();renderTimeline();
     }catch(error){console.warn('Не вдалося оновити стан проєкту',error);}
   },10000);
+  if(episodeDraftPending(draft)&&!(state.project.voice_script||{}).text)await openNewEpisodeWizard({projectId:id,draft});
   return true;
 }
 

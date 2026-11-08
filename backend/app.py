@@ -1137,7 +1137,12 @@ class Handler(BaseHTTPRequestHandler):
         ideas_match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/episode-ideas", path)
         if ideas_match:
             import episode_ideas
-            return self.json_response(episode_ideas.public(episode_ideas.read(ideas_match.group(1))))
+            data = episode_ideas.catalog(ideas_match.group(1)) if query.get('view') == ['topics'] else episode_ideas.read(ideas_match.group(1))
+            return self.json_response(episode_ideas.public(data))
+        draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
+        if draft_match:
+            import episode_ideas
+            return self.json_response(episode_ideas.public(episode_ideas.read_project(draft_match.group(1))))
         if path == "/api/sound-effects":
             import sound_settings
             return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog()})
@@ -1723,6 +1728,10 @@ class Handler(BaseHTTPRequestHandler):
         if ideas_match and method == "POST":
             import episode_ideas
             return self.json_response(episode_ideas.public(episode_ideas.start(ideas_match.group(1), body)), 202)
+        draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
+        if draft_match and method == "POST":
+            import episode_ideas
+            return self.json_response(episode_ideas.public(episode_ideas.start_project(draft_match.group(1), body)), 202)
         if method == "POST" and path == "/api/projects":
             project = store.create_project(body["channel_id"], body["name"], body.get("episode_path"))
             return self.json_response({"project": project}, 201)

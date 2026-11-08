@@ -31,6 +31,7 @@ class EpisodeIdeasTest(unittest.TestCase):
     def setUp(self):
         ideas.ACTIVE.clear()
         ideas.path(self.cid).unlink(missing_ok=True)
+        ideas.topics_path(self.cid).unlink(missing_ok=True)
     request = fixtures.BackendTest.request
     def test_saved_suggestions_are_cleaned_without_resetting_work(self):
         saved = {'status':'done', 'stage':'ideas', 'id':'saved-draft', 'target_words':1200,
@@ -123,8 +124,10 @@ class EpisodeIdeasTest(unittest.TestCase):
         hooks=[{'text':'A meaningful opening with enough words. '*5,'uk':''}]*5
         with patch.object(ideas,'opus',return_value={'openings':hooks}): self.finish(data)
         store.save_project_source(store.load_project(pid),'Author text already saved.')
-        data=self.begin({'action':'script','index':0})
-        with patch.object(ideas,'opus',return_value={'script':hooks[0]['text']+' text'*200}): self.finish(data)
+        with patch.object(ideas,'Thread') as thread:
+            with self.assertRaises(store.StudioError):
+                ideas.start(self.cid, {'action':'script','index':0})
+        thread.assert_not_called()
         self.assertEqual(store.load_project(pid)['voice_script']['text'],'Author text already saved.')
 
 if __name__=='__main__': unittest.main()

@@ -42,6 +42,126 @@ def read(cid):
         return data
 
 
+def topics_path(cid):
+    return path(cid).with_name('episode-topics.json')
+
+
+def remember_topics(cid, data):
+    # The channel catalog survives opening, retrying or cancelling an older project.
+    if not data.get('ideas'): return
+    saved = {k: data[k] for k in ('ideas', 'day', 'attempt_day', 'target_words', 'sample_count', 'context', 'used_idea_indexes') if k in data}
+    saved['id'] = data.get('ideas_id', data['id'])
+    saved['topic_projects'] = {}
+    if data.get('project_id') and not data.get('cancelled'):
+        saved['topic_projects'][str(data['selected_index'])] = data['project_id']
+    store.atomic_json(topics_path(cid), saved)
+
+
+def save_draft(cid, data):
+    """Keep hooks with their episode before another channel request replaces the catalog."""
+    if not topics_path(cid).is_file(): remember_topics(cid, data)
+    pid = data.get('project_id')
+    if pid:
+        try:
+            project = store.load_project(pid)
+            if project['channel_id'] != cid:
+                raise store.StudioError('Випуск належить іншому каналу', 403)
+            store.atomic_json(store.project_dir(pid) / 'episode-draft.json', data)
+        except store.StudioError as error:
+            if error.status != 404: raise
+    store.atomic_json(path(cid), data)
+
+
+def read_project(pid):
+    with LOCK:
+        project = store.load_project(pid)
+        cid = project['channel_id']
+        saved = store.read_json(store.project_dir(pid) / 'episode-draft.json', {}) or {}
+        if not saved:
+            legacy = read(cid)
+            if legacy.get('project_id') == pid:
+                saved = legacy
+        if saved.get('project_id') != pid:
+            return {}
+        if saved.get('status') == 'running' and (cid not in ACTIVE or read(cid).get('id') != saved.get('id')):
+            saved.update(status='failed', error='Роботу перервано. Збережені зачини доступні; повторний запит запускається лише вручну.')
+        return saved
+
+
+def catalog(cid, data=None):
+    """New episode always shows topics, without resuming another episode's hooks."""
+    with LOCK:
+        current = read(cid) if data is None else data
+        if not topics_path(cid).is_file(): remember_topics(cid, current)
+        data = store.read_json(topics_path(cid), {}) or current
+        result = {k: data[k] for k in ('id', 'ideas', 'day', 'attempt_day', 'target_words', 'sample_count', 'context', 'used_idea_indexes') if k in data}
+        used = set(result.get('used_idea_indexes', []))
+        for index, pid in data.get('topic_projects', {}).items():
+            try:
+                store.load_project(pid)
+                if not (store.read_json(store.project_dir(pid) / 'episode-draft.json', {}) or {}).get('cancelled'):
+                    used.add(int(index))
+            except store.StudioError as error:
+                if error.status != 404: raise
+        result.update(used_idea_indexes=sorted(used), stage='ideas', status='done', new_episode=True,
+                      stale=data.get('day') != today() and data.get('attempt_day') != today())
+        if current.get('stage') == 'ideas':
+            result.update(status=current.get('status', 'done'), error=current.get('error'))
+        return result
+
+
+def launch(cid, data, action, request_id=None):
+    data.update(status='running', stage=action, error=None, started_at=time.time(), cancelled=False, request_id=request_id)
+    save_draft(cid, data)
+    if action == 'ideas':
+        topics = store.read_json(topics_path(cid), {}) or {}
+        topics['attempt_day'] = data['attempt_day']
+        store.atomic_json(topics_path(cid), topics)
+    if action == 'openings':
+        topics = store.read_json(topics_path(cid), {}) or {}
+        if topics.get('id') == data.get('ideas_id', data['id']):
+            topics.setdefault('topic_projects', {})[str(data['selected_index'])] = data['project_id']
+            store.atomic_json(topics_path(cid), topics)
+    ACTIVE.add(cid)
+    Thread(target=work, args=(cid, data), daemon=True).start()
+    return public(data)
+
+
+def start_project(pid, body):
+    with LOCK:
+        project = store.load_project(pid)
+        cid, action = project['channel_id'], body.get('action')
+        data = read_project(pid)
+        if not data: raise store.StudioError('У цьому випуску немає збережених зачинів', 404)
+        if body.get('request_id') and data.get('request_id') == body['request_id']: return public(data)
+        if cid in ACTIVE:
+            current = read(cid)
+            if current.get('id') == data.get('id') and current.get('stage') == action and not body.get('refresh'):
+                return public(current)
+            raise store.StudioError('Opus ще працює в цьому каналі. Дочекайтеся завершення запиту.', 409)
+        if action == 'cancel':
+            data.update(status='cancelled', cancelled=True)
+            store.atomic_json(store.project_dir(pid) / 'episode-draft.json', data)
+            if read(cid).get('id') == data.get('id'): store.atomic_json(path(cid), data)
+            return public(data)
+        if action not in {'openings', 'script'}: raise store.StudioError('Невідомий крок створення сценарію')
+        if data.get('completed') or (project.get('voice_script') or {}).get('text'):
+            raise store.StudioError('Сценарій уже збережено. Відкрийте випуск для його редагування.', 409)
+        if action == 'openings':
+            if data.get('openings') and not body.get('refresh') and data.get('status') != 'failed': return public(data)
+            if body.get('refresh'):
+                store.atomic_json(store.project_dir(pid) / 'draft-history' / (uuid.uuid4().hex + '.json'), data)
+                data['previous_openings'] = data.pop('openings', [])
+        else:
+            index = body.get('index')
+            if type(index) is not int or not 0 <= index < len(data.get('openings', [])): raise store.StudioError('Виберіть зачин')
+            data['opening'] = data['openings'][index]['text']
+        current = read(cid)
+        if current.get('id') != data.get('id'):
+            save_draft(cid, current)
+        return launch(cid, data, action, body.get('request_id'))
+
+
 def words(text):
     return len(re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, re.UNICODE))
 
@@ -124,44 +244,48 @@ def validate_titles(result, ctx):
 
 def start(cid, body):
     action = body.get('action', 'ideas')
+    if body.get('project_id'):
+        if store.load_project(body['project_id'])['channel_id'] != cid: raise store.StudioError('Випуск належить іншому каналу', 403)
+        return start_project(body['project_id'], body)
     if action not in {'ideas', 'openings', 'script'}: raise store.StudioError('Невідомий крок створення сценарію')
     with LOCK:
         data = read(cid)
-        if cid in ACTIVE: return data
-        if action == 'ideas' and data.get('ideas') and not body.get('refresh'): return data
+        if body.get('request_id') and data.get('request_id') == body['request_id']: return public(data)
+        if cid in ACTIVE:
+            if data.get('stage') == action and (action == 'ideas' or data.get('selected_index') == body.get('index')):
+                return public(data)
+            raise store.StudioError('Opus ще працює в цьому каналі. Дочекайтеся завершення запиту.', 409)
+        if action == 'ideas' and data.get('ideas') and not body.get('refresh'): return public(catalog(cid, data))
         if action == 'ideas':
+            save_draft(cid, data)
             ctx = context(cid)
             data = {'id': uuid.uuid4().hex, 'context': ctx, 'target_words': ctx['target_words'], 'sample_count': ctx['sample_count'], 'day': today(), 'attempt_day': today(), 'stale': False}
         elif action == 'openings':
             index = body.get('index')
-            if type(index) is not int or not 0 <= index < len(data.get('ideas', [])): raise store.StudioError('Виберіть тему зі списку')
-            if data.get('completed') and body.get('new_episode') is True:
-                used = sorted(set(data.get('used_idea_indexes', [])) | {data['selected_index']})
-                if index in used: raise store.StudioError('Цю тему вже використано. Виберіть іншу або оновіть теми.')
-                # Keep the finished script and its receipts attached to its original episode.
-                store.atomic_json(path(cid).parent / 'idea-runs' / data['id'] / 'finished.json', data)
+            if body.get('new_episode') is True:
+                topics = catalog(cid, data)
+                if type(index) is not int or not 0 <= index < len(topics.get('ideas', [])): raise store.StudioError('Виберіть тему зі списку')
+                if index in topics['used_idea_indexes']: raise store.StudioError('Цю тему вже використано. Виберіть іншу або оновіть теми.')
+                if data.get('project_id'):
+                    save_draft(cid, data)
+                    store.atomic_json(path(cid).parent / 'idea-runs' / data['id'] / 'finished.json', data)
                 ctx = context(cid)
-                data = {'id': uuid.uuid4().hex, 'context': ctx, 'ideas': data['ideas'],
-                        'day': data.get('day'), 'attempt_day': data.get('attempt_day'), 'stale': False,
-                        'target_words': ctx['target_words'], 'sample_count': ctx['sample_count'], 'used_idea_indexes': used}
-            if data.get('openings') and data.get('selected_index') == index: return data
+                data = {**topics, 'id': uuid.uuid4().hex, 'ideas_id': topics['id'], 'context': ctx,
+                        'target_words': ctx['target_words'], 'sample_count': ctx['sample_count']}
+            if type(index) is not int or not 0 <= index < len(data.get('ideas', [])): raise store.StudioError('Виберіть тему зі списку')
+            if data.get('openings') and data.get('selected_index') == index: return public(data)
             reuse = data.get('project_id') and data.get('status') == 'failed' and data.get('selected_index') == index
-            if data.get('project_id') and not reuse: raise store.StudioError('Сценарій для вибраної теми вже розпочато. Відкрийте випуск або запросіть нові ідеї.')
+            if data.get('project_id') and not reuse: raise store.StudioError('Відкрийте випуск із його картки або виберіть нову тему.')
             count = body.get('target_words', data['target_words'])
             if type(count) is not int or not 200 <= count <= 15000: raise store.StudioError('Вкажіть обсяг від 200 до 15 000 слів')
             idea = data['ideas'][index]
             project = store.load_project(data['project_id']) if reuse else store.create_project(cid, idea['title'])
             data.update(selected_index=index, selected=idea, target_words=count, project_id=project['id'])
         else:
-            index = body.get('index')
-            if type(index) is not int or not 0 <= index < len(data.get('openings', [])): raise store.StudioError('Виберіть зачин')
-            if data.get('completed'): return data
-            data['opening'] = data['openings'][index]['text']
-        data.update(status='running', stage=action, error=None, started_at=time.time())
-        store.atomic_json(path(cid), data)
-        ACTIVE.add(cid)
-        Thread(target=work, args=(cid, data), daemon=True).start()
-        return public(data)
+            if not data.get('project_id'): raise store.StudioError('Виберіть випуск із зачином')
+            if data.get('completed'): return public(data)
+            return start_project(data['project_id'], body)
+        return launch(cid, data, action, body.get('request_id'))
 
 
 def public(data):
@@ -185,6 +309,8 @@ def work(cid, data):
         else:
             brief += '\nSELECTED TITLE AND FULL SCRIPT TARGET: ' + json.dumps({'title': data['selected']['title'], 'target_words': data['target_words']}, ensure_ascii=False)
             if stage == 'openings':
+                if data.get('previous_openings'):
+                    brief += '\nWrite new hooks with different angles from these previous variants: ' + json.dumps(data['previous_openings'], ensure_ascii=False)
                 result = opus(brief + '\nWrite exactly 5 meaningfully different opening hooks for this specific topic, 60-110 words each. '
                     'Do not write the full script yet. Add uk translation for hooks in languages other than Ukrainian/Russian. '
                     'Return JSON only {"openings":[{"text":"...","uk":"..."}]}.', root, identity, cid)
@@ -215,7 +341,8 @@ def work(cid, data):
         data.update(status='failed', error=str(error)[:400])
     finally:
         with LOCK:
-            store.atomic_json(path(cid), data)
+            save_draft(cid, data)
+            if data['status'] == 'done' and data['stage'] == 'ideas': remember_topics(cid, data)
             if data['status'] == 'done' and data.get('completed') and data['stage'] == 'script':
                 completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
             ACTIVE.discard(cid)
@@ -228,8 +355,8 @@ def daily_once():
         cid=channel['id']
         with LOCK:
             data=read(cid)
-            if cid in ACTIVE or data.get('attempt_day') == today(): continue
-            if data.get('project_id') and not data.get('completed') and data.get('stage') != 'ideas': continue
+            topics = store.read_json(topics_path(cid), {}) or {}
+            if cid in ACTIVE or today() in {data.get('attempt_day'), topics.get('attempt_day')}: continue
             start(cid, {'action':'ideas','refresh':True})
 
 
