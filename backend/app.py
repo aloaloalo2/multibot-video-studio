@@ -819,12 +819,13 @@ def project_jobs(pid: str) -> dict:
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
     import episode_ideas
-    for cid in episode_ideas.ACTIVE.copy():
-        data = episode_ideas.read(cid)
-        result['busy'].append('створення сценарію: ' + cid)
+    for data in episode_ideas.active_work():
+        cid = data['channel_id']
+        kind = 'створення зачинів' if data['stage'] == 'openings' else 'створення сценарію'
+        result['busy'].append(kind + ': ' + (data.get('project_id') or cid))
         result['active_channels'] = sorted(set(result['active_channels']) | {cid})
         if data.get('project_id'):
-            result['activities'].append({'project_id': data['project_id'], 'channel_id': cid, 'kind': 'створення сценарію', 'status': 'running'})
+            result['activities'].append({'project_id': data['project_id'], 'channel_id': cid, 'kind': kind, 'status': 'running'})
     return result
 
 

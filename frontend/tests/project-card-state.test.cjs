@@ -23,6 +23,7 @@ test('recognition and director status is replaced once and cleared when work end
   activities.set('p','режисура');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/Режисер складає план/);
   activities.set('p',{kind:'озвучення сценарію',progress:42});render();assert.match(children[0].innerHTML,/Озвучуємо сценарій · 42%/);
   activities.set('p','створення сценарію');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/spinner/);assert.match(children[0].innerHTML,/Opus пише сценарій/);
+  activities.set('p','створення зачинів');render();assert.match(children[0].innerHTML,/Opus готує зачини/);
   activities.clear();render();assert.equal(children.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
   classes.add('exporting');render();assert.equal(attributes['aria-busy'],'true');
 });

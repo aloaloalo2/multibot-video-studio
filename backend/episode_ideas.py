@@ -18,7 +18,17 @@ import project_costs
 import completion_notices
 
 LOCK = threading.RLock()
-ACTIVE = set()
+ACTIVE = {}  # Project IDs for Opus work; channel IDs only for the topic request.
+
+def is_running(cid, data):
+    active = ACTIVE.get(data.get('project_id') or cid)
+    return bool(active and active.get('id') == data.get('id'))
+
+
+def active_work():
+    with LOCK:
+        return [public(data.copy()) for data in ACTIVE.values()]
+
 
 def today():
     return datetime.now(ZoneInfo('Europe/Kyiv')).date().isoformat()
@@ -36,7 +46,7 @@ def read(cid):
             for field in ('title', 'uk'):
                 if isinstance(item.get(field), str):
                     item[field] = clean_title(item[field])
-        if data.get('status') == 'running' and cid not in ACTIVE:
+        if data.get('status') == 'running' and not is_running(cid, data):
             data.update(status='failed', error='Роботу перервано перезапуском. Збережені результати доступні; повторний запит запускається лише вручну.')
         data['stale'] = data.get('day') != today() and (data.get('completed') or data.get('stage') in {None, 'ideas'})
         return data
@@ -51,13 +61,13 @@ def remember_topics(cid, data):
     if not data.get('ideas'): return
     saved = {k: data[k] for k in ('ideas', 'day', 'attempt_day', 'target_words', 'sample_count', 'context', 'used_idea_indexes') if k in data}
     saved['id'] = data.get('ideas_id', data['id'])
-    saved['topic_projects'] = {}
+    saved.update(status='done', error=None, topic_projects={})
     if data.get('project_id') and not data.get('cancelled'):
         saved['topic_projects'][str(data['selected_index'])] = data['project_id']
     store.atomic_json(topics_path(cid), saved)
 
 
-def save_draft(cid, data):
+def save_draft(cid, data, *, make_current=True):
     """Keep hooks with their episode before another channel request replaces the catalog."""
     if not topics_path(cid).is_file(): remember_topics(cid, data)
     pid = data.get('project_id')
@@ -69,7 +79,8 @@ def save_draft(cid, data):
             store.atomic_json(store.project_dir(pid) / 'episode-draft.json', data)
         except store.StudioError as error:
             if error.status != 404: raise
-    store.atomic_json(path(cid), data)
+    if make_current or (store.read_json(path(cid), {}) or {}).get('id') == data.get('id'):
+        store.atomic_json(path(cid), data)
 
 
 def read_project(pid):
@@ -83,7 +94,7 @@ def read_project(pid):
                 saved = legacy
         if saved.get('project_id') != pid:
             return {}
-        if saved.get('status') == 'running' and (cid not in ACTIVE or read(cid).get('id') != saved.get('id')):
+        if saved.get('status') == 'running' and not is_running(cid, saved):
             saved.update(status='failed', error='Роботу перервано. Збережені зачини доступні; повторний запит запускається лише вручну.')
         return saved
 
@@ -105,24 +116,30 @@ def catalog(cid, data=None):
                 if error.status != 404: raise
         result.update(used_idea_indexes=sorted(used), stage='ideas', status='done', new_episode=True,
                       stale=data.get('day') != today() and data.get('attempt_day') != today())
-        if current.get('stage') == 'ideas':
+        topic_job = ACTIVE.get(cid)
+        if topic_job:
+            result.update(status='running', stale=False)
+        elif data.get('status'):
+            result.update(status='failed' if data['status'] == 'running' else data['status'],
+                          error='Підготовку тем перервано. Повторіть запит вручну.' if data['status'] == 'running' else data.get('error'))
+        elif current.get('stage') == 'ideas':
             result.update(status=current.get('status', 'done'), error=current.get('error'))
         return result
 
 
 def launch(cid, data, action, request_id=None):
-    data.update(status='running', stage=action, error=None, started_at=time.time(), cancelled=False, request_id=request_id)
+    data.update(status='running', stage=action, error=None, started_at=time.time(), cancelled=False, request_id=request_id, channel_id=cid)
     save_draft(cid, data)
     if action == 'ideas':
         topics = store.read_json(topics_path(cid), {}) or {}
-        topics['attempt_day'] = data['attempt_day']
+        topics.update(attempt_day=data['attempt_day'], status='running', error=None)
         store.atomic_json(topics_path(cid), topics)
     if action == 'openings':
         topics = store.read_json(topics_path(cid), {}) or {}
         if topics.get('id') == data.get('ideas_id', data['id']):
             topics.setdefault('topic_projects', {})[str(data['selected_index'])] = data['project_id']
             store.atomic_json(topics_path(cid), topics)
-    ACTIVE.add(cid)
+    ACTIVE[data.get('project_id') or cid] = data
     Thread(target=work, args=(cid, data), daemon=True).start()
     return public(data)
 
@@ -134,11 +151,11 @@ def start_project(pid, body):
         data = read_project(pid)
         if not data: raise store.StudioError('У цьому випуску немає збережених зачинів', 404)
         if body.get('request_id') and data.get('request_id') == body['request_id']: return public(data)
-        if cid in ACTIVE:
-            current = read(cid)
-            if current.get('id') == data.get('id') and current.get('stage') == action and not body.get('refresh'):
+        current = ACTIVE.get(pid)
+        if current:
+            if current.get('stage') == action and not body.get('refresh'):
                 return public(current)
-            raise store.StudioError('Opus ще працює в цьому каналі. Дочекайтеся завершення запиту.', 409)
+            raise store.StudioError('У цьому випуску Opus ще працює. Дочекайтеся завершення запиту.', 409)
         if action == 'cancel':
             data.update(status='cancelled', cancelled=True)
             store.atomic_json(store.project_dir(pid) / 'episode-draft.json', data)
@@ -251,10 +268,10 @@ def start(cid, body):
     with LOCK:
         data = read(cid)
         if body.get('request_id') and data.get('request_id') == body['request_id']: return public(data)
-        if cid in ACTIVE:
-            if data.get('stage') == action and (action == 'ideas' or data.get('selected_index') == body.get('index')):
-                return public(data)
-            raise store.StudioError('Opus ще працює в цьому каналі. Дочекайтеся завершення запиту.', 409)
+        if action == 'ideas' and cid in ACTIVE:
+            return public(ACTIVE[cid])
+        if action == 'openings' and data.get('stage') == 'openings' and is_running(cid, data) and data.get('selected_index') == body.get('index'):
+            return public(data)
         if action == 'ideas' and data.get('ideas') and not body.get('refresh'): return public(catalog(cid, data))
         if action == 'ideas':
             save_draft(cid, data)
@@ -264,6 +281,8 @@ def start(cid, body):
             index = body.get('index')
             if body.get('new_episode') is True:
                 topics = catalog(cid, data)
+                if body.get('ideas_id') and body['ideas_id'] != topics.get('id'):
+                    raise store.StudioError('Список тем оновився. Виберіть тему ще раз.', 409)
                 if type(index) is not int or not 0 <= index < len(topics.get('ideas', [])): raise store.StudioError('Виберіть тему зі списку')
                 if index in topics['used_idea_indexes']: raise store.StudioError('Цю тему вже використано. Виберіть іншу або оновіть теми.')
                 if data.get('project_id'):
@@ -341,11 +360,15 @@ def work(cid, data):
         data.update(status='failed', error=str(error)[:400])
     finally:
         with LOCK:
-            save_draft(cid, data)
+            save_draft(cid, data, make_current=False)
+            if data['stage'] == 'ideas' and data['status'] == 'failed':
+                topics = store.read_json(topics_path(cid), {}) or {}
+                topics.update(status='failed', error=data.get('error'))
+                store.atomic_json(topics_path(cid), topics)
             if data['status'] == 'done' and data['stage'] == 'ideas': remember_topics(cid, data)
             if data['status'] == 'done' and data.get('completed') and data['stage'] == 'script':
                 completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
-            ACTIVE.discard(cid)
+            ACTIVE.pop(data.get('project_id') or cid, None)
 
 
 def daily_once():

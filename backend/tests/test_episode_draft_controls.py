@@ -117,16 +117,63 @@ class EpisodeDraftControlsTest(unittest.TestCase):
         self.assertEqual(ideas.catalog(self.cid)['ideas'], new_topics)
         self.assertEqual(ideas.read_project(old['project_id'])['selected'], old['selected'])
 
-    def test_other_active_project_cannot_be_resumed_by_a_new_topic_request(self):
-        active = self.begin()
+    def test_projects_in_one_channel_run_independently_and_finish_in_reverse_order(self):
+        first = self.begin(0)
+        second = self.begin(1)
+        self.assertNotEqual(first['project_id'], second['project_id'])
+        self.assertEqual(len(ideas.active_work()), 2)
+        code, status = self.request('/api/studio/status')
+        self.assertEqual(code, 200)
+        own = [row for row in status['activities'] if row['project_id'] in {first['project_id'], second['project_id']}]
+        self.assertEqual(len(own), 2)
+        self.assertTrue(all(row['kind'] == 'створення зачинів' for row in own))
+        self.assertEqual(ideas.read_project(first['project_id'])['status'], 'running')
+        with patch.object(ideas, 'opus', return_value={'openings':self.hooks}):
+            ideas.work(self.cid, second)
+            self.assertIn(first['project_id'], ideas.ACTIVE)
+            self.assertEqual(ideas.read_project(first['project_id'])['status'], 'running')
+            ideas.work(self.cid, first)
+        self.assertFalse(ideas.ACTIVE)
+        self.assertEqual(ideas.read(self.cid)['project_id'], second['project_id'])
+        for data in (first, second):
+            saved = ideas.read_project(data['project_id'])
+            self.assertEqual(saved['status'], 'done')
+            self.assertEqual(saved['openings'], self.hooks)
+            self.assertEqual(saved['selected'], data['selected'])
+
+    def test_topic_refresh_can_run_beside_openings_and_keeps_its_own_progress(self):
+        first = self.begin()
+        with patch.object(ideas, 'Thread'):
+            ideas.start(self.cid, {'action':'ideas','refresh':True})
+            ideas.start(self.cid, {'action':'ideas','refresh':True})
+        self.assertEqual(len(ideas.ACTIVE), 2)
+        self.assertEqual(ideas.catalog(self.cid)['status'], 'running')
+        topic_job = ideas.ACTIVE[self.cid].copy()
+        with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'Updated useful topic {i}'} for i in range(5)]}):
+            ideas.work(self.cid, topic_job)
+        self.assertEqual(ideas.catalog(self.cid)['status'], 'done')
+        self.assertIn(first['project_id'], ideas.ACTIVE)
+        ideas.ACTIVE.clear()
+        self.assertEqual(ideas.read_project(first['project_id'])['status'], 'failed')
+
+    def test_same_project_rejects_overlapping_steps_and_other_project_can_cancel(self):
+        first = self.ready(0)
+        second = self.begin(1)
         with patch.object(ideas, 'Thread') as thread:
+            cancelled = ideas.start_project(first['project_id'], {'action':'cancel'})
+            self.assertTrue(cancelled['cancelled'])
             with self.assertRaises(store.StudioError) as error:
-                ideas.start(self.cid, {'action':'openings','index':1,'new_episode':True})
+                ideas.start_project(second['project_id'], {'action':'openings','refresh':True})
         self.assertEqual(error.exception.status, 409)
         thread.assert_not_called()
-        self.assertEqual(ideas.catalog(self.cid)['stage'], 'ideas')
-        self.assertNotIn('project_id', ideas.catalog(self.cid))
-        self.assertEqual(ideas.read_project(active['project_id'])['status'], 'running')
+        self.assertEqual(ideas.read(self.cid)['project_id'], second['project_id'])
+
+    def test_stale_topic_selection_cannot_create_a_different_episode(self):
+        ideas.catalog(self.cid)
+        with patch.object(ideas, 'Thread') as thread:
+            with self.assertRaises(store.StudioError):
+                ideas.start(self.cid, {'action':'openings','index':0,'new_episode':True,'ideas_id':'obsolete'})
+        thread.assert_not_called()
 
     def test_daily_reservation_survives_failed_refresh_and_reopening_an_old_project(self):
         old = self.ready()
