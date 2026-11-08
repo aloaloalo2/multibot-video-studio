@@ -15,6 +15,7 @@ import store
 import director
 import credentials
 import project_costs
+import completion_notices
 
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -200,11 +201,14 @@ def work(cid, data):
             for event_id, event in (store.read_json(origin, {}).get('events') or {}).items():
                 project_costs.record_at(root, event['provider'], event.get('amount'), identity=event_id.split(':', 1)[1], category='script')
         data['status'] = 'done'
+        data['finished_at'] = time.time()
     except Exception as error:
         data.update(status='failed', error=str(error)[:400])
     finally:
         with LOCK:
             store.atomic_json(path(cid), data)
+            if data['status'] == 'done' and data.get('completed') and data['stage'] == 'script':
+                completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
             ACTIVE.discard(cid)
 
 

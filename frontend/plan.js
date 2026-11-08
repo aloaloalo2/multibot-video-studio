@@ -162,15 +162,16 @@ function renderNarrationGeneration(panel){
   const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{if(q.estimated_usd===0)return 'Безкоштовно';const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
-  async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · із кешу ${quote.cached}/${quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
+  async function updateQuote(){const version=++quoteVersion;if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · ${quote.cached?`із кешу ${quote.cached}/${quote.total}`:quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
   text.oninput=()=>{box.classList.remove('has-ready-narration');button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);estimate.textContent='Оновлюємо оцінку…';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
   let busy=false;
   function actionState(mode='idle'){
     const running=mode==='running',waiting=mode==='cancelling';
-    const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Згенерувати озвучку';
+    const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Озвучити сценарій';
     button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting;
     button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
+    if(!running&&!waiting)button.innerHTML+='<span>Озвучити сценарій</span>';
     const choices=panel.querySelector('.narration-choices');if(choices)choices.hidden=running||waiting;
     box.classList.toggle('is-generating',running||waiting);text.readOnly=running||waiting;
   }

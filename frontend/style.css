@@ -2004,8 +2004,11 @@ select option{background:#232327;color:#f1f1f2}
 .narration-progress-track{grid-area:progress;height:3px;overflow:hidden;border-radius:4px;background:#30333b;margin-top:2px}
 .narration-progress-track>span{display:block;height:100%;width:0;background:#959eaf;border-radius:inherit;transition:width .35s ease}
 .narration-generation:not(.is-generating) .narration-phrase-count,.narration-generation:not(.is-generating) .narration-progress-track{display:none}
-.narration-generation:not(.is-generating) .narration-status-row{grid-template-areas:"info action" "cost cost"}
-.narration-generation:not(.is-generating) .narration-status-row .narration-cost{justify-self:start;white-space:normal}
+.narration-generation:not(.is-generating) .narration-status-row{display:flex;flex-wrap:wrap;gap:10px 12px}
+.narration-generation:not(.is-generating) .narration-status-row p{flex-basis:100%}
+.narration-generation:not(.is-generating) .narration-status-row p:empty{display:none}
+.narration-generation:not(.is-generating) .narration-status-row .narration-cost{order:1;flex:1 1 170px;white-space:normal}
+.narration-generation:not(.is-generating) .narration-action-icon{order:2;display:inline-flex;align-items:center;justify-content:center;gap:7px;width:auto;padding:8px 12px!important;border-radius:10px;font-size:13px;white-space:nowrap}
 .narration-generation textarea[readonly]{color:#bdc1cb;opacity:1}
 .narration-generation.is-generating{padding-top:0}
 .narration-generation.is-generating textarea{height:clamp(180px,30vh,300px);min-height:180px;resize:vertical;padding:14px 16px;line-height:1.65}

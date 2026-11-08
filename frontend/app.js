@@ -179,7 +179,7 @@ function renderProjectActivities(){
     card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення сценарію'?'Opus пише сценарій':kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
 }
@@ -188,13 +188,15 @@ async function pollChannelActivity(){
   if(document.hidden||channelActivityPending)return;
   channelActivityPending=true;
   try{
+    const writing=[...projectActivities].filter(([,task])=>(typeof task==='object'?task?.kind:task)==='створення сценарію').map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
-    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
+    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію','створення сценарію'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
     await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress});}else projectActivities.delete(id);}catch{}}));
     renderProjectActivities();
+    if(!state.project&&writing.some(id=>!projectActivities.has(id)))refreshProjects().catch(error=>console.warn('Не вдалося оновити готовий сценарій',error));
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
     for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){

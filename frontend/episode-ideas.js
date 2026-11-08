@@ -27,7 +27,13 @@ async function openNewEpisodeWizard(){
   }
   async function poll(){if(!root.isConnected||$('modal-backdrop').hidden)return;try{draw(await api(endpoint));}catch(error){if(root.isConnected){root.innerHTML=`<p class="episode-error">${esc(error.message)}</p><button id="ideas-status">Оновити стан</button>`;root.querySelector('#ideas-status').addEventListener('click',poll);}}}
   function draw(data){
-    if(!root.isConnected)return;
+    if(!root.isConnected||$('modal-backdrop').hidden||state.channel?.id!==cid)return;
+    // Opus has the saved title/opening already. Closing never discards or cancels its server job.
+    if(data.project_id)modalDirty=false;
+    if(data.status==='running'&&data.stage==='script'&&data.project_id){
+      projectActivities.set(data.project_id,'створення сценарію');
+      closeModal();showProjectList();pollChannelActivity();return;
+    }
     input.readOnly=!!data.selected;
     $('modal-actions').querySelector('button').hidden=!!data.project_id;
     if(data.stale){request({action:'ideas',refresh:true});return;}
@@ -39,7 +45,7 @@ async function openNewEpisodeWizard(){
     if(data.status==='running'){
       const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує п’ять зачинів',script:'Opus пише сценарій'}[data.stage];
       if(data.selected)input.value=data.selected.title;
-      root.innerHTML=`<div class="episode-writing"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.selected?esc(data.selected.title)+' · '+data.target_words.toLocaleString('uk-UA')+' слів':'На основі попередніх випусків каналу'}</small></div></div><p class="muted">Вікно можна закрити. Результат збережеться в студії.</p>`;
+      root.innerHTML=`<div class="episode-writing"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.selected?esc(data.selected.title)+' · '+data.target_words.toLocaleString('uk-UA')+' слів':'На основі попередніх випусків каналу'}</small></div></div>`;
       setTimeout(poll,2000);return;
     }
     let error=data.status==='failed'?`<p class="episode-error">${esc(data.error||'Запит не завершено')}</p>`:'';

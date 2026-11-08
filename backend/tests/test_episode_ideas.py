@@ -78,6 +78,10 @@ class EpisodeIdeasTest(unittest.TestCase):
         script=hooks[3]['text']+' Full natural script words.'*400
         with patch.object(ideas,'opus',return_value={'script':script}): data=self.finish(data)
         self.assertTrue(data['completed'])
+        project = store.load_project(pid)
+        self.assertEqual(ideas.completion_notices.notice(project)['kind'], 'process')
+        ideas.completion_notices.seen(pid)
+        self.assertIsNone(ideas.completion_notices.notice(project))
         self.assertEqual(store.load_project(pid)['voice_script']['text'],script.strip())
         self.assertFalse(store.load_project(pid).get('plan_source'))
         self.assertEqual(store.read_json(store.project_dir(pid)/'source-timing.json')['timing']['status'],'awaiting_voice')
