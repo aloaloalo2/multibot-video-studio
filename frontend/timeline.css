@@ -174,3 +174,7 @@
 .universal-clip.draft-frame{background:#4b4a53}
 .frame-group-clip.group-made{background:#2f7d5a;color:#eafff3;border-color:#3fbf86}
 .frame-group-clip.group-made.selected{background:#3fa575;color:#fff}
+/* The timeline meets the window edges; the upper editor keeps its own gutters. */
+.app-shell.editor-open{--editor-outer-gutter:12px;padding-bottom:0}
+.editor-open .timeline-panel{margin:0 calc(0px - var(--editor-outer-gutter));width:calc(100% + var(--editor-outer-gutter) + var(--editor-outer-gutter));border-inline:0;border-bottom:0;border-radius:0}
+@media(max-width:560px){.app-shell.editor-open{--editor-outer-gutter:8px}}
