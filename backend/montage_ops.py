@@ -882,7 +882,7 @@ def transitions(ctx: Context, spec: dict) -> None:
             continue
         ctx.actions.append({"type": "set_join_transition", "payload": {"from_ref": left, "to_ref": right, "type": kind, "duration": round(duration, 3)}})
         previous, added = kind, added + 1
-    soundtrack.transitions(ctx)
+    soundtrack.transitions(ctx, spec)
     ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({round(100 * share)}%), було {designed}, додано {added}, прибрано {cuts}, "
                       f"стане {designed + added}; у текстові кадри склейка")
 
@@ -1010,7 +1010,7 @@ def reglue(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
+OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

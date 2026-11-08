@@ -10,10 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 KIT_AUDIO = ROOT / 'razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/audio'
 CATEGORIES = (
-    ('whoosh', 'М’який перехід', ('whoosh',)),
+    ('whoosh', 'М’який помах', ('whoosh',)),
     ('swish', 'Швидкий помах', ('swish',)),
     ('appearance', 'Поява елемента', ('pop',)),
-    ('switch', 'Перемикання кадру', ('blip',)),
+    ('switch', 'Перемикання елемента', ('blip',)),
     ('tick', 'Клацання', ('tick',)),
     ('counter', 'Підрахунок чисел', ('counter',)),
     ('notification', 'Сповіщення', ('ding',)),
@@ -22,18 +22,35 @@ CATEGORIES = (
     ('impact', 'Глибокий акцент', ('impact', 'stinger')),
     ('tension', 'Наростання', ('riser',)),
     ('freeze', 'Стоп-кадр', ('freeze', 'slowmo')),
-    ('digital', 'Цифровий перехід', ('glitch',)),
+    ('digital', 'Цифровий збій', ('glitch',)),
     ('devices', 'Затвор камери', ('flash',)),
     ('ambience', 'Звуковий підйом', ('powerup',)),
 )
+TRANSITIONS = (
+    ('air', 'Повітряний whoosh'), ('silk', 'М’який шовковий'), ('whip', 'Різкий whip'),
+    ('camera', 'Затвор камери'), ('snap', 'Сухий snap'), ('sweep', 'Висхідний sweep'),
+    ('down', 'Низхідний swoosh'), ('rise', 'Коротке наростання'), ('reverse', 'Зворотний вдих'),
+    ('bass', 'Басовий поштовх'), ('glitch', 'Цифровий glitch'), ('pixel', 'Піксельний перехід'),
+    ('neon', 'Неоновий перелив'), ('warp', 'Об’ємний warp'), ('shimmer', 'Кришталеве сяйво'),
+)
+TRANSITION_IDS = {row[0] for row in TRANSITIONS}
 IDS = {row[0] for row in CATEGORIES}
 LOCK = threading.RLock()
+
+
+def merge(current, patch):
+    result = normalize(current)
+    if not isinstance(patch, dict):
+        raise ValueError('Невірні налаштування звуку')
+    for key, value in patch.items():
+        result[key] = {**result.get(key, {}), **value} if isinstance(value, dict) else value
+    return normalize(result)
 
 
 def normalize(value=None):
     if value is None:
         value = {}
-    if not isinstance(value, dict) or set(value) - {'music', 'effects'}:
+    if not isinstance(value, dict) or set(value) - {'music', 'effects', 'transitions'}:
         raise ValueError('Невірні налаштування звуку')
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
@@ -50,6 +67,14 @@ def normalize(value=None):
     if not isinstance(categories, list) or any(not isinstance(key, str) or key not in IDS for key in categories) or len(set(categories)) != len(categories):
         raise ValueError('Невідома або повторена категорія звуку')
     result['effects']['categories'] = list(categories)
+    transition = value.get('transitions', {})
+    if not isinstance(transition, dict) or set(transition) - {'enabled', 'styles'}:
+        raise ValueError('Невірні налаштування звуків переходів')
+    enabled = transition.get('enabled', False)
+    styles = transition.get('styles', [row[0] for row in TRANSITIONS])
+    if type(enabled) is not bool or not isinstance(styles, list) or any(not isinstance(k, str) or k not in TRANSITION_IDS for k in styles) or len(set(styles)) != len(styles):
+        raise ValueError('Невідомий звук переходу або некоректний вибір')
+    result['transitions'] = {'enabled': enabled, 'styles': list(styles)}
     return result
 
 
@@ -71,14 +96,19 @@ def allowed_names(sound):
     return [name for key, _, names in CATEGORIES if key in selected for name in names]
 
 
-def apply_config(config, value):
+def transition_names(sound):
+    selected = sound['transitions']['styles'] if sound['transitions']['enabled'] else []
+    return ['tr_' + key for key, _ in TRANSITIONS if key in selected]
+
+
+def apply_config(config, value, *, animated=False):
     """A copy, so channel switches never destroy the director's saved cues or music file."""
     result = copy.deepcopy(config)
     if value is None:
         return result
     sound = normalize(value)
     result['music'] = {**(result.get('music') or {}), **sound['music']}
-    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'], 'allowed_names': allowed_names(sound)}
+    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + ([] if animated else transition_names(sound))}
     return result
 
 
@@ -100,6 +130,10 @@ def catalog():
     return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=2'} for key, label, names in CATEGORIES]
 
 
+def transition_catalog():
+    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=1'} for key, label in TRANSITIONS]
+
+
 def audio_module(name):
     # Load the checked-in kit, without requiring a renderer or changing a working project.
     with LOCK:
@@ -116,17 +150,18 @@ def audio_module(name):
         return sys.modules[key]
 
 
-def preview(category):
+def preview(category, *, transition=False):
     import store
-    row = next((row for row in CATEGORIES if row[0] == category), None)
+    rows = [(key, label, ('tr_' + key,)) for key, label in TRANSITIONS] if transition else CATEGORIES
+    row = next((row for row in rows if row[0] == category), None)
     if row is None:
         raise store.StudioError('Звук не знайдено', 404)
-    path = store.DATA_ROOT / 'cache' / 'sound-previews-v2' / (category + '.wav')
+    path = store.DATA_ROOT / 'cache' / 'sound-previews-v2' / (('transition-' if transition else '') + category + '.wav')
     with LOCK:
         if not path.is_file():
             path.parent.mkdir(parents=True, exist_ok=True)
             module = audio_module('sfx')
-            samples = module.make(row[2][0], dur=1.5, seed=7)
+            samples = module.make(row[2][0], seed=7, **({} if transition else {'dur': 1.5}))
             # One consistent, moderate preview level. No service call.
             import numpy as np
             peak = float(np.abs(samples).max(initial=0))
@@ -143,13 +178,18 @@ def instructions(project, *, scoped=False, include_workflow=True):
              'Використовуй фонову музику. Її можна створити локально.\n' if music['generate'] else
              'Використовуй лише вже додану музику. Нову музику не генеруй.\n')
     names = allowed_names(sound)
-    text += ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Прив’язуй їх до переходів між кадрами й появи елементів. Чергуй варіанти, уникай однакових звуків поспіль. Зберігай чіткість голосу.\n' if names else
+    text += ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Використовуй їх для акцентів і появи елементів усередині кадру. Зберігай чіткість голосу.\n' if names else
              'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n')
+    import store
+    animated = store.project_animated(project)
+    transitions = [] if animated else transition_names(sound)
+    text += ('Окремі звуки переходів: ' + ', '.join(transitions) + '. Обирай лише доречні стики, чергуй типи. Більшість м’яких склейок залишай тихими.\n' if transitions else 'Звуки переходів вимкнено. Монтажні акценти мають окремий вибір.\n')
     if scoped:
         return text + 'Це правка кадрів: наявний звук збережи, заново його не створюй.\n'
     if not include_workflow or not project.get('id'):
         return text
-    text += 'Операція transitions автоматично озвучує створені переходи дозволеними різними ефектами. Не дублюй ці стики окремими cues.\n'
+    if not animated:
+        text += 'Операція transitions озвучує вибрані доречні стики. Для авторського вибору передай sound_frames з номерами вхідних кадрів; порожній список лишає всі переходи тихими. Операція transition_sounds оновлює тільки звук на існуючих стиках. Не дублюй ці події окремими cues.\n'
     text += ('Для Razgon запиши ці обмеження в config.json: music.enabled, music.generate, sfx.enabled і sfx.allowed_names; '
              'cue та amb мають використовувати тільки дозволені імена. Вимкнений пункт не потребує генерування.\n'
              'Для звичайного монтажу після створення кадрів один раз використай /ops операцію soundtrack: '

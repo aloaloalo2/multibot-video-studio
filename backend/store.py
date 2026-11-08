@@ -477,6 +477,10 @@ def update_channel_settings(cid: str, patch: dict) -> dict:
         raise StudioError("Налаштування мають бути об'єктом")
     next_value = copy.deepcopy(current)
     next_value.update(patch)
+    if 'sound' in patch:
+        import sound_settings
+        try: next_value['sound'] = sound_settings.merge(current.get('sound'), patch['sound'])
+        except ValueError as error: raise StudioError(str(error)) from None
     if "weights" in patch:
         next_value["weights"] = patch["weights"]
     validate_settings(next_value)

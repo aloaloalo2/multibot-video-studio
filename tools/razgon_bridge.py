@@ -245,7 +245,7 @@ def prepare(args) -> None:
         "sfx": {"enabled": True, "gainDb": -6}, "loudness": -14}
     sys.path.insert(0, str(STUDIO_BACKEND))
     import sound_settings
-    config = sound_settings.apply_config(config, (channel.get("settings") or {}).get("sound"))
+    config = sound_settings.apply_config(config, (channel.get("settings") or {}).get("sound"), animated=project.get("project_kind", (channel.get("settings") or {}).get("channel_kind")) == "animated")
     selected = args.style or animation.get('style')
     styles = studio.call('GET', f"/api/channels/{channel['id']}/custom-styles").get('styles', []) if channel and str(selected).startswith(('custom-', 'studio-')) else []
     config = channel_style(config, animation, args.style, styles)
@@ -577,7 +577,7 @@ def render_bed(razgon: Path) -> Path | None:
         studio = Studio(link["studio_url"])
         project = studio.project(link["project_id"])
         channel = next(c for c in studio.call("GET", "/api/channels")["channels"] if c["id"] == project["channel_id"])
-        config = sound_settings.apply_config(config, channel.get("settings", {}).get("sound"))
+        config = sound_settings.apply_config(config, channel.get("settings", {}).get("sound"), animated=project.get("project_kind", channel.get("settings", {}).get("channel_kind")) == "animated")
     story = sound_settings.filter_story(story, config)
     if not (config.get("music") or {}).get("generate", True) and not (config.get("music") or {}).get("file"):
         config["music"]["enabled"] = False

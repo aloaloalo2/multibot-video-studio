@@ -15,6 +15,30 @@ import montage_ops
 
 
 class SoundSettingsTest(unittest.TestCase):
+    def test_transition_choices_are_separate_and_have_15_distinct_decodable_designs(self):
+        import numpy as np
+        import hashlib
+        module = sound.audio_module('sfx')
+        choice = sound.normalize({'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'camera']}})
+        self.assertEqual(sound.allowed_names(choice), [])
+        self.assertEqual(sound.transition_names(choice), ['tr_air', 'tr_camera'])
+        self.assertFalse(sound.normalize({'effects': {'categories': ['whoosh']}})['transitions']['enabled'])
+        self.assertEqual(sound.apply_config({}, choice)['sfx']['allowed_names'], ['tr_air', 'tr_camera'])
+        self.assertEqual(sound.apply_config({}, choice, animated=True)['sfx']['allowed_names'], [])
+        self.assertFalse(sound.apply_config({}, choice, animated=True)['sfx']['enabled'])
+        hashes = set()
+        for row in sound.transition_catalog():
+            data = module.make(row['name'])
+            self.assertEqual(data.shape[1], 2)
+            self.assertTrue(np.isfinite(data).all())
+            self.assertGreater(float(np.sqrt(np.mean(data ** 2))), .001)
+            self.assertLessEqual(float(np.abs(data).max()), .95)
+            hashes.add(hashlib.sha256(data.tobytes()).hexdigest())
+        self.assertEqual(len(hashes), 15)
+        for transitions in [{'enabled': 'true'}, {'styles': ['missing']}, {'styles': ['air', 'air']}]:
+            with self.subTest(transitions=transitions), self.assertRaises(ValueError):
+                sound.normalize({'transitions': transitions})
+
     def test_catalogue_has_15_editing_choices_without_ambience_and_rejects_invalid_choices(self):
         library = sound.audio_module('sfx').LIB
         names = [name for _, _, group in sound.CATEGORIES for name in group]
@@ -99,20 +123,40 @@ class SoundSettingsTest(unittest.TestCase):
                  {'from_ref': 'group:2', 'to_ref': 'group:3', 'type': 'slide_left', 'duration': .35}]
         ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 15}]}],
                                        'join_transitions': joins}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
-        choice = {'effects': {'categories': ['whoosh', 'devices']}}
+        choice = {'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'camera']}}
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
              patch.object(sound, 'saved_for_project', return_value=choice):
-            soundtrack.transitions(ctx)
+            soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             clips = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
             self.assertEqual([c['start'] for c in clips], [5, 10])
-            self.assertIn('whoosh', clips[0]['title'])
-            self.assertIn('flash', clips[1]['title'])
+            self.assertIn('tr_air', clips[0]['title'])
+            self.assertIn('tr_camera', clips[1]['title'])
             ctx.project['tracks'][0]['clips'] += [dict(c, id=f'fx-{i}') for i, c in enumerate(clips)]
-            ctx.actions.clear(); soundtrack.transitions(ctx)
+            ctx.actions.clear(); soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual(ctx.actions, [])
             ctx.actions = [{'type': 'set_join_transition', 'payload': {**joins[1], 'type': 'cut'}}]
-            soundtrack.transitions(ctx)
+            soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual([a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'], ['fx-1'])
+
+    def test_animated_films_and_gentle_crossfades_do_not_get_automatic_transition_sound(self):
+        ctx = SimpleNamespace(project={'project_kind': 'animated'}, actions=[], report=[])
+        with patch.object(sound, 'saved_for_project', side_effect=AssertionError('Animated must not use this setting')):
+            soundtrack.transitions(ctx)
+        self.assertEqual(ctx.actions, [])
+        ctx = SimpleNamespace(project={'id': 'a'*24, 'project_kind': 'regular', 'tracks': [{'id': 'base', 'clips': [
+            {'kind': 'image', 'start': 0, 'duration': 60}]}], 'join_transitions': [
+            {'from_ref': f'group:{n}', 'to_ref': f'group:{n+1}', 'type': 'crossfade', 'duration': .35} for n in range(1, 6)]},
+            frames=[{'number': n, 'start': (n-1)*10, 'end': n*10, 'group': {'id': str(n)}} for n in range(1, 7)],
+            plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
+             patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': True}}):
+            soundtrack.transitions(ctx)
+            self.assertEqual(ctx.actions, [])
+            for join in ctx.project['join_transitions']: join['type'] = 'slide_left'
+            soundtrack.transitions(ctx)
+            cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
+            self.assertEqual(len(cues), 2)  # restrained maximum of 40 percent
+            self.assertNotEqual(cues[0]['title'].split(' · ')[-1], cues[1]['title'].split(' · ')[-1])
 
 
 class AccentSideFieldTest(unittest.TestCase):

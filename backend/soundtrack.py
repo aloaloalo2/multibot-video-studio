@@ -24,8 +24,8 @@ def place(ctx, spec, *, transition=False):
                 [float(c.get('start', 0)) + float(c.get('duration', 0)) for l in ctx.project['tracks'] for c in l['clips']] + [0])
     if not math.isfinite(total) or not .1 <= total <= 36000:
         raise ValueError('Спочатку додайте озвучку або кадри з тривалістю')
-    allowed = set(sound_settings.allowed_names(sound))
-    known = {name for _, _, names in sound_settings.CATEGORIES for name in names}
+    allowed = set(sound_settings.transition_names(sound) if transition else sound_settings.allowed_names(sound))
+    known = {name for _, _, names in sound_settings.CATEGORIES for name in names} | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
     events = []
     for cue in cues:
         if not isinstance(cue, dict) or cue.get('name') not in known:
@@ -91,31 +91,46 @@ def place(ctx, spec, *, transition=False):
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 
-def transitions(ctx):
-    """Sound follows actual designed joins; repeating this operation leaves existing matching cues in place."""
-    if sound_settings.saved_for_project(ctx.project) is None:
+def transitions(ctx, spec=None):
+    """Choose restrained sound accents for designed joins in universal projects only."""
+    if store.project_animated(ctx.project) or sound_settings.saved_for_project(ctx.project) is None:
         return
     settings = sound_settings.for_project(ctx.project)
-    allowed = set(sound_settings.allowed_names(settings))
-    pool = [name for name in ('whoosh', 'swish', 'flash', 'blip', 'tick', 'pop', 'ding', 'counter',
-                             'shimmer', 'hit', 'impact', 'glitch', 'powerup', 'freeze', 'riser') if name in allowed]
+    pool = sound_settings.transition_names(settings)
+    spec = spec or {}
+    wanted_frames = spec.get('sound_frames')
+    if wanted_frames is not None and (not isinstance(wanted_frames, list) or any(type(n) is not int for n in wanted_frames)):
+        raise ValueError('sound_frames має містити номери кадрів')
     joins = {(j['from_ref'], j['to_ref']): j for j in ctx.project.get('join_transitions', [])}
     for action in ctx.actions:
         if action['type'] == 'set_join_transition':
             p = action['payload']; key = (p['from_ref'], p['to_ref'])
             if p['type'] == 'cut': joins.pop(key, None)
             else: joins[key] = p
-    events, wanted = [], set()
+    events, wanted, previous = [], set(), None
+    limit = max(1, math.ceil(len(joins) * .4))
     for a, b in zip(ctx.frames, ctx.frames[1:]):
         key = ('group:' + a['group']['id'], 'group:' + b['group']['id'])
         join = joins.get(key)
         if not join or not pool:
             continue
-        name = pool[len(events) % len(pool)]
+        kind = join['type']
+        if wanted_frames is not None:
+            if b['number'] not in wanted_frames: continue
+        elif kind == 'crossfade' or len(events) >= limit or (events and b['start'] - events[-1]['t'] < 8):
+            continue
+        preferred = (['tr_warp', 'tr_bass', 'tr_rise', 'tr_reverse'] if 'zoom' in kind else
+                     ['tr_air', 'tr_whip', 'tr_sweep', 'tr_down', 'tr_silk'] if 'slide' in kind else
+                     ['tr_silk', 'tr_shimmer', 'tr_air'] if kind == 'crossfade' else
+                     ['tr_neon', 'tr_glitch', 'tr_pixel', 'tr_camera', 'tr_snap'])
+        choices = [name for name in preferred if name in pool] or pool
+        different = [name for name in choices if name != previous] or [name for name in pool if name != previous]
+        choices = different or choices
+        name = choices[len(events) % len(choices)]
         label = f'{a["number"]} → {b["number"]}'
-        # A join begins at the incoming frame; its sound occupies that same interval.
         events.append({'name': name, 't': b['start'], 'dur': max(.1, min(.7, float(join.get('duration', .35)))), 'join': label})
         wanted.add(TRANSITION_PREFIX + label + ' · ' + name)
+        previous = name
     for layer in ctx.project['tracks']:
         for clip in layer['clips']:
             if clip.get('title', '').startswith(TRANSITION_PREFIX) and clip['title'] not in wanted:

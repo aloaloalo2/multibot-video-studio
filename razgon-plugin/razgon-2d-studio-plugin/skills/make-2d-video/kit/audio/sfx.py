@@ -287,6 +287,10 @@ def buzz(dur=1.5, seed=35, **_):
     return normalize(np.stack([x * l, x * r], 1).astype(np.float32), -6)
 
 
+from transition_sfx import LIB as TRANSITION_LIBRARY
+LIB.update(TRANSITION_LIBRARY)
+
+
 def make(name, **kw):
     if name not in LIB: raise KeyError(f"unknown sfx '{name}'. Available: {', '.join(LIB)}")
     k = {"dur": LIB[name]["dur"], **{a: b for a, b in kw.items() if b is not None}}
