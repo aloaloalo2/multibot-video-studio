@@ -38,7 +38,7 @@ function selectUniversalClip(id,seek=false){const chosen=universalClips().find(c
 function renderUniversalTimeline(){
   renderGroupingControls();
   if(projectAnimated())state.compactTimeline=true;   // only frames, never layers
-  if(state.compactTimeline && sceneGroups().length && !state.expandedGroup){renderGroupedTimeline();return;}
+  if(!state.expandedGroup && ((state.compactTimeline && sceneGroups().length) || plannedTimelineFrames().length)){renderGroupedTimeline();return;}
   const ruler=$('time-ruler'),tracks=$('timeline-tracks');ruler.replaceChildren();tracks.replaceChildren();
   const total=timelineSpan(),width=timelineWidth();ruler.className='time-ruler universal-ruler';
   const label=document.createElement('div');label.className='track-label';ruler.append(label);

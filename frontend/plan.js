@@ -11,7 +11,7 @@ function projectPlanMode(project=state.project){
 }
 function directMontage(project=state.project){return projectPlanMode(project)==='direct';}
 function sourceForProject(result,project=state.project){return directMontage(project)?result.source || result.plan:result.plan;}
-// Direct montage starts on an empty timeline; planned episodes keep their existing frame gate.
+// Every project opens the combined voice, planning and montage workspace, including an empty timeline.
 function editorUnlocked(project=state.project){return !!project;}
 const editorLockedHint='Монтаж відкриється з першими кадрами ролика';
 
@@ -89,8 +89,33 @@ function narrationChoices(panel,ready,restore=true){
 function narrationResultVisible(job,project,justGenerated=false){
   return job?.status==='done' && (project?.restarted_at||0)<=(job.started_at||0) && (justGenerated || (project?.assets||[]).some(asset=>asset.id===job.asset_id));
 }
+function renderNarrationAnalysis(panel,pid){
+  const job=state.analysis?.job;
+  const ready=panel.querySelector('.narration-ready');if(!ready)return false;
+  if(job?.project_id!==pid||!['queued','running'].includes(job.status)){
+    if(ready.getAttribute('aria-busy')==='true'){
+      ready.removeAttribute('aria-busy');ready.querySelector('.narration-ready-heading strong').textContent='✓ Озвучка готова';
+      ready.querySelectorAll('.narration-tempo button,.narration-tempo input,.narration-plan-action').forEach(control=>control.disabled=false);
+      const range=ready.querySelector('input'),plan=ready.querySelector('.narration-plan-action');
+      plan.disabled=Number(range.value)!==Number(ready.dataset.speed);
+      const text=panel.querySelector('textarea');if(text)text.readOnly=false;
+      const choices=panel.parentElement?.querySelector('.narration-choices');if(choices)choices.hidden=false;
+      if(job?.status==='failed'){const note=panel.querySelector('.narration-status-row p');if(note)note.textContent=job.error||'Не вдалося розпізнати озвучку';}
+    }
+    return false;
+  }
+  const stage=speechStageNames[job.stage]||'Розпізнаємо озвучку',percent=Number.isFinite(job.progress)?` · ${Math.round(job.progress)}%`:'';
+  ready.setAttribute('aria-busy','true');
+  ready.querySelector('.narration-ready-heading strong').innerHTML=`${exportSpinner} Whisper · ${esc(stage)}${percent}`;
+  ready.querySelectorAll('.narration-tempo button,.narration-tempo input,.narration-plan-action').forEach(control=>control.disabled=true);
+  const note=panel.querySelector('.narration-status-row p');if(note)note.textContent='';
+  const text=panel.querySelector('textarea');if(text)text.readOnly=true;
+  const choices=panel.parentElement?.querySelector('.narration-choices');if(choices)choices.hidden=true;
+  return true;
+}
 function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('section');ready.className='narration-ready';
+  ready.dataset.speed=String(Math.round((job.speed||1)*100));
   const cost=job.estimated_usd===0?'Безкоштовно':job.estimated_usd!=null?`≈ $${job.estimated_usd.toFixed(3)}`:'';
   ready.innerHTML=`<header class="narration-ready-heading"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><small>${esc(cost)}</small></header>`;
   const headline=ready.querySelector('strong');
@@ -104,11 +129,11 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   range.oninput=()=>{tempo.querySelector('output').textContent=range.value+'%';const changed=Number(range.value)!==Math.round((job.speed||1)*100);plan.disabled=changed;apply.hidden=!changed;apply.disabled=false;tempo.querySelector('small').textContent=changed?`Використовується ${Math.round((job.speed||1)*100)}% · обрано ${range.value}%`:`Використовується швидкість ${Math.round((job.speed||1)*100)}% · без зміни тону`;};
   apply.onclick=async()=>{apply.disabled=true;range.disabled=true;plan.disabled=true;note('Змінюємо швидкість…');try{await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});ready.remove();await refresh();}catch(error){note(error.message);apply.disabled=false;range.disabled=false;}};
   const actions=document.createElement('footer');actions.className='narration-ready-actions';actions.append(plan);
-  ready.append(tempo,actions);panel.classList.add('has-ready-narration');panel.append(ready);return ready;
+  ready.append(tempo,actions);panel.classList.add('has-ready-narration');panel.append(ready);renderNarrationAnalysis(panel,pid);return ready;
 }
 function renderNarrationGeneration(panel){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`<div class="voice-start-head narration-script-heading"><h1>Озвучка сценарію</h1><p>Прослухайте готову озвучку й налаштуйте швидкість перед створенням кадрів.</p></div><label class="voice-script"><span>Текст озвучки</span><textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small class="narration-cache-note">Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
+  box.innerHTML=`<div class="voice-start-head narration-script-heading"><h1>Озвучка сценарію</h1><p>Прослухайте готову озвучку й налаштуйте швидкість перед створенням кадрів.</p></div><label class="voice-script"><span>Сценарій</span><textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><small class="narration-cache-note">Готові фрази зберігаються в кеші. Після правок оновляться тільки змінені.</small><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
   panel.append(box);
   const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
   const cid=state.project.channel_id;let profile=null,currentJob=null;
@@ -188,7 +213,7 @@ function renderVoiceStart(panel){
     <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
       <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
-    <label class="voice-script"><span>Текст озвучки <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
+    <label class="voice-script"><span>Сценарій <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
       <small>${direct?'Сценарій допоможе точніше розпізнати озвучку й звірити текст.':'Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.'}</small></label>
     <div class="voice-start-actions"><div class="voice-progress" aria-live="polite"></div><button type="button" class="primary" disabled>Розпізнати озвучку</button></div>`;
   section.hidden=true;let generated=null;
@@ -208,7 +233,7 @@ function renderVoiceStart(panel){
   for(const name of ['dragenter','dragover'])drop.addEventListener(name,event=>{event.preventDefault();drop.classList.add('is-over');});
   for(const name of ['dragleave','drop'])drop.addEventListener(name,()=>drop.classList.remove('is-over'));
   drop.addEventListener('drop',event=>{event.preventDefault();choose(event.dataTransfer.files[0]);});
-  function show(stage,value){progress.innerHTML=`<span class="voice-progress-stage">${exportSpinner}<span>${esc(stage)}</span></span>${value===undefined?'':`<progress max="100" value="${value}"></progress>`}`;}
+  function show(stage,value){progress.innerHTML=`<span class="voice-progress-stage">${exportSpinner}<span>${esc(stage)}</span></span>${value===undefined?'':`<progress max="100" value="${value}"></progress>`}`;if(generated)renderNarrationAnalysis(generated,project.id);}
   function lock(value){busy=value;start.disabled=value || !file;text.disabled=value;drop.classList.toggle('is-busy',value);}
   start.addEventListener('click',async()=>{
     if(!file || busy)return;lock(true);
@@ -303,13 +328,7 @@ $('view-agent').addEventListener('click',()=>setProjectView('agent'));
 
 function renderPlanSwitch(panel){
   const heading=document.createElement('div');heading.className='project-plan-heading';
-  const started=!!(state.plan?.frames?.length || filmClips().length || state.project.production_request);
-  if(started){heading.innerHTML='<h1>Озвучка</h1>';panel.append(heading);return;}
-  heading.innerHTML=`<h1>Озвучка</h1><label class="project-plan-switch"><input type="checkbox" role="switch" aria-label="Увімкнути план ролика" ${directMontage()?'':'checked'}><span aria-hidden="true"></span></label>`;
-  const input=heading.querySelector('input'),id=state.project.id;
-  input.disabled=state.project.plan_mode_editable!==true;
-  if(input.disabled)heading.title='Перемикач запрацює після безпечного перезапуску студії';
-  input.onchange=async()=>{input.disabled=true;try{await action('set_plan_mode',{mode:input.checked?'director':'direct'});if(state.project?.id===id)await selectProject(id,{view:'plan'});}catch{input.checked=!input.checked;input.disabled=false;}};
+  heading.innerHTML='<h1><svg class="narration-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-1 4.5-4 6.5-3.5L12 10l2.5-1.5C16.5 8 18 11 21 12c-2 4-5 6-9 6s-7-2-9-6Z"/><path d="M3 12c3 1 6 .5 9 .5s6 .5 9-.5"/></svg>Озвучка</h1>';
   panel.append(heading);
 
 }

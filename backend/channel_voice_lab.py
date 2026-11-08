@@ -237,6 +237,12 @@ def remove(cid):
                 archive = root / 'previous';archive.mkdir(exist_ok=True)
                 file.replace(archive / f'{time.time_ns()}-{name}')
         (root / 'job.json').unlink(missing_ok=True)
+        settings = validated(store.read_json(root / 'settings.json', {}))
+        if settings['provider'] == 'heygen' and settings['heygen_voice_id']:
+            # Unlink this channel's choice; keep the remote voice and every paid sample.
+            store.atomic_json(root / 'previous' / f'{time.time_ns()}-settings.json', settings)
+            settings['heygen_voice_id'] = ''
+            store.atomic_json(root / 'settings.json', settings)
     return snapshot(cid)
 
 

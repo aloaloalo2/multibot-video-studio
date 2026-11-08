@@ -148,7 +148,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
 кладе сама після твоєї роботи, без рендеру.
-1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль, герої й декорації як у попередніх випусках каналу.
+1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль бери зі збережених налаштувань каналу; герої й декорації зберігають послідовність випусків.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше перевір assets/library-picks.json і вже прикріплені предмети.
    Далі один точний пошук: python3 "{store.razgon_rel()}/tools/library.py" search <слова> --limit 6 --sheet <аркуш.png> і use.
    Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
@@ -386,7 +386,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         text = repair_brief(project,request,notes) if request.get('repair_frames') else brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
-        text += director.channel_memory(project)
+        text += director.animation_style(project) + director.channel_memory(project)
         _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
         text += production_context.instructions(handoff,scoped=bool(request.get('repair_frames')))
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,

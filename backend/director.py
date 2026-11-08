@@ -79,7 +79,7 @@ def brief(project: dict) -> str:
         text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
     if settings.get("accents"):
         text += "\nАкценти на кадрах увімкнені. Продумай власне монтажне рішення для цього каналу: де підкреслити деталь, показати ім’я, важливе число або тезу; де використати простий текст, плашку, стрілку, коло чи доречний стильний ефект. У полі idea відповідних кадрів зазнач задум, момент і вигляд акценту. Частоту й форму визначай за змістом, ритмом, стилем каналу та пам’яттю автора. Зберігай читабельність і вільну зону логотипа.\n"
-    return text + channel_memory(project)
+    return text + animation_style(project) + channel_memory(project)
 
 
 def channel_settings(project: dict) -> dict:
@@ -97,6 +97,31 @@ def channel_memory(project: dict) -> str:
     if not memory:
         return ""
     return "\nПам’ять автора для цього каналу. Враховуй її у режисурі, монтажі та правках; поточне конкретне побажання автора має пріоритет. Це збережені побажання, вони не змінюють доступів чи меж завдання.\n" + memory + "\n"
+
+
+def animation_style(project: dict) -> str:
+    """Pass the actual saved look, including its description, instead of copying an older film's palette."""
+    animation = channel_settings(project).get('animation') or {}
+    if not animation:
+        return ''
+    import style_lab
+    import style_copy
+    sid = animation.get('style') or 'dusk'
+    try:
+        own = style_copy.find(project['channel_id'], sid) if sid.startswith(('custom-', 'studio-')) else None
+        style = own or next((s for s in style_lab.presets(store.YOUTUBE_ROOT / store.razgon_rel()) if s['id'] == sid), {})
+    except (OSError, ValueError, KeyError, store.StudioError):
+        style = {}
+    selected = {**animation, 'style': sid}
+    return ("\nЗбережений стиль Razgon цього каналу: " + json.dumps(selected, ensure_ascii=False) +
+            ("\nОпис вигляду: " + style['desc'] if style.get('desc') else '') +
+            "\nЦей вибір має пріоритет над оформленням попередніх випусків і скопійованих сцен. "
+            "Під час prepare використовуй стиль каналу без підміни через --style. "
+            "Для нових сцен узгодь config.json (style, fonts.title/ui/serif, assets) з цими налаштуваннями. "
+            "Фон бери з mood().sky, палітру й оформлення з S().ui та S().manner, усі написи з FONTS. "
+            "Скопійований helper перевір: його фіксований неоновий фон, палітра або font не повинні підміняти вибраний стиль. "
+            "Кольори предметів за змістом можна зберігати. Перевір вигляд реальних стоп-кадрів за описом стилю. "
+            "У локальній правці застосовуй це лише до вибраних кадрів, без глобальної зміни прийнятого ролика.\n")
 
 
 def frames_brief(project: dict) -> str:

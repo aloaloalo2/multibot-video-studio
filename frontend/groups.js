@@ -104,12 +104,31 @@ function frameBlock(clip){return clip.kind==='animation'&&clip.content_type==='s
 function draftFrameClip(clip){return frameBlock(clip)&&!!(typeof framesDrawn==='function'&&framesDrawn()?.has(Number(/кадр (\d+)/.exec(clip.title)?.[1])));}
 function emptyFrameClip(clip){return frameBlock(clip)&&!draftFrameClip(clip);}
 
+function plannedTimelineFrames(){return directMontage()?[]:(state.plan?.frames || []).filter(frame=>Number.isFinite(Number(frame.start))&&Number(frame.end)>Number(frame.start));}
+function missingPlannedFrames(frames,bounds){
+  return frames.filter(frame=>!bounds.some(b=>b.start<=Number(frame.start)+.04&&b.end>=Number(frame.end)-.04));
+}
+function appendPlannedFrames(lane,groups){
+  const missing=missingPlannedFrames(plannedTimelineFrames(),groups.filter(group=>groupMembers(group).length).map(groupBounds));
+  for(const frame of missing){
+    const block=document.createElement('button');block.type='button';block.className='planned-frame-guide';
+    block.dataset.plannedFrame=frame.number;block.textContent=frame.number;
+    block.style.left=((Number(frame.start)-timelineOrigin())/timelineSpan()*100)+'%';
+    block.style.width=((Number(frame.end)-Number(frame.start))/timelineSpan()*100)+'%';
+    block.setAttribute('aria-label',`Кадр ${frame.number} · заплановано`);
+    block.title=`Кадр ${frame.number} · ${clock(frame.start)} - ${clock(frame.end)} · ${planFormatNames[frame.format]||frame.format}\n${frame.visual?.idea||frame.idea||''}`;
+    block.addEventListener('click',event=>{event.stopPropagation();status(`Кадр ${frame.number} заплановано. Готовий матеріал з’явиться тут після створення.`);});
+    lane.append(block);
+  }
+}
+
 function groupLane(title,groups,ref){
   const row=document.createElement('div');row.className='track-row universal-row grouped-row';
   const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=title;
-  if(ref)enableStackReorder(label,ref);
-  if(ref)addStackTools(label,{ref,groups,title});
+  if(ref&&groups.length)enableStackReorder(label,ref);
+  if(ref&&groups.length)addStackTools(label,{ref,groups,title});
   const lane=document.createElement('div');lane.className='track-lane universal-lane frame-group-lane';lane.style.width=timelineWidth()+'px';
+  if(ref==='scenes')appendPlannedFrames(lane,groups);
   const occupied=[];
   for(const group of groups){
     const bounds=groupBounds(group),members=groupMembers(group);if(!members.length)continue;
@@ -152,7 +171,7 @@ function renderGroupedTimelineWithIndex(){
   const scenes=sceneGroups().filter(g=>g.role!=='overlay').sort((a,b)=>groupBounds(a).start-groupBounds(b).start);
   const index=new Map();layers().forEach((layer,i)=>{for(const c of layer.clips || [])index.set(c.id,i);});
   const rows=[];
-  if(scenes.length)rows.push({title:'\u041a\u0430\u0434\u0440\u0438 \u00b7 '+scenes.length,groups:scenes,ref:'scenes',z:Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1)))});
+  if(scenes.length||plannedTimelineFrames().length)rows.push({title:'Кадри · '+Math.max(scenes.length,plannedTimelineFrames().length),groups:scenes,ref:'scenes',z:scenes.length?Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1))):-1});
   for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:group.title,groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});

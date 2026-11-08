@@ -553,7 +553,7 @@ async function pollDirector(id){
   // The frames arrive with the finished run: reload the plan so the new frames show at once.
   if(before!==run.status && run.status==='done' && state.view==='plan'){await setProjectView('plan');return;}
   if(before!==run.status && run.status==='done' && state.view==='editor'){
-    try{const result=await api(`/api/projects/${encodeURIComponent(id)}/plan`);if(state.project?.id!==id)return;state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;renderMontageMake();}catch{}
+    try{const result=await api(`/api/projects/${encodeURIComponent(id)}/plan`);if(state.project?.id!==id)return;state.plan=sourceForProject(result);state.planSettingsMatch=result.settings_match ?? null;renderMontageMake();renderTimeline();renderPreview();}catch{}
   }
   refreshEpisode();
 }

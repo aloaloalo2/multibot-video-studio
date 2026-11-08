@@ -55,3 +55,30 @@ test('starting frames from Animation stays in the combined workspace and sends o
   assert.equal(calls.length,1);assert.equal(calls[0][0],'/api/projects/p/production-request');assert.equal(calls[0][2].frames,2);
   assert.equal(state.project.tracks,tracks);assert.equal(state.project.production_request,request);assert.equal(state.view,'editor');assert.equal(refreshed,1);
 });
+
+
+test('planned frames remain visible before media exists and disappear when their intervals are filled',()=>{
+  const groups=fs.readFileSync(path.join(__dirname,'../groups.js'),'utf8');
+  const state={plan:{frames:[{number:1,start:0,end:5},{number:2,start:5,end:10}]}},c=vm.createContext({state,directMontage:()=>false});
+  vm.runInContext(groups.slice(groups.indexOf('function plannedTimelineFrames('),groups.indexOf('function appendPlannedFrames(')),c);
+  assert.equal(c.plannedTimelineFrames().length,2);
+  assert.equal(c.missingPlannedFrames(state.plan.frames,[]).length,2);
+  assert.equal(c.missingPlannedFrames(state.plan.frames,[{start:0,end:5}])[0].number,2);
+  assert.equal(c.missingPlannedFrames(state.plan.frames,[{start:0,end:10}]).length,0);
+  c.directMontage=()=>true;assert.equal(c.plannedTimelineFrames().length,0);
+});
+
+test('Whisper progress replaces the ready label and prevents starting another analysis',()=>{
+  const header={},range={value:'90'},planButton={},controls=[range,planButton],note={textContent:'Озвучка готова'},text={};
+  const ready={dataset:{speed:'90'},attrs:{},setAttribute(k,v){this.attrs[k]=v},getAttribute(k){return this.attrs[k]},removeAttribute(k){delete this.attrs[k]},
+    querySelector(s){return s.includes('strong')?header:s==='input'?range:planButton},querySelectorAll(){return controls}};
+  const panel={querySelector(s){return s==='.narration-ready'?ready:s==='textarea'?text:note}};
+  const state={analysis:{job:{project_id:'p',status:'running',stage:'recognizing',progress:43}}};
+  const c=vm.createContext({state,exportSpinner:'<i>spinner</i>',speechStageNames:{recognizing:'Розпізнаємо озвучку'},esc:s=>s});
+  vm.runInContext(plan.slice(plan.indexOf('function renderNarrationAnalysis('),plan.indexOf('function appendReadyNarration(')),c);
+  assert.equal(c.renderNarrationAnalysis(panel,'p'),true);
+  assert.match(header.innerHTML,/Whisper.*43%/);assert.equal(planButton.disabled,true);assert.equal(note.textContent,'');
+  state.analysis.job.status='failed';state.analysis.job.error='Recognition stopped';
+  assert.equal(c.renderNarrationAnalysis(panel,'p'),false);assert.equal(planButton.disabled,false);assert.equal(text.readOnly,false);
+  assert.equal(note.textContent,'Recognition stopped');
+});

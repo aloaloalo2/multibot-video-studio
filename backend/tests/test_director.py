@@ -48,6 +48,19 @@ class DirectorTest(unittest.TestCase):
                      'tools/razgon_bridge.py" plan', "Не малюй сцени"):
             self.assertIn(part, text)
 
+    def test_saved_style_and_description_reach_planning_and_scene_generation(self):
+        import production
+        settings={'animation':{'style':'care','title_font':'Noto Serif','assets':False}}
+        request={'frames':1,'total_frames':1,'start':0,'end':10}
+        with patch.object(director,'channel_settings',return_value=settings):
+            text=director.brief(PROJECT)
+            self.assertIn('pastel',text)
+            self.assertIn('"style": "care"',text)
+            self.assertIn('Noto Serif',text)
+            self.assertIn('mood().sky',text)
+            self.assertIn('S().ui',text)
+        self.assertNotIn('Стиль, герої й декорації як у попередніх',production.brief(PROJECT,request))
+
     def test_photo_channels_get_their_frames_from_the_director_too(self):
         self.kind = "regular"
         text = director.brief(PROJECT)

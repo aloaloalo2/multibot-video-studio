@@ -11,7 +11,7 @@ import preview_js
 
 @unittest.skipUnless(shutil.which('node'), 'node required')
 class DirectMontageUITest(unittest.TestCase):
-    def test_empty_direct_project_opens_editor_but_planned_project_keeps_gate(self):
+    def test_empty_projects_open_the_combined_planning_and_montage_workspace(self):
         prelude = "const state={channel:{id:'c',settings:{plan_mode:'direct'}},channels:[]};"
         result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'projectAnimated', 'editorUnlocked'], """
             console.log(JSON.stringify([
@@ -23,9 +23,9 @@ class DirectMontageUITest(unittest.TestCase):
               editorUnlocked(null)
             ]));
         """, prelude)
-        self.assertEqual(result, [True, False, True, False, True, False])
+        self.assertEqual(result, [True, True, True, True, True, False])
 
-    def test_legacy_mode_and_branding_overlay_do_not_unlock_planned_editor(self):
+    def test_legacy_mode_opens_combined_editor_without_changing_plan_mode(self):
         prelude = "const state={channel:{id:'c',settings:{}},channels:[]};"
         result = preview_js.run(['projectPlanMode', 'directMontage', 'filmClips', 'projectAnimated', 'editorUnlocked'], """
             const p={channel_id:'c',scene_groups:[{role:'overlay',clip_ids:['plate']}],
@@ -33,7 +33,7 @@ class DirectMontageUITest(unittest.TestCase):
             console.log(JSON.stringify([projectPlanMode(p),editorUnlocked(p),
               directMontage({plan_mode:'unsupported',tracks:[]})]));
         """, prelude)
-        self.assertEqual(result, ['director', False, False])
+        self.assertEqual(result, ['director', True, False])
 
     def test_project_source_is_selected_by_mode_and_other_channel_is_not_inherited(self):
         prelude = "const state={channel:{id:'other',settings:{plan_mode:'direct'}},channels:[]};"

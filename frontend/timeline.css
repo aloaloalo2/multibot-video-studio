@@ -2,6 +2,8 @@
 @font-face{font-family:Golos;src:url('/fonts/golos.woff2');font-weight:100 900;font-display:swap;}
 @font-face{font-family:Literata;src:url('/fonts/literata.woff2');font-weight:100 900;font-display:swap;}
 .composition-clip{overflow:visible;}
+.planned-frame-guide{position:absolute;top:2px;height:25px;min-width:1px;overflow:hidden;padding:0 3px;border:1px dashed #50505a;border-radius:3px;background:#29292e;color:#96969f;font-size:10px;line-height:23px;white-space:nowrap;cursor:default}
+.planned-frame-guide:hover{background:#35353b;color:#ccc}
 .composition-clip[hidden],.motion-trail[hidden]{display:none!important;}
 .graphics-checkbox{display:flex!important;align-items:center;gap:7px;}
 .graphics-checkbox input{width:auto!important;}

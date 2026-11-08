@@ -38,6 +38,26 @@ class FakeStudio:
 
 
 class FrameSlotsTest(unittest.TestCase):
+    def test_reused_scene_configuration_takes_current_channel_style_and_all_fonts(self):
+        old={'style':'neon','styleDef':{'old':True},'fonts':{'title':'Fredoka','ui':'Nunito'},'duration':10,'music':{'gainDb':-17}}
+        current={'style':'care','title_font':'Noto Serif','assets':False}
+        result=razgon_bridge.channel_style(old,current)
+        self.assertEqual(result['style'],'care')
+        self.assertNotIn('styleDef',result)
+        self.assertEqual(set(result['fonts'].values()),{'Noto Serif'})
+        self.assertFalse(result['assets'])
+        self.assertEqual(result['music'],old['music'])
+        self.assertEqual(old['style'],'neon')
+
+    def test_custom_style_keeps_its_definition_and_missing_style_does_not_silently_fallback(self):
+        style={'id':'custom-mint','def':{'ink':'#123456'}}
+        result=razgon_bridge.channel_style({'style':'neon'},{'style':'custom-mint'},styles=[style])
+        self.assertEqual(result['styleDef'],style['def'])
+        self.assertTrue(result['style_approved'])
+        with self.assertRaises(razgon_bridge.BridgeError):
+            razgon_bridge.channel_style({}, {'style':'custom-missing'})
+        self.assertEqual(razgon_bridge.channel_style({}, {'style':'care'},'dusk')['style'],'dusk')
+
     def test_channel_plate_already_grouped_by_studio_is_not_grouped_twice(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

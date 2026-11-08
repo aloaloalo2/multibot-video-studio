@@ -176,6 +176,27 @@ def all_clips(project: dict):
 
 
 # ---------------------------------------------------------------- prepare
+def channel_style(config: dict, animation: dict, override: str | None = None, styles: list | None = None) -> dict:
+    """Apply saved channel choices on preparation, also when reusing an older Razgon project."""
+    result = {**config}
+    selected = override or animation.get('style')
+    if selected:
+        result['style'] = selected
+        result.pop('styleDef', None)
+        result['style_approved'] = not override
+        if str(selected).startswith(('custom-', 'studio-')):
+            own = next((s for s in styles or [] if s['id'] == selected), None)
+            if not own:
+                raise BridgeError('Не знайдено визначення вибраного стилю каналу: ' + selected)
+            result['styleDef'] = own['def']
+    if animation.get('title_font'):
+        result['fonts'] = {**result.get('fonts', {}), **dict.fromkeys(('title', 'ui', 'serif'), animation['title_font'])}
+    if animation.get('accent'):
+        result['ui'] = {**result.get('ui', {}), 'accent': animation['accent']}
+    result['assets'] = animation.get('assets', True) is not False
+    return result
+
+
 def prepare(args) -> None:
     studio = Studio(args.studio_url)
     project = studio.project(args.project_id)
@@ -222,23 +243,9 @@ def prepare(args) -> None:
         "title": project["name"], "style": args.style or animation.get("style") or "dusk", "captions": False, "bars": "none",
         "fadeIn": 0.5, "fadeOut": 0.8, "music": {"enabled": True, "gainDb": -17},
         "sfx": {"enabled": True, "gainDb": -6}, "loudness": -14}
-    if fresh:
-        if animation.get("title_font"):
-            config["fonts"] = {key: animation["title_font"] for key in ("title", "ui", "serif")}
-        if animation.get("accent"):
-            config["ui"] = {"accent": animation["accent"]}
-        # Whether the film uses picture props (library and generated) or draws everything with shapes.
-        config["assets"] = animation.get("assets", True) is not False
-        # A style the channel copied from a picture is not in engine/styles.js: its whole definition goes into the config.
-        if str(config["style"]).startswith(("custom-", "studio-")) and channel:
-            own = next((s for s in studio.call("GET", f"/api/channels/{channel['id']}/custom-styles").get("styles", []) if s["id"] == config["style"]), None)
-            if own:
-                config["styleDef"] = own["def"]
-            else:
-                config["style"] = "dusk"
-        # The user chose the style once in the channel settings, so a film that keeps it needs no separate approval.
-        if not args.style and animation.get("style") and config["style"] == animation["style"]:
-            config["style_approved"] = True
+    selected = args.style or animation.get('style')
+    styles = studio.call('GET', f"/api/channels/{channel['id']}/custom-styles").get('styles', []) if channel and str(selected).startswith(('custom-', 'studio-')) else []
+    config = channel_style(config, animation, args.style, styles)
     config.update({"aspect": "9:16" if height > width else "16:9", "resolution": RESOLUTIONS.get(min(width, height), "1080p"),
                    "fps": fps, "voiceover": "input/" + voice_dst.name, "script": "input/script.txt", "duration": round(duration, 3)})
     if not config.get("overlay") and channel:

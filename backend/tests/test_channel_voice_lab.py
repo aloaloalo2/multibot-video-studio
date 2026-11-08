@@ -145,9 +145,21 @@ class VoiceLabTests(unittest.TestCase):
             return np.sqrt(np.mean(quiet**2))/np.sqrt(np.mean(speech**2))
         self.assertLess(ratio(cleaned),ratio(source)*.85)
     def test_remove_keeps_previous_recording_and_does_not_delete_cloud_voice(self):
-        self.reference();lab.remove(self.cid)
+        self.reference()
+        settings=lab.validated({'provider':'heygen','heygen_voice_id':'selected-voice'})
+        lab.save(self.cid,settings)
+        result=lab.remove(self.cid)
         self.assertIsNone(lab.reference(self.cid))
         self.assertTrue(list((lab.folder(self.cid)/'previous').glob('*reference.mp3')))
+        self.assertEqual(result['settings']['heygen_voice_id'],'')
+        saved=list((lab.folder(self.cid)/'previous').glob('*settings.json'))
+        self.assertEqual(store.read_json(saved[0],{})['heygen_voice_id'],'selected-voice')
+
+    def test_selected_library_voice_can_be_unlinked_without_a_reference(self):
+        lab.save(self.cid,lab.validated({'provider':'heygen','heygen_voice_id':'library-voice'}))
+        with patch.object(lab.languages,'request') as remote:
+            self.assertEqual(lab.remove(self.cid)['settings']['heygen_voice_id'],'')
+            remote.assert_not_called()
 
     def test_copy_profile_reuses_cloud_owner_reference_and_cached_audio_without_remote_calls(self):
         self.reference();lab.save(self.cid,lab.DEFAULTS)
