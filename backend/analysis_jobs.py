@@ -12,6 +12,7 @@ import speech
 import speech_repair
 import director
 import store
+import narration_ending
 import number_text
 
 RUN_LOCK = threading.Lock()
@@ -170,10 +171,11 @@ def worker(job, script, save_job):
                 run = subprocess.run(command, capture_output=True, timeout=600)
                 if run.returncode or not extracted.is_file():
                     raise RuntimeError("Не вдалося отримати звук із відео. Перевірте, чи воно містить звукову доріжку")
-                audio = store.import_asset_file(project, extracted, "speech-analysis")
+                audio = narration_ending.import_audio(project, extracted, "speech-analysis")
                 extracted.unlink(missing_ok=True)
                 cache[original_hash] = {"asset_id": audio["id"], "sha256": store.audio_fingerprint(Path(audio["path"]))}
                 store.atomic_json(cache_path, cache)
+            audio = narration_ending.prepare_asset(project, audio)
             path = Path(audio["path"])
             duration = store.media_duration(path)
             if not duration or duration > 36000:

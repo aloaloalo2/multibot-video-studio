@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 import project_costs
+import narration_ending
 from pathlib import Path
 import store
 import languages
@@ -102,14 +103,16 @@ def change_speed(pid, speed):
         output=folder/f'Озвучка-{round(speed*100)}.mp3'
         output.write_bytes(lab.paced_audio(baseline,speed/base_speed))
         if not (store.media_duration(output) or 0)>0:raise store.StudioError('Не вдалося змінити темп')
-        updated=store.import_asset_file(project,output,'narration')
+        updated=narration_ending.import_audio(project,output,'narration')
         with store.LOCK:
             project=store.load_project(pid)
             for track in project.get('tracks',[]):
                 for clip in track.get('clips',[]):
                     if clip.get('asset_id')==asset['id']:
                         clip['asset_id']=updated['id']
-                        clip['duration']=min(updated['duration'],clip.get('duration',asset['duration'])*current/speed)
+                        length=clip.get('duration',asset['duration'])
+                        full=abs(length-asset['duration'])<.05 and float(clip.get('trim_start') or 0)==0
+                        clip['duration']=updated['duration'] if full else min(updated['duration'],length*current/speed)
             project['revision']+=1;store.save_project(project)
         job.update(asset_id=updated['id'],speed=speed,duration=updated['duration'])
         store.atomic_json(folder/'job.json',job)
@@ -199,10 +202,10 @@ def run(project,text,settings,ref,entries,job):
         listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
         target=folder/'Озвучка.mp3'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
-        asset=store.import_asset_file(store.load_project(pid),target,'narration')
+        asset=narration_ending.import_audio(store.load_project(pid),target,'narration')
         shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
         store.atomic_json(folder/'phrases.json',entries)
-        job.update(status='done',asset_id=asset['id'],finished_at=time.time())
+        job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),ending_seconds=narration_ending.SECONDS,finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())
     except Exception as error:job.update(status='failed',error=str(error))
     finally:
