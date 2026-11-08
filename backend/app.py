@@ -1122,6 +1122,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True, "create_video": True})
+        if path == "/api/sound-effects":
+            import sound_settings
+            return self.json_response({"categories": sound_settings.catalog()})
+        sound_match = re.fullmatch(r"/api/sound-effects/([a-z]+)\.wav", path)
+        if sound_match:
+            import sound_settings
+            return self.serve_media(sound_settings.preview(sound_match.group(1)), cache=True)
         if path == "/api/channels":
             return self.json_response({"channels": store.list_channels()})
         if path == "/api/extension":

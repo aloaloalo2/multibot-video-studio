@@ -3,6 +3,7 @@ const channelSettingsPaths={
   projects:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M8 13h3m-3 3h7"/>',
   look:'<path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.4 1.4 0 0 1 .8-2.6h2A4.2 4.2 0 0 0 21 10.5 8.5 8.5 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="6.7" r=".7"/><circle cx="15.5" cy="7.5" r=".7"/>',
   voice:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
+  sound:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',
   languages:'<path d="M3 5h11M8 3v2M5 5c0 5 4 9 8 10M12 5c0 4-3 8-8 11m10 5 4-11 4 11m-6.5-4h5"/>',
   thumbnails:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
   formats:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -27,6 +28,7 @@ function organizeChannelSettings(){
     ['projects','Проєкти','Налаштування проєктів за замовчуванням'],
     ['look','Оформлення','Логотип, стиль анімації та шрифти'],
     ['voice','Озвучка','Голос для озвучення сценаріїв'],
+    ['sound','Звук ролика','Музика, переходи й монтажні акценти'],
     ['languages','Переклад','Голоси для мов перекладу'],
     ['thumbnails','Прев’ю','Герой і побажання до обкладинок']
   ];
@@ -72,6 +74,7 @@ function organizeChannelSettings(){
   move('.logo-section','look',{icon:'thumbnails'});
   move('.channel-look','look',{icon:'look'});
   const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);
+  move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero'});
   move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});

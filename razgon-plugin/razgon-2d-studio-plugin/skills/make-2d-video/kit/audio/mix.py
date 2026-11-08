@@ -96,7 +96,7 @@ def beds(P, cfg, story, n, v_rms, env, music=True, sfx=True):
     total = story.get("duration") or story["shots"][-1]["end"]
     # ---- music
     mcfg = cfg.get("music", {}) or {}
-    if mcfg.get("enabled", True) and music:
+    if mcfg.get("enabled", True) and music and (mcfg.get("file") or mcfg.get("generate", True)):
         if mcfg.get("file"):
             mus = load_any(os.path.join(P, mcfg["file"]))
             reps = int(np.ceil(n / len(mus))); mus = np.concatenate([mus] * reps)[:n]
@@ -120,6 +120,10 @@ def beds(P, cfg, story, n, v_rms, env, music=True, sfx=True):
             for c in s.get("sfx", []) or []: cues.append({**c, "t": s["start"] + float(c.get("at", 0))})
         for c in story.get("sfx", []) or []: cues.append({**c, "t": float(c["t"])})
         beds_of = [s for s in story["shots"] if s.get("amb")]
+        if "allowed_names" in scfg:
+            allowed = set(scfg["allowed_names"])
+            cues = [cue for cue in cues if cue.get("name") in allowed]
+            beds_of = [shot for shot in beds_of if shot["amb"].get("name") in allowed]
         gain = db(scfg.get("gainDb", -6) + (v_rms + 18))   # SFX levels are relative to the voice level
         bases, loops, sounds, done = {}, {}, {}, set()
         for w0 in range(0, n, BLOCK):

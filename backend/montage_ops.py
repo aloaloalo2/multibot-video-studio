@@ -34,6 +34,7 @@ from PIL import Image, ImageDraw
 
 import display_text
 import native_animation
+import soundtrack
 import joins
 import store
 import typography
@@ -881,6 +882,7 @@ def transitions(ctx: Context, spec: dict) -> None:
             continue
         ctx.actions.append({"type": "set_join_transition", "payload": {"from_ref": left, "to_ref": right, "type": kind, "duration": round(duration, 3)}})
         previous, added = kind, added + 1
+    soundtrack.transitions(ctx)
     ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({round(100 * share)}%), було {designed}, додано {added}, прибрано {cuts}, "
                       f"стане {designed + added}; у текстові кадри склейка")
 
@@ -969,7 +971,18 @@ def reglue(ctx: Context, spec: dict) -> None:
             local = mid - (float(accent_clip["start"]) - float(clip["start"]))
             centre = (keyframe_value(accent_clip, "x", local) * ctx.W, keyframe_value(accent_clip, "y", local) * ctx.H)
             text = accent_clip.get("kind") == "text"
-            pin = picture.covers(centre[0], centre[1], mid) if text else True
+            # A caption in the side field and its underline/card share one coordinate system.
+            # Pinning only the underline to the moving photo makes its entrance drift away from the words.
+            caption = next((c for c in frame["clips"] if c.get("kind") == "text" and
+                            c.get("title", "").split(" акцент ")[-1].split()[0] ==
+                            accent_clip.get("title", "").split(" акцент ")[-1].split()[0]), None)
+            label = caption if accent_kind(accent_clip) in {"риска", "картка"} else accent_clip if text else None
+            if label:
+                label_local = mid - (float(label["start"]) - float(clip["start"]))
+                pin = picture.covers(keyframe_value(label, "x", label_local) * ctx.W,
+                                     keyframe_value(label, "y", label_local) * ctx.H, mid)
+            else:
+                pin = True
             keys, base = _glued(picture, centre, mid, duration, ctx, pin)
             fades = [{"time": p["time"], "opacity": p["opacity"]} for p in accent_clip.get("keyframes") or [] if "opacity" in p]
             kind = accent_kind(accent_clip)
@@ -997,7 +1010,7 @@ def reglue(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
+OPS = {"soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
@@ -1010,6 +1023,7 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
         if expected_revision is not None and expected_revision != project.get("revision", 0):
             raise store.StudioError("Проєкт змінився. Прочитайте його ще раз перед правкою", 409)
         ctx = Context(project)
+        ctx.dry_run = dry_run
         for spec in ops:
             if not isinstance(spec, dict) or spec.get("op") not in OPS:
                 raise OpError("Невідома операція: " + str(spec.get("op") if isinstance(spec, dict) else spec))

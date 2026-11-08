@@ -282,6 +282,16 @@ class SoundTest(unittest.TestCase):
         self.assertAlmostEqual(float(info["format"]["duration"]), 4.0, delta=0.03)
         self.assertIn(("POST", f"/api/projects/{'p' * 24}/tidy"), self.studio.calls)
 
+    def test_switching_all_sound_off_removes_only_the_generated_bed(self):
+        self.run_sound()
+        before = {clip["id"] for _, track in enumerate(self.studio.data["tracks"]) for clip in track["clips"]
+                  if clip.get("title") != razgon_bridge.BED_TITLE}
+        self.bed = lambda razgon: None
+        self.run_sound()
+        self.assertEqual(self.beds(), [])
+        after = {clip["id"] for track in self.studio.data["tracks"] for clip in track["clips"]}
+        self.assertEqual(after, before)
+
     def test_an_unchanged_bed_is_left_and_a_new_one_replaces_it(self):
         self.run_sound()
         sent = len(self.studio.sent)

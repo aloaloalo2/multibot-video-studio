@@ -323,6 +323,10 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Налаштування мають бути об'єктом")
     if not isinstance(value.get("claude_effort", "high"), str) or value.get("claude_effort", "high") not in {"low", "medium", "high", "xhigh"}:
         raise StudioError("Невідомий рівень зусиль агента")
+    if "sound" in value:
+        import sound_settings
+        try: value["sound"] = sound_settings.normalize(value["sound"])
+        except ValueError as error: raise StudioError(str(error)) from None
     name = value.get("display_name")
     if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 80):
         raise StudioError("Назва каналу має містити від 1 до 80 символів")

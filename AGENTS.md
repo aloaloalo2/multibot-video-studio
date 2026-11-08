@@ -741,3 +741,12 @@ When a linguist replacement fails a concrete local language/number guard, send t
 ## Editable animation without pre-rendering (8 November 2026)
 
 The `animation` format uses native editable layers and keyframes, played live by Studio. Create or replace one frame with `/ops` operation `animation` (`native_animation.py`); `replace: true` updates only that scene while preserving its group and neighbours. Do not encode animation frames to MP4/WebM/GIF or rerun Pillow/moviepy/FFmpeg video scripts for repairs. `place` and `replace` refuse this frame format. Reuse existing images as individual layers and inspect stills. Only the author's Export MP4 action renders video. Preserve previously created media and accepted projects; changing these workflow rules does not authorize a bulk rebuild of old frames.
+
+
+## Channel sound choices (8 November 2026)
+
+Channel settings group «Звук ролика» stores `sound.music.enabled`, `sound.music.generate`, `sound.effects.enabled` and `sound.effects.categories`. The 15 categories cover short editing accents such as whooshes, switching, appearance and a camera shutter, without ambient/foley categories. Categories and their built-in sound names live in `backend/sound_settings.py`; local audition WAVs are cached and use no paid service. Read the current saved channel choices in director, production and Studio-agent context. Respect them when writing music, cue and ambience plans. The bridge and the canonical Razgon audio mixer enforce the enabled flags and sound-name allowlist; music.generate=false permits only an explicit existing music file. Missing settings preserve legacy mixer config. Saving settings alone never rebuilds accepted audio.
+
+For ordinary projects `/ops` operation `soundtrack` places locally generated music and allowed timed cues as ordinary audio clips, outside scene groups, under the same undo/revision guard. Generation is bounded to a reusable music segment, repeated on the timeline, and existing music or identical cue clips are reused. Disabled choices never start synthesis. The transitions operation attaches different allowed short sounds at actual designed joins, reuses matching cues and removes its own sounds when a join becomes a cut. Frame repairs preserve existing sound.
+
+When reattaching accents, captions in the side fields and their cards/underlines share the caption's fixed coordinates. Do not attach a side-field underline to the moving photograph. Rebuild the entrance from those same coordinates so it meets the steady underline without a jump.

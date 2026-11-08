@@ -395,7 +395,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         text = repair_brief(project,request,notes) if request.get('repair_frames') else brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
-        text += director.animation_style(project) + director.channel_memory(project)
+        text += director.sound_brief(project, scoped=bool(request.get("repair_frames"))) + director.animation_style(project) + director.channel_memory(project)
         _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
         text += production_context.instructions(handoff,scoped=bool(request.get('repair_frames')))
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,

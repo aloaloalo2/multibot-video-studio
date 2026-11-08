@@ -2115,3 +2115,26 @@ select option{background:#232327;color:#f1f1f2}
 .channel-voice-lab .voice-lab-result .voice-player{margin:0 0 6px}
 .channel-voice-lab .voice-lab-result>small{color:#8e939e;font-size:11px}
 @media(max-width:620px){.channel-voice-lab .voice-lab-tuning{grid-template-columns:minmax(0,1fr)}.channel-voice-lab .voice-lab-reference{flex-wrap:wrap}.channel-voice-lab .voice-lab-reference-player{flex-basis:calc(100% - 40px)}.channel-voice-lab .voice-lab-save{margin-left:0}}
+
+/* Channel sound preferences use the same quiet controls as the settings workspace. */
+.channel-sound-music{display:grid;gap:6px;padding-bottom:14px;border-bottom:1px solid var(--border,#38393f)}
+.channel-sound-generate{margin-left:28px}
+.channel-sound-music small{color:var(--muted,#999da8);font-size:13px}
+.channel-sound-effects-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px}
+.channel-sound-effects-head .check{font-weight:650}
+.channel-sound-effects-head>span{font-size:13px;color:var(--muted,#999da8);font-variant-numeric:tabular-nums}
+.channel-sound-categories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 20px}
+.channel-sound-category{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:0}
+.channel-sound-category .check{font-size:14px;gap:10px;margin:0;min-width:0;line-height:1.4}
+.channel-sound-category input{flex-shrink:0}
+.sound-preview{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;padding:7px;border:0;background:transparent;color:var(--muted,#999da8);border-radius:50%}
+.sound-preview svg{width:16px;height:16px}
+.sound-preview:hover,.sound-preview.playing{background:#36383f;color:#e3e5eb}
+.settings-sound .muted{opacity:.45}
+.settings-sound .channel-sound-note{margin-top:14px;font-size:13px;line-height:1.5;color:var(--muted,#999da8)}
+@media(max-width:760px){.channel-sound-categories{grid-template-columns:1fr}}
+
+.modal-body .settings-sound label.check{padding:3px 0;min-height:26px}
+.settings-sound input[type=checkbox]:checked{background:#b5b9c4;border-color:#b5b9c4;box-shadow:none}
+.settings-sound input[type=checkbox]::before{background:#24262c}
+.settings-sound input[type=checkbox]:hover:not(:disabled){border-color:#c4c7d0}

@@ -243,6 +243,9 @@ def prepare(args) -> None:
         "title": project["name"], "style": args.style or animation.get("style") or "dusk", "captions": False, "bars": "none",
         "fadeIn": 0.5, "fadeOut": 0.8, "music": {"enabled": True, "gainDb": -17},
         "sfx": {"enabled": True, "gainDb": -6}, "loudness": -14}
+    sys.path.insert(0, str(STUDIO_BACKEND))
+    import sound_settings
+    config = sound_settings.apply_config(config, (channel.get("settings") or {}).get("sound"))
     selected = args.style or animation.get('style')
     styles = studio.call('GET', f"/api/channels/{channel['id']}/custom-styles").get('styles', []) if channel and str(selected).startswith(('custom-', 'studio-')) else []
     config = channel_style(config, animation, args.style, styles)
@@ -568,6 +571,16 @@ def render_bed(razgon: Path) -> Path | None:
     import audio_level
     config = {**config, "music": {**(config.get("music") or {}), "gainDb": audio_level.MUSIC_DB},
               "sfx": {**(config.get("sfx") or {}), "gainDb": audio_level.SFX_DB}}
+    import sound_settings
+    if (razgon / "story" / "studio_frames.json").is_file():
+        link, _, _ = load_link(razgon)
+        studio = Studio(link["studio_url"])
+        project = studio.project(link["project_id"])
+        channel = next(c for c in studio.call("GET", "/api/channels")["channels"] if c["id"] == project["channel_id"])
+        config = sound_settings.apply_config(config, channel.get("settings", {}).get("sound"))
+    story = sound_settings.filter_story(story, config)
+    if not (config.get("music") or {}).get("generate", True) and not (config.get("music") or {}).get("file"):
+        config["music"]["enabled"] = False
     level = audio_level.measure(razgon / config["voiceover"])
     voice_gain = 10 ** (audio_level.standard_db(level) / 20) if level else 1.0
     n = MIX.secs(story.get("duration") or story["shots"][-1]["end"])
@@ -909,7 +922,11 @@ def sound(args) -> None:
     wait_for_renders()
     wav = render_bed(razgon)
     if wav is None:
-        print("Музики й ефектів у проєкті немає (вимкнені в config.json або порожні): на таймлайн нічого не покладено")
+        project = studio.project(pid)
+        old = [clip for _, clip in all_clips(project) if clip.get("title") == BED_TITLE]
+        if old:
+            studio.batch(project, [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in old])
+        print("Музику й ефекти вимкнено або події відсутні. Створена студією звукова доріжка відсутня; озвучку збережено")
         return
     bed = encode_bed(wav, duration)
     project = studio.project(pid)
