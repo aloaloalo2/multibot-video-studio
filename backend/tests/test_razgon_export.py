@@ -131,6 +131,49 @@ class RazgonExportTest(unittest.TestCase):
     def renders(self, film):
         return sorted(line.split() for line in (film / "renders.log").read_text().splitlines())
 
+    def legacy_half_frame(self, name):
+        project, root, film, plan = self.episode(name)
+        path = film / "story" / "studio_frames.json"
+        link = json.loads(path.read_text())
+        link["frames"][0]["end"] = .42  # old Python round -> .40; preview/current renderer -> .44
+        link["frames"][1]["start"] = .42
+        path.write_text(json.dumps(link))
+        project["tracks"][2]["clips"][0].update(start=.44, duration=.96)
+        ffmpeg("-f", "lavfi", "-i", "color=c=blue:s=320x180:r=25", "-frames:v", "24", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+               Path(project["episode_path"]) / "frame_002.mp4")
+        return project, root, film, plan
+
+    def test_legacy_code_slot_exports_without_a_false_shift_error(self):
+        project, root, film, plan = self.legacy_half_frame("legacy-slot")
+        store.save_project(project)
+        job = self.export(project, plan)
+        self.assertEqual(frame_count(job["output_path"]), 50)
+        self.assertGreater(pixel(job["output_path"], .40, 160, 90)[0], 200)
+        self.assertGreater(pixel(job["output_path"], .44, 160, 90)[2], 200)
+        # Export fixes its own snapshot, without silently editing the author's project.
+        self.assertEqual(store.load_project(project["id"])["tracks"][1]["clips"][0]["duration"], .4)
+
+    def test_mixed_legacy_slot_uses_canonical_bounds_in_engine_manifest(self):
+        project, root, film, plan = self.legacy_half_frame("mixed-legacy-slot")
+        project["tracks"][0]["clips"].append({"id": "own", "kind": "text", "text": "Hi", "start": 0, "duration": 1})
+        with patch.object(store, "load_project_plan", return_value=plan):
+            spec = razgon_export.export_job(project)
+        self.assertTrue(spec["mixed"])
+        self.assertEqual(project["tracks"][1]["clips"][0]["duration"], .44)
+        # The normal engine manifest receives the corrected snapshot too.
+        manifest = app.normalize_for_engine(project)
+        block = next(c for layer in manifest["timeline_layers"] for c in layer["clips"] if c["id"] == "f1")
+        self.assertEqual(block["duration"], .44)
+
+    def test_real_moves_and_authored_code_effects_are_not_legacy_rounding(self):
+        project, root, film, plan = self.legacy_half_frame("moved-slot")
+        for patch_fields in ({"start": .04}, {"duration": .36}, {"duration": .401}, {"shadow": {"blur": 1}}):
+            altered = json.loads(json.dumps(project))
+            altered["tracks"][1]["clips"][0].update(patch_fields)
+            with self.subTest(patch_fields=patch_fields), patch.object(store, "load_project_plan", return_value=plan):
+                with self.assertRaises(store.StudioError):
+                    razgon_export.export_job(altered)
+
     def test_export_renders_code_blocks_and_matches_bridge_final(self):
         project, root, film, plan = self.episode("film")
         job = self.export(project, plan)

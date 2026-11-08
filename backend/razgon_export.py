@@ -118,6 +118,41 @@ def _layered(project: dict, plate: str | None, logo: str | None) -> str | None:
     return str(target)
 
 
+def canonicalize_legacy_blocks(project: dict, info: dict) -> list[str]:
+    """Upgrade old banker-rounded code slots in this export snapshot only.
+
+    A genuine move must still fail validation. Accept only untouched invisible code blocks
+    whose exact endpoints are the old or current quantization of the matching source plan.
+    Rendered clips and authored timing/effects are never rewritten here.
+    """
+    link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
+    plan = store.load_project_plan(project["id"]) or {}
+    audio = (plan.get("timing") or {}).get("audio") or {}
+    if (link.get("project_id") != project["id"] or link.get("fps") != project.get("fps")
+            or plan.get("script_sha256") != link.get("script_sha256")
+            or audio.get("sha256") != link.get("audio_sha256")):
+        return []
+    fps = int(link["fps"])
+    frames = {int(f["number"]): f for f in link.get("frames", [])}
+    changed = []
+    for track in project.get("tracks", []):
+        for clip in track.get("clips", []):
+            match = FRAME_TITLE.fullmatch(clip.get("title", ""))
+            frame = frames.get(int(match[1])) if match else None
+            if (not frame or clip.get("kind") != "animation" or clip.get("content_type") != "shape"
+                    or float(clip.get("opacity", 1)) != 0 or not _as_is(clip)):
+                continue
+            want = _slot(frame["start"], frame["end"], fps)
+            old = tuple(round(float(frame[key]) * fps) for key in ("start", "end"))
+            bounds = (float(clip["start"]), float(clip["start"]) + float(clip["duration"]))
+            if all(any(abs(t - index / fps) < 1e-7 for index in (before, after))
+                   for t, before, after in zip(bounds, old, want)):
+                if _slot(*bounds, fps) != want:
+                    clip.update(start=want[0] / fps, duration=(want[1] - want[0]) / fps)
+                    changed.append(clip["id"])
+    return changed
+
+
 def export_job(project: dict) -> dict | None:
     """The bridge's part of an export of this project, or None when it exports through the Studio engine."""
     if not store.razgon_link(project):
@@ -125,6 +160,8 @@ def export_job(project: dict) -> dict | None:
     blocks = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])
               if FRAME_TITLE.fullmatch(clip.get("title", "")) and clip.get("kind") != "video"]
     info = razgon_live.link(project)
+    if info:
+        canonicalize_legacy_blocks(project, info)
     try:
         if not info or not BRIDGE.is_file():
             raise NotTheFilm("не знайдено проєкт Razgon або razgon_bridge.py")

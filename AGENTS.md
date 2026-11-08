@@ -22,6 +22,8 @@ For direct montage, agents use the normal asset and timeline action APIs, includ
 
 Visual clip times must quantize their absolute start and end with the same deterministic frame-index function. Never independently round duration and start, as that creates one-frame gaps or overlaps at touching boundaries. Keep spoken audio and ASR times unchanged. Check every decoded frame in a fractional-boundary render.
 
+Razgon export must accept untouched code blocks saved by the former Python banker-rounding rule. Canonicalize only exact old/current endpoints from the matching project, script, audio and FPS in the export snapshot. Keep the real-move check strict; never use a blanket one-frame tolerance or alter rendered media. Test both the engine manifest and an actual exported seam before changing this compatibility path.
+
 The final composition may extend by one output frame to cover a fractional audio end. Keep interior edit boundaries and speech timestamps unchanged; never introduce an empty rounding frame at the end. Exported circular and rounded masks must retain antialiased edges at their final size.
 
 Keep preview media DOM nodes keyed by clip/source. Removing an outgoing transition clip must not reload the incoming image or video. Preload upcoming media and its source offset. CSS stacking values must be integers; graphic covers sit above scene media and below permanent branding. Test transition application, moving an existing transition, invalid drops, hover previews, and both sides of the final frame in the real browser.
