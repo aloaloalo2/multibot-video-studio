@@ -1,4 +1,5 @@
 import json
+import copy
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,32 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_native_animation_ops_remain_editable_and_repair_keeps_neighbours(self):
+        project=store.create_project(store.channel_id(self.channel),'Live animation')
+        pid=project['id'];root='/api/projects/'+pid
+        plan={'frames':[{'number':3,'format':'animation','start':0,'end':6},
+                        {'number':4,'format':'animation','start':6,'end':12}]}
+        layers=[{'kind':'animation','content_type':'shape','color':'#ff0000','width':.2,'height':.2,
+                 'keyframes':[{'time':0,'x':.2},{'time':6,'x':.8}]}]
+        with patch.object(store,'load_project_plan',return_value=plan):
+            code,result=self.request(root+'/ops','POST',{'ops':[{'op':'animation','frame':3,'clips':layers},
+                                                              {'op':'animation','frame':4,'clips':layers}]})
+            self.assertEqual(code,200,result)
+            before=store.load_project(pid)
+            groups={g['title']:g for g in before['scene_groups']}
+            original_group=groups['Кадр 3']['id']
+            neighbour=copy.deepcopy(groups['Кадр 4'])
+            code,result=self.request(root+'/ops','POST',{'ops':[{'op':'animation','frame':3,'replace':True,
+                'clips':[{'kind':'text','text':'Новий підпис','font_size':60}]}]})
+            self.assertEqual(code,200,result)
+            after=store.load_project(pid);groups={g['title']:g for g in after['scene_groups']}
+            self.assertEqual(groups['Кадр 3']['id'],original_group)
+            self.assertEqual(groups['Кадр 4'],neighbour)
+            self.assertEqual(store.made_frames(after,plan),[3,4])
+            self.assertTrue(all(c['kind']!='video' for t in after['tracks'] for c in t['clips']))
+            self.assertTrue(any(c.get('text')=='Новий підпис' for t in after['tracks'] for c in t['clips']))
+            self.assertEqual(after['assets'],before['assets'])
+
     def test_thumbnail_edit_http_forwards_the_selected_base(self):
         project=store.create_project(store.channel_id(self.channel),'Thumbnail edits')
         root='/api/projects/'+project['id']

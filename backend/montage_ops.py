@@ -33,6 +33,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 import display_text
+import native_animation
 import joins
 import store
 import typography
@@ -633,6 +634,9 @@ def replace(ctx: Context, spec: dict) -> None:
         clip = main_picture(ctx.project, frame)
         if clip is None:
             raise OpError("У кадрі немає фото чи відео для заміни")
+    owner = next((f for f in ctx.frames if any(c.get('id') == clip['id'] for c in f['clips'])), None)
+    if owner and (owner.get('plan') or {}).get('format') == 'animation':
+        raise OpError('Правки анімації внесіть шарами через op: animation, replace: true. Відео кадру не рендериться.', 400)
     asset_id = spec.get("asset_id") or ctx.asset_for(Path(spec["path"]).expanduser())
     ctx.actions.append({"type": "replace_clip_asset", "payload": {"clip_id": clip["id"], "asset_id": asset_id}})
     ctx.actions.append({"type": "update_clip", "payload": {"clip_id": clip["id"], "patch": {"title": clip.get("title", "")}}})
@@ -661,6 +665,8 @@ def place(ctx: Context, spec: dict) -> None:
     planned = next((f for f in (ctx.plan or {}).get("frames", []) if int(f.get("number", 0)) == number), None)
     if planned is None:
         raise OpError(f"Кадру {number} немає в плані", 404)
+    if planned.get('format') == 'animation':
+        raise OpError('Кодову анімацію додайте шарами через op: animation. Відео рендериться лише під час експорту.', 400)
     have = next((f for f in ctx.frames if f["number"] == number), None)
     if have and (main_picture(ctx.project, have) or _full_frame_text(have) and any(c.get("kind") == "text" for c in have["clips"])):
         raise OpError(f"Кадр {number} уже стоїть на таймлайні: замініть його картинку через replace")
@@ -991,7 +997,7 @@ def reglue(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
+OPS = {"animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion": motion}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
