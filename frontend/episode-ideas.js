@@ -1,5 +1,5 @@
 function episodeDraftPending(data){
-  return !!data?.project_id&&!data.completed&&!data.cancelled&&['openings','script'].includes(data.stage);
+  return !!data?.project_id&&!data.completed&&!data.cancelled&&['openings','script','metadata'].includes(data.stage);
 }
 
 async function openNewEpisodeWizard({projectId=null,draft=null}={}){
@@ -64,11 +64,15 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     if(data.completed&&projectId){closeModal();selectProject(projectId).catch(error=>status(error.message,true));return;}
     if(data.stale&&!projectId&&data.status!=='failed'&&!passive){request({action:'ideas',refresh:true});return;}
     if(data.status==='running'){
-      const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує зачини',script:'Opus пише сценарій'}[data.stage];
-      root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.selected?data.target_words.toLocaleString('uk-UA')+' слів':'На основі попередніх випусків каналу'}</small></div></div>`;
+      const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage];
+      root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.target_words?data.target_words.toLocaleString('uk-UA')+' слів':'Для збереженого сценарію'}</small></div></div>`;
       timer=setTimeout(poll,2000);return;
     }
     const error=data.status==='failed'?errorBox(data.error||'Запит не завершено'):'';
+    if(projectId&&(data.script_saved||data.stage==='metadata')){
+      root.innerHTML=error+'<p class="muted">Сценарій збережено.</p><button class="secondary" id="metadata-retry">Дописати метадані · Opus</button>';
+      root.querySelector('#metadata-retry').onclick=()=>request({action:'metadata'});return;
+    }
     const openings=data.openings?.length?data.openings:data.previous_openings;
     if(projectId&&openings?.length){
       root.innerHTML=error+`<div class="episode-openings-head"><h3>Виберіть зачин</h3><span class="muted">${data.target_words.toLocaleString('uk-UA')} слів</span></div><div class="episode-options">${openings.map((row,i)=>`<button data-opening="${i}" ${data.openings?.length?'':'disabled'}><strong>Варіант ${i+1}</strong><span>${esc(row.text)}</span>${row.uk?`<small>${esc(row.uk)}</small>`:''}</button>`).join('')}</div>`+draftControls();

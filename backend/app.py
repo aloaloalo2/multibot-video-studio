@@ -821,7 +821,7 @@ def studio_work_status(exports):
     import episode_ideas
     for data in episode_ideas.active_work():
         cid = data['channel_id']
-        kind = 'створення зачинів' if data['stage'] == 'openings' else 'створення сценарію'
+        kind = {'openings': 'створення зачинів', 'metadata': 'створення метаданих'}.get(data['stage'], 'створення сценарію')
         result['busy'].append(kind + ': ' + (data.get('project_id') or cid))
         result['active_channels'] = sorted(set(result['active_channels']) | {cid})
         if data.get('project_id'):

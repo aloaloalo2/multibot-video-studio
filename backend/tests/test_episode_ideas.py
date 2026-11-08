@@ -1,5 +1,6 @@
 import copy
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 import test_backend as fixtures
 import store
@@ -77,7 +78,11 @@ class EpisodeIdeasTest(unittest.TestCase):
             self.assertIn('story number 2',model.call_args.args[0])
         data=self.begin({'action':'script','index':3})
         script=hooks[3]['text']+' Full natural script words.'*400
-        with patch.object(ideas,'opus',return_value={'script':script}): data=self.finish(data)
+        metadata={'titles':[data['selected']['title'],'Another fresh angle','A third fresh angle'], 'description':'Thank you for watching! Subscribe for more.\n\nThis video is for entertainment.', 'tags':['story','fiction','curiosity']}
+        with patch.object(ideas,'opus',return_value={'script':script,'metadata':metadata}) as model, (patch.object(ideas.author_rules,'check',return_value=(True,'OK')) if hasattr(ideas,'author_rules') else nullcontext()):
+            data=self.finish(data)
+            self.assertEqual(model.call_count,1)
+            self.assertIn('metadata', model.call_args.args[0])
         self.assertTrue(data['completed'])
         project = store.load_project(pid)
         self.assertEqual(ideas.completion_notices.notice(project)['kind'], 'process')

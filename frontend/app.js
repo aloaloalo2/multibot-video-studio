@@ -172,7 +172,7 @@ function renderProjectActivities(){
     card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
 }
@@ -181,9 +181,9 @@ async function pollChannelActivity(){
   if(document.hidden||channelActivityPending)return;
   channelActivityPending=true;
   try{
-    const writing=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
+    const writing=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
-    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію','створення сценарію','створення зачинів'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
+    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію','створення сценарію','створення зачинів','створення метаданих'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
@@ -339,7 +339,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
       renderPreview();renderTimeline();
     }catch(error){console.warn('Не вдалося оновити стан проєкту',error);}
   },10000);
-  if(episodeDraftPending(draft)&&!(state.project.voice_script||{}).text)await openNewEpisodeWizard({projectId:id,draft});
+  if(episodeDraftPending(draft)&&(!(state.project.voice_script||{}).text||draft.script_saved||draft.stage==='metadata'))await openNewEpisodeWizard({projectId:id,draft});
   return true;
 }
 
