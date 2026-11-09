@@ -334,6 +334,8 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Невідомий режим створення ролика")
     if value.get("motion_easing", "ease_in_out") not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
         raise StudioError("Невідомий тип руху")
+    if value.get("text_look", "varied") not in {"varied", "dim"}:
+        raise StudioError("Невідомий вигляд текстових вставок")
     if 'typography' in value:
         if not isinstance(value['typography'],dict):raise StudioError('Invalid typography')
         try:graphics.validate(value['typography'])

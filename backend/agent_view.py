@@ -65,6 +65,25 @@ def _uncovered(project: dict, clip: dict) -> str | None:
     return None
 
 
+def _solid_backing(clip: dict, picture: dict) -> bool:
+    """A stationary opaque field must cover the whole picture interval and the whole canvas."""
+    if (clip.get("kind") != "animation" or clip.get("content_type") != "shape"
+            or not str(clip.get("title", "")).endswith(" фон") or clip.get("keyframes")
+            or clip.get("mask", "none") != "none" or float(clip.get("rotation", 0)) != 0
+            or float(clip.get("opacity", 1)) < 1):
+        return False
+    color = str(clip.get("color", ""))
+    if len(color) != 7 or not color.startswith("#"):
+        return False
+    start, duration = float(clip.get("start", 0)), float(clip.get("duration", 0))
+    pstart = float(picture.get("start", 0))
+    if start > pstart + 1e-6 or start + duration < pstart + float(picture.get("duration", 0)) - 1e-6:
+        return False
+    scale = float(clip.get("scale", 1))
+    return all(float(clip.get(size, 0)) * scale >= 1 + 2 * abs(float(clip.get(axis, .5)) - .5)
+               for size, axis in (("width", "x"), ("height", "y")))
+
+
 def project_summary(project: dict, readiness: dict | None = None, plan: dict | None = None) -> dict:
     """{"head": [...lines], "frames": [{"n", "line", "issues"}], "issues": [...]} — the text an agent reads."""
     if plan is None:
@@ -116,7 +135,8 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                 problems.append(f"слова після кінця «{clip.get('title')}»")
             if montage_ops.is_accent(clip) and not montage_ops.is_entrance(clip):
                 accents[str(clip.get("title", "")).split()[-1]] += 1
-        uncovered = _uncovered(project, main) if main else None
+        field = main and any(_solid_backing(c, main) for c in frame["clips"] if c is not main)
+        uncovered = _uncovered(project, main) if main and not field else None
         if uncovered:
             problems.append(uncovered)
         join = joins_by_from.get("group:" + frame["group"]["id"])

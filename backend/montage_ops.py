@@ -14,7 +14,7 @@ POST /api/projects/<id>/ops {"ops": [...], "expected_revision": n, "dry_run": fa
 - {"op": "remove", "frame": 12} takes the frame off the timeline with its whole group.
 - {"op": "place", "frame": 12, "path": file | "asset_id": id | "text": true, "motion": "zoom_in"} puts a frame of the
   plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video, still unless the director
-  explicitly names its motion, or with "text" the frame's own spoken words as a full-frame text. The frame agent of
+  explicitly names its "motion" (zoom_in, zoom_out, pan_left, pan_right), or with "text" the frame's own spoken words as a full-frame text. The frame agent of
   the photo channels (backend/production.py) builds the film with it.
 
 The answer is short (the report lines and the new revision), so an agent does not have to read the whole project back.
@@ -393,6 +393,8 @@ def draw_circle(path: Path, radii, colors=(YELLOW, INK)):
 # ---------------------------------------------------------------- the operation context
 
 class Context:
+    text_look = "varied"   # the channel's look of text frames; a context made without __init__ (tests) keeps the default
+
     def __init__(self, project: dict):
         self.project = project
         self.W, self.H = float(project.get("width", 1920)), float(project.get("height", 1080))
@@ -408,6 +410,15 @@ class Context:
         self.report: list[str] = []
         self.entrance = 0
         self.easing = project.get("settings", {}).get("motion_easing", "ease_in_out")
+        # per-channel looks (channel video-plan.json): the project snapshot first, the channel's current file else, so a
+        # project made before the setting still follows it
+        channel = {}
+        if project.get("channel_id"):
+            try:
+                channel = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+            except (store.StudioError, OSError, ValueError):
+                channel = {}
+        self.text_look = project.get("settings", {}).get("text_look") or channel.get("text_look", "varied")
 
     def words(self) -> list[dict]:
         if self._words is None:
@@ -596,15 +607,19 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
     # a label over the picture rides with it; one in the black field beside a vertical photo stands still
     pin = spec.get("pin", picture is not None and picture.covers(centre[0], centre[1], mid))
     first = words[0][1] - start
+    # «dim» (Григорий Антропов, user 8 November 2026: «плашка… чорною… трошки прозорою… з рівними кутами»): a black,
+    # slightly see-through card with square corners and a little more room round the words
+    dim = ctx.text_look == "dim" and style == "card" and "card_color" not in spec
     if card or style == "white":
-        under = ({"title": "картка", "centre": centre, "size": (right - left + 40, bottom - top + 22), "color": spec.get("card_color", card), "at": first,
-                  "top": .9 if style == "card" else .96, "radius": min(24, (bottom - top + 22) / 2)} if card else
+        under = ({"title": "картка", "centre": centre, "size": (right - left + (72 if dim else 40), bottom - top + (34 if dim else 22)),
+                  "color": "#000000" if dim else spec.get("card_color", card), "at": first,
+                  "top": .72 if dim else .9 if style == "card" else .96, "radius": 0 if dim else min(24, (bottom - top + 22) / 2)} if card else
                  {"title": "риска", "centre": (centre[0], centre[1] + (bottom - top) / 2 + 8), "size": (right - left, 12), "color": spec.get("card_color", YELLOW),
                   "at": words[-1][1] - start + .2, "top": 1.0, "radius": 4})
         keys, base = _glued(picture, under["centre"], mid, duration, ctx, pin)
         animated(ctx, frame, picture, f"{index} {under['title']}", {"kind": "animation", "content_type": "shape", "color": under["color"],
                                                                      "width": under["size"][0] / ctx.W, "height": under["size"][1] / ctx.H,
-                                                                     "mask": "rounded", "corner_radius": under["radius"]},
+                                                                     "mask": "rounded" if under["radius"] else "none", "corner_radius": under["radius"]},
                  keys, base, max(0.0, under["at"] - (ENTRANCE.get(under["title"], .5) if under["title"] == "картка" else 0)), duration, under["top"])
     keys, base = _glued(picture, (bx, by), mid, duration, ctx, pin)
     entrance = spec.get("entrance") or ENTRANCES[ctx.entrance % len(ENTRANCES)]
@@ -756,6 +771,21 @@ TEXT_LOOKS = [
 ]
 
 
+# «dim» text frames (Григорий Антропов, user 8 November 2026: «на темнішому фоні, такому прям тусклому… з якимсь
+# ефектом… переливання… щоб воно… грало»): the episode's picture blurred deep and greyed under an almost black veil,
+# a slow flowing gradient of dark muted colours over it, and words with a soft coloured glow.
+DIM_TEXT_LOOKS = [
+    {"veil": "#040507", "veil_opacity": .78, "blur": 36, "color": "#ffffff", "entrance": "blur_up", "zoom": (1.12, 1.0),
+     "flow": ["#0b1a2e", "#1f1238", "#062a2a", "#141414"], "glow": "#6aa8ff"},
+    {"veil": "#070605", "veil_opacity": .80, "blur": 40, "color": "#f6ead2", "entrance": "up", "zoom": (1.0, 1.12),
+     "flow": ["#2a1a08", "#101820", "#2b0f12", "#0c0c0c"], "glow": "#ffbf6a"},
+    {"veil": "#030406", "veil_opacity": .76, "blur": 34, "color": "#e6f1ff", "entrance": "pop", "zoom": (1.12, 1.02),
+     "flow": ["#071f33", "#0d2b22", "#1a1030", "#0a0a0f"], "glow": "#57d6c4"},
+    {"veil": "#050505", "veil_opacity": .82, "blur": 42, "color": "#ffffff", "entrance": "fade", "zoom": (1.02, 1.12),
+     "flow": ["#22102a", "#0b1c30", "#2a1c0a", "#0d0d0d"], "glow": "#c58cff"},
+]
+
+
 def _text_background(ctx: Context, number: int) -> dict | None:
     """A picture of the episode for the text frame's background: a neighbouring frame's picture first, any picture else."""
     by_number = {f["number"]: f for f in ctx.frames if f.get("number") is not None}
@@ -786,17 +816,19 @@ def _timed_tokens(ctx: Context, planned: dict) -> list[tuple[str, float]]:
 
 
 def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, start: float, end: float, have: dict | None) -> None:
-    look = TEXT_LOOKS[number % len(TEXT_LOOKS)]
+    dim = ctx.text_look == "dim"
+    look = (DIM_TEXT_LOOKS if dim else TEXT_LOOKS)[number % len(DIM_TEXT_LOOKS if dim else TEXT_LOOKS)]
     duration = end - start
     tokens = _timed_tokens(ctx, planned)
     if tokens and len(tokens) == len(payload["text"].split()):
         family = ctx.project.get("font_family") or "Golos"
         box, stub = _text_layout(ctx, tokens, 1500, 760, 68, family, 700, start)
-        if stub["text_words"]:
-            stub["text_words"][0]["start"] = min(stub["text_words"][0]["start"], .12)   # the frame opens on its first word
+        # every word, the first too, waits for its own moment in the voice (AGENTS.md, 20 October 2026; user 8 November
+        # 2026: «текст вже появився, хоча про нього ми ще не говорили»): no pulling the first word to the frame's start
         payload.update(width=box / ctx.W, height=760 / ctx.H, x=.5, y=.5, font_size=stub["font_size"], font_family=family, font_weight=700,
                        text_words=stub["text_words"], word_entrance={"type": look["entrance"], "duration": .26, "distance": 16},
-                       color=look["color"], shadow=None)
+                       color=look["color"], shadow={"color": look["glow"], "opacity": .55, "blur": 22, "x": 0, "y": 0} if dim else
+                       None)
     background = _text_background(ctx, number)
     if background is None:
         return
@@ -811,10 +843,19 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
         cover = 1.18
     ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_bg,
                                                          "kind": "image", "asset_id": background["id"], "scale": zoom[0] * cover, "blur": look["blur"], "easing": ctx.easing,
+                                                         **({"visual_effect": "monochrome"} if dim else {}),
                                                          "keyframes": [{"time": 0.0, "scale": zoom[0] * cover}, {"time": math.floor(duration * 1000) / 1000, "scale": zoom[1] * cover}], **group}})
     ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_veil,
                                                          "kind": "animation", "content_type": "shape", "color": look["veil"], "opacity": look["veil_opacity"],
                                                          "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+    if dim:
+        title_flow = f"K{number:03d} переливання"
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_flow,
+                                                             "kind": "animation", "content_type": "gradient", "opacity": .42,
+                                                             "gradient": {"colors": look["flow"], "speed": .09, "amplitude": .3, "softness": .14},
+                                                             "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+        if not have:
+            ctx.groups[title_flow] = f"Кадр {number}"
     if not have:
         ctx.groups[title_bg] = ctx.groups[title_veil] = f"Кадр {number}"
 

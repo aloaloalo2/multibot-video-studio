@@ -42,6 +42,16 @@ class DirectorTest(unittest.TestCase):
         self.assertIn("Сині плашки", text)
         self.assertIn("Акценти на кадрах увімкнені", text)
 
+    def test_claude_memory_reaches_the_director_with_a_bounded_budget(self):
+        import author_rules
+        with patch.object(director.agent_storage, "get_memory", return_value="Поточні правила каналу"), \
+                patch.object(store, "get_channel_folder", return_value=Path("/channels/Test")), \
+                patch.object(author_rules, "claude_memory", return_value="Нотатки автора") as memory:
+            text = director.channel_memory(PROJECT)
+        memory.assert_called_once_with("Test", limit=20000)
+        self.assertIn("Поточні правила каналу", text)
+        self.assertIn("Нотатки автора", text)
+
     def test_brief_names_the_episode_steps_and_the_limits(self):
         text = director.brief(PROJECT)
         for part in (PROJECT["id"], "What If/05 Test", 'tools/razgon_bridge.py" prepare', "gen_shots.py", "direction_check.py",

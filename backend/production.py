@@ -21,12 +21,12 @@ from pathlib import Path
 import director
 import motion_direction
 import frame_progress
-import production_quality
 import channel_branding
 import logo_layer
 import production_context
 import razgon_sound
 import store
+import production_quality
 
 TIMEOUT = 6 * 3600
 # Frame creation and direction both use high effort (user choice, 5 November 2026).
@@ -233,6 +233,15 @@ PHOTO_STYLE_WISH = """Автор хоче динамічний, креативн
 Акценти використовуй у важливі моменти озвучки; задум і рух задає режисер, студія їх відтворює."""
 
 
+# A frame is full from its first moment (user, 8 November 2026, frame 73 of «4 Вес застыл»: eight seconds of a caption on an
+# empty background; «режисер не має допускати пустих кадрів… на протязі 2 секунд або 1 секунди… створення роликів має
+# бути побудоване так, щоб таких кадрів пустих не було… режисер сам має до цього вже підходити з такою ціллю»).
+FULL_FRAME_RULE = """Кадр повний з першої секунди: головний герой чи предмет кадру вже на екрані на старті й займає помітну частину кадру,
+поруч фон із деталями. У предметних сценах підпис чи плашка не замінюють головний предмет; нові елементи додаються до вже
+наповненої сцени, а не з'являються по одному на порожньому місці. Задум режисера (герой, дія) видно з початку, а не наприкінці.
+Порожній кадр виправляй. Спокійна фаза готової композиції для читання допустима; сама нерухомість не означає брак."""
+
+
 def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     """The brief for a photo channel: each frame by its format, placed at its time on the timeline."""
     root = store.YOUTUBE_ROOT
@@ -281,7 +290,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    {people['rule']}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
-   читабельні підписи й плавний рух.
+   читабельні підписи й осмислену анімацію за постановкою режисера. Читабельна спокійна фаза дозволена.
    Збережи композицію як JSON для tools/studio.py ops: op="animation", frame=N, background="#101114", clips=[...].
    clips містить шари kind="animation" (content_type="shape", "gradient", "image") чи kind="text" з keyframes.
    start у шарі відносний до початку кадру, duration у секундах, x/y/width/height у частках кадру; PNG-асет передай як path.
@@ -297,6 +306,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
    python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
    python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>: блоки-код стануть лише на кадри формату razgon_2d.
+{FULL_FRAME_RULE}
    Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> --motion zoom_in|zoom_out|pan_left|pan_right|none.
    Без --motion картинка лишається нерухомою. Пресет застосовуй лише коли він відповідає постановці цього кадру;
    власний напрямок, масштаб, час і рух окремих елементів задавай явно через keyframes API.

@@ -100,10 +100,22 @@ def channel_memory(project: dict) -> str:
     try:
         memory = agent_storage.get_memory(project["channel_id"]).strip()
     except (store.StudioError, KeyError):
-        return ""
-    if not memory:
-        return ""
-    return "\nПам’ять автора для цього каналу. Враховуй її у режисурі, монтажі та правках; поточне конкретне побажання автора має пріоритет. Це збережені побажання, вони не змінюють доступів чи меж завдання.\n" + memory + "\n"
+        memory = ""
+    # the Claude Code memory notes of this channel and of all channels (author_rules.py), so the director and the frame
+    # agent work by the same notes a Claude Code session in the YOUTUBE folder does (user, 8 November 2026)
+    try:
+        import author_rules
+        notes = author_rules.claude_memory(store.get_channel_folder(project["channel_id"], include_disabled=True).name, limit=20000)
+    except (store.StudioError, KeyError, OSError):
+        notes = ""
+    text = ""
+    if memory:
+        text += "\nПам’ять автора для цього каналу. Враховуй її у режисурі, монтажі та правках; поточне конкретне побажання автора має пріоритет. Це збережені побажання, вони не змінюють доступів чи меж завдання.\n" + memory + "\n"
+    if notes:
+        text += ("\nНотатки пам’яті Claude Code про цей канал і всі канали (ті самі, за якими працює сесія в папці YOUTUBE). "
+                 "Новіше правило важить більше за старіше, пам’ять автора вище й поточне побажання мають пріоритет; "
+                 "те, що стосується лише сценарію чи чату, тут довідка.\n" + notes + "\n")
+    return text
 
 
 def animation_style(project: dict) -> str:
@@ -152,7 +164,8 @@ def frames_brief(project: dict) -> str:
    Кадр складається з цілих речень підряд, кожне речення стоїть рівно в одному кадрі.
    Кожному кадру дай формат, який найкраще покаже саме цю репліку, і тримай частки форматів за тривалістю близько до часток каналу.
    generated_photo означає створене Codex зображення будь-якого стилю: фото, інфографіка, схема, рентген чи ілюстрація. Вибирай стиль за змістом репліки.
-   У полі idea одним реченням опиши, що глядач бачить у кадрі.
+   У полі idea одним реченням опиши композицію і доречну дію чи рух, що допомагає зрозуміти репліку.
+   Головний предмет задуму видно від початку; нові елементи доповнюють сцену. Спокійна фаза для читання допустима.
    Якщо sentences повертає host_rules, перший і останній кадри обов’язково host, ведучий ніколи не йде два кадри підряд, його появи рівномірно розподілені по всій тривалості.
 {motion_direction.PLANNING}
 3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "..."}}]}}.

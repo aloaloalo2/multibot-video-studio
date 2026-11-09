@@ -90,3 +90,23 @@ class BackgroundIsNotThePhotoTest(unittest.TestCase):
         frame = {"clips": [{"title": "K012 фон", "kind": "image", "asset_id": "a", "width": 1, "height": 1},
                            {"title": "K012 кадр", "kind": "image", "asset_id": "a", "width": 1, "height": 1}]}
         self.assertEqual(montage_ops.main_picture({}, frame)["title"], "K012 кадр")
+
+
+class AntropovLooksTest(unittest.TestCase):
+    """Dim flowing text frames, the first word on its own time (user, 8 November 2026)."""
+
+    def test_dim_text_frame_flows_glows_and_waits_for_the_first_word(self):
+        assets = [{"id": "a1", "kind": "image", "path": "/nope/photo.png"}]
+        frames = [{"number": 4, "clips": [{"kind": "image", "asset_id": "a1", "width": 1, "height": 1}], "group": {"id": "g4"}}]
+        ctx = DesignedTextTest().ctx(assets, frames)
+        ctx.text_look = "dim"
+        planned = {"number": 5, "sentences": ["Врачи признают такое неудобство."],
+                   "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": 11.5, "end": 13.0}]}
+        payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
+        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None)
+        background, veil, flow = (a["payload"] for a in ctx.actions)
+        self.assertEqual(background["visual_effect"], "monochrome")
+        self.assertGreaterEqual(veil["opacity"], .75)
+        self.assertEqual(flow["content_type"], "gradient")
+        self.assertGreater(payload["shadow"]["blur"], 15)
+        self.assertGreaterEqual(payload["text_words"][0]["start"], 1.4)   # said 1.5 s into the frame, not shown at its start
