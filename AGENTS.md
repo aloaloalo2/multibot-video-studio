@@ -832,3 +832,8 @@ Opus full-script acceptance uses the author's final tolerance of ±7% of target_
 
 
 Overview status polling refreshes project snapshots when writing, recognition, narration or direction hands off to the next stage, and when an active frame-creation job is absent from the local card snapshot. A director-to-production handoff must show frame progress without a page reload. Do not fetch all project snapshots on every unchanged activity poll.
+
+
+Export completion acknowledgement consumes only the completion timestamp actually shown on the overview card at project opening. A background export poll never acknowledges completion. Send `through` to /completion/seen so an old or delayed acknowledgement cannot hide a newer export. Keep the completion icon outside the ellipsized date span, in a shared flex row with a non-shrinking icon. Preserve the existing disappear-after-opening behavior.
+
+A completed export newer than an earlier failed frame-creation run takes priority in the overview card's status, including after its unread mark is acknowledged. Expose last_export_at independently of completion_notice; keep the underlying visual-review report intact inside the project. A failure or active run newer than that export keeps its own status.

@@ -32,3 +32,18 @@ class CompletionNoticeTests(unittest.TestCase):
             notices.record({'id':'b'*24,'project_id':self.project['id'],'status':status,'output_path':'x.mp4'},15)
         self.project['production_request']['status']='failed'
         self.assertIsNone(notices.notice(self.project))
+
+    def test_acknowledgement_of_a_visible_notice_does_not_consume_a_later_export(self):
+        pid=self.project['id']
+        notices.record({'id':'first','project_id':pid,'status':'complete','output_path':'one.mp4'},15)
+        notices.record({'id':'second','project_id':pid,'status':'complete','output_path':'two.mp4'},25)
+        with patch.object(notices.time,'time',return_value=30):notices.seen(pid,15)
+        self.assertEqual(notices.notice(self.project)['at'],25)
+        with patch.object(notices.time,'time',return_value=30):notices.seen(pid,25)
+        self.assertIsNone(notices.notice(self.project))
+        with patch.object(notices.time,'time',return_value=30):notices.seen(pid,15)
+        self.assertEqual(store.read_json(notices.path(pid))['seen_at'],25)
+
+    def test_invalid_acknowledgement_cannot_hide_future_completions(self):
+        for value in ('15',float('nan'),float('inf'),-1,True):
+            with self.assertRaises(store.StudioError):notices.seen(self.project['id'],value)

@@ -1171,7 +1171,9 @@ class Handler(BaseHTTPRequestHandler):
             projects = store.list_projects((query.get("channel") or [None])[0])
             for item in projects:
                 item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
-                item['completion_notice'] = completion_notices.notice(store.listed_project(store.project_dir(item['id']) / 'project.json'))
+                receipts = store.read_json(completion_notices.path(item['id']), {}) or {}
+                item['last_export_at'] = (receipts.get('export') or {}).get('at', 0)
+                item['completion_notice'] = completion_notices.notice(store.listed_project(store.project_dir(item['id']) / 'project.json'), receipts)
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
@@ -1489,7 +1491,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
         if match and method == 'POST':
             store.load_project(match.group(1))
-            completion_notices.seen(match.group(1))
+            completion_notices.seen(match.group(1), body.get('through'))
             return self.json_response({'seen': True})
         if method == "PATCH" and path == "/api/channels/order":
             return self.json_response({"channels": store.reorder_channels(body.get("ids"))})

@@ -151,7 +151,8 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card .project-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
 .project-created{color:#96989f;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-created time{white-space:nowrap;font-variant-numeric:tabular-nums}
-.project-completion{display:inline-flex;vertical-align:middle;margin-left:6px;color:#b2b5bd;line-height:1}
+.project-created-group{display:flex;align-items:center;gap:6px;min-width:0}
+.project-completion{display:inline-flex;flex-shrink:0;vertical-align:middle;color:#b2b5bd;line-height:1}
 .project-completion.is-exported{color:#f0b429}
 .project-completion svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .project-card.has-cover{background:#0c0c0f}
@@ -207,7 +208,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .project-card.exporting{border-color:rgba(240,180,41,.55)}
 /* while exporting, a short amber line takes the date's place and the progress runs along the picture's bottom edge */
 .project-export-state{color:#f5c04a;font-size:12px;font-weight:600}
-.project-card.exporting .project-created{display:none}
+.project-card.exporting .project-created-group{display:none}
 .project-export-state[hidden]{display:none}
 .project-making[hidden],.project-production-control[hidden]{display:none}
 .project-card.exporting .project-making,.project-card.exporting .project-production-control{display:none}
@@ -994,7 +995,7 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .overview-projects .project-making{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .project-making .project-export-progress>span{background:linear-gradient(90deg,#3fbf86,#9dffd0);box-shadow:0 0 10px #6bf2ae99}
 .project-card.producing{border-color:#6bf2ae66}
-.project-card.producing .project-created{display:none}
+.project-card.producing .project-created-group{display:none}
 .project-card.producing .project-open{cursor:pointer}
 /* the voice player in the voice stage: play and pause, a seek bar, the time */
 .voice-player{display:flex;align-items:center;gap:12px;margin:0 12px 12px;padding:6px 14px 6px 6px;border:1px solid #2a2a2f;border-radius:999px;background:#141416}
@@ -1080,7 +1081,7 @@ input[type=checkbox]:hover:not(:disabled),input[type=radio]:hover:not(:disabled)
 input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid #f0b429;outline-offset:2px}
 input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.45;cursor:not-allowed}
 .project-making.stopped{color:#f0c967}
-.project-card.production-stopped .project-created{display:none}
+.project-card.production-stopped .project-created-group{display:none}
 /* the frame table speaks the strip's language: each format in its colour, a made frame ticked */
 .plan-table .plan-format{display:inline-flex;align-items:center;gap:7px;color:#e4e5e9}
 .plan-table .plan-format::before{content:'';width:10px;height:10px;border-radius:3px;background:var(--format-color);flex:none}
@@ -1825,7 +1826,7 @@ select option{background:#232327;color:#f1f1f2}
 .voice-progress-stage,.episode-director-line strong{display:flex;align-items:center;gap:8px}
 .episode-voice[data-state="working"] .episode-voice-icon{animation:none}
 .project-stage-job{color:#c7cbd6}
-.project-card.stage-working .project-created,.project-card.stage-working .project-making:not(.project-stage-job),.project-card.stage-working .project-production-control{display:none}
+.project-card.stage-working .project-created-group,.project-card.stage-working .project-making:not(.project-stage-job),.project-card.stage-working .project-production-control{display:none}
 .overview-projects .project-card.stage-working .project-stage-job{right:90px}
 
 .channel-name{flex:1}

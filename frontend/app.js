@@ -381,9 +381,11 @@ function completionMark(project){
   return `<span class="project-completion${exported?' is-exported':''}" role="img" aria-label="${label}" title="${label}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg></span>`;
 }
 async function markProjectSeen(id){
+  const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;
+  if(!notice)return;
   try{
-    await api(`/api/projects/${encodeURIComponent(id)}/completion/seen`,'POST',{});
-    const project=state.projects.find(item=>item.id===id);if(project)project.completion_notice=null;
+    await api(`/api/projects/${encodeURIComponent(id)}/completion/seen`,'POST',{through:notice.at});
+    if(project.completion_notice?.at<=notice.at)project.completion_notice=null;
   }catch(error){console.warn('Не вдалося прибрати позначку завершення',error);}
 }
 
@@ -396,10 +398,10 @@ function projectCardHeading(project){
   heading.append(button);return heading;
 }
 
-function projectProductionCardState(request){
+function projectProductionCardState(request,lastExportAt=0){
   const total=Math.max(0,Number(request?.frames)||0),done=Math.max(0,Math.min(total,Number(request?.made)||0));
   return {total,done,working:['requested','in_progress'].includes(request?.status),
-    stopped:request?.status==='failed'&&(done<total||request?.quality?.passed===false)};
+    stopped:request?.status==='failed'&&!(lastExportAt>Number(request.finished_at||0))&&(done<total||request?.quality?.passed===false)};
 }
 
 function renderOverview() {
@@ -414,10 +416,10 @@ function renderOverview() {
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}${completionMark(project)}</span></div>`;
+    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created-group"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span>${completionMark(project)}</span></div>`;
     // While the agent makes the frames the card shows how far it got and still opens, so the author can watch the frames
     // come in (user, 5 November 2026: «коли проект створюється… дозволено нажимати на проект… подивитися, що там відбувається»).
-    const making=project.production_request,makingState=projectProductionCardState(making),producing=makingState.working;
+    const making=project.production_request,makingState=projectProductionCardState(making,project.last_export_at),producing=makingState.working;
     open.addEventListener('click',()=>{
       selectProject(project.id,{view:directMontage(project)||count?'editor':'plan'}).catch(error=>status(error.message,true));
     });
@@ -1314,7 +1316,7 @@ async function pollJob(){
       target.innerHTML=`<p class="export-status-line">${!complete&&!failed&&!cancelled?exportSpinner:''}<span>${label}</span></p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
     jobPollFailures=0;
-    if(complete||failed||cancelled){if(complete&&state.project?.id===state.job.project_id)markProjectSeen(state.project.id);if(state.poll)clearTimeout(state.poll);state.poll=null;if(target){const box=$('modal-actions');box.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='Закрити';close.addEventListener('click',closeModal);box.append(close);}status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}
+    if(complete||failed||cancelled){if(state.poll)clearTimeout(state.poll);state.poll=null;if(target){const box=$('modal-actions');box.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='Закрити';close.addEventListener('click',closeModal);box.append(close);}status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}
     scheduleJobPoll();
   }catch(error){
     if(state.job?.id!==jobId){if(state.job)scheduleJobPoll(0);return;}

@@ -1,4 +1,5 @@
 """Small persistent unread completion marks, separate from the montage revision."""
+import math
 import threading
 import time
 import store
@@ -43,10 +44,11 @@ def index_exports(root):
         INDEXED.add(str(root))
 
 
-def notice(project):
+def notice(project, data=None):
     pid = project['id']
-    with LOCK:
-        data = store.read_json(path(pid), {})
+    if data is None:
+        with LOCK:
+            data = store.read_json(path(pid), {})
     seen = data.get('seen_at', 0)
     exported = data.get('export') or {}
     if exported.get('at', 0) > seen:
@@ -63,9 +65,12 @@ def notice(project):
     return {'kind': 'process', 'label': 'Роботу завершено', 'at': latest} if latest > seen else None
 
 
-def seen(pid):
+def seen(pid, through=None):
+    if through is not None and (type(through) not in (int, float) or not math.isfinite(through) or through < 0):
+        raise store.StudioError('Некоректна позначка завершення')
     with LOCK:
         target = path(pid)
         data = store.read_json(target, {})
-        data['seen_at'] = time.time()
+        stamp = time.time() if through is None else min(float(through), time.time())
+        data['seen_at'] = max(float(data.get('seen_at') or 0), stamp)
         store.atomic_json(target, data)

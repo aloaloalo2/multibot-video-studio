@@ -72,3 +72,37 @@ test('completion marks use gray for work and gold for export, with no mark after
   assert.doesNotMatch(c.completionMark({completion_notice:{kind:'process'}}),/is-exported/);
   assert.match(c.completionMark({completion_notice:{kind:'export'}}),/is-exported/);
 });
+
+
+test('opening consumes only a notice the overview actually showed, never a newer completion',async()=>{
+  const project={id:'p'},calls=[],state={projects:[project]};let release;
+  const block=source.slice(source.indexOf('async function markProjectSeen('),source.indexOf('function projectCardHeading('));
+  const c=vm.createContext({state,console,api:(...args)=>{calls.push(args);return new Promise(resolve=>release=resolve);}});
+  vm.runInContext(block,c);await c.markProjectSeen('p');assert.equal(calls.length,0);
+  project.completion_notice={kind:'process',at:10};const pending=c.markProjectSeen('p');
+  assert.equal(calls[0][2].through,10);
+  project.completion_notice={kind:'export',at:20};release({seen:true});await pending;
+  assert.equal(project.completion_notice.kind,'export');
+  const next=c.markProjectSeen('p');release({seen:true});await next;
+  assert.equal(project.completion_notice,null);
+});
+
+test('automatic export polling never acknowledges a result before its card is shown',async()=>{
+  const block=source.slice(source.indexOf('async function pollJob('),source.indexOf("\n$('add-channel')",source.indexOf('async function pollJob(')));
+  let seen=0;
+  const c=vm.createContext({state:{job:{id:'job',project_id:'p'},project:{id:'p'},poll:null},jobPollInFlight:false,jobPollFailures:0,
+    api:async()=>({job:{id:'job',project_id:'p',status:'complete'}}),updateExportLock(){},$:()=>null,
+    status(){},markProjectSeen:()=>seen++,clearTimeout(){},scheduleJobPoll(){}});
+  vm.runInContext(block,c);await c.pollJob();assert.equal(seen,0);
+});
+
+
+test('a newer successful export takes priority over an old failed production card without erasing its review',()=>{
+  const c=vm.createContext({});vm.runInContext(stateSource,c);
+  const request={status:'failed',frames:66,made:66,finished_at:100,quality:{passed:false}};
+  assert.equal(c.projectProductionCardState(request,110).stopped,false);
+  assert.equal(c.projectProductionCardState(request,90).stopped,true);
+  assert.equal(c.projectProductionCardState({...request,finished_at:120},110).stopped,true);
+  assert.equal(c.projectProductionCardState({...request,status:'in_progress'},110).working,true);
+  assert.equal(request.quality.passed,false);
+});
