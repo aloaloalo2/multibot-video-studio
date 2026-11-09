@@ -35,12 +35,19 @@ function channelSettingsSummary(values,limit=3){
   const active=values.filter(item=>Number(item.amount)>0).sort((a,b)=>b.amount-a.amount);
   return active.slice(0,limit).map(item=>`${item.label} ${item.amount}%`).join(' · ')+(active.length>limit?` · +${active.length-limit}`:'');
 }
+function channelSettingsEditable(field){
+  return !field.closest('.voice-player');
+}
+function channelSettingsResetAnchor(field){
+  const anchor=field.nextElementSibling;
+  return field.type==='range'&&channelSettingsEditable(field)&&anchor?.matches('output')?anchor:null;
+}
 function channelSettingsFieldValue(field){
   if(field.matches('button'))return field.getAttribute('aria-checked')??field.getAttribute('aria-pressed');
   return ['checkbox','radio'].includes(field.type)?String(field.checked):field.value;
 }
 function channelSettingsDirty(baseline){
-  return [...baseline].some(([field,before])=>field.isConnected&&channelSettingsFieldValue(field)!==before);
+  return [...baseline].some(([field,before])=>field.isConnected&&channelSettingsEditable(field)&&channelSettingsFieldValue(field)!==before);
 }
 function organizeChannelSettings(channel){
   const body=$('modal-body'),backdrop=$('modal-backdrop');
@@ -159,14 +166,14 @@ function organizeChannelSettings(channel){
     if(visual.style.backgroundImage!==$('logo-preview').style.backgroundImage)visual.style.backgroundImage=$('logo-preview').style.backgroundImage;
     visual.classList.toggle('has-preview',!!visual.style.backgroundImage);
     // New async controls get their own baseline; unchanged loading is never an author edit.
-    for(const field of body.querySelectorAll(fields))if(!field.disabled&&!baseline.has(field))baseline.set(field,channelSettingsFieldValue(field));
+    for(const field of body.querySelectorAll(fields))if(!field.disabled&&channelSettingsEditable(field)&&!baseline.has(field))baseline.set(field,channelSettingsFieldValue(field));
     for(const field of baseline.keys())if(!field.isConnected){baseline.delete(field);resets.delete(field);}
     for(const [field,before] of baseline){
-      if(field.type!=='range')continue;
+      const anchor=channelSettingsResetAnchor(field);if(!anchor)continue;
       if(!resets.has(field)){
         const reset=document.createElement('button');reset.type='button';reset.className='settings-field-reset';reset.textContent='↺';reset.title='Повернути збережене значення';reset.setAttribute('aria-label',reset.title);
         reset.addEventListener('click',()=>{field.value=before;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));});
-        field.nextElementSibling.after(reset);resets.set(field,reset);
+        anchor.after(reset);resets.set(field,reset);
       }
       resets.get(field).hidden=channelSettingsFieldValue(field)===before;
     }

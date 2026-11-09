@@ -108,6 +108,28 @@ class ThumbnailTest(unittest.TestCase):
                     else:
                         self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
 
+    def test_deepseek_receives_labeled_host_image_before_scene_references(self):
+        import io
+        import credentials
+        hero=Path(self.tmp.name)/'Головний герой.png'
+        Image.new('RGB',(16,16),'green').save(hero)
+        refs=[hero]
+        for number in range(5):
+            ref=Path(self.tmp.name)/f'scene-{number}.png'
+            Image.new('RGB',(16,9),'blue').save(ref);refs.append(ref)
+        response={'choices':[{'message':{'content':'A deliberate thumbnail composition. '*12}}],'usage':{'cost':0}}
+        with patch.object(credentials,'vault') as vault, patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(response).encode())) as opened:
+            vault.return_value.read.return_value='test-only'
+            thumbnail_gen.write_prompt_deepseek('MAIN CHARACTER REFERENCE: Головний герой.png',self.episode,refs)
+        payload=json.loads(opened.call_args.args[0].data)
+        content=payload['messages'][0]['content']
+        self.assertIn('Головний герой.png',content[1]['text'])
+        self.assertIn('Main character identity',content[1]['text'])
+        self.assertEqual(content[2]['type'],'image_url')
+        self.assertIn('scene-0.png',content[3]['text'])
+        self.assertEqual(sum(item['type']=='image_url' for item in content),4)
+        opened.assert_called_once()
+
     def test_edit_uses_only_selected_image_and_preserves_old_versions(self):
         work=thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
         selected=work/'Превью v1.png';Image.new('RGB',(16,9),'red').save(selected)

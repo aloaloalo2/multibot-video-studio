@@ -327,12 +327,14 @@ def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id:
         text = re.sub(r"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: [^\n]*\n", "", text)
         text += "\n\nГерої, їхній вигляд і світ ролику (story bible):\n" + bible.read_text(encoding="utf-8", errors="replace")[:8000]
     content = [{"type": "text", "text": text}]
-    for path in [*refs, *examples(folder)[1]][:4]:
+    for index, path in enumerate([*refs, *examples(folder)[1]][:4], 1):
         try:
             with Image.open(path) as source:
                 image = source.convert("RGB")
             image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
             out = io.BytesIO(); image.save(out, format="JPEG", quality=88)
+            role = "Main character identity reference. Match this character; other images do not replace their identity." if path.name == 'Головний герой.png' else "Scene or style reference."
+            content.append({"type": "text", "text": f"Reference image {index}: {path.name}. {role}"})
             content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()}})
         except (OSError, UnidentifiedImageError):
             continue
