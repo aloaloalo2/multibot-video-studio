@@ -269,6 +269,34 @@ def opus(prompt, root, identity, cid):
     return unpack(answer.get('result') or '')
 
 
+# One bounded request: choose varied editorial angles internally, return only five finished titles.
+TOPIC_PROMPT = r"""
+Propose exactly 5 fresh, compelling YouTube video topics for this channel's audience.
+Current author instruction: create a varied set of click-worthy titles. Use previous titles to learn
+language, subject, audience and voice; do not copy their sentence structure or their opening pattern.
+A strong title combines a concrete recognizable subject, a meaningful stake or useful promise,
+and a specific unanswered detail that makes the viewer curious. Put the strongest words early.
+Choose at least four different editorial angles across the set, for example an overlooked cause,
+a surprising consequence, a costly mistake, a practical discovery, a recognizable situation,
+a revealing story, a specific experiment or a useful numbered selection. Choose angles that fit
+this channel. Vary their order, syntax, length and opening words on each request.
+At least three titles must be one sentence. At most two may open as questions, and at most one may
+use a question followed by a second teaser sentence. Do not make all titles lists, warnings or
+versions of the same hook. A required branded premise such as What If may remain; within it vary
+the subject, stakes, curiosity angle and phrasing instead of adding the same second sentence.
+Keep each title natural, understandable and specific. Avoid empty hype, vague secrets, invented
+facts, fake urgency, unsupported medical claims, cure guarantees or guaranteed outcomes.
+The future script must be able to deliver the title's promise. Channel history contains examples,
+not performance analytics; do not invent CTR, search trends or claims that a formula guarantees views.
+Exclude earlier topics and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
+Use plain titles without list numbering or list markers, no colon, dash or hyphen of any kind,
+and a maximum of 100 characters per title. Preserve the channel language and tone.
+For non-Ukrainian/non-Russian titles add a natural Ukrainian reading translation in uk; otherwise uk="".
+Before responding, silently compare the five and rewrite repetitive hooks within this same response.
+Return only JSON {"ideas":[{"title":"...","uk":"..."}]} with exactly five entries, no analysis or alternatives.
+"""
+
+
 def clean_title(text):
     # Remove list markers, preserving numbers belonging to the title itself.
     return re.sub(r'^(?:\s*\d+[.)]\s+)+', '', text.strip()).strip()
@@ -385,9 +413,7 @@ def _work(cid, data):
                  'rule wins over an older one. Previous scripts in samples show the voice only: where a rule asks for something '
                  'they lack (an ending phrase, say), follow the rule.\n' + json.dumps(ctx, ensure_ascii=False))
         if stage == 'ideas':
-            result = deepseek(brief + '\nPropose exactly 5 fresh, distinct video topics matching the title structure and audience. '
-                'Exclude earlier topics and close paraphrases. Return plain titles and translations without list numbering or list markers. Preserve meaningful numbers within titles. Titles must contain no colon and no dash or hyphen of any kind. Infer language from scripts/titles. For every non-Ukrainian/non-Russian '
-                'title add a Ukrainian reading translation in uk, otherwise uk="". Return JSON only {"ideas":[{"title":"...","uk":"..."}]}.', root, identity)
+            result = deepseek(brief + TOPIC_PROMPT, root, identity)
             writing_jobs.check()
             data['ideas'] = validate_titles(result, ctx)
         else:

@@ -35,12 +35,12 @@ test('original narration requires a configured reference or selected HeyGen voic
 });
 
 test('missing voice disables generation while a running narration can always be stopped',()=>{
-  const button={setAttribute(){}},c=load(plan,"  function actionState(mode='idle')",'  function renderRunning(job)',{
-    voiceReady:false,text:{value:'A complete scenario'},button,box:{classList:{toggle(){}}},panel:{querySelector:()=>null},exportSpinner:'spinner'});
-  c.actionState();assert.equal(button.disabled,true);
-  c.actionState('running');assert.equal(button.disabled,false);
+  const row={},button={setAttribute(){}},c=load(plan,"  function actionState(mode='idle')",'  function renderRunning(job)',{
+    voiceReady:false,text:{value:'A complete scenario'},button,box:{classList:{toggle(){}},querySelector:()=>row},panel:{querySelector:()=>null},exportSpinner:'spinner'});
+  c.actionState();assert.equal(button.disabled,true);assert.equal(row.hidden,true);
+  c.actionState('running');assert.equal(button.disabled,false);assert.equal(row.hidden,false);
   c.actionState('cancelling');assert.equal(button.disabled,true);
-  c.voiceReady=true;c.actionState();assert.equal(button.disabled,false);
+  c.voiceReady=true;c.actionState();assert.equal(button.disabled,false);assert.equal(row.hidden,false);
 });
 
 test('creation resumes after existing work or a previous attempt',()=>{

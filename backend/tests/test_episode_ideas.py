@@ -43,6 +43,25 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertEqual(current['ideas'][0]['uk'], '7 звуків в авто!')
         self.assertEqual((current['id'], current['target_words'], current['status']),
                          ('saved-draft',1200,'done'))
+    def test_topics_use_varied_clickworthy_angles_in_one_request(self):
+        data=self.begin({'action':'ideas'})
+        titles=["Why your car smells sweet", "5 sounds worth checking before a long trip",
+                "The overlooked part behind a rough idle", "Your winter tyres lose grip sooner than you think",
+                "This tiny dashboard light can save an expensive repair"]
+        with patch.object(ideas,'deepseek',return_value={'ideas':[{'title':t,'uk':''} for t in titles]}) as model:
+            result=self.finish(data)
+        model.assert_called_once()
+        prompt=model.call_args.args[0]
+        self.assertNotIn('matching the title structure',prompt)
+        self.assertIn('at least four different editorial angles',prompt)
+        self.assertIn('At least three titles must be one sentence',prompt)
+        self.assertIn('at most one may',prompt)
+        self.assertIn('do not invent CTR',prompt)
+        self.assertEqual([row['title'] for row in result['ideas']],titles)
+        with patch.object(ideas,'deepseek') as model:
+            self.assertEqual(ideas.read(self.cid)['ideas'],result['ideas'])
+        model.assert_not_called()
+
     def test_http_stage_is_reserved_once_and_hides_private_context(self):
         with patch.object(ideas,'Thread') as thread:
             code,data=self.request('/api/channels/'+self.cid+'/episode-ideas','POST',{'action':'ideas'})

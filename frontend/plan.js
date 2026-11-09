@@ -73,7 +73,7 @@ async function startVideoCreation(pid,payload){
 }
 function narrationChoices(panel,ready,restore=true){
   const choices=document.createElement('div');choices.className='narration-choices';
-  choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art" aria-hidden="true"><span class="narration-paper"><b>Текст</b><i></i><i></i><i></i><span>▶</span></span></span><strong>Озвучити сценарій</strong><small>Вставити текст → створити голос</small></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><span class="narration-upload"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 30V10m-8 8 8-8 8 8M10 30v9h28v-9"/></svg><b>MP3 · WAV · MP4</b></span></span><strong>Завантажити файл</strong><small>Додати готове аудіо або відео</small></button>`;
+  choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art narration-service-marks" aria-hidden="true">${['elevenlabs','heygen','fishaudio'].map(key=>`<span title="${{elevenlabs:'ElevenLabs',heygen:'HeyGen',fishaudio:'Fish Audio'}[key]}">${projectCostIcons[key]}</span>`).join('')}</span><span class="narration-choice-copy"><strong>Озвучити сценарій</strong><small>Створити голос із тексту</small></span></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21V4m-6 6 6-6 6 6M5 21v7h22v-7"/></svg></span><span class="narration-choice-copy"><strong>Завантажити озвучку</strong><small>Готове аудіо або відео</small></span></button>`;
   const buttons=choices.querySelectorAll('button'),pid=state.project.id;
   function showSelection(index){
     choices.classList.add('has-selection');
@@ -106,7 +106,7 @@ function renderNarrationAnalysis(panel,pid){
       ready.querySelectorAll('.narration-tempo button,.narration-tempo input,.narration-plan-action').forEach(control=>control.disabled=false);
       const range=ready.querySelector('input'),plan=ready.querySelector('.narration-plan-action');
       plan.disabled=Number(range.value)!==Number(ready.dataset.speed);
-      const text=panel.querySelector('textarea');if(text)text.readOnly=false;
+      const text=panel.querySelector('textarea') || panel.parentElement?.querySelector('.narration-script textarea');if(text)text.readOnly=false;
       const choices=panel.parentElement?.querySelector('.narration-choices');if(choices)choices.hidden=false;
       if(job?.status==='failed'){const note=panel.querySelector('.narration-status-row p');if(note)note.textContent=job.error||'Не вдалося розпізнати озвучку';}
     }
@@ -117,7 +117,7 @@ function renderNarrationAnalysis(panel,pid){
   ready.querySelector('.narration-ready-heading strong').innerHTML=`${exportSpinner} Whisper · ${esc(stage)}${percent}`;
   ready.querySelectorAll('.narration-tempo button,.narration-tempo input,.narration-plan-action').forEach(control=>control.disabled=true);
   const note=panel.querySelector('.narration-status-row p');if(note)note.textContent='';
-  const text=panel.querySelector('textarea');if(text)text.readOnly=true;
+  const text=panel.querySelector('textarea') || panel.parentElement?.querySelector('.narration-script textarea');if(text)text.readOnly=true;
   const choices=panel.parentElement?.querySelector('.narration-choices');if(choices)choices.hidden=true;
   return true;
 }
@@ -144,9 +144,9 @@ function channelVoiceAvailable(profile){
   return profile?.settings?.provider==='heygen'?!!profile.settings.heygen_voice_id:!!profile?.reference;
 }
 
-function renderNarrationGeneration(panel){
+function renderNarrationGeneration(panel,scriptInput=null){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`<div class="voice-start-head narration-script-heading"><h1>Озвучка сценарію</h1><p>Прослухайте готову озвучку й налаштуйте швидкість перед створенням кадрів.</p></div><label class="voice-script"><span>Сценарій</span><textarea rows="9" placeholder="Вставте текст для озвучення"></textarea></label><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
+  box.innerHTML=`${scriptInput?'':'<label class="voice-script"><span>Сценарій</span><textarea rows="6" placeholder="Вставте текст для озвучення"></textarea></label>'}<div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
   panel.append(box);
   const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
   const cid=state.project.channel_id;let profile=null,currentJob=null,voiceReady=false;
@@ -161,20 +161,21 @@ function renderNarrationGeneration(panel){
     const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
-  const text=box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
-  text.value=voiceScriptDraft[pid] || state.project.voice_script?.text || state.plan?.script || '';
+  const text=scriptInput || box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
+  if(!scriptInput)text.value=voiceScriptDraft[pid] ?? state.project.voice_script?.text ?? state.plan?.script ?? '';
   const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
   const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
   const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{if(q.estimated_usd===0)return 'Безкоштовно';const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
-  async function updateQuote(){const version=++quoteVersion;if(!voiceReady){estimate.textContent='';return;}if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · ${quote.cached?`із кешу ${quote.cached}/${quote.total}`:quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
+  async function updateQuote(){const version=++quoteVersion;if(!voiceReady||box.hidden){estimate.textContent='';return;}if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · ${quote.cached?`із кешу ${quote.cached}/${quote.total}`:quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
   text.oninput=()=>{box.classList.remove('has-ready-narration');button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);actionState();estimate.textContent=voiceReady?'Оновлюємо оцінку…':'';quoteTimer=setTimeout(updateQuote,500);};
   updateQuote();
   let busy=false;
   function actionState(mode='idle'){
     const running=mode==='running',waiting=mode==='cancelling';
     const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Озвучити сценарій';
+    box.querySelector('.narration-status-row').hidden=!running&&!waiting&&!voiceReady;
     button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting||(!running&&(!voiceReady||text.value.trim().length<10));
     button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
     if(!running&&!waiting)button.innerHTML+='<span>Озвучити сценарій</span>';
@@ -204,7 +205,7 @@ function renderNarrationGeneration(panel){
         currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);setTimeout(poll,1500);
       }
       else if(narrationResultVisible(job,state.project,busy)){
-        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script)text.value=job.script;button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script&&voiceScriptDraft[pid]===undefined)text.value=job.script;button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         if(!box.querySelector('.narration-ready')){
           appendReadyNarration(box,pid,job,info,poll);
         }
@@ -228,16 +229,17 @@ function renderVoiceStart(panel){
     <label class="voice-drop"><input type="file" accept="audio/*,video/*,.m4a,.mkv,.aiff,.aif,.flac,.opus" hidden>
       <span class="voice-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
       <strong>Перетягніть аудіо сюди</strong><span class="voice-drop-hint">або натисніть, щоб вибрати файл озвучки</span><small>MP3, WAV, M4A, FLAC або відео з голосом</small><b class="voice-drop-file" hidden></b></label>
-    <label class="voice-script"><span>Сценарій <em>необов’язково</em></span><textarea rows="7" placeholder="Вставте текст, який звучить в озвучці"></textarea>
-      <small>${direct?'Сценарій допоможе точніше розпізнати озвучку й звірити текст.':'Сценарій можна не додавати: студія сама розпізнає мову. Але з текстом розпізнавання точніше, і в кадрах буде саме ваш текст без помилок.'}</small></label>
+    <label class="voice-script narration-script"><span class="sr-only">Сценарій</span><textarea rows="3" placeholder="Вставте сценарій або залиште порожнім для розпізнавання аудіо"></textarea></label>
     <div class="voice-start-actions"><p class="narration-create-note">${videoCreationCopy().note}</p><div class="voice-progress" aria-live="polite"></div><button type="button" class="secondary" disabled>${createVideoIcon}<span>${videoCreationCopy().label}</span></button></div>`;
+  const scriptLabel=section.querySelector('.narration-script'),text=scriptLabel.querySelector('textarea');
+  panel.append(scriptLabel);
   section.hidden=true;let generated=null;
-  narrationChoices(panel,upload=>{section.hidden=!upload;if(generated)generated.hidden=upload;if(!upload&&!generated)generated=renderNarrationGeneration(panel);});
+  narrationChoices(panel,upload=>{section.hidden=!upload;if(generated)generated.hidden=upload;if(!upload&&!generated)generated=renderNarrationGeneration(panel,text);});
   panel.append(section);
   const drop=section.querySelector('.voice-drop'),input=drop.querySelector('input'),fileLabel=drop.querySelector('.voice-drop-file');
-  const text=section.querySelector('textarea'),start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
+  const start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
   let file=null,busy=false;
-  text.value=voiceScriptDraft[project.id] || project.voice_script?.text || (direct?state.plan?.script:'') || '';
+  text.value=voiceScriptDraft[project.id] ?? project.voice_script?.text ?? (direct?state.plan?.script:'') ?? '';
   text.addEventListener('input',()=>{voiceScriptDraft[project.id]=text.value;});
   function choose(next){
     if(busy || !next)return;
@@ -343,7 +345,7 @@ $('view-agent').addEventListener('click',()=>setProjectView('agent'));
 
 function renderPlanSwitch(panel){
   const heading=document.createElement('div');heading.className='project-plan-heading';
-  heading.innerHTML='<h1><svg class="narration-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-1 4.5-4 6.5-3.5L12 10l2.5-1.5C16.5 8 18 11 21 12c-2 4-5 6-9 6s-7-2-9-6Z"/><path d="M3 12c3 1 6 .5 9 .5s6 .5 9-.5"/></svg>Озвучка</h1>';
+  heading.innerHTML='<h1><svg class="narration-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21v-4a7 7 0 1 1 7-10l2 4h-3v4h-3v6M19 8l2-1M19 12h3M19 16l2 1"/><path d="M13 11h1"/></svg>Сценарій</h1>';
   panel.append(heading);
 
 }
