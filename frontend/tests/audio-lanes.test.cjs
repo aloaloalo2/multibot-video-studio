@@ -49,3 +49,26 @@ test('creation resumes after existing work or a previous attempt',()=>{
   for(const request of [{status:'failed'},{status:'done'},{status:'requested'}])assert.equal(c.productionStartLabel(request),'Продовжити створення ролика');
   assert.equal(c.productionStartLabel(null,3),'Продовжити створення ролика');
 });
+
+
+test('script count measures the actual text and updates its muted heading',()=>{
+  const c=load(plan,'function scriptWordCount(','const voiceScriptDraft=');
+  assert.equal(c.scriptWordCount('Hello, world!'),2);
+  assert.equal(c.scriptWordCount("П'ять слів тут? Насправді лише шість."),6);
+  assert.equal(c.scriptWordCount('123 ... !'),0);
+  const badge={},panel={querySelector:()=>badge};
+  c.updateScriptWordCount(panel,'One two three');assert.equal(badge.textContent,'3 слова');
+  c.updateScriptWordCount(panel,'One two');assert.equal(badge.textContent,'2 слова');
+});
+
+test('missing channel voice defaults to upload while active synthesis stays on its stop controls',()=>{
+  const c=load(plan,'function narrationInitialMode(','function narrationChoices(',{
+    channelVoiceAvailable:p=>p.settings?.provider==='heygen'?!!p.settings.heygen_voice_id:!!p.reference});
+  assert.equal(c.narrationInitialMode({source:'script'},{settings:{provider:'elevenlabs'}}),'file');
+  assert.equal(c.narrationInitialMode({source:'file'},{reference:{filename:'voice.mp3'}}),'file');
+  assert.equal(c.narrationInitialMode({source:'script'},{reference:{filename:'voice.mp3'}}),'script');
+  assert.equal(c.narrationInitialMode({job:{status:'running'}},{settings:{provider:'heygen'}}),'script');
+  assert.equal(c.narrationInitialMode({job:{status:'cancelling'}},null),'script');
+  assert.equal(c.narrationInitialMode({source:'script'},null),'script');
+  assert.equal(c.narrationInitialMode({job:{status:'done',asset_id:'saved'}},{settings:{provider:'heygen'}}),'script');
+});

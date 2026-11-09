@@ -23,7 +23,7 @@ class MetadataTest(unittest.TestCase):
         ideas.ACTIVE.clear()
         self.project = store.create_project(self.cid, self._testMethodName)
         self.pid = self.project['id']
-        self.script = 'A selected opening. ' + 'Natural spoken words for this episode. ' * 30
+        self.script = 'A selected opening. ' + 'Natural spoken words for this episode. ' * 32
         self.value = {'titles': [self.project['name'], 'Another fresh angle', 'A third fresh angle'],
                       'description': 'Thanks for watching. Subscribe for more.\n\nThis video is for entertainment.',
                       'tags': ['story', 'fiction', 'curiosity']}
@@ -116,6 +116,39 @@ class MetadataTest(unittest.TestCase):
         self.assertTrue(data['review_required'])
         self.assertTrue(data['completed'])
 
+    def script_with_words(self, count):
+        return 'A selected opening. ' + 'detail ' * (count-3)
+
+    def test_length_and_content_issues_share_one_correction_and_corrected_count_is_checked(self):
+        data=self.draft();short=self.script_with_words(160);corrected=self.script_with_words(200)
+        with patch.object(ideas,'opus',side_effect=[{'script':short,'metadata':self.value},{'script':corrected}]) as model, \
+                patch.object(ideas.author_rules,'check',side_effect=[(False,'A concrete content issue'),(True,'OK')]):
+            ideas.work(self.cid,data)
+        self.assertEqual(model.call_count,2)
+        self.assertIn('A concrete content issue',model.call_args_list[1].args[0])
+        self.assertIn('186 to 214',model.call_args_list[1].args[0])
+        self.assertEqual(data['actual_words'],200)
+        self.assertTrue(data['length']['passed'])
+        self.assertTrue(data['completed'])
+        self.assertEqual(store.load_project(self.pid)['voice_script']['text'],corrected.strip())
+
+    def test_failed_length_correction_keeps_draft_without_marking_complete_or_metadata_bypass(self):
+        data=self.draft();short=self.script_with_words(160)
+        with patch.object(ideas,'opus',return_value={'script':short,'metadata':self.value}) as model, \
+                patch.object(ideas.author_rules,'check',return_value=(True,'OK')):
+            ideas.work(self.cid,data)
+        self.assertEqual(model.call_count,2)
+        self.assertEqual(data['status'],'failed')
+        self.assertFalse(data['completed'])
+        self.assertFalse(data['length']['passed'])
+        self.assertIn('186 до 214',data['error'])
+        self.assertEqual(store.load_project(self.pid)['voice_script']['text'],short.strip())
+        self.assertFalse(metadata.exists(store.load_project(self.pid)))
+        with patch.object(ideas,'Thread') as worker:
+            with self.assertRaisesRegex(store.StudioError,'±7%'):
+                ideas.start_project(self.pid,{'action':'metadata'})
+        worker.assert_not_called()
+
     def test_author_edit_during_check_cannot_be_overwritten(self):
         data = self.draft()
         def check(*args):
@@ -126,3 +159,14 @@ class MetadataTest(unittest.TestCase):
             ideas.work(self.cid,data)
         self.assertEqual(data['status'],'failed')
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'],'Author changed this script.')
+
+
+class ScriptLengthTest(unittest.TestCase):
+    def test_seven_percent_bounds_are_inclusive_and_use_exact_integer_arithmetic(self):
+        for count,passed in ((1952,False),(1953,True),(2100,True),(2247,True),(2248,False)):
+            report=ideas.script_length('word '*count,2100)
+            self.assertEqual((report['minimum'],report['maximum']),(1953,2247))
+            self.assertEqual(report['passed'],passed)
+        report=ideas.script_length('word '*93,101)
+        self.assertEqual((report['minimum'],report['maximum']),(94,108))
+        self.assertIsNone(ideas.script_length('Manual source',None))

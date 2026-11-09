@@ -90,3 +90,18 @@ test('activity polling reads phrase progress only for active narration and preve
   assert.deepEqual(requests,['/api/studio/status','/api/projects/active/narration','/api/studio/status']);
   assert.equal(projectActivities.size,0);assert.equal(channelActivity.size,0);
 });
+
+
+test('overview discovers director-to-frames handoff and new production without a reload',async()=>{
+  const projectActivities=new Map([['p','режисура']]),state={project:null,projects:[{id:'p'}],channels:[]};
+  let refreshes=0;
+  const context=vm.createContext({state,projectActivities,channelActivity:new Set(),channelActivityPending:false,
+    document:{hidden:false,querySelectorAll:()=>[]},renderProjectActivities(){},console,
+    api:async()=>({activities:[{project_id:'p',kind:'створення кадрів'}],active_channels:[],busy:[]}),
+    refreshProjects:async()=>{refreshes++;state.projects=[{id:'p',production_request:{status:'in_progress'}}];}});
+  vm.runInContext(section('async function pollChannelActivity(','(function channelActivityLoop('),context);
+  await context.pollChannelActivity();assert.equal(refreshes,1);
+  await context.pollChannelActivity();assert.equal(refreshes,1); // normal production polling owns later counts
+  state.projects=[{id:'p'}];await context.pollChannelActivity();assert.equal(refreshes,2); // first active snapshot without previous director
+  state.project={id:'p'};state.projects=[{id:'p'}];await context.pollChannelActivity();assert.equal(refreshes,2);
+});

@@ -80,7 +80,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     }
     const error=data.status==='failed'?errorBox(data.error||'Запит не завершено'):'';
     if(projectId&&(data.script_saved||data.stage==='metadata')){
-      root.innerHTML=error+'<p class="muted">Сценарій збережено.</p><button class="secondary" id="metadata-retry">Дописати метадані · Opus</button>';
+      root.innerHTML=error+`<p class="muted">Сценарій збережено.${data.length?` ${data.length.actual.toLocaleString('uk-UA')} слів · потрібно ${data.length.minimum.toLocaleString('uk-UA')}–${data.length.maximum.toLocaleString('uk-UA')}.`:''}</p><button class="secondary" id="metadata-retry">Дописати метадані · Opus</button>`;
       root.querySelector('#metadata-retry').onclick=()=>request({action:'metadata'});return;
     }
     const openings=data.openings?.length?data.openings:data.previous_openings;

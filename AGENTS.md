@@ -823,3 +823,12 @@ After selecting a topic, keep its title input editable until the author starts o
 
 
 Russian and Ukrainian episode topics and opening hooks have no Ukrainian reading duplicate, including cached variants. Keep reading translations for other languages. Digits are permitted in titles and stay as digits; never convert existing title digits to written-out number words.
+
+
+The scenario heading shows the actual script word count in small muted text, updating on author edits and restored narration text. Count letter words with internal apostrophes consistently with episode_ideas.words. With no configured channel voice, initially select the file source; preserve active narration stop controls and an explicit newer user click while defaults are loading. Preserve the existing two source cards, separate upload target and selection checkmark; the author cancelled combining them. Omit the generic «Натисніть Створити відео…» explanatory line.
+
+
+Opus full-script acceptance uses the author's final tolerance of ±7% of target_words, with exact inclusive integer bounds and the same word counter as the scenario heading. Persist the first draft before checks. Combine content and length issues into at most one correction request to the same author; no retry loop or extra reviewer. Recheck the corrected text locally. Outside the bounds keep the draft, report actual/required words and never mark writing completed or bypass the gate through metadata-only recovery. Existing accepted episodes are not rewritten automatically.
+
+
+Overview status polling refreshes project snapshots when writing, recognition, narration or direction hands off to the next stage, and when an active frame-creation job is absent from the local card snapshot. A director-to-production handoff must show frame progress without a page reload. Do not fetch all project snapshots on every unchanged activity poll.

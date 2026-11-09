@@ -87,7 +87,7 @@ test('Create video submits one combined action and rejects an older server befor
   const calls=[],c=vm.createContext({directMontage:()=>false,api:async(path,method,body)=>{calls.push({path,method,body});return path==='/api/health'?{create_video:true}:{job:{id:'j'}};}});
   vm.runInContext(plan.slice(plan.indexOf('function videoCreationCopy('),plan.indexOf('function narrationChoices(')),c);
   assert.equal(c.videoCreationCopy().label,'Створити відео');
-  assert.match(c.videoCreationCopy().note,/розпізнає аудіо, складе план і створить усі кадри/);
+  assert.equal(c.videoCreationCopy().note,'');
   await c.startVideoCreation('p',{asset_id:'voice',script:'text'});
   assert.equal(calls.length,2);assert.equal(calls[1].path,'/api/projects/p/create-video');assert.equal(calls[1].body.asset_id,'voice');
   calls.length=0;c.api=async path=>{calls.push(path);return {};};

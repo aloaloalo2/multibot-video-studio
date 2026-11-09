@@ -160,7 +160,7 @@ class EpisodeIdeasTest(unittest.TestCase):
             self.assertIn('1500', model.call_args.args[0])
             self.assertIn('story number 2',model.call_args.args[0])
         data=self.begin({'action':'script','index':3})
-        script=hooks[3]['text']+' Full natural script words.'*400
+        script=hooks[3]['text']+' Full natural script words.'*370
         metadata={'titles':[data['selected']['title'],'Another fresh angle','A third fresh angle'], 'description':'Thank you for watching! Subscribe for more.\n\nThis video is for entertainment.', 'tags':['story','fiction','curiosity']}
         with patch.object(ideas,'opus',return_value={'script':script,'metadata':metadata}) as model, (patch.object(ideas.author_rules,'check',return_value=(True,'OK')) if hasattr(ideas,'author_rules') else nullcontext()):
             data=self.finish(data)

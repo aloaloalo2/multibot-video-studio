@@ -176,6 +176,11 @@ def start_project(pid, body):
         if action == 'metadata':
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
+            data['length'] = script_length(project['voice_script']['text'], data.get('target_words'))
+            if data['length'] and not data['length']['passed']:
+                data.update(completed=False, review_required=True, error=length_message(data['length']))
+                save_draft(cid, data, make_current=False)
+                raise store.StudioError(data['error'])
             if episode_metadata.exists(project):
                 data.update(completed=True, metadata_saved=True, status='done', error=None)
                 save_draft(cid, data, make_current=False)
@@ -213,6 +218,20 @@ def start_project(pid, body):
 
 def words(text):
     return len(re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, re.UNICODE))
+
+
+def script_length(text, target):
+    if type(target) is not int or target <= 0:
+        return None
+    actual = words(text)
+    minimum, maximum = (target * 93 + 99) // 100, target * 107 // 100
+    return {'actual': actual, 'target': target, 'minimum': minimum, 'maximum': maximum,
+            'passed': minimum <= actual <= maximum, 'tolerance_percent': 7}
+
+
+def length_message(report):
+    return (f"У сценарії {report['actual']} слів. Потрібно від {report['minimum']} до {report['maximum']} "
+            f"для заданих {report['target']} (±7%). Чернетку збережено, сценарій ще не готовий.")
 
 
 def context(cid):
@@ -442,6 +461,10 @@ def _work(cid, data):
         if stage == 'metadata':
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
+            data['length'] = script_length(script, data.get('target_words'))
+            if data['length'] and not data['length']['passed']:
+                data['completed'] = False
+                raise ValueError(length_message(data['length']))
             result = opus(episode_metadata.PROMPT + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
                           + json.dumps({'channel': project['channel_name'], 'selected_title': project['name'],
                                         'script': script}, ensure_ascii=False)
@@ -479,7 +502,7 @@ def _work(cid, data):
             else:
                 brief += '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening']
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
-                    'Aim within 10% of target word count. Follow the title promise and channel rules. No headings, stage directions or markdown. '
+                    f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
                     'Do not invent studies, quotes, statistics or medical claims; use cautious factual wording for uncertain facts. '
                     + episode_metadata.PROMPT + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
                     '"description":"...","tags":["...","...","..."]}}.', root, identity, cid)
@@ -495,24 +518,32 @@ def _work(cid, data):
                     store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                  'author': 'Opus', 'saved_at': time.time()})
                     store.save_project_source(project, script)
-                    data.update(script_saved=True, actual_words=words(script))
+                    data.update(script_saved=True, actual_words=words(script), length=script_length(script, data['target_words']))
                     save_draft(cid, data, make_current=False)
                 original = script
                 # the author's own check (proverka.py): its errors go back to Opus once, with the script, to be fixed
                 passed, report = author_rules.check(script, root)
                 data['check'] = {'passed': passed, 'report': report[-3000:]}
                 save_draft(cid, data, make_current=False)
-                if passed is False:
+                length = script_length(script, data['target_words'])
+                if passed is False or not length['passed']:
                     writing_jobs.check()
+                    problems = (report[-4000:] if passed is False else '')
+                    if not length['passed']:
+                        problems += (f"\nMeasured full script: {length['actual']} words. Required: {length['minimum']} to {length['maximum']} words inclusive. "
+                                     "Adjust its length while preserving the title promise, factual meaning, natural voice and the selected opening. Add useful explanation when short; remove repetition when long. No padding.")
                     fixed = opus(brief + '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening'] + '\nYOUR SCRIPT:\n' + script
-                                 + '\nThe author\'s checker found these problems:\n' + report[-4000:]
-                                 + '\nFix only these places, keep everything else word for word. Return JSON only {"script":"..."}.',
+                                 + '\nFix these content/length problems in one pass:\n' + problems
+                                 + f"\nKeep the complete result within {length['minimum']} to {length['maximum']} letter words. Preserve unaffected passages. Return JSON only {{\"script\":\"...\"}}.",
                                  root, 'fix-' + identity, cid).get('script')
-                    if isinstance(fixed, str) and fixed.strip().startswith(data['opening'].strip()) and words(fixed) >= words(script) * .8:
-                        script = fixed
-                        passed, report = author_rules.check(script, root)
+                    if isinstance(fixed, str) and fixed.strip().startswith(data['opening'].strip()) and words(fixed) >= 100:
+                        candidate = script_length(fixed, data['target_words'])
+                        if candidate['passed'] or (not length['passed'] and abs(candidate['actual']-candidate['target']) < abs(length['actual']-length['target'])):
+                            script = fixed
+                            passed, report = author_rules.check(script, root)
                 data['check'] = {'passed': passed, 'report': report[-3000:]}
-                data['review_required'] = passed is not True
+                data['length'] = script_length(script, data['target_words'])
+                data['review_required'] = passed is not True or not data['length']['passed']
                 with LOCK:
                     writing_jobs.check()
                     project = store.load_project(data['project_id'])
@@ -523,6 +554,9 @@ def _work(cid, data):
                         store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                      'author': 'Opus', 'saved_at': time.time()})
                     data.update(actual_words=words(script))
+                    if not data['length']['passed']:
+                        data['completed'] = False
+                        raise ValueError(length_message(data['length']))
                     data['metadata_file'] = episode_metadata.save(project, result.get('metadata'), script)
                     data.update(completed=True, metadata_saved=True)
             # Move idea receipts into the selected project's cumulative accounting once.

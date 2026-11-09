@@ -186,7 +186,7 @@ async function pollChannelActivity(){
   if(document.hidden||channelActivityPending)return;
   channelActivityPending=true;
   try{
-    const writing=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
+    const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
     for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію','створення сценарію','створення зачинів','створення метаданих'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
@@ -194,7 +194,8 @@ async function pollChannelActivity(){
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
     await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress});}else projectActivities.delete(id);}catch{}}));
     renderProjectActivities();
-    if(!state.project&&writing.some(id=>!projectActivities.has(id)))refreshProjects().catch(error=>console.warn('Не вдалося оновити готовий сценарій',error));
+    const newProduction=(activity.activities||[]).some(task=>task.kind==='створення кадрів'&&(state.projects||[]).some(project=>project.id===task.project_id&&!['requested','in_progress'].includes(project.production_request?.status)));
+    if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
     for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
