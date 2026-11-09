@@ -107,8 +107,8 @@ async function bindChannelVoiceLab(channel){
   const draw=()=>{
     if(!current())return;
     const s=data.settings;
-    box.innerHTML=`<h3>Голос</h3><p class="voice-lab-intro">Налаштуйте голос і прослухайте зразок.</p>
-      <div class="settings-three-column voice-lab-service"><label>Сервіс<select name="provider"><option value="elevenlabs" ${s.provider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="fishaudio" ${s.provider==='fishaudio'?'selected':''}>Fish Audio</option><option value="heygen" ${s.provider==='heygen'?'selected':''}>HeyGen</option></select></label><label>Мова голосу<select name="language">${data.languages.map(l=>`<option value="${l.code}" ${l.code===s.language?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
+    box.innerHTML=`<h3>Голос</h3>
+      <div class="settings-three-column voice-lab-service"><label>Сервіс<select name="provider" aria-label="Сервіс"><option value="elevenlabs" ${s.provider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="fishaudio" ${s.provider==='fishaudio'?'selected':''}>Fish Audio</option><option value="heygen" ${s.provider==='heygen'?'selected':''}>HeyGen</option></select></label><label>Мова голосу<select name="language" aria-label="Мова голосу">${data.languages.map(l=>`<option value="${l.code}" ${l.code===s.language?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Модель<select name="model">${data.models.map(m=>`<option value="${m.id}" ${m.id===s.model?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="heygen">Модель<select name="heygen_model">${(data.heygen_models||[]).map(m=>`<option value="${m.id}" ${m.id===s.heygen_model?'selected':''}>${esc(m.name.replace(/^HeyGen /,''))}</option>`).join('')}</select></label><label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
@@ -124,6 +124,12 @@ async function bindChannelVoiceLab(channel){
       <label class="voice-lab-text">Текст зразка<textarea rows="3" maxlength="2000">${esc(s.text)}</textarea></label>
       <div class="voice-lab-actions"><button type="button" class="secondary voice-lab-listen"></button><button type="button" class="secondary voice-lab-save">Зберегти голос</button></div>
       <div class="voice-lab-status" role="status" aria-live="polite"></div><div class="voice-lab-result"></div>`;
+    // Keep the common speed control visible and fold service-specific tuning.
+    const tuning=box.querySelector('.voice-lab-tuning'),speed=tuning.firstElementChild;
+    const advanced=document.createElement('details');advanced.className='voice-lab-expression';
+    advanced.innerHTML='<summary>Інтонація та схожість</summary>';
+    tuning.before(speed,advanced);advanced.append(tuning,box.querySelector('.voice-lab-direction'));
+    const delivery=box.querySelector('[name=delivery]').closest('label');tuning.prepend(delivery);
     if(data.reference)box.querySelector('.voice-lab-reference-player').replaceChildren(voicePlayer(null,`${base}/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Відтворити приклад голосу'}));
     else box.querySelector('.voice-lab-reference-player').textContent=s.provider==='heygen'&&s.heygen_voice_id?'Голос HeyGen':'Приклад для клонування';
 

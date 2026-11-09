@@ -25,12 +25,12 @@ const styleNames={neon:['Неоновий нуар','Глибокий чорни
 
 function brandingSections(channel,projectDefaults=''){
   const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
-  const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" value="${value}" ${kind===value?'checked':''}><span><strong>${title}</strong><small>${text}</small></span></label>`;
+  const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" aria-label="${title}" value="${value}" ${kind===value?'checked':''}><span><span class="settings-kind-art" aria-hidden="true">${value==='regular'?'<svg viewBox="0 0 120 50"><rect x="4" y="7" width="48" height="36" rx="5"/><path d="m8 37 14-16 12 11 7-7 7 12"/><circle cx="39" cy="17" r="4"/><rect x="60" y="7" width="56" height="36" rx="5"/><path d="m83 17 13 8-13 8Z"/></svg>':'<svg viewBox="0 0 120 50"><circle cx="29" cy="25" r="15"/><path d="M50 25h22m-6-6 6 6-6 6"/><rect x="81" y="10" width="29" height="30" rx="6"/></svg>'}</span><strong>${title}</strong><small>${text}</small></span></label>`;
   const cells=brandingPositions.map(item=>`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`).join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><div class="channel-identity-edit"><div class="channel-avatar-edit"><label class="channel-avatar-pick" title="Завантажити іконку каналу"><input id="channel-icon-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><span id="channel-icon-image">${channelIdentityIcon(channel)}</span></label><button id="channel-icon-remove" class="channel-avatar-remove" type="button" aria-label="Видалити іконку каналу" title="Видалити іконку" ${channel.icon_url?'':'hidden'}>${trashIcon}</button></div><div class="channel-identity-name"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></div></div><p id="channel-icon-state" class="channel-icon-state" role="status" hidden></p></section>
-    <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-effort-setting"><label for="settings-claude-effort"><h4>Рівень зусиль Claude Code</h4></label><select id="settings-claude-effort">${[["low","Легкий"],["medium","Середній"],["high","Високий"],["xhigh","Надвисокий"]].map(([value,label])=>`<option value="${value}" ${(settings.claude_effort||"high")===value?"selected":""}>${label}</option>`).join('')}</select></div><div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, стокове й створене відео, анімації, текст, моушн-дизайн, графіка та переходи')}${kindCard('animated','Анімаційний','Ролик повністю з анімацій зі своїм стилем')}</div></div></section>
-    <section class="settings-section logo-section"><div class="logo-heading"><h3>Логотип каналу</h3><label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати</label></div><div class="logo-compact-body">
+    <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-effort-setting"><label for="settings-claude-effort"><h4>Рівень зусиль Claude Code</h4></label><select id="settings-claude-effort">${[["low","Легкий"],["medium","Середній"],["high","Високий"],["xhigh","Надвисокий"]].map(([value,label])=>`<option value="${value}" ${(settings.claude_effort||"high")===value?"selected":""}>${label}</option>`).join('')}</select></div><div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, відео, графіка й анімація')}${kindCard('animated','Анімаційний','Увесь ролик в анімації')}</div></div></section>
+    <section class="settings-section logo-section"><input type="hidden" id="logo-version" value="${logo.version||0}"><div class="logo-heading"><h3>Логотип каналу</h3><label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати</label></div><div class="logo-compact-body">
       <div class="logo-file">
         <div class="logo-tile-wrap"><label class="logo-tile" id="logo-tile" title="Додати або замінити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
           <img id="logo-tile-image" alt="Логотип каналу" hidden>
@@ -50,7 +50,7 @@ function brandingSections(channel,projectDefaults=''){
       <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-        <div class="style-toolbar"><label>Шрифт заголовків<select id="style-title-font">${titleFonts.map(font=>`<option value="${esc(font)}" ${(titleFonts.includes(animation.title_font)?animation.title_font:'Nunito')===font?'selected':''}>${font}</option>`).join('')}</select><small id="style-font-note"></small></label>
+        <div class="style-toolbar"><label>Шрифт<select id="style-title-font">${titleFonts.map(font=>`<option style="font-family:'${esc(font)}'" value="${esc(font)}" ${(titleFonts.includes(animation.title_font)?animation.title_font:'Nunito')===font?'selected':''}>${font}</option>`).join('')}</select></label>
           <label class="logo-toggle" title="PNG предмети для кодової анімації та Razgon, в універсальних і анімаційних проєктах. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> PNG асети</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div></section>`;
@@ -119,12 +119,13 @@ function bindBranding(channel){
   };
   // the file itself in its tile, its size, and the placing controls only while there is a logo to place
   const draw=()=>{
+    $('logo-version').value=String(version);
     place(image);
     tileImage.hidden=!present;$('logo-tile-empty').hidden=present;$('logo-tile').classList.toggle('has-logo',present);
     $('logo-replace').hidden=!present;$('logo-remove').hidden=!present;$('logo-place').hidden=!present;$('logo-switch').hidden=!present;
     $('logo-file-title').textContent=present?'Логотип каналу':'Логотип ще не додано';
     $('logo-file-meta').textContent=present?`${tileImage.naturalWidth} × ${tileImage.naturalHeight} пікселів${$('logo-enabled').checked?'':' · у роликах не показується'}`:'Перетягніть картинку в квадрат або натисніть на нього. Найкраще PNG з прозорим фоном, до 6 МБ.';
-    $('logo-place').classList.toggle('is-off',!$('logo-enabled').checked);
+    $('logo-place').hidden=!present||!$('logo-enabled').checked;
     for(const mark of film.querySelectorAll('.logo-mark')){if(mark.getAttribute('src')!==logoUrl())mark.src=logoUrl();place(mark);}
     for(const id of ['logo-size','logo-margin','logo-opacity'])$(id).nextElementSibling.textContent=$(id).value+'%';
   };
@@ -134,8 +135,13 @@ function bindBranding(channel){
   // The logo sits on the style card of the chosen Razgon style: an animated channel's films and a regular channel's 2D-animation frames.
   const backdrop=()=>{
     const style=styles?.find(item=>item.id===chosen);
+    if(style){
+      let selection=$('settings-animation-style');
+      if(!selection){selection=document.createElement('input');selection.type='hidden';selection.id='settings-animation-style';selection.value=chosen;strip.after(selection);}
+      else if(selection.value!==chosen){selection.value=chosen;selection.dispatchEvent(new Event('input',{bubbles:true}));}
+    }
     frame.style.backgroundImage=style?`url("${card(style.id)}")`:'';
-    if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<span>${esc(text)}</span>`;}
+    if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<details class="settings-inline-help"><summary aria-label="Про вибраний стиль">ⓘ</summary><span>${esc(text)}</span></details>`;}
     else if(!styles)$('style-caption').innerHTML='<strong>Завантажуємо стилі…</strong>';
   };
   const choose=id=>{chosen=id;strip.querySelectorAll('.style-thumb').forEach(item=>item.setAttribute('aria-checked',String(item.dataset.style===id)));backdrop();if(!film.hidden)loadFilm();};
@@ -183,9 +189,7 @@ function bindBranding(channel){
     }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
   });
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
-  const fontNote=()=>{const note=$('style-font-note');if(note)note.textContent='Для заголовків, підписів і тез · українська, російська та латинка';};
-  fontNote();
-  const swap=()=>{fontNote();for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
+  const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
   const loadStyles=async(announce=true)=>{
     const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{

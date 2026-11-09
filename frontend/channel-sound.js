@@ -10,7 +10,7 @@ function channelSoundMarkup(){
       <div id="sound-categories" class="channel-sound-categories"></div>
       <p class="channel-sound-note">Поява елементів, числа, підписи та інші акценти всередині кадру.</p>
     </details>
-    <details open class="channel-sound-group regular-only"><summary><span>Звуки переходів</span><small id="sound-transition-count"></small></summary>
+    <details class="channel-sound-group regular-only"><summary><span>Звуки переходів</span><small id="sound-transition-count"></small></summary>
       <label class="check"><input id="sound-transitions" type="checkbox" disabled>Використовувати на стиках</label>
       <div id="transition-categories" class="channel-sound-categories"></div>
       <p class="channel-sound-note">Режисер обирає доречні переходи й чергує позначені звуки. М’які склейки переважно залишаються тихими.</p>
@@ -34,15 +34,15 @@ function bindChannelSound(saved){
   let sample=null;
   const stop=()=>{if(sample){sample.pause();sample.remove();sample=null;}root.querySelectorAll('.sound-preview').forEach(b=>{b.classList.remove('playing');b.setAttribute('aria-pressed','false');});};
   function update(){
-    generate.disabled=!music.checked;
+    generate.disabled=!music.checked;root.querySelector('.channel-sound-generate').hidden=!music.checked;
     root.querySelector('.channel-sound-generate').classList.toggle('muted',!music.checked);
     root.querySelector('#sound-music-note').textContent=!music.checked?'Ролик без фонової музики.':generate.checked?'Студія може створити музичний супровід.':'Використовуватиметься лише вже додана музика.';
     root.soundValue.music={enabled:music.checked,generate:generate.checked};
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
       inputs.forEach(input=>input.disabled=!group.toggle.checked);
-      group.list.classList.toggle('muted',!group.toggle.checked);
-      group.count.textContent=inputs.length?`${group.toggle.checked?selected.length:0} / ${inputs.length}`:'';
+      group.list.hidden=!group.toggle.checked;
+      group.count.textContent=!group.toggle.checked?'Вимкнено':inputs.length?`${selected.length} звуків`:'';
       root.soundValue[group.key].enabled=group.toggle.checked;
       if(inputs.length)root.soundValue[group.key][group.field]=selected.map(i=>i.value);
     }
