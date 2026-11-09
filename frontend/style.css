@@ -656,10 +656,8 @@ button.danger:hover:not(:disabled){background:#523034}
 .editor-brand{justify-content:center}
 @media(min-width:761px){
   .sidebar>.brand{align-items:flex-start;padding-top:9px}
-  /* the logo block is as wide as the home page's sidebar (210px with its borders; 208px inside, plus the divider) and
-     starts at the bar's edge: the logo sits in the middle of it and in the same place as on the home page, and the
-     divider stands where the sidebar's edge is */
-  .editor-open .editor-brand{width:209px;margin-left:-19px;height:46px;padding:0;align-self:center;justify-content:center}
+  /* Match the home sidebar width so the logo keeps its horizontal position in the editor. */
+  .editor-open .editor-brand{width:241.5px;margin-left:-19px;height:46px;padding:0;border-right:0;box-shadow:1px 0 #303034;align-self:center;justify-content:center}
 }
 
 .overview-heading{display:flex;align-items:center;gap:10px;margin-bottom:7px}
@@ -756,7 +754,13 @@ button.danger:hover:not(:disabled){background:#523034}
 .topbar{background:transparent;border:0;border-bottom:1px solid #2c2c31;border-radius:0;height:62px;margin-bottom:12px}
 .app-shell.editor-open{padding-top:0}
 .editor-open .topbar{min-height:62px;margin-inline:-12px;padding-inline:31px}
-@media(min-width:761px){.editor-open .topbar{height:76px;min-height:76px}}
+/* Home and editor share one header origin and logo center. */
+@media(min-width:761px){
+  .app-shell{padding-top:0}
+  .topbar,.editor-open .topbar{height:76px;min-height:76px}
+  .sidebar>.brand{height:75px;padding-block:0;align-items:center}
+  .sidebar .brand-logo{align-self:center}
+}
 @media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{margin-bottom:8px}.topbar{margin-bottom:8px}.editor-open .topbar{margin-inline:-8px;padding-inline:20px}}
 /* Channel look: one big frame (logo, and for an animated channel the style card), style thumbnails and logo controls. */
 .channel-look>.logo-preview{margin-bottom:12px}
