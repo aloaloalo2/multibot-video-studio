@@ -15,7 +15,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .app-shell{height:100vh;min-height:650px;display:grid;grid-template-columns:241.5px minmax(0,1fr);}
 .app-shell.editor-open{grid-template-columns:minmax(0,1fr)}
 .app-shell.agent-open{height:100dvh;min-height:0}
-.sidebar{border-right:1px solid #303034;padding:0 11px 17px;display:flex;flex-direction:column;min-height:0}
+.sidebar{border:0;padding:0 11px 17px;display:flex;flex-direction:column;min-height:0}
 .sidebar>.brand{height:64px;flex:none;margin:0 -11px;padding:9px 19px}
 .brand{display:flex;align-items:center;gap:9px;padding:2px 8px 22px;border-bottom:1px solid #303034}
 .brand strong{display:block;font-size:16px;font-weight:600;line-height:1.1}
@@ -37,7 +37,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .channel-icon{width:18px;height:18px;flex:none;color:#9498a3}
 .channel-name{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
 .channel-item.active .channel-icon{color:#f0b429}
-.sidebar-bottom{margin-top:auto;border-top:1px solid #303034;padding-top:12px}
+.sidebar-bottom{margin-top:auto;padding-top:12px}
 .sidebar-bottom button{background:none;border:0;color:#aaaeb8;padding:9px 11px;text-align:left;border-radius:10px;width:100%}
 .sidebar-bottom button:hover{background:#242428}
 .main{min-width:0;min-height:0;display:flex;flex-direction:column}
@@ -600,7 +600,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(max-width:600px){.settings-two-column,.settings-three-column,.weights-grid,.weights-legend{grid-template-columns:1fr}.settings-import-row{flex-direction:column;align-items:stretch}.modal{padding:15px}.settings-section{padding:12px}}
 @media(max-width:1100px){.workspace{grid-template-columns:190px minmax(260px,1fr)}.inspector-panel{grid-column:1/-1;min-height:170px}.inspector-panel #inspector-fields{display:flex;align-items:flex-end;gap:11px;flex-wrap:wrap}.inspector-panel .field-row{min-width:145px;margin:0}.inspector-panel .selected-name{min-width:150px}.inspector-panel .inspector-actions{margin:0}.preview-panel{min-height:0}}
 @media(max-width:760px){.app-shell{grid-template-columns:204.7px minmax(0,1fr)}.brand strong{font-size:13px}.sidebar{padding:0 6px 10px}.sidebar-heading{font-size:9px}.channel-select,.project-item{padding:7px 4px;font-size:12px}.channel-select{white-space:normal;text-overflow:clip;line-height:1.3}.overview-top{flex-wrap:wrap}.overview-actions{width:100%;justify-content:flex-start}.workspace{grid-template-columns:1fr;grid-auto-rows:min-content;overflow:auto}.library-panel{min-height:195px}.asset-list{display:flex;overflow:auto;min-height:70px}.asset{min-width:170px}.preview-panel{min-height:280px}.inspector-panel{grid-column:1;min-height:150px}}
-@media(max-width:560px){.app-shell{display:block;height:auto;min-height:100vh}.sidebar{border-right:0;border-bottom:1px solid #303034;display:block}.brand{padding:2px 6px 9px;border-bottom:0}.sidebar-heading,.episode-heading,.project-list{display:none}.channel-list{display:flex;overflow:auto;max-height:none}.channel-item{flex:none}.channel-select{white-space:nowrap}.sidebar-bottom{display:inline-block;border-top:0;padding:0;margin:0 0 0 4px}.sidebar-bottom button{width:auto;padding:7px 9px}.main{min-height:calc(100vh - 95px)}.topbar{height:auto;min-height:58px;flex-wrap:wrap}.top-actions{margin-left:auto}.overview-top{flex-wrap:wrap}.overview-actions{justify-content:flex-start}.workspace{padding:7px}.preview-surface{margin:8px}.timeline-panel{margin:0 7px}.timeline-scroll{--timeline-label-width:118px}.track-label{font-size:10px}}
+@media(max-width:560px){.app-shell{display:block;height:auto;min-height:100vh}.sidebar{display:block}.brand{padding:2px 6px 9px;border-bottom:0}.sidebar-heading,.episode-heading,.project-list{display:none}.channel-list{display:flex;overflow:auto;max-height:none}.channel-item{flex:none}.channel-select{white-space:nowrap}.sidebar-bottom{display:inline-block;border-top:0;padding:0;margin:0 0 0 4px}.sidebar-bottom button{width:auto;padding:7px 9px}.main{min-height:calc(100vh - 95px)}.topbar{height:auto;min-height:58px;flex-wrap:wrap}.top-actions{margin-left:auto}.overview-top{flex-wrap:wrap}.overview-actions{justify-content:flex-start}.workspace{padding:7px}.preview-surface{margin:8px}.timeline-panel{margin:0 7px}.timeline-scroll{--timeline-label-width:118px}.track-label{font-size:10px}}
 
 @media(max-width:1100px){
   .workspace:not(.fitted-preview){grid-auto-rows:min-content;align-content:start}
@@ -748,12 +748,11 @@ button.danger:hover:not(:disabled){background:#523034}
 .logo-slider output{color:#f1f1f2;}
 /* Floating panels: the sidebar and the header are rounded cards on the page, like the project cards. */
 .app-shell{padding:12px;gap:12px;background:#0b0b0c}
-.sidebar{background:transparent;border:1px solid #2c2c31;border-radius:20.5px;padding:0 11px 14px;overflow:hidden}
+.sidebar{background:transparent;border:0;border-radius:20.5px;padding:0 11px 14px;overflow:hidden}
 .sidebar>.brand{border-bottom:0;height:62px}
-.sidebar-bottom{border-top-color:#26262a}
 .topbar{background:transparent;border:1px solid #2c2c31;border-radius:20.5px;height:62px;margin-bottom:12px}
 .editor-open .topbar{min-height:62px}
-@media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{border-bottom:1px solid #2c2c31;margin-bottom:8px}.topbar{margin-bottom:8px}}
+@media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{margin-bottom:8px}.topbar{margin-bottom:8px}}
 /* Channel look: one big frame (logo, and for an animated channel the style card), style thumbnails and logo controls. */
 .channel-look>.logo-preview{margin-bottom:12px}
 .channel-look .logo-controls{margin-top:14px;padding-top:14px;border-top:1px solid #3b3b41}
