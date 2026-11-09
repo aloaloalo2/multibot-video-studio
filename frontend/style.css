@@ -24,8 +24,8 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .sidebar-heading{display:flex;justify-content:space-between;align-items:center;margin:22px 9px 8px;color:#777981;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
 .sidebar-heading button{background:none;border:0;color:#aaaeb8;font-size:17px;line-height:1;padding:0 5px}
 .channel-list,.project-list{display:grid;gap:4px;max-height:28vh;overflow:auto}
-.channel-item{display:flex;align-items:center;gap:3px;border-radius:11.5px;padding:2px 4px 2px 0}
-.channel-item.active{background:#2b2b30}
+.channel-item{display:flex;align-items:center;gap:3px;border-radius:999px;padding:2px 4px 2px 0}
+.channel-item.active{background:#242428}
 .channel-select,.project-item{min-width:0;flex:1;border:0;background:none;color:#aaaeb6;text-align:left;padding:8px 10px;border-radius:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-actions{display:flex;align-items:center;gap:4px;flex:none}
 .project-action{display:grid;place-items:center;width:27px;height:27px;padding:5px;border:1px solid #424248;border-radius:7.5px;background:#242428;color:#bec0c8}
@@ -33,7 +33,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .project-action:hover,.project-action:focus-visible{background:#3b3b41;color:#fff}
 .project-action.delete:hover,.project-action.delete:focus-visible{color:#ffc2c7;background:#572e34;border-color:#a55963}
 .channel-item.active .channel-select,.project-item.active{color:#f1f1f2}
-.channel-select{display:flex;align-items:center;gap:8px}
+.channel-select{display:flex;align-items:center;gap:8px;border-radius:999px}
 .channel-icon{width:18px;height:18px;flex:none;color:#9498a3}
 .channel-name{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
 .channel-item.active .channel-icon{color:#f0b429}
@@ -823,7 +823,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .voice-drop,.director-card,.agent-message,.agent-composer,.agent-cost{border-radius:20.5px}
 .settings-section,.channel-kind-card>span,.logo-preview,.thumb-current,.plan-settings-warning,.service-key-panel,.weights-summary,
 .easing-card,.universal-properties section,.asset,.asset-video-result,.preview-surface,.export-gaps,.agent-empty>span{border-radius:16.5px}
-button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.channel-item,.channel-select,.project-item,
+button.primary,button.secondary,button.danger,button.subtle,.modal-actions button,.sidebar-add,.sidebar-bottom button,.project-item,
 .project-views button,.settings-import-row button,.logo-file-button,.timeline-toolbar button,.inspector-actions button,.search,.preview-zoom,
 .modal-body input,.modal-body select,.modal-body textarea,.settings-section textarea,.voice-script textarea,.thumb-view textarea,.style-toolbar select,.agent-reasoning select,
 .field-row input:not([type=range]),.field-row select,.universal-properties input:not([type=range]),.universal-properties select,.universal-properties button,
