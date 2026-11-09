@@ -751,8 +751,8 @@ button.danger:hover:not(:disabled){background:#523034}
 .sidebar{background:transparent;border:0;border-radius:20.5px;padding:0 11px 14px;overflow:visible}
 .sidebar>.brand{border-bottom:0;height:62px}
 .topbar{background:transparent;border:0;border-bottom:1px solid #2c2c31;border-radius:0;height:62px;margin-bottom:12px}
-.editor-open .topbar{min-height:62px}
-@media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{margin-bottom:8px}.topbar{margin-bottom:8px}}
+.editor-open .topbar{min-height:62px;margin-inline:-12px;padding-inline:31px}
+@media(max-width:560px){.app-shell{padding:8px;gap:8px}.sidebar{margin-bottom:8px}.topbar{margin-bottom:8px}.editor-open .topbar{margin-inline:-8px;padding-inline:20px}}
 /* Channel look: one big frame (logo, and for an animated channel the style card), style thumbnails and logo controls. */
 .channel-look>.logo-preview{margin-bottom:12px}
 .channel-look .logo-controls{margin-top:14px;padding-top:14px;border-top:1px solid #3b3b41}
