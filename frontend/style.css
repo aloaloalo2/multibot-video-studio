@@ -135,7 +135,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .full{width:100%}
 .banner{margin:9px 12px 0;padding:10px 12px;border:1px solid #6a474c;background:#392528;color:#f6c6ca;border-radius:10px;flex:none}
 .channel-overview{padding:16px clamp(16px,4vw,50px);overflow:auto;flex:1}
-.overview-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:27px}
+.overview-top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:27px}
 .overview-top>div:first-child{min-width:0}
 .overview-top h1>span{min-width:0;overflow-wrap:anywhere}
 .overview-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
@@ -748,7 +748,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .logo-slider output{color:#f1f1f2;}
 /* Floating panels: the sidebar and the header are rounded cards on the page, like the project cards. */
 .app-shell{padding:12px;gap:12px;background:#0b0b0c}
-.sidebar{background:transparent;border:0;border-radius:20.5px;padding:0 11px 14px;overflow:hidden}
+.sidebar{background:transparent;border:0;border-radius:20.5px;padding:0 11px 14px;overflow:visible}
 .sidebar>.brand{border-bottom:0;height:62px}
 .topbar{background:transparent;border:0;border-bottom:1px solid #2c2c31;border-radius:0;height:62px;margin-bottom:12px}
 .editor-open .topbar{min-height:62px}
