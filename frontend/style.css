@@ -134,7 +134,7 @@ button.danger{border:1px solid #634045;background:#3b292c;color:#efb2b8;border-r
 button.danger:hover:not(:disabled){background:#523034}
 .full{width:100%}
 .banner{margin:9px 12px 0;padding:10px 12px;border:1px solid #6a474c;background:#392528;color:#f6c6ca;border-radius:10px;flex:none}
-.channel-overview{padding:32px clamp(16px,4vw,50px);overflow:auto;flex:1}
+.channel-overview{padding:16px clamp(16px,4vw,50px);overflow:auto;flex:1}
 .overview-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:27px}
 .overview-top>div:first-child{min-width:0}
 .overview-top h1>span{min-width:0;overflow-wrap:anywhere}
@@ -783,7 +783,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-film{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
 .style-film .style-loading{grid-column:1/-1}
 /* The header's text starts on the same line as the page content below it (.channel-overview padding minus the border). */
-.app-shell:not(.editor-open) .topbar{padding-left:calc(clamp(16px,4vw,50px) - 1px);padding-right:calc(clamp(16px,4vw,50px) - 1px)}
+.app-shell:not(.editor-open) .topbar{margin-bottom:0;padding-left:calc(clamp(16px,4vw,50px) - 1px);padding-right:calc(clamp(16px,4vw,50px) - 1px)}
 .channel-settings-button{width:26px;height:26px;margin-left:-2px;background:#222226;color:#9a9ca4}
 .channel-settings-button svg{width:15px;height:15px;stroke-width:1.8}
 @media(hover:hover){.channel-settings-button:not(:disabled):hover{background:#303035;color:#f2f2f3}}
