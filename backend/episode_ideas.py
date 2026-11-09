@@ -239,6 +239,8 @@ def context(cid):
 
 
 def unpack(text):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError('Модель не повернула готовий текст. Попередні результати збережено; повторити запит можна вручну.')
     text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip())
     return json.loads(text)
 
@@ -248,12 +250,21 @@ def deepseek(prompt, root, identity):
     try: key = credentials.vault().read(credentials.service_name('openrouter'))
     except RuntimeError: raise RuntimeError('Додайте ключ OpenRouter у налаштуваннях студії') from None
     payload = {'model': agent_openrouter.MODEL, 'messages': [{'role': 'user', 'content': prompt}],
-               'max_tokens': 3500, 'response_format': {'type': 'json_object'}, 'usage': {'include': True}}
+               'max_tokens': 3500, 'reasoning': {'effort': 'none'},
+               'provider': {'require_parameters': True, 'allow_fallbacks': False},
+               'response_format': {'type': 'json_object'}, 'usage': {'include': True}}
     req = urllib.request.Request(agent_openrouter.BASE + '/chat/completions', data=json.dumps(payload).encode(),
                                  headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
     with urllib.request.urlopen(req, timeout=120) as response: result = json.load(response)
     project_costs.record_at(root, 'openrouter', (result.get('usage') or {}).get('cost'), identity=result.get('id') or identity, category='script')
-    return unpack(result['choices'][0]['message']['content'])
+    choices = result.get('choices') or []
+    choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+    message = choice.get('message') or {}
+    store.atomic_json(root / 'topic-response.json', {'request_id': result.get('id'),
+                      'finish_reason': choice.get('finish_reason'), 'usage': result.get('usage')})
+    if choice.get('finish_reason') == 'length':
+        raise ValueError('DeepSeek вичерпав ліміт відповіді без повного списку тем. Попередні теми збережено. Повторити запит можна вручну.')
+    return unpack(message.get('content') if isinstance(message, dict) else None)
 
 
 def opus(prompt, root, identity, cid):
@@ -288,7 +299,7 @@ Keep each title natural, understandable and specific. Avoid empty hype, vague se
 facts, fake urgency, unsupported medical claims, cure guarantees or guaranteed outcomes.
 The future script must be able to deliver the title's promise. Channel history contains examples,
 not performance analytics; do not invent CTR, search trends or claims that a formula guarantees views.
-Exclude earlier topics and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
+Exclude earlier topics, previous_suggestions and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
 Use plain titles without list numbering or list markers, no colon, dash or hyphen of any kind,
 and a maximum of 100 characters per title. Preserve the channel language and tone.
 For non-Ukrainian/non-Russian titles add a natural Ukrainian reading translation in uk; otherwise uk="".
@@ -305,10 +316,11 @@ def clean_title(text):
 def validate_titles(result, ctx):
     titles = result.get('ideas')
     if not isinstance(titles, list) or len(titles) != 5: raise ValueError('DeepSeek не повернув список нових тем')
-    existing = {re.sub(r'\W', '', clean_title(t)).casefold() for t in ctx['previous_titles']}
+    existing = {re.sub(r'\W', '', clean_title(t)).casefold() for t in ctx['previous_titles'] + ctx.get('previous_suggestions', []) if isinstance(t, str)}
     accepted = []
     for item in titles:
-        title, uk = item.get('title'), item.get('uk', '')
+        if not isinstance(item, dict): continue
+        title, uk = item.get('title'), item.get('uk') or ''
         if not isinstance(title, str) or not isinstance(uk, str): continue
         title, uk = clean_title(title), clean_title(uk)
         if not 5 <= len(title) <= 100 or re.search(r'[:：\-–—]', title): continue
@@ -337,6 +349,10 @@ def start(cid, body):
         if action == 'ideas':
             save_draft(cid, data)
             ctx = context(cid)
+            previous = store.read_json(topics_path(cid), {}) or data
+            recent = (previous.get('context') or {}).get('previous_suggestions', [])
+            ctx['previous_suggestions'] = (recent + [row['title'] for row in previous.get('ideas', [])
+                                                     if isinstance(row, dict) and isinstance(row.get('title'), str)])[-25:]
             data = {'id': uuid.uuid4().hex, 'context': ctx, 'target_words': ctx['target_words'], 'sample_count': ctx['sample_count'], 'day': today(), 'attempt_day': today(), 'stale': False}
         elif action == 'openings':
             index = body.get('index')
@@ -358,7 +374,12 @@ def start(cid, body):
             if data.get('project_id') and not reuse: raise store.StudioError('Відкрийте випуск із його картки або виберіть нову тему.')
             count = body.get('target_words', data['target_words'])
             if type(count) is not int or not 200 <= count <= 15000: raise store.StudioError('Вкажіть обсяг від 200 до 15 000 слів')
-            idea = data['ideas'][index]
+            idea = dict(data['ideas'][index])
+            title = store.validated_name(body.get('title', idea['title']))
+            if title != idea['title']:
+                idea.update(title=title, uk='')
+            if reuse and title != data['selected']['title']:
+                raise store.StudioError('Зачини цього випуску вже розпочаті. Відкрийте його з картки.')
             project = store.load_project(data['project_id']) if reuse else store.create_project(cid, idea['title'])
             data.update(selected_index=index, selected=idea, target_words=count, project_id=project['id'])
         else:

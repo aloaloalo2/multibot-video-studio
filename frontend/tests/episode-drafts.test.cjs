@@ -43,9 +43,10 @@ test('refreshing hooks sends one project-bound explicit request',async()=>{
 test('selected topic creates a new episode only after pressing Create openings',async()=>{
   const h=harness(async(url,method)=>method==='POST'?({...hooks,status:'running'}):topics);
   await h.context.openNewEpisodeWizard();h.root.querySelectorAll('[data-idea]')[0].onclick();
-  assert.equal(h.calls.length,1);assert.equal(h.input.value,'A fresh title');
+  assert.equal(h.calls.length,1);assert.equal(h.input.value,'A fresh title');assert.equal(h.input.readOnly,false);
+  h.input.value='A fresh title with my addition';
   await h.root.querySelector('#ideas-create-openings').onclick();
-  assert.equal(h.calls.length,2);assert.equal(h.calls[1][2].new_episode,true);assert.equal(h.calls[1][2].index,0);
+  assert.equal(h.calls.length,2);assert.equal(h.calls[1][2].new_episode,true);assert.equal(h.calls[1][2].index,0);assert.equal(h.calls[1][2].title,'A fresh title with my addition');
 });
 test('failed daily refresh shows an error without automatically repeating the paid request',async()=>{
   const h=harness(async(url,method)=>{if(method==='POST')throw new Error('Channel busy');return {...topics,stale:true};});

@@ -81,6 +81,41 @@ class EpisodeIdeasTest(unittest.TestCase):
         data = self.begin({'action':'ideas'})
         with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'A fresh {self._testMethodName[:20]} story number {i}', 'uk':'Українська назва'} for i in range(5)]}):
             return self.finish(data)
+    def test_edited_topic_title_reaches_project_and_opus_without_changing_the_catalog(self):
+        topics = self.topics()
+        original = topics['ideas'][1]['title']
+        edited = 'My edited topic with a new detail'
+        data = self.begin({'action':'openings','index':1,'title':'  '+edited+'  ',
+                           'ideas_id':topics['id'],'new_episode':True})
+        self.assertEqual(data['selected']['title'], edited)
+        self.assertEqual(data['selected']['uk'], '')
+        self.assertEqual(store.load_project(data['project_id'])['name'], edited)
+        self.assertEqual(ideas.catalog(self.cid)['ideas'][1]['title'], original)
+        hooks = [{'text':('A complete vivid hook with useful natural spoken detail. ')*4,'uk':''} for _ in range(4)]
+        with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
+            self.finish(data)
+        self.assertIn(edited, model.call_args.args[0])
+
+    def test_blank_edited_title_creates_no_project_or_model_job(self):
+        self.topics()
+        with patch.object(store,'create_project') as create, patch.object(ideas,'Thread') as thread:
+            with self.assertRaises(store.StudioError):
+                ideas.start(self.cid, {'action':'openings','index':0,'title':'  ','new_episode':True})
+        create.assert_not_called()
+        thread.assert_not_called()
+
+    def test_refresh_excludes_previous_suggestions_and_keeps_them_on_empty_response(self):
+        previous = self.topics()
+        data = self.begin({'action':'ideas','refresh':True})
+        with patch.object(ideas,'deepseek',side_effect=ValueError('Empty model response')) as model:
+            self.finish(data)
+        self.assertIn(previous['ideas'][0]['title'], data['context']['previous_suggestions'])
+        self.assertIn('previous_suggestions', model.call_args.args[0])
+        self.assertEqual(ideas.catalog(self.cid)['ideas'], previous['ideas'])
+        self.assertEqual(ideas.catalog(self.cid)['status'], 'failed')
+        with self.assertRaises(ValueError):
+            ideas.validate_titles({'ideas':previous['ideas']}, data['context'])
+
     def test_complete_flow_keeps_selected_title_opening_and_target_without_starting_voice(self):
         previous = store.create_project(self.cid, 'Old fixture')
         store.save_project_source(previous, 'old script words ' * 400)
@@ -173,3 +208,30 @@ class DailyIdeasTest(EpisodeIdeasTest):
     def test_title_punctuation_rule_is_enforced(self):
         for title in ['A title: detail','A title - detail','A title — detail']:
             with self.assertRaises(ValueError): ideas.validate_titles({'ideas':[{'title':title,'uk':''}]*5},{'previous_titles':[]})
+
+
+class TopicTransportTest(unittest.TestCase):
+    def test_empty_response_records_cost_and_stops_once_with_a_clear_error(self):
+        import io, json, tempfile
+        from pathlib import Path
+        result = {'id':'request-1','usage':{'cost':.001},
+                  'choices':[{'finish_reason':'length','message':{'content':None}}]}
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(ideas.credentials,'vault') as vault, \
+                patch.object(ideas.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps(result).encode())) as send, \
+                patch.object(ideas.project_costs,'record_at') as cost:
+            vault.return_value.read.return_value='test-key'
+            with self.assertRaisesRegex(ValueError, 'ліміт відповіді'):
+                ideas.deepseek('Five topics',Path(folder),'test-run')
+            cost.assert_called_once()
+            self.assertEqual(cost.call_args.args[2],.001)
+            send.assert_called_once()
+            payload=json.loads(send.call_args.args[0].data)
+            self.assertEqual(payload['reasoning'],{'effort':'none'})
+            self.assertFalse(payload['provider']['allow_fallbacks'])
+            diagnostic=json.loads((Path(folder)/'topic-response.json').read_text())
+            self.assertEqual(diagnostic['finish_reason'],'length')
+
+    def test_null_content_is_not_treated_as_text(self):
+        with self.assertRaisesRegex(ValueError, 'не повернула готовий текст'):
+            ideas.unpack(None)

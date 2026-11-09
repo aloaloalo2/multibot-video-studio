@@ -37,10 +37,13 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     finally{sending=false;create.disabled=false;}
   }
   function chooseTopic(data,index){
-    const topic=data.ideas[index];input.value=topic.title;input.readOnly=true;create.hidden=true;
+    const topic=data.ideas[index];input.value=topic.title;input.readOnly=false;create.hidden=true;
     root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">Скасувати</button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#ideas-back').onclick=()=>draw(data);
-    root.querySelector('#ideas-create-openings').onclick=()=>request({action:'openings',index,ideas_id:data.id,target_words:Number(root.querySelector('#idea-words').value),new_episode:true});
+    root.querySelector('#ideas-create-openings').onclick=()=>{
+      const title=input.value.trim();if(!title){status('Введіть назву випуску.',true);return;}
+      return request({action:'openings',index,title,ideas_id:data.id,target_words:Number(root.querySelector('#idea-words').value),new_episode:true});
+    };
   }
   async function poll(){
     if(!connected())return;
