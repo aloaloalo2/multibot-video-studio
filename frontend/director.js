@@ -414,8 +414,9 @@ function fillMake(make){
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
     :directorAwaited()?'Кадри з’являться, коли режисер розкладе озвучку.'
-    :floor>=frames.length?'Усі кадри створені. Ролик можна експортувати кнопкою «Експорт MP4».':'';
-  const locked=working||paused||!!blocked;
+    :'';
+  const allMade=floor>=frames.length;
+  const locked=working||paused||!!blocked||allMade;
   make.classList.toggle('locked',locked);make.dispatchEvent(new Event('episode-refresh'));make.classList.toggle('waiting',directorAwaited());
   const count=Math.max(Math.min(frames.length,floor+1),Math.min(frames.length,Number(makeCount[id]) || frames.length));
   const shownCount=working||paused?Number(request.frames):count;
@@ -423,12 +424,12 @@ function fillMake(make){
   const first=working||paused||request?.status==='failed'?Number(request.first || 1):floor+1;
   cells.forEach((cell,index)=>{cell.classList.toggle('made',made.has(index));cell.classList.toggle('chosen',index<shownCount&&!made.has(index)&&!blocked);
     cell.title=`Кадр ${index+1} · ${clock(frames[index].start)}–${clock(frames[index].end)}${made.has(index)?' · готовий':''}`;});
-  handle.hidden=!!blocked;
+  handle.hidden=!!blocked||allMade;
   if(shownCount)handle.style.left=`${Number(frames[shownCount-1].end)/(Number(frames[frames.length-1].end) || 1)*100}%`;
   strip.setAttribute('aria-valuenow',String(shownCount));strip.setAttribute('aria-disabled',String(locked));
   max.disabled=locked;max.classList.toggle('active',!locked&&count===frames.length);
   const end=Number(frames[shownCount-1]?.end) || 0,all=Number(frames[frames.length-1].end) || 0;
-  readout.innerHTML=blocked&&!working&&!paused?`<strong>${frames.length}</strong><span>${planFrameWord(frames.length)} · ${clock(all)}</span>`
+  readout.innerHTML=(blocked||allMade)&&!working&&!paused?`<strong>${frames.length}</strong><span>${planFrameWord(frames.length)} · ${clock(all)}</span>`
     // a stretch after the made frames reads «Кадри 2–6 з 6 · 00:04–00:48», a count from the start «6 кадрів з 6 · до 00:48»
     :first>1?`<span>Кадри</span><strong>${first}–${shownCount}</strong><span>з ${frames.length} · ${clock(frames[first-1].start)}–${clock(end)}</span>`
     :`<strong>${shownCount}</strong><span>${planFrameWord(shownCount)} з ${frames.length} · до ${clock(end)} з ${clock(all)}</span>`;
@@ -441,7 +442,7 @@ function fillMake(make){
   feed.replaceChildren();
   make.querySelector('.production-control')?.remove();
   // Show the current activity in one muted status control, without a live work log.
-  start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked;
+  start.classList.remove('loading','glow-action');start.onclick=null;start.disabled=!!blocked||allMade;
   if(working){
     // the whole asked film with every frame made so far, earlier runs too: «86 з 107», never counted from the first gap
     const done=[...made].filter(index=>index<request.frames).length,total=request.frames;
