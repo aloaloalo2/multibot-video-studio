@@ -30,7 +30,8 @@
 .composition-tab-wrap:has(.active) .composition-tab{background:transparent!important;}
 .composition-close{align-self:center;width:18px;height:18px;margin-right:4px;padding:0;border-radius:50%;background:transparent;color:#c1c1c8;font-size:13px;}
 .composition-close:hover{background:#55555e;color:#fff;}
-.editor-open .project-views{gap:3px;padding:7px 12px 0;background:#0f0f10;border-bottom:1px solid #35353c;min-height:39px;}
+.editor-open .project-views{gap:3px;padding:7px 34px 0;background:transparent;border-bottom:1px solid #35353c;min-height:39px;}
+@media(max-width:560px){.editor-open .project-views{padding-inline:30px}}
 .editor-open .project-views button{border:0;border-radius:12.5px 12.5px 0 0;background:#1e1e23;color:#b8b8c0;padding:7px 15px;min-width:137px;height:32px;}
 .editor-open .project-views button.active{background:#35353c;color:#f4f4f6;}
 #composition-tabs{align-self:flex-end;align-items:stretch;padding:0 8px;margin-bottom:-1px;height:30px;}

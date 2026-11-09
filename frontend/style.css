@@ -2160,8 +2160,9 @@ select option{background:#232327;color:#f1f1f2}
 
 .timeline-toolbar{padding:4px 12px;gap:8px}
 .timeline-group-controls:empty{display:none}
-/* Keep the editor sections inside the same horizontal gutter. */
-.editor-open .project-views{margin-inline:10px}
+/* The tab divider spans the window; tab buttons retain the editor gutter. */
+.editor-open .project-views{margin-inline:-12px}
+@media(max-width:560px){.editor-open .project-views{margin-inline:-8px}}
 .editor-open .workspace{margin-inline:10px;padding-inline:0}
 
 /* Channel voice setup follows the same compact field rhythm as channel settings. */
