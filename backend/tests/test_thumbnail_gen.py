@@ -179,6 +179,26 @@ class ThumbnailTest(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0 if picture else 1, "ok", "" if picture else "quota")
         return patch.object(subprocess, "run", side_effect=run)
 
+    def test_clone_uses_reference_before_frames_and_conditional_host_without_extra_prompt_author(self):
+        Image.new('RGB', (32, 18)).save(self.studio / 'idea-reference.jpg')
+        store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
+        work = thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
+        hero = work / 'Головний герой.png';Image.new('RGB', (16, 16)).save(hero)
+        with self.tools(), patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(hero, 'Include this recognizable person prominently')), \
+             patch.object(thumbnail_gen, 'frame_stills') as frames, patch.object(thumbnail_gen, 'write_prompt') as writer:
+            thumbnail_gen.run(self.project['id'], 'Our title', 'Our script', '', writer='trending')
+        self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
+        self.assertEqual(len(self.calls), 1);frames.assert_not_called();writer.assert_not_called()
+        command, sent = self.calls[0]
+        self.assertIn(str(work / 'idea-reference.jpg'), command)
+        self.assertIn(str(hero), command)
+        self.assertIn('neutral story subject', sent['input'])
+        self.assertIn('people-free', sent['input'])
+        self.assertNotIn('Include this recognizable person prominently', sent['input'])
+        thumbnail_gen.ACTIVE.clear()
+        with patch.object(thumbnail_gen, 'CODEX', Path(sys.executable)), patch.object(thumbnail_gen.threading, 'Thread'):
+            self.assertEqual(thumbnail_gen.start(self.project['id'], 'Our title', 'Our script')['status'], 'running')
+
     def test_a_run_keeps_the_old_thumbnail_and_puts_the_new_one_in_place(self):
         Image.new("RGB", (16, 9), (255, 0, 0)).save(self.episode / "Превью.png")
         thumbnail_gen.ACTIVE.add(self.project["id"])

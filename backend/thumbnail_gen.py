@@ -124,13 +124,15 @@ def choose(pid: str, name: str) -> dict:
 
 def defaults(pid: str) -> dict:
     project = store.load_project(pid)
+    import idea_reference
+    clone, _ = idea_reference.for_project(pid)
     folder = Path(project.get("episode_path") or "")
     plan = store.load_project_narration(pid) or {}
     script = plan.get("spoken_script") or plan.get("script") or (project.get("voice_script") or {}).get("text") or ""
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
-            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": MIN_FRAMES,
+            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else MIN_FRAMES,
             "versions": versions(pid), "writers": ["claude", "deepseek", "trending"], "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
@@ -378,7 +380,12 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         work.mkdir(exist_ok=True)
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью *.png") if (m := VERSION.fullmatch(p.name))] or [0])
         name = f"Превью v{number}.png"
+        import idea_reference
+        clone, clone_image = idea_reference.for_project(pid)
         hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
+        if clone and not base:
+            # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
+            hero_rules = '\nГоловний герой.png is our host identity reference ONLY when replacing a source presenter. Do not add this host to neutral story-subject or object-only concepts.\n' if hero else ''
         channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
@@ -388,7 +395,13 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             if channel_wishes:
                 wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
-            refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
+            if clone:
+                snapshot = work / 'idea-reference.jpg'
+                shutil.copyfile(clone_image, snapshot)
+                refs = [snapshot]
+                wishes += '\n' + idea_reference.thumbnail_rules(title, name)
+            else:
+                refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
             # 1. Claude (or DeepSeek, on trial) picks the moment and writes the prompt; it is kept even if the drawing fails
             if writer == "trending":
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
@@ -461,10 +474,12 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
         if not str(wishes or "").strip():
             raise store.StudioError("Напишіть, що змінити в прев'ю")
     project = store.load_project(pid)
+    import idea_reference
+    clone, _ = idea_reference.for_project(pid)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")
-    if not base and store.picture_count(project) < MIN_FRAMES:
+    if not base and not clone and store.picture_count(project) < MIN_FRAMES:
         raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {MIN_FRAMES} кадри ролику: з них береться стиль", 409)
     if not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)

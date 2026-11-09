@@ -1125,6 +1125,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference/([A-Za-z0-9_-]{11})/thumbnail', path)
+        if reference_match:
+            import idea_reference
+            cid, ref = reference_match.groups()
+            idea_reference.read(cid, ref)
+            return self.serve_media(idea_reference.folder(cid, ref) / 'thumbnail.jpg')
         if path == '/api/space':
             return self.json_response(space.all_usage(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
@@ -1477,6 +1483,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference', path)
+        if reference_match and method == 'POST':
+            import idea_reference
+            return self.json_response(idea_reference.inspect(reference_match.group(1), body.get('url')))
         if path == '/api/space' and method == 'POST':
             return self.json_response(space.free_all(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source|cancel|speed)', path)
