@@ -112,9 +112,13 @@ button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled)
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:10px;padding:9px 13px}
 button.primary:hover:not(:disabled){background:#f5c24b}
 /* The two main actions glow like the logo key, in their own gold. */
-#export-open,#overview-create{transition:background-color .15s,box-shadow .2s}
-#export-open:not(:disabled),#overview-create:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
-#export-open:not(:disabled):hover,#overview-create:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+#export-open{transition:background-color .15s,box-shadow .2s}
+#export-open:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
+#export-open:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
+#overview-create{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:9px 16px;border:1px solid #383a42;border-radius:999px;background:#0b0b0c;color:#d7d9e0;font-weight:550;box-shadow:none;transition:background-color .15s,border-color .15s,color .15s}
+#overview-create svg{width:17px;height:17px;flex:none}
+#overview-create:not(:disabled):hover{background:#191a1e;border-color:#60646f;color:#f1f1f2}
+#overview-create:focus-visible{outline:2px solid #a4a9b5;outline-offset:3px}
 button.secondary{border:1px solid #47474d;background:#2b2b30;color:#e0e1e4;border-radius:9px;padding:8px 10px}
 button.secondary:hover:not(:disabled){background:#3a3a40}
 /* «Оновити студію»: a blue rounded button with a download mark; a stopped update stays amber with a warning mark */
