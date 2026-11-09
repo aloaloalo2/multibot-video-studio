@@ -1174,11 +1174,12 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 
 async function openStudioSettings(){
   try{
-    modal('Загальні налаштування студії',`${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
+    modal('Загальні налаштування студії',`${studioSpaceMarkup()}${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Скасувати',run:closeModal},{label:'Зберегти',primary:true,run:async()=>{
       try{if(typeof saveTypedServiceKeys==='function')await saveTypedServiceKeys();closeModal();status('Загальні налаштування студії збережено.');}catch(error){status(error.message,true);}
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
     fillExtension();
+    fillStudioSpace();
     await initServiceKeys();
   }catch(error){status(error.message,true);}
 }

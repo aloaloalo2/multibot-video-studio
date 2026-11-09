@@ -84,5 +84,59 @@ class SpaceTest(unittest.TestCase):
         self.assertTrue((self.build / "music.wav").exists())
 
 
+class AllSpaceTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.ids = ['a' * 24, 'b' * 24, 'c' * 24]
+        for index, pid in enumerate(self.ids):
+            folder = self.root / pid
+            (folder / 'stills').mkdir(parents=True)
+            (folder / 'stills' / 'cached.png').write_bytes(b'x' * (index + 1) * 100)
+            (folder / 'voice.mp3').write_bytes(b'keep')
+            (folder / 'project.json').write_text(json.dumps({
+                'id': pid, 'schema_version': 2, 'layer_mode': 'item', 'tracks': [], 'assets': [],
+                'deleted_at': 1 if index == 2 else None}))
+        for item in (patch.object(store, 'PROJECTS_ROOT', self.root),
+                     patch.object(space.frame_progress, 'razgon_project', return_value=None),
+                     patch.object(store, 'load_project', side_effect=lambda pid: store.read_json(store.project_path(pid)))):
+            item.start(); self.addCleanup(item.stop)
+
+    def test_totals_all_projects_without_the_card_minimum_and_skips_busy_and_deleted(self):
+        self.assertEqual(space.all_usage(), {'total': 300, 'projects': 2, 'busy': 0, 'unavailable': 0})
+        blocked = lambda pid: 'export' if pid == self.ids[1] else None
+        self.assertEqual(space.all_usage(blocked), {'total': 100, 'projects': 1, 'busy': 1, 'unavailable': 0})
+        result = space.free_all(blocked)
+        self.assertEqual(result, {'freed': 100, 'projects': 1, 'busy': 1, 'unavailable': 0})
+        self.assertFalse((self.root / self.ids[0] / 'stills').exists())
+        for pid in self.ids:
+            self.assertEqual((self.root / pid / 'voice.mp3').read_bytes(), b'keep')
+            self.assertTrue((self.root / pid / 'project.json').exists())
+        for pid in self.ids[1:]:
+            self.assertTrue((self.root / pid / 'stills').exists())
+
+    def test_execution_rechecks_activity_after_the_quote(self):
+        self.assertEqual(space.all_usage()['total'], 300)
+        result = space.free_all(lambda pid: 'started' if pid in self.ids[:2] else None)
+        self.assertEqual(result['freed'], 0)
+        self.assertEqual(result['busy'], 2)
+        self.assertEqual(space.all_usage()['total'], 300)
+
+    def test_broken_project_does_not_abort_other_projects(self):
+        (self.root / self.ids[1] / 'project.json').write_text('{broken')
+        self.assertEqual(space.all_usage(), {'total': 100, 'projects': 1, 'busy': 0, 'unavailable': 1})
+        result = space.free_all()
+        self.assertEqual(result['freed'], 100)
+        self.assertEqual(result['unavailable'], 1)
+        self.assertEqual(space.all_usage()['total'], 0)
+
+    def test_parallel_cleanup_is_rejected(self):
+        with space._SWEEP_LOCK:
+            with self.assertRaises(store.StudioError) as error:
+                space.free_all()
+        self.assertEqual(error.exception.status, 409)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,29 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_global_space_routes_reuse_project_cleanup_and_activity_guard(self):
+        summary = {'total': 1200, 'projects': 2, 'busy': 1, 'unavailable': 0}
+        with patch.object(app.space, 'all_usage', return_value=summary) as scan:
+            self.assertEqual(self.request('/api/space'), (200, summary))
+            scan.assert_called_once_with(app.cleanup_blocked)
+        with patch.object(app.space, 'free_all', return_value={'freed': 1200}) as free:
+            self.assertEqual(self.request('/api/space', 'POST', {}), (200, {'freed': 1200}))
+            free.assert_called_once_with(app.cleanup_blocked)
+
+    def test_global_cleanup_guard_covers_exports_recognition_and_writing(self):
+        pid = 'e' * 24
+        with patch.object(app, 'active_export', return_value={'status': 'queued'}):
+            self.assertTrue(app.cleanup_blocked(pid))
+        with patch.object(app, 'active_export', return_value=None), \
+             patch.object(app, 'busy_candidates', return_value={pid}), \
+             patch.object(app, 'project_jobs', return_value={'recognition': 'running'}):
+            self.assertTrue(app.cleanup_blocked(pid))
+        import episode_ideas
+        with patch.object(app, 'active_export', return_value=None), \
+             patch.object(app, 'busy_candidates', return_value=set()), \
+             patch.object(episode_ideas, 'active_work', return_value=[{'project_id': pid}]):
+            self.assertTrue(app.cleanup_blocked(pid))
+
     def test_native_animation_ops_remain_editable_and_repair_keeps_neighbours(self):
         project=store.create_project(store.channel_id(self.channel),'Live animation')
         pid=project['id'];root='/api/projects/'+pid

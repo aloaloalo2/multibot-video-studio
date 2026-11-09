@@ -11,6 +11,8 @@ what older episodes still carry.
 from __future__ import annotations
 
 import shutil
+import re
+import threading
 import time
 from pathlib import Path
 
@@ -65,6 +67,63 @@ def cache_items(pid: str) -> list[Path]:
 FREEABLE_MIN = 100 * 1024 ** 2
 FREEABLE_TTL = 30 * 60   # half an hour (user, 1 November 2026)
 _FREEABLE: dict[str, tuple[float, bool]] = {}
+_SWEEP_LOCK = threading.Lock()
+
+
+def project_ids():
+    """Read only the local project index, without narration/thumbnail work from the overview."""
+    if not store.PROJECTS_ROOT.is_dir():
+        return
+    for folder in sorted(store.PROJECTS_ROOT.iterdir()):
+        if re.fullmatch(r"[0-9a-f]{24}", folder.name) and (folder / "project.json").is_file():
+            yield folder.name
+
+
+def all_usage(blocked=lambda pid: None) -> dict:
+    result = {"total": 0, "projects": 0, "busy": 0, "unavailable": 0}
+    for pid in project_ids():
+        try:
+            project = store.listed_project(store.project_dir(pid) / "project.json")
+            if project.get("deleted_at"):
+                continue
+            if blocked(pid) or busy(pid):
+                result["busy"] += 1
+                continue
+            data = usage(pid, project)
+            result["total"] += data["total"]
+            result["projects"] += bool(data["total"])
+        except (OSError, ValueError, KeyError, TypeError, store.StudioError):
+            result["unavailable"] += 1
+    return result
+
+
+def free_all(blocked=lambda pid: None) -> dict:
+    """Recheck each project at execution; active work never enters the cleanup path."""
+    if not _SWEEP_LOCK.acquire(blocking=False):
+        raise store.StudioError("Очищення вже триває", 409)
+    result = {"freed": 0, "projects": 0, "busy": 0, "unavailable": 0}
+    try:
+        for pid in project_ids():
+            try:
+                project = store.listed_project(store.project_dir(pid) / "project.json")
+                if project.get("deleted_at"):
+                    continue
+                if blocked(pid) or busy(pid):
+                    result["busy"] += 1
+                    continue
+                if not usage(pid, project)["total"]:
+                    continue
+                if blocked(pid) or busy(pid):
+                    result["busy"] += 1
+                    continue
+                data = free(pid)
+                result["freed"] += data["freed"]
+                result["projects"] += bool(data["freed"])
+            except (OSError, ValueError, KeyError, TypeError, store.StudioError):
+                result["unavailable"] += 1
+        return result
+    finally:
+        _SWEEP_LOCK.release()
 
 
 def freeable(pid: str, now: float | None = None) -> bool:
@@ -97,8 +156,8 @@ def busy(pid: str) -> str | None:
     return None
 
 
-def usage(pid: str) -> dict:
-    project = store.load_project(pid)
+def usage(pid: str, project: dict | None = None) -> dict:
+    project = store.load_project(pid) if project is None else project
     build = sum(size(item) for item in build_items(project))
     old = old_renders(pid, project)
     renders = sum(Path(asset["path"]).stat().st_size for asset in old)

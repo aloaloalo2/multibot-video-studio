@@ -797,6 +797,17 @@ def busy_candidates() -> set[str]:
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
+def cleanup_blocked(pid):
+    if active_export(pid):
+        return "Зараз іде експорт"
+    if pid in busy_candidates() and any(value in agent_view.BUSY for value in project_jobs(pid).values()):
+        return "У проєкті триває робота"
+    import episode_ideas
+    if any(job.get('project_id') == pid for job in episode_ideas.active_work()):
+        return "Створюється сценарій"
+    return space.busy(pid)
+
+
 def project_jobs(pid: str) -> dict:
     """{what: status} of the work that runs for one project besides its export."""
     request = store.load_project(pid).get("production_request")
@@ -1114,6 +1125,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        if path == '/api/space':
+            return self.json_response(space.all_usage(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
         if narration:
             store.load_project(narration.group(1))
@@ -1464,6 +1477,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        if path == '/api/space' and method == 'POST':
+            return self.json_response(space.free_all(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source|cancel|speed)', path)
         if narration and method == 'POST':
             pid, mode = narration.groups(); project = store.load_project(pid)
