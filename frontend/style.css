@@ -101,6 +101,9 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .editor-open .project-heading{display:grid;grid-template-columns:minmax(0,max-content) auto;grid-template-rows:auto auto;column-gap:14px;row-gap:3px;align-items:center;justify-content:start}
 .editor-open .project-heading>.project-title{grid-column:1;grid-row:1;min-width:0}
 .editor-open .project-heading>.save-state{grid-column:1;grid-row:2}
+.editor-open .project-heading>.save-state:empty{display:none}
+.editor-open .project-heading:has(>.save-state:empty){grid-template-rows:auto;row-gap:0}
+.editor-open .project-heading:has(>.save-state:empty)>.history-actions{grid-row:1}
 .history-actions{display:flex;gap:6px;grid-column:2;grid-row:1/3}
 .history-actions:not(:has(button:not([hidden]))){display:none}
 .history-button{width:34px;height:34px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;flex:none;background:#26272b;color:#f2f2f3;transition:background-color .12s,color .12s}
@@ -656,7 +659,7 @@ button.danger:hover:not(:disabled){background:#523034}
   /* the logo block is as wide as the home page's sidebar (210px with its borders; 208px inside, plus the divider) and
      starts at the bar's edge: the logo sits in the middle of it and in the same place as on the home page, and the
      divider stands where the sidebar's edge is */
-  .editor-open .editor-brand{width:209px;margin-left:-19px;height:46px;padding:0;align-self:start;justify-content:center}
+  .editor-open .editor-brand{width:209px;margin-left:-19px;height:46px;padding:0;align-self:center;justify-content:center}
 }
 
 .overview-heading{display:flex;align-items:center;gap:10px;margin-bottom:7px}
