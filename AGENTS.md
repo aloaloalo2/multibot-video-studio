@@ -820,3 +820,6 @@ The voice setup shows one shared editable Scenario field before the two compact 
 ## Editable suggested topics (9 November 2026)
 
 After selecting a topic, keep its title input editable until the author starts openings. Send the edited title with the topic index and catalog id; validate it before project creation and preserve it exactly in the project and Opus brief. Keep the original catalog suggestion unchanged. DeepSeek topic refresh excludes the last 25 suggestions as well as project titles. For this short topic request explicitly disable optional reasoning, keep a bounded output and no provider fallback or automatic paid retry. Record usage before rejecting an empty/truncated response, retain compact response diagnostics and the previous catalog, and show a readable error instead of calling strip on null.
+
+
+Russian and Ukrainian episode topics and opening hooks have no Ukrainian reading duplicate, including cached variants. Keep reading translations for other languages. Digits are permitted in titles and stay as digits; never convert existing title digits to written-out number words.

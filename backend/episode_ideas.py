@@ -128,7 +128,7 @@ def catalog(cid, data=None):
                           error='Підготовку тем перервано. Повторіть запит вручну.' if data['status'] == 'running' else data.get('error'))
         elif current.get('stage') == 'ideas':
             result.update(status=current.get('status', 'done'), error=current.get('error'))
-        return result
+        return public(result)
 
 
 def launch(cid, data, action, request_id=None):
@@ -302,7 +302,9 @@ not performance analytics; do not invent CTR, search trends or claims that a for
 Exclude earlier topics, previous_suggestions and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
 Use plain titles without list numbering or list markers, no colon, dash or hyphen of any kind,
 and a maximum of 100 characters per title. Preserve the channel language and tone.
-For non-Ukrainian/non-Russian titles add a natural Ukrainian reading translation in uk; otherwise uk="".
+Keep existing digits as digits; do not spell out numbers in titles.
+For non-Ukrainian/non-Russian titles add a natural Ukrainian reading translation in uk.
+Never translate Russian or Ukrainian titles into Ukrainian; for those always return uk="".
 Before responding, silently compare the five and rewrite repetitive hooks within this same response.
 Return only JSON {"ideas":[{"title":"...","uk":"..."}]} with exactly five entries, no analysis or alternatives.
 """
@@ -322,7 +324,7 @@ def validate_titles(result, ctx):
         if not isinstance(item, dict): continue
         title, uk = item.get('title'), item.get('uk') or ''
         if not isinstance(title, str) or not isinstance(uk, str): continue
-        title, uk = clean_title(title), clean_title(uk)
+        title, uk = clean_title(title), reading_translation(title, clean_title(uk))
         if not 5 <= len(title) <= 100 or re.search(r'[:：\-–—]', title): continue
         key = re.sub(r'\W', '', title).casefold()
         if key in existing: continue
@@ -389,8 +391,32 @@ def start(cid, body):
         return launch(cid, data, action, body.get('request_id'))
 
 
+def reader_language(text):
+    # Use the Studio's existing script-language rule; short Cyrillic headlines confuse statistical classifiers.
+    from languages import guess_language
+    return guess_language(text)
+
+
+def reading_translation(text, translated):
+    if not isinstance(translated, str) or not translated.strip():
+        return ''
+    cyrillic = len(re.findall(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
+    if cyrillic / max(1, sum(char.isalpha() for char in text)) >= .6 and reader_language(text) in {'ru', 'uk'}:
+        return ''
+    return translated
+
+
 def public(data):
-    return {k: v for k, v in data.items() if k != 'context'}
+    result = {k: v for k, v in data.items() if k != 'context'}
+    # Also normalize cached topics/hooks without rewriting their originals or requesting a model.
+    for field in ('ideas', 'openings', 'previous_openings'):
+        if isinstance(result.get(field), list):
+            result[field] = [{**row, 'uk': reading_translation(row.get('title') or row.get('text') or '', row.get('uk'))}
+                             if isinstance(row, dict) else row for row in result[field]]
+    if isinstance(result.get('selected'), dict):
+        row = result['selected']
+        result['selected'] = {**row, 'uk': reading_translation(row.get('title') or '', row.get('uk'))}
+    return result
 
 
 def work(cid, data):
@@ -443,13 +469,13 @@ def _work(cid, data):
                 if data.get('previous_openings'):
                     brief += '\nWrite new hooks with different angles from these previous variants: ' + json.dumps(data['previous_openings'], ensure_ascii=False)
                 result = opus(brief + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 10 complete sentences. '
-                    'Do not write the full script yet. Add uk translation for hooks in languages other than Ukrainian/Russian. '
+                    'Do not write the full script yet. Add uk translation only for hooks in languages other than Ukrainian/Russian. Never translate Russian or Ukrainian hooks; return uk="" for them. '
                     'Return JSON only {"openings":[{"text":"...","uk":"..."}]}.', root, identity, cid)
                 rows = result.get('openings')
                 writing_jobs.check()
                 if not isinstance(rows, list) or len(rows) != 4 or any(not isinstance(r.get('text'), str) or words(r['text']) < 15 or not isinstance(r.get('uk', ''), str) for r in rows):
                     raise ValueError('Opus не повернув чотири повні зачини')
-                data['openings'] = rows
+                data['openings'] = [{**row, 'uk': reading_translation(row['text'], row.get('uk'))} for row in rows]
             else:
                 brief += '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening']
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '

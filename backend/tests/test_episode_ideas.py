@@ -21,6 +21,35 @@ class TitleCleanupTest(unittest.TestCase):
             ideas.validate_titles({'ideas': rows}, {'previous_titles': ['1. 5 Geräusche am Auto!']})
 
 
+class ReadingTranslationTest(unittest.TestCase):
+    def test_russian_topics_and_hooks_have_no_ukrainian_duplicate_including_saved_rows(self):
+        saved={'ideas':[{'title':'Просыпаюсь в 4 утра после 60?', 'uk':'Прокидаюся о 4 ранку після 60?'}],
+               'openings':[{'text':'Почему это происходит после 60 лет?', 'uk':'Чому це відбувається після 60 років?'}]}
+        with patch.object(ideas, 'reader_language', return_value='ru'):
+            shown=ideas.public(saved)
+        self.assertEqual(shown['ideas'][0]['uk'], '')
+        self.assertEqual(shown['openings'][0]['uk'], '')
+        self.assertEqual(shown['ideas'][0]['title'], 'Просыпаюсь в 4 утра после 60?')
+        self.assertTrue(saved['ideas'][0]['uk'])  # read-only normalization
+
+    def test_short_russian_titles_without_exclusive_letters_still_need_no_translation(self):
+        for title in ('7 причин боли в спине после 60', 'Сон после 60 лет', 'Почему болит спина'):
+            with self.subTest(title=title):
+                self.assertEqual(ideas.reading_translation(title, 'Український переклад'), '')
+
+    def test_english_and_german_reading_translations_are_preserved_without_detection(self):
+        with patch.object(ideas, 'reader_language') as detector:
+            self.assertEqual(ideas.reading_translation('7 sounds to check', '7 звуків для перевірки'), '7 звуків для перевірки')
+            self.assertEqual(ideas.reading_translation('4 Stunden Schlaf?', '4 години сну?'), '4 години сну?')
+            self.assertEqual(ideas.reading_translation('A story about Россия today', 'Історія про Росію'), 'Історія про Росію')
+        detector.assert_not_called()
+
+    def test_correct_empty_translation_needs_no_language_classifier(self):
+        with patch.object(ideas, 'reader_language') as detector:
+            self.assertEqual(ideas.reading_translation('Сон после 60 лет', ''), '')
+        detector.assert_not_called()
+
+
 class EpisodeIdeasTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
