@@ -20,8 +20,8 @@ async function openThumbnail(project){
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
   modal('New Preview',`
-    ${data.reference_selection?`<div class="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg><span>Клонувати ідею</span></button></div><label class="thumb-reference-field" id="thumb-reference-field" hidden><span>Посилання на YouTube</span><input id="thumb-reference-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(data.clone_reference?.url || '')}"></label>`:''}
-    <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
+    ${data.reference_selection?`<div class="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Клонувати ідею</span></button></div><label class="thumb-reference-field" id="thumb-reference-field" hidden><span>Посилання на YouTube</span><input id="thumb-reference-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(data.clone_reference?.url || '')}"></label>`:''}
+    <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden><figcaption id="thumb-reference-caption">Прев’ю за посиланням</figcaption></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label></div>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
@@ -47,10 +47,35 @@ async function openThumbnail(project){
 
 function setupThumbnailModes(project,data){
   const backdrop=$('modal-backdrop'),buttons=[...backdrop.querySelectorAll('[data-thumb-mode]')];
+  const field=$('thumb-reference-url'),preview=$('thumb-reference-preview'),image=$('thumb-reference-image'),caption=$('thumb-reference-caption');
+  const source=thumbnailSources.get(project.id);
+  let timer,version=0;
+  const paint=reference=>{
+    image.hidden=!reference?.thumbnail_url;
+    if(reference?.thumbnail_url)image.src=reference.thumbnail_url;else image.removeAttribute('src');
+    caption.textContent=reference?.title||'Прев’ю за посиланням';
+  };
+  if(data.clone_reference){source.reference=data.clone_reference;source.referenceUrl=field.value.trim();paint(data.clone_reference);}
+  const load=async()=>{
+    const url=field.value.trim(),current=++version;
+    if(!url){paint(null);return;}
+    if(source.referenceUrl===url&&source.reference){paint(source.reference);return;}
+    image.hidden=true;caption.textContent='Завантажуємо прев’ю…';
+    try{
+      const reference=await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
+      if(!preview.isConnected||current!==version||field.value.trim()!==url)return;
+      source.reference=reference;source.referenceUrl=url;paint(reference);
+    }catch(error){if(preview.isConnected&&current===version){paint(null);caption.textContent=error.message;}}
+  };
+  field.addEventListener('input',()=>{clearTimeout(timer);version++;source.reference=null;paint(null);if(field.value.trim())timer=setTimeout(()=>{if(preview.isConnected)load();},450);});
+  field.addEventListener('change',()=>{clearTimeout(timer);return load();});
   const select=mode=>{
     backdrop.dataset.thumbnailMode=mode;
     for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.thumbMode===mode));
     $('thumb-reference-field').hidden=mode!=='clone';
+    preview.hidden=mode!=='clone';
+    $('thumb-brief-layout').classList.toggle('has-reference',mode==='clone');
+    if(mode!=='clone'){clearTimeout(timer);version++;}
     const gated=mode==='new'&&Number(data.pictures||0)<Number(data.creation_min_frames??thumbnailFrames);
     for(const button of backdrop.querySelectorAll('#modal-actions button'))button.dataset.gated=gated?'1':'';
     $('thumb-state').textContent=gated?`Для нового прев’ю потрібні хоча б ${data.creation_min_frames??thumbnailFrames} готові кадри. Клонування доступне за посиланням.`:'';
@@ -119,7 +144,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
     if(source.reference_selection&&backdrop?.dataset.thumbnailProject===project.id){
       if(backdrop.dataset.thumbnailMode==='clone'){
         const url=$('thumb-reference-url').value.trim();if(!url)throw new Error('Вставте посилання на YouTube.');
-        const reference=await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
+        const reference=source.referenceUrl===url&&source.reference?.id?source.reference:await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
         if(!reference?.id)throw new Error('Не вдалося прочитати прев’ю за посиланням.');
         body.reference_id=reference.id;
       }else body.reference_id='';

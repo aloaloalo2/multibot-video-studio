@@ -561,7 +561,7 @@ async function pollDirector(id){
 
 // The latest actions of a run, newest first, each with who did it: Opus directs, Codex draws, Razgon renders,
 // helpers are agents Opus sends off in parallel.
-const teamRoles={opus:['Режисер','Claude Opus 5.5, керує всім'],codex:['Художник','Codex, малює картинки'],razgon:['Рендер','Razgon, збирає кадри'],helper:['Помічник','паралельне завдання']};
+const teamRoles={opus:['Режисер','Claude Code, керує створенням ролика'],codex:['Художник','Codex, малює картинки'],razgon:['Рендер','Razgon, збирає кадри'],helper:['Помічник','паралельне завдання']};
 // The author never sees file names or the agent's English notes: reading and preparing read as one plain line, files
 // written read as what they are for, and real steps keep their own words.
 function humanStep(text){

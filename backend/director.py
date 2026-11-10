@@ -1,4 +1,4 @@
-"""Direction of an episode by Claude Opus 5.5 (high effort), started as soon as the voice is recognised.
+"""Direction of an episode by the channel-selected Claude model and effort, started as soon as the voice is recognised.
 
 The Studio hands the episode to Claude Code once Whisper has turned the voice into timed words and the plan follows the
 voice; no channel gets its frames from the sentence splitter (user, 31 October 2026: «план завжди робить клод-код, тобто
@@ -22,7 +22,7 @@ import agent_storage
 import store
 import motion_direction
 
-MODEL = "claude-opus-5-5"
+MODEL = store.DEFAULT_DIRECTOR_MODEL
 EFFORT = "high"
 TIMEOUT = 3 * 3600
 RESULT_EXIT_GRACE = 3
@@ -283,10 +283,12 @@ def activity_path(pid: str, kind: str) -> Path:
 
 
 def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
-           effort: str = EFFORT) -> tuple[int, dict]:
+           effort: str = EFFORT, model: str = MODEL) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
-    command = [str(cli), "--model", MODEL, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+    if model not in store.DIRECTOR_MODELS:
+        raise store.StudioError("Невідома модель режисера")
+    command = [str(cli), "--model", model, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
                "--disallowedTools", "Agent", "Task",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
     # its own process group; kill() also stops the commands, renders and helpers under it
@@ -439,9 +441,9 @@ def _run(pid: str, cli: Path) -> None:
     try:
         data = state(pid) or {}
         project = store.load_project(pid)
-        data.update(status="running", started_at=time.time(), model=MODEL, effort=store.channel_effort(project), error=None, creation_error=None, summary=None, limit=False)
+        data.update(status="running", started_at=time.time(), model=store.channel_director_model(project), effort=store.channel_effort(project), error=None, creation_error=None, summary=None, limit=False)
         save(pid, data)
-        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT, effort=data["effort"])
+        code, answer = claude(cli, brief(project), store.project_dir(pid) / "director.log", activity_path(pid, "director"), TIMEOUT, effort=data["effort"], model=data["model"])
         plan = store.load_project_plan(pid) or {}
         plan_file = store.project_plan_file(store.load_project(pid))
         # the run counts only if it wrote a fresh director plan into the Studio
@@ -499,7 +501,7 @@ def start(pid: str, reason: str = "voice") -> dict:
             raise store.StudioError(str(error), 503) from None
         ACTIVE.add(pid)
         previous = state(pid) or {}
-        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": MODEL, "effort": store.channel_effort(project),
+        data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": store.channel_director_model(project), "effort": store.channel_effort(project),
                 "create_video": reason == 'create_video' or previous.get('status') == 'failed' and bool(previous.get('create_video'))}
         save(pid, data)
     threading.Thread(target=run, args=(pid, cli), daemon=True).start()

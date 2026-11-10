@@ -5,7 +5,7 @@ folder, text frames and Razgon frames of a mixed episode) are made by the same a
 frame on the timeline with tools/studio.py place, and the run is done when each of the requested frames has its clip
 (store.made_frames). An animated film's frames follow below.
 
-The production request (store.request_production) hands the frames to Claude Opus 5.5 (high effort) through Claude
+The production request (store.request_production) hands the frames to the channel-selected model and effort through Claude
 Code on the user's subscription, in the YOUTUBE folder, as the channel rules' step 7 asks: scenes of the shots behind
 those frames, props from the library or drawn by Codex (tools/codex_image.py), checks on contact sheets. The frames stay
 «Кадр N» code blocks on the timeline that the live preview draws: nothing is rendered until the author presses «Експорт
@@ -368,6 +368,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             log = run_log(pid, request)
             started = time.time()
             effort = store.channel_effort(project)
+            model = store.channel_director_model(project)
             if request.get('repair_frames'):
                 review_frames = request['repair_frames']
             else:
@@ -375,7 +376,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 pending = set(request.get('review_frames', [])) if request.get('quality_version') == 1 else set()
                 review_frames = sorted(pending | (set(range(1, int(request['frames']) + 1)) - existing))
             request.update(quality_version=1, review_frames=review_frames)
-            set_request(pid, status="in_progress", started_at=started, model=director.MODEL, effort=effort, error=None,
+            set_request(pid, status="in_progress", started_at=started, model=model, effort=effort, error=None,
                         limit=False, paused=False, quality_version=1, review_frames=review_frames)
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
@@ -385,7 +386,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         text += production_context.instructions(handoff,scoped=bool(request.get('repair_frames')))
         text += production_quality.INSTRUCTIONS
         code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=None, effort=effort)
+                                       resume=None, effort=effort, model=model)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),

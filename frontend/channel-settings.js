@@ -63,7 +63,7 @@ function organizeChannelSettings(channel){
     ['sound','Звук','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
     ['thumbnails','Прев’ю','Герой і побажання'],
-    ['advanced','Розширене','Режисер і формат відео','Розширене']
+    ['advanced','Розширене','Формат відео й правила','Розширене']
   ];
   const panels={},tabs={},summaries=new Map();
   const preferenceKey=`channel-settings-panel:${channel.id}`;
@@ -102,9 +102,10 @@ function organizeChannelSettings(channel){
     const inner=document.createElement('div');inner.className='channel-settings-group-body';details.append(summary,inner);inner.append(section);if(heading)heading.hidden=true;panels[panel].append(details);
     summaries.set(selector,summary.querySelector('small'));return details;
   };
-  // Common choices are visible immediately; planning mechanics belong to advanced settings.
+  // Keep common project and director choices visible on the main panel.
   const defaults=body.querySelector('.channel-project-defaults'),kind=defaults.querySelector('.channel-kind-section');
   const kindSection=document.createElement('section');kindSection.className='settings-section settings-project-kind';kindSection.innerHTML='<h3>Тип роликів</h3>';kindSection.append(kind);kind.querySelector('h4').hidden=true;panels.projects.append(kindSection);
+  move('.channel-project-defaults','projects',{title:'Робота режисера',icon:'projects'});
   const quick=document.createElement('div');quick.className='settings-quick-grid';
   for(const [key,title,icon] of [['voice','Голос','voice'],['look','Оформлення','look']]){
     const button=document.createElement('button');button.type='button';button.className='settings-quick-card';button.dataset.quick=key;
@@ -115,7 +116,6 @@ function organizeChannelSettings(channel){
   move('.settings-visual-formats','projects',{fold:true,icon:'formats',title:'Формати кадрів'});
   const strip=document.createElement('div');strip.className='settings-format-preview';strip.setAttribute('aria-hidden','true');
   summaries.get('.settings-visual-formats')?.after(strip);
-  move('.channel-project-defaults','advanced',{fold:true,title:'Робота режисера',icon:'projects'});
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
@@ -149,7 +149,6 @@ function organizeChannelSettings(channel){
     text(summaries.get('.settings-visual-formats'),channelSettingsSummary(weights)||'Оберіть формати');
     strip.replaceChildren(...[...$('settings-bar').children].map(el=>{const part=el.cloneNode(false);part.title=el.title;return part;}));
     const wishes=body.querySelector('.generated-image-preferences');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0);
-    text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
     text(summaries.get('.settings-sentences'),`До ${value('settings-max-sentences')} речень на кадр`);

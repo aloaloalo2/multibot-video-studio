@@ -131,6 +131,31 @@ class DirectorTest(unittest.TestCase):
         self.assertEqual(command[command.index('--disallowedTools') + 1:command.index('--disallowedTools') + 3], ['Agent', 'Task'])
         self.assertNotIn('Agent', director.ALLOWED)
 
+    def test_selected_model_and_effort_reach_the_cli(self):
+        for model in store.DIRECTOR_MODELS:
+            for effort in ['low', 'medium', 'high', 'xhigh']:
+                with patch.object(director.subprocess, 'Popen', side_effect=OSError('no paid call')) as popen:
+                    with self.assertRaises(OSError):
+                        director.claude(Path('claude'), 'brief', Path(self.tmp.name)/'log',
+                                        Path(self.tmp.name)/'feed.json', 60, model=model, effort=effort)
+                command = popen.call_args.args[0]
+                self.assertEqual(command[command.index('--model')+1], model)
+                self.assertEqual(command[command.index('--effort')+1], effort)
+        with patch.object(director.subprocess, 'Popen') as popen:
+            with self.assertRaises(store.StudioError):
+                director.claude(Path('claude'), 'brief', Path('log'), Path('feed'), 60, model='wrong')
+            popen.assert_not_called()
+
+    def test_planning_uses_channel_model_and_reports_it(self):
+        with patch.object(store, 'channel_director_model', return_value='claude-fable-5-2'), \
+                patch.object(store, 'channel_effort', return_value='low'), \
+                patch.object(director, 'brief', return_value='brief'), \
+                patch.object(director, 'claude', return_value=(1, {'result': 'test stopped'})) as model:
+            director.run(PROJECT['id'], Path('claude'))
+        self.assertEqual(model.call_args.kwargs['model'], 'claude-fable-5-2')
+        self.assertEqual(model.call_args.kwargs['effort'], 'low')
+        self.assertEqual(director.state(PROJECT['id'])['model'], 'claude-fable-5-2')
+
     def test_terminal_result_finishes_even_when_a_background_tool_keeps_stdout_open(self):
         cli=Path(self.tmp.name)/'fake-claude'
         child_pid=Path(self.tmp.name)/'background.pid'

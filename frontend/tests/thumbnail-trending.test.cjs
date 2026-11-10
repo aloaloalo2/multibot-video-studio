@@ -68,3 +68,52 @@ test('empty clone URL starts no metadata read or paid generation',async()=>{
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'claude','')",c);
   assert.equal(calls,0);assert.match(message,/посилання/);
 });
+
+test('a displayed matching reference is reused for generation without another metadata read',async()=>{
+  const calls=[],backdrop={hidden:true,dataset:{thumbnailProject:'p',thumbnailMode:'clone'}};
+  const c=vm.createContext({state:{channel:{id:'c'}},thumbnailSources:new Map([['p',{reference_selection:true,referenceUrl:'https://youtu.be/abcdefghijk',reference:{id:'abcdefghijk'}}]]),thumbnailRuns:new Map(),
+    $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:'https://youtu.be/abcdefghijk'}:null,
+    api:async(...args)=>{calls.push(args);return {job:{status:'running'}};},showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw Error(message);}});
+  vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',channel_id:'c'},'claude','Wishes')",c);
+  assert.equal(calls.length,1);assert.equal(calls[0][2].reference_id,'abcdefghijk');
+});
+
+function referenceFixture(data,api){
+  const controls={},source={};
+  const element=()=>({hidden:false,isConnected:true,value:'',textContent:'',dataset:{},listeners:{},classList:{toggle(){}},addEventListener(event,handler){this.listeners[event]=handler;},removeAttribute(name){delete this[name];},setAttribute(){}});
+  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-state'])controls[id]=element();
+  controls['thumb-reference-url'].value=data.clone_reference?.url||'';
+  const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}}));
+  controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:[];
+  const c=vm.createContext({$:id=>controls[id],state:{channel:{id:'c'}},thumbnailSources:new Map([['p',source]]),thumbnailFrames:2,showThumbnailState(){},api,setTimeout,clearTimeout});
+  vm.runInContext(sourceText(),c);
+  c.data=data;vm.runInContext("setupThumbnailModes({id:'p',channel_id:'c'},data)",c);
+  return {controls,buttons,source};
+}
+function sourceText(){return source.slice(source.indexOf('function setupThumbnailModes('),source.indexOf('const thumbnailLanguageRuns='));}
+
+test('saved clone preview appears beside wishes on opening without a metadata or model request',()=>{
+  const reference={id:'abcdefghijk',url:'https://youtu.be/abcdefghijk',thumbnail_url:'/cached.jpg',title:'Source title'};
+  const {controls,source}=referenceFixture({clone_reference:reference},()=>{throw Error('unexpected request');});
+  assert.equal(controls['thumb-reference-preview'].hidden,false);
+  assert.equal(controls['thumb-reference-image'].src,'/cached.jpg');
+  assert.equal(controls['thumb-reference-image'].hidden,false);
+  assert.equal(controls['thumb-reference-caption'].textContent,'Source title');
+  assert.equal(source.reference,reference);
+});
+
+test('a late reference response cannot replace the newer pasted URL or a closed modal',async()=>{
+  const pending=[];
+  const {controls,buttons}=referenceFixture({},()=>new Promise(resolve=>pending.push(resolve)));
+  buttons[1].listeners.click();
+  const field=controls['thumb-reference-url'];
+  field.value='https://youtu.be/abcdefghijk';const first=field.listeners.change();
+  field.value='https://youtu.be/12345678901';const second=field.listeners.change();
+  pending[1]({id:'new',thumbnail_url:'/new.jpg'});await second;
+  pending[0]({id:'old',thumbnail_url:'/old.jpg'});await first;
+  assert.equal(controls['thumb-reference-image'].src,'/new.jpg');
+  field.value='https://youtu.be/zzzzzzzzzzz';const third=field.listeners.change();
+  controls['thumb-reference-preview'].isConnected=false;
+  pending[2]({id:'closed',thumbnail_url:'/closed.jpg'});await third;
+  assert.equal(controls['thumb-reference-image'].src,'/new.jpg');
+});

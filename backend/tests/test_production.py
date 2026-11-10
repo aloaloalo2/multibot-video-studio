@@ -85,6 +85,7 @@ class ProductionTest(unittest.TestCase):
         blocks = lambda kind: [{"clips": [{"kind": kind, "title": f"Razgon · кадр {n:03d}"} for n in (1, 2, 3)]}]
         with patch.object(production.director, "claude", return_value=(0, json.loads(answer))) as model, \
                 patch.object(store, "channel_effort", return_value="medium"), \
+                patch.object(store, "channel_director_model", return_value="claude-fable-5-2"), \
                 patch.object(production.frame_progress, "drawn", return_value=[1, 2]) as scenes:
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
@@ -99,6 +100,8 @@ class ProductionTest(unittest.TestCase):
             production.run(self.project["id"], Path("claude"))
         request = self.project["production_request"]
         self.assertEqual(model.call_args.kwargs["effort"], "medium")
+        self.assertEqual(model.call_args.kwargs["model"], "claude-fable-5-2")
+        self.assertEqual(request["model"], "claude-fable-5-2")
         self.assertEqual(request["effort"], "medium")
         self.assertEqual((request["status"], request["cost_usd"]), ("done", 4.2))
         self.assertGreaterEqual(request["minutes"], 0)                                 # wall clock from the start

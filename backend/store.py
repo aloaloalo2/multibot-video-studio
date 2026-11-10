@@ -318,11 +318,17 @@ def get_channel_folder(cid: str, include_disabled=False) -> Path:
     raise StudioError("Канал не знайдено", 404)
 
 
+DEFAULT_DIRECTOR_MODEL = "claude-opus-5-5"
+DIRECTOR_MODELS = {DEFAULT_DIRECTOR_MODEL, "claude-fable-5-2"}
+
+
 def validate_settings(value: dict) -> dict:
     if not isinstance(value, dict):
         raise StudioError("Налаштування мають бути об'єктом")
     if not isinstance(value.get("claude_effort", "high"), str) or value.get("claude_effort", "high") not in {"low", "medium", "high", "xhigh"}:
         raise StudioError("Невідомий рівень зусиль агента")
+    if not isinstance(value.get("director_model", DEFAULT_DIRECTOR_MODEL), str) or value.get("director_model", DEFAULT_DIRECTOR_MODEL) not in DIRECTOR_MODELS:
+        raise StudioError("Невідома модель режисера")
     if "sound" in value:
         import sound_settings
         try: value["sound"] = sound_settings.normalize(value["sound"])
@@ -403,6 +409,15 @@ def channel_record(folder: Path) -> dict:
     import channel_hero
     return {"hero_reference": channel_hero.info(channel_id(folder)), "icon_url": icon_url, "id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
             "path": str(folder), "settings": settings}
+
+
+def channel_director_model(project: dict) -> str:
+    try:
+        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {})
+    except (StudioError, KeyError):
+        return DEFAULT_DIRECTOR_MODEL
+    value = settings.get("director_model", DEFAULT_DIRECTOR_MODEL)
+    return value if isinstance(value, str) and value in DIRECTOR_MODELS else DEFAULT_DIRECTOR_MODEL
 
 
 def channel_effort(project: dict) -> str:
