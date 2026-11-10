@@ -636,7 +636,7 @@ function renderProject() {
   const title=$('project-title');title.replaceChildren();
   const channelName=document.createElement('strong');channelName.title=state.channel?.name || '';channelName.innerHTML=state.channel?`${channelIdentityIcon(state.channel)}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';title.append(channelName);
   if(state.project){
-    const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати випуск «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати випуск «${state.project.name}»`);name.innerHTML=`<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(name);
+    const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати випуск «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати випуск «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(name);
   }
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent='';
