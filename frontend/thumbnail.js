@@ -8,7 +8,7 @@ const thumbnailRuns=new Map(),thumbnailSources=new Map();
 const thumbnailFrames=2;
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
 // a server from before the count knows nothing about frames: the button stays as it was
-function thumbnailReady(project){return project.pictures===undefined || project.pictures>=thumbnailFrames;}
+function thumbnailReady(project){return project.pictures===undefined || project.pictures>=(thumbnailMinimumFrames.get(project.id) ?? thumbnailFrames);}
 
 // Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
@@ -42,8 +42,10 @@ async function openThumbnail(project){
   if(thumbnailBusy(project.id))pollThumbnail(project.id);
 }
 
-const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set();
+const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set(),thumbnailPictures=new Map(),thumbnailMinimumFrames=new Map();
 function readThumbnailData(id,data){
+  if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
+  if(Number.isFinite(data.min_frames)&&data.min_frames>=0)thumbnailMinimumFrames.set(id,data.min_frames);
   if(data.job)thumbnailRuns.set(id,data.job);
   thumbnailLanguageRuns.set(id,data.thumbnail_jobs || []);
 }
@@ -181,7 +183,6 @@ async function pollThumbnail(id){
 
 // Opening the tab shows the gallery; selecting a saved image opens its edit workspace.
 let thumbRoute='';
-const thumbnailPictures=new Map();
 function thumbnailFramesMade(project){
   return (project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || '')).length;
 }
@@ -192,10 +193,11 @@ function renderThumbView(){
   section.hidden=!open;
   if(!open){if(section.childElementCount)section.replaceChildren();delete section.dataset.project;return;}
   if(section.dataset.project!==project.id)buildThumbView(section,project);
-  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=thumbnailFrames;
+  const minimum=thumbnailMinimumFrames.get(project.id) ?? thumbnailFrames;
+  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=minimum;
   const create=section.querySelector('.thumb-view-create');
   create.dataset.gated=ready?'':'1';create.disabled=!ready||thumbnailBusy(project.id);
-  create.title=ready?'Створити нове прев’ю':`Потрібні хоча б ${thumbnailFrames} готові кадри ролика`;
+  create.title=ready?'Створити нове прев’ю':`Потрібні хоча б ${minimum} готові кадри ролика`;
 }
 async function buildThumbView(section,project){
   const id=project.id;section.dataset.project=id;
@@ -213,7 +215,6 @@ async function buildThumbView(section,project){
   try{data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(section.dataset.project!==id)return;
   thumbnailSources.set(id,{title:data.title,script:data.script});
-  if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
   readThumbnailData(id,data);
   buildThumbnailGallery(section,project,data);
   renderThumbView();showThumbnailState(id);markThumbnailCard(id);

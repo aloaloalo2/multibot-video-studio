@@ -25,3 +25,17 @@ test('failed activity discovery can be checked on the next status poll',async()=
   vm.runInContext(discovery,c);
   await c.discoverThumbnailActivity('p');await c.discoverThumbnailActivity('p');assert.equal(reads,2);
 });
+
+test('clone gallery accepts the server zero-frame requirement while ordinary and busy projects stay gated',()=>{
+  const create={dataset:{}},section={dataset:{project:'p'},querySelector:()=>create},tab={classList:{toggle(){}},setAttribute(){}};
+  const state={project:{id:'p',episode_path:'/episode',tracks:[]},view:'thumb'},runs=new Map();
+  const c=vm.createContext({state,thumbnailRuns:runs,thumbnailBusy:id=>runs.get(id)?.status==='running',
+    $:id=>id==='view-thumb'?tab:section});
+  vm.runInContext(source.slice(source.indexOf('const thumbnailLanguageRuns='),source.indexOf('function thumbnailWorking(')),c);
+  vm.runInContext(source.slice(source.indexOf('function thumbnailFramesMade('),source.indexOf('async function buildThumbView(')),c);
+  c.thumbnailFrames=2;
+  c.readThumbnailData('p',{pictures:0,min_frames:0});c.renderThumbView();assert.equal(create.disabled,false);
+  c.readThumbnailData('p',{pictures:0,min_frames:2});c.renderThumbView();assert.equal(create.disabled,true);assert.match(create.title,/2/);
+  c.readThumbnailData('p',{pictures:2,min_frames:2});c.renderThumbView();assert.equal(create.disabled,false);
+  c.readThumbnailData('p',{pictures:0,min_frames:0,job:{status:'running'}});c.renderThumbView();assert.equal(create.disabled,true);
+});
