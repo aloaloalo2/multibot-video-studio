@@ -789,7 +789,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-film .style-loading{grid-column:1/-1}
 /* The header's text starts on the same line as the page content below it (.channel-overview padding minus the border). */
 .app-shell:not(.editor-open) .topbar{margin-bottom:0;padding-left:calc(clamp(16px,4vw,50px) - 1px);padding-right:calc(clamp(16px,4vw,50px) - 1px)}
-.channel-settings-button{width:30px;height:30px;margin-left:-2px;border:1px solid #383a42;border-radius:50%;background:transparent;color:#a4a9b5;box-shadow:none;transition:border-color .15s,color .15s}
+.channel-settings-button{width:30px;height:30px;margin-left:-2px;border:1px solid transparent;border-radius:50%;background:transparent;color:#a4a9b5;box-shadow:none;transition:border-color .15s,color .15s}
 .channel-settings-button svg{width:15px;height:15px;stroke-width:1.8}
 @media(hover:hover){.channel-settings-button:not(:disabled):hover{background:transparent;border-color:#60646f;color:#f1f1f2}}
 .channel-name-section label h3{margin-bottom:9px}
