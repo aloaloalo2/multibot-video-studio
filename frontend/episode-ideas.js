@@ -84,7 +84,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   function chooseTopic(data,index){
     topicSelected=true;
     const topic=data.ideas[index];input.value=topic.title;input.readOnly=false;input.hidden=false;showCreate(false);
-    root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">${episodeIcon('close')}<span>Скасувати</span></button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
+    root.innerHTML=`${topic.uk?`<p class="muted">${esc(topic.uk)}</p>`:''}<label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="1" value="${data.target_words}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="ideas-back">${episodeIcon('close')}<span>Скасувати</span></button><button class="primary glow-action thumb-writer-button" id="ideas-create-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#ideas-back').onclick=()=>draw(data);
     root.querySelector('#ideas-create-openings').onclick=()=>{
       const title=input.value.trim();if(!title){status('Введіть назву випуску.',true);return;}
@@ -94,7 +94,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   function drawReference(){
     if(!reference||!connected())return;
     showCreate(false);input.readOnly=false;input.hidden=false;
-    root.innerHTML=`<div class="episode-reference-card"><img src="${esc(reference.thumbnail_url)}" alt="Прев’ю референсу"><span>${esc(reference.author)}</span></div><label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="50" value="${lastData?.target_words||2000}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="reference-back">${episodeIcon('close')}<span>Скасувати</span></button><button class="primary glow-action thumb-writer-button" id="reference-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
+    root.innerHTML=`<div class="episode-reference-card"><img src="${esc(reference.thumbnail_url)}" alt="Прев’ю референсу"><span>${esc(reference.author)}</span></div><label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="1" value="${lastData?.target_words||2000}"> слів</label><div class="episode-topic-actions"><button class="secondary" id="reference-back">${episodeIcon('close')}<span>Скасувати</span></button><button class="primary glow-action thumb-writer-button" id="reference-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#reference-back').onclick=()=>{reference=null;referenceVersion++;$('episode-reference-url').value='';input.value='';selectEntry('topics');};
     root.querySelector('#reference-openings').onclick=()=>request({action:'clone_openings',reference_id:reference.id,title:input.value.trim(),target_words:Number(root.querySelector('#idea-words').value)});
   }

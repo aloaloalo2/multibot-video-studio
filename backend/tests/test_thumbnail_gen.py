@@ -165,7 +165,7 @@ class ThumbnailTest(unittest.TestCase):
             with self.subTest(base=base),self.assertRaises(store.StudioError):
                 thumbnail_gen.start(self.project['id'],'T','S','Change',base=base)
 
-    def tools(self, picture=True, answer=None):
+    def tools(self, picture=True, answer=None, metadata=False):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""
         self.calls = []
         def run(command, **kwargs):
@@ -175,7 +175,12 @@ class ThumbnailTest(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, json.dumps(reply), "")
             self.assertIn("-i", command)                      # the channel's style frame is attached
             if picture:
-                Image.new("RGB", (16, 9), (0, 0, 255)).save(Path(kwargs["cwd"]) / "Превью v1.png")
+                path = Path(kwargs["cwd"]) / "Превью v1.png"
+                Image.new("RGB", (16, 9), (0, 0, 255)).save(path)
+                if metadata:
+                    from test_image_delivery import png_chunk
+                    raw = path.read_bytes()
+                    path.write_bytes(raw[:33] + png_chunk(b'caBX', b'c2pa.test') + raw[33:])
             return subprocess.CompletedProcess(command, 0 if picture else 1, "ok", "" if picture else "quota")
         return patch.object(subprocess, "run", side_effect=run)
 
@@ -233,6 +238,21 @@ class ThumbnailTest(unittest.TestCase):
             thumbnail_gen.run(self.project["id"], "T", "S", "")                           # a new one is made without it
         self.assertEqual(thumbnail_gen.state(self.project["id"])["status"], "done")
         self.assertFalse(self.episode.exists())
+
+    def test_generation_and_choice_deliver_clean_copies_without_reimporting_them(self):
+        with self.tools(metadata=True):
+            thumbnail_gen.run(self.project['id'], 'T', 'S', '')
+        work = self.studio/'preview'
+        original = (work/'Превью v1.png').read_bytes()
+        self.assertIn(b'caBX', original)
+        self.assertEqual((work/'Превью.png').read_bytes(), original)
+        self.assertNotIn(b'caBX', (self.episode/'Превью.png').read_bytes())
+        self.assertNotIn(b'caBX', (self.episode/'Превью'/'Превью v1.png').read_bytes())
+        thumbnail_gen.choose(self.project['id'], 'Превью v1.png')
+        thumbnail_gen.preview(self.project)
+        self.assertEqual((work/'Превью.png').read_bytes(), original)
+        self.assertEqual((work/'Превью v1.png').read_bytes(), original)
+        self.assertNotIn(b'caBX', (self.episode/'Превью.png').read_bytes())
 
     def test_a_run_without_a_picture_fails_and_changes_nothing(self):
         thumbnail_gen.ACTIVE.add(self.project["id"])

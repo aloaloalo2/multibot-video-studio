@@ -111,6 +111,8 @@ def catalog(cid, data=None):
         if not topics_path(cid).is_file(): remember_topics(cid, current)
         data = store.read_json(topics_path(cid), {}) or current
         result = {k: data[k] for k in ('id', 'ideas', 'day', 'attempt_day', 'target_words', 'sample_count', 'context', 'used_idea_indexes') if k in data}
+        # Topics may be cached for a day; script length follows the latest projects.
+        result.update(recommended_length(cid))
         used = set(result.get('used_idea_indexes', []))
         for index, pid in data.get('topic_projects', {}).items():
             try:
@@ -235,27 +237,41 @@ def length_message(report):
             f"для заданих {report['target']} (±7%). Чернетку збережено, сценарій ще не готовий.")
 
 
-def context(cid):
-    folder = store.get_channel_folder(cid)
-    projects = sorted(store.list_projects(cid), key=lambda p: p.get('created_at', 0), reverse=True)
-    samples, counts = [], []
-    for item in projects[:24]:
+def recent_scripts(cid, projects=None, limit=3):
+    projects = store.list_projects(cid) if projects is None else projects
+    samples = []
+    for item in sorted(projects, key=lambda p: p.get('created_at', 0), reverse=True):
         p = store.load_project(item['id'])
         script = (p.get('voice_script') or {}).get('text') or ''
         if not script:
             source = store.load_project_narration(p['id']) or {}
             script = source.get('spoken_script') or source.get('script') or ''
-        if words(script) >= 100:
-            counts.append(words(script))
-            samples.append({'title': p['name'], 'opening': script[:800], 'ending': script[-250:]})
+        count = words(script)
+        if count >= 100:
+            samples.append({'title': p['name'], 'opening': script[:800], 'ending': script[-250:], 'words': count})
+            if len(samples) == limit:
+                break
+    return samples
+
+
+def recommended_length(cid, samples=None):
+    samples = recent_scripts(cid) if samples is None else samples
+    return {'target_words': min(15000, max(200, round(sum(s['words'] for s in samples) / len(samples)))) if samples else 2000,
+            'sample_count': len(samples)}
+
+
+def context(cid):
+    folder = store.get_channel_folder(cid)
+    projects = sorted(store.list_projects(cid), key=lambda p: p.get('created_at', 0), reverse=True)
+    samples = recent_scripts(cid, projects)
     import agent_storage, author_rules
     # The same rules a Claude Code session in the YOUTUBE folder works by (author_rules.py): the author's writing rules,
     # the script sections of both AGENTS.md files in full, the Claude memory notes of this channel and of all channels,
     # and the director's memory. Earlier only the first 16 000 characters of each AGENTS.md went in.
     rules = author_rules.for_channel(folder, store.YOUTUBE_ROOT)
     return {'channel': folder.name, 'previous_titles': [p['name'] for p in projects[:150]],
-            'samples': samples[:8], 'target_words': max(200, round(sum(counts) / len(counts) / 50) * 50) if counts else 2000,
-            'sample_count': len(counts), **rules, 'memory': agent_storage.get_memory(cid)[:12000]}
+            'samples': samples, **recommended_length(cid, samples),
+            **rules, 'memory': agent_storage.get_memory(cid)[:12000]}
 
 
 def unpack(text):

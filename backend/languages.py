@@ -39,6 +39,7 @@ import dubbing_fit
 import language_mix
 import language_defaults
 import language_thumbnails
+import image_delivery
 import language_quality
 import eleven_api
 import eleven_voices
@@ -2849,7 +2850,11 @@ def copy_out(project: dict, code: str, what: str) -> None:
     try:
         folder.mkdir(parents=True, exist_ok=True)
         selected=language_thumbnails.current_file(project['id'],code) if what=='thumbnail' else None
-        shutil.copyfile(selected or work_dir(project["id"], code) / source_file, folder / target)
+        source = selected or work_dir(project["id"], code) / source_file
+        if what == 'thumbnail':
+            image_delivery.copy_png(source, folder / target)
+        else:
+            shutil.copyfile(source, folder / target)
         if what == "text":
             title = ((load_state(project["id"]).get("languages") or {}).get(code) or {}).get("title")
             if title:

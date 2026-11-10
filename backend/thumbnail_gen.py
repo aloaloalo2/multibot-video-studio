@@ -22,6 +22,7 @@ import director
 import frame_progress
 import store
 import channel_hero
+import image_delivery
 
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 PREVIEW = "Превью.png"
@@ -118,7 +119,7 @@ def choose(pid: str, name: str) -> dict:
         project = store.load_project(pid)
         folder = Path(project.get("episode_path") or "")
         if project.get("episode_path") and folder.is_dir():
-            shutil.copyfile(source, folder / PREVIEW)
+            image_delivery.copy_png(source, folder / PREVIEW)
     return {"versions": versions(pid)}
 
 
@@ -444,9 +445,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         # the channel rules keep the thumbnail next to the video too, with its prompt in «Превью», while that folder exists
         if folder.is_dir():
             (folder / FOLDER).mkdir(exist_ok=True)
-            for item in (made, work / f"Промпт прев'ю v{number}.txt"):
-                shutil.copyfile(item, folder / FOLDER / item.name)
-            shutil.copyfile(made, folder / PREVIEW)
+            image_delivery.copy_png(made, folder / FOLDER / made.name)
+            prompt_file = work / f"Промпт прев'ю v{number}.txt"
+            shutil.copyfile(prompt_file, folder / FOLDER / prompt_file.name)
+            image_delivery.copy_png(made, folder / PREVIEW)
         data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
         late = ("DeepSeek" if writer == "deepseek" else "Claude") + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
