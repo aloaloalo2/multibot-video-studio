@@ -51,13 +51,17 @@ function setupThumbnailModes(project,data){
   const field=$('thumb-reference-url'),preview=$('thumb-reference-preview'),image=$('thumb-reference-image'),caption=$('thumb-reference-caption');
   const source=thumbnailSources.get(project.id);
   let timer,version=0;
-  $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);version++;$('thumb-mode-switch')?.remove();};
+  $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);version++;$('thumb-mode-switch')?.remove();$('modal-actions').hidden=false;};
   const referenceState=$('thumb-reference-state');
   const note=text=>{referenceState.textContent=text;referenceState.hidden=!text;};
   const updateReferenceView=()=>{
     const cloning=backdrop.dataset.thumbnailMode==='clone';
     const ready=!!(source.reference?.id&&source.reference?.thumbnail_url&&source.referenceUrl===field.value.trim());
+    const awaiting=cloning&&!ready;
     preview.hidden=!cloning||!ready;
+    $('thumb-brief-layout').hidden=awaiting;
+    $('modal-actions').hidden=awaiting;
+    $('thumb-state').hidden=awaiting;
     $('thumb-brief-layout').classList.toggle('has-reference',cloning&&ready);
     for(const button of backdrop.querySelectorAll('#modal-actions button'))button.dataset.referenceMissing=cloning&&!ready?'1':'';
     showThumbnailState(project.id);
