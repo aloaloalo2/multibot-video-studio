@@ -192,6 +192,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
 function markThumbnailCard(id){
   const card=document.querySelector(`.project-card[data-project-id="${CSS.escape(id)}"], .thumb-view-frame[data-project-id="${CSS.escape(id)}"]`);if(!card)return;
   const busy=thumbnailBusy(id);card.classList.toggle('thumb-running',busy);
+  const create=card.querySelector('.project-action.thumbnail');if(create)create.disabled=busy;
   card.setAttribute('aria-busy',String(busy||['producing','exporting','stage-working'].some(name=>card.classList.contains(name))));
   if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
   let veil=card.querySelector('.thumb-progress');
@@ -316,7 +317,7 @@ function buildThumbnailGallery(section,project,data){
   const show=(key,focus=false)=>{
     const item=items.find(x=>x.key===key);if(!item)return;
     selected=key;thumbnailSelection.set(id,key);workspace.hidden=false;editor.dataset.code=item.code;
-    frame.innerHTML=`<img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}"><div class="thumb-preview-tools"><a class="thumb-preview-download" title="Завантажити прев’ю" aria-label="Завантажити прев’ю" href="${item.url}&download=${encodeURIComponent(`Прев’ю ${item.label}.png`)}" download="Прев’ю ${esc(item.label)}.png"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg></a></div>`;
+    frame.innerHTML=`<img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}"><div class="thumb-preview-tools"><a class="thumb-preview-download" title="Завантажити прев’ю" aria-label="Завантажити прев’ю" href="${item.url}&delivery=clean-png-v1&download=${encodeURIComponent(`Прев’ю ${item.label}.png`)}" download="Прев’ю ${esc(item.label)}.png"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg></a></div>`;
     section.querySelector('.thumb-preview-language').textContent=`${item.flag} ${item.label} · ${item.detail}`;
     input.value=thumbnailDrafts.get(`${id}:${key}`)||'';
     choose.hidden=!item.name||item.current;draw();showThumbnailState(id);markThumbnailCard(id);

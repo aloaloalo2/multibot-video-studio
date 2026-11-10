@@ -817,7 +817,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
 /* a thumbnail in the making: the card dims under a slow light sweep, one pill in the middle, title and buttons stay on top */
 .project-card.thumb-running{border-color:#3fbf8699}
-.project-card.thumb-running>.project-actions{z-index:4}
+.overview-projects .project-card.thumb-running>.project-actions{z-index:4;opacity:1;transform:none}
 .thumb-progress{position:absolute;inset:0;z-index:2;display:grid;place-items:center;border-radius:inherit;overflow:hidden;background:rgba(8,10,12,.5);backdrop-filter:blur(3px) saturate(.8);-webkit-backdrop-filter:blur(3px) saturate(.8);pointer-events:none;animation:thumb-fade .35s ease}
 .thumb-progress::before{content:'';position:absolute;top:0;bottom:0;left:-60%;width:60%;background:linear-gradient(100deg,transparent,rgba(107,242,174,.16),transparent);animation:thumb-sweep 2.4s ease-in-out infinite}
 .thumb-progress-pill{position:relative;display:flex;align-items:center;gap:11px;padding:10px 18px 10px 14px;border-radius:999px;background:rgba(12,28,21,.88);border:1px solid #3fe39a59;box-shadow:0 8px 28px rgba(0,0,0,.55),0 0 18px rgba(107,242,174,.18);color:#eafff3}
@@ -828,6 +828,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @keyframes thumb-sweep{to{left:120%}}
 @keyframes thumb-fade{from{opacity:0}}
 .project-action.thumbnail svg{stroke:#f0b429}
+.project-action.thumbnail:disabled svg{stroke:currentColor}
 .project-card h2{margin-top:0;margin-right:0}
 
 /* One rounding scale for the whole Studio, as strong as the project cards:

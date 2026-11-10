@@ -39,6 +39,7 @@ import frame_progress
 import space
 import production
 import thumbnail_gen
+import image_delivery
 import languages
 import language_mix
 import agent_runtime
@@ -1303,7 +1304,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({**thumbnail_gen.defaults(match.group(1)), **languages.thumbnail_gallery(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnails/([^/]+\.png)", path)
         if match:
-            return self.serve_media(thumbnail_gen.version_file(*match.groups()))
+            return self.serve_thumbnail(thumbnail_gen.version_file(*match.groups()), download=(query.get('download') or [None])[0])
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1), compact=True))
@@ -1330,7 +1331,7 @@ class Handler(BaseHTTPRequestHandler):
             cover = languages.cover(store.load_project(match.group(1)))
             if not cover:
                 raise store.StudioError("Прев'ю ще немає", 404)
-            return self.serve_media(cover, download=(query.get("download") or [None])[0])
+            return self.serve_thumbnail(cover, download=(query.get("download") or [None])[0])
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/waveform", path)
         if match:
             pid, code = match.groups()
@@ -1349,10 +1350,11 @@ class Handler(BaseHTTPRequestHandler):
                 for report in (languages.translation_check(*match.groups()[:2]), languages.voice_language_check(*match.groups()[:2])):
                     if report['state'] != 'ok':
                         raise store.StudioError(languages.language_quality.message(report), 409)
-            return self.serve_media(languages.file_path(*match.groups()), download=(query.get("download") or [None])[0])
+            serve = self.serve_thumbnail if match.group(3) == 'thumbnail' else self.serve_media
+            return serve(languages.file_path(*match.groups()), download=(query.get("download") or [None])[0])
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/thumbnails/(v[1-9][0-9]*\.png)",path)
         if match:
-            return self.serve_media(languages.language_thumbnails.version_file(*match.groups()),download=(query.get('download') or [None])[0],cache=True)
+            return self.serve_thumbnail(languages.language_thumbnails.version_file(*match.groups()),download=(query.get('download') or [None])[0],cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/work", path)
         if match:
             project = store.load_project(match.group(1))
@@ -1843,6 +1845,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_thumbnail(self, path: Path, cache=False, download: str | None = None):
+        if not download:
+            return self.serve_media(path, cache=cache)
+        body = image_delivery.clean_png(path.read_bytes())
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        plain = re.sub(r'[^A-Za-z0-9._ -]+', '_', download).strip('_ ') or 'preview.png'
+        self.send_header('Content-Disposition', f'attachment; filename="{plain}"; filename*=UTF-8\'\'' + urllib.parse.quote(download))
+        self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
         self.wfile.write(body)
 

@@ -26,6 +26,29 @@ import director  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):
+    def test_thumbnail_downloads_are_clean_while_inline_and_sources_stay_original(self):
+        from test_image_delivery import marked_png
+        project = store.create_project(store.channel_id(self.channel), 'Clean download')
+        source = store.project_dir(project['id'])/'marked.png'
+        marked_png(source)
+        raw = source.read_bytes()
+        root = '/api/projects/'+project['id']
+        routes = [root+'/thumbnails/cover.png', root+'/languages/original/thumbnail',
+                  root+'/languages/pl/file/thumbnail', root+'/languages/pl/thumbnails/v1.png']
+        with patch.object(app.thumbnail_gen, 'version_file', return_value=source), \
+             patch.object(app.languages, 'cover', return_value=source), \
+             patch.object(app.languages, 'file_path', return_value=source), \
+             patch.object(app.languages.language_thumbnails, 'version_file', return_value=source):
+            for route in routes:
+                with self.subTest(route=route):
+                    with urllib.request.urlopen(self.base_url+route) as response:
+                        self.assertEqual(response.read(), raw)
+                    with urllib.request.urlopen(self.base_url+route+'?download=preview.png') as response:
+                        self.assertEqual(response.headers['Content-Type'], 'image/png')
+                        self.assertIn('attachment', response.headers['Content-Disposition'])
+                        self.assertEqual(response.read(), app.image_delivery.clean_png(raw))
+        self.assertEqual(source.read_bytes(), raw)
+
     def test_global_space_routes_reuse_project_cleanup_and_activity_guard(self):
         summary = {'total': 1200, 'projects': 2, 'busy': 1, 'unavailable': 0}
         with patch.object(app.space, 'all_usage', return_value=summary) as scan:
