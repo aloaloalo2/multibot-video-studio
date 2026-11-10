@@ -20,7 +20,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .brand{display:flex;align-items:center;gap:9px;padding:2px 8px 22px;border-bottom:1px solid #303034}
 .brand strong{display:block;font-size:16px;font-weight:600;line-height:1.1}
 .brand span{display:block;margin-top:4px;color:#777981;font-size:10px;letter-spacing:.17em}
-.editor-brand{padding:0 15px 0 0;border-bottom:0;border-right:1px solid #303034;flex:none}
+.editor-brand{padding:0 15px 0 0;border:0;flex:none}
 .sidebar-heading{display:flex;justify-content:space-between;align-items:center;margin:22px 9px 8px;color:#777981;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
 .sidebar-heading button{background:none;border:0;color:#aaaeb8;font-size:17px;line-height:1;padding:0 5px}
 .channel-list,.project-list{display:grid;gap:4px;max-height:28vh;overflow:auto}
@@ -44,7 +44,11 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .topbar{height:64px;flex:none;border-bottom:1px solid #303034;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 17px}
 .editor-open .topbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;height:auto;min-height:64px}
 .editor-open .project-heading{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}
-.editor-open .project-title{width:100%;max-width:100%}
+.editor-open .project-title{width:100%;max-width:100%;flex-direction:column;align-items:flex-start;gap:3px}
+.editor-open .project-title>strong{font-size:11px;font-weight:500;line-height:16px;color:#979ba6;gap:6px}
+.editor-open .project-title>strong .channel-icon{width:14px;height:14px;color:#979ba6}
+.editor-open .project-name{padding:0;font-size:14px;line-height:20px;color:#e1e3e9;max-width:100%;border-radius:3px}
+.editor-open .project-name:hover{background:transparent;color:#fff}
 .editor-open .save-state{line-height:1.2}
 .project-heading{min-width:0;display:flex;align-items:center;gap:11px;flex:1}
 .project-heading strong{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -52,7 +56,6 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .project-title>strong{flex:0 1 auto;display:inline-flex;align-items:center;gap:7px;min-width:0}
 .project-title>strong .channel-icon{width:17px;height:17px;color:#f0b429}
 .project-title>strong span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.project-title-slash{color:#73767e;flex:none}
 .project-name{display:flex;align-items:center;gap:7px;min-width:0;border:0;background:none;color:#a9abb4;padding:5px 3px;border-radius:6.5px;font-size:15px;font-weight:500;text-align:left}
 .project-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-name:hover,.project-name:focus-visible{background:#2b2b30;color:#dedfe4}
@@ -620,7 +623,6 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(max-width:560px){
   .editor-open .project-title{flex-wrap:wrap;gap:2px}
   .editor-open .project-title>strong,.editor-open .project-name{flex-basis:100%;max-width:100%}
-  .editor-open .project-title-slash{display:none}
   .editor-open .project-title>strong span,.editor-open .project-name>span{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
   .editor-open .project-name{padding:4px 0}
   .timeline-toolbar h2{flex-basis:100%}
@@ -653,7 +655,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(min-width:761px){
   .sidebar>.brand{align-items:flex-start;padding-top:9px}
   /* Match the home sidebar width so the logo keeps its horizontal position in the editor. */
-  .editor-open .editor-brand{width:241.5px;margin-left:-19px;height:46px;padding:0;border-right:0;box-shadow:1px 0 #303034;align-self:center;justify-content:center}
+  .editor-open .editor-brand{width:241.5px;margin-left:-19px;height:46px;padding:0;border-right:0;align-self:center;justify-content:center}
 }
 
 .overview-heading{display:flex;align-items:center;gap:10px}
@@ -1061,7 +1063,6 @@ button.primary,button.secondary,button.danger,button.subtle,.modal-actions butto
 .frame-strip-tip b{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--format-color)}
 .frame-strip-made{color:#c9cbd2}
 #save-state.unsaved{color:#ff8a8a}
-.project-title-channel{cursor:pointer;border-radius:8px;transition:color .15s}.project-title-channel:hover{color:#6bf2ae}.project-title-channel:focus-visible{outline:2px solid #6bf2ae;outline-offset:3px}
 /* «Монтаж» on a narrow window: the picture first at its full width, the page scrolls as one instead of a 400 px box
    with the play button cut off; the library and the properties follow under it */
 @media(max-width:900px){
