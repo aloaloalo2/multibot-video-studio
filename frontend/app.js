@@ -411,9 +411,6 @@ function projectProductionCardState(request,lastExportAt=0){
 
 function renderOverview() {
   $('overview-title').textContent=state.channel?'Випуски':'Оберіть канал';
-  $('overview-count').hidden=!state.channel;
-  $('overview-count').textContent=state.projects.length.toLocaleString('uk-UA');
-  $('overview-count').setAttribute('aria-label',`Випусків: ${state.projects.length}`);
   $('overview-create').disabled=!state.channel;
   $('overview-channel-settings').disabled=!state.channel;
   const container=$('overview-projects');container.replaceChildren();

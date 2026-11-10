@@ -657,7 +657,6 @@ button.danger:hover:not(:disabled){background:#523034}
 }
 
 .overview-heading{display:flex;align-items:center;gap:10px}
-.overview-count{color:#858892;font-size:14px;font-variant-numeric:tabular-nums}
 .overview-heading #overview-title{margin:0}
 
 .brand-logo .wordmark-icon{grid-column:1;grid-row:1 / 3;width:42px;height:30px;display:block}
