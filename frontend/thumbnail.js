@@ -119,7 +119,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
     if(source.reference_selection&&backdrop?.dataset.thumbnailProject===project.id){
       if(backdrop.dataset.thumbnailMode==='clone'){
         const url=$('thumb-reference-url').value.trim();if(!url)throw new Error('Вставте посилання на YouTube.');
-        const {reference}=await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
+        const reference=await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
         if(!reference?.id)throw new Error('Не вдалося прочитати прев’ю за посиланням.');
         body.reference_id=reference.id;
       }else body.reference_id='';

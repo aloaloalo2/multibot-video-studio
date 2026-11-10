@@ -51,7 +51,7 @@ test('clone mode reads the chosen URL once and sends a per-cover reference witho
     const calls=[],backdrop={hidden:true,dataset:{thumbnailProject:'p',thumbnailMode:mode}};
     const c=vm.createContext({state:{channel:{id:'c'}},thumbnailSources:new Map([['p',{title:'Our episode',script:'Our script',reference_selection:true}]]),thumbnailRuns:new Map(),
       $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:null,
-      api:async(...args)=>{calls.push(args);return args[0].endsWith('/idea-reference')?{reference:{id:'abcdefghijk'}}:{job:{status:'running'}};},
+      api:async(...args)=>{calls.push(args);return args[0].endsWith('/idea-reference')?{id:'abcdefghijk',url:'https://youtu.be/abcdefghijk'}:{job:{status:'running'}};},
       showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw Error(message);}});
     vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',channel_id:'c'},'claude','Wishes')",c);
     assert.equal(calls.length,mode==='clone'?2:1);

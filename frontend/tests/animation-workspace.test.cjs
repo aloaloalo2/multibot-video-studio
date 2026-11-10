@@ -95,3 +95,24 @@ test('Create video submits one combined action and rejects an older server befor
   c.directMontage=()=>true;calls.length=0;await c.startVideoCreation('p',{asset_id:'voice'});
   assert.equal(calls[0],'/api/projects/p/plan/analyze');
 });
+
+
+test('speed confirmation estimates duration from the applied speed without compounding it',()=>{
+  const c=vm.createContext({});vm.runInContext(plan.slice(plan.indexOf('function narrationSpeedPreview('),plan.indexOf('function openNarrationSpeed(')),c);
+  let preview=c.narrationSpeedPreview(1000,.9,100);assert.equal(preview.duration,900);assert.equal(preview.delta,-100);
+  preview=c.narrationSpeedPreview(900,1,90);assert.equal(preview.duration,1000);assert.equal(preview.delta,100);
+  preview=c.narrationSpeedPreview(945.821,.91,91);assert.ok(Math.abs(preview.delta)<.000001);
+});
+
+test('speed settings preview changes locally and apply audio only after confirmation',async()=>{
+  let action,changed,requests=0,refreshed=0,closed=0;
+  const range={value:'91',addEventListener:(name,fn)=>changed=fn},apply={},value={},summary={},error={},planButton={},gear={};
+  const ready={isConnected:true,querySelector:s=>s==='audio'?{duration:945.821,pause(){}}:s==='.narration-plan-action'?planButton:gear,remove(){}};
+  const elements={'narration-speed-range':range,'narration-speed-value':value,'narration-speed-summary':summary,'narration-speed-error':error,'modal-actions':{querySelector:()=>apply}};
+  const c=vm.createContext({state:{project:{id:'p'}},$:id=>elements[id],clock:s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`,
+    modal:(title,body,actions)=>action=actions[0],closeModal:()=>closed++,api:async(url,method,body)=>{requests++;assert.equal(url,'/api/projects/p/narration/speed');assert.equal(body.speed,1);}});
+  vm.runInContext(plan.slice(plan.indexOf('function narrationSpeedPreview('),plan.indexOf('function appendReadyNarration(')),c);
+  c.openNarrationSpeed('p',{speed:.91,duration:945.821},ready,async()=>refreshed++);
+  assert.equal(apply.disabled,true);range.value='100';changed();assert.equal(requests,0);assert.equal(apply.disabled,false);assert.match(summary.textContent,/14:21/);
+  await action.run();assert.equal(requests,1);assert.equal(refreshed,1);assert.equal(closed,1);
+});
