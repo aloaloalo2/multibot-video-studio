@@ -138,14 +138,10 @@ button.danger:hover:not(:disabled){background:#523034}
 .full{width:100%}
 .banner{margin:9px 12px 0;padding:10px 12px;border:1px solid #6a474c;background:#392528;color:#f6c6ca;border-radius:10px;flex:none}
 .channel-overview{padding:16px clamp(16px,4vw,50px);overflow:auto;flex:1}
-.overview-top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:27px}
+.overview-top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:20px}
 .overview-top>div:first-child{min-width:0}
-.overview-top h1>span{min-width:0;overflow-wrap:anywhere}
 .overview-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.overview-eyebrow{color:#f0b429;font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}
-.overview-top h1{font-size:29px;line-height:1.2;font-weight:600;margin:0 0 7px;display:flex;align-items:center;gap:11px}
-.overview-top h1 .channel-icon{width:28px;height:28px;color:#f0b429}
-.overview-top p{color:#96989f;margin:0;line-height:1.5}
+.overview-top h1{font-size:22px;line-height:1.2;font-weight:600;margin:0}
 .overview-projects{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:16px}
 @media(min-width:1180px){.overview-projects{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .project-card{position:relative;border:1px solid #35353a;background:#181819;border-radius:20.5px;aspect-ratio:16/9;min-height:0;overflow:hidden;display:flex;flex-direction:column;color:#f1f1f2;transition:border-color .15s,background .15s,box-shadow .2s}
@@ -660,7 +656,8 @@ button.danger:hover:not(:disabled){background:#523034}
   .editor-open .editor-brand{width:241.5px;margin-left:-19px;height:46px;padding:0;border-right:0;box-shadow:1px 0 #303034;align-self:center;justify-content:center}
 }
 
-.overview-heading{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.overview-heading{display:flex;align-items:center;gap:10px}
+.overview-count{color:#858892;font-size:14px;font-variant-numeric:tabular-nums}
 .overview-heading #overview-title{margin:0}
 
 .brand-logo .wordmark-icon{grid-column:1;grid-row:1 / 3;width:42px;height:30px;display:block}

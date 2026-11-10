@@ -364,16 +364,20 @@ function showProjectList() {
   }
 }
 
-function projectCreationDate(timestamp){
+function projectCreationDate(timestamp,now=new Date()){
   const raw=Number(timestamp);
   if(!Number.isFinite(raw) || raw<=0)return null;
   const date=new Date(raw<1e11?raw*1000:raw);
   if(!Number.isFinite(date.getTime()))return null;
-  const formatter=new Intl.DateTimeFormat('uk-UA',{timeZone:'Europe/Kyiv',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-  const values=Object.fromEntries(formatter.formatToParts(date).map(part=>[part.type,part.value]));
-  const now=Object.fromEntries(formatter.formatToParts(new Date()).map(part=>[part.type,part.value]));
-  const today=values.day===now.day && values.month===now.month && values.year===now.year;
-  return {label:today?'Створено сьогодні':'Створено',text:today?`о ${values.hour}:${values.minute}`:`${values.day} ${values.month} ${values.year}, ${values.hour}:${values.minute}`,datetime:date.toISOString()};
+  const formatter=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',day:'2-digit',month:'2-digit',year:'numeric'});
+  const calendarDay=value=>{
+    const parts=Object.fromEntries(formatter.formatToParts(value).map(part=>[part.type,part.value]));
+    return Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day));
+  };
+  const days=Math.max(0,Math.round((calendarDay(now)-calendarDay(date))/86400000));
+  const word={one:'день',few:'дні',many:'днів',other:'дня'}[new Intl.PluralRules('uk-UA').select(days)];
+  const fullDate=new Intl.DateTimeFormat('uk-UA',{timeZone:'Europe/Kyiv',day:'numeric',month:'long',year:'numeric'}).format(date);
+  return {text:days?`${days.toLocaleString('uk-UA')} ${word} тому`:'Сьогодні',datetime:date.toISOString(),fullDate};
 }
 
 function completionMark(project){
@@ -406,7 +410,10 @@ function projectProductionCardState(request,lastExportAt=0){
 }
 
 function renderOverview() {
-  $('overview-title').innerHTML=state.channel?`${channelIdentityIcon(state.channel)}<span>${esc(state.channel.name)}</span>`:'Оберіть канал';
+  $('overview-title').textContent=state.channel?'Випуски':'Оберіть канал';
+  $('overview-count').hidden=!state.channel;
+  $('overview-count').textContent=state.projects.length.toLocaleString('uk-UA');
+  $('overview-count').setAttribute('aria-label',`Випусків: ${state.projects.length}`);
   $('overview-create').disabled=!state.channel;
   $('overview-channel-settings').disabled=!state.channel;
   const container=$('overview-projects');container.replaceChildren();
@@ -417,7 +424,7 @@ function renderOverview() {
     const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
     const created=projectCreationDate(project.created_at);
     const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created-group"><span class="project-created">${created?`${esc(created.label)} <time datetime="${created.datetime}" title="Час за Києвом">${esc(created.text)}</time>`:'Дата створення невідома'}</span>${completionMark(project)}</span></div>`;
+    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created-group"><span class="project-created">${created?`<time datetime="${created.datetime}" title="${esc(created.fullDate)}">${esc(created.text)}</time>`:'Дата невідома'}</span>${completionMark(project)}</span></div>`;
     // While the agent makes the frames the card shows how far it got and still opens, so the author can watch the frames
     // come in (user, 5 November 2026: «коли проект створюється… дозволено нажимати на проект… подивитися, що там відбувається»).
     const making=project.production_request,makingState=projectProductionCardState(making,project.last_export_at),producing=makingState.working;
