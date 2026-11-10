@@ -271,7 +271,9 @@ def deepseek(prompt, root, identity):
     except RuntimeError: raise RuntimeError('Додайте ключ OpenRouter у налаштуваннях студії') from None
     payload = {'model': agent_openrouter.MODEL, 'messages': [{'role': 'user', 'content': prompt}],
                'max_tokens': 3500, 'reasoning': {'effort': 'none'},
-               'provider': {'require_parameters': True, 'allow_fallbacks': False},
+               # Relace's shared pool repeatedly returns 429; choose another low-cost endpoint once.
+               'provider': {'require_parameters': True, 'allow_fallbacks': False,
+                            'ignore': ['relace'], 'sort': 'price'},
                'response_format': {'type': 'json_object'}, 'usage': {'include': True}}
     req = urllib.request.Request(agent_openrouter.BASE + '/chat/completions', data=json.dumps(payload).encode(),
                                  headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
@@ -297,7 +299,9 @@ def deepseek(prompt, root, identity):
         store.atomic_json(root / 'topic-response.json', {'error': detail})
         if error.code == 429:
             wait = f"Спробуйте через {detail['retry_after_seconds']} с." if 'retry_after_seconds' in detail else 'Спробуйте пізніше.'
-            message = f'OpenRouter тимчасово обмежив запити до DeepSeek (429). {wait}'
+            provider = detail.get('provider_name')
+            source = f'Провайдер {provider} через OpenRouter' if provider else 'OpenRouter'
+            message = f'{source} тимчасово обмежив запити до DeepSeek (429). {wait}'
         elif error.code == 402:
             message = 'OpenRouter відхилив запит через обмеження бюджету або доступних коштів (402).'
         elif error.code in (401, 403):

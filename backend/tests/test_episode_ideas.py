@@ -270,6 +270,8 @@ class TopicTransportTest(unittest.TestCase):
             payload=json.loads(send.call_args.args[0].data)
             self.assertEqual(payload['reasoning'],{'effort':'none'})
             self.assertFalse(payload['provider']['allow_fallbacks'])
+            self.assertEqual(payload['provider']['ignore'],['relace'])
+            self.assertEqual(payload['provider']['sort'],'price')
             diagnostic=json.loads((Path(folder)/'topic-response.json').read_text())
             self.assertEqual(diagnostic['finish_reason'],'length')
 
