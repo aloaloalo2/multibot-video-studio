@@ -188,7 +188,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
 }
 
 // While a thumbnail is made, its card dims under a slow light sweep with one pill in the middle that says which half
-// of the work is going on; the title and buttons stay readable above it.
+// of the work is going on; CSS hides the card actions until the run finishes.
 function markThumbnailCard(id){
   const card=document.querySelector(`.project-card[data-project-id="${CSS.escape(id)}"], .thumb-view-frame[data-project-id="${CSS.escape(id)}"]`);if(!card)return;
   const busy=thumbnailBusy(id);card.classList.toggle('thumb-running',busy);
