@@ -252,7 +252,7 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
 
 function projectActions(project){
   const actions=document.createElement('div');actions.className='project-actions';
-  const canCreateThumbnail=project.episode_path&&thumbnailReady(project);
+  const canCreateThumbnail=!!project.episode_path;
   const icons={delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(canCreateThumbnail)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;

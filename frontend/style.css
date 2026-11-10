@@ -2325,6 +2325,8 @@ select option{background:#232327;color:#f1f1f2}
 .thumb-mode-switch{justify-self:center;max-width:100%}
 .thumb-mode-switch svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
 .thumb-reference-field{margin:0 0 16px}
+#thumb-reference-state{display:block;margin-top:8px;font-size:12px;color:#a0a3ad}
+#thumb-reference-state[hidden]{display:none}
 
 .narration-ready-tools{display:flex;align-items:center;gap:10px;flex:none}
 .narration-settings{display:grid;place-items:center;width:30px;height:30px;padding:5px;border:1px solid transparent;border-radius:50%;background:none;color:#9da3af;transition:color .15s,border-color .15s}

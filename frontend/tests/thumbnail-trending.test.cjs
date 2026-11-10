@@ -81,14 +81,14 @@ test('a displayed matching reference is reused for generation without another me
 function referenceFixture(data,api){
   const controls={},source={};
   const element=()=>({hidden:false,isConnected:true,value:'',textContent:'',dataset:{},listeners:{},classList:{toggle(){}},addEventListener(event,handler){this.listeners[event]=handler;},removeAttribute(name){delete this[name];},setAttribute(){}});
-  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-state'])controls[id]=element();
+  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-state'])controls[id]=element();
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
-  const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}}));
-  controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:[];
+  const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element(),element(),element()];
+  controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector==='#modal-actions button'?writers:[];
   const c=vm.createContext({$:id=>controls[id],state:{channel:{id:'c'}},thumbnailSources:new Map([['p',source]]),thumbnailFrames:2,showThumbnailState(){},api,setTimeout,clearTimeout});
   vm.runInContext(sourceText(),c);
   c.data=data;vm.runInContext("setupThumbnailModes({id:'p',channel_id:'c'},data)",c);
-  return {controls,buttons,source};
+  return {controls,buttons,source,writers};
 }
 function sourceText(){return source.slice(source.indexOf('function setupThumbnailModes('),source.indexOf('const thumbnailLanguageRuns='));}
 
@@ -117,5 +117,23 @@ test('a late reference response cannot replace the newer pasted URL or a closed 
   field.value='https://youtu.be/zzzzzzzzzzz';const third=field.listeners.change();
   controls['thumb-reference-preview'].isConnected=false;
   pending[2]({id:'closed',thumbnail_url:'/closed.jpg'});await third;
-  assert.equal(controls['thumb-reference-image'].src,'/new.jpg');
+  assert.equal(controls['thumb-reference-image'].src,undefined);
+});
+
+
+test('empty clone mode leaves no blank image column and gates generation until its reference resolves',async()=>{
+  let resolve;
+  const {controls,buttons,writers}=referenceFixture({},()=>new Promise(done=>{resolve=done;}));
+  buttons[1].listeners.click();
+  assert.equal(controls['thumb-reference-preview'].hidden,true);
+  assert.ok(writers.every(button=>button.dataset.referenceMissing==='1'));
+  controls['thumb-reference-url'].value='https://youtu.be/abcdefghijk';
+  const pending=controls['thumb-reference-url'].listeners.change();
+  assert.equal(controls['thumb-reference-preview'].hidden,true);
+  resolve({id:'abcdefghijk',thumbnail_url:'/ready.jpg'});await pending;
+  assert.equal(controls['thumb-reference-preview'].hidden,false);
+  assert.ok(writers.every(button=>button.dataset.referenceMissing===''));
+  controls['thumb-reference-url'].value='';controls['thumb-reference-url'].listeners.input();
+  assert.equal(controls['thumb-reference-preview'].hidden,true);
+  assert.ok(writers.every(button=>button.dataset.referenceMissing==='1'));
 });
