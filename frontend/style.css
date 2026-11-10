@@ -639,7 +639,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .timeline-selection-box{position:fixed;pointer-events:none;border:1px solid #f4bf36;background:rgba(244,191,54,.18);z-index:10000}
 #timeline-tracks{user-select:none}
 
-.brand-logo{transform:scale(.9);transform-origin:center;display:grid;grid-template-columns:42px max-content;grid-template-rows:22px 10px;column-gap:8px;justify-content:center;align-content:center;align-items:center;align-self:flex-start;width:172px;height:46px;max-width:100%;flex:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.brand-logo{transform:scale(.92);transform-origin:center;display:grid;grid-template-columns:42px max-content;grid-template-rows:22px 10px;column-gap:8px;justify-content:center;align-content:center;align-items:center;align-self:flex-start;width:172px;height:46px;max-width:100%;flex:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .editor-brand .brand-logo{width:172px}
 
 @media(min-width:761px){
