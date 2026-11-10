@@ -81,7 +81,7 @@ test('a displayed matching reference is reused for generation without another me
 function referenceFixture(data,api){
   const controls={},source={};
   const element=()=>({hidden:false,isConnected:true,value:'',textContent:'',dataset:{},listeners:{},classList:{toggle(){}},addEventListener(event,handler){this.listeners[event]=handler;},removeAttribute(name){delete this[name];},setAttribute(){}});
-  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-state','modal-actions'])controls[id]=element();
+  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-state','modal-actions','thumb-reference-copy'])controls[id]=element();
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
   const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element(),element(),element()];
   controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector==='#modal-actions button'?writers:[];
@@ -109,12 +109,12 @@ test('a late reference response cannot replace the newer pasted URL or a closed 
   const {controls,buttons}=referenceFixture({},()=>new Promise(resolve=>pending.push(resolve)));
   buttons[1].listeners.click();
   const field=controls['thumb-reference-url'];
-  field.value='https://youtu.be/abcdefghijk';const first=field.listeners.change();
-  field.value='https://youtu.be/12345678901';const second=field.listeners.change();
+  field.value='https://youtu.be/abcdefghijk';const first=controls['thumb-reference-copy'].listeners.click();
+  field.value='https://youtu.be/12345678901';const second=controls['thumb-reference-copy'].listeners.click();
   pending[1]({id:'new',thumbnail_url:'/new.jpg'});await second;
   pending[0]({id:'old',thumbnail_url:'/old.jpg'});await first;
   assert.equal(controls['thumb-reference-image'].src,'/new.jpg');
-  field.value='https://youtu.be/zzzzzzzzzzz';const third=field.listeners.change();
+  field.value='https://youtu.be/zzzzzzzzzzz';const third=controls['thumb-reference-copy'].listeners.click();
   controls['thumb-reference-preview'].isConnected=false;
   pending[2]({id:'closed',thumbnail_url:'/closed.jpg'});await third;
   assert.equal(controls['thumb-reference-image'].src,undefined);
@@ -130,7 +130,7 @@ test('empty clone mode leaves no blank image column and gates generation until i
   assert.equal(controls['thumb-brief-layout'].hidden,true);
   assert.equal(controls['modal-actions'].hidden,true);
   controls['thumb-reference-url'].value='https://youtu.be/abcdefghijk';
-  const pending=controls['thumb-reference-url'].listeners.change();
+  const pending=controls['thumb-reference-copy'].listeners.click();
   assert.equal(controls['thumb-reference-preview'].hidden,true);
   resolve({id:'abcdefghijk',thumbnail_url:'/ready.jpg'});await pending;
   assert.equal(controls['thumb-reference-preview'].hidden,false);
@@ -148,4 +148,19 @@ test('empty clone mode leaves no blank image column and gates generation until i
   buttons[1].listeners.click();
   controls['modal-body'].channelSettingsCleanup();
   assert.equal(controls['modal-actions'].hidden,false);
+});
+
+test('pasting a clone URL waits for Clone or Enter and duplicate clicks do not repeat the reference read',async()=>{
+  let calls=0,resolve;
+  const {controls,buttons}=referenceFixture({},()=>{calls++;return new Promise(done=>{resolve=done;});});
+  buttons[1].listeners.click();
+  const field=controls['thumb-reference-url'],clone=controls['thumb-reference-copy'];
+  field.value='https://youtu.be/abcdefghijk';field.listeners.input();
+  assert.equal(calls,0);assert.equal(clone.disabled,false);
+  let prevented=false;
+  const pending=field.listeners.keydown({key:'Enter',preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);assert.equal(calls,1);assert.equal(clone.disabled,true);
+  await clone.listeners.click();assert.equal(calls,1);
+  resolve({id:'abcdefghijk',thumbnail_url:'/ready.jpg'});await pending;
+  assert.equal(controls['modal-actions'].hidden,false);assert.equal(clone.disabled,false);
 });
