@@ -23,11 +23,11 @@ function harness(api){
   vm.runInContext(source,context);return {context,root,input,actions,calls,timers,selected,modes,referenceInput,referenceBox,note,copy,headerRefresh};
 }
 
-test('New episode loads topics only, leaving title empty',async()=>{
+test('New episode opens the empty own-title field without generating topics',async()=>{
   const h=harness(async()=>topics);await h.context.openNewEpisodeWizard();
   assert.equal(h.calls.length,1);assert.equal(h.calls[0][0],'/api/channels/channel-a/episode-ideas?view=topics');
   assert.equal(h.input.value,'');assert.equal(h.input.readOnly,false);assert.doesNotMatch(h.root.innerHTML,/Нові теми/);assert.doesNotMatch(h.root.innerHTML,/Ідеї DeepSeek/);
-  assert.equal(h.actions.nodes[0].hidden,true);assert.equal(h.input.hidden,true);
+  assert.equal(h.actions.nodes[0].hidden,false);assert.equal(h.actions.nodes[0].disabled,true);assert.equal(h.input.hidden,false);
 });
 test('a project opens its saved hooks without any provider or catalog request',async()=>{
   const h=harness(()=>assert.fail('No network request for saved hooks'));
@@ -44,21 +44,28 @@ test('refreshing hooks sends one project-bound explicit request',async()=>{
 });
 test('selected topic creates a new episode only after pressing Create openings',async()=>{
   const h=harness(async(url,method)=>method==='POST'?({...hooks,status:'running'}):topics);
-  await h.context.openNewEpisodeWizard();h.root.querySelectorAll('[data-idea]')[0].onclick();
-  assert.equal(h.calls.length,1);assert.equal(h.input.value,'A fresh title');assert.equal(h.input.readOnly,false);
+  await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();h.root.querySelectorAll('[data-idea]')[0].onclick();
+  assert.equal(h.calls.length,2);assert.equal(h.input.value,'A fresh title');assert.equal(h.input.readOnly,false);
   h.input.value='A fresh title with my addition';
   await h.root.querySelector('#ideas-create-openings').onclick();
-  assert.equal(h.calls.length,2);assert.equal(h.calls[1][2].new_episode,true);assert.equal(h.calls[1][2].index,0);assert.equal(h.calls[1][2].title,'A fresh title with my addition');
+  assert.equal(h.calls.length,3);assert.equal(h.calls[2][2].new_episode,true);assert.equal(h.calls[2][2].index,0);assert.equal(h.calls[2][2].title,'A fresh title with my addition');
 });
 test('failed daily refresh shows an error without automatically repeating the paid request',async()=>{
   const h=harness(async(url,method)=>{if(method==='POST')throw new Error('Channel busy');return {...topics,stale:true};});
-  await h.context.openNewEpisodeWizard();await new Promise(resolve=>setImmediate(resolve));
+  await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.calls.filter(c=>c[1]==='POST').length,1);assert.ok(h.root.messages.some(s=>s.includes('Channel busy')));
 });
-test('a saved failed refresh with stale topics never triggers an automatic repeat',async()=>{
-  const h=harness(async()=>({...topics,stale:true,status:'failed',error:'Limit'}));await h.context.openNewEpisodeWizard();
-  assert.equal(h.calls.length,1);assert.match(h.root.innerHTML,/Limit/);
+test('a failed attempt today never triggers an automatic repeat',async()=>{
+  const h=harness(async()=>({...topics,stale:false,status:'failed',error:'Limit'}));await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();
+  assert.equal(h.calls.length,2);assert.match(h.root.innerHTML,/Limit/);
 });
+test('yesterday failed ideas get one guarded attempt when the tab opens',async()=>{
+  const h=harness(async(url,method)=>method==='POST'?{...topics,stale:false,status:'running'}:{...topics,stale:true,status:'failed',error:'Yesterday limit'});
+  await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();await new Promise(resolve=>setImmediate(resolve));
+  const posts=h.calls.filter(c=>c[1]==='POST');assert.equal(posts.length,1);assert.equal(posts[0][2].if_stale,true);assert.equal(posts[0][2].refresh,undefined);
+  assert.match(h.root.innerHTML,/DeepSeek пропонує/);
+});
+
 test('closed project dialog ignores delayed polling',async()=>{
   const h=harness(()=>assert.fail('Closed draft must not poll'));await h.context.openNewEpisodeWizard({projectId:'project-a',draft:{...hooks,status:'running'}});
   h.context.closeModal();await h.timers[0]();assert.equal(h.calls.length,0);
@@ -73,7 +80,7 @@ test('cancelled and completed hooks do not reopen when selecting a project',()=>
 test('source choice hides unrelated fields and selected topics remain editable',async()=>{
   const h=harness(async()=>topics);await h.context.openNewEpisodeWizard();
   h.modes.nodes[0].onclick();assert.equal(h.input.hidden,false);assert.equal(h.actions.hidden,true);assert.equal(h.actions.nodes[0].hidden,false);assert.equal(h.root.hidden,true);
-  h.modes.nodes[1].onclick();assert.equal(h.input.hidden,true);assert.equal(h.actions.hidden,true);
+  await h.modes.nodes[1].onclick();assert.equal(h.input.hidden,true);assert.equal(h.actions.hidden,true);
   h.root.querySelectorAll('[data-idea]')[0].onclick();h.input.value='Edited title';h.input.oninput();
   assert.equal(h.input.hidden,false);assert.equal(h.actions.hidden,true);assert.equal(h.root.hidden,false);
   assert.ok(h.root.querySelector('#ideas-create-openings'));
@@ -107,9 +114,9 @@ test('a stale reference response cannot replace another choice or title',async()
 test('header refresh is scoped to ideas and duplicate clicks share the pending request',async()=>{
   let resolve;
   const h=harness(async(url,method)=>method==='POST'?new Promise(done=>resolve=done):topics);
-  await h.context.openNewEpisodeWizard();assert.equal(h.headerRefresh.hidden,false);
+  await h.context.openNewEpisodeWizard();assert.equal(h.headerRefresh.hidden,true);
   h.modes.nodes[2].onclick();assert.equal(h.headerRefresh.hidden,true);
-  h.modes.nodes[1].onclick();assert.equal(h.headerRefresh.hidden,false);
+  await h.modes.nodes[1].onclick();assert.equal(h.headerRefresh.hidden,false);
   const pending=h.headerRefresh.onclick();h.headerRefresh.onclick();
   assert.equal(h.calls.filter(call=>call[1]==='POST').length,1);
   resolve({...topics,status:'running',stage:'ideas'});await pending;

@@ -1931,8 +1931,6 @@ def main():
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
     server = StudioHTTPServer((args.host, args.port), Handler)
-    import episode_ideas
-    episode_ideas.start_daily()
     for pid, result in technical_files.migrate_all().items():
         if isinstance(result, dict) and result.get("error"):
             print(f"Technical file migration of {pid}: {result['error']}", flush=True)

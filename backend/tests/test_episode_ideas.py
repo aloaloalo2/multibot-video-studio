@@ -220,20 +220,32 @@ class EpisodeIdeasTest(unittest.TestCase):
 
 if __name__=='__main__': unittest.main()
 
-class DailyIdeasTest(EpisodeIdeasTest):
-    def test_daily_reservation_prevents_repeated_paid_calls_and_keeps_opening_work(self):
-        with patch.object(ideas.credentials,'vault') as vault, patch.object(store,'list_channels',return_value=[{'id':self.cid}]), patch.object(ideas,'Thread'):
-            vault.return_value.configured.return_value=True
-            ideas.daily_once()
-            self.assertIn(self.cid,ideas.ACTIVE)
-            data=store.read_json(ideas.path(self.cid));self.assertEqual(data['attempt_day'],ideas.today())
+class LazyIdeasTest(EpisodeIdeasTest):
+    def test_opening_ideas_reserves_one_attempt_per_day_and_reading_is_free(self):
+        with patch.object(ideas, 'Thread') as thread:
+            self.assertTrue(ideas.catalog(self.cid)['stale'])
+            thread.assert_not_called()
+            first = ideas.start(self.cid, {'action':'ideas','if_stale':True})
+            self.assertEqual(first['status'], 'running')
+            ideas.start(self.cid, {'action':'ideas','if_stale':True})
+            self.assertEqual(thread.call_count, 1)
             ideas.ACTIVE.clear()
-            ideas.daily_once()
-            self.assertFalse(ideas.ACTIVE)
-            data.update(attempt_day='2000-01-01',stage='openings',project_id='existing',completed=False)
-            store.atomic_json(ideas.path(self.cid),data)
-            ideas.daily_once()
-            self.assertFalse(ideas.ACTIVE)
+            failed = ideas.start(self.cid, {'action':'ideas','if_stale':True})
+            self.assertEqual(failed['status'], 'failed')
+            self.assertEqual(thread.call_count, 1)
+            with patch.object(ideas, 'today', return_value='2099-01-02'):
+                self.assertTrue(ideas.catalog(self.cid)['stale'])
+                ideas.start(self.cid, {'action':'ideas','if_stale':True})
+            self.assertEqual(thread.call_count, 2)
+
+    def test_fresh_topics_reused_and_manual_refresh_remains_explicit(self):
+        self.topics()
+        with patch.object(ideas, 'Thread') as thread:
+            self.assertEqual(ideas.start(self.cid, {'action':'ideas','if_stale':True})['status'], 'done')
+            thread.assert_not_called()
+            ideas.start(self.cid, {'action':'ideas','refresh':True})
+            thread.assert_called_once()
+
     def test_title_punctuation_rule_is_enforced(self):
         for title in ['A title: detail','A title - detail','A title — detail']:
             with self.assertRaises(ValueError): ideas.validate_titles({'ideas':[{'title':title,'uk':''}]*5},{'previous_titles':[]})
@@ -260,6 +272,38 @@ class TopicTransportTest(unittest.TestCase):
             self.assertFalse(payload['provider']['allow_fallbacks'])
             diagnostic=json.loads((Path(folder)/'topic-response.json').read_text())
             self.assertEqual(diagnostic['finish_reason'],'length')
+
+    def test_rate_limit_keeps_safe_diagnostics_and_never_retries(self):
+        import io, json, tempfile, urllib.error
+        from pathlib import Path
+        failure = urllib.error.HTTPError('https://openrouter.ai/api/v1/chat/completions', 429, 'Too Many Requests',
+            {'Retry-After':'45'}, io.BytesIO(json.dumps({'error':{'metadata':{
+                'provider_name':'DeepSeek','limit_source':'upstream_provider','raw':'private provider contents'}}}).encode()))
+        with tempfile.TemporaryDirectory() as folder, patch.object(ideas.credentials,'vault') as vault, \
+                patch.object(ideas.urllib.request,'urlopen',side_effect=failure) as send, \
+                patch.object(ideas.project_costs,'record_at') as cost:
+            vault.return_value.read.return_value='test-key'
+            with self.assertRaisesRegex(RuntimeError, 'через 45 с'):
+                ideas.deepseek('private prompt',Path(folder),'test-run')
+            send.assert_called_once()
+            cost.assert_not_called()
+            text=(Path(folder)/'topic-response.json').read_text()
+            self.assertNotIn('private',text)
+            self.assertNotIn('test-key',text)
+            detail=json.loads(text)['error']
+            self.assertEqual(detail['status'],429)
+            self.assertEqual(detail['provider_name'],'DeepSeek')
+            self.assertEqual(detail['retry_after_seconds'],45)
+
+    def test_connection_failure_is_readable_without_an_automatic_retry(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder, patch.object(ideas.credentials,'vault') as vault, \
+                patch.object(ideas.urllib.request,'urlopen',side_effect=ConnectionResetError('private details')) as send:
+            vault.return_value.read.return_value='test-key'
+            with self.assertRaisesRegex(RuntimeError, 'З’єднання з OpenRouter перервалося'):
+                ideas.deepseek('private prompt',Path(folder),'test-run')
+            send.assert_called_once()
 
     def test_null_content_is_not_treated_as_text(self):
         with self.assertRaisesRegex(ValueError, 'не повернула готовий текст'):

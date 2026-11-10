@@ -20,7 +20,7 @@ function episodeDraftPending(data){
 async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   if(!state.channel){status('Спершу додайте канал.',true);return;}
   const cid=state.channel.id;
-  modal(projectId?'Зачини випуску':'Новий випуск',`<div class="episode-wizard"><div class="episode-name-field" id="episode-name-field">${episodeIcon('title')}<input id="new-project-name" aria-label="Назва випуску" maxlength="100" placeholder="Назва випуску"></div>${projectId?'':`<div class="episode-entry-tools" id="episode-entry-tools"><div class="episode-entry-options" id="episode-entry-options" role="group" aria-label="Спосіб створення"><button type="button" data-entry="title" aria-pressed="false">${episodeIcon('title')}<span>Власна назва</span></button><button type="button" data-entry="topics" aria-pressed="true">${episodeIcon('topics')}<span>Ідеї</span></button><button type="button" data-entry="reference" aria-pressed="false">${episodeIcon('link')}<span>Клонувати ідею</span></button></div><button class="secondary" id="ideas-refresh" title="Оновити ідеї" aria-label="Оновити ідеї">${episodeIcon('refresh')}</button></div><div class="episode-reference" id="episode-reference" hidden><div class="episode-reference-input">${episodeIcon('link')}<input id="episode-reference-url" aria-label="Клонування ідеї" type="url" placeholder="Вставте посилання на YouTube" autocomplete="off"><button type="button" class="secondary" id="episode-reference-copy" disabled>${episodeIcon('magic')}<span>Клонувати</span></button></div><div id="episode-reference-status" role="status"></div></div>`}<div id="episode-ideas"><p class="muted">Завантажуємо…</p></div></div>`,[
+  modal(projectId?'Зачини випуску':'Новий випуск',`<div class="episode-wizard"><div class="episode-name-field" id="episode-name-field">${episodeIcon('title')}<input id="new-project-name" aria-label="Назва випуску" maxlength="100" placeholder="Назва випуску"></div>${projectId?'':`<div class="episode-entry-tools" id="episode-entry-tools"><div class="episode-entry-options" id="episode-entry-options" role="group" aria-label="Спосіб створення"><button type="button" data-entry="title" aria-pressed="true">${episodeIcon('title')}<span>Власна назва</span></button><button type="button" data-entry="topics" aria-pressed="false">${episodeIcon('topics')}<span>Ідеї</span></button><button type="button" data-entry="reference" aria-pressed="false">${episodeIcon('link')}<span>Клонувати ідею</span></button></div><button class="secondary" id="ideas-refresh" title="Оновити ідеї" aria-label="Оновити ідеї">${episodeIcon('refresh')}</button></div><div class="episode-reference" id="episode-reference" hidden><div class="episode-reference-input">${episodeIcon('link')}<input id="episode-reference-url" aria-label="Клонування ідеї" type="url" placeholder="Вставте посилання на YouTube" autocomplete="off"><button type="button" class="secondary" id="episode-reference-copy" disabled>${episodeIcon('magic')}<span>Клонувати</span></button></div><div id="episode-reference-status" role="status"></div></div>`}<div id="episode-ideas"><p class="muted">Завантажуємо…</p></div></div>`,[
     {label:'Створити випуск',run:async()=>{if(create.disabled)return;create.disabled=true;try{
       const name=$('new-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');
       const result=await api('/api/projects','POST',{channel_id:cid,name});closeModal();await selectChannel(cid);await selectProject(result.project.id,{view:'editor'});
@@ -33,7 +33,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   create.classList.add('episode-action','secondary');
   $('episode-name-field')?.append(create);
   const channelEndpoint=`/api/channels/${cid}/episode-ideas`;
-  let sending=false,lastData=null,timer=null,reference=null,referenceVersion=0,entry='topics',topicSelected=false;
+  let sending=false,lastData=null,timer=null,reference=null,referenceVersion=0,entry='title',topicSelected=false;
   const entryTitles={title:'',topics:'',reference:''};
   const entryChoices=$('episode-entry-options'),entryButtons=entryChoices?[...entryChoices.querySelectorAll('button')]:[];
   const entryTools=$('episode-entry-tools'),ideasRefresh=$('ideas-refresh');
@@ -54,7 +54,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     if(entry==='reference'){
       if(reference){input.value=entryTitles.reference||reference.title;input.hidden=false;drawReference();}
       $('episode-reference-url').focus();
-    }else if(entry==='topics'&&lastData)draw(lastData,true);
+    }else if(entry==='topics')return poll();
     else if(entry==='title')input.focus();
   }
   entryButtons.forEach(button=>button.onclick=()=>selectEntry(button.dataset.entry));
@@ -152,7 +152,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
       }
       closeModal();selectProject(projectId).catch(error=>status(error.message,true));return;
     }
-    if(data.stale&&!projectId&&data.status!=='failed'&&!passive){request({action:'ideas',refresh:true});return;}
+    if(data.stale&&!projectId&&!passive){request({action:'ideas',if_stale:true});return;}
     if(data.status==='running'){
       const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage];
       root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.target_words?data.target_words.toLocaleString('uk-UA')+' слів':'Для збереженого сценарію'}</small></div></div>`;
@@ -176,11 +176,12 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     if(!data.ideas){
       if(passive){root.innerHTML=error;return;}
       if(data.status==='failed'){root.innerHTML=error+`<button class="secondary episode-action" id="ideas-retry">${episodeIcon('refresh')}<span>Спробувати ще раз</span></button>`;root.querySelector('#ideas-retry').onclick=()=>request({action:'ideas',refresh:true});}
-      else request({action:'ideas'});
+      else request({action:'ideas',if_stale:true});
       return;
     }
     root.innerHTML=error+`<div class="episode-options episode-topic-options">${data.ideas.map((row,i)=>(data.used_idea_indexes||[]).includes(i)?'':`<button data-idea="${i}">${episodeIcon('episode')}<span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>${(data.used_idea_indexes||[]).length>=data.ideas.length?'<p class="muted">Усі ці теми вже використані. Натисніть ↻, щоб отримати нові.</p>':''}`;
     root.querySelectorAll('[data-idea]').forEach(b=>b.onclick=()=>chooseTopic(data,Number(b.dataset.idea)));
   }
+  if(!projectId)selectEntry('title');
   if(draft)draw(draft);else await poll();
 }

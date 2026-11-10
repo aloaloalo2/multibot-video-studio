@@ -6,6 +6,7 @@ import threading
 from threading import Thread
 import time
 import uuid
+import urllib.error
 import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -274,7 +275,39 @@ def deepseek(prompt, root, identity):
                'response_format': {'type': 'json_object'}, 'usage': {'include': True}}
     req = urllib.request.Request(agent_openrouter.BASE + '/chat/completions', data=json.dumps(payload).encode(),
                                  headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=120) as response: result = json.load(response)
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response: result = json.load(response)
+    except urllib.error.HTTPError as error:
+        # Keep bounded routing facts, never raw provider text, request headers or prompts.
+        detail = {'status': error.code, 'model': agent_openrouter.MODEL}
+        try:
+            body = json.loads(error.read(16384))
+            failure = body.get('error') if isinstance(body, dict) else None
+            metadata = failure.get('metadata') if isinstance(failure, dict) else None
+            if isinstance(metadata, dict):
+                for field in ('provider_name', 'limit_source', 'error_type'):
+                    value = metadata.get(field)
+                    if isinstance(value, str) and re.fullmatch(r'[\w ./:()-]{1,100}', value):
+                        detail[field] = value
+        except (OSError, ValueError, TypeError):
+            pass
+        retry = (error.headers.get('Retry-After') or '').strip() if error.headers else ''
+        if retry.isdigit() and len(retry) <= 5 and 0 < int(retry) <= 86400:
+            detail['retry_after_seconds'] = int(retry)
+        store.atomic_json(root / 'topic-response.json', {'error': detail})
+        if error.code == 429:
+            wait = f"Спробуйте через {detail['retry_after_seconds']} с." if 'retry_after_seconds' in detail else 'Спробуйте пізніше.'
+            message = f'OpenRouter тимчасово обмежив запити до DeepSeek (429). {wait}'
+        elif error.code == 402:
+            message = 'OpenRouter відхилив запит через обмеження бюджету або доступних коштів (402).'
+        elif error.code in (401, 403):
+            message = f'OpenRouter відхилив доступ до DeepSeek ({error.code}). Перевірте ключ і його обмеження.'
+        else:
+            message = f'OpenRouter не завершив запит до DeepSeek ({error.code}). Спробуйте пізніше.'
+        raise RuntimeError(message + ' Попередні теми збережено. Автоматичного повтору немає.') from None
+    except OSError:
+        store.atomic_json(root / 'topic-response.json', {'error': {'type': 'connection', 'model': agent_openrouter.MODEL}})
+        raise RuntimeError('З’єднання з OpenRouter перервалося. Попередні теми збережено. Повторіть запит вручну пізніше.') from None
     project_costs.record_at(root, 'openrouter', (result.get('usage') or {}).get('cost'), identity=result.get('id') or identity, category='script')
     choices = result.get('choices') or []
     choice = choices[0] if choices and isinstance(choices[0], dict) else {}
@@ -367,6 +400,10 @@ def start(cid, body):
         if body.get('request_id') and data.get('request_id') == body['request_id']: return public(data)
         if action == 'ideas' and cid in ACTIVE:
             return public(ACTIVE[cid])
+        if action == 'ideas' and body.get('if_stale'):
+            saved_topics = catalog(cid, data)
+            if not saved_topics['stale']:
+                return saved_topics
         if action == 'openings' and data.get('stage') == 'openings' and is_running(cid, data) and data.get('selected_index') == body.get('index'):
             return public(data)
         if action == 'ideas' and data.get('ideas') and not body.get('refresh'): return public(catalog(cid, data))
@@ -598,24 +635,3 @@ def _work(cid, data):
                 key = data.get('project_id') or cid
                 if ACTIVE.get(key, {}).get('run_id') == data.get('run_id'):
                     ACTIVE.pop(key, None)
-
-
-def daily_once():
-    # Persist the day before the call, so a restart or a service error cannot repeat a charge that day.
-    if not credentials.vault().configured(credentials.service_name('openrouter')): return
-    for channel in store.list_channels():
-        cid=channel['id']
-        with LOCK:
-            data=read(cid)
-            topics = store.read_json(topics_path(cid), {}) or {}
-            if cid in ACTIVE or today() in {data.get('attempt_day'), topics.get('attempt_day')}: continue
-            start(cid, {'action':'ideas','refresh':True})
-
-
-def start_daily():
-    def loop():
-        while True:
-            try: daily_once()
-            except Exception: pass  # the next tick only retries scheduling, never a reserved model call
-            time.sleep(60)
-    Thread(target=loop, name='daily-episode-ideas', daemon=True).start()
