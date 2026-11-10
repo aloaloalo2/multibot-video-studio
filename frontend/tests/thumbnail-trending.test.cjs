@@ -81,7 +81,7 @@ test('a displayed matching reference is reused for generation without another me
 function referenceFixture(data,api){
   const controls={},source={};
   const element=()=>({hidden:false,isConnected:true,value:'',textContent:'',dataset:{},listeners:{},classList:{toggle(){}},addEventListener(event,handler){this.listeners[event]=handler;},removeAttribute(name){delete this[name];},setAttribute(){}});
-  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-state'])controls[id]=element();
+  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-state'])controls[id]=element();
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
   const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}}));
   controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:[];
@@ -98,7 +98,9 @@ test('saved clone preview appears beside wishes on opening without a metadata or
   assert.equal(controls['thumb-reference-preview'].hidden,false);
   assert.equal(controls['thumb-reference-image'].src,'/cached.jpg');
   assert.equal(controls['thumb-reference-image'].hidden,false);
-  assert.equal(controls['thumb-reference-caption'].textContent,'Source title');
+  assert.equal(controls['thumb-reference-caption'].textContent,'Прев’ю конкурента');
+  assert.equal(controls['thumb-reference-image'].title,'Source title');
+  assert.match(controls['thumb-create-wishes'].placeholder,/клонованого/);
   assert.equal(source.reference,reference);
 });
 

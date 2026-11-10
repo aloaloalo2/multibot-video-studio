@@ -20,8 +20,8 @@ async function openThumbnail(project){
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
   modal('New Preview',`
-    ${data.reference_selection?`<div class="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Клонувати ідею</span></button></div><label class="thumb-reference-field" id="thumb-reference-field" hidden><span>Посилання на YouTube</span><input id="thumb-reference-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(data.clone_reference?.url || '')}"></label>`:''}
-    <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden><figcaption id="thumb-reference-caption">Прев’ю за посиланням</figcaption></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label></div>
+    ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Клонувати ідею</span></button></div><label class="thumb-reference-field" id="thumb-reference-field" hidden><span>Посилання на YouTube</span><input id="thumb-reference-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(data.clone_reference?.url || '')}"></label>`:''}
+    <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…"></textarea></label></div>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
@@ -39,7 +39,10 @@ async function openThumbnail(project){
   $('modal-backdrop').dataset.thumbnailProject=project.id;
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
-  if(data.reference_selection)setupThumbnailModes(project,data);
+  if(data.reference_selection){
+    setupThumbnailModes(project,data);
+    $('modal-title').after($('thumb-mode-switch'));
+  }
   else delete $('modal-backdrop').dataset.thumbnailMode;
   showThumbnailState(project.id);
   if(thumbnailBusy(project.id))pollThumbnail(project.id);
@@ -50,10 +53,12 @@ function setupThumbnailModes(project,data){
   const field=$('thumb-reference-url'),preview=$('thumb-reference-preview'),image=$('thumb-reference-image'),caption=$('thumb-reference-caption');
   const source=thumbnailSources.get(project.id);
   let timer,version=0;
+  $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);version++;$('thumb-mode-switch')?.remove();};
   const paint=reference=>{
     image.hidden=!reference?.thumbnail_url;
     if(reference?.thumbnail_url)image.src=reference.thumbnail_url;else image.removeAttribute('src');
-    caption.textContent=reference?.title||'Прев’ю за посиланням';
+    caption.textContent='Прев’ю конкурента';
+    image.title=reference?.title||'';
   };
   if(data.clone_reference){source.reference=data.clone_reference;source.referenceUrl=field.value.trim();paint(data.clone_reference);}
   const load=async()=>{
@@ -74,6 +79,7 @@ function setupThumbnailModes(project,data){
     for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.thumbMode===mode));
     $('thumb-reference-field').hidden=mode!=='clone';
     preview.hidden=mode!=='clone';
+    $('thumb-create-wishes').placeholder=mode==='clone'?'Вкажіть побажання або правки до клонованого прев’ю…':'Вкажіть побажання для нового прев’ю…';
     $('thumb-brief-layout').classList.toggle('has-reference',mode==='clone');
     if(mode!=='clone'){clearTimeout(timer);version++;}
     const gated=mode==='new'&&Number(data.pictures||0)<Number(data.creation_min_frames??thumbnailFrames);
