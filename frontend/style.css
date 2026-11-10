@@ -2327,3 +2327,10 @@ select option{background:#232327;color:#f1f1f2}
 .project-plan-heading .script-word-count{color:#8f929c;font-size:11px;font-weight:400;white-space:nowrap}
 
 .project-card .project-action:disabled{opacity:.35;cursor:default}
+
+.thumb-mode-switch{display:flex;align-self:flex-start;gap:4px;width:fit-content;max-width:100%;padding:4px;margin:0 0 18px;background:#191a1e;border:1px solid #383a42;border-radius:999px}
+.thumb-mode-switch button{display:flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:10px 16px;background:none;color:#a9abb4;font-weight:600;white-space:nowrap}
+.thumb-mode-switch button[aria-pressed=true]{background:#3a3d46;color:#f1f1f2}
+.thumb-mode-switch svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.thumb-reference-field{margin:0 0 16px}
+@media(max-width:560px){.thumb-mode-switch{width:100%}.thumb-mode-switch button{flex:1;padding:10px 9px;font-size:12px;gap:6px}}

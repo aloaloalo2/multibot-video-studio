@@ -1599,7 +1599,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
-            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None, use_hero=body.get("use_hero"))}, 202)
+            return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None, use_hero=body.get("use_hero"), reference_id=body.get("reference_id"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
         if match and method == "POST":
             return self.json_response(languages.cancel(match.group(1), body.get("slot") or None))

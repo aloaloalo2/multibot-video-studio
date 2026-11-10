@@ -133,6 +133,7 @@ def defaults(pid: str) -> dict:
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else MIN_FRAMES,
+            "creation_min_frames": MIN_FRAMES, "reference_selection": True, "clone_reference": clone,
             "versions": versions(pid), "writers": ["claude", "deepseek", "trending"], "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
@@ -370,7 +371,7 @@ Use the built-in image generation tool and make exactly one image. Save it in th
 and reply only with the saved path."""
 
 
-def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None) -> None:
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> None:
     data = state(pid) or {}
     try:
         project = store.load_project(pid)
@@ -381,7 +382,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         number = 1 + max([int(m.group(1)) for p in work.glob("Превью *.png") if (m := VERSION.fullmatch(p.name))] or [0])
         name = f"Превью v{number}.png"
         import idea_reference
-        clone, clone_image = idea_reference.for_project(pid)
+        clone, clone_image = idea_reference.thumbnail_reference(project, reference_id)
         hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
         if clone and not base:
             # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
@@ -460,7 +461,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None) -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> dict:
     if use_hero is not None and not isinstance(use_hero, bool):
         raise store.StudioError('Оберіть, чи використовувати головного героя', 400)
     writer = writer if writer in {"deepseek", "trending"} else "claude"
@@ -475,7 +476,9 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
             raise store.StudioError("Напишіть, що змінити в прев'ю")
     project = store.load_project(pid)
     import idea_reference
-    clone, _ = idea_reference.for_project(pid)
+    if base and reference_id is not None:
+        raise store.StudioError('Референс клонування не використовується для правок готового прев’ю', 400)
+    clone, _ = idea_reference.thumbnail_reference(project, reference_id)
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")
@@ -499,7 +502,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 shutil.copy2(source, keep_dir(pid) / base)
         ACTIVE.add(pid)
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
-                "writer": writer, "use_hero": use_hero, **({"base": base} if base else {})}
+                "writer": writer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {})}
         store.atomic_json(job_path(pid), data)
-    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero), daemon=True).start()
+    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id), daemon=True).start()
     return data

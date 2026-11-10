@@ -44,3 +44,27 @@ test('host checkbox sends the explicit per-run choice and is omitted when unavai
     assert.equal(body.use_hero,choice===null?undefined:choice);
   }
 });
+
+
+test('clone mode reads the chosen URL once and sends a per-cover reference without changing the episode title',async()=>{
+  for(const mode of ['clone','new']){
+    const calls=[],backdrop={hidden:true,dataset:{thumbnailProject:'p',thumbnailMode:mode}};
+    const c=vm.createContext({state:{channel:{id:'c'}},thumbnailSources:new Map([['p',{title:'Our episode',script:'Our script',reference_selection:true}]]),thumbnailRuns:new Map(),
+      $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:null,
+      api:async(...args)=>{calls.push(args);return args[0].endsWith('/idea-reference')?{reference:{id:'abcdefghijk'}}:{job:{status:'running'}};},
+      showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw Error(message);}});
+    vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',channel_id:'c'},'claude','Wishes')",c);
+    assert.equal(calls.length,mode==='clone'?2:1);
+    const posted=calls.at(-1);assert.equal(posted[0],'/api/projects/p/thumbnail');
+    assert.equal(posted[2].reference_id,mode==='clone'?'abcdefghijk':'');assert.equal(posted[2].title,'Our episode');
+    if(mode==='clone')assert.equal(calls[0][2].url,'https://youtu.be/abcdefghijk');
+  }
+});
+test('empty clone URL starts no metadata read or paid generation',async()=>{
+  let calls=0,message;
+  const c=vm.createContext({thumbnailSources:new Map([['p',{reference_selection:true}]]),
+    $:id=>id==='modal-backdrop'?{dataset:{thumbnailProject:'p',thumbnailMode:'clone'}}:id==='thumb-reference-url'?{value:' '}:null,
+    api:async()=>{calls++;},status:text=>message=text});
+  vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'claude','')",c);
+  assert.equal(calls,0);assert.match(message,/посилання/);
+});

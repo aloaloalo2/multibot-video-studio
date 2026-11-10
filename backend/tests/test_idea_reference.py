@@ -112,3 +112,23 @@ class CloneEpisodeTest(unittest.TestCase):
                 self.assertEqual(start.call_args.kwargs['writer'], 'trending')
                 reference.start_thumbnail({**data, 'clone_thumbnail_attempted': False, 'review_required': True})
                 self.assertEqual(start.call_count, 1)
+
+
+class CoverReferenceSelectionTest(unittest.TestCase):
+    def test_per_cover_reference_does_not_overwrite_episode_reference_and_new_mode_omits_it(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(store, 'DATA_ROOT', Path(temp)), \
+             patch.object(store, 'get_channel_folder', return_value=Path(temp)), \
+             patch.object(store, 'PROJECTS_ROOT', Path(temp)/'projects'):
+            project={'id':'f'*24,'channel_id':'a'*16}
+            original=store.PROJECTS_ROOT/project['id'];original.mkdir(parents=True)
+            store.atomic_json(original/'idea-reference.json',{'id':'abcdefghijk','url':'original'})
+            Image.new('RGB',(32,18)).save(original/'idea-reference.jpg')
+            root=reference.folder(project['channel_id'],'123456789ab');root.mkdir(parents=True)
+            store.atomic_json(root/'reference.json',{'id':'123456789ab','url':'chosen'})
+            Image.new('RGB',(32,18)).save(root/'thumbnail.jpg')
+            selected,image=reference.thumbnail_reference(project,'123456789ab')
+            self.assertEqual(selected['url'],'chosen');self.assertEqual(image,root/'thumbnail.jpg')
+            self.assertEqual(reference.thumbnail_reference(project,''),(None,None))
+            self.assertEqual(reference.thumbnail_reference(project)[0]['url'],'original')
+            with self.assertRaises(store.StudioError):reference.thumbnail_reference(project,True)
+            with self.assertRaises(store.StudioError):reference.thumbnail_reference(project,'../secret')

@@ -18,8 +18,9 @@ async function openThumbnail(project){
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(data.job)thumbnailRuns.set(project.id,data.job);
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
-  thumbnailSources.set(project.id,{title:data.title,script:data.script});
+  thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
   modal('New Preview',`
+    ${data.reference_selection?`<div class="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg><span>Клонувати ідею</span></button></div><label class="thumb-reference-field" id="thumb-reference-field" hidden><span>Посилання на YouTube</span><input id="thumb-reference-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(data.clone_reference?.url || '')}"></label>`:''}
     <label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Опишіть ідею для нового прев’ю..."></textarea></label>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
@@ -38,8 +39,25 @@ async function openThumbnail(project){
   $('modal-backdrop').dataset.thumbnailProject=project.id;
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
+  if(data.reference_selection)setupThumbnailModes(project,data);
+  else delete $('modal-backdrop').dataset.thumbnailMode;
   showThumbnailState(project.id);
   if(thumbnailBusy(project.id))pollThumbnail(project.id);
+}
+
+function setupThumbnailModes(project,data){
+  const backdrop=$('modal-backdrop'),buttons=[...backdrop.querySelectorAll('[data-thumb-mode]')];
+  const select=mode=>{
+    backdrop.dataset.thumbnailMode=mode;
+    for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.thumbMode===mode));
+    $('thumb-reference-field').hidden=mode!=='clone';
+    const gated=mode==='new'&&Number(data.pictures||0)<Number(data.creation_min_frames??thumbnailFrames);
+    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.dataset.gated=gated?'1':'';
+    $('thumb-state').textContent=gated?`Для нового прев’ю потрібні хоча б ${data.creation_min_frames??thumbnailFrames} готові кадри. Клонування доступне за посиланням.`:'';
+    showThumbnailState(project.id);
+  };
+  for(const button of buttons)button.addEventListener('click',()=>select(button.dataset.thumbMode));
+  select(data.clone_reference?.url?'clone':'new');
 }
 
 const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set(),thumbnailPictures=new Map(),thumbnailMinimumFrames=new Map();
@@ -54,8 +72,8 @@ function showThumbnailState(id){
   const run=thumbnailRuns.get(id),backdrop=$('modal-backdrop');
   if(backdrop?.classList.contains('thumb-modal-open')&&backdrop.dataset.thumbnailProject===id){
     const box=backdrop.querySelector('.thumb-state');
-    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.disabled=thumbnailBusy(id);
-    if(box)box.textContent=run?.status==='running'?'Створюємо прев’ю…':run?.status==='failed'?`Не вдалося: ${run.error}`:'';
+    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.disabled=thumbnailBusy(id)||button.dataset.gated==='1';
+    if(box&&(run?.status==='running'||run?.status==='failed'))box.textContent=run.status==='running'?'Створюємо прев’ю…':`Не вдалося: ${run.error}`;
   }
   const section=$('project-thumb');
   if(section?.dataset.project!==id)return;
@@ -97,6 +115,15 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
   if($('thumb-use-hero'))body.use_hero=$('thumb-use-hero').checked;
   try{
+    const backdrop=$('modal-backdrop');
+    if(source.reference_selection&&backdrop?.dataset.thumbnailProject===project.id){
+      if(backdrop.dataset.thumbnailMode==='clone'){
+        const url=$('thumb-reference-url').value.trim();if(!url)throw new Error('Вставте посилання на YouTube.');
+        const {reference}=await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
+        if(!reference?.id)throw new Error('Не вдалося прочитати прев’ю за посиланням.');
+        body.reference_id=reference.id;
+      }else body.reference_id='';
+    }
     if(writer==='trending'){
       const available=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);
       if(!available.writers?.includes('trending'))throw new Error('Трендове прев’ю стане доступним після безпечного перезапуску студії. Зараз триває робота.');
@@ -193,11 +220,9 @@ function renderThumbView(){
   section.hidden=!open;
   if(!open){if(section.childElementCount)section.replaceChildren();delete section.dataset.project;return;}
   if(section.dataset.project!==project.id)buildThumbView(section,project);
-  const minimum=thumbnailMinimumFrames.get(project.id) ?? thumbnailFrames;
-  const ready=(thumbnailPictures.get(project.id) ?? thumbnailFramesMade(project))>=minimum;
   const create=section.querySelector('.thumb-view-create');
-  create.dataset.gated=ready?'':'1';create.disabled=!ready||thumbnailBusy(project.id);
-  create.title=ready?'Створити нове прев’ю':`Потрібні хоча б ${minimum} готові кадри ролика`;
+  create.dataset.gated='';create.disabled=thumbnailBusy(project.id);
+  create.title='Створити нове прев’ю або клонувати ідею';
 }
 async function buildThumbView(section,project){
   const id=project.id;section.dataset.project=id;
