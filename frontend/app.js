@@ -170,9 +170,10 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
-    const working=!!kind&&!!open;
+    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','озвучення сценарію','розпізнавання озвучки','режисура'].includes(kind);
     card.classList.toggle('stage-working',working);
-    card.setAttribute('aria-busy',String(working||card.classList.contains('producing')||card.classList.contains('exporting')));
+    card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
+    updateProjectDeleteButton(card,kind);
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?'Озвучуємо сценарій'+percent:kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
@@ -185,13 +186,22 @@ function renderProjectActivities(){
   }
 }
 
+function updateProjectDeleteButton(card,kind){
+  const button=card.querySelector('.project-action.delete');if(!button)return;
+  const task=typeof projectActivities!=='undefined'?projectActivities.get(card.dataset.projectId):null;
+  const reason=kind||(typeof task==='object'?task?.kind:task)||(card.classList.contains('exporting')?'експорт':card.classList.contains('producing')?'створення кадрів':card.classList.contains('thumb-running')?'створення прев’ю':null);
+  button.disabled=!!reason;
+  button.title=reason?`Триває ${reason}. Видалення доступне після зупинки або завершення роботи.`:'Видалити випуск';
+}
+
 async function pollChannelActivity(){
   if(document.hidden||channelActivityPending)return;
   channelActivityPending=true;
   try{
     const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
-    for(const task of activity.activities||[])if(['розпізнавання озвучки','режисура','озвучення сценарію','створення сценарію','створення зачинів','створення метаданих'].includes(task.kind))projectActivities.set(task.project_id,task.kind);
+    if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
+    for(const task of activity.activities||[])projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
@@ -496,10 +506,11 @@ function exportQueueLabel(job){return `Експорт у черзі${Number(job?
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
     const job=state.projectExports.get(card.dataset.projectId),active=!!job&&['queued','running','cancelling'].includes(job.status);
-    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')||card.classList.contains('stage-working')));
+    card.classList.toggle('exporting',active);card.setAttribute('aria-busy',String(active||card.classList.contains('producing')||card.classList.contains('stage-working')||card.classList.contains('thumb-running')));
     const making=card.querySelector('.project-making');if(making)making.hidden=active;
     const control=card.querySelector('.project-production-control');if(control)control.hidden=active;
     for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active&&!button.classList.contains('thumbnail');
+    if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     if(!active){box.replaceChildren();continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));

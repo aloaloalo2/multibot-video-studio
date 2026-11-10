@@ -30,8 +30,8 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .project-actions{display:flex;align-items:center;gap:4px;flex:none}
 .project-action{display:grid;place-items:center;width:27px;height:27px;padding:5px;border:1px solid #424248;border-radius:7.5px;background:#242428;color:#bec0c8}
 .project-action svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.project-action:hover,.project-action:focus-visible{background:#3b3b41;color:#fff}
-.project-action.delete:hover,.project-action.delete:focus-visible{color:#ffc2c7;background:#572e34;border-color:#a55963}
+.project-action:hover:not(:disabled),.project-action:focus-visible:not(:disabled){background:#3b3b41;color:#fff}
+.project-action.delete:hover:not(:disabled),.project-action.delete:focus-visible:not(:disabled){color:#ffc2c7;background:#572e34;border-color:#a55963}
 .channel-item.active .channel-select,.project-item.active{color:#f1f1f2}
 .channel-select{display:flex;align-items:center;gap:8px;border-radius:999px}
 .channel-icon{width:18px;height:18px;flex:none;color:#9498a3}
@@ -817,7 +817,8 @@ button.danger:hover:not(:disabled){background:#523034}
 .thumb-state[data-status="running"]{color:#8dffc6}.thumb-state[data-status="failed"]{color:#ff8a80}
 /* a thumbnail in the making: the card dims under a slow light sweep, one pill in the middle, title and buttons stay on top */
 .project-card.thumb-running{border-color:#3fbf8699}
-.thumb-progress{position:absolute;inset:0;z-index:0;display:grid;place-items:center;border-radius:inherit;overflow:hidden;background:rgba(8,10,12,.5);backdrop-filter:blur(3px) saturate(.8);-webkit-backdrop-filter:blur(3px) saturate(.8);pointer-events:none;animation:thumb-fade .35s ease}
+.project-card.thumb-running>.project-actions{z-index:4}
+.thumb-progress{position:absolute;inset:0;z-index:2;display:grid;place-items:center;border-radius:inherit;overflow:hidden;background:rgba(8,10,12,.5);backdrop-filter:blur(3px) saturate(.8);-webkit-backdrop-filter:blur(3px) saturate(.8);pointer-events:none;animation:thumb-fade .35s ease}
 .thumb-progress::before{content:'';position:absolute;top:0;bottom:0;left:-60%;width:60%;background:linear-gradient(100deg,transparent,rgba(107,242,174,.16),transparent);animation:thumb-sweep 2.4s ease-in-out infinite}
 .thumb-progress-pill{position:relative;display:flex;align-items:center;gap:11px;padding:10px 18px 10px 14px;border-radius:999px;background:rgba(12,28,21,.88);border:1px solid #3fe39a59;box-shadow:0 8px 28px rgba(0,0,0,.55),0 0 18px rgba(107,242,174,.18);color:#eafff3}
 .thumb-progress-pill>span{display:flex;flex-direction:column;line-height:1.25}
@@ -2324,3 +2325,5 @@ select option{background:#232327;color:#f1f1f2}
 .episode-draft-actions button span{font-size:19px;line-height:1}
 
 .project-plan-heading .script-word-count{color:#8f929c;font-size:11px;font-weight:400;white-space:nowrap}
+
+.project-card .project-action:disabled{opacity:.35;cursor:default}

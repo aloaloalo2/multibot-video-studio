@@ -112,12 +112,27 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
 function markThumbnailCard(id){
   const card=document.querySelector(`.project-card[data-project-id="${CSS.escape(id)}"], .thumb-view-frame[data-project-id="${CSS.escape(id)}"]`);if(!card)return;
   const busy=thumbnailBusy(id);card.classList.toggle('thumb-running',busy);
+  card.setAttribute('aria-busy',String(busy||['producing','exporting','stage-working'].some(name=>card.classList.contains(name))));
+  if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
   let veil=card.querySelector('.thumb-progress');
   if(!busy){veil?.remove();return;}
   if(!veil){veil=document.createElement('div');veil.className='thumb-progress';veil.setAttribute('role','status');
     veil.innerHTML=`<span class="thumb-progress-pill">${typeof exportSpinner==='string'?exportSpinner:''}<span><b>Малюємо прев’ю</b><small></small></span></span>`;card.append(veil);}
   const stage=thumbnailRuns.get(id)?.stage;
   veil.querySelector('small').textContent=stage==='prompt'?`${thumbnailRuns.get(id)?.writer==='deepseek'?'DeepSeek':'Claude'} пише промпт`:stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
+}
+
+// Automatic clone covers can start after the card's initial thumbnail read.
+const thumbnailDiscovering=new Set();
+async function discoverThumbnailActivity(id){
+  if(thumbnailBusy(id)||thumbnailDiscovering.has(id))return;
+  thumbnailDiscovering.add(id);
+  try{
+    const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);
+    readThumbnailData(id,data);markThumbnailCard(id);
+    if(thumbnailWorking(id))pollThumbnail(id);
+  }catch{}
+  finally{thumbnailDiscovering.delete(id);}
 }
 
 // After a reload the page knows no run: each episode's card asks once whether its thumbnail is being made right now.

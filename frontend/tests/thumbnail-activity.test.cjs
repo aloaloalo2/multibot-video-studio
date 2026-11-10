@@ -1,0 +1,27 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const fs=require('node:fs');
+const path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'..','thumbnail.js'),'utf8');
+const discovery=source.slice(source.indexOf('const thumbnailDiscovering='),source.indexOf('// After a reload'));
+test('automatic cover handoff discovers a new run after the initial idle read and shares pending reads',async()=>{
+  const runs=new Map([['p',{status:'done'}]]),marked=[],polled=[];
+  let release,reads=0;const response=new Promise(resolve=>release=resolve);
+  const c=vm.createContext({thumbnailBusy:id=>runs.get(id)?.status==='running',
+    api:async url=>{reads++;assert.equal(url,'/api/projects/p/thumbnail');return response;},
+    readThumbnailData:(id,data)=>runs.set(id,data.job),markThumbnailCard:id=>marked.push(id),
+    thumbnailWorking:id=>runs.get(id)?.status==='running',pollThumbnail:id=>polled.push(id)});
+  vm.runInContext(discovery,c);
+  const pending=c.discoverThumbnailActivity('p');await c.discoverThumbnailActivity('p');assert.equal(reads,1);
+  release({job:{status:'running',stage:'drawing'}});await pending;
+  assert.deepEqual(marked,['p']);assert.deepEqual(polled,['p']);
+  await c.discoverThumbnailActivity('p');assert.equal(reads,1);
+});
+test('failed activity discovery can be checked on the next status poll',async()=>{
+  let reads=0;
+  const c=vm.createContext({thumbnailBusy:()=>false,api:async()=>{reads++;throw Error('offline');},
+    readThumbnailData(){},markThumbnailCard(){},thumbnailWorking:()=>false,pollThumbnail(){}});
+  vm.runInContext(discovery,c);
+  await c.discoverThumbnailActivity('p');await c.discoverThumbnailActivity('p');assert.equal(reads,2);
+});

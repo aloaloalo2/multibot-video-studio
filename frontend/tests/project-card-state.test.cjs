@@ -106,3 +106,17 @@ test('a newer successful export takes priority over an old failed production car
   assert.equal(c.projectProductionCardState({...request,status:'in_progress'},110).working,true);
   assert.equal(request.quality.passed,false);
 });
+
+test('delete follows live project work and unlocks only after all known activity ends',()=>{
+  const button={},classes=new Set(),activities=new Map();
+  const card={dataset:{projectId:'p'},classList:{contains:name=>classes.has(name)},querySelector:()=>button};
+  const helper=source.slice(source.indexOf('function updateProjectDeleteButton('),source.indexOf('async function pollChannelActivity('));
+  const c=vm.createContext({projectActivities:activities,card});vm.runInContext(helper,c);
+  for(const kind of ['створення сценарію','озвучення сценарію','розпізнавання озвучки','режисура',"прев'ю",'музика й ефекти','мови']){
+    activities.set('p',kind);button.disabled=false;c.updateProjectDeleteButton(card);
+    assert.equal(button.disabled,true);assert.match(button.title,/Видалення доступне/);
+  }
+  activities.clear();classes.add('exporting');c.updateProjectDeleteButton(card);assert.equal(button.disabled,true);
+  classes.clear();classes.add('thumb-running');c.updateProjectDeleteButton(card);assert.equal(button.disabled,true);
+  classes.clear();c.updateProjectDeleteButton(card);assert.equal(button.disabled,false);assert.equal(button.title,'Видалити випуск');
+});

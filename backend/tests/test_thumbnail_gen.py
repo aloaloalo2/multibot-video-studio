@@ -193,6 +193,8 @@ class ThumbnailTest(unittest.TestCase):
         self.assertIn(str(work / 'idea-reference.jpg'), command)
         self.assertIn(str(hero), command)
         self.assertIn('neutral story subject', sent['input'])
+        self.assertIn('ear-and-nose coordination exercise', sent['input'])
+        self.assertIn('Replace this demonstrator with our attached channel hero', sent['input'])
         self.assertIn('people-free', sent['input'])
         self.assertNotIn('Include this recognizable person prominently', sent['input'])
         thumbnail_gen.ACTIVE.clear()

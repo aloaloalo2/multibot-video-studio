@@ -157,11 +157,12 @@ Capture its topic, central visual promise, composition logic and emotional situa
 Use the author's current title {json.dumps(title, ensure_ascii=False)}. Thumbnail lettering must match the channel language.
 Determine the role of every person from the reference, not merely whether it contains a face:
 - A recognizable presenter, recurring avatar or channel host is replaced by our channel hero from Головний герой.png, if attached. Preserve our hero's identity, never the competitor's identity.
+- A close-up person teaching or demonstrating a technique to the viewer is the PRESENTER, even when the person performs it on their own body. Examples: showing an ear-and-nose coordination exercise, a massage, breathing technique or self-test. Replace this demonstrator with our attached channel hero performing the SAME clear gesture; do not retain the source person's gender or choose a random model. Recurrence or prior recognition is not required when the teaching role is clear.
 - A neutral story subject (for example an older woman holding her painful neck, patient, passerby or family member) is replaced by a DIFFERENT person in the same role, age range and meaningful action. Do not replace this person with our host.
 - If the reference has only objects or graphics, keep the new composition people-free. Do not add our host.
 - If the reference contains both a host and neutral subjects, replace only the host with our hero, and use different neutral subjects.
 If no hero reference is attached, use a new suitable presenter only when the reference actually has a host.
-Do not assume every portrait is a host. Use contextual role clues; an ordinary person demonstrating symptoms is a story subject.
+Do not assume every portrait is a host. Use contextual role clues: a patient experiencing pain or symptoms is a story subject; a person actively teaching the remedy or demonstrating the promised technique is a presenter. A medical setting alone does not decide the role.
 Keep the semantic idea while making a new image. Do not reproduce competitor logos, watermarks, identity or channel branding.
 Do not paste or resave the reference as the output. Generate a fresh finished image, with readable lettering and sound composition.
 Use the available image generation tool. Return the actual saved PNG, not a plan or an HTML mockup.
