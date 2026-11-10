@@ -228,7 +228,7 @@ function restartButton(id){
 function confirmRestart(id){
   const action=directMontage()?'Студія прибере озвучку, розпізнаний текст і монтаж.':'Студія зупинить режисера й агента, прибере план кадрів, озвучку й кадри з таймлайну.';
   modal('Почати випуск заново?',`<p>${action} Випуск відкриється порожнім, і ви додасте сценарій та озвучку наново.</p><p>Нічого не зникне назавжди: попередній стан збережеться в резервній копії випуску, а створені файли лишаться в папці випуску.</p>`,
-    [{label:'Скасувати',run:closeModal},{label:'Почати заново',icon:'trash',danger:true,run:async()=>{
+    [{label:'Почати заново',icon:'trash',danger:true,run:async()=>{
       const button=$('modal-actions').querySelector('.danger');button.disabled=true;
       try{
         await api(`/api/projects/${encodeURIComponent(id)}/restart`,'POST',{});

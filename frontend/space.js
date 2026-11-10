@@ -41,7 +41,7 @@ async function fillStudioSpace(){
 }
 
 async function openSpace(project){
-  modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займає кеш випуску…</p>',[{label:'Скасувати',run:closeModal}]);
+  modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займає кеш випуску…</p>',[]);
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/space`);}
   catch(error){$('modal-body').innerHTML=`<p class="space-note">${esc(error.message)}</p>`;return;}
@@ -53,7 +53,7 @@ async function openSpace(project){
   modal(`Звільнити ${spaceSize(data.total)}?`,`<ul class="space-list">${rows}</ul>
     <p class="space-note">Ролик у студії лишиться таким, як є. Кадри на таймлайні, озвучка, сцени й готове відео в папці випуску не видаляються. Наступний експорт перемалює кадри заново, тому триватиме довше.</p>
     ${blocked?`<p class="space-busy">${esc(blocked)}. Звільнити місце можна, коли робота закінчиться.</p>`:''}`,
-    [{label:'Скасувати',run:closeModal},{label:`Звільнити ${spaceSize(data.total)}`,icon:'trash',danger:true,run:async()=>{
+    [{label:`Звільнити ${spaceSize(data.total)}`,icon:'trash',danger:true,run:async()=>{
       const button=$('modal-actions').querySelector('.danger');button.disabled=true;
       try{
         const result=await api(`/api/projects/${encodeURIComponent(project.id)}/space`,'POST',{});

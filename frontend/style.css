@@ -44,10 +44,12 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .topbar{height:64px;flex:none;border-bottom:1px solid #303034;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 17px}
 .editor-open .topbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;height:auto;min-height:64px}
 .editor-open .project-heading{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}
-.editor-open .project-title{width:100%;max-width:100%;flex-direction:column;align-items:flex-start;gap:3px}
-.editor-open .project-title>strong{font-size:11px;font-weight:500;line-height:16px;color:#979ba6;gap:6px}
-.editor-open .project-title>strong .channel-icon{width:14px;height:14px;color:#979ba6}
-.editor-open .project-name{padding:0;font-size:14px;line-height:20px;color:#a9abb4;max-width:100%;border-radius:3px}
+.editor-open .project-title{width:100%;max-width:100%;display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:11px;row-gap:2px;align-items:center}
+.editor-open .project-title>strong{display:contents;font-size:15px;font-weight:700;line-height:20px;color:#f1f1f2}
+.editor-open .project-title>strong .channel-icon{grid-column:1;grid-row:1/3;width:32px;height:32px;align-self:center;color:#a9abb4}
+.editor-open .project-title>strong>span{grid-column:2;grid-row:1;line-height:20px}
+.editor-open .project-name{grid-column:2;grid-row:2;padding:0;font-size:13px;line-height:18px;color:#a9abb4;max-width:100%;border-radius:3px;gap:6px}
+.editor-open .project-name>.project-icon{width:14px;height:14px;color:#818590}
 .editor-open .project-name:hover{background:transparent;color:#c2c5ce}
 .editor-open .save-state{line-height:1.2}
 .project-heading{min-width:0;display:flex;align-items:center;gap:11px;flex:1}
@@ -118,7 +120,8 @@ button.subtle:hover:not(:disabled),.timeline-toolbar button:hover:not(:disabled)
 button.primary{border:0;background:#f0b429;color:#181510;font-weight:600;border-radius:10px;padding:9px 13px}
 button.primary:hover:not(:disabled){background:#f5c24b}
 /* The two main actions glow like the logo key, in their own gold. */
-#export-open{transition:background-color .15s,box-shadow .2s}
+#export-open{display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background-color .15s,box-shadow .2s}
+#export-open>.export-icon{width:17px;height:17px;flex:none}
 #export-open:not(:disabled){box-shadow:0 0 12px rgba(240,180,41,.45),0 0 2px rgba(240,180,41,.6)}
 #export-open:not(:disabled):hover{box-shadow:0 0 22px rgba(240,180,41,.75),0 0 4px rgba(245,194,75,.9)}
 #overview-create,#global-settings{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:9px 16px;border:1px solid #383a42;border-radius:999px;background:#0b0b0c;color:#d7d9e0;font-weight:550;box-shadow:none;transition:background-color .15s,border-color .15s,color .15s}
@@ -592,6 +595,8 @@ button.danger:hover:not(:disabled){background:#523034}
 #normalize-weights{margin-top:12px}
 .modal-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;padding-top:6px;flex:none}
 .modal-actions button{border:0;border-radius:9px;padding:9px 12px;background:#34343a;color:#f1f1f2}
+.modal-actions .icon-label-button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.modal-actions .export-icon{width:17px;height:17px;flex:none}
 .modal-actions button.primary{background:#f0b429;color:#181510}
 .modal-actions button.danger{display:inline-flex;align-items:center;gap:7px;margin:0;border:1px solid #92464b;background:#452a2e;color:#ffb7bc}
 .modal-actions button.danger:hover{background:#613138;border-color:#c65b64}
@@ -621,10 +626,10 @@ button.danger:hover:not(:disabled){background:#523034}
   .sidebar>.brand{margin:0 -6px;padding-left:14px;padding-right:14px}
 }
 @media(max-width:560px){
-  .editor-open .project-title{flex-wrap:wrap;gap:2px}
+  .editor-open .project-title{column-gap:9px;row-gap:2px}
   .editor-open .project-title>strong,.editor-open .project-name{flex-basis:100%;max-width:100%}
   .editor-open .project-title>strong span,.editor-open .project-name>span{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
-  .editor-open .project-name{padding:4px 0}
+  .editor-open .project-name{padding:0}
   .timeline-toolbar h2{flex-basis:100%}
   .timeline-panel{height:clamp(272px,calc(34vh + 32px),352px)}
   .modal-actions button{flex:1 1 130px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
@@ -1813,7 +1818,7 @@ select option{background:#232327;color:#f1f1f2}
 .thumb-writer-button svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .thumb-writer-button .claude-mark{fill:currentColor;stroke:none}
 
-.channel-item[draggable=true]{cursor:grab;position:relative}
+.channel-item[draggable=true]{cursor:pointer;position:relative}
 .channel-item.channel-dragging{opacity:.4}
 .channel-drop-before::before,.channel-drop-after::after{content:"";position:absolute;left:7px;right:7px;height:2px;border-radius:2px;background:#b6bdcc;pointer-events:none}
 .channel-drop-before::before{top:-3px}.channel-drop-after::after{bottom:-3px}
@@ -1836,8 +1841,8 @@ select option{background:#232327;color:#f1f1f2}
 .channel-avatar-remove[hidden]{display:none}
 .channel-icon-state{font-size:12px;color:#b5bac6;margin:8px 0 0}
 @media(hover:none){.channel-avatar-remove{opacity:1;pointer-events:auto}}
-.channel-select[draggable=true]{cursor:grab}
-.channel-select[draggable=true]:active{cursor:grabbing}
+.channel-select[draggable=true]{cursor:pointer}
+.channel-item.channel-dragging,.channel-item.channel-dragging .channel-select{cursor:grabbing}
 
 .channel-effort-setting{margin-top:18px}.channel-effort-setting select{max-width:320px;width:100%}
 .voice-progress-stage,.episode-director-line strong{display:flex;align-items:center;gap:8px}

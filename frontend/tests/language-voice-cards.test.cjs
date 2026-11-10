@@ -61,7 +61,7 @@ test('cached-only confirmation stays free and unrelated busy languages do not lo
   const env=runtime();env.run("langData.jobs=[{code:'uk',kind:'voice',status:'running'}]");
   await env.run("langConfirmVoice('project-a','pl')");
   assert.match(env.confirmations[0][1],/без платних запитів/);
-  assert.match(env.confirmations[0][2][1].label,/безкоштовно/);
+  assert.match(env.confirmations[0][2].find(action=>action.primary).label,/безкоштовно/);
   await env.run("langConfirmVoice('project-a','uk')");
   assert.equal(env.confirmations.length,1);
   await env.run("langConfirmVoice('another-project','pl')");
