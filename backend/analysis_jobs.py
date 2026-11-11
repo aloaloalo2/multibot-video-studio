@@ -16,6 +16,7 @@ import job_timing
 import narration_ending
 import number_text
 import narration_sequence
+import status_views
 
 RUN_LOCK = threading.Lock()
 ACTIVE_JOBS = set()
@@ -37,7 +38,7 @@ def owner_alive(job):
         return True
 
 
-def latest(pid, load_job):
+def latest(pid, load_job, *, compact=False):
     store.load_project(pid)
     pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {})
     if not pointer.get("job_id"):
@@ -47,8 +48,9 @@ def latest(pid, load_job):
         raise store.StudioError("Звіт не належить цьому випуску", 404)
     if job["status"] in {"queued", "running"} and not owner_alive(job):
         job = {**job, "status": "failed", "stage": "failed", "error": "Обробку перервано перезапуском студії. Запустіть її ще раз"}
-    report = store.read_json(store.project_dir(pid) / "analysis" / job["id"] / "result.json")
-    return {"job": job, "report": report}
+    report_path = store.project_dir(pid) / "analysis" / job["id"] / "result.json"
+    report = status_views.analysis_report(report_path) if compact else store.read_json(report_path)
+    return {"job": status_views.job(job) if compact else job, "report": report, **({'compact':True} if compact else {})}
 
 
 def create_video(project, asset_id, save_job, load_job, script=None):

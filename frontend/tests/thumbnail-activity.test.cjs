@@ -9,7 +9,7 @@ test('automatic cover handoff discovers a new run after the initial idle read an
   const runs=new Map([['p',{status:'done'}]]),marked=[],polled=[];
   let release,reads=0;const response=new Promise(resolve=>release=resolve);
   const c=vm.createContext({thumbnailBusy:id=>runs.get(id)?.status==='running',
-    api:async url=>{reads++;assert.equal(url,'/api/projects/p/thumbnail');return response;},
+    api:async url=>{reads++;assert.equal(url,'/api/projects/p/thumbnail?compact=1');return response;},
     readThumbnailData:(id,data)=>runs.set(id,data.job),markThumbnailCard:id=>marked.push(id),
     thumbnailWorking:id=>runs.get(id)?.status==='running',pollThumbnail:id=>polled.push(id)});
   vm.runInContext(discovery,c);

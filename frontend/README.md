@@ -32,6 +32,8 @@ Global settings contain service keys, the YouTube directory, the script/hook wor
 
 `project-next-action.js` chooses one primary action in the header from the existing workflow state, including hook selection, narration, video creation and export. It delegates to the established handlers and hides that action's duplicate. Busy work remains locked, while a blocking reason and settings shortcut stay next to the primary action. Direct montage retains optional narration. It observes the mounted workspace and adds no status polling.
 
+`ui-controls.js` and `ui-controls.css` provide reusable standard actions, compact choices and segmented keyboard behavior. The preview dialog uses one action and a remembered per-channel writer choice. `thumbnail-compare.js` compares a version with its recorded clone source or exact same-language edit base. `studio-reads.js` joins overlapping status/settings reads, briefly reuses results and invalidates them around related mutations. Polling uses compact analysis/thumbnail responses; the transcript report is loaded when its disclosure opens. See [workflow efficiency](../docs/workflow-ux-and-efficiency.md) for all reviewed items and measured limits.
+
 ## API entry points
 
 The backend owns project identity, revisions, timings, queues and persistence. Main frontend routes include:

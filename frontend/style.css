@@ -2482,7 +2482,7 @@ select option{background:#232327;color:#f1f1f2}
 /* Shared modal chrome also covers native translation and voice dialogs. */
 :is(.modal,dialog) :is(button.primary,button.secondary,button.danger)>span{font-size:inherit;line-height:inherit}
 :is(.modal,dialog) :is(button.primary,button.secondary,button.danger)>svg{width:var(--ui-icon-size);height:var(--ui-icon-size);flex:none}
-:is(.modal,dialog) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),select,textarea){font-size:var(--ui-control-font);border-radius:var(--ui-radius-field);color-scheme:dark}
+:is(.modal,dialog) :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),select,textarea){font-size:var(--ui-control-font);border-radius:var(--ui-radius-field);color-scheme:dark}
 :is(.lang-script-dialog,.lang-script-picker,.lang-voice-dialog,.lang-result-dialog,.lang-thumbnail-dialog,.voice-reference-dialog){background:var(--ui-surface);border-color:#49494e;border-radius:var(--ui-radius-dialog)}
 :is(#modal-close,.lang-script-close){display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:1px solid #41434c;border-radius:50%;background:#303138;color:#c9cbd3;font-size:20px;line-height:1}
 :is(#modal-close,.lang-script-close):hover{color:#fff;background:#42454e}

@@ -30,6 +30,8 @@ On Apple Silicon, universal timelines up to 1080p and 30 fps use the GPU rendere
 
 `script_drafts.py` stores working script text and bounded recovery versions separately from accepted narration. See [script drafts and the next action](../docs/script-drafts-and-next-action.md) for concurrency and workflow ownership.
 
+`status_views.py` projects small read-only job/recognition statuses. `thumbnail_compare.py` retains per-version comparison sources. `writer_context.py` compacts exact duplicate rules and topic ledgers; `channel_profile.py` caches script samples/counts. `production_sessions.py` bounds long frame runs with verified scopes and explicit continuation checkpoints. See [workflow efficiency](../docs/workflow-ux-and-efficiency.md).
+
 ## API
 
 JSON mutations require an object with `Content-Type: application/json`, local `Host`, and same-origin browser requests. Non-object bodies, truncated requests, non-finite numbers and excessive JSON nesting return 400 before dispatch. Binary media and settings ZIP uploads use their existing dedicated routes. Errors return `{ "error": "..." }` with a non-2xx status.
@@ -52,6 +54,9 @@ JSON mutations require an object with `Content-Type: application/json`, local `H
 | POST | `/api/projects/import/pick` | `{channel_id,name?}` opens the native JSON chooser; `{project}` |
 | GET | `/api/projects/<id>` | `{project}` with editable scenes, tracks, assets, revision |
 | GET | `/api/projects/<id>/performance` | Bounded local task/stage timings; no service requests or job mutations |
+| GET | `/api/projects/<id>/analysis?compact=1` | Small job/readiness summary; omit `compact` for the full recognition report |
+| GET | `/api/projects/<id>/thumbnail?compact=1` | Original and translated preview job statuses, without script/frame/gallery preparation |
+| GET | `/api/projects/<id>/thumbnail-reference/<sha256>.jpg` | Immutable local clone-comparison source owned by that project |
 | GET | `/api/projects/<id>/script-draft` | Working text, accepted-source hash/epoch, optimistic version and history count |
 | PATCH | `/api/projects/<id>/script-draft` | Saves `{text,expected_version,base_sha256,epoch,writer_id?,client_sequence?}` including intentionally empty text; never starts narration |
 | GET | `/api/projects/<id>/script-draft/history` | Metadata for the pinned initial text and up to 20 previous working versions |

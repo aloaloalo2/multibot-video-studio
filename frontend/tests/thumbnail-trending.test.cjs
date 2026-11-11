@@ -4,24 +4,26 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'..','thumbnail.js'),'utf8');
-const open=source.slice(source.indexOf('async function openThumbnail('),source.indexOf('function showThumbnailState('));
-const generation=source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
+const open=source.slice(source.indexOf('function thumbnailWriterOptions('),source.indexOf('function showThumbnailState('));
+const generation="const thumbnailCreatePending=new Set();if(typeof thumbnailRuns==='undefined')globalThis.thumbnailRuns=new Map();if(typeof thumbnailBusy==='undefined')globalThis.thumbnailBusy=id=>thumbnailRuns.get(id)?.status==='running';if(typeof showThumbnailState==='undefined')globalThis.showThumbnailState=()=>{};\n"+source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
-test('Codex action sends wishes to trending mode and Claude remains primary on the right',async()=>{
-  let actions;const calls=[];let heading,html;
+test('one create action uses the remembered writer while preserving each project wishes',async()=>{
+  let actions,heading,html,choice;const calls=[],preferences=new Map();
   const saved={p:{status:'done',wishes:'Акцент на проблемі.\nБез зайвих елементів.'},other:{status:'failed',wishes:'Інше побажання'}};
+  const button={dataset:{},classList:{add(){}},querySelector:()=>({})},footer={append(){},prepend(){},querySelector:()=>button};
   const c=vm.createContext({state:{},api:async url=>({title:'¿Qué pasaría?',script:'Texto español.',job:saved[url.split('/')[3]]}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
-    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',dataset:{},classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
-    document:{querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
+    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?footer:{value:'Make the face large',dataset:{},classList:{add(){}}},esc:s=>s,
+    document:{createElement:()=>({append(){}}),querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
+    StudioUI:{preference:(key,allowed,fallback)=>preferences.get(key)||fallback,remember:(key,value)=>preferences.set(key,value),choice:(root,options)=>{choice=options;}},
     generateThumbnail:(...args)=>calls.push(args),status(){}});
-  vm.runInContext(open,c);await vm.runInContext("openThumbnail({id:'p',name:'Spanish video'})",c);
-  assert.equal(heading,'New Preview');assert.equal(actions.length,3);assert.equal(actions[1].label,'Створити з Codex');assert.equal(actions[2].label,'Створити з Claude');assert.equal(actions[2].primary,true);
+  vm.runInContext(open,c);await c.openThumbnail({id:'p',channel_id:'c'});
+  assert.equal(heading,'Нове прев’ю');assert.equal(actions.length,1);assert.equal(actions[0].label,'Створити');assert.equal(actions[0].primary,true);
   const wishes=()=>html.match(/id="thumb-create-wishes"[^>]*>([\s\S]*?)<\/textarea>/)[1];
-  assert.equal(wishes(),saved.p.wishes);
-  actions[1].run();assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
-  await c.openThumbnail({id:'other'});assert.equal(wishes(),saved.other.wishes);
-  await c.openThumbnail({id:'empty'});assert.equal(wishes(),'');
-  await c.openThumbnail({id:'p'});assert.equal(wishes(),saved.p.wishes);
+  assert.equal(wishes(),saved.p.wishes);choice.onChange('trending');actions[0].run();
+  assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
+  await c.openThumbnail({id:'other',channel_id:'c'});assert.equal(wishes(),saved.other.wishes);assert.equal(choice.value,'trending');
+  await c.openThumbnail({id:'empty',channel_id:'other-channel'});assert.equal(wishes(),'');assert.equal(choice.value,'claude');
+  await c.openThumbnail({id:'p',channel_id:'c'});assert.equal(wishes(),saved.p.wishes);
 });
 test('trending request preserves source title/script and creates a new image without a base',async()=>{
   const calls=[];
@@ -91,7 +93,7 @@ function referenceFixture(data,api){
   for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-reference-load','thumb-state','modal-actions'])controls[id]=element();
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
   const heroLabel={hidden:false};if(data.hero_reference)controls['thumb-use-hero']={checked:false,closest:()=>heroLabel};
-  const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element(),element(),element()];
+  const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element()];
   controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector==='#modal-actions button'?writers:[];
   const c=vm.createContext({$:id=>controls[id],state:{channel:{id:'c'}},thumbnailSources:new Map([['p',source]]),thumbnailFrames:2,showThumbnailState(){},api,setTimeout,clearTimeout});
   vm.runInContext(sourceText(),c);
@@ -174,14 +176,14 @@ test('clone writer labels follow the selected mode and concurrent reference read
   let calls=0,resolve;
   const {controls,buttons,writers}=referenceFixture({},()=>{calls++;return new Promise(done=>{resolve=done;});});
   buttons[1].listeners.click();
-  assert.deepEqual(writers.map(button=>button.label.textContent),['Клонувати з DeepSeek','Клонувати з Codex','Клонувати з Claude']);
+  assert.deepEqual(writers.map(button=>button.label.textContent),['Клонувати']);
   const field=controls['thumb-reference-url'];field.value='https://youtu.be/abcdefghijk';
   const pending=field.listeners.change();
   await field.listeners.change();assert.equal(calls,1);
   resolve({id:'abcdefghijk',thumbnail_url:'/ready.jpg'});await pending;
   assert.equal(controls['modal-actions'].hidden,false);
   buttons[0].listeners.click();
-  assert.deepEqual(writers.map(button=>button.label.textContent),['Створити з DeepSeek','Створити з Codex','Створити з Claude']);
+  assert.deepEqual(writers.map(button=>button.label.textContent),['Створити']);
 });
 
 

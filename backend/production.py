@@ -24,6 +24,7 @@ import frame_progress
 import channel_branding
 import logo_layer
 import production_context
+import production_sessions
 import razgon_sound
 import store
 import job_timing
@@ -369,6 +370,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 return
             log = run_log(pid, request)
             started = time.time()
+            deadline = time.monotonic() + TIMEOUT
             effort = store.channel_effort(project)
             model = store.channel_director_model(project)
             if request.get('repair_frames'):
@@ -382,19 +384,40 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                         limit=False, paused=False, quality_version=1, review_frames=review_frames)
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
-        text = repair_brief(project,request,notes) if request.get('repair_frames') else brief(project, request, notes) if store.project_animated(project) else photo_brief(project, request, notes)
-        text += mixed_assets_step(project) + director.sound_brief(project, scoped=bool(request.get("repair_frames"))) + director.animation_style(project) + director.channel_memory(project)
-        _, handoff = production_context.write(project, request, repair=bool(notes.strip()))
-        text += production_context.instructions(handoff,scoped=bool(request.get('repair_frames')))
-        text += production_quality.INSTRUCTIONS
-        code, answer = director.claude(cli, text, log, director.activity_path(pid, "production"), TIMEOUT,
-                                       resume=None, effort=effort, model=model)
+        signature = production_context.digest({'request':request['id'],'script':request.get('script_sha256'),'frames':(store.load_project_plan(pid) or {}).get('frames',[]),'repair':request.get('repair_frames'),'wishes':request.get('task_notes',request.get('notes',''))})
+        def cancelled():
+            current = store.load_project(pid).get('production_request') or {}
+            return director.cancelled(pid,'production') or current.get('paused') or current.get('id') != request['id']
+        def verify(numbers):
+            return drawn(pid,request['frames'],numbers) and production_quality.check(store.load_project(pid),{**request,'review_frames':numbers})['passed']
+        def checkpoint(receipt):
+            with store.LOCK:
+                if cancelled():raise InterruptedError('Створення кадрів зупинено')
+                set_request(pid,session_checkpoint={**receipt,'signature':signature})
+        def launch(numbers,summary,index):
+            current=store.load_project(pid)
+            scoped={**request,**({'session_frames':numbers,'summary':summary} if numbers else {})}
+            if numbers and scoped.get('repair_frames'):scoped['repair_frames']=numbers
+            text = repair_brief(current,scoped,notes) if scoped.get('repair_frames') else brief(current, scoped, notes) if store.project_animated(current) else photo_brief(current, scoped, notes)
+            text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames') or numbers)) + director.animation_style(current) + director.channel_memory(current)
+            _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
+            text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')))+production_quality.INSTRUCTIONS
+            if numbers:
+                text += '\nЦей короткий запуск охоплює ЛИШЕ кадри '+','.join(map(str,numbers))+'. Працюй партіями по 5 всередині цієї області. Після перевірки всіх цих кадрів заверши відповідь стислим підсумком. Наступну область студія передасть окремій новій сесії. Не використовуй all-text або інші команди, які змінюють кадри поза цією областю.'
+            session_log=log.with_name(log.stem+f'-session-{index:02d}.log') if numbers else log
+            if cancelled():raise InterruptedError('Створення кадрів зупинено')
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
+            return director.claude(cli,text,session_log,director.activity_path(pid,'production'),max(1,int(remaining)),resume=None,effort=effort,model=model)
+        previous=request.get('session_checkpoint') or {}
+        if previous.get('signature') != signature or request.get('continuation_mode') != 'handoff':previous={}
+        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous)
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
                       summary=(answer.get("result") or "").strip()[-2000:], **director.spent(answer, started))
         if director.limit_stop(answer):
-            # a pause, not a failure: what is made stays, and «Продовжити» picks the same session up once the limit resets
+            # A continuation preserves verified work and opens a fresh scoped session from its checkpoint.
             fields.update(status="failed", limit=True, error=director.limit_stop(answer))
         elif code or answer.get("is_error") or not drawn(pid, request["frames"],request.get('repair_frames')):
             missing = ("Не всі кадри намальовані й стоять на таймлайні студії блоками-кодом" if store.project_animated(project)

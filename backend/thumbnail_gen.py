@@ -24,6 +24,7 @@ import store
 import job_timing
 import channel_hero
 import image_delivery
+import thumbnail_compare
 
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 PREVIEW = "Превью.png"
@@ -87,16 +88,24 @@ def versions(pid: str) -> list[dict]:
         return []
     kept = work / PREVIEW
     items = []
+    try:comparisons = store.read_json(work / 'comparisons.json', {}) or {}
+    except (OSError, ValueError):comparisons = {}
     for path in work.glob("Превью*.png"):
         match = VERSION.fullmatch(path.name)
         if not match:
             continue
         number = int(match.group(1))
         prompt = work / f"Промпт прев'ю v{number}.txt"
-        head = prompt.read_text(encoding="utf-8", errors="replace")[:200] if " до " not in path.name and prompt.is_file() else ""
+        head = ''
+        if " до " not in path.name and prompt.is_file():
+            with prompt.open(encoding='utf-8', errors='replace') as source:head = source.read(200)
         writer = "deepseek" if head.startswith("[DeepSeek]") else "trending" if head.startswith(("[Трендове прев’ю", "[Клонування · Codex]")) else "edit" if head.startswith("[Правка") else None
         edit = re.match(r"\[Правка Превью (?:до )?v(\d+)\.png\] (.*)", head)
+        comparison = thumbnail_compare.describe(pid, path.name, comparisons)
+        legacy = re.match(r'\[Правка (Превью (?:до )?v[1-9][0-9]*\.png)\]', head)
+        if not comparison and legacy:comparison = {'kind':'edit','base':legacy.group(1)}
         items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
+                      **({'comparison': comparison} if comparison else {}),
                       **({"from": int(edit.group(1)), "notes": edit.group(2).strip()} if edit else {}),
                       "current": kept.is_file() and filecmp.cmp(path, kept, shallow=False), "time": path.stat().st_mtime})
     return sorted(items, key=lambda item: (item["number"], not item["earlier"]), reverse=True)
@@ -515,6 +524,8 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         except (OSError, UnidentifiedImageError):
             raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
         with job_timing.span('saving'):
+            try:thumbnail_compare.record(pid, name, base=base, reference=clone, image=clone_image)
+            except (OSError, ValueError):pass  # Optional comparison cannot discard a completed image.
             kept = work / PREVIEW
             preview(project)                        # a thumbnail put into the episode folder by hand is kept first
             if kept.is_file() and not any(filecmp.cmp(kept, other, shallow=False) for other in work.glob("Превью *.png")):

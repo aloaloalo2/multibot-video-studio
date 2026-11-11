@@ -87,20 +87,20 @@ function arrangeEpisode(episode){
   const heardText=document.createElement('div');heardText.className='plan-script-text episode-heard';
   const reportSlot=document.createElement('div');reportSlot.className='episode-report';heard.append(heardText,reportSlot);
   const fillHeard=report=>{heardText.textContent=report.recognized_text || '';if(!reportSlot.children.length)appendSpeechReport(reportSlot,report,{transcript:false});};
-  const report=episodeAnalysis()?.report;
-  if(report)fillHeard(report);
-  else{
-    heardText.textContent='Завантажуємо розпізнаний текст…';
-    // a plan opened by its link has not loaded the recognition yet: fetch it (the same request the page makes) and fill
-    // the fold and the voice line
-    loadAnalysis(id).then(result=>{
+  let reportLoading=false,reportLoaded=false;
+  heard.addEventListener('toggle',async()=>{
+    if(!heard.open||reportLoading||reportLoaded)return;reportLoading=true;
+    heardText.textContent='Завантажуємо…';
+    try{
+      const saved=episodeAnalysis()?.report;
+      const result=saved&&!saved.compact?{report:saved}:await loadAnalysis(id,true);
       if(state.project?.id!==id||!reportSlot.isConnected)return;
-      state.analysis=result;
       if(result.report)fillHeard(result.report);
-      else heardText.textContent='Розпізнаного тексту немає: таймінги озвучки додали готовим файлом, без розпізнавання.';
-      refreshEpisode(episode);
-    }).catch(error=>{if(reportSlot.isConnected)heardText.textContent=`Не вдалося завантажити розпізнаний текст: ${error.message}`;});
-  }
+      else heardText.textContent='Таймінги додано без розпізнавання.';
+      reportLoaded=true;
+    }catch(error){if(reportSlot.isConnected)heardText.textContent=`Не вдалося завантажити розпізнаний текст: ${error.message}`;}
+    finally{reportLoading=false;}
+  });
   if(direct){body.append(scriptFold,heard);return;}
   const table=episodeFold(`Таблиця кадрів (${frames.length})`);table.append(planTable(frames,!!state.project.production?.plan_ready,madeSet(frames)));
   const directorReport=document.createElement('div');directorReport.className='episode-director-report';

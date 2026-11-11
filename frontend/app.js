@@ -69,9 +69,15 @@ function syncRoute(replace=false){
 }
 
 async function api(path, method='GET', body) {
+  if(method==='GET'&&typeof sharedStudioRead==='function')return sharedStudioRead(path,()=>apiTransport(path,method,body));
+  if(method!=='GET'&&typeof invalidateStudioReads==='function')invalidateStudioReads(path);
+  try{return await apiTransport(path,method,body);}
+  finally{if(method!=='GET'&&typeof invalidateStudioReads==='function')invalidateStudioReads(path);}
+}
+async function apiTransport(path, method='GET', body) {
   const options = {method, headers: {'Accept':'application/json'}};
   if (body !== undefined) {options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body);}
-  const startupRead=method==='GET' && (path==='/api/health' || path==='/api/channels' || path==='/api/studio/status' || path.startsWith('/api/projects?') || /^\/api\/projects\/[0-9a-f]{24}(?:\/(?:assets|plan|analysis|export\/active))?$/.test(path));
+  const startupRead=method==='GET' && (path==='/api/health' || path==='/api/channels' || path==='/api/studio/status' || path.startsWith('/api/projects?') || /^\/api\/projects\/[0-9a-f]{24}(?:\/(?:assets|plan|analysis|export\/active))?$/.test(path.split('?')[0]) || typeof pooledStudioPath==='function'&&pooledStudioPath(path));
   for(let attempt=0;;attempt++){
     const controller=startupRead||/^\/api\/projects\/[0-9a-f]{24}\/script-draft(?:\/|$)/.test(path)?new AbortController():null;
     const timeout=controller?setTimeout(()=>controller.abort(),15000):null;
@@ -136,6 +142,7 @@ function modal(title, body, actions=[]) {
     else {const icon=modalActionIcon(action);if(icon){button.innerHTML=icon;const label=document.createElement('span');label.textContent=action.label;button.append(label);}else button.textContent=action.label;}
     if (action.primary) button.classList.add('primary');
     if (action.danger) button.classList.add('danger');
+    if(!action.primary&&!action.danger)button.classList.add('secondary');
     let running=false;
     button.addEventListener('click',async event=>{
       if(running||button.disabled)return;running=true;button.disabled=true;button.setAttribute('aria-busy','true');
@@ -144,6 +151,7 @@ function modal(title, body, actions=[]) {
     box.append(button);
   }
   box.hidden=!box.children.length;
+  if(typeof StudioUI!=='undefined'){StudioUI.enhance($('modal-body'));StudioUI.enhance(box);}
   $('modal-backdrop').hidden=false;
   // the name field of a small dialog is ready to type into; a long form keeps the page's focus where it is
   const field=$('modal-body').querySelector('input[type=text]:not([disabled]),input:not([type]):not([disabled])');
@@ -326,9 +334,10 @@ function deleteProject(project){
 
 // One request for a project's recognition at a time: the page and the plan ask for it together when a project opens.
 const analysisLoads=new Map();
-function loadAnalysis(id){
-  if(!analysisLoads.has(id))analysisLoads.set(id,api(`/api/projects/${encodeURIComponent(id)}/analysis`).finally(()=>setTimeout(()=>analysisLoads.delete(id),0)));
-  return analysisLoads.get(id);
+function loadAnalysis(id,details=false){
+  const key=id+(details?':details':'');
+  if(!analysisLoads.has(key))analysisLoads.set(key,api(`/api/projects/${encodeURIComponent(id)}/analysis${details?'':'?compact=1'}`).finally(()=>setTimeout(()=>analysisLoads.delete(key),0)));
+  return analysisLoads.get(key);
 }
 
 async function selectProject(id,{updateUrl=true,view='editor'}={}) {

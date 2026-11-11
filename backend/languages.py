@@ -3260,6 +3260,13 @@ def thumbnail_gallery(pid: str) -> dict:
         if code not in LANGUAGES:continue
         for version in language_thumbnails.versions(pid,code):
             items.append({"code":code,"name":LANGUAGES[code][0],"label":LANGUAGES[code][1],
-                          "version_name":version['name'],"number":version['number'],"stamp":version['stamp'],"current":version['current']})
+                          "version_name":version['name'],"number":version['number'],"stamp":version['stamp'],"current":version['current'],
+                          **({'comparison':{'kind':'edit','base':version['base']}} if version.get('base') else {})})
     return {"translated_thumbnails":items,"original_language":data.get("original_language"),
             "thumbnail_jobs":[job for job in data.get("jobs",{}).values() if job.get("kind")=="thumbnail"]}
+
+
+def thumbnail_status(pid: str) -> list:
+    import status_views
+    # Reuse the regular loader's live/interrupted ownership semantics.
+    return [status_views.job(job) for job in load_state(pid).get('jobs', {}).values() if job.get('kind') == 'thumbnail']

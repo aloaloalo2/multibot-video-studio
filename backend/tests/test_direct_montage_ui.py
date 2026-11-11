@@ -67,8 +67,8 @@ class DirectMontageUITest(unittest.TestCase):
 
     def test_direct_episode_preserves_script_transcript_without_frame_controls(self):
         prelude = """
-          class Node {constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.classList={toggle(){}};}
-            append(...items){this.children.push(...items)}setAttribute(){} }
+          class Node {constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.isConnected=true;this.listeners={};this.classList={toggle(){}};}
+            append(...items){this.children.push(...items)}setAttribute(){}addEventListener(event,handler){this.listeners[event]=handler} }
           const document={createElement:tag=>new Node(tag)};
           const state={project:{id:'p',plan_mode:'direct',production:{}},channels:[],
             plan:{script:'Original script',frames:[{number:1}]}};
@@ -85,13 +85,16 @@ class DirectMontageUITest(unittest.TestCase):
         arrange = director[director.index('function arrangeEpisode(episode){'):director.index('// The voice itself')]
         result = preview_js.run(['projectPlanMode', 'directMontage'], """
           const direct=new Node();arrangeEpisode(direct);const directCounts=[makeCalls,tableCalls];
+          const before=flatten(direct);function findHeard(n){return n.label==='Розпізнаний текст'?n:n.children.map(findHeard).find(Boolean)}
+          const heard=findHeard(direct);heard.open=true;heard.listeners.toggle();
           state.project.plan_mode='director';const planned=new Node();arrangeEpisode(planned);
-          console.log(JSON.stringify({nodes:flatten(direct),directCounts,plannedCounts:[makeCalls,tableCalls]}));
+          console.log(JSON.stringify({nodes:flatten(direct),before,directCounts,plannedCounts:[makeCalls,tableCalls]}));
         """, prelude+'\n'+arrange)
         self.assertEqual(result['directCounts'], [0, 0])
         self.assertEqual(result['plannedCounts'], [1, 1])
         self.assertIn('Original script', [n.get('text') for n in result['nodes']])
         self.assertIn('Recognized speech', [n.get('text') for n in result['nodes']])
+        self.assertNotIn('Recognized speech', [n.get('text') for n in result['before']])
         self.assertNotIn('episode-director', [n.get('className') for n in result['nodes']])
         self.assertNotIn('episode-make', [n.get('className') for n in result['nodes']])
 

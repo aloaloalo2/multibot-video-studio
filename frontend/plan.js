@@ -367,14 +367,16 @@ function renderVoiceStart(panel){
   });
   async function poll(){
     if(!section.isConnected)return;
-    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);
+    let result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis?compact=1`);
     if(!section.isConnected || state.project?.id!==project.id)return;
     state.analysis=result;
     const job=result.job;if(!job || !section.isConnected)return;
     if(job.status==='failed'){lock(false);show(job.error || 'Обробку зупинено');return;}
     if(job.status==='complete'){
       if(result.report?.applied){if(typeof acceptRecognizedScriptDraft==='function')acceptRecognizedScriptDraft(project.id,result.report,!!file);delete voiceScriptDraft[project.id];status(direct?'Озвучку й розпізнаний текст збережено.':'Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
-      lock(false);show('Озвучку розпізнано, але текст не збігся з озвученим. Перевірте звіт нижче.');if(result.report)appendSpeechReport(section,result.report);return;
+      lock(false);show('Озвучку розпізнано, але текст не збігся з озвученим. Перевірте звіт нижче.');
+      if(result.compact)result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);
+      if(section.isConnected&&state.project?.id===project.id&&result.report)appendSpeechReport(section,result.report);return;
     }
     lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
   }
@@ -387,7 +389,7 @@ function renderVoiceStart(panel){
   function idle(){
     if(!section.isConnected || state.project?.id!==project.id)return;
     if(busy){setTimeout(idle,3000);return;}
-    api(`/api/projects/${encodeURIComponent(project.id)}/analysis`).then(result=>{
+    api(`/api/projects/${encodeURIComponent(project.id)}/analysis?compact=1`).then(result=>{
       if(!section.isConnected || state.project?.id!==project.id || busy)return;
       const job=result.job;
       if(job && job.id!==seen){

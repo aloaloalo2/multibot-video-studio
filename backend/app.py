@@ -26,6 +26,8 @@ from pathlib import Path
 import store
 import job_timing
 import script_drafts
+import status_views
+import thumbnail_compare
 import technical_files
 import covers
 import channel_transfer
@@ -1322,7 +1324,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_media(target)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/analysis", path)
         if match:
-            return self.json_response(analysis_jobs.latest(match.group(1), load_job))
+            return self.json_response(analysis_jobs.latest(match.group(1), load_job, compact=(query.get('compact') or [''])[0]=='1'))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-live", path)
         if match:
             return self.json_response(razgon_live.status(match.group(1)))
@@ -1358,10 +1360,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
+            if (query.get('compact') or [''])[0]=='1':
+                store.load_project(match.group(1))
+                return self.json_response({'compact':True,'job':status_views.job(thumbnail_gen.state(match.group(1))),
+                                           'thumbnail_jobs':languages.thumbnail_status(match.group(1))})
             return self.json_response({**thumbnail_gen.defaults(match.group(1)), **languages.thumbnail_gallery(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnails/([^/]+\.png)", path)
         if match:
             return self.serve_thumbnail(thumbnail_gen.version_file(*match.groups()), download=(query.get('download') or [None])[0])
+        match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/thumbnail-reference/([0-9a-f]{64}\.jpg)', path)
+        if match:
+            return self.serve_media(thumbnail_compare.source(*match.groups()), cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages", path)
         if match:
             return self.json_response(languages.overview(match.group(1), compact=True))

@@ -7,6 +7,7 @@ const thumbnailRuns=new Map(),thumbnailSources=new Map();
 
 const thumbnailFrames=2;
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
+function thumbnailWriterOptions(data){return [{value:'deepseek',label:'DeepSeek'},{value:'trending',label:'Codex'},{value:'claude',label:'Claude'}].filter(item=>!data.writers||data.writers.includes(item.value));}
 
 // Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
@@ -20,23 +21,20 @@ async function openThumbnail(project){
   if(data.job)thumbnailRuns.set(project.id,data.job);
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
-  modal('New Preview',`
+  const writers=thumbnailWriterOptions(data),preference='thumbnail-writer:'+project.channel_id;
+  let writer=StudioUI.preference(preference,writers.map(item=>item.value),'claude');
+  if(!writers.some(item=>item.value===writer))writer=writers[0]?.value||'claude';
+  modal('Нове прев’ю',`
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
-    // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
-    [{label:'Створити з DeepSeek',run:()=>generateThumbnail(project,'deepseek',$('thumb-create-wishes').value)},
-     {label:'Створити з Codex',run:()=>generateThumbnail(project,'trending',$('thumb-create-wishes').value)},
-     {label:'Створити з Claude',primary:true,run:()=>generateThumbnail(project,'claude',$('thumb-create-wishes').value)}]);
-  const writerIcons=[
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-6 8-6 11-2l6-3-2 6c-2 7-11 7-15-1Z"/><path d="M7 11h.01M13 16l2 3"/></svg>',
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16"/></svg>',
-    projectCostIcons.claude_code];
-  [...$('modal-actions').children].forEach((button,index)=>{button.innerHTML=writerIcons[index]+`<span>${esc(button.textContent)}</span>`;button.classList.add('thumb-writer-button');});
-  $('modal-actions').children[1].title='Трендове прев’ю: Codex сам продумує ідею за правилами обкладинок';
+    [{label:'Створити',primary:true,enabled:()=>!thumbnailBusy(project.id)&&!thumbnailCreatePending.has(project.id)&&create.dataset.gated!=='1'&&create.dataset.referenceMissing!=='1',run:()=>generateThumbnail(project,writer,$('thumb-create-wishes').value)}]);
+  const actions=$('modal-actions'),create=actions.querySelector('button');create.id='thumb-create-submit';create.innerHTML=thumbnailIcon+'<span>Створити</span>';create.classList.add('glow-action');
+  const controls=document.createElement('div');controls.className='thumb-create-controls';actions.append(controls);
+  StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
   if(data.hero_reference)$('modal-actions').prepend($('thumb-use-hero').closest('label'));
-  $('modal-title').innerHTML=`${thumbnailIcon}<span>New Preview</span>`;
+  $('modal-title').innerHTML=`${thumbnailIcon}<span>Нове прев’ю</span>`;
   $('modal-backdrop').dataset.thumbnailProject=project.id;
   $('modal-backdrop').classList.add('thumb-modal-open');
   document.querySelector('#modal-actions .primary')?.classList.add('glow-action');
@@ -68,10 +66,9 @@ function setupThumbnailModes(project,data){
     $('modal-actions').hidden=awaiting;
     $('thumb-state').hidden=awaiting;
     $('thumb-brief-layout').classList.toggle('has-reference',cloning&&ready);
-    for(const [index,button] of [...backdrop.querySelectorAll('#modal-actions button')].entries()){
+    for(const button of backdrop.querySelectorAll('#modal-actions button')){
       button.dataset.referenceMissing=cloning&&!ready?'1':'';
-      button.querySelector('span').textContent=`${cloning?'Клонувати':'Створити'} з ${['DeepSeek','Codex','Claude'][index]}`;
-      if(index===1)button.title=cloning?'Codex адаптує прев’ю конкурента за вашими побажаннями':'Трендове прев’ю: Codex сам продумує ідею за правилами обкладинок';
+      button.querySelector('span').textContent=cloning?'Клонувати':'Створити';
     }
     showThumbnailState(project.id);
   };
@@ -119,6 +116,7 @@ function setupThumbnailModes(project,data){
 }
 
 const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set();
+const thumbnailCreatePending=new Set();
 function readThumbnailData(id,data){
   if(data.job)thumbnailRuns.set(id,data.job);
   thumbnailLanguageRuns.set(id,data.thumbnail_jobs || []);
@@ -128,7 +126,7 @@ function showThumbnailState(id){
   const run=thumbnailRuns.get(id),backdrop=$('modal-backdrop');
   if(backdrop?.classList.contains('thumb-modal-open')&&backdrop.dataset.thumbnailProject===id){
     const box=backdrop.querySelector('.thumb-state');
-    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.disabled=thumbnailBusy(id)||button.dataset.gated==='1'||button.dataset.referenceMissing==='1';
+    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.disabled=thumbnailBusy(id)||thumbnailCreatePending.has(id)||button.dataset.gated==='1'||button.dataset.referenceMissing==='1';
     if(box&&(run?.status==='running'||run?.status==='failed'))box.textContent=run.status==='running'?'Створюємо прев’ю…':`Не вдалося: ${run.error}`;
   }
   const section=$('project-thumb');
@@ -168,7 +166,10 @@ async function editThumbnail(project,item,wishes){
 }
 
 async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes')?.value || ''){
-  const generation=state.modalGeneration;
+  if(thumbnailCreatePending.has(project.id)||thumbnailBusy(project.id))return;
+  const generation=state.modalGeneration,navigation=state.navigation,initialBackdrop=$('modal-backdrop'),owned=initialBackdrop?.dataset?.thumbnailProject===project.id&&!initialBackdrop.hidden;
+  const current=()=>!owned||state.modalGeneration===generation&&state.navigation===navigation&&!$('modal-backdrop').hidden&&$('modal-backdrop').dataset.thumbnailProject===project.id;
+  thumbnailCreatePending.add(project.id);showThumbnailState(project.id);
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
   if($('thumb-use-hero'))body.use_hero=$('modal-backdrop')?.dataset?.thumbnailMode==='clone'||$('thumb-use-hero').checked;
   try{
@@ -177,6 +178,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
       if(backdrop.dataset.thumbnailMode==='clone'){
         const url=$('thumb-reference-url').value.trim();if(!url)throw new Error('Вставте посилання на YouTube.');
         const reference=source.referenceUrl===url&&source.reference?.id?source.reference:await api(`/api/channels/${encodeURIComponent(project.channel_id || state.channel?.id)}/idea-reference`,'POST',{url});
+        if(!current()||owned&&($('thumb-reference-url').value.trim()!==url||$('modal-backdrop').dataset.thumbnailMode!=='clone'))return;
         if(!reference?.id)throw new Error('Не вдалося прочитати прев’ю за посиланням.');
         body.reference_id=reference.id;
       }else body.reference_id='';
@@ -185,12 +187,14 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
       const available=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);
       if(!available.writers?.includes('trending'))throw new Error('Трендове прев’ю стане доступним після безпечного перезапуску студії. Зараз триває робота.');
     }
+    if(!current())return;
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);
     thumbnailRuns.set(project.id,job);
     // the window closes once the wishes are sent: the card behind it shows «Малюємо прев’ю» while the picture is made
     if(state.modalGeneration===generation&&!$('modal-backdrop').hidden&&$('modal-backdrop').dataset.thumbnailProject===project.id&&$('modal-backdrop').classList.contains('thumb-modal-open'))closeModal();
     showThumbnailState(project.id);markThumbnailCard(project.id);pollThumbnail(project.id);
-  }catch(error){status(error.message,true);}
+  }catch(error){if(current())status(error.message,true);}
+  finally{thumbnailCreatePending.delete(project.id);showThumbnailState(project.id);}
 }
 
 // While a thumbnail is made, its card dims under a slow light sweep with one pill in the middle that says which half
@@ -215,7 +219,7 @@ async function discoverThumbnailActivity(id){
   if(thumbnailBusy(id)||thumbnailDiscovering.has(id))return;
   thumbnailDiscovering.add(id);
   try{
-    const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);
+    const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail?compact=1`);
     readThumbnailData(id,data);markThumbnailCard(id);
     if(thumbnailWorking(id))pollThumbnail(id);
   }catch{}
@@ -230,7 +234,7 @@ function watchThumbnails(projects){
     if(thumbnailRuns.has(project.id)){markThumbnailCard(project.id);continue;}
     if(thumbnailAsked.has(project.id))continue;
     thumbnailAsked.add(project.id);
-    api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`).then(data=>{
+    api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail?compact=1`).then(data=>{
       readThumbnailData(project.id,data);markThumbnailCard(project.id);
       if(thumbnailWorking(project.id))pollThumbnail(project.id);
     }).catch(()=>{});
@@ -246,7 +250,7 @@ async function pollThumbnail(id){
       await new Promise(resolve=>setTimeout(resolve,5000));
       try{
         const before=[thumbnailRuns.get(id),...(thumbnailLanguageRuns.get(id)||[])].filter(job=>job?.status==='running');
-        const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);readThumbnailData(id,data);
+        const data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail?compact=1`);readThumbnailData(id,data);
         if(thumbnailSelection.has(id)){
           if(before.some(job=>!job.code)&&data.job?.status==='done'&&data.job.file)thumbnailSelection.set(id,data.job.file);
           for(const job of data.thumbnail_jobs||[])if(job.status==='done'&&job.version&&before.some(old=>old.code===job.code))thumbnailSelection.set(id,`${job.code}:v${job.version}.png`);
@@ -282,7 +286,7 @@ function renderThumbView(){
 async function buildThumbView(section,project){
   const id=project.id;section.dataset.project=id;
   section.innerHTML=`<div class="thumb-view thumb-studio">
-    <header class="thumb-studio-head"><h1>Галерея прев’ю</h1><button type="button" class="icon-button thumb-view-create" title="Створити нове прев’ю" aria-label="Створити нове прев’ю"><span class="thumb-create-mark">${thumbnailIcon}<b>+</b></span><span>New Preview</span></button></header>
+    <header class="thumb-studio-head"><h1>Галерея прев’ю</h1><button type="button" class="icon-button thumb-view-create" title="Створити нове прев’ю" aria-label="Створити нове прев’ю"><span class="thumb-create-mark">${thumbnailIcon}<b>+</b></span><span>Нове прев’ю</span></button></header>
     <div class="thumb-workspace" hidden><div class="thumb-hero"><div class="thumb-view-frame" data-project-id="${esc(id)}"></div>
       <div class="thumb-preview-meta"><span class="thumb-preview-language"></span><button type="button" class="secondary thumb-set-cover" hidden>Зробити обкладинкою</button></div></div>
     <form class="thumb-compose"><header><h2>Внести правки</h2><button type="button" class="icon-button thumb-edit-close" aria-label="Закрити перегляд">×</button></header>
@@ -306,11 +310,13 @@ function buildThumbnailGallery(section,project,data){
   const id=project.id,base=`/api/projects/${encodeURIComponent(id)}`;
   const flags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
   const versions=data.versions || [];
-  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`,current:v.current,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
-    ...(data.translated_thumbnails || []).map(v=>({key:`${v.code}:${v.version_name}`,code:v.code,base:v.version_name,label:v.name,detail:v.number?`v${v.number}`:'Переклад',url:`${base}/languages/${v.code}/thumbnails/${encodeURIComponent(v.version_name)}?v=${v.stamp}`,flag:flags[v.code] || '🌐'}))];
+  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`,current:v.current,comparison:v.comparison,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
+    ...(data.translated_thumbnails || []).map(v=>({key:`${v.code}:${v.version_name}`,code:v.code,base:v.version_name,label:v.name,comparison:v.comparison,detail:v.number?`v${v.number}`:'Переклад',url:`${base}/languages/${v.code}/thumbnails/${encodeURIComponent(v.version_name)}?v=${v.stamp}`,flag:flags[v.code] || '🌐'}))];
   if(data.preview&&!versions.some(v=>v.current))items.unshift({key:'cover',code:'original',base:'current',label:'Оригінал',detail:'Обкладинка',current:true,url:`${base}/cover?v=${Date.now()}`,flag:flags[data.original_language] || '◈'});
   let selected=thumbnailSelection.get(id),filter='all';
+  if(!selected&&typeof thumbnailComparison==='function')selected=items.find(item=>item.current&&thumbnailComparison(item,items,data))?.key||null;
   const grid=section.querySelector('.thumb-gallery-grid'),filters=section.querySelector('.thumb-filters'),frame=section.querySelector('.thumb-view-frame'),choose=section.querySelector('.thumb-set-cover'),workspace=section.querySelector('.thumb-workspace'),editor=section.querySelector('.thumb-compose'),input=section.querySelector('.thumb-edit-input');
+  const compare=typeof bindThumbnailComparison==='function'?bindThumbnailComparison(section,project):()=>{};
   const draw=()=>{
     const codes=['all',...new Set(items.map(x=>x.code))];
     filters.innerHTML=codes.map(code=>`<button type="button" data-code="${code}" aria-pressed="${code===filter}">${code==='all'?'Усі':code==='original'?'Оригінал':`${flags[code] || '🌐'} ${esc(items.find(x=>x.code===code).label)}`}</button>`).join('');
@@ -323,6 +329,7 @@ function buildThumbnailGallery(section,project,data){
     frame.innerHTML=`<img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}"><div class="thumb-preview-tools"><a class="thumb-preview-download" title="Завантажити прев’ю" aria-label="Завантажити прев’ю" href="${item.url}&delivery=clean-png-v1&download=${encodeURIComponent(`Прев’ю ${item.label}.png`)}" download="Прев’ю ${esc(item.label)}.png"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg></a></div>`;
     section.querySelector('.thumb-preview-language').textContent=`${item.flag} ${item.label} · ${item.detail}`;
     input.value=thumbnailDrafts.get(`${id}:${key}`)||'';
+    compare(item,items,data);
     choose.hidden=!item.name||item.current;draw();showThumbnailState(id);markThumbnailCard(id);
     if(focus){workspace.scrollIntoView({behavior:'smooth',block:'nearest'});input.focus({preventScroll:true});}
   };

@@ -2,6 +2,8 @@
 
 The shared theme lives at the start of `frontend/style.css` in the `--ui-*` variables. Change these values to adjust all standard controls together.
 
+Reusable behavior lives in `frontend/ui-controls.js`; standard action paint, compact choices and preview comparison layout live in `frontend/ui-controls.css`. The common modal builder applies `ui-action` to standard actions. Use `StudioUI.choice` for a compact provider choice and `StudioUI.enhance` for keyboard-accessible segmented groups. The field baseline uses `:where` to avoid overriding the functional shapes of shared controls. Keep specialized players and timeline gestures outside action decoration.
+
 - `button.primary`: main action, amber background.
 - `button.secondary`: secondary action, quiet grey background and border.
 - `button.outline`: quiet outlined action, one shared grey hover and border for channel settings, Studio settings and New episode. Component rules only set size and placement.
