@@ -80,16 +80,16 @@ def repair(audio: Path, words: list[dict], language: str | None = None) -> tuple
 
 
 @job_timing.measure('recognition')
-def repair_script(audio: Path, script: str, words: list[dict], language=None, *, duration=None, sequence_verified=False) -> tuple[list[dict], int]:
+def repair_script(audio: Path, script: str, words: list[dict], language=None, *, duration=None, sequence_verified=False, order_only=False) -> tuple[list[dict], int]:
     """Rehear blocked phrases locally, preserving neighbours and the acceptance gate."""
     if not script or not words:
         return words, 0
     duration = duration or max(word['end'] for word in words)
-    compare = lambda value: speech.compare_script(script, value, duration, sequence_verified=True) if sequence_verified else speech.compare_script(script, value, duration)
+    compare = lambda value: speech.compare_script(script, value, duration, sequence_verified=sequence_verified, order_only=order_only)
     report = compare(words)
     if report['status'] == 'matched':
         return words, 0
-    blocking = speech.blocking_issues(sequence_verified)
+    blocking = speech.blocking_issues(sequence_verified, order_only=order_only)
     targets = [row['number'] for row in report['phrases']
                if blocking.intersection(row['issues'])][:MAX_SCRIPT_PHRASES]
     fixed = 0

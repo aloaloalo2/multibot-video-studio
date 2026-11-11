@@ -39,6 +39,14 @@ class SpeechOrderTest(unittest.TestCase):
             self.assertEqual(report['status'],'needs_review')
             self.assertIsNone(report['timings'])
 
+    def test_original_sentence_order_policy_rejects_missing_repeated_and_moved_sentences(self):
+        for order in [[0, 1, 3, 4, 5], [0, 1, 2, 1, 2, 3, 4, 5], [3, 4, 5, 0, 1, 2]]:
+            with self.subTest(order=order):
+                words, duration = voice(order)
+                report = speech.compare_script(' '.join(SENTENCES), words, duration, order_only=True)
+                self.assertEqual(report['status'], 'needs_review')
+                self.assertIsNone(report['timings'])
+
     def test_a_piece_said_twice_is_caught_with_both_times(self):
         report = self.compare([0, 1, 2, 1, 2, 3, 4, 5])
         self.assertEqual((report["status"], report["timings"]), ("needs_review", None))

@@ -171,6 +171,44 @@ class SpeechTest(unittest.TestCase):
         numeric = speech.compare_script(script, self.heard(script.replace('15', 'fifteen')), 30)
         self.assertEqual(numeric['status'], 'matched')
 
+    def test_original_narration_checks_sentence_presence_without_blocking_asr_spelling_or_numbers(self):
+        cases = [
+            ('Viele Fachleute raten, Winterreifen nach etwa sechs bis acht Jahren zu ersetzen.',
+             'Viele Fachleute raten, Winterreifen nach etwa 6 -8 Jahren zu ersetzen.'),
+            ('Gesetzlich verlangt sind in Deutschland 1,6 Millimeter im Winter.',
+             'Gesetzlich verlangt sind in Deutschland 1 ,6 Millimeter im Winter.'),
+            ('Du fährst vielleicht zehntausend Kilometer im Jahr und sparst zwei Wechsel.',
+             'Du fährst vielleicht 10 .000 Kilometer im Jahr und sparst 2 Wechsel.'),
+            ('Das klingt für viele falsch herum.', 'Das klingt für viele Falscher rum.'),
+            ('Repeat these movements 15 times every single morning.',
+             'Repeat these movements 50 times every single morning.'),
+        ]
+        for script, heard in cases:
+            with self.subTest(script=script):
+                words = self.heard(heard)
+                saved = [dict(word) for word in words]
+                duration = len(words) * .3 + 1
+                self.assertEqual(speech.compare_script(script, words, duration)['status'], 'needs_review')
+                report = speech.compare_script(script, words, duration, order_only=True)
+                self.assertEqual(report['status'], 'matched')
+                self.assertEqual(report['recognition_policy'], 'sentence_order')
+                self.assertEqual(report['matched_phrases'], report['phrase_count'])
+                self.assertTrue(report['phrases'][0]['issues'])
+                self.assertIsNotNone(report['timings'])
+                self.assertNotIn('sequence_verification', report)
+                self.assertEqual(words, saved)
+
+    def test_order_policy_still_rejects_unrelated_or_missing_speech_and_overlapping_boundaries(self):
+        candidates = [self.heard('Different unrelated text. Nothing matches here.'),
+                      self.words()[:-3], self.words()[3:]]
+        overlap = self.words(); overlap[3]['start'] = .4
+        candidates.append(overlap)
+        for words in candidates:
+            with self.subTest(words=words):
+                report = speech.compare_script(self.script, words, 6, order_only=True)
+                self.assertEqual(report['status'], 'needs_review')
+                self.assertIsNone(report['timings'])
+
     def test_analysis_owned_by_another_live_server_is_not_interrupted(self):
         with patch.object(analysis_jobs.os, "kill") as check:
             self.assertTrue(analysis_jobs.owner_alive({"id": "test", "owner_pid": analysis_jobs.os.getpid() + 100000}))

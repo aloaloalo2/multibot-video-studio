@@ -139,7 +139,7 @@ function renderNarrationAnalysis(panel,pid){
       if(note&&job.status==='failed')note.textContent=job.error||'Не вдалося розпізнати озвучку';
       else if(note&&job.status==='complete'&&report?.applied)note.textContent='';
       else if(note&&job.status==='complete'&&report&&!report.applied){
-        const blocking=['missing_boundary','uncertain_boundary','missing_speech','repeated_speech','out_of_order',...(!report.sequence_verification?['low_phrase_match','number_difference']:[])];
+        const blocking=['missing_boundary','uncertain_boundary','missing_speech','repeated_speech','out_of_order',...(!report.sequence_verification&&report.recognition_policy!=='sentence_order'?['low_phrase_match','number_difference']:[])];
         const phrases=(report.phrases||[]).filter(row=>(row.issues||[]).some(issue=>blocking.includes(issue))).map(row=>row.number);
         if(report.status==='needs_review')note.textContent=phrases.length?'Потрібно уточнити розпізнавання · фрази '+phrases.slice(0,8).join(', '):'Потрібно уточнити порядок речень в озвучці';
         else if(report.status==='script_changed')note.textContent='Сценарій змінився. Повторіть перевірку озвучки.';

@@ -59,3 +59,11 @@ class StatusViewsTest(unittest.TestCase):
     def test_compact_diagnostics_keep_blocking_sentence_numbers_first(self):
         full={'phrases':[{'number':n,'issues':['text_difference']} for n in range(10)]+[{'number':99,'issues':['out_of_order']}]}
         self.assertEqual(views.report(full)['phrases'][0]['number'],99)
+
+    def test_original_policy_keeps_numeric_differences_diagnostic_and_prioritizes_real_order_failure(self):
+        full = {'recognition_policy':'sentence_order',
+                'phrases':[{'number':n,'issues':['number_difference','low_phrase_match']} for n in range(10)]
+                          + [{'number':99,'issues':['out_of_order']}]}
+        summary = views.report(full)
+        self.assertEqual(summary['recognition_policy'], 'sentence_order')
+        self.assertEqual(summary['phrases'][0]['number'], 99)

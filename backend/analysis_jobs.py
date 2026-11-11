@@ -92,9 +92,9 @@ def creation_status(project, load_job):
         return {'status': job['status'], 'stage': 'recognizing', 'progress': job.get('progress', 0), 'job': job}
     if job.get('status') == 'failed' or not (analysis.get('report') or {}).get('applied'):
         report=analysis.get('report') or {}
-        blocking=speech.blocking_issues(bool(report.get('sequence_verification'))) | {'repeated_speech','out_of_order'}
+        blocking=speech.blocking_issues(bool(report.get('sequence_verification')), order_only=report.get('recognition_policy')=='sentence_order') | {'repeated_speech','out_of_order'}
         blocked=[str(row['number']) for row in report.get('phrases',[]) if blocking.intersection(row.get('issues',[]))]
-        reason='Потрібно уточнити розпізнавання фраз: '+', '.join(blocked[:8]) if blocked else 'Текст не збігся з озвучкою'
+        reason='Потрібно уточнити порядок або наявність фраз: '+', '.join(blocked[:8]) if blocked else 'Не вдалося підтвердити наявність і порядок речень'
         return {'status': 'failed', 'stage': 'recognizing', 'error': job.get('error') or reason}
     direction = director.state(project['id']) or {}
     if direction.get('status') in {'queued', 'running'}:
@@ -243,13 +243,13 @@ def worker(job, script, save_job):
             else:
                 words, engine["repaired_holes"] = speech_repair.repair(path, words, engine.get("language"))
                 if script:
-                    words,engine['repaired_script_phrases']=speech_repair.repair_script(path,script,words,engine.get('language'),duration=duration,sequence_verified=bool(sequence))
+                    words,engine['repaired_script_phrases']=speech_repair.repair_script(path,script,words,engine.get('language'),duration=duration,sequence_verified=bool(sequence),order_only=True)
             if script is None:
                 # No script from the author: the recognised voice becomes the script of the episode.
                 script = speech.transcript_script(words)
             progress(90, "comparing")
             if report is None:
-                report = speech.compare_script(script, words, duration, sequence_verified=True) if sequence else speech.compare_script(script, words, duration)
+                report = speech.compare_script(script, words, duration, sequence_verified=bool(sequence), order_only=True)
             if sequence:
                 report['sequence_verification'] = sequence
             report.update(engine=engine, source={"asset_id": source["id"], "name": source["name"], "kind": source["kind"], "sha256": original_hash},

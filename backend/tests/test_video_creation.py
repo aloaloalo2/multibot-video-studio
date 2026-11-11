@@ -133,6 +133,7 @@ class CreationTests(unittest.TestCase):
             repair.assert_not_called()
         else:
             repair.assert_called_once()
+            self.assertTrue(repair.call_args.kwargs['order_only'])
         self.handoff_observations=handoff
         return recognize.call_count,store.read_json(self.root/'analysis'/'next'/'result.json')
 
@@ -144,6 +145,23 @@ class CreationTests(unittest.TestCase):
         self.assertEqual(report['timing_source'], 'generated_takes')
         self.assertEqual(report['timings']['sentences'][0]['end'], 1.5)
         self.assertEqual(report['engine']['repaired_script_phrases'], 0)
+
+    def test_uploaded_narration_records_order_policy_without_claiming_generated_assembly(self):
+        _, report = self.run_cached_analysis({})
+        self.assertTrue(report['applied'])
+        self.assertEqual(report['recognition_policy'], 'sentence_order')
+        self.assertNotIn('sequence_verification', report)
+
+    def test_failure_status_names_only_real_missing_or_moved_phrases_under_order_policy(self):
+        store.atomic_json(self.root/'analysis-state.json', {'job_id':'j','create_video':True})
+        report = {'applied':False,'recognition_policy':'sentence_order', 'phrases':[
+            {'number':12,'issues':['number_difference']},
+            {'number':13,'issues':['low_phrase_match']},
+            {'number':95,'issues':['out_of_order']}]}
+        with patch.object(analysis_jobs, 'latest', return_value={'job':{'status':'complete'},'report':report}):
+            result = analysis_jobs.creation_status(self.project, lambda _:None)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error'], 'Потрібно уточнити порядок або наявність фраз: 95')
 
     def test_recognizer_failure_uses_proven_take_times_and_unknown_audio_still_stops(self):
         proof = {'version': 2, 'source': 'generated_takes', 'sentences': 1,

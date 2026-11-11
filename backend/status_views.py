@@ -35,13 +35,13 @@ def cached_file(path, project):
 def report(value):
     if not isinstance(value, dict):return None
     keys = ('status', 'applied', 'script_sha256', 'studio_script_sha256', 'word_match_percent',
-            'phrase_count', 'matched_phrases', 'timing_source')
+            'phrase_count', 'matched_phrases', 'timing_source', 'recognition_policy')
     result = {key: value[key] for key in keys if key in value}
     if value.get('sequence_verification'):
         proof = value['sequence_verification']
         result['sequence_verification'] = {key: proof[key] for key in ('version', 'verified') if key in proof}
     blocking = {'missing_boundary','uncertain_boundary','missing_speech','repeated_speech','out_of_order'}
-    if not value.get('sequence_verification'):blocking.update(('low_phrase_match','number_difference'))
+    if not value.get('sequence_verification') and value.get('recognition_policy')!='sentence_order':blocking.update(('low_phrase_match','number_difference'))
     phrases = [row for row in value.get('phrases', []) if row.get('issues')]
     phrases.sort(key=lambda row: not bool(blocking.intersection(row['issues'])))
     result['phrases'] = [{'number': row.get('number'), 'issues': row['issues']} for row in phrases[:8]]

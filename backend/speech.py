@@ -38,8 +38,8 @@ MAX_UNHEARD_RUN = 3
 BLOCKING_ISSUES = {"missing_boundary", "uncertain_boundary", "missing_speech", "low_phrase_match", "number_difference"}
 
 
-def blocking_issues(sequence_verified=False):
-    return BLOCKING_ISSUES - {'low_phrase_match', 'number_difference'} if sequence_verified else BLOCKING_ISSUES
+def blocking_issues(sequence_verified=False, *, order_only=False):
+    return BLOCKING_ISSUES - {'low_phrase_match', 'number_difference'} if sequence_verified or order_only else BLOCKING_ISSUES
 
 
 def transcript_script(words):
@@ -53,7 +53,7 @@ def transcript_script(words):
     return text
 
 
-def _compare_in_order(script, words, duration, sequence_verified=False):
+def _compare_in_order(script, words, duration, sequence_verified=False, *, order_only=False):
     sentences = planner.split_sentences(script)
     locale = number_text.detect_locale(script)
     reference, ranges, chunks, token_chunks = [], [], [], []
@@ -169,12 +169,15 @@ def _compare_in_order(script, words, duration, sequence_verified=False):
                                  "word_index": k,
                                  "estimated": any(estimated[a] for a, owners in enumerate(token_chunks) if k in owners)})
     percent = round(len(mapping) / len(reference) * 100, 1) if reference else 0
-    blocking = blocking_issues(sequence_verified)
-    ready = bool(phrases) and (sequence_verified or percent >= MIN_MATCH_PERCENT) and all(not blocking.intersection(phrase["issues"]) for phrase in phrases)
+    blocking = blocking_issues(sequence_verified, order_only=order_only)
+    # Original narration needs evidence that each sentence is present in order.
+    # ASR spelling/numerals remain diagnostics; they are not an assembly proof.
+    ready = bool(phrases) and (sequence_verified or order_only or percent >= MIN_MATCH_PERCENT) and all(not blocking.intersection(phrase["issues"]) for phrase in phrases)
     timings = {"duration": duration, "sentences": [{"text": phrase["text"], "start": phrase["start"], "end": phrase["end"]} for phrase in phrases]} if ready else None
     if timings:
         planner.validate_sentence_timings(script, timings["sentences"], duration)
     return {"status": "matched" if ready else "needs_review", "matched_words": len(mapping),
+            **({'recognition_policy': 'sentence_order'} if order_only else {}),
             "script_words": len(reference), "recognized_words": len(heard),
             "word_match_percent": percent, "minimum_phrase_match_percent": MIN_PHRASE_MATCH_PERCENT,
             "corrected_words": len(reference) - len(mapping),
@@ -258,5 +261,7 @@ def transcribe(path, duration, progress, language=None):
 # A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
 # comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
 @job_timing.measure('verification')
-def compare_script(script, words, duration, sequence_verified=False):
-    return speech_order.mark(script, words, _compare_in_order(script, words, duration, sequence_verified), blocking_issues(sequence_verified))
+def compare_script(script, words, duration, sequence_verified=False, *, order_only=False):
+    return speech_order.mark(script, words,
+                             _compare_in_order(script, words, duration, sequence_verified, order_only=order_only),
+                             blocking_issues(sequence_verified, order_only=order_only))

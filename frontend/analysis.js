@@ -3,19 +3,20 @@ const speechIssueNames={text_difference:'Розбіжність тексту',mi
 
 function appendSpeechReport(target,report,{transcript:withTranscript=true}={}){
   const proven=report.applied&&report.timing_source==='generated_takes'&&report.sequence_verification?.version===2;
+  const orderOnly=report.recognition_policy==='sentence_order';
   const box=document.createElement('section');box.className='speech-report';
-  const title=document.createElement('h3');title.textContent=proven?'Порядок речень підтверджено':report.applied?'Таймінги застосовано':'Потрібна перевірка';box.append(title);
+  const title=document.createElement('h3');title.textContent=proven||orderOnly&&report.applied?'Порядок речень підтверджено':report.applied?'Таймінги застосовано':'Потрібна перевірка';box.append(title);
   const counts=document.createElement('div');counts.className='speech-report-counts';
-  counts.innerHTML=`<span><strong>${Number(report.word_match_percent).toFixed(1).replace('.',',')}%</strong> слів зіставлено</span><span><strong>${report.matched_phrases} з ${report.phrase_count}</strong> ${proven?'меж речень підтверджено':'фраз без зауважень'}</span>`;box.append(counts);
+  counts.innerHTML=`<span><strong>${Number(report.word_match_percent).toFixed(1).replace('.',',')}%</strong> слів зіставлено</span><span><strong>${report.matched_phrases} з ${report.phrase_count}</strong> ${proven||orderOnly?'речень підтверджено':'фраз без зауважень'}</span>`;box.append(counts);
   const source=document.createElement('p');source.className='plan-note';source.textContent=report.source.name;box.append(source);
   if(report.status==='script_changed' || report.status==='source_changed'){
     const warning=document.createElement('p');warning.className='speech-warning';warning.textContent=report.status==='script_changed'?'Сценарій змінився під час обробки. Повторіть аналіз.':'Медіафайл змінився під час обробки. Повторіть аналіз.';box.append(warning);
   }
-  const help=document.createElement('p');help.className='plan-note';help.textContent=proven?'Усі фрагменти озвучки збережені в порядку сценарію. Розпізнавання уточнює час слів.':'Збіг слів показує відповідність сценарію. Автоматичні часові межі та сумнівні фрази перевіряються окремо.';box.append(help);
+  const help=document.createElement('p');help.className='plan-note';help.textContent=proven?'Усі фрагменти озвучки збережені в порядку сценарію. Розпізнавання уточнює час слів.':orderOnly?'Перевіряється наявність і порядок речень. Розбіжності слів і чисел збережено у звіті.':'Збіг слів показує відповідність сценарію. Автоматичні часові межі та сумнівні фрази перевіряються окремо.';box.append(help);
   const issues=(report.phrases || []).filter(phrase=>phrase.issues.length);
   if(issues.length){
     const details=document.createElement('details');details.className='speech-issues';
-    const summary=document.createElement('summary');summary.textContent=report.applied?`Дрібні розбіжності, виправлені за сценарієм: ${issues.length}`:`Фрази для перевірки: ${issues.length}`;details.append(summary);
+    const summary=document.createElement('summary');summary.textContent=orderOnly&&report.applied?`Розбіжності розпізнавання: ${issues.length}`:report.applied?`Дрібні розбіжності, виправлені за сценарієм: ${issues.length}`:`Фрази для перевірки: ${issues.length}`;details.append(summary);
     const list=document.createElement('div');
     for(const phrase of issues){const item=document.createElement('article'),match=phrase.word_match_percent??(phrase.words?phrase.matched_words/phrase.words*100:0);item.innerHTML=`<strong>Фраза ${phrase.number} · ${Math.round(match)}%</strong><p>${esc(phrase.issues.map(issue=>speechIssueNames[issue] || issue).join(' · '))}</p><p><b>Сценарій:</b> ${esc(phrase.text)}</p><p><b>Розпізнано:</b> ${esc(phrase.recognized || 'Не знайдено відповідного фрагмента')}</p>`;list.append(item);}details.append(list);box.append(details);
   }

@@ -90,6 +90,15 @@ class ScriptPhraseRepairTest(unittest.TestCase):
             self.assertEqual(speech_repair.repair_script(Path('voice.wav'), self.script, self.full, duration=24), (self.full, 0))
         recognize.assert_not_called()
 
+    def test_order_policy_does_not_re_recognize_minor_numeric_and_word_differences(self):
+        script = 'Gesetzlich verlangt sind in Deutschland 1,6 Millimeter im Winter. Das klingt für viele falsch herum.'
+        heard = script.replace('1,6', '1 ,6').replace('falsch herum', 'Falscher rum')
+        words = [w(text, i * .3, i * .3 + .2) for i, text in enumerate(heard.split())]
+        with patch.object(speech_repair.speech, 'transcribe') as recognize:
+            result = speech_repair.repair_script(Path('voice.wav'), script, words, 'de', duration=10, order_only=True)
+        self.assertEqual(result, (words, 0))
+        recognize.assert_not_called()
+
     def test_bad_or_failed_second_pass_keeps_original_evidence_and_no_retry_loop(self):
         for response in [([w('Unrelated.', 0, .3)], {}), RuntimeError('recognition unavailable')]:
             with self.subTest(response=response), patch.object(speech_repair, 'cut', return_value=True), \
