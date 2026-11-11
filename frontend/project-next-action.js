@@ -9,11 +9,12 @@ function projectNextAction(model){
   if(model.producing)return action('wait','Створюємо кадри',{disabled:true});
   if(model.metadataPending)return action('metadata','Доповнити метадані',{reason:model.draftError||''});
   if(model.hooksPending)return model.hasHooks?action('hook','Обрати зачин'):action('openings','Створити зачини',{reason:model.draftError||''});
+  if(model.draftReadError)return action('save','Завантажити сценарій',{reason:model.draftReadError});
+  if(model.draftLoading)return action('wait','Завантажуємо чернетку',{disabled:true});
   if(model.canExport&&!model.pendingScript)return action('export','Експорт MP4');
   if(model.directionRecovery&&!model.pendingScript)return action('direction',model.directionRecoveryLabel||'Оновити план кадрів',{reason:model.directionRecoveryReason||''});
   if(model.draftConflict)return action('save','Зберегти мою версію',{reason:'Є інші правки. Попередня версія залишиться в історії.'});
   if(model.draftSaveError)return action('save','Зберегти правки',{reason:model.draftSaveError});
-  if(model.draftLoading&&model.hasScriptField)return action('wait','Завантажуємо чернетку',{disabled:true});
   if(model.direct&&model.hasPictures)return action('export','Експорт MP4',{disabled:!model.canExport,reason:model.productionReason||'',settings:!model.canExport?'voice':null});
   if(model.fileMode)return model.hasFile?action('upload',model.direct?'Розпізнати аудіо':'Створити відео',{disabled:!model.uploadEnabled,reason:model.uploadEnabled?'':'Завантажуємо озвучку'}):action('file','Завантажити озвучку');
   if(model.readyVoice&&!model.pendingScript)return action('create',model.direct?'Розпізнати аудіо':'Створити відео',{disabled:!model.createEnabled,reason:model.createReason||(!model.createEnabled?'Завантажуємо стан випуску':''),settings:!model.createEnabled?'audio':null});
@@ -47,7 +48,7 @@ function projectNextContext(){
   const exporting=state.job?.project_id===project.id&&['queued','running','cancelling'].includes(state.job.status);
   const model={
     script,hasScriptField:!!field,pendingScript:!!(working.dirty||working.pending)&&script.trim()!==accepted.trim(),
-    draftLoading:!!working.loading,draftConflict:!!working.conflict,draftSaveError:working.dirty&&working.error,
+    draftLoading:!!working.loading,draftReadError:!working.loaded&&working.error,draftConflict:!!working.conflict,draftSaveError:working.dirty&&working.error,
     exporting,exportLabel:$('export-open')?.textContent,
     writing:pending&&['queued','running','cancelling'].includes(pending.status),writingLabel:{openings:'Готуємо зачини',script:'Пишемо сценарій',metadata:'Готуємо метадані'}[pending?.stage],
     hooksPending:!!pending&&!pending.script_saved&&pending.stage!=='metadata',metadataPending:!!pending&&(pending.script_saved||pending.stage==='metadata'),hasHooks:!!root.querySelector('.episode-hook-option:not([disabled])'),draftError:pending?.error,

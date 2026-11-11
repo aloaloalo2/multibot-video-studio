@@ -25,6 +25,10 @@ test('local edits take precedence over an older ready voice and complete frames'
   assert.equal(decide({pendingScript:true,readyVoice:true,hasFrames:true,canExport:true}).kind,'narrate');
   assert.equal(decide({pendingScript:true,readyVoice:true,hasFrames:true,canExport:true,hasScriptField:false}).kind,'edit');
 });
+test('an old finished timeline cannot export before pending working text is loaded',()=>{
+  const value=decide({draftLoading:true,canExport:true,hasScriptField:false});assert.equal(value.kind,'wait');assert.equal(value.disabled,true);
+  const failure=decide({draftReadError:'Студія не відповідає',canExport:true,hasScriptField:false});assert.equal(failure.kind,'save');assert.equal(failure.reason,'Студія не відповідає');
+});
 test('a durable-draft conflict has an explicit recovery action',()=>{
   const value=decide({draftConflict:true});assert.equal(value.kind,'save');assert.equal(value.disabled,false);assert.match(value.reason,/історії/);
 });
