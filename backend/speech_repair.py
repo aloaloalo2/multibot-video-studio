@@ -8,6 +8,7 @@ the new words replace the old ones there only when the second pass heard more. T
 """
 from __future__ import annotations
 
+import job_timing
 import shutil, subprocess, tempfile
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def cut(audio: Path, start: float, end: float, target: Path) -> bool:
     return run.returncode == 0 and target.is_file()
 
 
+@job_timing.measure('recognition')
 def repair(audio: Path, words: list[dict], language: str | None = None) -> tuple[list[dict], int]:
     """The words with every swallowed hole recognised again; also how many holes gained words."""
     spans = holes(words)
@@ -77,6 +79,7 @@ def repair(audio: Path, words: list[dict], language: str | None = None) -> tuple
     return result + words[done:], fixed
 
 
+@job_timing.measure('recognition')
 def repair_script(audio: Path, script: str, words: list[dict], language=None, *, duration=None, sequence_verified=False) -> tuple[list[dict], int]:
     """Rehear blocked phrases locally, preserving neighbours and the acceptance gate."""
     if not script or not words:

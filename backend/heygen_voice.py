@@ -6,6 +6,7 @@ import urllib.error
 import urllib.parse
 import credentials
 import store
+import job_timing
 
 API='https://api.heygen.com'
 MODELS={'heygen-voice-1':'HeyGen Voice 1','heygen-voice-1-turbo':'HeyGen Voice Turbo','heygen-voice-1-turbo-free':'HeyGen Voice Turbo Free','starfish':'Starfish'}
@@ -28,6 +29,7 @@ def key():
     try:return credentials.vault().read(credentials.service_name('heygen'))
     except RuntimeError:raise store.StudioError('Додайте ключ HeyGen у загальних налаштуваннях студії') from None
 
+@job_timing.measure('service')
 def call(path,body=None,*,idempotency_key=None):
     data=json.dumps(body).encode() if body is not None else None
     headers={'X-Api-Key':key(),'Content-Type':'application/json'}
@@ -73,6 +75,7 @@ def voices(model='heygen-voice-1'):
             if not page.get('has_more') or not token:break
     return {'voices':result}
 
+@job_timing.measure('service')
 def synthesize(settings):
     if not settings.get('heygen_voice_id'):raise store.StudioError('Виберіть голос HeyGen')
     if settings['heygen_model']=='starfish':return synthesize_starfish(settings)

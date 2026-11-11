@@ -12,6 +12,7 @@ import speech
 import speech_repair
 import director
 import store
+import job_timing
 import narration_ending
 import number_text
 import narration_sequence
@@ -171,14 +172,16 @@ def start(project, asset_id, save_job, load_job, script=None, create_video=False
     return job
 
 
+@job_timing.track('analysis', project='job', job='job')
 def worker(job, script, save_job):
     def progress(value, stage="recognizing"):
+        job_timing.advance({'loading_model':'recognition', 'recognizing':'recognition', 'comparing':'verification'}.get(stage, 'preparation'))
         job.update(status="running", progress=value, stage=stage)
         save_job(job)
     try:
         work = store.project_dir(job["project_id"]) / "analysis" / job["id"]
         work.mkdir(parents=True, exist_ok=True)
-        with RUN_LOCK:
+        with job_timing.queued_lock(RUN_LOCK):
             progress(5, "preparing")
             project = store.load_project(job["project_id"])
             source = store.resolve_asset(project, job["source_asset_id"])
@@ -255,7 +258,7 @@ def worker(job, script, save_job):
                           script_from=job.get("script_from", "plan"))
             if store.audio_fingerprint(original) != original_hash or store.audio_fingerprint(path) != audio_hash:
                 report["status"] = "source_changed"
-            with store.LOCK:
+            with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
                 snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current
                 if job.get("script_from", "plan") in {"plan", "source"} and (not snapshot or snapshot.get("script") != script):

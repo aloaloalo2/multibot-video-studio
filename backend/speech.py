@@ -1,6 +1,7 @@
 """Local speech recognition and conservative script-to-word alignment."""
 from __future__ import annotations
 
+import job_timing
 import difflib
 import math
 import os
@@ -228,6 +229,7 @@ def transcribe_mlx(model_path, path, duration, progress, language=None):
                    "language_probability": None, "local": True}
 
 
+@job_timing.measure('recognition')
 def transcribe(path, duration, progress, language=None):
     global _MODEL
     model_path = mlx_model_path()
@@ -255,5 +257,6 @@ def transcribe(path, duration, progress, language=None):
 
 # A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
 # comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
+@job_timing.measure('verification')
 def compare_script(script, words, duration, sequence_verified=False):
     return speech_order.mark(script, words, _compare_in_order(script, words, duration, sequence_verified), blocking_issues(sequence_verified))

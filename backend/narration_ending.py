@@ -5,6 +5,7 @@ import subprocess
 import threading
 from pathlib import Path
 import store
+import job_timing
 
 SECONDS = 1.5
 VERSION = 1
@@ -44,6 +45,7 @@ def prepare_file(pid, source):
     return output, saved
 
 
+@job_timing.measure('saving')
 def import_audio(project, source, source_name='narration', reverb=None, room_noise=None):
     """Preserve raw takes; reuse a matching prepared import instead of adding another pause."""
     with LOCK:

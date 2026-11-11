@@ -20,6 +20,14 @@ The backend checks the result and moves the complete MP4 into the selected episo
 
 On Apple Silicon, universal timelines up to 1080p and 30 fps use the GPU renderer when Swift is available. It emits progress, mixes audio using the existing renderer, and fully decodes the completed MP4 before publishing it. Variable-frame-rate, rotated, interlaced, HDR, blurred-video and other unsupported slices use the established renderer. GPU failure falls back to the established export and resets progress. Set `MULTIBOT_GPU_EXPORT=0` to select the established path for diagnostics. Cancellation terminates the process group and removes temporary output.
 
+## Module boundaries
+
+`app.py` owns the HTTP/security gate, project requests, lifecycle and export queue. `channel_api.py` handles channel settings, identities, voices and transfer through that same gate. Native folder selection and busy checks remain explicit injected callbacks. The channel media endpoints share one handler.
+
+`store.py` remains the public project storage API. It re-exports atomic file helpers from `storage_io.py`, errors from `studio_errors.py` and pure timeline checks/edits from `timeline_model.py`. Those small modules have no dependency on the project store or external services. JSON and text writes share one atomic writer; observations use its existing-directory mode to avoid recreating deleted projects.
+
+`job_timing.py` records exclusive wall time inside existing workers. See [workflow timing](../docs/workflow-timing.md) for the read-only API, retention and timing semantics.
+
 ## API
 
 JSON mutations require an object with `Content-Type: application/json`, local `Host`, and same-origin browser requests. Non-object bodies, truncated requests, non-finite numbers and excessive JSON nesting return 400 before dispatch. Binary media and settings ZIP uploads use their existing dedicated routes. Errors return `{ "error": "..." }` with a non-2xx status.
@@ -41,6 +49,7 @@ JSON mutations require an object with `Content-Type: application/json`, local `H
 | POST | `/api/projects/import` | `{channel_id,plan_path,name?}` imports `План видео.json`; `{project}` |
 | POST | `/api/projects/import/pick` | `{channel_id,name?}` opens the native JSON chooser; `{project}` |
 | GET | `/api/projects/<id>` | `{project}` with editable scenes, tracks, assets, revision |
+| GET | `/api/projects/<id>/performance` | Bounded local task/stage timings; no service requests or job mutations |
 | PATCH | `/api/projects/<id>` | Rename with `{name,expected_revision?}` |
 | DELETE | `/api/projects/<id>` | Permanently removes managed project data and the episode's `VideoKey` media folder; preserves the author's other episode files and Razgon source |
 | POST | `/api/projects/<id>/restore` | Clears an earlier legacy soft-delete marker while its managed project still exists; cannot undo permanent removal |

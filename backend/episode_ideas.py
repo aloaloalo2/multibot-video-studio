@@ -12,6 +12,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import store
+import job_timing
 import director
 import credentials
 import project_costs
@@ -302,6 +303,7 @@ def unpack(text):
     return json.loads(text)
 
 
+@job_timing.measure('service')
 def deepseek(prompt, root, identity):
     import agent_openrouter
     try: key = credentials.vault().read(credentials.service_name('openrouter'))
@@ -519,6 +521,7 @@ def public(data):
     return result
 
 
+@job_timing.track(lambda values: values['data'].get('stage'), project='data', job='data')
 def work(cid, data):
     with writing_jobs.scope(data):
         _work(cid, data)

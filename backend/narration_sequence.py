@@ -11,6 +11,7 @@ from fractions import Fraction
 import number_text
 import planner
 import store
+import job_timing
 
 
 def sentence_timings(root, baseline, rows, ending, job, base_hash):
@@ -98,6 +99,7 @@ def tempo_verified(root, job, baseline, base_hash, source_hash):
     return True
 
 
+@job_timing.measure('verification')
 def verify(project, asset, script):
     """Only an unchanged generated asset and an exact reconstruction qualify.
 
@@ -164,6 +166,7 @@ def verify(project, asset, script):
         return None
 
 
+@job_timing.measure('verification')
 def align(script, words, duration, proof):
     """Use proven take order/times; recognition refines only words inside each take."""
     import speech

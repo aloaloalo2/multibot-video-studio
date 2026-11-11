@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 import director
 import frame_progress
 import store
+import job_timing
 import channel_hero
 import image_delivery
 
@@ -280,6 +281,7 @@ def clone_brief(title: str, wishes: str, name: str, refs: list[Path]) -> str:
             "Your role at this step is to write the prompt; the Studio runs image generation afterward.")
 
 
+@job_timing.measure('service')
 def write_prompt_codex(text: str, work: Path, refs: list[Path], name: str) -> tuple[str, dict]:
     """A fresh text-only authoring session; its visual context never reaches the drawing session."""
     output = work / ('codex-prompt-' + Path(name).stem + '.txt')
@@ -296,6 +298,7 @@ def write_prompt_codex(text: str, work: Path, refs: list[Path], name: str) -> tu
     return written, {}
 
 
+@job_timing.measure('service')
 def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None):
     """An isolated fresh session receives text and optional host identity, with no competitor pixels/files/history."""
     with tempfile.TemporaryDirectory(prefix='videokey-new-thumbnail-') as temp:
@@ -345,6 +348,7 @@ This creates a new thumbnail version. Use the attached frames for style and char
 """
 
 
+@job_timing.measure('service')
 def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) -> tuple[str, dict]:
     """Claude Code writes the picture's prompt; returns it with the run's answer (cost, session)."""
     try:
@@ -371,6 +375,7 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
 # A trial the author asked for on 1 November 2026: DeepSeek (OpenRouter) writes the prompt instead of Claude Opus, from
 # the same brief, the same reference frames (sent as pictures) and the story bible (sent as text), so the two prompts can
 # be compared on the same Codex drawing. «Згенерувати з DeepSeek» in the thumbnail window starts it.
+@job_timing.measure('service')
 def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id: str | None = None) -> tuple[str, dict]:
     import base64, io, urllib.request
     import agent_openrouter, credentials
@@ -431,6 +436,7 @@ Use the built-in image generation tool and make exactly one image. Save it in th
 and reply only with the saved path."""
 
 
+@job_timing.track('thumbnail', project='pid', job=lambda values: state(values['pid']))
 def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> None:
     data = {}
     try:
@@ -493,13 +499,14 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
         # Clone drawings run in a fresh, clean workspace with text and optional host identity only.
-        if clone and not base:
-            result = draw_clone_from_text(written, name, work, hero)
-        else:
-            command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
-            for ref in refs: command += ["-i", str(ref)]
-            result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
-                                    capture_output=True, timeout=TIMEOUT)
+        with job_timing.span('service'):
+            if clone and not base:
+                result = draw_clone_from_text(written, name, work, hero)
+            else:
+                command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
+                for ref in refs: command += ["-i", str(ref)]
+                result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
+                                        capture_output=True, timeout=TIMEOUT)
         (work / f"Лог генерації v{number}.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
         made = work / name
         try:
@@ -507,19 +514,20 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 image.verify()
         except (OSError, UnidentifiedImageError):
             raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
-        kept = work / PREVIEW
-        preview(project)                        # a thumbnail put into the episode folder by hand is kept first
-        if kept.is_file() and not any(filecmp.cmp(kept, other, shallow=False) for other in work.glob("Превью *.png")):
-            shutil.copy2(kept, work / f"Превью до v{number}.png")
-        shutil.copyfile(made, kept)
-        # the channel rules keep the thumbnail next to the video too, with its prompt in «Превью», while that folder exists
-        if folder.is_dir():
-            (folder / FOLDER).mkdir(exist_ok=True)
-            image_delivery.copy_png(made, folder / FOLDER / made.name)
-            prompt_file = work / f"Промпт прев'ю v{number}.txt"
-            shutil.copyfile(prompt_file, folder / FOLDER / prompt_file.name)
-            image_delivery.copy_png(made, folder / PREVIEW)
-        data.update(status="done", file=name, finished_at=time.time(), error=None)
+        with job_timing.span('saving'):
+            kept = work / PREVIEW
+            preview(project)                        # a thumbnail put into the episode folder by hand is kept first
+            if kept.is_file() and not any(filecmp.cmp(kept, other, shallow=False) for other in work.glob("Превью *.png")):
+                shutil.copy2(kept, work / f"Превью до v{number}.png")
+            shutil.copyfile(made, kept)
+            # the channel rules keep the thumbnail next to the video too, with its prompt in «Превью», while that folder exists
+            if folder.is_dir():
+                (folder / FOLDER).mkdir(exist_ok=True)
+                image_delivery.copy_png(made, folder / FOLDER / made.name)
+                prompt_file = work / f"Промпт прев'ю v{number}.txt"
+                shutil.copyfile(prompt_file, folder / FOLDER / prompt_file.name)
+                image_delivery.copy_png(made, folder / PREVIEW)
+            data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
         late = ({"deepseek": "DeepSeek", "trending": "Codex"}.get(writer, "Claude")) + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
         data.update(status="failed", error=late, finished_at=time.time())

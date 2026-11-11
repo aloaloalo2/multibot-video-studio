@@ -667,6 +667,7 @@ function saveMonitorSettings(){
 function renderProject() {
   if(state.project&&state.view==='plan'){state.view='editor';syncRoute();}
   updateMonitorControls();
+  if(typeof updatePerformanceButton==='function')updatePerformanceButton();
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);

@@ -9,6 +9,7 @@ import project_costs
 import narration_ending
 from pathlib import Path
 import store
+import job_timing
 import languages
 import channel_voice_lab as lab
 
@@ -24,6 +25,7 @@ def release_heygen(pid):
         HEYGEN_TURN.notify_all()
 
 
+@job_timing.measure('queue')
 def wait_heygen(pid, job):
     with HEYGEN_TURN:
         if pid not in HEYGEN_QUEUE:HEYGEN_QUEUE.append(pid)
@@ -232,6 +234,7 @@ def start(project,text,resume=False):
         raise
     return {'job':job,'voice_script':script_record}
 
+@job_timing.track('narration', project='project', job='job')
 def run(project,text,settings,ref,entries,job):
     pid=project['id'];cid=project['channel_id'];folder=None
     try:
@@ -268,16 +271,17 @@ def run(project,text,settings,ref,entries,job):
                 pending.replace(target)
             job['completed']=i+1;store.atomic_json(folder/'job.json',job)
         if (folder/'cancel').exists():raise Cancelled()
-        listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
-        target=folder/'Озвучка.mp3'
-        languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
-        shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
-        import narration_effects
-        effect = narration_effects.normalize(settings.get('reverb'))
-        noise = narration_effects.noise_options(settings.get('room_noise'))
-        asset=narration_ending.import_audio(store.load_project(pid),target,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(store.load_project(pid),target,'narration')
-        store.atomic_json(folder/'phrases.json',entries)
-        job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=narration_ending.SECONDS,finished_at=time.time())
+        with job_timing.span('saving'):
+            listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
+            target=folder/'Озвучка.mp3'
+            languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
+            shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
+            import narration_effects
+            effect = narration_effects.normalize(settings.get('reverb'))
+            noise = narration_effects.noise_options(settings.get('room_noise'))
+            asset=narration_ending.import_audio(store.load_project(pid),target,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(store.load_project(pid),target,'narration')
+            store.atomic_json(folder/'phrases.json',entries)
+            job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=narration_ending.SECONDS,finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())
     except Exception as error:job.update(status='failed',error=str(error))
     finally:

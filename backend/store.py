@@ -16,7 +16,6 @@ import threading
 import time
 import unicodedata
 import uuid
-from contextlib import contextmanager
 from pathlib import Path
 
 import planner
@@ -27,6 +26,23 @@ import joins
 import typography
 import workspace_paths
 import word_blacklist
+
+from studio_errors import StudioError as StudioError, UKRAINIAN as UKRAINIAN
+from storage_io import atomic_json as atomic_json, atomic_text as atomic_text, read_json as read_json, read_snapshot as read_snapshot
+from timeline_model import (
+    recompute_timeline as recompute_timeline,
+    keep_overlays_on_top as keep_overlays_on_top,
+    recompute_universal_duration as recompute_universal_duration,
+    layer_by_id as layer_by_id,
+    clip_by_id as clip_by_id,
+    finite_float as finite_float,
+    validated_keyframes as validated_keyframes,
+    validated_text_layout as validated_text_layout,
+    validated_preset as validated_preset,
+    reconcile_scene_groups as reconcile_scene_groups,
+    apply_group_action as apply_group_action,
+    scene_by_id as scene_by_id,
+)
 
 
 YOUTUBE_ROOT = workspace_paths.youtube_root()
@@ -162,107 +178,7 @@ _DURATION_CACHE = {}
 _AUDIO_HASH_CACHE = {}
 
 
-# Messages of the timeline's checks (here, graphics.py, joins.py) as the author reads them: the studio speaks Ukrainian.
-UKRAINIAN = {
-    "Invalid typography": "Невірні налаштування шрифту каналу",
-    "Invalid source offset": "Невірний початок фрагмента у файлі",
-    "Invalid timed text layout": "Невірне розташування слів тексту",
-    "Invalid timed text word": "Невірне слово тексту",
-    "Timed text words must be ordered": "Слова тексту мають іти по черзі",
-    "Timed text words need a positive box": "Слово тексту має мати розмір",
-    "Timed text differs from clip text": "Слова не збігаються з текстом кліпу",
-    "Invalid frame members": "Невірний склад кадру",
-    "Frame title is empty": "Назва кадру порожня",
-    "Invalid frame role": "Невідома роль кадру",
-    "Frame group not found": "Кадр не знайдено",
-    "Invalid mute state": "Невірний стан звуку",
-    "Invalid visibility state": "Невірний стан видимості доріжки",
-    "This layer has no picture": "На цій доріжці немає зображення",
-    "This layer has no sound": "На цьому шарі немає звуку",
-    "Stack group not found": "Групу не знайдено",
-    "Invalid stack reference": "Невірне посилання на шар",
-    "Invalid stack destination": "Невірне місце для шару",
-    "Source offset is after the end of the file": "Початок фрагмента пізніше за кінець файлу",
-    "Timed words require a text clip": "Слова з часом бувають лише в текстовому кліпі",
-    "Invalid text role": "Невідома роль тексту",
-    "Text frame is missing from the approved plan": "Текстового кадру немає в плані",
-    "A text frame must contain its complete spoken passage": "Текстовий кадр має містити всі свої слова озвучки",
-    "A text frame must begin with its first spoken word": "Текстовий кадр має починатися з першого слова озвучки",
-    "Invalid batch size": "Забагато або замало дій за раз",
-    "Unsupported batch action": "Ця дія не підтримується в пакеті",
-    "Waveform requires audio": "Хвиля звуку буває лише в аудіо чи відео",
-    "Invalid graphics value": "Невірне значення графіки",
-    "Unknown mask": "Невідома маска",
-    "Unknown font": "Невідомий шрифт",
-    "Invalid text alignment": "Невідоме вирівнювання тексту",
-    "Invalid gradient": "Невірний градієнт",
-    "Invalid shadow color": "Невірний колір тіні",
-    "Invalid shadow": "Невірна тінь",
-    "Scene not found": "Кадр не знайдено",
-    "Invalid transition endpoint": "Невірний край переходу",
-    "A transition requires visual clips": "Перехід можливий лише між картинками чи відео",
-    "Transitions can only be dropped onto touching frame edges": "Перехід ставиться лише на стик сусідніх кадрів",
-    "Unknown transition": "Невідомий перехід",
-    "Transition is longer than an adjacent frame": "Перехід довший за сусідній кадр",
-}
 
-
-class StudioError(Exception):
-    def __init__(self, message, status=400):
-        message = UKRAINIAN.get(str(message), message)
-        if isinstance(message, str) and message.startswith(("Unknown visual effect", "Frame exceeds", "Invalid ")) and message not in UKRAINIAN.values():
-            message = "Невірні параметри: " + message   # a rare check without a translation still says it is the input
-        super().__init__(message)
-        self.status = status
-
-
-def atomic_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex)
-    try:
-        tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(str(tmp), str(path))
-    finally:
-        if tmp.exists():
-            tmp.unlink()
-
-
-def atomic_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex)
-    try:
-        tmp.write_text(value, encoding="utf-8")
-        os.replace(str(tmp), str(path))
-    finally:
-        if tmp.exists():
-            tmp.unlink()
-
-
-_READ_SNAPSHOT = threading.local()
-
-
-@contextmanager
-def read_snapshot():
-    """Request-local reuse for read-only views; changed files get a new stat key."""
-    previous = getattr(_READ_SNAPSHOT, 'values', None)
-    _READ_SNAPSHOT.values = previous if previous is not None else {}
-    try:
-        yield
-    finally:
-        _READ_SNAPSHOT.values = previous
-
-
-def read_json(path: Path, default=None):
-    if not path.exists():
-        return copy.deepcopy(default)
-    values = getattr(_READ_SNAPSHOT, 'values', None)
-    if values is None:
-        return json.loads(path.read_text(encoding="utf-8"))
-    stamp = path.stat()
-    key = (str(path), stamp.st_mtime_ns, stamp.st_size)
-    if key not in values:
-        values[key] = json.loads(path.read_text(encoding="utf-8"))
-    return values[key]
 
 
 def global_settings() -> dict:
@@ -1876,160 +1792,6 @@ def import_asset_stream(project: dict, stream, size: int, filename: str) -> dict
     return asset
 
 
-def recompute_timeline(project: dict) -> None:
-    t = 0.0
-    for scene in project["scenes"]:
-        scene["start"] = round(t, 3)
-        t += float(scene["duration"])
-    project["duration"] = round(t, 3)
-
-
-def keep_overlays_on_top(project: dict) -> None:
-    """The channel's logo and plate (layers whose clips all belong to scene groups with the role «overlay») stay the top
-    layers, so a layer added after them never lands over them: the higher a layer, the higher its row and its place in
-    the picture (user, 30 October 2026)."""
-    overlay = {cid for group in project.get("scene_groups") or [] if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
-    tracks = project.get("tracks", [])
-    top = [layer.get("id") for layer in tracks if layer.get("clips") and all(clip.get("id") in overlay for clip in layer["clips"])]
-    if top and [layer.get("id") for layer in tracks[-len(top):]] != top:
-        project["tracks"] = [layer for layer in tracks if layer.get("id") not in top] + [layer for layer in tracks if layer.get("id") in top]
-
-
-def recompute_universal_duration(project: dict) -> None:
-    project["duration"] = round(max((float(clip.get("start", 0)) + float(clip.get("duration", 0)) for layer in project.get("tracks", []) for clip in layer.get("clips", [])), default=0), 3)
-    keep_overlays_on_top(project)
-    for index, layer in enumerate(project.get("tracks", [])):
-        layer["z_index"] = index
-
-
-def layer_by_id(project: dict, layer_id: str) -> dict:
-    for layer in project.get("tracks", []):
-        if layer.get("id") == layer_id and layer.get("type") == "universal":
-            return layer
-    raise StudioError("Шар не знайдено", 404)
-
-
-def clip_by_id(project: dict, clip_id: str) -> tuple[dict, dict]:
-    for layer in project.get("tracks", []):
-        for clip in layer.get("clips", []):
-            if clip.get("id") == clip_id:
-                return layer, clip
-    raise StudioError("Кліп не знайдено", 404)
-
-
-def finite_float(value, minimum=None, maximum=None, message="Невірне число") -> float:
-    try:
-        result = float(value)
-    except (TypeError, ValueError):
-        raise StudioError(message) from None
-    if not math.isfinite(result) or minimum is not None and result < minimum or maximum is not None and result > maximum:
-        raise StudioError(message)
-    return result
-
-
-def validated_keyframes(value, duration: float) -> list[dict]:
-    if not isinstance(value, list) or len(value) > 200:
-        raise StudioError("Невірні ключові кадри")
-    result = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise StudioError("Невірний ключовий кадр")
-        point = {"time": finite_float(item.get("time"), 0, duration, "Невірний час ключового кадру")}
-        for key in ("x", "y"):
-            if key in item:
-                point[key] = finite_float(item[key], -2, 2, "Невірна позиція ключового кадру")
-        if "scale" in item:
-            point["scale"] = finite_float(item["scale"], .05, 8, "Невірний масштаб ключового кадру")
-        if "opacity" in item:
-            point["opacity"] = finite_float(item["opacity"], 0, 1, "Невірна прозорість ключового кадру")
-        result.append(point)
-    return sorted(result, key=lambda item: item["time"])
-
-
-def validated_text_layout(value, text, duration):
-    if not isinstance(value, list) or len(value) > 200:
-        raise StudioError("Invalid timed text layout")
-    result = []
-    previous = -1
-    for word in value:
-        if not isinstance(word, dict) or not str(word.get("text", "")).strip():
-            raise StudioError("Invalid timed text word")
-        point = {"text": str(word["text"]), "start": finite_float(word.get("start"), 0, duration)}
-        if 'end' in word:
-            point['end'] = finite_float(word['end'], point['start'], duration)
-        if point["start"] < previous:
-            raise StudioError("Timed text words must be ordered")
-        previous = point["start"]
-        for key in ("x", "y", "width", "height"):
-            point[key] = finite_float(word.get(key), 0, 1)
-        if not point["width"] or not point["height"]:
-            raise StudioError("Timed text words need a positive box")
-        result.append(point)
-    if result and " ".join(w["text"] for w in result).split() != str(text).split():
-        raise StudioError("Timed text differs from clip text")
-    return result
-
-
-def validated_preset(name, duration, clip_duration: float) -> tuple[str | None, float]:
-    if name in (None, "", "none"):
-        return None, 0.0
-    if name not in {"fade_in", "fade_out", "slide_in", "slide_out", "zoom_in", "pop"}:
-        raise StudioError("Невідомий анімаційний прийом")
-    length = finite_float(duration if duration is not None else min(.4, clip_duration), .05, clip_duration, "Невірна тривалість анімації")
-    return str(name), round(length, 3)
-
-
-def reconcile_scene_groups(project):
-    existing={c['id'] for t in project['tracks'] for c in t.get('clips',[])}
-    groups=[]
-    for group in project.get('scene_groups',[]):
-        group['clip_ids']=[cid for cid in group['clip_ids'] if cid in existing]
-        if group['clip_ids']: groups.append(group)
-    if 'scene_groups' in project: project['scene_groups']=groups
-
-
-def apply_group_action(project, action, payload):
-    groups=project.setdefault('scene_groups',[])
-    clips={c['id']:c for t in project['tracks'] for c in t.get('clips',[])}
-    if action=='group_clips':
-        ids=payload.get('clip_ids')
-        if ids is None and isinstance(payload.get('clip_titles'),list):
-            # clips added earlier in the same batch have no id the caller knows: name them by title (the newest one not
-            # yet in a group), so a clip and its frame group are one undo step (montage_ops.place)
-            occupied={cid for g in groups for cid in g['clip_ids']}
-            ids=[]
-            for title in payload['clip_titles']:
-                found=[c for t in project['tracks'] for c in t.get('clips',[]) if c.get('title')==title and c['id'] not in occupied and c['id'] not in ids]
-                if not found:raise StudioError(f'Кліп «{title}» не знайдено')
-                ids.append(found[-1]['id'])
-        if not isinstance(ids,list) or not 1<=len(ids)<=200 or any(not isinstance(cid,str) for cid in ids) or len(set(ids))!=len(ids) or any(cid not in clips for cid in ids):
-            raise StudioError('Invalid frame members')
-        occupied={cid for g in groups for cid in g['clip_ids']}
-        if occupied.intersection(ids):raise StudioError('A clip is already grouped')
-        title=str(payload.get('title') or 'Кадр').strip()[:120]
-        if not title:raise StudioError('Frame title is empty')
-        role=payload.get('role','scene')
-        if role not in {'scene','overlay'}:raise StudioError('Invalid frame role')
-        groups.append(dict(id=uuid.uuid4().hex[:12],title=title,clip_ids=ids,role=role))
-        return
-    group=next((g for g in groups if g['id']==payload.get('group_id')),None)
-    if not group:raise StudioError('Frame group not found',404)
-    if action=='ungroup_clips':groups.remove(group)
-    elif action=='update_group':
-        title=str(payload.get('title','')).strip()[:120]
-        if not title:raise StudioError('Frame title is empty')
-        group['title']=title
-    elif action=='move_group':
-        members=[clips[cid] for cid in group['clip_ids']]
-        first=min(float(c['start']) for c in members)
-        offset=finite_float(payload.get('start'),0,36000)-first
-        if any(float(c['start'])+offset<0 or float(c['start'])+offset+float(c['duration'])>36000 for c in members):raise StudioError('Frame exceeds timeline bounds')
-        for clip in members:clip['start']=round(float(clip['start'])+offset,3)
-    elif action=='delete_group':
-        remove=set(group['clip_ids'])
-        for track in project['tracks']:track['clips']=[c for c in track['clips'] if c['id'] not in remove]
-        project['tracks']=[t for t in project['tracks'] if t['clips']] or [dict(id='layer-1',name='Шар 1',type='universal',clips=[])]
-        groups.remove(group)
 
 
 def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
@@ -2333,11 +2095,6 @@ def apply_text_binding(project,clip,source):
         raise StudioError('A text frame must begin with its first spoken word')
 
 
-def scene_by_id(project: dict, sid: str) -> dict:
-    for scene in project.get("scenes", []):
-        if scene.get("id") == sid:
-            return scene
-    raise StudioError("Кадр не знайдено", 404)
 
 
 HISTORY_LIMIT = 30

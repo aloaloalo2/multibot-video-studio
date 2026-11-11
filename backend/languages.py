@@ -53,6 +53,7 @@ import translation_recovery
 import translation_linguist
 import translation_costs
 import store
+import job_timing
 
 LANGUAGES = {
     "en": ("English", "англійська"), "uk": ("Українська", "українська"), "ru": ("Русский", "російська"),
@@ -583,6 +584,7 @@ def key(service: str) -> str:
         raise RuntimeError(f"Додайте ключ {name} у налаштуваннях студії («Ключі сервісів»)") from None
 
 
+@job_timing.measure('service')
 def request(url: str, data: bytes, headers: dict, what: str) -> bytes:
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=data, method="POST", headers=headers), timeout=TIMEOUT) as response:
@@ -702,6 +704,7 @@ def record_translation(payload, result):
             'messages': payload['messages'], 'choices': result.get('choices'), 'usage': result.get('usage')})
 
 
+@job_timing.measure('service')
 def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     import agent_openrouter
     context = getattr(TRANSLATION_CONTEXT, 'value', None) or {}
@@ -2861,6 +2864,7 @@ def recover_thumbnail(pid: str, code: str) -> dict:
     return overview(pid)
 
 
+@job_timing.measure('saving')
 def copy_out(project: dict, code: str, what: str) -> None:
     folder = episode_dir(project, code)
     if not folder:
@@ -2972,6 +2976,7 @@ WORK = {"translate": translate, "sample": sample, "voice": whole, "thumbnail": t
 NAMES = {"translate": "переклад", "sample": "зразок озвучки", "voice": "озвучка", "thumbnail": "генерація прев’ю", "save-audio": "збереження аудіо","refit":"вирівнювання пауз"}
 
 
+@job_timing.track(lambda values: job_timing.LANGUAGE_WORKFLOWS.get(values['kind']), project='pid', job='job')
 def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> None:
     with dubbing_fit.for_language(code):
         _worker(pid,kind,code,provider,job)

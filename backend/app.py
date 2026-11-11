@@ -24,13 +24,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import store
+import job_timing
 import technical_files
 import covers
-import channel_branding
-import channel_hero
 import channel_transfer
+import channel_api
 import style_lab
-import style_copy
 import director
 import spend_report
 import project_costs
@@ -456,6 +455,7 @@ import episode_automation
 episode_automation.JOB_CALLBACKS = (save_job, load_job)
 
 
+@job_timing.measure('verification')
 def _check_render(path: Path) -> None:
     if not path.is_file() or path.stat().st_size < 1024:
         raise RuntimeError("Рендер не створив повний відеофайл")
@@ -523,11 +523,12 @@ def _export_queue_positions() -> None:
             save_job(job)
 
 
+@job_timing.track('export', project='job', job='job')
 def _queued_render_worker(job: dict, *args) -> None:
     """A single render slot across channels, with cancellable FIFO waiting."""
     global EXPORT_RUNNING
     try:
-        with EXPORT_CONDITION:
+        with job_timing.span('queue'), EXPORT_CONDITION:
             entry = ACTIVE_EXPORTS[job['id']]
             while not entry['cancel']:
                 first = next((item['job']['id'] for item in ACTIVE_EXPORTS.values()
@@ -564,6 +565,7 @@ def _queued_render_worker(job: dict, *args) -> None:
                 EXPORT_CONDITION.notify_all()
 
 
+@job_timing.measure('rendering')
 def _render_worker(job: dict, render_manifest: Path, staging: Path, destination: Path, command: list[str] | None = None, mixed: dict | None = None) -> None:
     with JOBS_LOCK:
         entry = ACTIVE_EXPORTS[job['id']]
@@ -664,6 +666,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                 with JOBS_LOCK:
                     if not entry['cancel']:
                         job['progress'] = max(job['progress'],progress)
+                        job_timing.advance('verification' if stage == 'verifying' else 'rendering')
                         job['stage'] = stage
                         elapsed = max(0.0, time.monotonic() - started_at)
                         if stage == 'verifying':
@@ -689,7 +692,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         with JOBS_LOCK:
             job.update(stage='saving', remaining_seconds=None)
             save_job(job)
-        with export_delivery.prepared(staging, destination, lambda: entry['cancel']) as ready:
+        with job_timing.span('saving'), export_delivery.prepared(staging, destination, lambda: entry['cancel']) as ready:
             with JOBS_LOCK:
                 if entry['cancel']:
                     return
@@ -1195,6 +1198,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        performance = re.fullmatch(r'/api/projects/([0-9a-f]{24})/performance', path)
+        if performance:
+            return self.json_response(job_timing.overview(performance.group(1)))
+        if path == "/api/channels" or path.startswith("/api/channels/"):
+            return channel_api.get(self, path, query, ensure_idle=channel_transfer_idle)
         reverb = re.fullmatch(r'/api/audio-effects/([a-z-]+)-v[1234]\.wav', path)
         if reverb:
             import narration_effects
@@ -1203,45 +1211,12 @@ class Handler(BaseHTTPRequestHandler):
         if dry_narration:
             speed = (query.get('speed') or [None])[0]
             return self.serve_media(project_narration.tempo_preview(dry_narration.group(1), speed) if speed is not None else project_narration.original_audio(dry_narration.group(1)))
-        transfer = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-(export|backups)', path)
-        if transfer:
-            cid, kind = transfer.groups()
-            if kind == 'backups': return self.json_response({'backups': channel_transfer.list_backups(cid)})
-            channel_transfer_idle(cid)
-            raw = channel_transfer.export_bundle(cid)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/zip')
-            self.send_header('Content-Disposition', 'attachment; filename="VideoKey-channel-settings.zip"')
-            self.send_header('Content-Length', str(len(raw)))
-            self.send_header('Cache-Control', 'no-store')
-            self.send_header('X-Content-Type-Options', 'nosniff')
-            self.end_headers()
-            self.wfile.write(raw)
-            return
-        reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference/([A-Za-z0-9_-]{11})/thumbnail', path)
-        if reference_match:
-            import idea_reference
-            cid, ref = reference_match.groups()
-            idea_reference.read(cid, ref)
-            return self.serve_media(idea_reference.folder(cid, ref) / 'thumbnail.jpg')
         if path == '/api/space':
             return self.json_response(space.all_usage(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
         if narration:
             store.load_project(narration.group(1))
             return self.json_response(project_narration.snapshot(narration.group(1)))
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft|heygen-voices|preview))?', path)
-        if match:
-            cid, kind = match.groups()
-            if kind == 'preview':
-                speed = (query.get('speed') or [None])[0]
-                return self.serve_media(channel_voice_lab.tempo_preview(cid, speed) if speed is not None else channel_voice_lab.local_preview_source(cid))
-            if kind=='heygen-voices':return self.json_response(channel_voice_lab.heygen_voice.voices((query.get('model') or ['heygen-voice-1'])[0]))
-            if kind == 'draft':
-                return self.serve_media(channel_voice_lab.reference_drafts.audio_file(channel_voice_lab.folder(cid), (query.get('id') or [None])[0], (query.get('clean') or ['0'])[0] == '1'))
-            if kind:
-                return self.serve_media(channel_voice_lab.audio_file(cid, kind, (query.get('key') or [None])[0]))
-            return self.json_response(channel_voice_lab.snapshot(cid))
         edit_match=re.fullmatch(r'/api/projects/([0-9a-f]{24})/production-edits',path)
         if edit_match:
             import production_edits
@@ -1250,11 +1225,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True, "create_video": True})
-        ideas_match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/episode-ideas", path)
-        if ideas_match:
-            import episode_ideas
-            data = episode_ideas.catalog(ideas_match.group(1)) if query.get('view') == ['topics'] else episode_ideas.read(ideas_match.group(1))
-            return self.json_response(episode_ideas.public(data))
         draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
         if draft_match:
             import episode_ideas
@@ -1270,8 +1240,6 @@ class Handler(BaseHTTPRequestHandler):
         if transition_sound:
             import sound_settings
             return self.serve_media(sound_settings.preview(transition_sound.group(1), transition=True), cache=True)
-        if path == "/api/channels":
-            return self.json_response({"channels": store.list_channels()})
         if path == "/api/extension":
             import extension
             return self.json_response(extension.state())
@@ -1358,9 +1326,6 @@ class Handler(BaseHTTPRequestHandler):
             project_id = match.group(1)
             conversation = agent_storage.get_conversation(project_id)
             return self.json_response({"messages": conversation["messages"], "costs": agent_storage.cost_summary(conversation["costs"]), "job": agent_runtime.snapshot(project_id), "settings": agent_storage.get_settings(project_id)})
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
-        if match:
-            return self.json_response({"memory": agent_storage.get_memory(match.group(1))})
         if path == "/api/pixabay/search":
             q = (query.get("q") or [""])[0].strip()
             kind = (query.get("kind") or ["video"])[0]
@@ -1386,16 +1351,6 @@ class Handler(BaseHTTPRequestHandler):
             project=store.load_project(match.group(1));asset=store.resolve_asset(project,match.group(2))
             if asset.get('kind') not in {'audio','video'}:raise store.StudioError('Waveform requires audio')
             return self.json_response(waveforms.read_peaks(asset['path'],store.project_dir(project['id'])/'waveforms'))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews/([0-9a-f]{20})/([a-z0-9_-]+-\d\.jpg)", path)
-        if match:
-            store.get_channel_folder(match.group(1))
-            try:
-                return self.serve_media(style_lab.preview_file(*match.groups()), cache=True)
-            except style_lab.StyleLabError as error:
-                raise store.StudioError(str(error), 404) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles", path)
-        if match:
-            return self.json_response({"styles": style_copy.load(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
             return self.json_response({**thumbnail_gen.defaults(match.group(1)), **languages.thumbnail_gallery(match.group(1))})
@@ -1414,12 +1369,6 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/([a-z]{2})/alignment", path)
         if match:
             return self.json_response(languages.alignment_timeline(*match.groups()))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices", path)
-        if match:
-            return self.json_response(languages.channel_voices(match.group(1)))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/file", path)
-        if match:
-            return self.serve_media(languages.channel_voice_file(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/original", path)
         if match:
             return self.serve_media(languages.original_file(match.group(1)))
@@ -1510,41 +1459,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_media(style_lab.card_file(*match.groups()), cache=True)
             except style_lab.StyleLabError as error:
                 raise store.StudioError(str(error), 404) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo-overlay\.png", path)
-        if match:
-            folder = store.get_channel_folder(match.group(1))
-            try:
-                frame = (int((query.get("w") or ["1920"])[0]), int((query.get("h") or ["1080"])[0]))
-            except ValueError:
-                raise store.StudioError("Невірний розмір кадру") from None
-            if not (16 <= frame[0] <= 7680 and 16 <= frame[1] <= 7680):
-                raise store.StudioError("Невірний розмір кадру")
-            settings = store.read_channel_settings(folder, {})
-            target = store.DATA_ROOT / "channels" / match.group(1) / f"logo-overlay-{frame[0]}x{frame[1]}.png"
-            if not channel_branding.overlay_png(match.group(1), settings.get("logo"), frame, target):
-                raise store.StudioError("Логотип не додано або вимкнено", 404)
-            return self.serve_media(target)
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/thumbnail-hero", path)
-        if match:
-            store.get_channel_folder(match.group(1))
-            file = channel_hero.path(match.group(1))
-            if not file.is_file():
-                raise store.StudioError("Референс героя не додано", 404)
-            return self.serve_media(file, cache=True)
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
-        if match:
-            store.get_channel_folder(match.group(1))
-            icon = channel_branding.icon_path(match.group(1))
-            if not icon.is_file():
-                raise store.StudioError("Іконку не додано", 404)
-            return self.serve_media(icon, cache=True)
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
-        if match:
-            store.get_channel_folder(match.group(1))
-            logo = channel_branding.logo_path(match.group(1))
-            if not logo.is_file():
-                raise store.StudioError("Логотип не додано", 404)
-            return self.serve_media(logo, cache=True)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/cover", path)
         if match:
             try:
@@ -1582,17 +1496,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
-        backup = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-backups/([0-9a-f]{32})(/restore)?', path)
-        if backup:
-            cid, bid, restore = backup.groups()
-            if method == 'POST' and restore:
-                return self.json_response(channel_transfer.restore_backup(cid, bid, channel_transfer_idle))
-            if method == 'DELETE' and not restore:
-                return self.json_response(channel_transfer.delete_backup(cid, bid))
-        reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference', path)
-        if reference_match and method == 'POST':
-            import idea_reference
-            return self.json_response(idea_reference.inspect(reference_match.group(1), body.get('url')))
+        if path == "/api/channels" or path.startswith("/api/channels/"):
+            return channel_api.mutate(self, method, path, body, ensure_idle=channel_transfer_idle, choose_folder=choose_local_folder)
         if path == '/api/space' and method == 'POST':
             return self.json_response(space.free_all(cleanup_blocked))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source|cancel|speed)', path)
@@ -1604,29 +1509,11 @@ class Handler(BaseHTTPRequestHandler):
             if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
             return self.json_response(project_narration.start(project, body.get('text'), body.get('resume') is True), 202)
 
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy|heygen-clone|fish-clone))?', path)
-        if match and method == 'POST':
-            cid, action = match.groups()
-            if action == 'heygen-clone':return self.json_response(channel_voice_lab.create_heygen_voice(cid, body.get('settings')))
-            if action == 'fish-clone':return self.json_response(channel_voice_lab.create_fish_voice(cid, body.get('settings')))
-            if action == 'reference/discard':
-                with channel_voice_lab.LOCK:
-                    channel_voice_lab.reference_drafts.discard(channel_voice_lab.folder(cid), body.get('draft_id'))
-                return self.json_response({'discarded': True})
-            if action == 'reference/preview':return self.json_response(channel_voice_lab.preview_reference(cid, body.get('draft_id')))
-            if action == 'reference/accept':return self.json_response(channel_voice_lab.accept_reference(cid, body.get('draft_id'), body.get('cleaned')))
-            if action == 'copy':return self.json_response(channel_voice_lab.copy_profile(body.get('source_channel'), cid))
-            if action == 'sample':
-                return self.json_response(channel_voice_lab.start(cid, body.get('settings'), body.get('client_id')), 202)
-            if action == 'reference/remove':return self.json_response(channel_voice_lab.remove(cid))
-            return self.json_response(channel_voice_lab.save(cid, body.get('settings')))
         match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
         if match and method == 'POST':
             store.load_project(match.group(1))
             completion_notices.seen(match.group(1), body.get('through'))
             return self.json_response({'seen': True})
-        if method == "PATCH" and path == "/api/channels/order":
-            return self.json_response({"channels": store.reorder_channels(body.get("ids"))})
         if method=='POST' and path=='/api/studio/restart/prepare':
             return self.json_response(prepare_local_restart())
         if method == 'POST' and path == '/api/update/apply':
@@ -1683,9 +1570,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"key": credentials.copy_provider_key(body.get("provider_id"))})
         if method == "POST" and path == "/api/service-keys":
             return self.json_response({"provider": credentials.save_provider(body.get("provider_id"), body.get("name"), body.get("key"))})
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
-        if match and method == "POST":
-            return self.json_response({"memory": agent_storage.set_memory(match.group(1), body.get("memory"))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/settings", path)
         if match and method == "POST":
             return self.json_response({"settings": agent_storage.set_settings(match.group(1), body.get("reasoning_effort"))})
@@ -1703,20 +1587,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"settings": update_studio_settings(body.get("settings", {}))})
         if method == 'POST' and path == '/api/settings/youtube-root/pick':
             return self.json_response({'path': str(choose_local_folder('Оберіть папку YouTube з каналами'))})
-        if method == "POST" and path == "/api/channels/pick":
-            selected = Path(body["path"]).expanduser().resolve() if body.get("path") else choose_local_folder("Оберіть папку каналу всередині папки YouTube")
-            return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
-        if method == "POST" and path == "/api/channels/create":
-            return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match and method == "POST":
             return self.json_response({"job": thumbnail_gen.start(match.group(1), body.get("title"), body.get("script"), body.get("wishes"), body.get("writer") or "claude", body.get("base") or None, use_hero=body.get("use_hero"), reference_id=body.get("reference_id"))}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/cancel", path)
         if match and method == "POST":
             return self.json_response(languages.cancel(match.group(1), body.get("slot") or None))
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/remove", path)
-        if match and method == "POST":
-            return self.json_response(languages.remove_channel_voice(*match.groups()))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/languages/defaults/apply", path)
         if match and method == "POST":
             return self.json_response(languages.language_defaults.apply_existing(match.group(1)))
@@ -1783,66 +1659,6 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match and method == "POST":
             return self.json_response({"director": director.start(match.group(1), "manual")})
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles", path)
-        if match and method == "POST":
-            try:
-                style = style_copy.create(match.group(1), body.get("image"), body.get("note") or "")
-            except style_copy.StyleCopyError as error:
-                raise store.StudioError(str(error), 409) from None
-            return self.json_response({"style": style}, 201)
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles/(custom-[0-9a-f]{10})", path)
-        if match and method == "DELETE":
-            try:
-                style_copy.remove(*match.groups())
-            except style_copy.StyleCopyError as error:
-                raise store.StudioError(str(error), 404) from None
-            return self.json_response({"ok": True})
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
-        if match and method == "POST":
-            try:
-                return self.json_response(style_lab.showcase(match.group(1), (body or {}).get("kind")))
-            except style_lab.StyleLabError as error:
-                raise store.StudioError(str(error), 409) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-previews", path)
-        if match and method == "POST":
-            try:
-                return self.json_response(style_lab.previews(match.group(1), bool(body.get("assets", True)), body.get("animation"), body.get("style")))
-            except style_lab.StyleLabError as error:
-                raise store.StudioError(str(error), 409) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/thumbnail-hero", path)
-        if match and method in {"POST", "DELETE"}:
-            if method == "POST":
-                hero = channel_hero.save(match.group(1), body.get("data"))
-            else:
-                channel_hero.remove(match.group(1))
-                hero = None
-            return self.json_response({"hero_reference": hero, "channels": store.list_channels()})
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/icon", path)
-        if match and method in {"POST", "DELETE"}:
-            try:
-                if method == "POST":
-                    icon = channel_branding.save_logo(match.group(1), body.get("data"), identity_icon=True)
-                else:
-                    channel_branding.remove_icon(match.group(1))
-                    icon = None
-                return self.json_response({"icon": icon, "channels": store.list_channels()})
-            except channel_branding.BrandingError as error:
-                raise store.StudioError(str(error)) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/logo", path)
-        if match and method in {"POST", "DELETE"}:
-            try:
-                if method == "POST":
-                    return self.json_response({"logo": channel_branding.save_logo(match.group(1), body.get("data"))}, 201)
-                channel_branding.remove_logo(match.group(1))
-                return self.json_response({"logo": None})
-            except channel_branding.BrandingError as error:
-                raise store.StudioError(str(error)) from None
-        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})", path)
-        if match and method == "PATCH":
-            return self.json_response({"channel": store.update_channel_settings(match.group(1), body.get("settings", {}))})
-        if match and method == "DELETE":
-            store.disable_channel(match.group(1))
-            return self.json_response({"ok": True})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match and method == "PATCH":
             project = store.apply_action(match.group(1), "rename_project", {"name": body.get("name")}, body.get("expected_revision"))
@@ -1863,10 +1679,6 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/projects/from-plan":
             project = store.project_from_plan(body["channel_id"], body["name"], body["episode_path"], body["plan"])
             return self.json_response({"project": project, "plan_url": f"/channels/{project['channel_id']}/projects/{project['id']}/plan"})
-        ideas_match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/episode-ideas", path)
-        if ideas_match and method == "POST":
-            import episode_ideas
-            return self.json_response(episode_ideas.public(episode_ideas.start(ideas_match.group(1), body)), 202)
         draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
         if draft_match and method == "POST":
             import episode_ideas

@@ -10,6 +10,7 @@ import time
 import project_costs
 import process_cleanup
 import store
+import job_timing
 
 LOCK = threading.RLock()
 LOCAL = threading.local()
@@ -51,6 +52,7 @@ def cancel(job):
             _kill(process)
 
 
+@job_timing.measure('service')
 def run(command, prompt, root, identity, timeout=900):
     check()
     job = getattr(LOCAL, 'job', None)

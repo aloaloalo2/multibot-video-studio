@@ -17,6 +17,7 @@ import urllib.request
 
 import credentials
 import store
+import job_timing
 
 BASE = "https://api.elevenlabs.io/v1"
 # Public ElevenAPI list prices, checked 2026-11-03. These are estimates, not account debits.
@@ -427,6 +428,7 @@ def settings(mid: str) -> dict:
     return out
 
 
+@job_timing.measure('service')
 def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str, voice_settings=None) -> bytes:
     """Turbo uses the documented Text to Dialogue WebSocket, with one registered voice."""
     try:

@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import store
+import job_timing
 import languages
 import eleven_api
 import heygen_voice
@@ -377,6 +378,7 @@ def clone(cid, settings, ref):
     return secret, voice
 
 
+@job_timing.measure('service')
 def synthesis(secret, voice, settings):
     text = delivery_prefix(settings) + settings['text']
     params = {k: settings[k] for k in ['stability', 'similarity_boost']}

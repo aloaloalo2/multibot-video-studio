@@ -26,6 +26,7 @@ import logo_layer
 import production_context
 import razgon_sound
 import store
+import job_timing
 import production_quality
 
 TIMEOUT = 6 * 3600
@@ -327,6 +328,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Наприкінці коротко напиши українською повними реченнями: які кадри готові, звідки картинки, що лишилося або не вдалося."""
 
 
+@job_timing.track('production', project='pid', job=lambda values: store.read_json(store.project_dir(values['pid']) / 'production-request.json', {}))
 def run(pid: str, cli: Path, notes: str = "") -> None:
     # The run always leaves ACTIVE, whatever fails on the way (a full disk while the request is written, a project
     # removed): otherwise the project read as «working» until the next restart and refused every new start.

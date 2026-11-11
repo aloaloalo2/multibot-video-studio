@@ -269,6 +269,26 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(status,200);self.assertLess(len(data),source.stat().st_size)
         with Image.open(io.BytesIO(data)) as im:self.assertLessEqual(im.width,256);self.assertLessEqual(im.height,160)
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),original)
+    def test_performance_endpoint_only_reads_owned_local_reports(self):
+        import job_timing
+        project = store.create_project(store.channel_id(self.channel), 'Performance API')
+        state = {'status': 'running'}
+
+        @job_timing.track('analysis', project='pid', job='job')
+        def measure(pid, job):
+            with job_timing.span('verification'):
+                job['status'] = 'done'
+        measure(project['id'], state)
+        directory = store.project_dir(project['id']) / 'performance'
+        original = {path.name: path.read_bytes() for path in directory.glob('*.json')}
+        status, data = self.request('/api/projects/' + project['id'] + '/performance')
+        self.assertEqual(status, 200)
+        self.assertEqual(len(data['runs']), 1)
+        self.assertEqual(data['runs'][0]['status'], 'complete')
+        self.assertIn('verification', data['runs'][0]['stages'])
+        self.assertEqual({path.name: path.read_bytes() for path in directory.glob('*.json')}, original)
+        self.assertEqual(self.request('/api/projects/' + '0' * 24 + '/performance')[0], 404)
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()

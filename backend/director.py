@@ -20,6 +20,7 @@ from pathlib import Path
 import razgon_sound
 import agent_storage
 import store
+import job_timing
 import motion_direction
 import process_cleanup
 import work_guard
@@ -290,6 +291,7 @@ def activity_path(pid: str, kind: str) -> Path:
     return store.project_dir(pid) / f"{kind}-activity.json"
 
 
+@job_timing.measure('service')
 def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
            effort: str = EFFORT, model: str = MODEL) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
@@ -432,6 +434,7 @@ def cancelled(pid: str, kind: str) -> bool:
     return found
 
 
+@job_timing.track('planning', project='pid', job=lambda values: state(values['pid']))
 def run(pid: str, cli: Path) -> None:
     # the run always leaves ACTIVE, whatever fails on the way, so the director can be started again
     try:

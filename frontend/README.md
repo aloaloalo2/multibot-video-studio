@@ -26,6 +26,8 @@ Global settings contain service keys, the YouTube directory, the script/hook wor
 - A project/media refresh commits only while its starting revision and navigation remain current. Keep author drafts, including intentional empty values.
 - Visible failures are reported inline or through the shared error banner. Do not silently leave a start action inert.
 
+`performance.js` owns the project’s clock button and local timing panel. It reads once for finished work and polls only while the panel owns active measurements. Closing or replacing the dialog, or changing project, invalidates pending responses and timers.
+
 ## API entry points
 
 The backend owns project identity, revisions, timings, queues and persistence. Main frontend routes include:
