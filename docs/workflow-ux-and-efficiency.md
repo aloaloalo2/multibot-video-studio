@@ -24,6 +24,8 @@ The gallery compares a clone's source and result, or an edited version and its e
 
 The compact query is compatible with an older running backend: it may return the full existing response until a safe restart. Public full routes and CLI clients remain available. No quality checks, source media or accepted scripts are removed by these optimizations. GET summaries write no files.
 
+Global activity checks read recognition job state without opening its report. Create-video status reuses the compact cached assessment. Fresh author scopes share the existing whole-job timeout; splitting a job cannot multiply that deadline.
+
 ## Verification and measured limits
 
 Unit/HTTP tests cover per-version comparison sources, exact language bases, compact/full API contracts, report cache invalidation/retention, complete topic exclusions, preserved unique rules, profile invalidation, independent shared reads, and scoped session completion/cancellation/failure/checkpoint behavior. A mocked worker verifies 45 frames use fresh scopes of 20, 20 and 5 with the same model/effort and retained total costs. No paid model call was used for these tests.

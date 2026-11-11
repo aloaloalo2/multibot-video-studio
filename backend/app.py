@@ -852,7 +852,7 @@ def project_jobs(pid: str) -> dict:
         except (store.StudioError, OSError, ValueError, KeyError):
             return None
     jobs = {"озвучення сценарію": status(lambda: project_narration.snapshot(pid).get("job")),
-            "розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
+            "розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job, compact=True, include_report=False).get("job")),
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
             "музика й ефекти": status(lambda: razgon_sound.state(pid)),

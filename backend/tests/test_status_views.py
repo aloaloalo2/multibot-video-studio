@@ -45,6 +45,9 @@ class StatusViewsTest(unittest.TestCase):
             small=analysis_jobs.latest(pid,lambda _:job,compact=True)
             self.assertEqual(full['report']['recognized_text'],'full text');self.assertNotIn('script',small['job'])
             self.assertTrue(small['report']['applied']);self.assertTrue(small['compact'])
+            with patch.object(views,'analysis_report',side_effect=AssertionError('global activity needs no report')):
+                state=analysis_jobs.latest(pid,lambda _:job,compact=True,include_report=False)
+                self.assertIsNone(state['report']);self.assertEqual(state['job']['status'],'complete')
             with self.assertRaises(store.StudioError):analysis_jobs.latest(pid,lambda _:{**job,'project_id':'another'},compact=True)
 
     def test_projection_cache_is_bounded(self):

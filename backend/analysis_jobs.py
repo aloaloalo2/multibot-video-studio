@@ -38,7 +38,7 @@ def owner_alive(job):
         return True
 
 
-def latest(pid, load_job, *, compact=False):
+def latest(pid, load_job, *, compact=False, include_report=True):
     store.load_project(pid)
     pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {})
     if not pointer.get("job_id"):
@@ -49,7 +49,7 @@ def latest(pid, load_job, *, compact=False):
     if job["status"] in {"queued", "running"} and not owner_alive(job):
         job = {**job, "status": "failed", "stage": "failed", "error": "Обробку перервано перезапуском студії. Запустіть її ще раз"}
     report_path = store.project_dir(pid) / "analysis" / job["id"] / "result.json"
-    report = status_views.analysis_report(report_path) if compact else store.read_json(report_path)
+    report = (status_views.analysis_report(report_path) if compact else store.read_json(report_path)) if include_report else None
     return {"job": status_views.job(job) if compact else job, "report": report, **({'compact':True} if compact else {})}
 
 
@@ -86,7 +86,7 @@ def creation_status(project, load_job):
         if handoff.get('status') == 'failed':
             return {'status':'failed','stage':'recognizing','error':handoff.get('error')}
         return {'status': 'idle', 'stage': None}
-    analysis = latest(project['id'], load_job)
+    analysis = latest(project['id'], load_job, compact=True)
     job = analysis.get('job') or {}
     if job.get('status') in {'queued', 'running'}:
         return {'status': job['status'], 'stage': 'recognizing', 'progress': job.get('progress', 0), 'job': job}
