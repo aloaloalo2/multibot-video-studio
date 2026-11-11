@@ -73,7 +73,7 @@ async function api(path, method='GET', body) {
   if (body !== undefined) {options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body);}
   const startupRead=method==='GET' && (path==='/api/health' || path==='/api/channels' || path==='/api/studio/status' || path.startsWith('/api/projects?') || /^\/api\/projects\/[0-9a-f]{24}(?:\/(?:assets|plan|analysis|export\/active))?$/.test(path));
   for(let attempt=0;;attempt++){
-    const controller=startupRead?new AbortController():null;
+    const controller=startupRead||/^\/api\/projects\/[0-9a-f]{24}\/script-draft(?:\/|$)/.test(path)?new AbortController():null;
     const timeout=controller?setTimeout(()=>controller.abort(),15000):null;
     if(controller)options.signal=controller.signal;
     try {
@@ -1296,6 +1296,7 @@ function updateExportLock(){
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
   if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
   else if(state.project)$('save-state').textContent='';
+  if(typeof updateProjectNextAction==='function')updateProjectNextAction();
 }
 function exportActions(){
   const actions=[];

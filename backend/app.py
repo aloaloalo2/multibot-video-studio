@@ -25,6 +25,7 @@ from pathlib import Path
 
 import store
 import job_timing
+import script_drafts
 import technical_files
 import covers
 import channel_transfer
@@ -1198,6 +1199,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(?:/(history|baseline|stale|[0-9a-f]{32}))?', path)
+        if draft:
+            pid, kind = draft.groups()
+            return self.json_response(script_drafts.current(pid) if kind is None else script_drafts.history(pid) if kind == 'history' else script_drafts.version(pid, kind))
         performance = re.fullmatch(r'/api/projects/([0-9a-f]{24})/performance', path)
         if performance:
             return self.json_response(job_timing.overview(performance.group(1)))
@@ -1496,6 +1501,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)
+        if draft and method == ('POST' if draft.group(2) else 'PATCH'):
+            return self.json_response(script_drafts.restore(draft.group(1), body) if draft.group(2) else script_drafts.save(draft.group(1), body))
         if path == "/api/channels" or path.startswith("/api/channels/"):
             return channel_api.mutate(self, method, path, body, ensure_idle=channel_transfer_idle, choose_folder=choose_local_folder)
         if path == '/api/space' and method == 'POST':

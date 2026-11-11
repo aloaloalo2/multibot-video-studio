@@ -289,6 +289,27 @@ class BackendTest(unittest.TestCase):
         self.assertEqual({path.name: path.read_bytes() for path in directory.glob('*.json')}, original)
         self.assertEqual(self.request('/api/projects/' + '0' * 24 + '/performance')[0], 404)
 
+    def test_working_script_round_trip_and_restore_never_start_narration(self):
+        project = store.create_project(store.channel_id(self.channel), 'Working script API')
+        original = store.save_voice_script(project['id'], 'Accepted original script.')
+        endpoint = '/api/projects/' + project['id'] + '/script-draft'
+        status, initial = self.request(endpoint)
+        self.assertEqual(status, 200)
+        with patch.object(app.project_narration, 'start') as narration:
+            status, edited = self.request(endpoint, 'PATCH', {'text': '', 'expected_version': initial['version'], 'base_sha256': initial['base_sha256'], 'epoch': initial['epoch']})
+            self.assertEqual(status, 200)
+            self.assertEqual(edited['text'], '')
+            self.assertEqual(self.request(endpoint)[1]['text'], '')
+            versions = self.request(endpoint + '/history')[1]['versions']
+            self.assertEqual(versions[0]['id'], 'baseline')
+            self.assertEqual(self.request(endpoint + '/baseline')[1]['text'], original['text'])
+            status, restored = self.request(endpoint + '/restore', 'POST', {'version_id': 'baseline', 'expected_version': edited['version'], 'base_sha256': edited['base_sha256'], 'epoch': edited['epoch']})
+            self.assertEqual(status, 200)
+            self.assertEqual(restored['text'], original['text'])
+            narration.assert_not_called()
+        self.assertEqual(store.load_project(project['id'])['voice_script'], original)
+        self.assertEqual(self.request('/api/projects/' + '0' * 24 + '/script-draft')[0], 404)
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()

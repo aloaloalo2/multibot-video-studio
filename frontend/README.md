@@ -6,7 +6,7 @@ The static frontend is served by the local backend. Open it through Studio so re
 
 1. The sidebar selects a channel. The channel overview shows its episodes, saved milestones, active progress, relative dates and export checkmarks. The gear beside the channel opens its settings. The gear, New episode and Studio settings use the same quiet outlined control style.
 2. New episode starts with Own title. The author can create an empty episode, explicitly open Ideas or import a YouTube reference. Opening the dialog generates nothing. Ideas request a daily refresh only when that choice is opened; explicit refresh is a separate action. A selected idea or imported reference has an editable title and target word count. Create openings starts four hooks of six sentences; choosing one starts the script. Unfinished hooks open inside that episode's script panel.
-3. The script appears before the two compact source cards: synthesize the script or upload narration. The cards retain a shared script draft when switching. Missing channel voice defaults to upload. Automatic narration and automatic montage are optional channel settings. Original HeyGen narrations use one FIFO queue; waiting episodes can be cancelled.
+3. The script appears before the two compact source cards: synthesize the script or upload narration. The cards retain a shared script draft when switching. Edits save immediately in browser recovery storage and after an 800 ms pause in Studio. The small clock beside the script opens previous versions; restoring changes the working text. Missing channel voice defaults to upload. Automatic narration and automatic montage are optional channel settings. Original HeyGen narrations use one FIFO queue; waiting episodes can be cancelled.
 4. Studio prepares the fixed closing pause and recognizes audio locally. A verified native take assembly supplies sentence order and measured sentence boundaries; recognition refines word timing. Uploaded or otherwise unverified audio retains the standard comparison and order checks. Temporary status failures retry reads without starting another analysis or voice generation.
 5. The director plans from the voice, then frame creation updates the same montage workspace. New frame revisions and media appear without reloading, preserving the selected clip and playhead. Ordinary unchanged polls do not reload the media library. Direct montage mode keeps the manual workflow without requiring director frames.
 6. The project workspace contains Montage, Preview and Languages. Preview has version history, generation, reference cloning and editing. Regular projects can create previews from title/script before frames exist; animation has its own prerequisites. Generated work continues after its dialog closes. Language work preserves the chosen voice and paid phrase cache.
@@ -28,6 +28,10 @@ Global settings contain service keys, the YouTube directory, the script/hook wor
 
 `performance.js` owns the project’s clock button and local timing panel. It reads once for finished work and polls only while the panel owns active measurements. Closing or replacing the dialog, or changing project, invalidates pending responses and timers.
 
+`script-drafts.js` owns draft hydration, local recovery, optimistic saves and version restoration. Late acknowledgements cannot overwrite newer typed text. Separate tab recovery keys and explicit conflict recovery protect competing edits. A busy pre-update backend can temporarily retain browser drafts until its safe restart; an actual deleted project still reports an error. Autosave never starts narration or changes the accepted voice source.
+
+`project-next-action.js` chooses one primary action in the header from the existing workflow state, including hook selection, narration, video creation and export. It delegates to the established handlers and hides that action's duplicate. Busy work remains locked, while a blocking reason and settings shortcut stay next to the primary action. Direct montage retains optional narration. It observes the mounted workspace and adds no status polling.
+
 ## API entry points
 
 The backend owns project identity, revisions, timings, queues and persistence. Main frontend routes include:
@@ -35,6 +39,7 @@ The backend owns project identity, revisions, timings, queues and persistence. M
 - `/api/channels` and `/api/channels/:id` for channels and settings.
 - `/api/channels/:id/episode-ideas` for the topic catalog and explicit writing starts.
 - `/api/projects/:id/episode-draft` for project-bound hooks/script state.
+- `/api/projects/:id/script-draft`, `/history` and `/restore` for working script edits and their recovery versions.
 - `/api/channels/:id/idea-reference` for public YouTube title/thumbnail references.
 - `/api/projects`, `/api/projects/:id` and `/api/projects/:id/assets` for project/media reads.
 - `/api/projects/:id/actions` for montage edits with `expected_revision`.

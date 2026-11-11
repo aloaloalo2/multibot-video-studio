@@ -28,6 +28,8 @@ On Apple Silicon, universal timelines up to 1080p and 30 fps use the GPU rendere
 
 `job_timing.py` records exclusive wall time inside existing workers. See [workflow timing](../docs/workflow-timing.md) for the read-only API, retention and timing semantics.
 
+`script_drafts.py` stores working script text and bounded recovery versions separately from accepted narration. See [script drafts and the next action](../docs/script-drafts-and-next-action.md) for concurrency and workflow ownership.
+
 ## API
 
 JSON mutations require an object with `Content-Type: application/json`, local `Host`, and same-origin browser requests. Non-object bodies, truncated requests, non-finite numbers and excessive JSON nesting return 400 before dispatch. Binary media and settings ZIP uploads use their existing dedicated routes. Errors return `{ "error": "..." }` with a non-2xx status.
@@ -50,6 +52,11 @@ JSON mutations require an object with `Content-Type: application/json`, local `H
 | POST | `/api/projects/import/pick` | `{channel_id,name?}` opens the native JSON chooser; `{project}` |
 | GET | `/api/projects/<id>` | `{project}` with editable scenes, tracks, assets, revision |
 | GET | `/api/projects/<id>/performance` | Bounded local task/stage timings; no service requests or job mutations |
+| GET | `/api/projects/<id>/script-draft` | Working text, accepted-source hash/epoch, optimistic version and history count |
+| PATCH | `/api/projects/<id>/script-draft` | Saves `{text,expected_version,base_sha256,epoch,writer_id?,client_sequence?}` including intentionally empty text; never starts narration |
+| GET | `/api/projects/<id>/script-draft/history` | Metadata for the pinned initial text and up to 20 previous working versions |
+| GET | `/api/projects/<id>/script-draft/<version-id>` | One complete historical text; `baseline` and an available `stale` draft are supported |
+| POST | `/api/projects/<id>/script-draft/restore` | Saves a selected `{version_id,expected_version,base_sha256,epoch}` as a new working draft, retaining the replaced text |
 | PATCH | `/api/projects/<id>` | Rename with `{name,expected_revision?}` |
 | DELETE | `/api/projects/<id>` | Permanently removes managed project data and the episode's `VideoKey` media folder; preserves the author's other episode files and Razgon source |
 | POST | `/api/projects/<id>/restore` | Clears an earlier legacy soft-delete marker while its managed project still exists; cannot undo permanent removal |

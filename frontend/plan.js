@@ -70,6 +70,8 @@ function updateScriptWordCount(panel,text){
 
 const voiceScriptDraft={};
 function narrationScriptValue(project,plan=null,job=null){
+  const working=typeof scriptDraftValue==='function'?scriptDraftValue(project):undefined;
+  if(working!==undefined)return working;
   if(voiceScriptDraft[project.id]!==undefined)return voiceScriptDraft[project.id];
   const saved=project.voice_script;
   if(typeof job?.script==='string'&&job.started_at>(saved?.saved_at||0)&&job.started_at>=(project.restarted_at||0))return job.script;
@@ -105,8 +107,12 @@ function narrationChoices(panel,ready,restore=true){
   }
   buttons.forEach((button,index)=>{button.setAttribute('aria-pressed','false');button.onclick=()=>choose(index);});
   panel.append(choices);
+  let restoredChoice=null;
+  const inferChoice=()=>{if(!restoredChoice||selectionVersion||choices.classList.contains('has-selection'))return;const [data,profile]=restoredChoice;const mode=narrationInitialMode(data,profile,panel.querySelector('textarea')?.value||'');if(mode)showSelection(mode==='file'?1:0);};
+  panel.querySelector('textarea')?.addEventListener('input',inferChoice);
   if(restore)Promise.all([api(`/api/projects/${pid}/narration`),api(`/api/channels/${state.project.channel_id}/voice-lab`).catch(()=>null)]).then(([data,profile])=>{
     if(!choices.isConnected||state.project?.id!==pid||selectionVersion)return;
+    restoredChoice=[data,profile];
     const running=['queued','running','cancelling'].includes(data.job?.status);
     const mode=narrationInitialMode(data,profile,panel.querySelector('textarea')?.value ?? state.project.voice_script?.text ?? state.plan?.script);
     if(mode)showSelection(mode==='file'?1:0);
@@ -238,7 +244,7 @@ function renderNarrationGeneration(panel,scriptInput=null){
     }
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   const text=scriptInput || box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
-  if(!scriptInput)text.value=narrationScriptValue(state.project,state.plan);
+  if(!scriptInput){text.value=narrationScriptValue(state.project,state.plan);if(typeof bindScriptDraft==='function')bindScriptDraft(text,state.project,panel);}
   const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
   const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
   const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
@@ -302,11 +308,14 @@ function renderNarrationGeneration(panel,scriptInput=null){
     }catch(error){if(narrationConnected()){info.textContent=error.message;if(busy)actionState(currentJob?.status||'running');else button.disabled=!voiceReady;if(error.httpStatus!==404)scheduleNarrationPoll(3000);}}
     finally{narrationPolling=false;}
   }
-  button.onclick=async()=>{if(busy){narrationPollVersion++;actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}if(!voiceReady)return;button.disabled=true;text.readOnly=true;narrationPollVersion++;const submittedScript=text.value;try{
+  button.onclick=async()=>{if(busy){narrationPollVersion++;actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}if(!voiceReady)return;button.disabled=true;text.readOnly=true;narrationPollVersion++;const submittedScript=text.value,submittedProject=state.project;try{
+    if(typeof flushScriptDraft==='function')await flushScriptDraft(submittedProject);
+    if(!narrationConnected())return;
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:submittedScript});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
-    const result=await api(`/api/projects/${pid}/narration/start`,'POST',{text:submittedScript,resume:true});if(!narrationConnected())return;if(result.voice_script)state.project.voice_script=result.voice_script;box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
+    if(!narrationConnected())return;
+    const result=await api(`/api/projects/${pid}/narration/start`,'POST',{text:submittedScript,resume:true});if(!narrationConnected())return;if(result.voice_script){state.project.voice_script=result.voice_script;if(typeof commitScriptDraft==='function')commitScriptDraft(state.project,result.voice_script);}box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
   }catch(error){if(narrationConnected()){info.textContent=error.message;button.disabled=false;text.readOnly=false;scheduleNarrationPoll(0);}}};
   poll();return box;
 }
@@ -330,6 +339,7 @@ function renderVoiceStart(panel){
   text.value=narrationScriptValue(project,direct?state.plan:null);
   updateScriptWordCount(panel,text.value);
   text.addEventListener('input',()=>{voiceScriptDraft[project.id]=text.value;updateScriptWordCount(panel,text.value);});
+  if(typeof bindScriptDraft==='function')bindScriptDraft(text,project,panel);
   function choose(next){
     if(busy || !next)return;
     if(!/^(audio|video)\//.test(next.type) && !/\.(mp3|wav|m4a|aac|flac|ogg|opus|aif|aiff|mp4|mov|mkv|webm)$/i.test(next.name)){status('Потрібен аудіо- або відеофайл з озвучкою.',true);return;}
@@ -344,9 +354,12 @@ function renderVoiceStart(panel){
   start.addEventListener('click',async()=>{
     if(!file || busy)return;lock(true);
     try{
+      if(typeof flushScriptDraft==='function')await flushScriptDraft(project);
+      if(!section.isConnected||state.project?.id!==project.id)return;
       show('Завантажуємо озвучку…');
       const response=await fetch(`/api/projects/${encodeURIComponent(project.id)}/assets/upload`,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
       const result=await response.json();if(!response.ok)throw new Error(result.error || 'Не вдалося додати файл');
+      if(!section.isConnected||state.project?.id!==project.id)return;
       // The saved script of an animated episode goes untouched; only an edited text is sent as the voice text.
       const payload={asset_id:result.asset.id},typed=text.value.trim();if(typed && typed!==(project.voice_script?.text || '').trim())payload.script=typed;
       await startVideoCreation(project.id,payload);await poll();
@@ -360,7 +373,7 @@ function renderVoiceStart(panel){
     const job=result.job;if(!job || !section.isConnected)return;
     if(job.status==='failed'){lock(false);show(job.error || 'Обробку зупинено');return;}
     if(job.status==='complete'){
-      if(result.report?.applied){delete voiceScriptDraft[project.id];status(direct?'Озвучку й розпізнаний текст збережено.':'Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
+      if(result.report?.applied){if(typeof acceptRecognizedScriptDraft==='function')acceptRecognizedScriptDraft(project.id,result.report,!!file);delete voiceScriptDraft[project.id];status(direct?'Озвучку й розпізнаний текст збережено.':'Озвучку розпізнано, план готовий.');await selectProject(project.id,{view:'plan'});return;}
       lock(false);show('Озвучку розпізнано, але текст не збігся з озвученим. Перевірте звіт нижче.');if(result.report)appendSpeechReport(section,result.report);return;
     }
     lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
@@ -437,6 +450,7 @@ function renderPlanSwitch(panel){
   const heading=document.createElement('div');heading.className='project-plan-heading';
   heading.innerHTML='<h1><svg class="narration-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21v-4a7 7 0 1 1 7-10l2 4h-3v4h-3v6M19 8l2-1M19 12h3M19 16l2 1"/><path d="M13 11h1"/></svg>Сценарій</h1><small class="script-word-count"></small>';
   panel.append(heading);
+  if(typeof bindScriptDraftStatus==='function'){bindScriptDraftStatus(heading,state.project);ensureScriptDraft(state.project).catch(()=>{});}
   updateScriptWordCount(panel,voiceScriptDraft[state.project.id] ?? state.project.voice_script?.text ?? state.plan?.script ?? '');
 
 }
