@@ -44,25 +44,48 @@ def prepare_file(pid, source):
     return output, saved
 
 
-def import_audio(project, source, source_name='narration'):
+def import_audio(project, source, source_name='narration', reverb=None, room_noise=None):
     """Preserve raw takes; reuse a matching prepared import instead of adding another pause."""
     with LOCK:
         project_lock = PROJECT_LOCKS.setdefault(project['id'], threading.RLock())
     with project_lock:
+        import narration_effects
+        effect_id = narration_effects.identity(reverb, room_noise)
         source = Path(source)
         identity = store.audio_fingerprint(source)
         current = store.load_project(project['id'])
         for asset in current.get('assets', []):
-            if prepared(asset) and (asset['narration_ending'].get('source_sha256') == identity
+            if prepared(asset) and asset.get('narration_processing', '') == effect_id and (asset['narration_ending'].get('source_sha256') == identity
                                     or Path(asset['path']).resolve() == source.resolve()):
                 return asset
         output, receipt = prepare_file(project['id'], source)
+        if effect_id:
+            target = output.parent / effect_id / 'Озвучка.flac'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            effect_receipt = target.with_suffix('.json')
+            saved = store.read_json(effect_receipt, {}) or {}
+            if not target.is_file() or saved.get('sha256') != store.audio_fingerprint(target):
+                pending = target.with_name('pending.flac')
+                try:
+                    narration_effects.render(output, reverb, pending, room_noise, closing_pause=SECONDS)
+                    duration = store.media_duration(pending) or 0
+                    if abs(duration - receipt['duration']) > .06:
+                        raise store.StudioError('Реверберація змінила тривалість озвучки')
+                    pending.replace(target)
+                finally:
+                    pending.unlink(missing_ok=True)
+                saved = {**receipt, 'sha256': store.audio_fingerprint(target)}
+                store.atomic_json(effect_receipt, saved)
+            output, receipt = target, saved
         asset = store.import_asset_file(current, output, source_name)
         asset['narration_ending'] = receipt
+        asset['narration_processing'] = effect_id
         with store.LOCK:
             current = store.load_project(project['id'])
             for saved in current.get('assets', []):
-                if saved['id'] == asset['id']: saved['narration_ending'] = receipt
+                if saved['id'] == asset['id']:
+                    saved['narration_ending'] = receipt
+                    saved['narration_processing'] = effect_id
             store.save_project(current)
         return asset
 

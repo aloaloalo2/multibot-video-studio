@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -27,6 +28,7 @@ import technical_files
 import covers
 import channel_branding
 import channel_hero
+import channel_transfer
 import style_lab
 import style_copy
 import director
@@ -35,6 +37,9 @@ import project_costs
 import production_context
 import director_plan
 import episode_restart
+import export_delivery
+import process_cleanup
+from work_guard import MUTEX as UPDATE_MUTEX
 import frame_progress
 import space
 import production
@@ -72,7 +77,6 @@ JOBS_LOCK = threading.RLock()
 ACTIVE_EXPORTS = {}
 EXPORT_CONDITION = threading.Condition(JOBS_LOCK)
 EXPORT_RUNNING = None
-UPDATE_MUTEX = threading.RLock()
 UPDATE_MANAGER = updater.Updater(APP_ROOT)
 UPDATE_BOOT = uuid.uuid4().hex
 UPDATE_RESTARTING = False
@@ -241,6 +245,19 @@ def choose_local_file(prompt: str) -> Path:
     if result.returncode:
         raise store.StudioError("Файл не вибрано")
     return Path(result.stdout.strip()).expanduser().resolve()
+
+
+def update_studio_settings(settings):
+    # Share the start/restart mutex: no worker can launch between this check and the directory switch.
+    with UPDATE_MUTEX:
+        if isinstance(settings, dict) and 'youtube_root' in settings and settings['youtube_root'] != str(store.YOUTUBE_ROOT):
+            if IN_FLIGHT > 1:
+                raise store.StudioError('Дочекайтеся збереження поточних змін перед зміною папки', 409)
+            with JOBS_LOCK:
+                exports = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
+            if channel_voice_lab.ACTIVE or studio_work_status(exports)['busy']:
+                raise store.StudioError('Дочекайтеся завершення поточної роботи перед зміною папки YouTube', 409)
+        return store.update_global_settings(settings)
 
 
 def pixabay_module():
@@ -433,6 +450,10 @@ def save_job(job: dict) -> None:
             completion_notices.record(job)
         except (OSError, ValueError, store.StudioError) as error:
             print(f'Completion notice not saved: {error}', flush=True)
+
+
+import episode_automation
+episode_automation.JOB_CALLBACKS = (save_job, load_job)
 
 
 def _check_render(path: Path) -> None:
@@ -655,6 +676,7 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             returncode = process.wait()
         finally:
             timeout.cancel()
+            process_cleanup.stop_group(process)
             process.stdout.close()
         if entry['cancel']:
             return
@@ -664,23 +686,29 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             raise RuntimeError(prefix + (render_error or fallback))
         _check_render(staging)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise RuntimeError("Файл з такою назвою вже існує")
         with JOBS_LOCK:
-            if entry['cancel']:
-                return
-            os.replace(str(staging), str(destination))
-            job["status"] = "complete"
-            job["output_path"] = str(destination)
-            job["progress"] = 100
+            job.update(stage='saving', remaining_seconds=None)
+            save_job(job)
+        with export_delivery.prepared(staging, destination, lambda: entry['cancel']) as ready:
+            with JOBS_LOCK:
+                if entry['cancel']:
+                    return
+                export_delivery.publish(ready, destination)
+                job["status"] = "complete"
+                job["output_path"] = str(destination)
+                job["progress"] = 100
         # the film is final: its language soundtracks follow the timeline's sound (music, effects, video sound)
-        language_mix.refresh_later(job["project_id"], "export")
+        try:
+            language_mix.refresh_later(job["project_id"], "export")
+        except Exception as error:
+            print(f'Export saved; language soundtrack refresh not started: {error}', flush=True)
     except Exception as exc:
         with JOBS_LOCK:
             if not entry['cancel']:
                 job["status"] = "failed"
                 job["error"] = str(exc)
     finally:
+        process_cleanup.stop_group(entry.get('process'))
         if staging.exists():
             staging.unlink()
         render_manifest.unlink(missing_ok=True)   # the job file keeps what was exported; the manifest was only its input
@@ -817,7 +845,7 @@ def project_jobs(pid: str) -> dict:
             return (read() or {}).get("status")
         except (store.StudioError, OSError, ValueError, KeyError):
             return None
-    return {"озвучення сценарію": status(lambda: project_narration.snapshot(pid).get("job")),
+    jobs = {"озвучення сценарію": status(lambda: project_narration.snapshot(pid).get("job")),
             "розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job).get("job")),
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
@@ -826,6 +854,15 @@ def project_jobs(pid: str) -> dict:
             "мови": 'running' if languages.busy(pid) else status(lambda: next((job for job in (languages.load_state(pid).get("jobs") or {}).values() if job.get("status") == "running"),
                                         languages.load_state(pid).get("job"))),
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
+    # A worker owns its slot until cleanup and the next-stage registration finish,
+    # even if its terminal receipt was already written.
+    for kind, owned in {'озвучення сценарію': project_narration.ACTIVE,
+                        'режисура': director.ACTIVE, 'створення кадрів': production.ACTIVE,
+                        'музика й ефекти': razgon_sound.ACTIVE, "прев'ю": thumbnail_gen.ACTIVE,
+                        'розпізнавання озвучки': set(analysis_jobs.ACTIVE_PROJECTS.copy().values())}.items():
+        if pid in owned and jobs[kind] not in agent_view.BUSY:
+            jobs[kind] = 'running'
+    return jobs
 
 
 def studio_work_status(exports):
@@ -839,6 +876,14 @@ def studio_work_status(exports):
         if data.get('project_id'):
             result['activities'].append({'project_id': data['project_id'], 'channel_id': cid, 'kind': kind, 'status': 'running'})
     return result
+
+
+def channel_transfer_idle(cid):
+    store.get_channel_folder(cid)
+    with JOBS_LOCK:
+        exports = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
+    if cid in studio_work_status(exports)['active_channels'] or channel_voice_lab.in_use(cid):
+        raise store.StudioError('Дочекайтеся завершення роботи в цьому каналі перед перенесенням налаштувань.', 409)
 
 
 def recent_exports(pid: str, limit: int = 5) -> list[dict]:
@@ -1026,9 +1071,22 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 < length <= 8 * 1024 * 1024:
             raise store.StudioError("Завеликий або порожній запит")
         try:
-            return json.loads(self.rfile.read(length))
-        except (ValueError, UnicodeDecodeError):
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise store.StudioError("Запит завантажено не повністю")
+            def invalid_constant(value):
+                raise ValueError('Non-finite JSON number')
+            def finite_float(value):
+                number = float(value)
+                if not math.isfinite(number):
+                    raise ValueError('Non-finite JSON number')
+                return number
+            body = json.loads(raw, parse_constant=invalid_constant, parse_float=finite_float)
+        except (ValueError, UnicodeDecodeError, RecursionError):
             raise store.StudioError("Невірний JSON") from None
+        if not isinstance(body, dict):
+            raise store.StudioError("Очікується JSON-об’єкт")
+        return body
 
     def check_request_origin(self):
         host = self.headers.get("Host", "")
@@ -1064,6 +1122,17 @@ class Handler(BaseHTTPRequestHandler):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
                 if project_match and not notice_only and not path.endswith(('/agent/cancel', '/still')) and agent_runtime.active(project_match.group(1)):
                     raise store.StudioError('Дочекайтеся завершення агента або зупиніть його перед зміною проєкту.', 423)
+                transfer = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-import', path)
+                if method == 'POST' and transfer:
+                    if self.headers.get('Content-Type', '').split(';')[0] not in {'application/zip', 'application/octet-stream'}:
+                        raise store.StudioError('Оберіть ZIP налаштувань', 415)
+                    try: size = int(self.headers.get('Content-Length', '0'))
+                    except ValueError: raise store.StudioError('Невірний розмір архіву') from None
+                    if not 0 < size <= channel_transfer.MAX_BYTES:
+                        raise store.StudioError('Оберіть ZIP до 128 МБ', 413)
+                    raw = self.rfile.read(size)
+                    if len(raw) != size: raise store.StudioError('Архів завантажено не повністю')
+                    return self.json_response(channel_transfer.import_bundle(transfer.group(1), raw, channel_transfer_idle))
                 shared = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})", path)
                 voice_reference = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab/reference', path)
                 if method == 'POST' and voice_reference:
@@ -1126,6 +1195,29 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        reverb = re.fullmatch(r'/api/audio-effects/([a-z-]+)-v[1234]\.wav', path)
+        if reverb:
+            import narration_effects
+            return self.serve_media(narration_effects.microphone_noise(reverb.group(1)[6:]) if reverb.group(1).startswith('noise-') else narration_effects.microphone_noise() if reverb.group(1)=='microphone' else narration_effects.impulse(reverb.group(1)), cache=True)
+        dry_narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/original', path)
+        if dry_narration:
+            speed = (query.get('speed') or [None])[0]
+            return self.serve_media(project_narration.tempo_preview(dry_narration.group(1), speed) if speed is not None else project_narration.original_audio(dry_narration.group(1)))
+        transfer = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-(export|backups)', path)
+        if transfer:
+            cid, kind = transfer.groups()
+            if kind == 'backups': return self.json_response({'backups': channel_transfer.list_backups(cid)})
+            channel_transfer_idle(cid)
+            raw = channel_transfer.export_bundle(cid)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Disposition', 'attachment; filename="VideoKey-channel-settings.zip"')
+            self.send_header('Content-Length', str(len(raw)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference/([A-Za-z0-9_-]{11})/thumbnail', path)
         if reference_match:
             import idea_reference
@@ -1138,10 +1230,13 @@ class Handler(BaseHTTPRequestHandler):
         if narration:
             store.load_project(narration.group(1))
             return self.json_response(project_narration.snapshot(narration.group(1)))
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft|heygen-voices))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(reference|sample|prepared|draft|heygen-voices|preview))?', path)
         if match:
             cid, kind = match.groups()
-            if kind=='heygen-voices':return self.json_response(channel_voice_lab.heygen_voice.voices())
+            if kind == 'preview':
+                speed = (query.get('speed') or [None])[0]
+                return self.serve_media(channel_voice_lab.tempo_preview(cid, speed) if speed is not None else channel_voice_lab.local_preview_source(cid))
+            if kind=='heygen-voices':return self.json_response(channel_voice_lab.heygen_voice.voices((query.get('model') or ['heygen-voice-1'])[0]))
             if kind == 'draft':
                 return self.serve_media(channel_voice_lab.reference_drafts.audio_file(channel_voice_lab.folder(cid), (query.get('id') or [None])[0], (query.get('clean') or ['0'])[0] == '1'))
             if kind:
@@ -1193,7 +1288,9 @@ class Handler(BaseHTTPRequestHandler):
                 item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
                 receipts = store.read_json(completion_notices.path(item['id']), {}) or {}
                 item['last_export_at'] = (receipts.get('export') or {}).get('at', 0)
-                item['completion_notice'] = completion_notices.notice(store.listed_project(store.project_dir(item['id']) / 'project.json'), receipts)
+                project = store.listed_project(store.project_dir(item['id']) / 'project.json')
+                item['completion_notice'] = completion_notices.notice(project, receipts)
+                item['ready_stage'] = completion_notices.ready_stage(project, receipts, item)
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
@@ -1422,7 +1519,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise store.StudioError("Невірний розмір кадру") from None
             if not (16 <= frame[0] <= 7680 and 16 <= frame[1] <= 7680):
                 raise store.StudioError("Невірний розмір кадру")
-            settings = store.read_json(folder / store.PLAN_CONFIG, {})
+            settings = store.read_channel_settings(folder, {})
             target = store.DATA_ROOT / "channels" / match.group(1) / f"logo-overlay-{frame[0]}x{frame[1]}.png"
             if not channel_branding.overlay_png(match.group(1), settings.get("logo"), frame, target):
                 raise store.StudioError("Логотип не додано або вимкнено", 404)
@@ -1485,6 +1582,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        backup = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-backups/([0-9a-f]{32})(/restore)?', path)
+        if backup:
+            cid, bid, restore = backup.groups()
+            if method == 'POST' and restore:
+                return self.json_response(channel_transfer.restore_backup(cid, bid, channel_transfer_idle))
+            if method == 'DELETE' and not restore:
+                return self.json_response(channel_transfer.delete_backup(cid, bid))
         reference_match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/idea-reference', path)
         if reference_match and method == 'POST':
             import idea_reference
@@ -1494,16 +1598,17 @@ class Handler(BaseHTTPRequestHandler):
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source|cancel|speed)', path)
         if narration and method == 'POST':
             pid, mode = narration.groups(); project = store.load_project(pid)
-            if mode == 'speed':return self.json_response(project_narration.change_speed(pid, body.get('speed')))
+            if mode == 'speed':return self.json_response(project_narration.change_speed(pid, body.get('speed'), body.get('reverb'), body.get('room_noise')))
             if mode == 'cancel':return self.json_response(project_narration.cancel(pid))
             if mode == 'source':return self.json_response(project_narration.select_source(pid, body.get('source')))
             if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
             return self.json_response(project_narration.start(project, body.get('text'), body.get('resume') is True), 202)
 
-        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy|heygen-clone))?', path)
+        match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/voice-lab(?:/(sample|reference/remove|reference/preview|reference/accept|reference/discard|copy|heygen-clone|fish-clone))?', path)
         if match and method == 'POST':
             cid, action = match.groups()
             if action == 'heygen-clone':return self.json_response(channel_voice_lab.create_heygen_voice(cid, body.get('settings')))
+            if action == 'fish-clone':return self.json_response(channel_voice_lab.create_fish_voice(cid, body.get('settings')))
             if action == 'reference/discard':
                 with channel_voice_lab.LOCK:
                     channel_voice_lab.reference_drafts.discard(channel_voice_lab.folder(cid), body.get('draft_id'))
@@ -1574,6 +1679,8 @@ class Handler(BaseHTTPRequestHandler):
             result = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],
                 script=body.get("script"), script_path=body.get("script_path"), duration=body.get("duration"), hints=body.get("hints"), project_id=project["id"], narration=body.get("narration"), timings=body.get("timings"), weights=body.get("weights"), use_channel_weights=body.get("use_channel_weights") is True)
             return self.json_response(result)
+        if method == "POST" and path == "/api/service-keys/copy":
+            return self.json_response({"key": credentials.copy_provider_key(body.get("provider_id"))})
         if method == "POST" and path == "/api/service-keys":
             return self.json_response({"provider": credentials.save_provider(body.get("provider_id"), body.get("name"), body.get("key"))})
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
@@ -1593,9 +1700,11 @@ class Handler(BaseHTTPRequestHandler):
             import extension
             return self.json_response(extension.update())
         if method == "PATCH" and path == "/api/settings":
-            return self.json_response({"settings": store.update_global_settings(body.get("settings", {}))})
+            return self.json_response({"settings": update_studio_settings(body.get("settings", {}))})
+        if method == 'POST' and path == '/api/settings/youtube-root/pick':
+            return self.json_response({'path': str(choose_local_folder('Оберіть папку YouTube з каналами'))})
         if method == "POST" and path == "/api/channels/pick":
-            selected = Path(body["path"]).expanduser().resolve() if body.get("path") else choose_local_folder("Оберіть папку каналу в YOUTUBE")
+            selected = Path(body["path"]).expanduser().resolve() if body.get("path") else choose_local_folder("Оберіть папку каналу всередині папки YouTube")
             return self.json_response({"channel": store.add_channel(selected, body.get("copy_from"))})
         if method == "POST" and path == "/api/channels/create":
             return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
@@ -1867,11 +1976,17 @@ class Handler(BaseHTTPRequestHandler):
         start, end, status = 0, size - 1, 200
         range_header = self.headers.get("Range")
         if range_header:
-            match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header.strip())
-            if not match:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+            if not match or not any(match.groups()):
                 raise store.StudioError("Непідтримуваний діапазон", 416)
-            start = int(match.group(1))
-            end = min(int(match.group(2)) if match.group(2) else size - 1, size - 1)
+            if match.group(1):
+                start = int(match.group(1))
+                end = min(int(match.group(2)) if match.group(2) else size - 1, size - 1)
+            else:
+                suffix = int(match.group(2))
+                if not suffix:
+                    raise store.StudioError("Непідтримуваний діапазон", 416)
+                start = max(0, size - suffix)
             if start >= size or end < start:
                 raise store.StudioError("Діапазон поза файлом", 416)
             status = 206
@@ -1947,6 +2062,9 @@ def main():
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
     server = StudioHTTPServer((args.host, args.port), Handler)
+    for cid, result in technical_files.migrate_channels().items():
+        if isinstance(result, dict) and result.get("error"):
+            print(f"Channel configuration migration of {cid}: {result['error']}", flush=True)
     for pid, result in technical_files.migrate_all().items():
         if isinstance(result, dict) and result.get("error"):
             print(f"Technical file migration of {pid}: {result['error']}", flush=True)

@@ -14,8 +14,6 @@ function montageStarted(){
   const overlay=new Set((state.project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
   return (state.project?.tracks || []).some(track=>(track.clips || []).some(clip=>['image','video','text','animation'].includes(clip.kind)&&!overlay.has(clip.id)));
 }
-function directorDone(){return state.plan?.frame_source==='razgon-direction' && !state.plan?.director_stale;}
-
 async function loadDirector(id){
   try{directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`)).director || {status:'none'};}
   // a lost answer keeps what was known: «none» would offer to start a second director while one still works
@@ -35,7 +33,8 @@ function renderMontageMake(){
   const panel=$('editor-production'),workspace=$('editor-workspace');
   const enabled=!!state.project&&state.view==='editor';
   panel.hidden=!enabled;workspace.classList.toggle('creation-workspace',enabled);
-  if(!enabled){panel.replaceChildren();delete panel.dataset.planKey;return;}
+  if(!enabled){panel.episodeDraftDispose?.();panel.replaceChildren();delete panel.dataset.planKey;return;}
+  if(renderInlineEpisodeDraft(panel)){panel.dataset.planKey="draft:"+state.project.id;return;}
   const id=state.project.id,frames=state.plan?.frames || [];
   const key=JSON.stringify([id,frames.map(frame=>[frame.number,frame.start,frame.end,frame.format]),state.plan?.timing?.status,state.plan?.timing?.audio?.asset_id,state.analysis?.status,state.analysis?.job_id,directMontage()]);
   if(panel.dataset.planKey!==key){
@@ -615,11 +614,20 @@ function renderMakeStatus(button,id,request,done,total){
   }).catch(()=>{});
 }
 // While the agent works, the project is read again now and then: the request carries its state and spend.
+const productionPolls=new Map();
 async function pollProduction(id){
-  if(state.project?.id!==id)return;
-  try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(state.project?.id!==id)return;
-    // Refresh the creation controls in the montage without replacing the author's current timeline or selection.
+  if(state.project?.id!==id||productionPolls.has(id)&&productionPolls.get(id).navigation===state.navigation)return;
+  const token={navigation:state.navigation};productionPolls.set(id,token);
+  const navigation=state.navigation,revision=state.project.revision;
+  const current=()=>state.project?.id===id&&state.navigation===navigation;
+  try{const {project}=await api(`/api/projects/${encodeURIComponent(id)}`);if(!current()||state.project.revision!==revision)return;
     if(state.view==='editor'){
+      // New frames update the actual timeline and media together, preserving the
+      // playhead/selection. Unchanged status polls need no media-library read.
+      if(project.revision!==revision&&!state.busy){
+        if(!await refreshCurrentProject(project)||!current())return;
+      }
+      if(!current())return;
       state.project={...state.project,production_request:project.production_request,production:project.production};
       loadDrawn(id);renderMontageMake();return;
     }
@@ -627,8 +635,9 @@ async function pollProduction(id){
     const before=state.project.production_request?.status;
     state.project=project;
     loadDrawn(id);
-    if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}catch{}
-  refreshEpisode();
+    if(before!==project.production_request?.status&&state.view==='plan'){renderPlan();return;}}
+  catch(error){console.warn('Стан створення кадрів тимчасово недоступний',error);}
+  finally{if(productionPolls.get(id)===token)productionPolls.delete(id);if(current())refreshEpisode();}
 }
 
 async function startDirector(id){

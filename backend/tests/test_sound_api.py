@@ -19,7 +19,7 @@ class SoundApiTest(unittest.TestCase):
     request = fixtures.BackendTest.request
 
     def setUp(self):
-        store.atomic_json(self.channel / store.PLAN_CONFIG, {'weights': {'stock_photo': 100}})
+        store.atomic_json(store.channel_settings_path(self.channel), {'weights': {'stock_photo': 100}})
 
     def test_channel_choices_round_trip_and_control_native_sound_generation(self):
         cid = store.channel_id(self.channel)

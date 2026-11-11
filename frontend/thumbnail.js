@@ -1,8 +1,8 @@
 // thumbnail.js — the magic button on a project card: a YouTube thumbnail (backend/thumbnail_gen.py) from the project's
 // title and script, stills of the video's made frames and the author's optional wishes, the only field of the window:
-// Claude writes the prompt, Codex draws it. The card button appears once a couple of frames are made. The run goes on
+// Claude writes the prompt, Codex draws it. Regular projects can start before any frames exist. The run goes on
 // after the window closes; the card picks up the new picture as its cover when it is ready.
-const thumbnailIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.6 3.6-1.2-1.2a1.2 1.2 0 0 0-1.7 0L2.4 18.6a1.2 1.2 0 0 0 0 1.7l1.2 1.2a1.2 1.2 0 0 0 1.7 0L21.6 5.4a1.2 1.2 0 0 0 0-1.8M14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9"/></svg>';
+const thumbnailIcon='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2v5"/><circle cx="7" cy="8" r="1.5"/><path d="m2 17 5-5 4 4 3-3"/><path d="m13 21 7-7 2 2-7 7ZM18 16l2 2M18 7v3m-1.5-1.5h3M13 10v2m-1-1h2"/></svg>';
 const thumbnailRuns=new Map(),thumbnailSources=new Map();
 
 const thumbnailFrames=2;
@@ -12,14 +12,17 @@ function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
 // додається ще одна»).
 async function openThumbnail(project){
+  const request=state.thumbnailOpenRequest=(state.thumbnailOpenRequest||0)+1,navigation=state.navigation,generation=state.modalGeneration;
+  const current=()=>state.thumbnailOpenRequest===request&&state.navigation===navigation&&state.modalGeneration===generation;
   let data;
-  try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){status(error.message,true);return;}
+  try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`);}catch(error){if(current())status(error.message,true);return;}
+  if(!current())return;
   if(data.job)thumbnailRuns.set(project.id,data.job);
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
   modal('New Preview',`
-    ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
-    <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…"></textarea></label></div>
+    ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
+    <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Головний герой</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     // «з DeepSeek» is a trial (user, 1 November 2026): DeepSeek writes the prompt instead of Claude, Codex draws the same way
@@ -52,12 +55,14 @@ function setupThumbnailModes(project,data){
   const source=thumbnailSources.get(project.id);
   let timer,version=0,loadingUrl='';
   $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);version++;$('thumb-mode-switch')?.remove();$('modal-actions').hidden=false;};
-  const referenceState=$('thumb-reference-state');
+  const referenceState=$('thumb-reference-state'),loadButton=$('thumb-reference-load');
   const note=text=>{referenceState.textContent=text;referenceState.hidden=!text;};
   const updateReferenceView=()=>{
     const cloning=backdrop.dataset.thumbnailMode==='clone';
     const ready=!!(source.reference?.id&&source.reference?.thumbnail_url&&source.referenceUrl===field.value.trim());
     const awaiting=cloning&&!ready;
+    const heroChoice=$('thumb-use-hero');if(heroChoice)heroChoice.closest('label').hidden=cloning;
+    loadButton.disabled=!cloning||!field.value.trim()||ready||!!loadingUrl;
     preview.hidden=!cloning||!ready;
     $('thumb-brief-layout').hidden=awaiting;
     $('modal-actions').hidden=awaiting;
@@ -92,6 +97,7 @@ function setupThumbnailModes(project,data){
     }catch(error){if(preview.isConnected&&current===version){source.reference=null;paint(null);note(error.message);}}
     finally{if(preview.isConnected&&current===version){loadingUrl='';updateReferenceView();}}
   };
+  loadButton.addEventListener('click',()=>{clearTimeout(timer);return load();});
   field.addEventListener('input',()=>{clearTimeout(timer);version++;loadingUrl='';source.reference=null;note('');paint(null);if(field.value.trim())timer=setTimeout(()=>{if(preview.isConnected)load();},450);});
   field.addEventListener('change',()=>{clearTimeout(timer);return load();});
   field.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();return load();}});
@@ -112,9 +118,8 @@ function setupThumbnailModes(project,data){
   select(data.clone_reference?.url?'clone':'new');
 }
 
-const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set(),thumbnailPictures=new Map();
+const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDrafts=new Map(),thumbnailEditPending=new Set();
 function readThumbnailData(id,data){
-  if(Number.isFinite(data.pictures))thumbnailPictures.set(id,data.pictures);
   if(data.job)thumbnailRuns.set(id,data.job);
   thumbnailLanguageRuns.set(id,data.thumbnail_jobs || []);
 }
@@ -163,8 +168,9 @@ async function editThumbnail(project,item,wishes){
 }
 
 async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes')?.value || ''){
+  const generation=state.modalGeneration;
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
-  if($('thumb-use-hero'))body.use_hero=$('thumb-use-hero').checked;
+  if($('thumb-use-hero'))body.use_hero=$('modal-backdrop')?.dataset?.thumbnailMode==='clone'||$('thumb-use-hero').checked;
   try{
     const backdrop=$('modal-backdrop');
     if(source.reference_selection&&backdrop?.dataset.thumbnailProject===project.id){
@@ -182,7 +188,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
     const {job}=await api(`/api/projects/${encodeURIComponent(project.id)}/thumbnail`,'POST',body);
     thumbnailRuns.set(project.id,job);
     // the window closes once the wishes are sent: the card behind it shows «Малюємо прев’ю» while the picture is made
-    if(!$('modal-backdrop').hidden&&$('modal-backdrop').classList.contains('thumb-modal-open'))closeModal();
+    if(state.modalGeneration===generation&&!$('modal-backdrop').hidden&&$('modal-backdrop').dataset.thumbnailProject===project.id&&$('modal-backdrop').classList.contains('thumb-modal-open'))closeModal();
     showThumbnailState(project.id);markThumbnailCard(project.id);pollThumbnail(project.id);
   }catch(error){status(error.message,true);}
 }
@@ -200,7 +206,7 @@ function markThumbnailCard(id){
   if(!veil){veil=document.createElement('div');veil.className='thumb-progress';veil.setAttribute('role','status');
     veil.innerHTML=`<span class="thumb-progress-pill">${typeof exportSpinner==='string'?exportSpinner:''}<span><b>Малюємо прев’ю</b><small></small></span></span>`;card.append(veil);}
   const stage=thumbnailRuns.get(id)?.stage;
-  veil.querySelector('small').textContent=stage==='prompt'?`${thumbnailRuns.get(id)?.writer==='deepseek'?'DeepSeek':'Claude'} пише промпт`:stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
+  veil.querySelector('small').textContent=stage==='prompt'?`${({deepseek:'DeepSeek',trending:'Codex',claude:'Claude'})[thumbnailRuns.get(id)?.writer]||'Claude'} пише промпт`:stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
 }
 
 // Automatic clone covers can start after the card's initial thumbnail read.
@@ -262,9 +268,6 @@ async function pollThumbnail(id){
 
 // Opening the tab shows the gallery; selecting a saved image opens its edit workspace.
 let thumbRoute='';
-function thumbnailFramesMade(project){
-  return (project?.tracks || []).flatMap(track=>track.clips || []).filter(clip=>['video','image'].includes(clip.kind)&&!/Логотип|Плашка/.test(clip.title || '')).length;
-}
 function renderThumbView(){
   const tab=$('view-thumb'),section=$('project-thumb');if(!tab||!section)return;
   const project=state.project,open=!!project&&state.view==='thumb';

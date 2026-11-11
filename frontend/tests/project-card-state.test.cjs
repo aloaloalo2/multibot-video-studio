@@ -45,7 +45,14 @@ test('export progress takes the single status slot and restores production statu
   const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner'});
   vm.runInContext(exportSource,c);vm.runInContext('updateOverviewExports()',c);
   assert.equal(making.hidden,true);assert.equal(control.hidden,true);assert.equal(box.hidden,false);
-  assert.match(box.innerHTML,/Експорт · 0\/107/);
+  assert.match(box.innerHTML,/<span>Експорт<\/span><strong>0%<\/strong>/);
+  assert.doesNotMatch(box.innerHTML,/0\/107/);
+  for(const stage of ['razgon_frames','razgon_sound','verifying','rendering']){
+    jobs.set('p',{status:'running',stage,razgon_completed:6,razgon_total:13,progress:42});
+    vm.runInContext('updateOverviewExports()',c);
+    assert.match(box.innerHTML,/<span>Експорт<\/span><strong>42%<\/strong>/);
+    assert.match(box.innerHTML,/aria-valuenow="42"/);
+  }
   jobs.clear();vm.runInContext('updateOverviewExports()',c);
   assert.equal(making.hidden,false);assert.equal(control.hidden,false);assert.equal(box.hidden,true);
 });
@@ -64,13 +71,23 @@ test('export leaves thumbnail creation available while destructive card actions 
   assert.ok(buttons.every(button=>!button.disabled));
 });
 
-test('completion marks use gray for work and gold for export, with no mark after acknowledgement',()=>{
+test('cards show the last ready stage in place of the date and keep it after acknowledgement',()=>{
   const block=source.slice(source.indexOf('function completionMark('),source.indexOf('async function markProjectSeen('));
-  const c=vm.createContext({});vm.runInContext(block,c);
-  assert.equal(c.completionMark({}), '');
-  assert.match(c.completionMark({completion_notice:{kind:'process'}}),/Роботу завершено/);
-  assert.doesNotMatch(c.completionMark({completion_notice:{kind:'process'}}),/is-exported/);
-  assert.match(c.completionMark({completion_notice:{kind:'export'}}),/is-exported/);
+  const c=vm.createContext({esc:s=>s,projectCreationDate:()=>({text:'4 дні тому',datetime:'2026-11-07',fullDate:'7 листопада'})});vm.runInContext(block,c);
+  assert.match(c.completionMark({}), /Новий випуск/);
+  for(const [stage,label] of Object.entries({openings:'Зачини',script:'Сценарій',voice:'Озвучка',plan:'План кадрів',frames:'Кадри',export:'Експорт'})){
+    const badge=c.completionMark({ready_stage:stage,completion_notice:null});assert.match(badge,new RegExp(label));assert.match(badge,/<svg/);
+  }
+  assert.match(c.completionMark({last_export_at:100}),/4 дні тому.*<svg/);
+  assert.match(c.completionMark({last_export_at:100}),/is-exported/);
+  assert.doesNotMatch(c.completionMark({last_export_at:100}),/<span>Експорт<\/span>/);
+  const completed={ready_stage:'voice',voice_duration:120,production_request:{status:'done',frames:95,quality:{passed:true}}};
+  assert.match(c.completionMark(completed),/Кадри/);
+  assert.doesNotMatch(c.completionMark(completed),/>Озвучка</);
+  assert.match(c.completionMark({...completed,ready_stage:undefined}),/Кадри/);
+  assert.match(c.completionMark({...completed,last_export_at:100}),/is-exported/);
+  for(const status of ['failed','in_progress','requested'])assert.match(c.completionMark({...completed,production_request:{status,frames:95}}),/Озвучка/);
+  assert.match(c.completionMark({...completed,production_request:{status:'done',frames:95,quality:{passed:false}}}),/Озвучка/);
 });
 
 

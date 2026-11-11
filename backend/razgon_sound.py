@@ -58,8 +58,19 @@ def start(pid: str, reason: str) -> bool:
             AGAIN.add(pid)
             return True
         ACTIVE.add(pid)
-    store.atomic_json(state_path(pid), {"status": "queued", "reason": reason, "queued_at": time.time()})
-    threading.Thread(target=run, args=(pid, reason), daemon=True).start()
+    data = {'status': 'queued', 'reason': reason, 'queued_at': time.time()}
+    try:
+        store.atomic_json(state_path(pid), data)
+        threading.Thread(target=run, args=(pid, reason), daemon=True).start()
+    except Exception:
+        data.update(status='failed', error='Не вдалося запустити збирання звуку', finished_at=time.time())
+        try:
+            store.atomic_json(state_path(pid), data)
+        finally:
+            with LOCK:
+                ACTIVE.discard(pid)
+                AGAIN.discard(pid)
+        raise
     return True
 
 

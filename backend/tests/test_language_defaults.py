@@ -5,6 +5,19 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import store,languages,language_defaults,eleven_api
 
 class LanguageDefaultsTest(unittest.TestCase):
+    def test_imported_remote_defaults_need_no_reference_files_or_clone_requests(self):
+        cid='c'*16;version='f'*32
+        payload={'settings':{'provider':'fishaudio','fish_engine':'s2.1-pro-free'},'languages':['uk'],
+                 'voices':{'uk':{'remote_only':True,'voice_ids':{'fishaudio':'fish-id','elevenlabs':'eleven-id'},'clone':'eleven-id'}}}
+        store.atomic_json(language_defaults.root(cid)/'current.json',{'version':version,'payload':payload,'signature':language_defaults.signature(payload)})
+        with patch.object(languages,'request',side_effect=AssertionError('no upload')):
+            project=store.create_project(cid,'Imported IDs');pid=project['id']
+            self.assertEqual(languages.voice_id(pid,'fishaudio','uk')['model_id'],'fish-id')
+            self.assertEqual(languages.voice_id(pid,'elevenlabs','uk')['id'],'eleven-id')
+            self.assertFalse((languages.work_dir(pid,'uk')/'own-voice.mp3').exists())
+            self.assertEqual(languages.voice_cache_context(pid,'uk','fishaudio')[0]['reference_id'],'fish-id')
+            language_defaults.pin_narration(pid,'uk')
+            self.assertEqual(languages.load_state(pid)['languages']['uk']['voice_ids']['fishaudio'],'fish-id')
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.channel=self.root/'Channel';self.channel.mkdir()

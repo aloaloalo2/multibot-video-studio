@@ -25,9 +25,11 @@ import display_text
 import graphics
 import joins
 import typography
+import workspace_paths
+import word_blacklist
 
 
-YOUTUBE_ROOT = Path(__file__).resolve().parents[2]
+YOUTUBE_ROOT = workspace_paths.youtube_root()
 
 
 def razgon_link(project: dict) -> dict | None:
@@ -152,7 +154,7 @@ def video_bitrates(width: int, height: int, fps: int) -> tuple[int, int, int]:
     return tuple(int(rate * factor) for rate in VIDEO_BITRATES[size])
 
 
-GLOBAL_DEFAULTS = {"export_subfolder": ""}
+GLOBAL_DEFAULTS = {"export_subfolder": "", "word_blacklist": []}
 PLAN_CONFIG = "video-plan.json"
 MEDIA_EXTENSIONS = {".mp4": "video", ".mov": "video", ".webm": "video", ".mkv": "video", ".m4v": "video", ".jpg": "image", ".jpeg": "image", ".png": "image", ".webp": "image", ".bmp": "image", ".tif": "image", ".tiff": "image", ".wav": "audio", ".aiff": "audio", ".aif": "audio", ".mp3": "audio", ".m4a": "audio", ".aac": "audio", ".flac": "audio", ".ogg": "audio", ".opus": "audio"}
 LOCK = threading.RLock()
@@ -266,18 +268,51 @@ def read_json(path: Path, default=None):
 def global_settings() -> dict:
     saved = read_json(GLOBAL_SETTINGS_PATH, {})
     # only today's keys: a size and frame rate saved by an older studio now live in each channel's settings
-    return {key: saved.get(key, value) for key, value in GLOBAL_DEFAULTS.items()} if isinstance(saved, dict) else dict(GLOBAL_DEFAULTS)
+    values = {key: saved.get(key, value) for key, value in GLOBAL_DEFAULTS.items()} if isinstance(saved, dict) else dict(GLOBAL_DEFAULTS)
+    return {**values, 'youtube_root': str(YOUTUBE_ROOT)}
+
+
+def validated_youtube_root(value) -> Path:
+    if not isinstance(value, str) or not value.strip() or '\x00' in value:
+        raise StudioError('Укажіть папку YouTube')
+    try:
+        folder = Path(value.strip()).expanduser()
+        if not folder.is_absolute():
+            raise StudioError('Укажіть повний шлях до папки YouTube')
+        folder = folder.resolve(strict=True)
+        if not folder.is_dir():
+            raise StudioError('Оберіть папку YouTube')
+        if under(folder, APP_ROOT) or under(folder, DATA_ROOT) or has_channel_settings(folder):
+            raise StudioError('Оберіть спільну папку з каналами')
+        if not os.access(folder, os.R_OK | os.W_OK | os.X_OK):
+            raise StudioError('Немає доступу до читання та запису в цю папку')
+        next(folder.iterdir(), None)
+    except (OSError, RuntimeError, ValueError):
+        raise StudioError('Папка недоступна. Перевірте шлях і підключення диска') from None
+    return folder
+
+
+def app_rel() -> str:
+    return workspace_paths.app_relative_to(YOUTUBE_ROOT)
 
 
 def update_global_settings(patch: dict) -> dict:
-    if not isinstance(patch, dict) or set(patch) - set(GLOBAL_DEFAULTS):
+    global YOUTUBE_ROOT
+    if not isinstance(patch, dict) or set(patch) - (set(GLOBAL_DEFAULTS) | {'youtube_root'}):
         raise StudioError("Невідоме загальне налаштування")
-    settings = {**global_settings(), **patch}
-    subfolder = settings["export_subfolder"]
-    if not isinstance(subfolder, str) or len(subfolder) > 80 or subfolder in {".", ".."} or any(ch in subfolder for ch in "/\\\x00") or subfolder != subfolder.strip():
-        raise StudioError("Папка експорту має бути однією назвою без роздільників")
     with LOCK:
+        settings = {**global_settings(), **patch}
+        try:
+            settings['word_blacklist']=word_blacklist.normalize(settings['word_blacklist'])
+        except ValueError as error:
+            raise StudioError(str(error)) from None
+        subfolder = settings["export_subfolder"]
+        if not isinstance(subfolder, str) or len(subfolder) > 80 or subfolder in {".", ".."} or any(ch in subfolder for ch in "/\\\x00") or subfolder != subfolder.strip():
+            raise StudioError("Папка експорту має бути однією назвою без роздільників")
+        root = validated_youtube_root(settings['youtube_root']) if 'youtube_root' in patch else YOUTUBE_ROOT
+        settings['youtube_root'] = str(root)
         atomic_json(GLOBAL_SETTINGS_PATH, settings)
+        YOUTUBE_ROOT = root
     return settings
 
 
@@ -293,6 +328,30 @@ def channel_id(folder: Path) -> str:
     return hashlib.sha256(str(folder.resolve()).encode()).hexdigest()[:16]
 
 
+def channel_settings_path(folder: Path) -> Path:
+    """Canonical configuration stays with the Studio's other channel data."""
+    return DATA_ROOT / "channels" / channel_id(folder) / "settings.json"
+
+
+def channel_settings_source(folder: Path) -> Path:
+    """Read old installations without creating or mirroring files in YouTube."""
+    internal = channel_settings_path(folder)
+    return internal if internal.exists() else folder / PLAN_CONFIG
+
+
+def read_channel_settings(folder: Path, default=None):
+    return read_json(channel_settings_source(folder), default)
+
+
+def has_channel_settings(folder: Path) -> bool:
+    return channel_settings_source(folder).is_file()
+
+
+def channel_rules_source(folder: Path) -> Path:
+    internal = DATA_ROOT / "channels" / channel_id(folder) / "channel-rules.md"
+    return internal if internal.exists() else folder / "AGENTS.md"
+
+
 def disabled_ids() -> set[str]:
     value = read_json(DISABLED_PATH, [])
     return set(value if isinstance(value, list) else [])
@@ -304,7 +363,7 @@ def channel_folders(include_disabled=False) -> list[Path]:
     if not YOUTUBE_ROOT.is_dir():
         return result
     for folder in YOUTUBE_ROOT.iterdir():
-        if not folder.is_dir() or not (folder / PLAN_CONFIG).is_file():
+        if not folder.is_dir() or not has_channel_settings(folder):
             continue
         if include_disabled or channel_id(folder) not in disabled:
             result.append(folder)
@@ -350,6 +409,11 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Побажання до зображень мають містити до 4000 символів")
     if not isinstance(value.get("thumbnail_wishes", ""), str) or len(value.get("thumbnail_wishes", "")) > 4000:
         raise StudioError("Побажання до прев’ю мають містити до 4000 символів")
+    if not isinstance(value.get("script_wishes", ""), str) or len(value.get("script_wishes", "")) > 30000:
+        raise StudioError("Побажання сценаристу мають містити до 30000 символів")
+    for flag in ('auto_narration', 'auto_montage'):
+        if type(value.get(flag, False)) is not bool:
+            raise StudioError("Автоматичні дії мають бути увімкнені або вимкнені")
     weights = value.get("weights")
     if not isinstance(weights, dict) or not weights:
         raise StudioError("Задайте частки форматів")
@@ -399,7 +463,7 @@ def validate_settings(value: dict) -> dict:
 
 def channel_record(folder: Path) -> dict:
     # The name shown in the Studio can differ from the folder: the folder path is the channel's id, so it never moves.
-    settings = read_json(folder / PLAN_CONFIG, {})
+    settings = read_channel_settings(folder, {})
     name = (settings.get("display_name") or "").strip() or folder.name
     icon = DATA_ROOT / "channels" / channel_id(folder) / "icon.png"
     try:
@@ -413,7 +477,7 @@ def channel_record(folder: Path) -> dict:
 
 def channel_director_model(project: dict) -> str:
     try:
-        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {})
+        settings = read_channel_settings(get_channel_folder(project["channel_id"], include_disabled=True), {})
     except (StudioError, KeyError):
         return DEFAULT_DIRECTOR_MODEL
     value = settings.get("director_model", DEFAULT_DIRECTOR_MODEL)
@@ -422,7 +486,7 @@ def channel_director_model(project: dict) -> str:
 
 def channel_effort(project: dict) -> str:
     try:
-        settings = read_json(get_channel_folder(project["channel_id"], include_disabled=True) / PLAN_CONFIG, {})
+        settings = read_channel_settings(get_channel_folder(project["channel_id"], include_disabled=True), {})
     except (StudioError, KeyError):
         return "high"
     value = settings.get("claude_effort", "high")
@@ -450,15 +514,18 @@ def reorder_channels(ids) -> list[dict]:
 def add_channel(folder: Path, copy_from: str | None = None) -> dict:
     folder = folder.expanduser().resolve()
     if folder.parent != YOUTUBE_ROOT.resolve() or not folder.is_dir():
-        raise StudioError("Оберіть папку каналу всередині YOUTUBE")
-    config = folder / PLAN_CONFIG
+        raise StudioError("Оберіть папку каналу всередині налаштованої папки YouTube")
+    config = channel_settings_path(folder)
     with LOCK:
+        if (folder / PLAN_CONFIG).exists():
+            import technical_files
+            technical_files.migrate_channel(folder)
         if not config.exists():
             if copy_from:
-                template = read_json(get_channel_folder(copy_from) / PLAN_CONFIG, None)
+                template = read_channel_settings(get_channel_folder(copy_from), None)
             else:
                 templates = channel_folders()
-                template = read_json(templates[0] / PLAN_CONFIG, None) if templates else None
+                template = read_channel_settings(templates[0], None) if templates else None
             if not template:
                 template = {"short_sentence_words": 5, "max_sentences_per_scene": 4, "words_per_minute": 145, "opening_seconds": 90, "opening_clip_count": 6, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 45, "generated_photo": 25, "animation": 20}}
             atomic_json(config, template)
@@ -472,7 +539,7 @@ def create_channel(name: str, copy_from: str | None = None) -> dict:
     name = validated_name(name)
     folder = YOUTUBE_ROOT / name
     if folder.exists():
-        if not folder.is_dir() or not (folder / PLAN_CONFIG).is_file():
+        if not folder.is_dir() or not has_channel_settings(folder):
             raise StudioError("Папка з такою назвою вже існує. Виберіть іншу назву")
         return add_channel(folder, copy_from)
     folder.mkdir(parents=False)
@@ -489,7 +556,7 @@ def disable_channel(cid: str) -> None:
 
 def update_channel_settings(cid: str, patch: dict) -> dict:
     folder = get_channel_folder(cid)
-    current = read_json(folder / PLAN_CONFIG, {})
+    current = read_channel_settings(folder, {})
     if not isinstance(patch, dict):
         raise StudioError("Налаштування мають бути об'єктом")
     next_value = copy.deepcopy(current)
@@ -507,7 +574,9 @@ def update_channel_settings(cid: str, patch: dict) -> dict:
         next_value["opening_clip_types"] = (existing_types + ["stock_video"] * count)[:count]
     validate_settings(next_value)
     with LOCK:
-        atomic_json(folder / PLAN_CONFIG, next_value)
+        import technical_files
+        technical_files.migrate_channel(folder)
+        atomic_json(channel_settings_path(folder), next_value)
     return channel_record(folder)
 
 
@@ -680,7 +749,7 @@ def film_clips(project: dict) -> list[dict]:
 
 
 def channel_animated(channel: Path) -> bool:
-    return (read_json(channel / PLAN_CONFIG, {}) or {}).get("channel_kind") == "animated"
+    return (read_channel_settings(channel, {}) or {}).get("channel_kind") == "animated"
 
 
 def project_plan_mode(project: dict) -> str:
@@ -745,9 +814,8 @@ def listed_plan(project: dict) -> dict | None:
 def production_state(project: dict) -> dict | None:
     """The production request as the project list shows it: its state and how many of the asked frames are made."""
     request = project.get("production_request") or {}
-    if request.get("status") in {"requested", "in_progress"}:
-        import production   # a request no agent works on any more is settled first
-        request = production.settle(project["id"], project) or {}
+    # Listing is read-only. A helper process has no copy of the server's ACTIVE set;
+    # it must never turn a live agent into a failed job. Startup/server job checks settle interruptions.
     if not request.get("status"):
         return None
     state = {"status": request["status"], "frames": int(request.get("frames") or 0), "first": int(request.get("first") or 1),
@@ -897,12 +965,12 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
     # every episode has its folder in the channel from the start: its pictures and videos go there
     episode.mkdir(parents=True, exist_ok=True)
     # the channel's video format, or the studio's defaults for a channel that has none
-    plan_config = read_json(channel / PLAN_CONFIG, {}) or {}
+    plan_config = read_channel_settings(channel, {}) or {}
     size = tuple(int(n) for n in plan_config.get("video_size", DEFAULT_VIDEO_SIZE).split("x"))
     fps = plan_config.get("video_fps", DEFAULT_VIDEO_FPS)
     with LOCK:
         folder.mkdir(parents=True, exist_ok=False)
-        project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_json(channel / PLAN_CONFIG, {})}
+        project = {"id": pid, "name": name, "channel_id": cid, "channel_name": unicodedata.normalize("NFC", channel.name), "episode_path": str(episode), "created_at": round(time.time() * 1000), "schema_version": 2, "layer_mode": "item", "revision": 0, "width": size[0], "height": size[1], "fps": fps, "duration": 0.0, "scenes": [], "tracks": [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}], "assets": [], "settings": read_channel_settings(channel, {})}
         project["plan_mode"] = "direct" if plan_config.get("plan_mode") == "direct" else "director"
         project["project_kind"] = "animated" if plan_config.get("channel_kind") == "animated" else "regular"
         atomic_json(folder / "project.json", project)
@@ -913,7 +981,7 @@ def create_project(cid: str, name: str, episode_path: str | None = None) -> dict
 
 
 def note_topics(channel: Path) -> None:
-    """The channel's «Теми каналу.txt» takes the new title (backend/topics.py); a problem never stops the action."""
+    """The Studio's internal channel title ledger takes the new title (backend/topics.py); a problem never stops the action."""
     try:
         import topics
         topics.update(channel)
@@ -1127,7 +1195,7 @@ def plan_settings_match(pid: str, plan: dict | None) -> bool | None:
         return None
     project = load_project(pid)
     channel = get_channel_folder(project["channel_id"], include_disabled=True)
-    settings = read_json(channel / PLAN_CONFIG, {})
+    settings = read_channel_settings(channel, {})
     if project.get("plan_weights") is not None:
         settings["weights"] = project["plan_weights"]
     return plan["settings_signature"] == planner.settings_signature(settings)
@@ -1253,6 +1321,29 @@ def plan_readiness(project, plan=None, stage_only=False):
     return result
 
 
+def save_voice_script(pid, text, *, source='author', expected_sha256=None):
+    """Persist the author's current editor text, preserving earlier versions locally."""
+    if not isinstance(text, str) or not 10 <= len(text.strip()) <= 200000:
+        raise StudioError('Введіть сценарій від 10 до 200 000 символів')
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    with LOCK:
+        project = load_project(pid)
+        previous = project.get('voice_script') or {}
+        previous_text = previous.get('text') or ''
+        if expected_sha256 is not None and hashlib.sha256(previous_text.encode()).hexdigest() != expected_sha256:
+            raise StudioError('Сценарій уже змінено. Оновіть випуск.', 409)
+        if previous_text == text:
+            return previous
+        if previous_text:
+            old_digest = hashlib.sha256(previous_text.encode()).hexdigest()
+            atomic_json(project_dir(pid)/'script-history'/f'{time.time_ns()}-{old_digest[:12]}.json', previous)
+        record = {'text': text, 'sha256': digest, 'saved_at': time.time(), 'source': source}
+        project['voice_script'] = record
+        project['revision'] = project.get('revision', 0) + 1
+        save_project(project)
+        return record
+
+
 def await_voice(cid: str, name: str, episode: Path, script, project_id=None) -> dict:
     """An episode gets no plan before its voice: the Studio keeps the script and waits.
 
@@ -1305,7 +1396,7 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
             raise StudioError("Сценарій має бути TXT-файлом у папці випуску")
         script = path.read_text(encoding="utf-8-sig")
     mode_project = load_project(project_id) if project_id else project_for_episode(cid, episode)
-    if (project_plan_mode(mode_project) if mode_project else (read_json(channel / PLAN_CONFIG, {}) or {}).get("plan_mode")) == "direct":
+    if (project_plan_mode(mode_project) if mode_project else (read_channel_settings(channel, {}) or {}).get("plan_mode")) == "direct":
         with LOCK:
             existing = load_project(project_id) if project_id else project_for_episode(cid, episode)
             if existing and (existing["channel_id"] != cid or Path(existing["episode_path"]).resolve() != episode):
@@ -1317,7 +1408,7 @@ def generate_project_plan(cid: str, name: str, episode_path: str, *, script=None
     if narration is None and timings is None:
         return await_voice(cid, validated_name(name), episode, script, project_id)
     with LOCK:
-        settings = validate_settings(read_json(channel / PLAN_CONFIG, {}))
+        settings = validate_settings(read_channel_settings(channel, {}))
         if project_id:
             existing_project = load_project(project_id)
         else:
@@ -2069,7 +2160,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         clip["trim_start"] = trim_start
         style_defaults={}
         if kind=='text' or content_type=='text':
-            config=read_json(get_channel_folder(project['channel_id'],include_disabled=True)/PLAN_CONFIG,{}) if project.get('channel_id') else {}
+            config=read_channel_settings(get_channel_folder(project['channel_id'],include_disabled=True),{}) if project.get('channel_id') else {}
             style_defaults=config.get('typography',{})
         try:clip.update(graphics.validate({**style_defaults,**payload}))
         except (ValueError,TypeError) as error:raise StudioError(str(error))

@@ -74,6 +74,9 @@ class EpisodeIdeasTest(unittest.TestCase):
                          ('saved-draft',1200,'done'))
     def test_topics_use_varied_clickworthy_angles_in_one_request(self):
         data=self.begin({'action':'ideas'})
+        # A manual edit made after reservation must reach the actual model prompt.
+        ledger = ideas.channel_topics.path(store.get_channel_folder(self.cid))
+        store.atomic_text(ledger, ledger.read_text(encoding='utf-8') + 'Manual history added after reservation\n')
         titles=["Why your car smells sweet", "5 sounds worth checking before a long trip",
                 "The overlooked part behind a rough idle", "Your winter tyres lose grip sooner than you think",
                 "This tiny dashboard light can save an expensive repair"]
@@ -81,6 +84,7 @@ class EpisodeIdeasTest(unittest.TestCase):
             result=self.finish(data)
         model.assert_called_once()
         prompt=model.call_args.args[0]
+        self.assertIn('Manual history added after reservation', prompt)
         self.assertNotIn('matching the title structure',prompt)
         self.assertIn('at least four different editorial angles',prompt)
         self.assertIn('At least three titles must be one sentence',prompt)
@@ -90,6 +94,32 @@ class EpisodeIdeasTest(unittest.TestCase):
         with patch.object(ideas,'deepseek') as model:
             self.assertEqual(ideas.read(self.cid)['ideas'],result['ideas'])
         model.assert_not_called()
+
+    def test_german_date_in_six_sentence_hooks_is_accepted_without_paid_retry(self):
+        draft = self.begin({'action':'ideas'})
+        with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'Original tyre story {i}', 'uk':''} for i in range(5)]}):
+            self.finish(draft)
+        draft = self.begin({'action':'openings', 'index':0})
+        hook = ('Wir prüfen am 1. Oktober 2024 die Reifen. Die erste Zahl steht auf der Flanke. '
+                'Du kannst sie selbst lesen. Das Profil prüfen wir danach. Ich zeige dir jeden Schritt. Am Ende kennst du alle Angaben.')
+        with patch.object(ideas, 'opus', return_value={'openings':[{'text':hook, 'uk':''} for _ in range(4)]}) as model:
+            result = self.finish(draft)
+        self.assertEqual(result['status'], 'done', result.get('error'))
+        self.assertEqual([row['text'] for row in result['openings']], [hook]*4)
+        model.assert_called_once()
+
+    def test_hook_sentence_counts_do_not_block_saved_results(self):
+        draft = self.begin({'action':'ideas'})
+        with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'Fresh hook format story {i}', 'uk':''} for i in range(5)]}):
+            self.finish(draft)
+        draft = self.begin({'action':'openings', 'index':0})
+        hooks = [{'text': 'A sentence. ' * count, 'uk':''} for count in (1, 5, 7, 10)]
+        with patch.object(ideas, 'opus', return_value={'openings':hooks}) as model, patch('planner.split_sentences', side_effect=AssertionError('Hook sentence counting must not run')):
+            result = self.finish(draft)
+        self.assertEqual(result['status'], 'done', result.get('error'))
+        self.assertEqual(result['openings'], hooks)
+        model.assert_called_once()
+        self.assertIn('each exactly 6 complete sentences', model.call_args.args[0])
 
     def test_http_stage_is_reserved_once_and_hides_private_context(self):
         with patch.object(ideas,'Thread') as thread:
@@ -120,10 +150,36 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertEqual(data['selected']['uk'], '')
         self.assertEqual(store.load_project(data['project_id'])['name'], edited)
         self.assertEqual(ideas.catalog(self.cid)['ideas'][1]['title'], original)
-        hooks = [{'text':('A complete vivid hook with useful natural spoken detail. ')*4,'uk':''} for _ in range(4)]
+        hooks = [{'text':('A complete vivid hook with useful natural spoken detail. ')*6,'uk':''} for _ in range(4)]
         with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
             self.finish(data)
         self.assertIn(edited, model.call_args.args[0])
+        self.assertIn('exactly 6 complete sentences', model.call_args.args[0])
+        self.assertEqual(ideas.read_project(data['project_id'])['status'], 'done')
+
+    def test_live_writer_wishes_reach_hooks_and_script_without_montage_memory(self):
+        self.topics()
+        data = self.begin({'action':'openings','index':0,'new_episode':True})
+        folder=store.get_channel_folder(self.cid)
+        original=store.read_json(folder / store.PLAN_CONFIG)
+        try:
+            store.update_channel_settings(self.cid, {'script_wishes':'Use a warm greeting and short concrete examples.'})
+            hooks=[{'text':'A complete vivid hook with useful spoken details. '*6,'uk':''} for _ in range(4)]
+            with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
+                self.finish(data)
+            self.assertIn('Use a warm greeting',model.call_args.args[0])
+            self.assertNotIn('"memory":',model.call_args.args[0])
+            data=self.begin({'action':'script','index':0})
+            with patch.object(ideas,'opus',side_effect=ValueError('Stop after capturing the script brief')) as model:
+                self.finish(data)
+            self.assertIn('Use a warm greeting',model.call_args.args[0])
+            # An incomplete set of variants stays failed with no hidden paid retry.
+            data=self.begin({'action':'openings','index':1,'new_episode':True})
+            with patch.object(ideas,'opus',return_value={'openings':[{'text':'A complete vivid hook with useful spoken details. '*10,'uk':''}]*3}) as model:
+                result=self.finish(data)
+            self.assertEqual(result['status'],'failed');model.assert_called_once()
+        finally:
+            store.atomic_json(folder / store.PLAN_CONFIG,original)
 
     def test_blank_edited_title_creates_no_project_or_model_job(self):
         self.topics()
@@ -154,7 +210,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertNotIn('context', ideas.public(data))
         data = self.begin({'action':'openings','index':2,'target_words':1500})
         pid = data['project_id']
-        hooks=[{'text':('Opening number '+str(i)+' with meaningful vivid words and natural spoken detail. ')*4,'uk':''} for i in range(4)]
+        hooks=[{'text':('Opening number '+str(i)+' with meaningful vivid words and natural spoken detail. ')*6,'uk':''} for i in range(4)]
         with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
             data=self.finish(data)
             self.assertIn('1500', model.call_args.args[0])
@@ -209,7 +265,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         self.assertEqual(ideas.read(self.cid)['status'],'failed')
     def test_existing_script_is_never_overwritten(self):
         self.topics();data=self.begin({'action':'openings','index':0});pid=data['project_id']
-        hooks=[{'text':'A meaningful opening with enough words. '*5,'uk':''}]*4
+        hooks=[{'text':'A meaningful opening with enough words. '*6,'uk':''}]*4
         with patch.object(ideas,'opus',return_value={'openings':hooks}): self.finish(data)
         store.save_project_source(store.load_project(pid),'Author text already saved.')
         with patch.object(ideas,'Thread') as thread:

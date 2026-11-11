@@ -17,6 +17,8 @@ LONG_WORD = 1.2      # seconds: longer than any spoken word
 CONTEXT = 2          # neighbouring words recognised again together with the hole
 PAD = 0.25           # seconds of audio kept around the cut
 MAX_HOLES = 60
+MAX_SCRIPT_PHRASES = 8
+MAX_SCRIPT_SECONDS = 60
 
 
 def holes(words: list[dict]) -> list[tuple[int, int]]:
@@ -73,3 +75,64 @@ def repair(audio: Path, words: list[dict], language: str | None = None) -> tuple
                 result += old
             done = b + 1
     return result + words[done:], fixed
+
+
+def repair_script(audio: Path, script: str, words: list[dict], language=None, *, duration=None, sequence_verified=False) -> tuple[list[dict], int]:
+    """Rehear blocked phrases locally, preserving neighbours and the acceptance gate."""
+    if not script or not words:
+        return words, 0
+    duration = duration or max(word['end'] for word in words)
+    compare = lambda value: speech.compare_script(script, value, duration, sequence_verified=True) if sequence_verified else speech.compare_script(script, value, duration)
+    report = compare(words)
+    if report['status'] == 'matched':
+        return words, 0
+    blocking = speech.blocking_issues(sequence_verified)
+    targets = [row['number'] for row in report['phrases']
+               if blocking.intersection(row['issues'])][:MAX_SCRIPT_PHRASES]
+    fixed = 0
+
+    def score(value):
+        issues = blocking | {'repeated_speech', 'out_of_order'}
+        blocked = {row['number'] for row in value['phrases'] if issues.intersection(row['issues'])}
+        return blocked, value['matched_words']
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for number in targets:
+            row = report['phrases'][number - 1]
+            if not blocking.intersection(row['issues']):
+                continue
+            # A completely swallowed opening/ending can have no boundary.
+            # Use the nearest heard phrases and the measured audio duration.
+            left = row['start']
+            right = row['end']
+            if left is None:
+                left = next((p['end'] for p in reversed(report['phrases'][:number - 1]) if p['end'] is not None), 0)
+            if right is None:
+                right = next((p['start'] for p in report['phrases'][number:] if p['start'] is not None), duration)
+            lo, hi = max(0, left - 1), min(duration, right + 1)
+            span = [i for i, word in enumerate(words) if word['end'] > lo and word['start'] < hi]
+            if not span:
+                continue
+            a, b = span[0], span[-1]
+            start = lo if a == 0 else words[a]['start']
+            end = hi if b == len(words) - 1 else words[b]['end']
+            if end <= start or end - start > MAX_SCRIPT_SECONDS:
+                continue
+            piece = Path(tmp) / f'phrase-{number}.wav'
+            if not cut(audio, start, end, piece):
+                continue
+            try:
+                heard, _ = speech.transcribe(piece, end - start, lambda *args, **kwargs: None, language)
+            except RuntimeError:
+                continue
+            heard = [{**word, 'start': round(max(start, min(end, word['start'] + start)), 3),
+                      'end': round(max(start, min(end, word['end'] + start)), 3)} for word in heard]
+            heard = [word for word in heard if word['end'] > word['start']]
+            candidate = words[:a] + heard + words[b + 1:]
+            reviewed = compare(candidate)
+            old_bad, old_hits = score(report)
+            new_bad, new_hits = score(reviewed)
+            if new_bad <= old_bad and new_hits >= old_hits and (len(new_bad) < len(old_bad) or new_hits > old_hits):
+                words, report = candidate, reviewed
+                fixed += 1
+    return words, fixed

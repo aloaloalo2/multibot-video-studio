@@ -39,7 +39,7 @@ TEXT_RULES = ('\nЧитабельність тексту обов’язкова
 
 def instructions(project, *, planning=False):
     try:
-        settings=store.read_json(store.get_channel_folder(project['channel_id'],include_disabled=True)/store.PLAN_CONFIG,{}) or {}
+        settings=store.read_channel_settings(store.get_channel_folder(project['channel_id'],include_disabled=True),{}) or {}
     except (store.StudioError, KeyError, OSError):
         settings={}
     enabled=(settings.get('animation') or {}).get('assets',True) is not False

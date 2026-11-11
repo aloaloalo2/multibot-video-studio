@@ -32,6 +32,13 @@ class SpeechOrderTest(unittest.TestCase):
         self.assertEqual(report["status"], "matched")
         self.assertFalse([d for d in report["differences"] if d.get("note")])
 
+    def test_verified_assembly_does_not_override_recognized_repeats_or_moved_sentences(self):
+        for order in [[0,1,2,1,2,3,4,5],[3,4,5,0,1,2]]:
+            words,duration=voice(order)
+            report=speech.compare_script(' '.join(SENTENCES),words,duration,sequence_verified=True)
+            self.assertEqual(report['status'],'needs_review')
+            self.assertIsNone(report['timings'])
+
     def test_a_piece_said_twice_is_caught_with_both_times(self):
         report = self.compare([0, 1, 2, 1, 2, 3, 4, 5])
         self.assertEqual((report["status"], report["timings"]), ("needs_review", None))

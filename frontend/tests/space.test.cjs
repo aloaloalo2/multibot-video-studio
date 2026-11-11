@@ -52,3 +52,11 @@ test('a failed scan can be retried without deletion',async()=>{
   await fields.open.onclick();assert.equal(fields.open.textContent,'Звільнити місце');
   assert.equal(fields.open.disabled,false);assert.equal(reads,2);
 });
+
+test('closing the project cleanup dialog discards its late scan',async()=>{
+  let finish,dialogs=0;const state={modalGeneration:0};
+  const c=vm.createContext({state,modal:()=>{dialogs++;state.modalGeneration++;},api:()=>new Promise(resolve=>finish=resolve)});
+  vm.runInContext(source,c);const pending=c.openSpace({id:'p'});
+  state.modalGeneration++;finish({total:0});await pending;
+  assert.equal(dialogs,1);
+});

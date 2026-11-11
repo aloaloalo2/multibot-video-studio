@@ -45,6 +45,9 @@ def split_sentences(text: str) -> list[str]:
     placeholders = {"т.д.": "т¤д¤", "т.п.": "т¤п¤", "н.е.": "н¤е¤", "Dr.": "Dr¤", "Mr.": "Mr¤"}
     for old, new in placeholders.items():
         text = text.replace(old, new)
+    # German dates use an ordinal dot before a capitalized month, not a sentence boundary.
+    text = re.sub(r"\b(0?[1-9]|[12]\d|3[01])\.(?=\s+(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\b)",
+                  r"\1¤", text)
     parts = re.split(r"(?<=[.!?…])\s+(?=[«„“\"(\w])", text)
     return [p.replace("¤", ".").strip() for p in parts if p.strip()]
 

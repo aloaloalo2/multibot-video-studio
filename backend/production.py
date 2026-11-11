@@ -104,8 +104,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'} і навики Razgon
-(«{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). Великі документи самої
-студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: це зайві токени, а все потрібне для кадрів є тут і в навиках. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, де випуск.
+(«{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). Великі документи самої
+студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: це зайві токени, а все потрібне для кадрів є тут і в навиках. python3 "{store.app_rel()}/tools/episode.py" "{rel}" показує, де випуск.
 
 Зона логотипа, яку треба залишити вільною від тексту й важливих об’єктів: {channel_branding.reserved_zone(project)}.
 Якщо зона задана, розташовуй заголовки, підписи, стрілки й ключові об’єкти поза нею у всіх кадрах, включно з Razgon.
@@ -124,8 +124,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
    Переглянь аркуші й познач результат через mark; direction_check.py без FAIL. Один набір аркушів для перевірки композиції й логіки.
 {motion_direction.EXECUTION}
-{QUALITY.replace("<студія>", store.APP_ROOT.name)}
-4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
+{QUALITY.replace("<студія>", store.app_rel())}
+4. python3 "{store.app_rel()}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
    знову робить блоком.
    Не рендери відео кадрів: не запускай razgon_bridge.py push, final чи export, а render.mjs запускай тільки з --sheet
@@ -140,7 +140,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
 
 
-# How people look in a channel's pictures: «Люди в кадрах» (`people_style` in video-plan.json). Stick figures are the
+# How people look in a channel's pictures: «Люди в кадрах» (`people_style` in saved channel settings). Stick figures are the
 # default (user, 31 October 2026); the health channels for older viewers show real people (user, 5 November 2026: «його
 # проект має бути для дорослих людей… не дудл, а живих справжніх людей. Старших… як будто сфоткані на телефон»).
 PEOPLE = ("Люди в кожному кадрі, крім кадрів ведучого, лише стикмени: і на картинках, і в кожному промпті для картинки "
@@ -172,7 +172,7 @@ PEOPLE_STYLES = {"stickman", "real", "real_older"}
 def people_style(project: dict) -> str:
     """Universal projects use realistic people; animated projects retain their channel choice."""
     try:
-        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+        settings = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
     except (store.StudioError, KeyError):
         settings = {}
     import animation_preferences
@@ -206,7 +206,7 @@ ACCENT_RULES = """Це творче монтажне рішення режисе
 def accents_step(project: dict, tools: str) -> str:
     """What the channel's settings say about accents (an arrow, a ring or a caption over a picture, «Акценти на кадрах»)."""
     try:
-        settings = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+        settings = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
     except (store.StudioError, KeyError):
         settings = {}
     if not settings.get("accents"):
@@ -247,7 +247,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     root = store.YOUTUBE_ROOT
     episode = Path(project["episode_path"])
     rel = episode.relative_to(root) if root in episode.parents else episode
-    tools = store.APP_ROOT.name + "/tools"
+    tools = store.app_rel() + "/tools"
     people = people_rules(project)
     remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
@@ -545,7 +545,15 @@ def start(pid: str, notes: str = "") -> None:
             set_request(pid, status="failed", error=str(error))
             return
         ACTIVE.add(pid)
-    threading.Thread(target=run, args=(pid, cli, notes), daemon=True).start()
+    try:
+        threading.Thread(target=run, args=(pid, cli, notes), daemon=True).start()
+    except Exception:
+        try:
+            set_request(pid, status='failed', error='Не вдалося запустити створення кадрів', finished_at=time.time())
+        finally:
+            with LOCK:
+                ACTIVE.discard(pid)
+        raise
 
 
 # A request just written waits this long for its run to start before it can read as stale.

@@ -168,7 +168,7 @@ def reserved_zone(project: dict) -> dict | None:
     if not cid:return None
     try:folder=store.get_channel_folder(cid,include_disabled=True)
     except store.StudioError:return None
-    settings=store.read_json(folder/store.PLAN_CONFIG,{})
+    settings=store.read_channel_settings(folder,{})
     spec=placement(settings.get('logo'));path=logo_path(cid)
     if not spec['enabled'] or not path.is_file():return None
     frame=(int(project.get('width') or 1920),int(project.get('height') or 1080))

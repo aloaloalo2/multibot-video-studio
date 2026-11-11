@@ -1,12 +1,14 @@
-"""«Теми каналу.txt»: the titles of a channel's episodes, one a line, so a new script picks a fresh topic (or tells an old
+"""Studio-internal «Теми каналу.txt»: the titles of a channel's episodes, one a line, so a new script picks a fresh topic (or tells an old
 one another way) from one short file instead of reading earlier scripts (user, 1 November 2026: «попередні сценарії
 не варто передивлятися… просто зберігати теми, заголовки… в текстовому файлі»).
 
 The Studio only appends: a title of a project or of an episode folder with «Метаданные.txt» that the file lacks is
-added at the end. Lines the author wrote or changed stay as they are, nothing is ever removed.
+added at the end. Legacy channel files are backed up, verified and migrated. Lines the author wrote or changed stay as they are, nothing is ever removed.
 """
 from __future__ import annotations
 
+import shutil
+import time
 import unicodedata
 from pathlib import Path
 
@@ -50,25 +52,58 @@ def titles(channel: Path) -> list[str]:
     return [name.strip() for _, name in sorted(found, key=lambda pair: pair[0]) if name.strip()]
 
 
+def path(channel: Path) -> Path:
+    """Technical history is private to this channel's Studio identity."""
+    return store.DATA_ROOT / "channels" / store.channel_id(channel) / FILE
+
+
+def _lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+
+
 def update(channel: Path) -> list[str]:
-    """Append the channel's titles the file lacks; returns the added ones."""
-    path = channel / FILE
-    text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else HEADER
-    have = {_key(line) for line in text.splitlines() if line.strip() and not line.startswith("#")}
-    added = []
-    for title in titles(channel):
-        if _key(title) not in have:
-            have.add(_key(title))
-            added.append(title)
-    if added or not path.is_file():
-        store.atomic_text(path, text.rstrip("\n") + "\n" + "".join(line + "\n" for line in added))
-    return added
+    """Merge legacy notes losslessly, then append missing episode titles under one lock."""
+    with store.LOCK:
+        target = path(channel)
+        legacy = channel / FILE
+        if target.is_symlink() or legacy.is_symlink():
+            raise store.StudioError("Файл тем каналу містить символічне посилання")
+        original = legacy.read_bytes() if legacy.is_file() else None
+        text = target.read_text(encoding="utf-8") if target.is_file() else HEADER
+        have = {_key(line) for line in _lines(text)}
+        added = []
+        candidates = (_lines(original.decode("utf-8")) if original is not None else []) + titles(channel)
+        for title in candidates:
+            if _key(title) not in have:
+                have.add(_key(title))
+                added.append(title)
+        merged = text.rstrip("\n") + "\n" + "".join(line + "\n" for line in added)
+        if original is not None:
+            backup = target.parent / "technical-history" / str(time.time_ns()) / FILE
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy, backup)
+            if backup.read_bytes() != original:
+                raise OSError("Не вдалося перевірити резервну копію тем каналу")
+        if added or original is not None or not target.is_file():
+            store.atomic_text(target, merged)
+        if original is not None:
+            if target.read_text(encoding="utf-8") != merged or legacy.read_bytes() != original:
+                raise OSError("Теми каналу змінилися під час перенесення")
+            legacy.unlink()
+        return added
+
+
+def history(channel: Path) -> list[str]:
+    """Refresh and read the full title ledger, including manually added topics."""
+    with store.LOCK:
+        update(channel)
+        return _lines(path(channel).read_text(encoding="utf-8"))
 
 
 def update_all() -> None:
-    """At start and after a project is made or renamed: every channel's file catches up; a problem never stops the Studio."""
+    """At start, migrate and refresh enabled and disabled channels."""
     for channel in store.channel_folders(include_disabled=True):
         try:
             update(channel)
-        except (OSError, store.StudioError):
+        except (OSError, ValueError, store.StudioError):
             continue

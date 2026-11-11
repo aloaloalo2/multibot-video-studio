@@ -35,12 +35,12 @@ class VoiceLabTests(unittest.TestCase):
         with wave.open(buf,'wb') as out:
             out.setnchannels(1);out.setsampwidth(2);out.setframerate(24000)
             out.writeframes((np.sin(np.arange(48000)*2*np.pi*440/24000)*16000).astype('<i2').tobytes())
-        settings=lab.validated({'provider':'fishaudio','speed':.9})
+        settings=lab.validated({'provider':'fishaudio','speed':.87})
         with patch.object(lab.languages,'request',return_value=buf.getvalue()) as request:
             slow=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},settings,raw_key='test-original')
-            fast=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},{**settings,'speed':1.1},raw_key='test-original')
+            fast=lab.fish_synthesis('mock',{'audio':b'ref','text':'ref'},{**settings,'speed':1.05},raw_key='test-original')
             request.assert_called_once()
-        for name,audio,wanted in [('slow',slow,2/.9),('fast',fast,2/1.1)]:
+        for name,audio,wanted in [('slow',slow,2/.87),('fast',fast,2/1.05)]:
             target=self.root/(name+'.mp3');target.write_bytes(audio)
             self.assertAlmostEqual(store.media_duration(target),wanted,delta=.12)
             raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(target),'-ar','24000','-f','f32le','pipe:1'])
@@ -48,21 +48,44 @@ class VoiceLabTests(unittest.TestCase):
             self.assertAlmostEqual(freq,440,delta=4)
 
     def test_eleven_speed_uses_one_standard_original(self):
-        settings=lab.validated({'speed':.9});ref={'sha256':'reference'}
+        settings=lab.validated({'speed':.87});ref={'sha256':'reference'}
         with patch.object(lab,'synthesis',return_value=b'original') as synth,patch.object(store,'media_duration',return_value=2),patch.object(lab,'paced_audio',side_effect=lambda path,speed:path.read_bytes()) as pace:
             lab.eleven_local_synthesis('secret','voice',settings,ref)
-            lab.eleven_local_synthesis('secret','voice',{**settings,'speed':1.1},ref)
+            lab.eleven_local_synthesis('secret','voice',{**settings,'speed':1.05},ref)
             synth.assert_called_once()
             self.assertEqual(synth.call_args.args[2]['speed'],1.)
-            self.assertEqual([call.args[1] for call in pace.call_args_list],[.9,1.1])
-        self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.1},ref))
+            self.assertEqual([call.args[1] for call in pace.call_args_list],[.87,1.05])
+        self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.05},ref))
 
     def test_fish_speed_validation_and_cache(self):
-        for speed in [True, float('nan'), .89, 1.11, '1']:
+        for speed in [True, float('nan'), .86, 1.06, '1']:
             with self.assertRaises(store.StudioError):lab.validated({'speed':speed})
         ref={'sha256':'ref'};base=lab.validated({'provider':'fishaudio'})
-        self.assertNotEqual(lab.fingerprint(base,ref),lab.fingerprint({**base,'speed':1.1},ref))
-        self.assertEqual(lab.validated({'speed':1.1})['speed'],1.1)
+        self.assertNotEqual(lab.fingerprint(base,ref),lab.fingerprint({**base,'speed':1.05},ref))
+        self.assertEqual(lab.validated({'speed':1.05})['speed'],1.05)
+
+    def test_service_sample_is_dry_and_local_controls_do_not_pay_for_another_take(self):
+        self.reference()
+        settings=lab.validated({'speed':.87,'reverb':{'enabled':True},'room_noise':{'enabled':True}})
+        with patch.object(lab.threading,'Thread',ImmediateThread),patch.object(lab,'clone',return_value=('secret','voice')), \
+                patch.object(lab,'synthesis',return_value=b'dry original') as synth,patch.object(store,'media_duration',return_value=12), \
+                patch.object(lab.languages.language_quality,'require'),patch.object(lab.eleven_api,'invalidate_balance'):
+            first=lab.start(self.cid,settings,'d'*20)
+            path=lab.folder(self.cid)/'samples'/(first['job']['fingerprint']+'.mp3')
+            self.assertEqual(path.read_bytes(),b'dry original')
+            self.assertEqual(synth.call_args.args[2]['speed'],1.)
+            second=lab.start(self.cid,{**settings,'speed':1.05,'room_noise':{'enabled':True,'preset':'city'}},'e'*20)
+            self.assertEqual(second['job']['fingerprint'],first['job']['fingerprint'])
+            synth.assert_called_once()
+
+    def test_local_audition_never_uses_the_uploaded_reference_in_place_of_a_sample(self):
+        self.reference()
+        profile=lab.snapshot(self.cid)
+        self.assertIsNone(profile['local_preview'])
+        with self.assertRaises(store.StudioError):lab.local_preview_source(self.cid)
+        source=lab.original_path(profile['settings'],profile['reference']);source.parent.mkdir(parents=True,exist_ok=True);source.write_bytes(b'dry take')
+        self.assertEqual(lab.local_preview_source(self.cid),source)
+        self.assertIn('/preview?v=',lab.snapshot(self.cid)['local_preview'])
 
     def test_existing_channels_and_supported_settings(self):
         self.assertIn('settings',lab.snapshot('0'*16))

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import audio_level
 import language_mix
 import languages
+import idea_reference
 import store
 import thumbnail_gen
 
@@ -58,9 +59,11 @@ class DirectNarrationConsumersTest(unittest.TestCase):
 
     def test_thumbnail_uses_direct_transcription_and_pre_analysis_saved_script(self):
         with patch.object(thumbnail_gen, "state", return_value=None), \
+             patch.object(idea_reference, "for_project", return_value=(None,None)), \
              patch.object(thumbnail_gen, "preview", return_value=None), \
              patch.object(thumbnail_gen, "versions", return_value=[]), \
-             patch.object(store, "picture_count", return_value=0):
+             patch.object(store, "picture_count", return_value=0), \
+             patch.object(thumbnail_gen.channel_hero, "info", return_value=None):
             self.assertEqual(thumbnail_gen.defaults("p")["script"], "The actual narration.")
             self.source.clear()
             self.project["voice_script"] = {"text": "Saved script before recognition."}

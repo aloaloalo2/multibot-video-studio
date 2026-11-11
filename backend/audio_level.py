@@ -176,7 +176,12 @@ def leveled(path: Path, wait: bool = True, level: dict | None = None) -> Path:
             if key in _BUILDING:
                 return path
             _BUILDING.add(key)
-        threading.Thread(target=_build, args=(path, out, level, key), daemon=True).start()
+        try:
+            threading.Thread(target=_build, args=(path, out, level, key), daemon=True).start()
+        except Exception:
+            with _LOCK:
+                _BUILDING.discard(key)
+            return path
         return path
     _build(path, out, level, key)
     return out if out.is_file() else path

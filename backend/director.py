@@ -21,6 +21,8 @@ import razgon_sound
 import agent_storage
 import store
 import motion_direction
+import process_cleanup
+import work_guard
 
 MODEL = store.DEFAULT_DIRECTOR_MODEL
 EFFORT = "high"
@@ -91,7 +93,7 @@ def sound_brief(project: dict, *, scoped=False, include_workflow=True) -> str:
 
 def channel_settings(project: dict) -> dict:
     try:
-        return store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+        return store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
     except (store.StudioError, KeyError):
         return {}
 
@@ -115,6 +117,12 @@ def channel_memory(project: dict) -> str:
         text += ("\nНотатки пам’яті Claude Code про цей канал і всі канали (ті самі, за якими працює сесія в папці YOUTUBE). "
                  "Новіше правило важить більше за старіше, пам’ять автора вище й поточне побажання мають пріоритет; "
                  "те, що стосується лише сценарію чи чату, тут довідка.\n" + notes + "\n")
+    if project.get('channel_id'):
+        portable = store.DATA_ROOT / 'channels' / project['channel_id'] / 'portable-rules.json'
+        if portable.is_file():
+            text += ("\nПеренесені правила каналу: прочитай " + str(portable)
+                     + ". Поля shared_rules та director_notes містять збережені побажання до монтажу. "
+                     "Враховуй їх разом із поточними налаштуваннями й пам’яттю каналу.\n")
     return text
 
 
@@ -145,7 +153,7 @@ def animation_style(project: dict) -> str:
 
 def frames_brief(project: dict) -> str:
     """A photo or video channel: the director only plans the frames; the montage is the next step."""
-    root, studio = store.YOUTUBE_ROOT, store.APP_ROOT.name
+    root, studio = store.YOUTUBE_ROOT, store.app_rel()
     episode = Path(project["episode_path"])
     channel = episode.parent
     rel = episode.relative_to(root) if root in episode.parents else episode
@@ -156,7 +164,7 @@ def frames_brief(project: dict) -> str:
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
-Спершу прочитай правила каналу {channel / 'AGENTS.md'}: як ділити озвучку на кадри і для чого який формат; сценарії інших випусків не читай.
+Спершу прочитай правила каналу {store.channel_rules_source(channel)}: як ділити озвучку на кадри і для чого який формат; сценарії інших випусків не читай.
 
 Твоє завдання: план кадрів за змістом озвучки.
 1. python3 "{studio}/tools/studio.py" sentences {project['id']} показує пронумеровані речення з часом, формати каналу з їхніми частками та обмеження.
@@ -183,7 +191,7 @@ def razgon_brief(project: dict) -> str:
     episode = Path(project["episode_path"])
     channel = episode.parent
     rel = episode.relative_to(root) if root in episode.parents else episode
-    SOUND_DESIGN = f"{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/references/sound-design.md"
+    SOUND_DESIGN = f"{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/references/sound-design.md"
     return f"""Ти режисер анімаційного випуску в VideoKey Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
@@ -192,15 +200,15 @@ def razgon_brief(project: dict) -> str:
 
 {motion_direction.PLANNING}
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {channel / 'AGENTS.md'} і навик режисури Razgon
-({store.razgon_rel()}/skills або плагін «{store.APP_ROOT.name}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
+Спершу прочитай правила: {root / 'AGENTS.md'}, {store.channel_rules_source(channel)} і навик режисури Razgon
+({store.razgon_rel()}/skills або плагін «{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
 Великі документи самої студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для режисури є тут, у правилах каналу й у навику.
 Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках ({store.razgon_rel()}/projects/*/story/gen_shots.py,
 ls -t покаже найновіші), а не в усіх.
 
 Твоє завдання: режисура, звук і план кадрів, кроки 3–5 правил каналу.
-1. python3 "{store.APP_ROOT.name}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
-   python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" prepare --project-id {project['id']}
+1. python3 "{store.app_rel()}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
+   python3 "{store.app_rel()}/tools/razgon_bridge.py" prepare --project-id {project['id']}
 2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
    і запусти його. Кадри ділиш за змістом, не за кількістю слів. Кожна дія відбувається рівно в одному шоті: наступний шот
    описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
@@ -216,7 +224,7 @@ ls -t покаже найновіші), а не в усіх.
    old = json.loads(шлях.read_text()) якщо файл є, sfx=old.get("sfx", []) у story і amb=old_amb.get(id шоту), де old_amb = {{s["id"]: s.get("amb") for s in old.get("shots", [])}}.
    Після кожного запуску gen_shots.py запускай і gen_sound.py. direction_check.py рахує ефекти й атмосферу і попереджає, коли їх мало або вони накладаються.
    Музику й ефекти на таймлайн студія кладе сама, щойно ти закінчиш, без рендеру: push для цього не потрібен.
-4. python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.APP_ROOT.name}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
+4. python3 "{store.app_rel()}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.app_rel()}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
 
 Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
@@ -291,20 +299,24 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     command = [str(cli), "--model", model, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
                "--disallowedTools", "Agent", "Task",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
+    for folder in (store.APP_ROOT, store.DATA_ROOT):
+        if not store.under(folder, store.YOUTUBE_ROOT) and (folder == store.APP_ROOT or not store.under(folder, store.APP_ROOT)):
+            command += ['--add-dir', str(folder)]
     # its own process group; kill() also stops the commands, renders and helpers under it
     # the agents draw frames as code; only «Експорт MP4» renders them, so razgon_bridge.py refuses push and final here
     process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, NO_RENDER: "1"})
     RUNNING[str(activity)] = process
-    if str(activity) in CANCELLED:
-        kill(process)
     expired = threading.Event()
-    watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
-    watchdog.start()
+    watchdog = None
     answer, steps = {}, []
     stopped_after_result = False
-    store.atomic_json(activity, [])
     try:
+        if str(activity) in CANCELLED:
+            kill(process)
+        watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
+        watchdog.start()
+        store.atomic_json(activity, [])
         process.stdin.write(prompt)
         process.stdin.close()
         with log.open("w", encoding="utf-8") as out:
@@ -343,7 +355,8 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
         else:
             process.wait()
     finally:
-        watchdog.cancel()
+        if watchdog is not None:watchdog.cancel()
+        process_cleanup.stop_group(process, children=descendants(process.pid) if process.poll() is None else ())
         process.stdout.close()
         RUNNING.pop(str(activity), None)
         import spend_report   # where this run spent the limits, saved beside the project once the log is complete
@@ -424,16 +437,17 @@ def run(pid: str, cli: Path) -> None:
     try:
         _run(pid, cli)
     finally:
-        with LOCK:
-            ACTIVE.discard(pid)
-        data = state(pid) or {}
-        if data.get('status') == 'done' and data.get('create_video'):
-            try:
-                import production
-                production.start_from_plan(pid)
-            except (OSError, store.StudioError) as error:
-                data['creation_error'] = str(error)
-                save(pid, data)
+        with work_guard.MUTEX:
+            with LOCK:
+                ACTIVE.discard(pid)
+            data = state(pid) or {}
+            if data.get('status') == 'done' and data.get('create_video'):
+                try:
+                    import production
+                    production.start_from_plan(pid)
+                except (OSError, RuntimeError, store.StudioError) as error:
+                    data['creation_error'] = str(error)
+                    save(pid, data)
 
 
 def _run(pid: str, cli: Path) -> None:
@@ -460,6 +474,10 @@ def _run(pid: str, cli: Path) -> None:
         data.update(status="failed", error="Режисура не вклалася в 3 години")
     except (OSError, store.StudioError) as error:
         data.update(status="failed", error=str(error))
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        data.update(status='failed', error='Режисуру зупинено через помилку студії. Збережені матеріали доступні.')
     finally:
         if not cancelled(pid, "director"):
             with LOCK:
@@ -499,12 +517,25 @@ def start(pid: str, reason: str = "voice") -> dict:
             cli = executable()
         except RuntimeError as error:
             raise store.StudioError(str(error), 503) from None
-        ACTIVE.add(pid)
         previous = state(pid) or {}
         data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": store.channel_director_model(project), "effort": store.channel_effort(project),
                 "create_video": reason == 'create_video' or previous.get('status') == 'failed' and bool(previous.get('create_video'))}
-        save(pid, data)
-    threading.Thread(target=run, args=(pid, cli), daemon=True).start()
+        ACTIVE.add(pid)
+        try:
+            save(pid, data)
+        except Exception:
+            ACTIVE.discard(pid)
+            raise
+    try:
+        threading.Thread(target=run, args=(pid, cli), daemon=True).start()
+    except Exception:
+        data.update(status='failed', error='Не вдалося запустити режисера', finished_at=time.time())
+        try:
+            save(pid, data)
+        finally:
+            with LOCK:
+                ACTIVE.discard(pid)
+        raise
     return data
 
 

@@ -40,7 +40,7 @@ function addStackTools(heading,entry){
     const items=[['Відкрити властивості',()=>stackOpen(entry)]];
     if(entry.clip)items.push(['Перейменувати',()=>modal('Назва доріжки',`<label>Назва<input id="stack-new-name" value="${esc(entry.title)}" maxlength="120"></label>`,[{label:'Зберегти',primary:true,run:async()=>{try{await action('batch',{actions:[{type:'update_layer',payload:{layer_id:entry.layer.id,name:$('stack-new-name').value}},{type:'update_clip',payload:{clip_id:entry.clip.id,patch:{title:$('stack-new-name').value}}}]},'Назву збережено.');closeModal();}catch(error){status(error.message,true);}}}])]);
     else if(entry.groups.length===1)items.push(['Перейменувати',()=>{selectFrameGroup(entry.groups[0]);$('frame-title')?.select();}]);
-    if(entry.clip)items.push(['Прибрати доріжку',()=>modal('Прибрати доріжку',`<p>Прибрати «${esc(entry.title)}»? Дію можна скасувати.</p>`,[{label:'Залишити',run:closeModal},{label:'Прибрати',primary:true,run:async()=>{try{await action('delete_clip',{clip_id:entry.clip.id},'Доріжку прибрано.');closeModal();}catch(error){status(error.message,true);}}}])]);
+    if(entry.clip)items.push(['Прибрати доріжку',()=>modal('Прибрати доріжку',`<p>Прибрати «${esc(entry.title)}»? Дію можна скасувати.</p>`,[{label:'Прибрати',primary:true,run:async()=>{try{await action('delete_clip',{clip_id:entry.clip.id},'Доріжку прибрано.');closeModal();}catch(error){status(error.message,true);}}}])]);
     for(const [name,run] of items){const item=document.createElement('button');item.type='button';if(name.startsWith('Прибрати'))setTrashButton(item,name);else item.textContent=name;item.setAttribute('role','menuitem');item.addEventListener('click',()=>{closeStackMenu();run();});menu.append(item);}
     document.body.append(menu);const rect=heading.getBoundingClientRect();menu.style.left=Math.min(window.innerWidth-menu.offsetWidth-8,event.type==='contextmenu'?event.clientX:rect.right-20)+'px';menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-8,rect.bottom)+'px';
   };
@@ -212,7 +212,7 @@ function renderGroupedTimelineWithIndex(){
   for(const entry of rows){
     if(entry.groups){tracks.append(groupLane(entry.title,entry.groups,entry.ref));continue;}
     if(entry.soundItems){tracks.append(soundLane(entry));continue;}
-    const {clip,layer}=entry,row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
+    const row=document.createElement('div');row.className='track-row universal-row';const label=document.createElement('div');label.className='layer-heading group-heading';label.textContent=entry.title;enableStackReorder(label,entry.ref);addStackTools(label,entry);
     const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
     appendGroupedMediaClip(lane,entry);row.append(label,lane);tracks.append(row);
   }
@@ -248,7 +248,7 @@ function renderGroupInspector(){
   for(const clip of members){const button=document.createElement('button');button.type='button';button.className='frame-member';button.textContent=clipLabel(clip);button.addEventListener('click',()=>{expandFrameGroup(group);state.selectedGroup=null;selectUniversalClip(clip.id);});$('frame-member-list').append(button);}
   $('save-frame-title').addEventListener('click',()=>action('update_group',{group_id:group.id,title:$('frame-title').value},'Назву кадру збережено.').catch(()=>{}));
   $('ungroup-frame').addEventListener('click',async()=>{try{await action('ungroup_clips',{group_id:group.id},'Кадр розгруповано.');state.selectedGroup=null;state.expandedGroup=null;renderTimeline();renderInspector();}catch(error){status(error.message,true);}});
-  $('delete-frame').addEventListener('click',()=>modal('Прибрати кадр',`<p>Прибрати «${esc(group.title)}» та його ${members.length} елементів? Дію можна скасувати.</p>`,[{label:'Залишити',run:closeModal},{label:'Прибрати',primary:true,run:async()=>{try{await action('delete_group',{group_id:group.id},'Кадр прибрано.');state.selectedGroup=null;state.expandedGroup=null;closeModal();renderTimeline();renderInspector();}catch(error){status(error.message,true);}}}]));
+  $('delete-frame').addEventListener('click',()=>modal('Прибрати кадр',`<p>Прибрати «${esc(group.title)}» та його ${members.length} елементів? Дію можна скасувати.</p>`,[{label:'Прибрати',primary:true,run:async()=>{try{await action('delete_group',{group_id:group.id},'Кадр прибрано.');state.selectedGroup=null;state.expandedGroup=null;closeModal();renderTimeline();renderInspector();}catch(error){status(error.message,true);}}}]));
 }
 
 function selectTimelineIds(ids,append=false){

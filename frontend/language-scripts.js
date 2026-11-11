@@ -346,5 +346,5 @@ async function langOpenTranslationCost(id,code){
     dialog.setAttribute('aria-label',`Вартість перекладу: ${item.name}`);
     dialog.innerHTML=`<div class="lang-script-dialog-head"><h2>Переклад · ${esc(item.name)}</h2><button type="button" class="lang-script-close" aria-label="Закрити вартість">×</button></div><div class="lang-script-dialog-body"><div class="lang-cost-breakdown">${rows}<hr>${models}<hr><div class="lang-cost-total"><strong>Усього за цю мову</strong><b>${money(cost.total_usd)}</b></div></div></div>`;
     dialog.querySelector('button').onclick=()=>dialog.close();dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
-  }catch(error){modal('Вартість перекладу',`<p>${esc(error.message)}</p>`,[{label:'Закрити',run:closeModal}]);}
+  }catch(error){modal('Вартість перекладу',`<p>${esc(error.message)}</p>`,[]);}
 }

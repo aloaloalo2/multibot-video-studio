@@ -47,3 +47,45 @@ class CompletionNoticeTests(unittest.TestCase):
     def test_invalid_acknowledgement_cannot_hide_future_completions(self):
         for value in ('15',float('nan'),float('inf'),-1,True):
             with self.assertRaises(store.StudioError):notices.seen(self.project['id'],value)
+
+class ReadyStageTests(unittest.TestCase):
+    def setUp(self):
+        CompletionNoticeTests.setUp(self)
+        self.project={'id':'a'*24}
+
+    def tearDown(self):
+        CompletionNoticeTests.tearDown(self)
+
+    def test_hooks_stay_ready_after_opening_and_during_a_failed_script(self):
+        store.atomic_json(self.root/'episode-draft.json', {'project_id':self.project['id'], 'stage':'script','status':'failed','openings':[{'text':'Saved opening.'}]})
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'openings')
+        notices.seen(self.project['id'])
+        self.assertEqual(notices.ready_stage(self.project,store.read_json(notices.path(self.project['id'])),{}),'openings')
+        self.project['voice_script']={'text':'Full saved script'}
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'script')
+
+    def test_saved_milestones_and_incomplete_frames(self):
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'draft')
+        self.assertEqual(notices.ready_stage(self.project,{}, {'voice_duration':15}),'voice')
+        self.project['plan_source']='plan.json'
+        with patch.object(store,'listed_plan',return_value={'frame_source':'razgon-direction','frames':[{}]}):
+            self.assertEqual(notices.ready_stage(self.project,{}, {'plan_stage':'audio_synced'}),'plan')
+        self.project.pop('plan_source')
+        self.project['production_request']={'status':'failed','frames':5,'made':5,'quality':{'passed':False}}
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'draft')
+        self.project['production_request']['status']='done';self.project['production_request']['quality']['passed']=True
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'frames')
+        self.assertEqual(notices.ready_stage(self.project,{'export':{'at':100}},{}),'export')
+
+    def test_cancelled_or_foreign_hooks_are_not_ready(self):
+        for data in ({'project_id':self.project['id'],'status':'cancelled'}, {'project_id':'b'*24,'status':'done'}):
+            store.atomic_json(self.root/'episode-draft.json',{**data,'openings':[{'text':'Old hook'}]})
+            self.assertEqual(notices.ready_stage(self.project,{},{}),'draft')
+
+    def test_synthesized_voice_is_ready_before_recognition_and_reset_removes_it(self):
+        audio=self.root/'voice.mp3';audio.write_bytes(b'fixture')
+        self.project['assets']=[{'id':'voice','path':str(audio)}]
+        store.atomic_json(self.root/'narration/job.json',{'status':'done','asset_id':'voice','started_at':10})
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'voice')
+        self.project['restarted_at']=20
+        self.assertEqual(notices.ready_stage(self.project,{},{}),'draft')

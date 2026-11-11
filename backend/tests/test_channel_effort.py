@@ -13,8 +13,8 @@ class ChannelEffortTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             store.atomic_json(folder/store.PLAN_CONFIG, {'weights': {'stock_photo': 100}, 'claude_effort': 'xhigh'})
-            with patch.object(store, 'get_channel_folder', return_value=folder), \
-                    patch.object(store, 'channel_record', side_effect=lambda f: store.read_json(f/store.PLAN_CONFIG, {})):
+            with patch.object(store, 'DATA_ROOT', folder / 'studio-data'), patch.object(store, 'get_channel_folder', return_value=folder), \
+                    patch.object(store, 'channel_record', side_effect=lambda f: store.read_channel_settings(f, {})):
                 saved = store.update_channel_settings('channel', {'director_model': 'claude-fable-5-2'})
                 self.assertEqual(saved['director_model'], 'claude-fable-5-2')
                 self.assertEqual(saved['claude_effort'], 'xhigh')

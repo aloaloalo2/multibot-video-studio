@@ -105,3 +105,67 @@ test('overview discovers director-to-frames handoff and new production without a
   state.projects=[{id:'p'}];await context.pollChannelActivity();assert.equal(refreshes,2); // first active snapshot without previous director
   state.project={id:'p'};state.projects=[{id:'p'}];await context.pollChannelActivity();assert.equal(refreshes,2);
 });
+
+test('project and media refresh commit together and never overwrite newer navigation or edits',async()=>{
+  for(const changed of ['navigation','revision','none']){
+    const pending={},state={navigation:1,project:{id:'p',revision:3},assets:[{id:'saved'}]};let renders=0;
+    const context=vm.createContext({state,api:url=>new Promise(resolve=>pending[url]=resolve),buildAudioNodes(){},renderProject:()=>renders++});
+    vm.runInContext(section('async function refreshCurrentProject(','async function useAsset('),context);
+    const refresh=context.refreshCurrentProject();
+    assert.equal(Object.keys(pending).length,2);
+    pending['/api/projects/p']({project:{id:'p',revision:3}});
+    if(changed==='navigation'){state.project={id:'other',revision:10};state.navigation++;}
+    if(changed==='revision')state.project={id:'p',revision:4};
+    pending['/api/projects/p/assets']({assets:[{id:'incoming'}]});
+    assert.equal(await refresh,changed==='none');
+    assert.equal(state.assets[0].id,changed==='none'?'incoming':'saved');
+    assert.equal(renders,changed==='none'?1:0);
+  }
+});
+
+test('a downloaded stock asset never lands in a project opened during its import',async()=>{
+  let finish,refreshes=0,placements=0;
+  const state={navigation:1,project:{id:'p'},libraryTab:'pixabay'};
+  const context=vm.createContext({state,api:()=>new Promise(resolve=>finish=resolve),
+    refreshCurrentProject:()=>refreshes++,isUniversal:()=>true,useUniversalAsset:()=>placements++});
+  vm.runInContext(section('async function useAsset(','function openAddAudio('),context);
+  const importing=context.useAsset({id:'stock',kind:'video'},'old-scene');
+  state.navigation++;state.project={id:'other'};
+  finish({asset:{id:'downloaded'}});await importing;
+  assert.equal(refreshes,0);assert.equal(placements,0);
+});
+
+test('stock search keeps the latest query and ignores older errors or replies after navigation',async()=>{
+  const pending=[],state={navigation:1,search:'old',pixabayKind:'video',pixabay:[]};let renders=0;const messages=[];
+  const context=vm.createContext({state,api:()=>new Promise((resolve,reject)=>pending.push({resolve,reject})),renderAssets:()=>renders++,status:text=>messages.push(text)});
+  const start=source.indexOf('async function searchPixabay()');
+  vm.runInContext(source.slice(start,source.indexOf('\nfunction selectLibraryTab(',start)),context);
+  const old=context.searchPixabay();state.search='new';const fresh=context.searchPixabay();
+  pending[1].resolve({results:[{id:'latest'}]});await fresh;
+  pending[0].reject(Error('Late failure'));await old;
+  assert.equal(state.pixabay[0].id,'latest');assert.equal(renders,1);assert.equal(messages.length,1);
+  const switched=context.searchPixabay();state.navigation++;
+  pending[2].resolve({results:[{id:'old-project'}]});await switched;
+  assert.equal(state.pixabay[0].id,'latest');assert.equal(renders,1);
+});
+
+test('late edit success or failure cannot overwrite a reopened project or its save state',async()=>{
+  for(const failed of [false,true]){
+    let resolve,reject;const messages=[],save={textContent:'',classList:{add(){},remove(){}}};
+    const state={project:{id:'p',revision:1},navigation:1};
+    const c=vm.createContext({state,$:()=>save,api:()=>new Promise((ok,no)=>{resolve=ok;reject=no}),status:(...args)=>messages.push(args),renderProject:()=>assert.fail('Stale render')});
+    vm.runInContext(section('async function action(','function openChannelSettings('),c);
+    const pending=c.action('trim_scene',{});state.navigation++;state.project={id:'p',revision:50};save.textContent='New page';
+    if(failed){reject(Error('Late failure'));await assert.rejects(pending,/Late failure/);}else{resolve({project:{id:'p',revision:2}});await pending;}
+    assert.equal(state.project.revision,50);assert.equal(save.textContent,'New page');assert.deepEqual(messages,[]);
+  }
+});
+
+test('a local file finishes in its original project without refreshing the page opened during upload',async()=>{
+  let finish,refreshes=0;const requests=[],messages=[],state={project:{id:'p'},navigation:1};
+  const c=vm.createContext({state,fetch:(url,options)=>{requests.push([url,options]);return new Promise(resolve=>finish=resolve)},refreshCurrentProject:()=>refreshes++,status:(...args)=>messages.push(args)});
+  vm.runInContext(section('async function uploadLocalMedia(',"$('local-media-file').addEventListener"),c);
+  const upload=c.uploadLocalMedia({name:'audio.wav'});state.navigation++;state.project={id:'other'};
+  finish({ok:true,json:async()=>({asset:{id:'uploaded'}})});await upload;
+  assert.equal(requests[0][0],'/api/projects/p/assets/upload');assert.equal(refreshes,0);assert.equal(messages.length,1);
+});

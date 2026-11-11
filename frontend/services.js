@@ -21,8 +21,25 @@ async function initServiceKeys(){
       const input=document.createElement('input');input.type='password';input.autocomplete='new-password';input.spellcheck=false;input.placeholder='Вставте ключ';input.setAttribute('aria-label',`${provider.name} ${label.textContent}`);if(provider.configured)input.value=mask;
       input.addEventListener('focus',()=>{if(input.value===mask)input.select();});label.append(input);
       input.dataset.provider=provider.id;input.dataset.providerName=provider.name;
-      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=provider.configured?'Оновити ключ':'Зберегти ключ';button.disabled=true;
-      input.addEventListener('input',()=>{button.disabled=!input.value.trim() || input.value===mask;});
+      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=provider.configured?'Оновити ключ':'Зберегти ключ';button.disabled=true;button.hidden=true;
+      const field=document.createElement('div');field.className='service-key-field';
+      const copy=document.createElement('button');copy.type='button';copy.className='icon-button service-key-copy';copy.title=copy.ariaLabel=`Скопіювати ключ ${provider.name}`;
+      copy.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>';
+      function copyState(){copy.disabled=provider.configured!==true&&(!input.value.trim()||input.value===mask);}
+      copyState();field.append(input,copy);label.append(field);
+      input.addEventListener('input',()=>{button.disabled=!input.value.trim() || input.value===mask;button.hidden=button.disabled;copyState();});
+      copy.addEventListener('click',async()=>{
+        copy.disabled=true;
+        try{
+          const readKey=async()=>input.value!==mask&&input.value.trim()?input.value.trim():(await api('/api/service-keys/copy','POST',{provider_id:provider.id})).key;
+          // Promise-backed ClipboardItem retains the click gesture in WebKit too.
+          if(typeof ClipboardItem!=='undefined'&&navigator.clipboard?.write){
+            await navigator.clipboard.write([new ClipboardItem({'text/plain':readKey().then(key=>new Blob([key],{type:'text/plain'}))})]);
+          }else{await navigator.clipboard.writeText(await readKey());}
+          notice(`Ключ ${provider.name} скопійовано.`);
+        }catch(error){notice('Не вдалося скопіювати ключ. Перевірте доступ до буфера обміну та зв’язки ключів.',true);}
+        finally{copyState();}
+      });
       button.addEventListener('click',async()=>{
         if(input.value===mask || !input.value.trim())return;
         button.disabled=true;
@@ -46,11 +63,17 @@ async function initServiceKeys(){
 // The window's own «Зберегти» saves a key typed in but not saved with its row's button, instead of dropping it.
 async function saveTypedServiceKeys(){
   const mask='••••••••••••••••';
-  for(const input of document.querySelectorAll('#service-key-list input[data-provider]')){
-    const key=input.value.trim();
-    if(!key||input.value===mask)continue;
+  const nameField=$('service-key-name'),keyField=$('service-key-value');
+  const name=nameField?.value.trim(),custom=keyField?.value.trim();
+  if(!!name!==!!custom)throw new Error(name?'Вставте ключ власного сервісу.':'Вкажіть назву власного сервісу.');
+  const pending=[...document.querySelectorAll('#service-key-list input[data-provider]')].map(input=>({input,key:input.value.trim()})).filter(({input,key})=>key&&input.value!==mask);
+  for(const {input,key} of pending){
     await api('/api/service-keys','POST',{provider_id:input.dataset.provider,key});
+    // A later failure must not submit already saved credentials again on Retry.
+    if(input.value.trim()===key)input.value=mask;
   }
-  const name=$('service-key-name')?.value.trim(),custom=$('service-key-value')?.value.trim();
-  if(name&&custom)await api('/api/service-keys','POST',{provider_id:'custom',name,key:custom});
+  if(name&&custom){
+    await api('/api/service-keys','POST',{provider_id:'custom',name,key:custom});
+    if(nameField.value.trim()===name&&keyField.value.trim()===custom){nameField.value='';keyField.value='';}
+  }
 }

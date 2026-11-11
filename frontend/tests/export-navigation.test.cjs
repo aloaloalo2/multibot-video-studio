@@ -33,3 +33,28 @@ test('a late export response does not pull the author out of a different project
   const h=setup();await h.open();const pending=h.submit();h.state.project={id:'other'};await pending;
   assert.deepEqual(h.calls,['modal']);assert.equal(h.state.job,undefined);
 });
+
+test('a late active-export read cannot attach its job or open a dialog after navigation',async()=>{
+  for(const change of ['project','modal']){
+    let finish;const state={project:{id:'p'},navigation:1,modalGeneration:1};let dialogs=0,locks=0;
+    const context=vm.createContext({state,api:()=>new Promise(resolve=>finish=resolve),modal:()=>dialogs++,updateExportLock:()=>locks++,status(){}});
+    vm.runInContext(fn,context);const pending=context.openExport();
+    if(change==='project'){state.project={id:'other'};state.navigation++;}else state.modalGeneration++;
+    finish({job:{id:'old-job'}});await pending;
+    assert.equal(state.job,undefined);assert.equal(dialogs,0);assert.equal(locks,0);
+  }
+});
+
+test('a late export start keeps a newer dialog open and continues tracking the accepted job',async()=>{
+  const h=setup();h.state.navigation=1;h.state.modalGeneration=1;await h.open();
+  const pending=h.submit();h.state.modalGeneration++;await pending;
+  assert.equal(h.state.job.id,'j');assert.deepEqual(h.calls,['modal','poll']);
+});
+test('completion of another project export never removes the current confirmation actions',async()=>{
+  let clears=0,messages=0;const target={innerHTML:'Current project confirmation'};
+  const state={project:{id:'other'},job:{id:'old',project_id:'p'}};
+  const c=vm.createContext({state,api:async()=>({job:{id:'old',project_id:'p',status:'done',progress:100}}),updateExportLock(){},
+    $:id=>id==='render-state'?target:{replaceChildren:()=>clears++},status:()=>messages++,clearTimeout(){}});
+  vm.runInContext(source.slice(source.indexOf('let jobPollInFlight='),source.indexOf("$('add-channel').addEventListener")),c);
+  await c.pollJob();assert.equal(clears,0);assert.equal(messages,0);assert.equal(target.innerHTML,'Current project confirmation');
+});

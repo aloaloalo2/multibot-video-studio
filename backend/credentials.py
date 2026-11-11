@@ -1,4 +1,4 @@
-"""Write-only HTTP-facing API key storage backed by macOS Keychain."""
+"""API key storage backed by macOS Keychain; reads require an explicit copy action."""
 
 import ctypes
 import getpass
@@ -126,3 +126,16 @@ def save_provider(provider_id, name, key):
                 custom.append({"id": provider_id, "name": name})
                 store.atomic_json(metadata_path(), custom)
     return {"id": provider_id, "configured": True}
+
+
+def copy_provider_key(provider_id):
+    custom = store.read_json(metadata_path(), [])
+    if not isinstance(provider_id, str) or provider_id not in {item["id"] for item in DEFAULTS + custom}:
+        raise store.StudioError("Оберіть сервіс")
+    try:
+        key = vault().read(service_name(provider_id))
+    except RuntimeError:
+        raise store.StudioError("Не вдалося скопіювати ключ зі зв’язки ключів macOS.", 503) from None
+    if not isinstance(key, str) or not key.strip():
+        raise store.StudioError("Спочатку збережіть ключ сервісу", 404)
+    return key

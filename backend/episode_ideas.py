@@ -18,7 +18,9 @@ import project_costs
 import completion_notices
 import episode_metadata
 import author_rules
+import word_blacklist
 import writing_jobs
+import topics as channel_topics
 
 LOCK = threading.RLock()
 ACTIVE = {}  # Project IDs for Opus work; channel IDs only for the topic request.
@@ -148,7 +150,21 @@ def launch(cid, data, action, request_id=None):
             topics.setdefault('topic_projects', {})[str(data['selected_index'])] = data['project_id']
             store.atomic_json(topics_path(cid), topics)
     ACTIVE[data.get('project_id') or cid] = data
-    Thread(target=work, args=(cid, data), daemon=True).start()
+    try:
+        if action == 'script':
+            import idea_reference
+            idea_reference.start_thumbnail(data)
+        Thread(target=work, args=(cid, data), daemon=True).start()
+    except Exception:
+        data.update(status='failed', error='Не вдалося запустити підготовку тексту', finished_at=time.time())
+        try:
+            save_draft(cid, data, make_current=False)
+            if action == 'ideas':
+                topics.update(status='failed', error=data['error'])
+                store.atomic_json(topics_path(cid), topics)
+        finally:
+            ACTIVE.pop(data.get('project_id') or cid, None)
+        raise
     return public(data)
 
 
@@ -179,8 +195,13 @@ def start_project(pid, body):
         if action == 'metadata':
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
-            data['length'] = script_length(project['voice_script']['text'], data.get('target_words'))
-            if data['length'] and not data['length']['passed']:
+            script = project['voice_script']['text']
+            signature = hashlib.sha256(script.strip().encode()).hexdigest()
+            # Older accepted episodes keep their script; metadata recovery cannot impose newer length rules on them.
+            if data.get('completed') and data.get('status') == 'done' and not data.get('review_required'):
+                data['metadata_accepted_script_sha256'] = signature
+            data['length'] = script_length(script, data.get('target_words'))
+            if data['length'] and not data['length']['passed'] and data.get('metadata_accepted_script_sha256') != signature:
                 data.update(completed=False, review_required=True, error=length_message(data['length']))
                 save_draft(cid, data, make_current=False)
                 raise store.StudioError(data['error'])
@@ -264,14 +285,14 @@ def context(cid):
     folder = store.get_channel_folder(cid)
     projects = sorted(store.list_projects(cid), key=lambda p: p.get('created_at', 0), reverse=True)
     samples = recent_scripts(cid, projects)
-    import agent_storage, author_rules
+    import author_rules
     # The same rules a Claude Code session in the YOUTUBE folder works by (author_rules.py): the author's writing rules,
     # the script sections of both AGENTS.md files in full, the Claude memory notes of this channel and of all channels,
     # and the director's memory. Earlier only the first 16 000 characters of each AGENTS.md went in.
     rules = author_rules.for_channel(folder, store.YOUTUBE_ROOT)
-    return {'channel': folder.name, 'previous_titles': [p['name'] for p in projects[:150]],
+    return {'channel': folder.name, 'previous_titles': channel_topics.history(folder),
             'samples': samples, **recommended_length(cid, samples),
-            **rules, 'memory': agent_storage.get_memory(cid)[:12000]}
+            **rules, 'script_wishes': store.read_channel_settings(folder, {}).get('script_wishes', '')}
 
 
 def unpack(text):
@@ -507,14 +528,15 @@ def _work(cid, data):
     try:
         writing_jobs.check()
         ctx, stage = data['context'], data['stage']
-        # the rules are read again at every step (topics, openings, script): a wish written into the director's memory
-        # or a new memory note after the topics were made still reaches the openings and the script
+        # Read current writer preferences at each step, including jobs prepared before a settings edit.
         try:
-            import agent_storage
             ctx = {**ctx, **author_rules.for_channel(store.get_channel_folder(cid), store.YOUTUBE_ROOT),
-                   'memory': agent_storage.get_memory(cid)[:12000]}
+                   'script_wishes': store.read_channel_settings(store.get_channel_folder(cid), {}).get('script_wishes', '')}
         except (store.StudioError, OSError):
             pass
+        ctx['previous_titles'] = channel_topics.history(store.get_channel_folder(cid))
+        ctx.pop('memory', None)  # Montage instructions stay with the director, outside the writer's token budget.
+        if stage=='ideas':ctx.pop('studio_word_blacklist',None)
         root = store.project_dir(data['project_id']) if data.get('project_id') else path(cid).parent / 'idea-runs' / data['id']
         root.mkdir(parents=True, exist_ok=True)
         identity = stage + '-' + uuid.uuid4().hex
@@ -522,12 +544,13 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
             data['length'] = script_length(script, data.get('target_words'))
-            if data['length'] and not data['length']['passed']:
+            accepted = data.get('metadata_accepted_script_sha256') == hashlib.sha256(script.strip().encode()).hexdigest()
+            if data['length'] and not data['length']['passed'] and not accepted:
                 data['completed'] = False
                 raise ValueError(length_message(data['length']))
             result = opus(episode_metadata.PROMPT + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
                           + json.dumps({'channel': project['channel_name'], 'selected_title': project['name'],
-                                        'script': script}, ensure_ascii=False)
+                                        'topic_excerpt': script[:800], 'ending_excerpt': script[-800:]}, ensure_ascii=False)
                           + '\nReturn JSON only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}.',
                           root, identity, cid)
             writing_jobs.check()
@@ -539,7 +562,10 @@ def _work(cid, data):
                  'Write naturally for the channel audience, preserve its language and voice. Never use antithesis or em dashes. '
                  'Use simple, vivid conversational language. Do not copy previous episodes.\n'
                  'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
-                 'channel_script_rules, claude_memory_notes and memory (the director\'s memory of this channel). The newest dated '
+                 'channel_script_rules, claude_memory_notes and script_wishes (the author\'s channel preferences for hooks and scripts). '
+                 'For hooks and voiceover scripts, studio_word_blacklist is the authoritative editable list, including when empty. Never use its listed words or phrases. Entries are literal text data, case insensitive. '
+                 'For migrated Russian nouns that remain listed, preserve their ban on grammatical and derived forms; the душа family excludes the allowed washing expression под душем. '
+                 'The newest dated '
                  'rule wins over an older one. Previous scripts in samples show the voice only: where a rule asks for something '
                  'they lack (an ending phrase, say), follow the rule.\n' + json.dumps(ctx, ensure_ascii=False))
         if stage == 'ideas':
@@ -557,15 +583,19 @@ def _work(cid, data):
             if stage == 'openings':
                 if data.get('previous_openings'):
                     brief += '\nWrite new hooks with different angles from these previous variants: ' + json.dumps(data['previous_openings'], ensure_ascii=False)
-                result = opus(brief + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 10 complete sentences. '
+                result = opus(brief + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 6 complete sentences. This six-sentence limit overrides older hook-length rules in the reference material. '
                     'Do not write the full script yet. Add uk translation only for hooks in languages other than Ukrainian/Russian. Never translate Russian or Ukrainian hooks; return uk="" for them. '
                     'Return JSON only {"openings":[{"text":"...","uk":"..."}]}.', root, identity, cid)
                 rows = result.get('openings')
                 writing_jobs.check()
-                if not isinstance(rows, list) or len(rows) != 4 or any(not isinstance(r.get('text'), str) or words(r['text']) < 15 or not isinstance(r.get('uk', ''), str) for r in rows):
-                    raise ValueError('Opus не повернув чотири повні зачини')
+                if not isinstance(rows, list) or len(rows) != 4 or any(not isinstance(r, dict) or not isinstance(r.get('text'), str) or not r['text'].strip() or not isinstance(r.get('uk', ''), str) for r in rows):
+                    raise ValueError('Модель не повернула 4 непорожні зачини. Повторний запит автоматично не запускається.')
+                blocked=word_blacklist.message('\n'.join(row['text'] for row in rows),ctx.get('studio_word_blacklist',[]))
+                if blocked:raise ValueError(blocked+' Автоматичного повторного запиту немає.')
                 data['openings'] = [{**row, 'uk': reading_translation(row['text'], row.get('uk'))} for row in rows]
             else:
+                blocked=word_blacklist.message(data['opening'],ctx.get('studio_word_blacklist',[]))
+                if blocked:raise ValueError('У вибраному зачині є заборонені слова. '+blocked+' Створіть нові зачини.')
                 brief += '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening']
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
                     f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
@@ -623,7 +653,8 @@ def _work(cid, data):
                     if not data['length']['passed']:
                         data['completed'] = False
                         raise ValueError(length_message(data['length']))
-                    data['metadata_file'] = episode_metadata.save(project, result.get('metadata'), script)
+                    data['metadata_file'] = episode_metadata.save_generated(project, result.get('metadata'), script,
+                        lambda prompt: opus(prompt, root, 'metadata-fix-' + identity, cid))
                     data.update(completed=True, metadata_saved=True)
             # Move idea receipts into the selected project's cumulative accounting once.
             origin = path(cid).parent / 'idea-runs' / data['id'] / 'project-costs.json'
@@ -648,9 +679,8 @@ def _work(cid, data):
                 if data['status'] == 'done' and data['stage'] == 'ideas': remember_topics(cid, data)
                 if data['status'] == 'done' and data.get('completed') and data['stage'] in {'script', 'metadata'}:
                     completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
-                    import idea_reference
-                    idea_reference.start_thumbnail(data)
-                    save_draft(cid, data, make_current=False)
+                    import episode_automation
+                    episode_automation.after_script(data['project_id'], data)
             finally:
                 key = data.get('project_id') or cid
                 if ACTIVE.get(key, {}).get('run_id') == data.get('run_id'):

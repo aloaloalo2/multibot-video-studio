@@ -1,10 +1,52 @@
 """Keep service metadata in Studio storage; archive old episode copies losslessly."""
 from pathlib import Path
+import json
 import shutil
 import time
 import store
 
 LEGACY_NAMES = ('razgon.json', 'План видео.json', 'Запит на створення.json', 'Таймінги озвучки.json')
+
+
+def migrate_channel(folder):
+    """Retain an exact backup before retiring a legacy channel configuration."""
+    with store.LOCK:
+        legacy = folder / store.PLAN_CONFIG
+        if not legacy.exists():
+            return []
+        target = store.channel_settings_path(folder)
+        if legacy.is_symlink() or target.is_symlink():
+            raise store.StudioError('Налаштування каналу містять символічне посилання')
+        original = legacy.read_bytes()
+        value = json.loads(original)
+        if not isinstance(value, dict):
+            raise store.StudioError('Налаштування каналу мають бути об’єктом')
+        # A newer internal configuration remains authoritative. Both versions are retained.
+        if target.exists() and not isinstance(store.read_json(target), dict):
+            raise store.StudioError('Внутрішні налаштування каналу пошкоджені')
+        backup = target.parent / 'technical-history' / str(time.time_ns()) / legacy.name
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy, backup)
+        if backup.read_bytes() != original:
+            raise OSError('Не вдалося перевірити резервну копію налаштувань каналу')
+        if not target.exists():
+            store.atomic_json(target, value)
+            if store.read_json(target) != value:
+                raise OSError('Не вдалося перевірити перенесені налаштування каналу')
+        if legacy.read_bytes() != original:
+            raise OSError('Налаштування каналу змінилися під час перенесення')
+        legacy.unlink()
+        return [str(legacy)]
+
+
+def migrate_channels():
+    result = {}
+    for folder in store.channel_folders(include_disabled=True):
+        try:
+            result[store.channel_id(folder)] = migrate_channel(folder)
+        except (OSError, ValueError, store.StudioError) as error:
+            result[store.channel_id(folder)] = {'error': str(error)}
+    return result
 
 
 def save_link(pid, data):
@@ -28,14 +70,14 @@ def migrate(pid):
         folder = store.project_dir(pid)
         if 'project_kind' not in project:
             try:
-                settings = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+                settings = store.read_channel_settings(store.get_channel_folder(project['channel_id'], include_disabled=True), {}) or {}
                 project['project_kind'] = 'animated' if settings.get('channel_kind') == 'animated' else 'regular'
                 store.save_project(project)
             except (store.StudioError, KeyError):
                 pass
         if 'plan_mode' not in project:
             try:
-                defaults = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+                defaults = store.read_channel_settings(store.get_channel_folder(project['channel_id'], include_disabled=True), {}) or {}
                 project['plan_mode'] = 'direct' if defaults.get('plan_mode') == 'direct' else 'director'
                 store.save_project(project)
             except (store.StudioError, KeyError):

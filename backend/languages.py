@@ -538,7 +538,8 @@ def _overview(pid: str, *, compact=False) -> dict:
                       "channel_voice": ({"filename": shared["filename"], "duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
                                         if not item.get("use_original_voice") and (shared := channel_voice(project.get("channel_id"), code)) else None),
                       "voice_key": voice_key(pid, item_provider, code),
-                      "fish_model": bool((voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
+                      "remote_voice_ids":remote_voice_ids(pid,code),
+                      "fish_model": bool(remote_voice_ids(pid,code).get("fishaudio") or (voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     source_display=numeric_comparison.source_comparison_chars(src['script'],source_language,
@@ -1854,7 +1855,7 @@ def fish_model(example: dict) -> str | None:
 
 def announce_model(pid: str, provider: str, code: str, job: dict) -> None:
     """Making a Fish model takes longer than a sample: the line says so, and a cancel waits for Fish's answer."""
-    example = voice_for(pid, code) if provider == "fishaudio" else None
+    example = voice_for(pid, code) if provider == "fishaudio" and not remote_voice_ids(pid,code).get(provider) else None
     if example and not example.get("fish_model"):
         meta = store.read_json(example["meta"], {}) or {}
         if not (meta.get("fish_refused_stamp") == example["stamp"] and time.time() - float(meta.get("fish_refused_at") or 0) < FISH_RETRY):
@@ -1869,9 +1870,22 @@ def eleven_voice_metadata(project: dict, code: str, ordinal: int = 1) -> dict:
             'labels':{'language':code}}
 
 
+def remote_voice_ids(pid,code):
+    if not code:return {}
+    data=load_state(pid);item=(data.get('languages') or {}).get(code) or {}
+    if item.get('use_original_voice') or own_voice(pid,code):return {}
+    if 'voice_ids' in item:return item['voice_ids'] or {}
+    try:return language_defaults.remote_ids(store.load_project(pid)['channel_id'],code)
+    except store.StudioError:return {}
+
+
 def voice_id(pid: str, provider: str, code: str | None = None):
-    """The voice for one language, from its example. ElevenLabs keeps a clone id per example; Fish gets the example
-    with every request."""
+    """Resolve an explicitly saved service ID or the language's existing reference."""
+    ids=remote_voice_ids(pid,code);remote=ids.get(provider)
+    if remote:
+        if provider=='fishaudio':return {'model_id':remote,'engine':fish_engine(pid,code),'style':fish_style(pid,code),'language':code}
+        return {'id':remote,'engine':eleven_engine(pid,code),'language':code}
+    if ids:raise RuntimeError('Для вибраного сервісу ще немає ID збереженого голосу')
     example = voice_for(pid, code)
     if not example:
         raise RuntimeError(NO_VOICE)
@@ -1998,12 +2012,19 @@ def sample_text_at(text: str, size: int) -> str:
 def voice_key(pid: str, provider: str, code: str | None = None) -> str:
     """Which voice a sample was made with: the provider (and Fish's engine) and the example it was cloned from, so a
     new example or engine never plays an older one's sample."""
+    remote=remote_voice_ids(pid,code).get(provider)
+    if remote:return provider+'-'+provider_engine(pid,provider,code)+'-remote-'+remote+('-'+fish_style(pid,code) if provider=='fishaudio' else '')
     example = voice_for(pid, code)
     tail = f"-{example['from']}{example['stamp']}{'m' if provider == 'fishaudio' and example.get('fish_model') else ''}" if example else ""
     return (f"fishaudio-{fish_engine(pid,code)}-{fish_style(pid,code)}" if provider == "fishaudio" else f"elevenlabs-{eleven_engine(pid,code)}") + tail
 
 
 def voice_cache_context(pid: str, code: str, provider: str) -> tuple[dict,set[str]]:
+    remote=remote_voice_ids(pid,code).get(provider)
+    if remote:
+        engine=provider_engine(pid,provider,code)
+        return {'version':1,'provider':provider,'language':code,'engine':engine,'reference_id':remote,
+                'settings':eleven_api.settings(engine) if provider=='elevenlabs' else FISH_STYLES[fish_style(pid,code)]},{voice_key(pid,provider,code)}
     example=voice_for(pid,code)
     engine=provider_engine(pid,provider,code)
     audio_hash=voice_cache.file_hash(example['path']) if example else None
@@ -2986,6 +3007,10 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
         if job.get('voice_ready') and job.get('phase')=='save-audio':
             message='Озвучка готова, але файл із музикою й ефектами не збережено. '+message+' Повторіть збереження файлу, це не витрачає кредити.'
         job.update(status="failed", error=message, finished_at=time.time())
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        job.update(status='failed', error='Обробку мови зупинено через помилку студії. Готові результати збережено.', finished_at=time.time())
     finally:
         if provider=='elevenlabs' and kind in ('sample','voice'):
             eleven_api.invalidate_balance()
@@ -3059,7 +3084,7 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         src=source(project)
         if translation_resumable(pid,code,src,translation_model(pid,code),segments_of(store.load_project_narration(pid) or {})):
             raise store.StudioError('Спершу завершіть переклад сценарію. Озвучення ще недоступне.',409)
-        if not voice_for(pid, code):
+        if not remote_voice_ids(pid,code).get(provider) and not voice_for(pid, code):
             raise store.StudioError(NO_VOICE, 409)
         try:
             language_quality.require(code, read_text(pid, code))
@@ -3090,7 +3115,6 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         data=load_state(pid)
         selected_translation_model = translation_model(pid, code, data)
         flag=(add_flag if add_flag is not None else thumbnail_options(pid)['add_flag']) if code in THUMBNAIL_FLAGS else False
-        ACTIVE.add(job_key(pid, code, group))
         job = {"status": "running", "kind": kind, "code": code, "provider": provider, "progress": 0, "stage": "Починаємо","owner_pid":os.getpid(),
                "translation_model": selected_translation_model,
                **({'preserve_text': True} if kind=='voice' and preserve_text else {}),
@@ -3108,8 +3132,23 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         data.setdefault("languages", {}).setdefault(code, {})
         if provider:
             data["provider"] = provider
-        save_state(pid, data)
-    threading.Thread(target=worker, args=(pid, kind, code, provider, job), daemon=True).start()
+        ACTIVE.add(job['key'])
+        try:
+            save_state(pid, data)
+        except Exception:
+            ACTIVE.discard(job['key'])
+            raise
+    try:
+        threading.Thread(target=worker, args=(pid, kind, code, provider, job), daemon=True).start()
+    except Exception:
+        job.update(status='failed', error='Не вдалося запустити обробку мови', finished_at=time.time())
+        try:
+            put_job(pid, job)
+        finally:
+            with LOCK:
+                ACTIVE.discard(job['key'])
+                CANCEL.discard(job['key'])
+        raise
     return {k: v for k, v in job.items() if k != "key"}
 
 

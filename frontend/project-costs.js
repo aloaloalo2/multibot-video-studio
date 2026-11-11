@@ -33,6 +33,7 @@ function projectCostMarkup(data){
 function attachProjectCosts(card,project){
   const box=document.createElement('aside');box.className='project-costs';box.setAttribute('aria-label','Витрати проєкту');
   box.innerHTML=projectCostMarkup(projectCostCache.get(project.id)?.data);card.append(box);
+  box.addEventListener('click',()=>card.querySelector('.project-open')?.click());
   const show=async()=>{try{box.innerHTML=projectCostMarkup(await loadProjectCosts(project.id));}catch{box.innerHTML='<span class="project-cost-unavailable">Витрати недоступні</span>';}};
   card.addEventListener('mouseenter',show);card.addEventListener('focusin',show);
 }

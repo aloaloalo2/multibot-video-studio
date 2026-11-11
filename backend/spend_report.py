@@ -388,7 +388,11 @@ def record(log: Path) -> dict | None:
 
 
 def record_later(log: Path) -> None:
-    threading.Thread(target=record, args=(log,), daemon=True).start()
+    try:
+        threading.Thread(target=record, args=(log,), daemon=True).start()
+    except RuntimeError:
+        # The original log remains available to the next local accounting backfill.
+        pass
 
 
 def backfill(pid: str) -> list[dict]:

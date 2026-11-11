@@ -27,7 +27,7 @@ class EpisodeDraftControlsTest(unittest.TestCase):
         self.context = patch.object(ideas, 'context', return_value=self.ctx)
         self.context.start()
         self.addCleanup(self.context.stop)
-        self.hooks = [{'text':f'Opening {n}. ' + 'Natural complete spoken words. '*10,'uk':''} for n in range(4)]
+        self.hooks = [{'text':f'Opening {n}. ' + 'Natural complete spoken words. '*5,'uk':''} for n in range(4)]
         self.topics = {'id':'topics-fixture', 'ideas':[{'title':f'A fresh topic number {n}', 'uk':''} for n in range(5)],
                        'day':ideas.today(), 'target_words':1200, 'sample_count':0, 'context':self.ctx, 'status':'done', 'stage':'ideas'}
         store.atomic_json(ideas.path(self.cid), self.topics)
@@ -83,7 +83,7 @@ class EpisodeDraftControlsTest(unittest.TestCase):
             self.request(f"/api/projects/{data['project_id']}/episode-draft", 'POST', body)
             self.assertEqual(thread.call_count, 1)
         self.assertEqual(len(list((root/'draft-history').glob('*.json'))), 1)
-        changed = [{'text':row['text']+' A different ending.', 'uk':''} for row in self.hooks]
+        changed = [{'text':row['text'].replace('Natural complete spoken words.','Different natural complete spoken words.',1), 'uk':''} for row in self.hooks]
         with patch.object(ideas, 'opus', return_value={'openings':changed}) as model:
             ideas.work(self.cid, store.read_json(root/'episode-draft.json'))
             self.assertIn('different angles', model.call_args.args[0])
@@ -189,9 +189,9 @@ class EpisodeDraftControlsTest(unittest.TestCase):
         catalog = ideas.catalog(self.cid)
         self.assertEqual(catalog['attempt_day'], ideas.today())
         self.assertFalse(catalog['stale'])
-        with patch.object(ideas.credentials, 'vault') as vault, patch.object(store, 'list_channels', return_value=[{'id':self.cid}]), patch.object(ideas, 'Thread') as thread:
-            vault.return_value.configured.return_value = True
-            ideas.daily_once()
+        with patch.object(ideas, 'Thread') as thread:
+            # Reopening Ideas uses its daily reservation, without the retired background scheduler.
+            ideas.start(self.cid, {'action':'ideas','if_stale':True})
         thread.assert_not_called()
 
     def test_saved_script_blocks_paid_regeneration(self):

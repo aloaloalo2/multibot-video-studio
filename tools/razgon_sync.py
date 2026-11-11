@@ -29,7 +29,10 @@ import sys
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-YOUTUBE = APP_ROOT.parent
+sys.path.insert(0, str(APP_ROOT / 'backend'))
+import workspace_paths
+
+YOUTUBE = workspace_paths.youtube_root()
 KIT = APP_ROOT / "razgon-plugin" / "razgon-2d-studio-plugin" / "skills" / "make-2d-video" / "kit"
 MANIFEST = ".videokey-kit.json"
 # The Razgon working copy lives inside the studio's own folder (user, 1 November 2026: «цю папку з What If прибрати й

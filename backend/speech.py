@@ -31,9 +31,14 @@ def tokens(text, locale=None):
 # Script text is the truth and the recogniser only supplies time. Small recognition slips («souls» for
 # «soles», «coroid» for «choroid») are corrected to the script automatically; a real gap in the voice,
 # an overlapping or missing boundary, or a weak overall match still go to review.
-MIN_MATCH_PERCENT = 95.0
+MIN_MATCH_PERCENT = 90.0
+MIN_PHRASE_MATCH_PERCENT = 80
 MAX_UNHEARD_RUN = 3
-BLOCKING_ISSUES = {"missing_boundary", "uncertain_boundary", "missing_speech"}
+BLOCKING_ISSUES = {"missing_boundary", "uncertain_boundary", "missing_speech", "low_phrase_match", "number_difference"}
+
+
+def blocking_issues(sequence_verified=False):
+    return BLOCKING_ISSUES - {'low_phrase_match', 'number_difference'} if sequence_verified else BLOCKING_ISSUES
 
 
 def transcript_script(words):
@@ -47,7 +52,7 @@ def transcript_script(words):
     return text
 
 
-def _compare_in_order(script, words, duration):
+def _compare_in_order(script, words, duration, sequence_verified=False):
     sentences = planner.split_sentences(script)
     locale = number_text.detect_locale(script)
     reference, ranges, chunks, token_chunks = [], [], [], []
@@ -74,7 +79,7 @@ def _compare_in_order(script, words, duration):
         return float(words[source_indexes[b0]]["start"]), float(words[source_end_indexes[b1 - 1]]["end"])
 
     matcher = difflib.SequenceMatcher(None, reference, heard, autojunk=False)
-    mapping, differences, affected = {}, [], set()
+    mapping, differences, affected, numeric_differences = {}, [], set(), set()
     times, estimated = [None] * len(reference), [False] * len(reference)
     for kind, a0, a1, b0, b1 in matcher.get_opcodes():
         if kind in {"equal", "replace"} and a1 - a0 == b1 - b0:
@@ -93,6 +98,10 @@ def _compare_in_order(script, words, duration):
         if not related and ranges:
             related = [next((index for index, (_, end) in enumerate(ranges) if a0 < end), len(ranges) - 1)]
         affected.update(related)
+        expected_numbers = [token for token in reference[a0:a1] if re.search(r'\d', token)]
+        heard_numbers = [token for token in heard[b0:b1] if re.search(r'\d', token)]
+        if expected_numbers != heard_numbers:
+            numeric_differences.update(related)
         differences.append({"kind": kind, "sentences": [index + 1 for index in related],
                             "expected": " ".join(reference[a0:a1]), "recognized": " ".join(heard[b0:b1])})
     # Script words the recogniser did not hear at all sit between their heard neighbours.
@@ -124,6 +133,10 @@ def _compare_in_order(script, words, duration):
             issues.append("estimated_words")
         if any(position in unheard for position in range(start, end)) or len(matched) * 2 < end - start:
             issues.append("missing_speech")
+        if len(matched) * 100 < (end - start) * MIN_PHRASE_MATCH_PERCENT:
+            issues.append("low_phrase_match")
+        if index in numeric_differences:
+            issues.append("number_difference")
         begin = times[start][0] if end > start and times[start] else None
         finish = times[end - 1][1] if end > start and times[end - 1] else None
         if begin is None or finish is None:
@@ -144,6 +157,7 @@ def _compare_in_order(script, words, duration):
         phrases.append({"number": index + 1, "text": number_text.to_digits(sentence, locale), "spoken_text": sentence, "recognized": recognized,
                         "start": None if begin is None else round(begin, 3), "end": None if finish is None else round(finish, 3),
                         "matched_words": len(matched), "words": end - start,
+                        "word_match_percent": round(len(matched) / (end - start) * 100, 1) if end > start else 0,
                         "recognition_confidence": round(confidence, 4), "issues": issues})
     script_words = []
     for k, chunk in enumerate(chunks):
@@ -151,16 +165,19 @@ def _compare_in_order(script, words, duration):
         if owned:
             script_words.append({"text": chunk["text"], "sentence": chunk["sentence"], "start": round(min(t[0] for t in owned), 3),
                                  "end": round(max(t[1] for t in owned), 3),
+                                 "word_index": k,
                                  "estimated": any(estimated[a] for a, owners in enumerate(token_chunks) if k in owners)})
     percent = round(len(mapping) / len(reference) * 100, 1) if reference else 0
-    ready = bool(phrases) and percent >= MIN_MATCH_PERCENT and all(not BLOCKING_ISSUES.intersection(phrase["issues"]) for phrase in phrases)
+    blocking = blocking_issues(sequence_verified)
+    ready = bool(phrases) and (sequence_verified or percent >= MIN_MATCH_PERCENT) and all(not blocking.intersection(phrase["issues"]) for phrase in phrases)
     timings = {"duration": duration, "sentences": [{"text": phrase["text"], "start": phrase["start"], "end": phrase["end"]} for phrase in phrases]} if ready else None
     if timings:
         planner.validate_sentence_timings(script, timings["sentences"], duration)
     return {"status": "matched" if ready else "needs_review", "matched_words": len(mapping),
             "script_words": len(reference), "recognized_words": len(heard),
-            "word_match_percent": percent, "corrected_words": len(reference) - len(mapping),
-            "matched_phrases": sum(not BLOCKING_ISSUES.intersection(phrase["issues"]) for phrase in phrases), "phrase_count": len(phrases),
+            "word_match_percent": percent, "minimum_phrase_match_percent": MIN_PHRASE_MATCH_PERCENT,
+            "corrected_words": len(reference) - len(mapping),
+            "matched_phrases": sum(not blocking.intersection(phrase["issues"]) for phrase in phrases), "phrase_count": len(phrases),
             "phrases": phrases, "differences": differences, "timings": timings, "aligned_words": script_words}
 
 
@@ -238,5 +255,5 @@ def transcribe(path, duration, progress, language=None):
 
 # A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
 # comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
-def compare_script(script, words, duration):
-    return speech_order.mark(script, words, _compare_in_order(script, words, duration), BLOCKING_ISSUES)
+def compare_script(script, words, duration, sequence_verified=False):
+    return speech_order.mark(script, words, _compare_in_order(script, words, duration, sequence_verified), blocking_issues(sequence_verified))

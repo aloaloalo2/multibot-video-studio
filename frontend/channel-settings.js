@@ -1,7 +1,9 @@
 // Keep the existing controls mounted while arranging them into a small settings workspace.
 const channelSettingsPaths={
   projects:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M8 13h3m-3 3h7"/>',
+  script:'<path d="M5 3h10l4 4v14H5ZM14 3v5h5M8 12h8m-8 4h6"/>',
   look:'<path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.4 1.4 0 0 1 .8-2.6h2A4.2 4.2 0 0 0 21 10.5 8.5 8.5 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="6.7" r=".7"/><circle cx="15.5" cy="7.5" r=".7"/>',
+  montage:'<path d="M4 5h16M4 12h16M4 19h16M8 2v6m8 1v6m-6 1v6"/>',
   voice:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
   sound:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',
   languages:'<path d="M3 5h11M8 3v2M5 5c0 5 4 9 8 10M12 5c0 4-3 8-8 11m10 5 4-11 4 11m-6.5-4h5"/>',
@@ -39,7 +41,7 @@ function channelSettingsEditable(field){
   return !field.closest('.voice-player');
 }
 function channelSettingsResetAnchor(field){
-  const anchor=field.nextElementSibling;
+  const anchor=field.closest('.tempo-scale')?.nextElementSibling||field.nextElementSibling;
   return field.type==='range'&&channelSettingsEditable(field)&&anchor?.matches('output')?anchor:null;
 }
 function channelSettingsFieldValue(field){
@@ -58,11 +60,13 @@ function organizeChannelSettings(channel){
   workspace.append(nav,content);body.append(workspace);
   const definitions=[
     ['projects','Основне','Для нових проєктів','Основне'],
+    ['script','Сценарій','Зачини та повний текст'],
     ['look','Оформлення','Стиль і логотип'],
-    ['voice','Голос','Озвучка сценаріїв'],
+    ['montage','Монтаж',''],
+    ['voice','Озвучка','Голос і автоматизація'],
+    ['thumbnails','Прев’ю','Герой і побажання'],
     ['sound','Звук','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
-    ['thumbnails','Прев’ю','Герой і побажання'],
     ['advanced','Розширене','Формат відео й правила','Розширене']
   ];
   const panels={},tabs={},summaries=new Map();
@@ -105,9 +109,9 @@ function organizeChannelSettings(channel){
   // Keep common project and director choices visible on the main panel.
   const defaults=body.querySelector('.channel-project-defaults'),kind=defaults.querySelector('.channel-kind-section');
   const kindSection=document.createElement('section');kindSection.className='settings-section settings-project-kind';kindSection.innerHTML='<h3>Тип роликів</h3>';kindSection.append(kind);kind.querySelector('h4').hidden=true;panels.projects.append(kindSection);
-  move('.channel-project-defaults','projects',{title:'Робота режисера',icon:'projects'});
+  move('.channel-project-defaults','projects',{fold:true,title:'Робота режисера',icon:'projects'});
   const quick=document.createElement('div');quick.className='settings-quick-grid';
-  for(const [key,title,icon] of [['voice','Голос','voice'],['look','Оформлення','look']]){
+  for(const [key,title,icon] of [['voice','Озвучка','voice'],['look','Оформлення','look']]){
     const button=document.createElement('button');button.type='button';button.className='settings-quick-card';button.dataset.quick=key;
     button.innerHTML=`<span class="settings-quick-visual">${channelSettingsIcon(icon)}</span><span class="settings-quick-copy"><strong>${title}</strong><span class="settings-quick-value">Завантажуємо…</span></span><span class="settings-quick-arrow" aria-hidden="true">›</span>`;
     button.addEventListener('click',()=>select(key,true));quick.append(button);
@@ -119,11 +123,14 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
-  move('.settings-agent-memory','advanced',{fold:true,icon:'memory',title:'Правила режисера'});
+  move('.settings-agent-memory','montage',{icon:'memory',title:'Правила монтажера'});
+  move('.settings-script-wishes','script',{icon:'script'});
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Логотип'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
-  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);
+  const automation=document.createElement('div');automation.className='settings-voice-automation';
+  automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label>`;
+  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot,automation);
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
@@ -142,13 +149,14 @@ function organizeChannelSettings(channel){
   const fields='input:not([type=file]),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button.style-thumb[data-style]';
   const baseline=new Map(),resets=new Map();let ready=false,weightsValid=true,scheduled=false;
   const save=$('modal-actions').querySelector('.primary');
-  const hint=document.createElement('span');hint.className='settings-save-hint';hint.setAttribute('role','status');$('modal-actions').prepend(hint);
+  const hint=document.createElement('button');hint.type='button';hint.className='settings-save-hint';hint.disabled=true;hint.addEventListener('click',()=>{select('projects');const field=body.querySelector('[data-weight]');const group=field.closest('details');group.open=true;field.scrollIntoView({block:'nearest'});field.focus();});$('modal-actions').prepend(hint);
   function refresh(){
     if(!workspace.isConnected)return;
     const weights=[...body.querySelectorAll('[data-weight]')].map(input=>({label:input.getAttribute('aria-label').replace(', відсотків',''),amount:Number(input.value)}));
     text(summaries.get('.settings-visual-formats'),channelSettingsSummary(weights)||'Оберіть формати');
     strip.replaceChildren(...[...$('settings-bar').children].map(el=>{const part=el.cloneNode(false);part.title=el.title;return part;}));
     const wishes=body.querySelector('.generated-image-preferences');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0);
+    text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
     text(summaries.get('.settings-sentences'),`До ${value('settings-max-sentences')} речень на кадр`);
@@ -157,7 +165,9 @@ function organizeChannelSettings(channel){
     text(summaries.get('.settings-accents'),$('settings-accents').checked?'Режисер додає за змістом':'Вимкнено');
     const voice=body.querySelector('.channel-voice-lab'),provider=voice?.querySelector('[name=provider]');
     const source=voice?.querySelector('.voice-lab-reference-player');
-    const hasVoice=!!source?.querySelector('audio')||(provider?.value==='heygen'&&!!voice?.querySelector('[name=heygen_voice_id]')?.value);
+    const idField={heygen:'heygen_voice_id',fishaudio:'fish_voice_id',elevenlabs:'eleven_voice_id'}[provider?.value];
+    const hasVoice=!!(idField&&voice?.querySelector(`[name=${idField}]`)?.value)||!!source?.querySelector('audio');
+    for(const field of automation.querySelectorAll('input')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
     text('[data-quick=voice] .settings-quick-value',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     const style=body.querySelector('.style-thumb[aria-checked=true] span')?.textContent;
     text('[data-quick=look] .settings-quick-value',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');
@@ -179,8 +189,9 @@ function organizeChannelSettings(channel){
     const dirty=ready&&channelSettingsDirty(baseline);
     const valid=weightsValid;
     body.querySelector('.settings-visual-formats').closest('details').classList.toggle('settings-invalid-weights',!valid);
-    save.disabled=!dirty||!valid;
-    text(hint,!valid?'Перевірте пропорції':dirty?'Є незбережені зміни':'');
+    save.disabled=!dirty||!valid||save.getAttribute('aria-busy')==='true';
+    hint.disabled=valid;hint.hidden=!dirty&&valid;
+    text(hint,!valid?'Перевірити пропорції ↗':dirty?'Є незбережені зміни':'');
     tabs.projects.classList.toggle('has-settings-error',!valid);
   }
   let refreshFrame;

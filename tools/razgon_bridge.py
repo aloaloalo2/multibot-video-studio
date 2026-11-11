@@ -39,7 +39,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-YOUTUBE = Path(__file__).resolve().parents[2]
 # the Razgon working copy: in the studio's own folder, or in What If before it moved (razgon_sync.home)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import razgon_sync

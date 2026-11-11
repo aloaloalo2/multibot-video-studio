@@ -69,6 +69,12 @@ function updateScriptWordCount(panel,text){
 }
 
 const voiceScriptDraft={};
+function narrationScriptValue(project,plan=null,job=null){
+  if(voiceScriptDraft[project.id]!==undefined)return voiceScriptDraft[project.id];
+  const saved=project.voice_script;
+  if(typeof job?.script==='string'&&job.started_at>(saved?.saved_at||0)&&job.started_at>=(project.restarted_at||0))return job.script;
+  return saved?.text??plan?.script??job?.script??'';
+}
 const createVideoIcon='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 20 11-11 3 3L7 23zM12 12l3 3M5 3v4M3 5h4M19 2v4M17 4h4M20 16v4M18 18h4"/></svg>';
 function videoCreationCopy(){return directMontage()?{label:'Розпізнати аудіо',note:'Натисніть, щоб студія розпізнала аудіо й зберегла текст із таймінгами.'}:{label:'Створити відео',note:''};}
 async function startVideoCreation(pid,payload){
@@ -77,11 +83,11 @@ async function startVideoCreation(pid,payload){
   if(!capabilities.create_video)throw new Error('Створення відео одним кроком стане доступним після безпечного перезапуску студії. Поточна робота продовжується.');
   return api(`/api/projects/${pid}/create-video`,'POST',payload);
 }
-function narrationInitialMode(data,profile){
-  if(['running','cancelling'].includes(data.job?.status))return 'script';
+function narrationInitialMode(data,profile,script=''){
+  if(['queued','running','cancelling'].includes(data.job?.status))return 'script';
   if(data.job?.status==='done'&&data.job.asset_id)return data.source || 'script';
   if(profile&&!channelVoiceAvailable(profile))return 'file';
-  return data.source || (data.job?.script?'script':null);
+  return data.source || (String(script || data.job?.script || '').trim()?'script':null);
 }
 function narrationChoices(panel,ready,restore=true){
   const choices=document.createElement('div');choices.className='narration-choices';
@@ -101,8 +107,8 @@ function narrationChoices(panel,ready,restore=true){
   panel.append(choices);
   if(restore)Promise.all([api(`/api/projects/${pid}/narration`),api(`/api/channels/${state.project.channel_id}/voice-lab`).catch(()=>null)]).then(([data,profile])=>{
     if(!choices.isConnected||state.project?.id!==pid||selectionVersion)return;
-    const running=['running','cancelling'].includes(data.job?.status);
-    const mode=narrationInitialMode(data,profile);
+    const running=['queued','running','cancelling'].includes(data.job?.status);
+    const mode=narrationInitialMode(data,profile,panel.querySelector('textarea')?.value ?? state.project.voice_script?.text ?? state.plan?.script);
     if(mode)showSelection(mode==='file'?1:0);
     if(running){choices.hidden=true;choices.setAttribute('aria-busy','true');}
   }).catch(error=>{if(choices.isConnected)status(error.message,true);});
@@ -121,7 +127,18 @@ function renderNarrationAnalysis(panel,pid){
       plan.disabled=false;
       const text=panel.querySelector('textarea') || panel.parentElement?.querySelector('.narration-script textarea');if(text)text.readOnly=false;
       const choices=panel.parentElement?.querySelector('.narration-choices');if(choices)choices.hidden=false;
-      if(job?.status==='failed'){const note=panel.querySelector('.narration-status-row p');if(note)note.textContent=job.error||'Не вдалося розпізнати озвучку';}
+    }
+    if(job?.project_id===pid){
+      const note=panel.querySelector('.narration-status-row p'),report=state.analysis?.report;
+      if(note&&job.status==='failed')note.textContent=job.error||'Не вдалося розпізнати озвучку';
+      else if(note&&job.status==='complete'&&report?.applied)note.textContent='';
+      else if(note&&job.status==='complete'&&report&&!report.applied){
+        const blocking=['missing_boundary','uncertain_boundary','missing_speech','repeated_speech','out_of_order',...(!report.sequence_verification?['low_phrase_match','number_difference']:[])];
+        const phrases=(report.phrases||[]).filter(row=>(row.issues||[]).some(issue=>blocking.includes(issue))).map(row=>row.number);
+        if(report.status==='needs_review')note.textContent=phrases.length?'Потрібно уточнити розпізнавання · фрази '+phrases.slice(0,8).join(', '):'Потрібно уточнити порядок речень в озвучці';
+        else if(report.status==='script_changed')note.textContent='Сценарій змінився. Повторіть перевірку озвучки.';
+        else if(report.status==='source_changed')note.textContent='Аудіо змінилося. Повторіть перевірку озвучки.';
+      }
     }
     return false;
   }
@@ -143,30 +160,39 @@ function openNarrationSpeed(pid,job,ready,refresh){
   const current=Math.round((job.speed||1)*100),asset=state.project?.assets?.find(item=>item.id===job.asset_id);
   const duration=Number(job.duration || asset?.duration || ready.querySelector('audio')?.duration)||0;
   ready.querySelector('audio')?.pause();
-  modal('Швидкість озвучки',`<div class="narration-speed-settings"><label for="narration-speed-range">Швидкість <output id="narration-speed-value">${current}%</output></label><input id="narration-speed-range" type="range" min="90" max="110" step="1" value="${current}"><p id="narration-speed-summary" aria-live="polite"></p><small>Зміна темпу без зміни тону. Повторна генерація голосу не потрібна.</small><p id="narration-speed-error" role="status"></p></div>`,[{label:'Застосувати',primary:true,run:async()=>{
+  modal('Налаштування озвучки',`<div class="narration-speed-settings voice-local-settings"><label for="narration-speed-range">Швидкість <output id="narration-speed-value">${current}%</output></label>${voiceTempoRange("narration-speed-range",current)}<p id="narration-speed-summary" aria-live="polite"></p>${voiceReverbControls(job.reverb,job.room_noise)}<div class="voice-local-preview"></div><p id="narration-speed-error" role="status"></p></div>`,[{label:'Застосувати',primary:true,run:async()=>{
     const range=$('narration-speed-range'),apply=$('modal-actions').querySelector('.primary');
-    if(apply.disabled)return;
     apply.disabled=true;range.disabled=true;apply.textContent='Змінюємо…';
+    $('modal-body').querySelectorAll('[data-reverb],[data-noise]').forEach(control=>control.disabled=true);
     const plan=ready.querySelector('.narration-plan-action'),settings=ready.querySelector('.narration-settings');plan.disabled=true;settings.disabled=true;
     try{
-      await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100});
+      await api(`/api/projects/${pid}/narration/speed`,'POST',{speed:Number(range.value)/100,reverb:readVoiceReverb($('modal-body')),room_noise:readVoiceNoise($('modal-body'))});
       if($('narration-speed-range')===range)closeModal();
       if(ready.isConnected&&state.project?.id===pid){ready.remove();await refresh();}
     }catch(error){
-      if($('narration-speed-range')===range){$('narration-speed-error').textContent=error.message;apply.disabled=false;range.disabled=false;apply.textContent='Застосувати';}
+      if($('narration-speed-range')===range){$('narration-speed-error').textContent=error.message;apply.disabled=false;range.disabled=false;apply.textContent='Застосувати';$('modal-body').querySelectorAll('[data-reverb],[data-noise]').forEach(control=>control.disabled=false);}
       plan.disabled=false;settings.disabled=false;
     }
   }}]);
   const range=$('narration-speed-range'),apply=$('modal-actions').querySelector('.primary');
+  const box=$('modal-body'),player=voicePlayer(null,`/api/projects/${pid}/narration/original`,{playLabel:'Прослухати налаштування озвучки'});
+  box.querySelector('.voice-local-preview').append(player);
+  const failed=error=>{$('narration-speed-error').textContent=error.message;};
+  const previewAudio=attachVoiceEffects(player.querySelector('audio'),()=>readVoiceReverb(box),job.local_preview_tempo?()=>1:()=>Number(range.value)/100/(job.original_speed||job.speed||1),failed,()=>readVoiceNoise(box),job.local_effects_version??2);
+  const previewTempo=job.local_preview_tempo?attachVoiceTempo(player.querySelector('audio'),`/api/projects/${pid}/narration/original`,()=>Number(range.value)/100,failed):null;
+  const noisePreview=bindVoiceNoisePreview(box,error=>{$('narration-speed-error').textContent=error.message;},job.local_effects_version??2);
+  box.channelSettingsCleanup=()=>{previewTempo?.dispose();previewAudio.dispose();noisePreview.dispose();box.channelSettingsCleanup=null;};
   const update=()=>{
-    const preview=narrationSpeedPreview(duration,job.speed||1,range.value),changed=Number(range.value)!==current;
+    const effect=syncVoiceReverb(box),speedChanged=Number(range.value)!==current,preview=narrationSpeedPreview(duration,job.speed||1,range.value),changed=!!job.audio_processing_stale||speedChanged||voiceReverbKey(effect)!==voiceReverbKey(job.reverb)||voiceNoiseKey(readVoiceNoise(box))!==voiceNoiseKey(job.room_noise);
     $('narration-speed-value').textContent=range.value+'%';apply.disabled=!changed;
-    $('narration-speed-summary').textContent=changed?`${clock(Math.floor(duration))} → ≈ ${clock(Math.round(preview.duration))} · на ${Math.round(Math.abs(preview.delta))} с ${preview.delta>0?'довше':'коротше'}`:`Тривалість ${clock(Math.floor(duration))}`;
+    $('narration-speed-summary').textContent=speedChanged?`${clock(Math.floor(duration))} → ≈ ${clock(Math.round(preview.duration))} · на ${Math.round(Math.abs(preview.delta))} с ${preview.delta>0?'довше':'коротше'}`:`Тривалість ${clock(Math.floor(duration))}`;
+    previewAudio.update();previewTempo?.update();
   };
-  range.addEventListener('input',update);update();
+  range.addEventListener('input',update);box.querySelectorAll('[data-reverb],[data-noise]').forEach(control=>control.addEventListener('input',update));update();
 }
 function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('section');ready.className='narration-ready';
+  ready.voicedScript=job.script||'';ready.dataset.asset=job.asset_id||'';
   const cost=job.estimated_usd===0?'Безкоштовно':job.estimated_usd!=null?`≈ $${job.estimated_usd.toFixed(3)}`:'';
   ready.innerHTML=`<header class="narration-ready-heading"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><div class="narration-ready-tools"><small>${esc(cost)}</small><button type="button" class="narration-settings" title="Налаштування озвучки" aria-label="Налаштування озвучки">${$('overview-channel-settings').innerHTML}</button></div></header>`;
   const headline=ready.querySelector('strong');
@@ -180,42 +206,53 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   ready.append(actions);panel.classList.add('has-ready-narration');panel.append(ready);renderNarrationAnalysis(panel,pid);return ready;
 }
 function channelVoiceAvailable(profile){
-  return profile?.settings?.provider==='heygen'?!!profile.settings.heygen_voice_id:!!profile?.reference;
+  const settings=profile?.settings||{};
+  return !!voiceLabVoiceId(settings)||(settings.provider!=='heygen'&&!!profile?.reference);
 }
 
 function renderNarrationGeneration(panel,scriptInput=null){
   const pid=state.project.id;const box=document.createElement('section');box.className='narration-generation';
-  box.innerHTML=`${scriptInput?'':'<label class="voice-script"><span>Сценарій</span><textarea rows="6" placeholder="Вставте текст для озвучення"></textarea></label>'}<div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div>`;
+  box.innerHTML=`${scriptInput?'':'<label class="voice-script"><span>Сценарій</span><textarea rows="6" placeholder="Вставте текст для озвучення"></textarea></label>'}<div class="narration-voice-card"><div class="narration-choice-profile">Завантажуємо голос…</div><div class="narration-status-row"><p role="status"></p><button class="secondary narration-action-icon" type="button" aria-label="Згенерувати озвучку" title="Згенерувати озвучку"></button></div></div>`;
   panel.append(box);
-  const details=document.createElement('div');details.className='narration-choice-profile';details.textContent='Завантажуємо голос…';box.prepend(details);
+  const details=box.querySelector('.narration-choice-profile');
   const cid=state.project.channel_id;let profile=null,currentJob=null,voiceReady=false;
   api(`/api/channels/${cid}/voice-lab`).then(data=>{
     profile=data;voiceReady=channelVoiceAvailable(data);if(currentJob)renderRunning(currentJob);
     if(!details.isConnected)return;details.replaceChildren();
     actionState(busy?currentJob?.status:'idle');updateQuote();
     if(!voiceReady){details.innerHTML='<div class="narration-voice-missing" role="status"><span aria-hidden="true">⚠</span><div><strong>Зразок голосу</strong><small>Немає голосу каналу. Додайте зразок у налаштуваннях каналу.</small></div></div>';return;}
-    if(data.reference){const player=voicePlayer(null,`/api/channels/${cid}/voice-lab/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Прослухати голос каналу'});details.append(player);}
-    else{const chosen=document.createElement('small');chosen.textContent='Голос HeyGen вибрано';details.append(chosen);}
     const settings=data.settings||{},service=settings.provider==='heygen'?'HeyGen':settings.provider==='fishaudio'?'Fish Audio':'ElevenLabs';
     const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
-    const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=[service,model].filter(Boolean).join(' · ');details.append(summary);
+    const heading=document.createElement('div');heading.className='narration-voice-heading';details.append(heading);
+    const summary=document.createElement('small');summary.className='narration-choice-settings';summary.textContent=model.startsWith(service)?model:[service,model].filter(Boolean).join(' · ');heading.append(summary);
+    if(data.reference){
+      const toggle=document.createElement('button');toggle.type='button';toggle.className='narration-reference-toggle';toggle.setAttribute('aria-expanded','false');toggle.title='Приклад голосу';
+      toggle.innerHTML='<span>Голос</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>';
+      const sample=document.createElement('div');sample.className='narration-reference';sample.hidden=true;
+      toggle.onclick=()=>{
+        sample.hidden=!sample.hidden;toggle.setAttribute('aria-expanded',String(!sample.hidden));
+        if(!sample.hidden&&!sample.firstChild)sample.append(voicePlayer(null,`/api/channels/${cid}/voice-lab/reference?v=${data.reference.stamp}`,{filename:'Приклад голосу',playLabel:'Прослухати голос каналу'}));
+        if(sample.hidden)sample.querySelector('audio')?.pause();
+      };
+      heading.append(toggle);details.append(sample);
+    }
   }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
   const text=scriptInput || box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
-  if(!scriptInput)text.value=voiceScriptDraft[pid] ?? state.project.voice_script?.text ?? state.plan?.script ?? '';
+  if(!scriptInput)text.value=narrationScriptValue(state.project,state.plan);
   const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
   const count=document.createElement('small');count.className='narration-phrase-count';box.querySelector('.narration-status-row').append(count);
   const progress=document.createElement('div');progress.className='narration-progress-track';progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Готовність озвучення');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.innerHTML='<span></span>';box.querySelector('.narration-status-row').append(progress);
   let quoteTimer=null,quoteVersion=0;
   const priceLabel=q=>{if(q.estimated_usd===0)return 'Безкоштовно';const usd=q.estimated_usd==null?'вартість у $ недоступна':`≈ $${q.estimated_usd.toFixed(3)}`;return q.estimated_credits==null?usd:`≈ ${q.estimated_credits.toLocaleString('uk-UA')} кредитів · ${usd}`;};
   async function updateQuote(){const version=++quoteVersion;if(!voiceReady||box.hidden){estimate.textContent='';return;}if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · ${quote.cached?`із кешу ${quote.cached}/${quote.total}`:quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
-  text.oninput=()=>{box.classList.remove('has-ready-narration');button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);actionState();estimate.textContent=voiceReady?'Оновлюємо оцінку…':'';quoteTimer=setTimeout(updateQuote,500);};
+  text.oninput=()=>{box.classList.remove('has-ready-narration');const ready=box.querySelector('.narration-ready');if(ready)ready.hidden=text.value.trim()!==(ready.voicedScript||'').trim();button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);actionState();estimate.textContent=voiceReady?'Оновлюємо оцінку…':'';quoteTimer=setTimeout(updateQuote,500);};
   updateScriptWordCount(panel,text.value);
   text.addEventListener('input',()=>updateScriptWordCount(panel,text.value));
   updateQuote();
   let busy=false;
   function actionState(mode='idle'){
-    const running=mode==='running',waiting=mode==='cancelling';
-    const label=waiting?'Зупиняємо озвучення':running?'Зупинити озвучення':'Озвучити сценарій';
+    const running=mode==='running'||mode==='queued',waiting=mode==='cancelling';
+    const label=waiting?'Зупиняємо озвучення':mode==='queued'?'Зняти з черги':running?'Зупинити озвучення':'Озвучити сценарій';
     box.querySelector('.narration-status-row').hidden=!running&&!waiting&&!voiceReady;
     button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting||(!running&&(!voiceReady||text.value.trim().length<10));
     button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
@@ -230,37 +267,47 @@ function renderNarrationGeneration(panel,scriptInput=null){
     const models=[...(profile?.heygen_models||[]),...(profile?.fish_models||[]),...(profile?.models||[])];
     const model=models.find(m=>m.id===key)?.name||key||'';
     const percent=job.total>0?Math.min(99,Math.max(0,Math.floor((job.completed||0)/job.total*100))):0;
-    info.innerHTML=`<span class="narration-engine">${esc([service,model].filter(Boolean).join(' · '))}</span><span class="narration-progress-title">${exportSpinner}<strong>${job.status==='cancelling'?'Зупиняємо':'Озвучуємо'}</strong><b>${percent}%</b></span>`;
-    count.textContent=`${job.completed||0} із ${job.total||0} фраз`;
+    const queued=job.status==='queued',label=queued?`HeyGen · у черзі${job.queue_position?' · '+job.queue_position:''}`:job.status==='cancelling'?'Зупиняємо':'Озвучуємо';
+    info.innerHTML=`<span class="narration-engine">${esc([service,model].filter(Boolean).join(' · '))}</span><span class="narration-progress-title">${exportSpinner}<strong>${esc(label)}</strong>${queued?'':`<b>${percent}%</b>`}</span>`;
+    count.textContent=queued?'Очікуємо завершення попереднього проєкту':`${job.completed||0} із ${job.total||0} фраз`;
     progress.setAttribute('aria-valuenow',String(percent));progress.firstElementChild.style.width=percent+'%';
     estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);
   }
   actionState();
+  let narrationPollTimer=null,narrationPolling=false,narrationPollVersion=0;
+  const narrationConnected=()=>box.isConnected&&state.project?.id===pid;
+  const scheduleNarrationPoll=(delay=1500)=>{clearTimeout(narrationPollTimer);if(narrationConnected())narrationPollTimer=setTimeout(poll,delay);};
   async function poll(){
-    if(!box.isConnected || state.project?.id!==pid)return;
+    if(!narrationConnected())return;
+    if(narrationPolling){scheduleNarrationPoll();return;}
+    narrationPolling=true;clearTimeout(narrationPollTimer);const version=narrationPollVersion;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
-      if(['running','cancelling'].includes(job?.status)){
+      if(!narrationConnected())return;
+      if(version!==narrationPollVersion){scheduleNarrationPoll(0);return;}
+      if(['queued','running','cancelling'].includes(job?.status)){
         if(typeof channelActivity!=='undefined')channelActivity.add(state.project.channel_id);
         if(typeof projectActivities!=='undefined')projectActivities.set(pid,{kind:'озвучення сценарію',progress:job.total>0?Math.min(99,Math.floor((job.completed||0)/job.total*100)):0});
-        if(!busy&&job.script){text.value=job.script;updateScriptWordCount(panel,text.value);}
-        currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);setTimeout(poll,1500);
+        if(!busy&&job.script){text.value=narrationScriptValue(state.project,state.plan,job);updateScriptWordCount(panel,text.value);}
+        currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);scheduleNarrationPoll();
       }
       else if(narrationResultVisible(job,state.project,busy)){
-        busy=false;currentJob=null;actionState();if(!text.value.trim()&&job.script&&voiceScriptDraft[pid]===undefined){text.value=job.script;updateScriptWordCount(panel,text.value);}button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
-        if(!box.querySelector('.narration-ready')){
-          appendReadyNarration(box,pid,job,info,poll);
-        }
+        busy=false;currentJob=null;actionState();if(voiceScriptDraft[pid]===undefined){text.value=narrationScriptValue(state.project,state.plan,job);updateScriptWordCount(panel,text.value);}button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        let ready=box.querySelector('.narration-ready');if(ready&&ready.dataset.asset!==job.asset_id){ready.remove();ready=null;}
+        ready??=appendReadyNarration(box,pid,job,info,poll);
+        ready.hidden=text.value.trim()!==(job.script||'').trim();if(ready.hidden)info.textContent='Сценарій змінено. Озвучте нову версію.';
       }
       else if(job?.status==='cancelled'){busy=false;currentJob=null;actionState();info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
       else if(job?.status==='failed'){busy=false;currentJob=null;actionState();info.textContent=job.error;}
-    }catch(error){info.textContent=error.message;button.disabled=!voiceReady;}
+      else{busy=false;currentJob=null;info.textContent='';actionState();}
+    }catch(error){if(narrationConnected()){info.textContent=error.message;if(busy)actionState(currentJob?.status||'running');else button.disabled=!voiceReady;if(error.httpStatus!==404)scheduleNarrationPoll(3000);}}
+    finally{narrationPolling=false;}
   }
-  button.onclick=async()=>{if(busy){actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}if(!voiceReady)return;button.disabled=true;try{
-    const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});
+  button.onclick=async()=>{if(busy){narrationPollVersion++;actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}if(!voiceReady)return;button.disabled=true;text.readOnly=true;narrationPollVersion++;const submittedScript=text.value;try{
+    const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:submittedScript});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
-    await api(`/api/projects/${pid}/narration/start`,'POST',{text:text.value,resume:true});box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
-  }catch(error){info.textContent=error.message;button.disabled=false;}};
+    const result=await api(`/api/projects/${pid}/narration/start`,'POST',{text:submittedScript,resume:true});if(!narrationConnected())return;if(result.voice_script)state.project.voice_script=result.voice_script;box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
+  }catch(error){if(narrationConnected()){info.textContent=error.message;button.disabled=false;text.readOnly=false;scheduleNarrationPoll(0);}}};
   poll();return box;
 }
 function renderVoiceStart(panel){
@@ -280,7 +327,7 @@ function renderVoiceStart(panel){
   const drop=section.querySelector('.voice-drop'),input=drop.querySelector('input'),fileLabel=drop.querySelector('.voice-drop-file');
   const start=section.querySelector('.voice-start-actions button'),progress=section.querySelector('.voice-progress');
   let file=null,busy=false;
-  text.value=voiceScriptDraft[project.id] ?? project.voice_script?.text ?? (direct?state.plan?.script:'') ?? '';
+  text.value=narrationScriptValue(project,direct?state.plan:null);
   updateScriptWordCount(panel,text.value);
   text.addEventListener('input',()=>{voiceScriptDraft[project.id]=text.value;updateScriptWordCount(panel,text.value);});
   function choose(next){
@@ -354,6 +401,7 @@ function renderPlan(){
   $('view-agent').setAttribute('aria-pressed',String(state.view==='agent'));
   const panel=$('project-plan');panel.replaceChildren();
   if(!state.project || state.view!=='plan')return;
+  if(renderInlineEpisodeDraft(panel))return;
   renderPlanSwitch(panel);
   if(direct){
     if(state.plan?.timing?.audio || state.plan?.timing?.status==='audio_synced')renderEpisode(panel);

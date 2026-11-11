@@ -30,13 +30,13 @@ class NarrationTests(unittest.TestCase):
             project={'id':'0'*24,'channel_id':'1'*16,'revision':1,'assets':[{'id':'old','path':str(source),'duration':10}], 'tracks':[{'clips':[{'asset_id':'old','duration':10}]}]}
             with patch.object(store,'project_dir',return_value=folder),patch.object(store,'load_project',return_value=project),patch.object(store,'save_project'),patch.object(store,'media_duration',return_value=9),patch.object(narration.narration_ending,'import_audio',return_value={'id':'new','duration':9}),patch.object(lab,'paced_audio',return_value=b'paced') as pace,patch.object(lab,'fish_synthesis') as paid,patch.object(narration,'snapshot',return_value={}):
                 store.atomic_json(narration.root(project['id'])/'job.json',{'status':'done','speed':1.,'asset_id':'old'})
-                narration.change_speed(project['id'],1.1)
-                self.assertEqual(pace.call_args.args[1],1.1)
+                narration.change_speed(project['id'],1.05)
+                self.assertEqual(pace.call_args.args[1],1.05)
                 self.assertEqual(pace.call_args.args[0].read_bytes(),b'original')
                 self.assertEqual(project['tracks'][0]['clips'][0]['asset_id'],'new')
                 self.assertEqual(project['tracks'][0]['clips'][0]['duration'],9)
                 self.assertFalse(paid.called)
-                for speed in [True,None,.89,1.11,float('nan')]:
+                for speed in [True,None,.86,1.06,float('nan')]:
                     with self.assertRaises(store.StudioError):narration.change_speed(project['id'],speed)
     def test_removed_or_pre_restart_audio_cannot_return_or_change_speed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,7 +46,7 @@ class NarrationTests(unittest.TestCase):
             with patch.object(store,'project_dir',return_value=folder),patch.object(store,'load_project',return_value=project):
                 store.atomic_json(narration.root(project['id'])/'job.json',job)
                 self.assertEqual(narration.snapshot(project['id'])['job'],{})
-                with self.assertRaises(store.StudioError):narration.change_speed(project['id'],1.1)
+                with self.assertRaises(store.StudioError):narration.change_speed(project['id'],1.05)
                 project.pop('restarted_at');project['assets']=[]
                 self.assertEqual(narration.snapshot(project['id'])['job'],{})
     def test_invalid_text_rejected_before_paid_work(self):

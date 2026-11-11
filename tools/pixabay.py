@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -16,7 +17,10 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 
-ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+import workspace_paths
+
+ROOT = workspace_paths.youtube_root()
 CACHE = Path(__file__).resolve().parent / ".pixabay-cache"
 SERVICE = "pixabay-youtube-api"
 LICENSE_URL = "https://pixabay.com/service/terms/"

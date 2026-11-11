@@ -14,6 +14,25 @@ import channel_voice_lab as lab
 
 LOCK = threading.Lock()
 ACTIVE = set()
+HEYGEN_QUEUE = []
+HEYGEN_TURN = threading.Condition()
+
+
+def release_heygen(pid):
+    with HEYGEN_TURN:
+        if pid in HEYGEN_QUEUE:HEYGEN_QUEUE.remove(pid)
+        HEYGEN_TURN.notify_all()
+
+
+def wait_heygen(pid, job):
+    with HEYGEN_TURN:
+        if pid not in HEYGEN_QUEUE:HEYGEN_QUEUE.append(pid)
+        while HEYGEN_QUEUE[0] != pid:
+            if (root(pid)/'cancel').exists():raise Cancelled()
+            HEYGEN_TURN.wait(.25)
+        if (root(pid)/'cancel').exists():raise Cancelled()
+        job.update(status='running', queue_position=None)
+
 
 class Cancelled(Exception):pass
 
@@ -30,7 +49,10 @@ def phrases(text):
 
 def spec(project, text):
     parts = phrases(text);cid=project['channel_id'];profile=lab.snapshot(cid)
-    settings=profile['settings'];ref=lab.effective_reference(cid,settings) if settings['provider']=='heygen' else profile['reference']
+    settings=profile['settings'];ref=lab.effective_reference(cid,settings) if lab.selected_voice_id(settings) or settings['provider']=='heygen' else profile['reference']
+    if settings['provider']=='heygen' and settings['heygen_model']=='starfish' and settings.get('heygen_starfish_ssml') and ('<' in text or '&' in text):
+        if len(text)>5000:raise store.StudioError('Для сценарію SSML Starfish допускається до 5000 символів. Для довгого сценарію виберіть звичайний текст')
+        parts=[text]
     if not ref:raise store.StudioError('Додайте або виберіть голос у налаштуваннях каналу')
     entries=[]
     for part in parts:
@@ -77,13 +99,13 @@ def recorded_speed(pid, job):
     for settings in candidates:
         ref=lab.effective_reference(cid,settings)
         if entries and ref:
-            for pct in range(90,111):
+            for pct in range(87,111):  # Includes historical settings when recovering old audio.
                 if all(lab.fingerprint({**settings,'text':e['text'],'speed':pct/100},ref)==e['key'] for e in entries[:3]):return pct/100
     raise store.StudioError('Не вдалося визначити початковий темп готової озвучки')
 
-def change_speed(pid, speed):
-    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9<=speed<=1.1:
-        raise store.StudioError('Швидкість має бути від 90 до 110%')
+def change_speed(pid, speed, reverb=None, room_noise=None):
+    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not lab.MIN_SPEED<=speed<=lab.MAX_SPEED:
+        raise store.StudioError('Швидкість має бути від 87 до 105%')
     import director,production
     with LOCK:
         if pid in ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE:raise store.StudioError('Дочекайтеся завершення поточної роботи проєкту',409)
@@ -91,7 +113,11 @@ def change_speed(pid, speed):
         if job.get('status')!='done':raise store.StudioError('Спочатку завершіть озвучення')
         if not completed_job_current(store.load_project(pid),job):raise store.StudioError('Цю озвучку вже прибрано з проєкту',409)
         current=recorded_speed(pid,job)
-        if abs(current-speed)<.00001:return snapshot(pid)
+        import narration_effects
+        effect = narration_effects.normalize(reverb if reverb is not None else job.get('reverb'))
+        noise = narration_effects.noise_options(room_noise if room_noise is not None else job.get('room_noise'))
+        current_effect=narration_effects.identity(effect,noise)
+        if abs(current-speed)<.00001 and current_effect==narration_effects.identity(job.get('reverb'), job.get('room_noise')) and (not current_effect or job.get('audio_processing_version')==narration_effects.VERSION):return snapshot(pid)
         project=store.load_project(pid)
         asset=next((a for a in project.get('assets',[]) if a['id']==job.get('asset_id')),None)
         if not asset or not Path(asset['path']).is_file():raise store.StudioError('Готовий аудіофайл не знайдено')
@@ -103,7 +129,7 @@ def change_speed(pid, speed):
         output=folder/f'Озвучка-{round(speed*100)}.mp3'
         output.write_bytes(lab.paced_audio(baseline,speed/base_speed))
         if not (store.media_duration(output) or 0)>0:raise store.StudioError('Не вдалося змінити темп')
-        updated=narration_ending.import_audio(project,output,'narration')
+        updated=narration_ending.import_audio(project,output,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(project,output,'narration')
         with store.LOCK:
             project=store.load_project(pid)
             for track in project.get('tracks',[]):
@@ -114,15 +140,40 @@ def change_speed(pid, speed):
                         full=abs(length-asset['duration'])<.05 and float(clip.get('trim_start') or 0)==0
                         clip['duration']=updated['duration'] if full else min(updated['duration'],length*current/speed)
             project['revision']+=1;store.save_project(project)
-        job.update(asset_id=updated['id'],speed=speed,duration=updated['duration'])
+        job.update(asset_id=updated['id'],speed=speed,reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,duration=updated['duration'],
+                   tempo_derivation={'baseline_sha256':store.audio_fingerprint(baseline),'source_sha256':store.audio_fingerprint(output),
+                                     'speed':speed,'baseline_speed':base_speed})
         store.atomic_json(folder/'job.json',job)
     return snapshot(pid)
 
 
+def original_audio(pid):
+    project = store.load_project(pid)
+    job = store.read_json(root(pid) / 'job.json', {})
+    if job.get('status') != 'done' or not completed_job_current(project, job):
+        raise store.StudioError('Готову озвучку не знайдено', 404)
+    source = root(pid) / 'speed-original.mp3'
+    if source.is_file():
+        return source
+    return Path(next(a['path'] for a in project['assets'] if a['id'] == job['asset_id']))
+
+
+def tempo_preview(pid, speed):
+    import narration_tempo
+    speed = narration_tempo.speed(speed)
+    source = original_audio(pid)
+    job = store.read_json(root(pid) / 'job.json', {})
+    original_speed = store.read_json(root(pid) / 'speed-original.json', {}).get('speed', job.get('speed', 1.))
+    return narration_tempo.preview(source, speed / original_speed)
+
+
 def snapshot(pid):
     job=store.read_json(root(pid)/'job.json',{})
-    if job.get('status')=='running' and pid not in ACTIVE:
+    if job.get('status') in {'queued','running'} and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
+    if job.get('status')=='queued':
+        with HEYGEN_TURN:
+            if pid in HEYGEN_QUEUE:job['queue_position']=max(1,HEYGEN_QUEUE.index(pid))
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     project=store.load_project(pid)
     creation=f'/api/projects/{pid}/plan/analyze' if store.project_plan_mode(project)=='direct' else f'/api/projects/{pid}/create-video'
@@ -130,6 +181,12 @@ def snapshot(pid):
     if job.get('status')=='done' and 'speed' not in job:
         try:job['speed']=recorded_speed(pid,job)
         except store.StudioError:pass
+    if job.get('status')=='done':
+        job['local_preview_tempo'] = True
+        job['original_speed'] = store.read_json(root(pid)/'speed-original.json',{}).get('speed',job.get('speed',1.))
+        import narration_effects
+        job['local_effects_version'] = narration_effects.VERSION
+        job['audio_processing_stale']=bool(narration_effects.identity(job.get('reverb'),job.get('room_noise')) and job.get('audio_processing_version')!=narration_effects.VERSION)
     return {'job':job,'source':project.get('narration_source'),
             'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start','create_video':creation},
                        {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':creation}],
@@ -142,6 +199,7 @@ def cancel(pid):
         (root(pid)/'cancel').touch()
         job=store.read_json(root(pid)/'job.json',{})
         job['status']='cancelling' if pid in ACTIVE else 'cancelled'
+        with HEYGEN_TURN:HEYGEN_TURN.notify_all()
         store.atomic_json(root(pid)/'job.json',job)
     return snapshot(pid)
 
@@ -153,28 +211,39 @@ def start(project,text,resume=False):
         if pid in ACTIVE:raise store.StudioError('Озвучення цього проєкту вже триває.',409)
         settings,ref,entries,quote=spec(project,text)
         job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed'],'render_settings':settings.copy()}
-        (root(pid)/'cancel').unlink(missing_ok=True)
-        store.atomic_json(root(pid)/'job.json',job)
+        if settings['provider']=='heygen':
+            with HEYGEN_TURN:
+                HEYGEN_QUEUE.append(pid);job.update(status='queued',queue_position=max(1,len(HEYGEN_QUEUE)-1))
+        try:
+            (root(pid)/'cancel').unlink(missing_ok=True)
+            store.atomic_json(root(pid)/'job.json',job)
+        except Exception:
+            release_heygen(pid)
+            raise
         ACTIVE.add(pid);lab.NARRATIONS[pid]=cid
     try:
+        script_record=store.save_voice_script(pid,text,source='narration')
         threading.Thread(target=run,args=(project,text,settings.copy(),ref.copy(),entries,job),daemon=True).start()
     except Exception as error:
+        release_heygen(pid)
         with LOCK,lab.LOCK:ACTIVE.discard(pid);lab.NARRATIONS.pop(pid,None)
         job.update(status='failed',error=str(error),finished_at=time.time())
         store.atomic_json(root(pid)/'job.json',job)
         raise
-    return {'job':job}
+    return {'job':job,'voice_script':script_record}
 
 def run(project,text,settings,ref,entries,job):
-    pid=project['id'];cid=project['channel_id'];folder=root(pid)
+    pid=project['id'];cid=project['channel_id'];folder=None
     try:
+        folder=root(pid)
+        if settings['provider']=='heygen':wait_heygen(pid,job)
         job['cost_receipts_version']=1
         store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
         fish=settings['provider']=='fishaudio'
         if missing and settings['provider']!='heygen':
             with lab.audio_guard(lab.folder(cid)/'reference.mp3'):
-                ref={**ref,'prepared_path':str(lab.prepared_source(cid,settings,ref))}
+                if not lab.selected_voice_id(settings):ref={**ref,'prepared_path':str(lab.prepared_source(cid,settings,ref))}
                 if fish:secret=languages.key('fishaudio');voice=lab.fish_reference(cid,settings,ref)
                 else:secret,voice=lab.clone(cid,settings,ref)
         for i,entry in enumerate(entries):
@@ -202,13 +271,26 @@ def run(project,text,settings,ref,entries,job):
         listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
         target=folder/'Озвучка.mp3'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
-        asset=narration_ending.import_audio(store.load_project(pid),target,'narration')
         shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
+        import narration_effects
+        effect = narration_effects.normalize(settings.get('reverb'))
+        noise = narration_effects.noise_options(settings.get('room_noise'))
+        asset=narration_ending.import_audio(store.load_project(pid),target,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(store.load_project(pid),target,'narration')
         store.atomic_json(folder/'phrases.json',entries)
-        job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),ending_seconds=narration_ending.SECONDS,finished_at=time.time())
+        job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=narration_ending.SECONDS,finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())
     except Exception as error:job.update(status='failed',error=str(error))
     finally:
-        try:store.atomic_json(folder/'job.json',job)
+        # Cancel and completion must publish under the same lock. Otherwise a
+        # late cancel write can replace the worker's terminal status forever.
+        try:
+            if job.get('status') == 'done':
+                import episode_automation
+                episode_automation.after_voice(pid, job)
         finally:
-            with LOCK,lab.LOCK:ACTIVE.discard(pid);lab.NARRATIONS.pop(pid,None)
+            with LOCK,lab.LOCK:
+                try:
+                    if folder is not None:store.atomic_json(folder/'job.json',job)
+                finally:
+                    release_heygen(pid)
+                    ACTIVE.discard(pid);lab.NARRATIONS.pop(pid,None)

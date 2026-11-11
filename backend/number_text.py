@@ -300,6 +300,20 @@ def to_digits(text,locale=None):
     return text
 
 
+def folded_offsets(text):
+    """Normalize text while retaining each character's original source interval."""
+    parts, offsets, start = [], [], 0
+    while start < len(text):
+        end = start + 1
+        while end < len(text) and unicodedata.category(text[end]).startswith('M'):
+            end += 1
+        normalized = fold(text[start:end])
+        parts.append(normalized)
+        offsets.extend([(start, end)] * len(normalized))
+        start = end
+    return ''.join(parts), offsets
+
+
 def word_spans(text,locale=None):
     """Normalized number tokens with spans in the original string, for ASR timing."""
     changes=replacements(text,locale);segments=[];cursor=0
@@ -309,11 +323,13 @@ def word_spans(text,locale=None):
     segments.append((text[cursor:],cursor,None))
     result=[]
     for value,start,end in segments:
-        for token in TOKEN.finditer(fold(value)):
+        normalized_value, offsets = folded_offsets(value)
+        for token in TOKEN.finditer(normalized_value):
             normalized=token.group()
             if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?(?:/\d+)?",normalized):
                 normalized=str(Fraction(normalized.replace(",",".")))
-            result.append((normalized,start+token.start() if end is None else start,start+token.end() if end is None else end))
+            result.append((normalized,start+offsets[token.start()][0] if end is None else start,
+                           start+offsets[token.end()-1][1] if end is None else end))
     # Preserve numeric ranges as one token in both spoken and digit form.
     # Keep fractions and separate numbers distinct and retain source spans.
     joined=[]

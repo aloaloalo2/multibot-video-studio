@@ -165,6 +165,12 @@ class NumberTextTest(unittest.TestCase):
         self.assertAlmostEqual(report["timings"]["sentences"][0]["end"],.75)
         self.assertEqual(report["phrases"][0]["recognized"],"Use 21 grams.")
 
+    def test_unicode_normalization_keeps_original_character_spans(self):
+        for text in ('Warte… Straße bleibt offen.', 'Fu\u0308r dich bleibt es ﬂach.', 'Выручают… когда готовить некогда.'):
+            with self.subTest(text=text):
+                for token, start, end in number_text.word_spans(text):
+                    self.assertEqual(number_text.fold(text[start:end]), token)
+
     def test_speech_number_formatting_does_not_hide_wrong_fraction(self):
         words=[{"text":text,"start":i*.3,"end":i*.3+.2,"probability":.99}
                for i,text in enumerate(["2-3","грамма."])]

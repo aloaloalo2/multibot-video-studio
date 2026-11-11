@@ -32,7 +32,7 @@ test('gallery opens the creation mode chooser without frames and stays gated onl
   const c=vm.createContext({state,thumbnailRuns:runs,thumbnailBusy:id=>runs.get(id)?.status==='running',
     $:id=>id==='view-thumb'?tab:section});
   vm.runInContext(source.slice(source.indexOf('const thumbnailLanguageRuns='),source.indexOf('function thumbnailWorking(')),c);
-  vm.runInContext(source.slice(source.indexOf('function thumbnailFramesMade('),source.indexOf('async function buildThumbView(')),c);
+  vm.runInContext(source.slice(source.indexOf('function renderThumbView('),source.indexOf('async function buildThumbView(')),c);
   c.thumbnailFrames=2;
   c.readThumbnailData('p',{pictures:0,min_frames:0});c.renderThumbView();assert.equal(create.disabled,false);
   c.readThumbnailData('p',{pictures:0,min_frames:2});c.renderThumbView();assert.equal(create.disabled,false);

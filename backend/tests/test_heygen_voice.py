@@ -10,8 +10,57 @@ import channel_voice_lab as lab
 import store
 
 class HeyGenTests(unittest.TestCase):
+    def test_starfish_catalog_uses_engine_and_keeps_compatible_voices(self):
+        with patch.object(hg,'call',side_effect=[{}, {'data':[{'voice_id':'a','available_engines':['starfish']},{'voice_id':'b','available_engines':['elevenlabs']}]}, {'data':[]}]) as call:
+            self.assertEqual([v['voice_id'] for v in hg.voices('starfish')['voices']],['a'])
+            self.assertIn('/v3/voices?',call.call_args_list[1].args[0])
+            self.assertIn('engine=starfish',call.call_args_list[1].args[0])
+
+    def test_starfish_request_and_audio_conversion(self):
+        settings=lab.validated({'provider':'heygen','heygen_model':'starfish','heygen_voice_id':'voice',
+            'heygen_starfish_speed':1.25,'heygen_starfish_ssml':True,'heygen_starfish_locale':'uk-UA'})
+        def convert(args,*unused):Path(args[-1]).write_bytes(b'mp3')
+        with patch.object(hg,'call',side_effect=[{'data':{'status':'ACTIVE'}},{'data':{'audio_url':'https://audio.example/a.wav'}}]) as call,patch.object(hg.urllib.request,'urlopen',return_value=io.BytesIO(b'RIFF')),patch.object(lab.languages,'run',side_effect=convert):
+            self.assertEqual(hg.synthesize(settings),b'mp3')
+            path,payload=call.call_args.args
+            self.assertEqual(path,'/v3/voices/speech')
+            self.assertEqual(payload['speed'],1.25)
+            self.assertEqual(payload['input_type'],'ssml')
+            self.assertEqual(payload['locale'],'uk-UA')
+            self.assertNotIn('expressiveness_boost',payload)
+            self.assertNotIn('model',payload)
+            self.assertEqual(call.call_count,2)
+
+    def test_starfish_failure_never_falls_back(self):
+        settings=lab.validated({'provider':'heygen','heygen_model':'starfish','heygen_voice_id':'voice'})
+        with patch.object(hg,'call',side_effect=[{'data':{'status':'ACTIVE'}},store.StudioError('failed')]) as call:
+            with self.assertRaises(store.StudioError):hg.synthesize(settings)
+            self.assertEqual(call.call_count,2)
+
+    def test_starfish_cache_and_validation(self):
+        settings=lab.validated({'provider':'heygen','heygen_model':'starfish','heygen_voice_id':'voice'})
+        for field,value in [('heygen_starfish_speed',1.25),('heygen_starfish_ssml',True),('heygen_starfish_locale','uk-UA')]:
+            self.assertNotEqual(lab.original_path(settings,{}),lab.original_path({**settings,field:value},{}))
+        self.assertEqual(lab.fingerprint(settings,{}),lab.fingerprint({**settings,'heygen_expressiveness':.9},{}))
+        for field,value in [('heygen_starfish_speed',True),('heygen_starfish_speed',float('nan')),('heygen_starfish_speed',2.1),('heygen_starfish_ssml','yes'),('heygen_starfish_locale','bad code')]:
+            with self.assertRaises(store.StudioError):lab.validated({field:value})
+        self.assertAlmostEqual(lab.estimate({**settings,'text':'x'*28000})['amount'],3.7333333333)
+        self.assertAlmostEqual(lab.estimate({**settings,'text':'x'*900,'heygen_starfish_speed':2.})['amount'],.06)
+
+    def test_starfish_ssml_is_not_split_inside_tags(self):
+        import project_narration as narration
+        settings=lab.validated({'provider':'heygen','heygen_model':'starfish','heygen_voice_id':'voice','heygen_starfish_ssml':True})
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(lab,'snapshot',return_value={'settings':settings}),patch.object(narration,'root',return_value=Path(tmp)):
+            text='<speak>Hello. <break time="1s"/> More words.</speak>'
+            entries=narration.spec({'id':'p','channel_id':'c'},text)[2]
+            self.assertEqual([e['text'] for e in entries],[text])
+            with self.assertRaises(store.StudioError):narration.spec({'id':'p','channel_id':'c'},'<speak>'+'x'*5000+'</speak>')
+        with patch.object(hg,'call') as call:
+            with self.assertRaises(store.StudioError):hg.synthesize({**settings,'text':'<speak>unclosed'})
+            call.assert_not_called()
+
     def test_explicit_model_and_no_api_speed(self):
-        settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice','speed':1.1,'heygen_expressiveness':.85})
+        settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice','speed':1.05,'heygen_expressiveness':.85})
         with patch.object(hg,'call',side_effect=[{'data':{'status':'ACTIVE','mode':'instant'}},{'data':{'audio_url':'https://audio.example/test.mp3'}}]) as call,patch.object(hg.urllib.request,'urlopen',return_value=io.BytesIO(b'audio')):
             self.assertEqual(hg.synthesize(settings),b'audio')
         payload=call.call_args.args[1]
@@ -59,8 +108,8 @@ class HeyGenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(store,'media_duration',return_value=1),patch.object(hg,'synthesize',return_value=b'audio') as synth,patch.object(lab,'paced_audio',return_value=b'paced'):
             settings=lab.validated({'provider':'heygen','heygen_voice_id':'voice'});ref={'sha256':'voice'}
             lab.heygen_synthesis(settings,ref)
-            lab.heygen_synthesis({**settings,'speed':1.1},ref)
+            lab.heygen_synthesis({**settings,'speed':1.05},ref)
             self.assertEqual(synth.call_count,1)
-            self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.1},ref))
+            self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.05},ref))
 
 if __name__=='__main__':unittest.main()

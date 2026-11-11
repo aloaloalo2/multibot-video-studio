@@ -22,18 +22,19 @@ On Apple Silicon, universal timelines up to 1080p and 30 fps use the GPU rendere
 
 ## API
 
-All mutations use `Content-Type: application/json`, local `Host`, and same-origin browser requests. Errors return `{ "error": "..." }` with a non-2xx status.
+JSON mutations require an object with `Content-Type: application/json`, local `Host`, and same-origin browser requests. Non-object bodies, truncated requests, non-finite numbers and excessive JSON nesting return 400 before dispatch. Binary media and settings ZIP uploads use their existing dedicated routes. Errors return `{ "error": "..." }` with a non-2xx status.
 
 | Method | Route | Result |
 | --- | --- | --- |
 | GET | `/api/health` or `/health` | `{service:"multibot-video-studio",status:"ok"}` |
 | GET | `/api/channels` | `{channels:[{id,name,path,settings}]}` |
-| GET | `/api/settings` | `{settings:{default_width,default_height,default_fps,export_subfolder}}` |
-| PATCH | `/api/settings` | `{settings:{...}}` saves global defaults for new projects and the export folder |
+| GET | `/api/settings` | `{settings:{youtube_root,export_subfolder}}` |
+| PATCH | `/api/settings` | `{settings:{...}}` saves the channel root and export subfolder |
+| POST | `/api/settings/youtube-root/pick` | `{path}` selects a directory locally without applying it |
 | GET | `/api/service-keys` | Provider names and key-presence status; never returns secrets |
 | POST | `/api/service-keys` | `{provider_id,key,name?}` writes a key to macOS Keychain; custom service names are stored separately |
 | POST | `/api/channels/pick` | Native folder chooser; optional `{path,copy_from}` for desktop integration; `{channel}` |
-| PATCH | `/api/channels/<id>` | `{settings:{...}}` merges into the channel's `video-plan.json`; `{channel}` |
+| PATCH | `/api/channels/<id>` | `{settings:{...}}` merges into Studio's `backend/data/channels/<id>/settings.json`; `{channel}` |
 | DELETE | `/api/channels/<id>` | Hides channel without deleting its folder |
 | GET | `/api/projects?channel=<id>` | `{projects:[{id,name,status,scene_count,duration,revision,created_at,updated_at}]}`, newest creation first |
 | POST | `/api/projects` | `{channel_id,name,episode_path?}` creates managed project; `{project}` |
@@ -41,8 +42,8 @@ All mutations use `Content-Type: application/json`, local `Host`, and same-origi
 | POST | `/api/projects/import/pick` | `{channel_id,name?}` opens the native JSON chooser; `{project}` |
 | GET | `/api/projects/<id>` | `{project}` with editable scenes, tracks, assets, revision |
 | PATCH | `/api/projects/<id>` | Rename with `{name,expected_revision?}` |
-| DELETE | `/api/projects/<id>` | Reversible removal from the list; preserves project and episode files |
-| POST | `/api/projects/<id>/restore` | Restore a removed project |
+| DELETE | `/api/projects/<id>` | Permanently removes managed project data and the episode's `VideoKey` media folder; preserves the author's other episode files and Razgon source |
+| POST | `/api/projects/<id>/restore` | Clears an earlier legacy soft-delete marker while its managed project still exists; cannot undo permanent removal |
 | GET | `/api/projects/<id>/plan` | `{plan,source,settings_match}`: the active scene plan, or narration source in direct mode |
 | POST | `/api/projects/<id>/plan` | Attach or update `{plan}` without changing montage clips |
 | POST | `/api/projects/from-plan` | Upsert by `{channel_id,name,episode_path,plan}`, returning `plan_url` |
@@ -102,7 +103,7 @@ POST `/api/projects/<id>/plan/analyze` accepts `{asset_id}` for an audio or vide
 
 Video audio is extracted to a lossless PCM WAV without changing the source video. The extracted asset is reused when the source and audio fingerprints still match. Audio input is recognized directly. All original words, timestamps, recognition scores, transcript differences and the comparison report are retained in the managed project's analysis folder. Concurrent local servers identify the worker process; interrupted work can be restarted. Closing the dialog does not stop the worker.
 
-The report distinguishes word-match percentage, complete phrase matches, differences, missing boundaries, overlapping intervals and low recognition confidence. Only complete normalized-text matches with usable actual ASR word boundaries are applied automatically. Incomplete phrase boundaries are never interpolated. A word-match percentage is not a calibrated estimate of timestamp accuracy. Reports requiring review leave the existing plan untouched. A changed source file or changed script prevents automatic application. Successful application regenerates the plan with current project/channel proportions, preserves montage and plan history, and binds export to the analyzed audio fingerprint.
+The report distinguishes word-match percentage, phrase matches, differences, missing boundaries, overlapping intervals and low recognition confidence. Automatic acceptance requires at least 90% overall and 80% in each sentence, usable actual ASR boundaries, preserved sentence order and complete speech. Equivalent written/spoken number forms are normalized. Genuine missing, repeated or reordered speech remains blocked. Local targeted recognition retries disputed windows before a final mismatch is reported; incomplete phrase boundaries are never interpolated. A word-match percentage is not a calibrated estimate of timestamp accuracy. Reports requiring review leave the existing plan untouched. A changed source file or changed script prevents automatic application. Successful application preserves montage and plan history and binds export to the analyzed audio fingerprint. Recognition completion is published after its requested director handoff, so readers cannot observe a finished analysis before the next stage starts.
 
 Tests cover missing/replaced/repeated words, punctuation normalization, misleading 100% text matches with low confidence, actual boundary selection, background application, review without overwriting, and video extraction reuse. A separate short synthetic audio/video check runs the real installed Whisper model. Real channel episodes are not rendered as part of these checks.
 
@@ -110,3 +111,7 @@ Tests cover missing/replaced/repeated words, punctuation normalization, misleadi
 Episode folders contain user deliverables and source media. Service metadata lives in `backend/data/projects/<id>/`: `imported-plan.json`, `razgon-link.json`, `production-request.json`, source timings and histories. Startup archives legacy episode JSON under `technical-history/` after verifying an exact copy.
 
 `GET /api/projects/<id>/razgon-link` returns the animation link. `POST` to the same endpoint accepts `{razgon_root, project}`, verifies the project ID in `story/studio_frames.json`, and stores the link internally. No episode JSON is written.
+
+### Channel directory
+
+`youtube_root` selects the parent directory containing channel folders. The default is the Studio installation’s parent. The native picker does not save; PATCH validates an existing readable/writable directory, persists it in backend/data/settings.json and applies it immediately when Studio is idle. New episodes and their publication outputs use the selected channel directory. Existing project paths and files are not migrated or renamed. Re-selecting a previous directory restores its channel/project list. Internal project data and caches remain in Studio. Server startup, episode/Pixabay tools and Razgon synchronization share workspace_paths.py.

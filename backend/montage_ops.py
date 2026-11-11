@@ -410,12 +410,12 @@ class Context:
         self.report: list[str] = []
         self.entrance = 0
         self.easing = project.get("settings", {}).get("motion_easing", "ease_in_out")
-        # per-channel looks (channel video-plan.json): the project snapshot first, the channel's current file else, so a
+        # per-channel looks (saved channel settings): the project snapshot first, the channel's current file else, so a
         # project made before the setting still follows it
         channel = {}
         if project.get("channel_id"):
             try:
-                channel = store.read_json(store.get_channel_folder(project["channel_id"], include_disabled=True) / store.PLAN_CONFIG, {}) or {}
+                channel = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
             except (store.StudioError, OSError, ValueError):
                 channel = {}
         self.text_look = project.get("settings", {}).get("text_look") or channel.get("text_look", "varied")

@@ -76,7 +76,7 @@ async function applyStudioUpdate(){
 }
 updateButton.addEventListener('click',()=>{
   if(updatePageOutdated){location.reload();return;}
-  if(updateBlocked){modal('Оновлення зупинене',updateReasonHtml(updateBlocked),[{label:'Зрозуміло',primary:true,run:closeModal}]);return;}
+  if(updateBlocked){modal('Оновлення зупинене',updateReasonHtml(updateBlocked),[]);return;}
   if(updateQueued){updateNote('Оновлення почнеться саме, щойно робота закінчиться.');return;}
   applyStudioUpdate();
 });

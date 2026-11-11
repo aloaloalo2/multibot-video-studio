@@ -28,10 +28,13 @@ test('muting a compact sound row affects only its audio layers in one undoable a
 
 test('original narration requires a configured reference or selected HeyGen voice',()=>{
   const c=load(plan,'function channelVoiceAvailable(','function renderNarrationGeneration(');
+  vm.runInContext(read('channel-voice-lab.js'),c);
   assert.equal(c.channelVoiceAvailable({settings:{provider:'elevenlabs',model:'eleven_v4_turbo'}}),false);
   assert.equal(c.channelVoiceAvailable({settings:{provider:'fishaudio'},reference:{filename:'sample.mp3'}}),true);
   assert.equal(c.channelVoiceAvailable({settings:{provider:'heygen'},reference:{filename:'uncloned.mp3'}}),false);
   assert.equal(c.channelVoiceAvailable({settings:{provider:'heygen',heygen_voice_id:'selected'}}),true);
+  assert.equal(c.channelVoiceAvailable({settings:{provider:'fishaudio',fish_voice_id:'selected'}}),true);
+  assert.equal(c.channelVoiceAvailable({settings:{provider:'elevenlabs',eleven_voice_id:'selected'}}),true);
 });
 
 test('missing voice disables generation while a running narration can always be stopped',()=>{
@@ -71,4 +74,9 @@ test('missing channel voice defaults to upload while active synthesis stays on i
   assert.equal(c.narrationInitialMode({job:{status:'cancelling'}},null),'script');
   assert.equal(c.narrationInitialMode({source:'script'},null),'script');
   assert.equal(c.narrationInitialMode({job:{status:'done',asset_id:'saved'}},{settings:{provider:'heygen'}}),'script');
+  const voice={settings:{provider:'heygen',heygen_voice_id:'saved'}};
+  assert.equal(c.narrationInitialMode({},voice,'Saved script.'),'script');
+  assert.equal(c.narrationInitialMode({},voice,'   '),null);
+  assert.equal(c.narrationInitialMode({source:'file'},voice,'Saved script.'),'file');
+  assert.equal(c.narrationInitialMode({},{settings:{provider:'heygen'}},'Saved script.'),'file');
 });

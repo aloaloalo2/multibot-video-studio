@@ -286,7 +286,7 @@ class BackendTest(unittest.TestCase):
         cls.director_patch.start()
         cls.channel = store.YOUTUBE_ROOT / "Test Channel"
         cls.channel.mkdir(parents=True)
-        (cls.channel / "video-plan.json").write_text(json.dumps({"short_sentence_words": 5, "opening_clip_count": 6, "opening_seconds": 90, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 70, "animation": 20}}))
+        store.atomic_json(store.channel_settings_path(cls.channel), {"short_sentence_words": 5, "opening_clip_count": 6, "opening_seconds": 90, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 70, "animation": 20}})
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -310,6 +310,35 @@ class BackendTest(unittest.TestCase):
                 return response.status, json.loads(data) if response.headers.get("Content-Type", "").startswith("application/json") else data
         except urllib.error.HTTPError as error:
             return error.code, json.loads(error.read())
+
+    def test_channel_settings_transfer_and_backup_routes(self):
+        cid = store.channel_id(self.channel)
+        status, raw = self.request('/api/channels/' + cid + '/settings-export')
+        self.assertEqual(status, 200)
+        target = store.create_channel('Portable HTTP target')
+        tid = target['id']
+        endpoint = self.base_url + '/api/channels/' + tid + '/settings-import'
+        request = urllib.request.Request(endpoint, data=raw, method='POST', headers={'Content-Type': 'application/zip'})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            result = json.loads(response.read())
+            self.assertEqual(response.status, 200)
+        self.assertEqual(result['channel']['settings'], store.channel_record(self.channel)['settings'])
+        bid = result['backup_id']
+        status, data = self.request('/api/channels/' + tid + '/settings-backups')
+        self.assertEqual(status, 200)
+        self.assertEqual(data['backups'][0]['id'], bid)
+        status, data = self.request('/api/channels/' + tid + '/settings-backups/' + bid + '/restore', 'POST', {})
+        self.assertEqual(status, 200)
+        status, data = self.request('/api/channels/' + tid + '/settings-backups/' + bid, 'DELETE')
+        self.assertEqual(status, 200)
+        self.assertTrue(data['deleted'])
+        request = urllib.request.Request(endpoint, data=raw, method='POST', headers={'Content-Type': 'application/zip', 'Origin': 'https://hostile.example'})
+        with self.assertRaises(urllib.error.HTTPError) as failed:
+            urllib.request.urlopen(request, timeout=5)
+        self.assertEqual(failed.exception.code, 403)
+        with patch.object(app, 'channel_transfer_idle', side_effect=store.StudioError('Busy', 409)):
+            status, data = self.request('/api/channels/' + cid + '/settings-export')
+            self.assertEqual(status, 409)
 
     def test_history_keeps_one_file_per_step_and_migrates_legacy_file(self):
         pid = store.create_project(store.channel_id(self.channel), "History steps")["id"]
@@ -695,7 +724,7 @@ class BackendTest(unittest.TestCase):
 
     def test_project_proportions_are_isolated_and_can_return_to_channel_defaults(self):
         cid = store.channel_id(self.channel)
-        original = (self.channel / "video-plan.json").read_bytes()
+        original = (store.channel_settings_path(self.channel)).read_bytes()
         project = store.create_project(cid, "Project proportions")
         endpoint = "/api/projects/" + project["id"] + "/plan/generate"
         script = "First complete sentence about a simple subject."
@@ -706,14 +735,14 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(result["plan"]["settings_scope"], "project")
         self.assertEqual(result["plan"]["frames"][0]["format"], "text")
         self.assertTrue(all(frame["format"] == "text" for frame in result["plan"]["frames"][1:]))
-        self.assertEqual((self.channel / "video-plan.json").read_bytes(), original)
+        self.assertEqual((store.channel_settings_path(self.channel)).read_bytes(), original)
         self.assertTrue(store.plan_settings_match(project["id"], result["plan"]))
         status, result = self.request(endpoint, "POST", timed)
         self.assertEqual(result["project"]["plan_weights"], {"text": 100})
         status, result = self.request(endpoint, "POST", {**timed, "use_channel_weights": True})
         self.assertEqual(status, 200)
         self.assertNotIn("plan_weights", result["project"])
-        self.assertEqual(result["plan"]["settings_snapshot"]["weights"], store.read_json(self.channel / "video-plan.json")["weights"])
+        self.assertEqual(result["plan"]["settings_snapshot"]["weights"], store.read_json(store.channel_settings_path(self.channel))["weights"])
         self.assertTrue(store.plan_settings_match(project["id"], result["plan"]))
 
     def test_health_channels_project_actions_and_undo(self):
@@ -780,8 +809,8 @@ class BackendTest(unittest.TestCase):
 
     def test_studio_generates_with_latest_saved_settings_and_preserves_montage(self):
         cid = store.channel_id(self.channel)
-        original = store.read_json(self.channel / "video-plan.json")
-        self.addCleanup(lambda: store.atomic_json(self.channel / "video-plan.json", original))
+        original = store.read_json(store.channel_settings_path(self.channel))
+        self.addCleanup(lambda: store.atomic_json(store.channel_settings_path(self.channel), original))
         episode = self.channel / "Studio generated"
         episode.mkdir(exist_ok=True)
         script = episode / "script.txt"
@@ -857,7 +886,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(len(result["channel"]["settings"]["opening_clip_types"]), 4)
         status, bad = self.request("/api/channels/%s" % cid, "PATCH", {"settings": {"weights": {"stock_photo": 20}}})
         self.assertEqual(status, 400)
-        self.assertEqual(sum(store.read_json(self.channel / "video-plan.json")["weights"].values()), 100)
+        self.assertEqual(sum(store.read_json(store.channel_settings_path(self.channel))["weights"].values()), 100)
         project = store.create_project(cid, "Media Test")
         episode = Path(project["episode_path"])
         episode.mkdir(exist_ok=True)
@@ -883,7 +912,8 @@ class BackendTest(unittest.TestCase):
         channel = result["channel"]
         self.assertEqual(channel["name"], "New Studio Channel")
         self.assertEqual(sum(channel["settings"]["weights"].values()), 100)
-        self.assertTrue((store.YOUTUBE_ROOT / "New Studio Channel" / "video-plan.json").is_file())
+        self.assertTrue(store.channel_settings_path(store.YOUTUBE_ROOT / "New Studio Channel").is_file())
+        self.assertEqual(list((store.YOUTUBE_ROOT / "New Studio Channel").iterdir()), [])
         status, channels = self.request("/api/channels")
         self.assertEqual(status, 200)
         self.assertIn(channel["id"], {item["id"] for item in channels["channels"]})
@@ -902,7 +932,7 @@ class BackendTest(unittest.TestCase):
         manifest = app.normalize_for_engine(project)
         self.assertEqual(manifest["timeline_layers"][0]["clips"][0]["easing"], "ease_out")
 
-    def test_service_keys_are_write_only_and_not_saved_in_project_data(self):
+    def test_service_keys_copy_is_explicit_and_keys_stay_out_of_list_and_project_data(self):
         class TestVault:
             def __init__(self):
                 self.entries = {}
@@ -910,6 +940,8 @@ class BackendTest(unittest.TestCase):
                 return service in self.entries
             def save(self, service, secret):
                 self.entries[service] = secret
+            def read(self, service):
+                return self.entries.get(service, "")
         fake = TestVault()
         example = "example-test-value-for-vault"
         with patch.object(credentials, "_keychain", fake):
@@ -933,6 +965,22 @@ class BackendTest(unittest.TestCase):
             status, _ = self.request("/api/service-keys", "POST", {"provider_id": "pexels", "key": "invalid\nvalue"})
             self.assertEqual(status, 400)
             self.assertNotIn("multibot-video-studio-pexels", fake.entries)
+            self.assertEqual(self.request("/api/service-keys/copy", "POST", {"provider_id": "pixabay"}), (200, {"key": example}))
+            custom_id = next(item["id"] for item in result["providers"] if item["name"] == "Test stock service")
+            self.assertEqual(self.request("/api/service-keys/copy", "POST", {"provider_id": custom_id}), (200, {"key": example}))
+            for provider_id in ("unknown", ["pixabay"]):
+                self.assertEqual(self.request("/api/service-keys/copy", "POST", {"provider_id": provider_id})[0], 400)
+            self.assertEqual(self.request("/api/service-keys/copy", "POST", {"provider_id": "pexels"})[0], 404)
+            self.assertEqual(self.request("/api/service-keys/copy", "POST", {"provider_id": "pixabay"}, headers={"Origin": "https://outside.example"})[0], 403)
+            self.assertEqual(self.request("/api/service-keys/copy")[0], 404)
+            with patch.object(fake, "read", side_effect=RuntimeError(example)):
+                status, error = self.request("/api/service-keys/copy", "POST", {"provider_id": "pixabay"})
+                self.assertEqual(status, 503)
+                self.assertNotIn(example, json.dumps(error))
+            req = urllib.request.Request(self.base_url+"/api/service-keys/copy", data=b'{"provider_id":"pixabay"}', headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req) as response:
+                self.assertEqual(response.headers['Cache-Control'], 'no-store')
+                self.assertEqual(json.load(response), {"key": example})
 
     def test_project_rename_and_delete_from_the_studio_disk(self):
         cid = store.channel_id(self.channel)

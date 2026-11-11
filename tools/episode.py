@@ -15,9 +15,12 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+import workspace_paths
+
+ROOT = workspace_paths.youtube_root()
 STUDIO = "http://127.0.0.1:8770"
-APP = Path(__file__).resolve().parents[1].name   # the studio folder by its own name, whatever the clone is called
+APP = workspace_paths.app_relative_to(ROOT)
 
 
 def read_json(path: Path):
@@ -140,7 +143,7 @@ def steps(episode: Path):
         fresh = report.is_file() and report.stat().st_mtime >= code
         slow = (read_json(report) or {}).get("slow", []) if fresh else []
         yield ("Дублі без важких місць", fresh and not slow,
-               ("усі дублі рендеряться рівно" if not slow else f"повільні дублі: " + ", ".join(f"{r['id']} {r['ms']} мс" for r in slow[:6])) if fresh
+               ("усі дублі рендеряться рівно" if not slow else "повільні дублі: " + ", ".join(f"{r['id']} {r['ms']} мс" for r in slow[:6])) if fresh
                else "перевірки ще не було або код сцен новіший за неї",
                f'node render.mjs --project "{razgon}" --speed-check у папці Razgon (VideoKey Studio/razgon-2d-studio) і переписати кожен повільний дубль '
                "(What If/AGENTS.md, пункт 5б)")

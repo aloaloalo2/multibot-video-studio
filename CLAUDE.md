@@ -10,9 +10,7 @@ answer in Ukrainian. The detailed rules of every subsystem are in @AGENTS.md and
 - The studio folder sits inside the user's `YOUTUBE` folder; the channel folders (`Алексей Горбунов`, `What If`, …) are
   its siblings, each episode is a folder inside its channel. macOS stores some Cyrillic names decomposed (NFD): find a
   path with `glob` or `ls` instead of typing it.
-- Each channel folder holds «Теми каналу.txt»: the titles of its episodes, one a line (`backend/topics.py` appends new
-  ones at start, on a new project and when a title is written; it never removes a line). For a new script read that file
-  and pick another topic or tell an old one another way; never read earlier scripts for this (user, 1 November 2026).
+- Each channel's technical title ledger is `backend/data/channels/<channel-id>/Теми каналу.txt`, managed by `backend/topics.py`. It appends episode titles and preserves manual entries. Legacy channel-folder copies migrate with verified exact backups inside Studio. New ideas, openings and scripts read the current ledger through `topics.history`; keep the file inside Studio.
 - `backend/` — the server (`app.py`, HTTP on http://127.0.0.1:8770), the project store and timeline actions
   (`store.py`), the planner (`planner.py`), exports (`razgon_export.py`, `audio_level.py`), speech recognition
   (`analysis_jobs.py`, `speech.py`). Projects, jobs and caches live in `backend/data/` (not in git).

@@ -35,7 +35,7 @@ def bind(project: dict) -> dict:
         folder=store.get_channel_folder(cid,include_disabled=True)
     except store.StudioError:
         return project
-    spec=channel_branding.placement((store.read_json(folder/store.PLAN_CONFIG,{}) or {}).get('logo'))
+    spec=channel_branding.placement((store.read_channel_settings(folder,{}) or {}).get('logo'))
     source=channel_branding.logo_path(cid)
     current=clips(project)
     duration=float(project.get('duration') or 0)

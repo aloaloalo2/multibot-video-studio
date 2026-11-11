@@ -74,7 +74,7 @@ function drawLangs(id){
   langCloseSampleMenu();
   section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());
   section.querySelectorAll('audio').forEach(audio=>audio.pause());
-  const data=langData,provider=data.provider,spec=data.providers.find(item=>item.id===provider) || data.providers[0];
+  const data=langData;
   const chosen=langChosen(id);
   section.innerHTML=`<div class="lang-view">
     <div class="lang-head"><h1>${langTranslateIcon}Мови<button type="button" class="lang-add-language" aria-label="Додати мову перекладу" title="Додати мову">+</button></h1>
@@ -102,7 +102,7 @@ function drawLangs(id){
 const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 const langWaveIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4"/></svg>';
-function langHasVoice(item){return !!(item.own_voice || item.channel_voice || langData?.source?.voice);}
+function langHasVoice(item){return !!(item.remote_voice_ids?.[item.provider] || item.own_voice || item.channel_voice || langData?.source?.voice);}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Не вдалося розпізнати слова в прикладі. Для точнішого голосу запишіть або завантажте чіткіший запис без фонового шуму.</p>':'';}
 function langOwnBlock(item){
   const own=item.own_voice,shared=item.channel_voice,fromOriginal=!!langData?.source?.voice;
@@ -110,6 +110,7 @@ function langOwnBlock(item){
   // акценту на створенні аудіо»; «кнопки… просто значки»): its label, a compact player and icons
   const model=item.fish_model?'<i class="lang-model-mark" title="Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон">✓ модель</i>':'';
   const add=(again)=>`<button type="button" class="lang-icon lang-own-record" title="${again?'Записати заново':'Записати себе'}" aria-label="${again?'Записати заново':'Записати себе'}">${micIcon}</button><label class="lang-icon lang-own-file" role="button" tabindex="0" title="Завантажити приклад голосу" aria-label="Завантажити приклад голосу">${langIcons.upload}<input type="file" accept="audio/*,video/*" hidden></label>`;
+  if(item.remote_voice_ids?.[item.provider])return `<div class="lang-own has-voice"><span class="lang-own-label">Голос збережений у сервісі</span><details class="voice-lab-advanced"><summary>ID голосу</summary><code>${esc(item.remote_voice_ids[item.provider])}</code></details></div>`;
   if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора${model?`<small>${model}</small>`:''}</span><div class="lang-player" data-kind="own"></div>
     <div class="lang-own-actions"><button type="button" class="lang-icon lang-own-remove" title="Прибрати приклад" aria-label="Прибрати приклад">${langIcons.trash}</button></div>${langHeardWarn(own)}</div>`;
   if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора<small>з налаштувань каналу ${model}</small></span><div class="lang-player" data-kind="channel"></div>
@@ -294,7 +295,7 @@ function langVoiceSummary(id,item){
   card.innerHTML=`<button type="button" class="lang-voice-open" aria-label="Налаштування голосу: ${esc(item.name)}" title="Змінити голос і налаштування">
     <strong>${micIcon}<span>Голос диктора</span></strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>
     <span>${esc(spec.name)}<small>${esc(engine?.name||spec.engine)}${spec.styles?' · '+esc(spec.styles.find(style=>style.id===spec.style)?.name||''):''}</small></span></button>
-    ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
+    ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${item.remote_voice_ids?.[item.provider]?'Голос збережений у сервісі':langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
   card.querySelector('.lang-voice-open').onclick=()=>langOpenVoiceSettings(id,item.code);
   langWirePlayers(id,card,item);
   return card;
@@ -498,7 +499,6 @@ function langVoiceResult(id,item){
   // a voicing shows only while what made it still holds: the voice, engine, likeness, example and text
   const readyVoice=item.files.voice&&item.voice_current!==false;
   const unsafeVoice=item.files.voice&&item.voice_matches_text!==false&&item.voice_language_check&&item.voice_language_check.state!=='ok';
-  const estimate=item.voice_estimates?.[spec.id];
   const durationIssue=langVoiceDurationIssue(item);
   const mix=durationIssue?{state:'unavailable',error:durationIssue.label+'. Файл випуску не збережено.'}:item.saved_mix || {state:'missing'};
   const mixText=mix.state==='saved'?'✓ Озвучку з музикою й ефектами збережено в папці випуску':mix.state==='outdated'?'Монтаж або озвучка змінилися. Оновіть збережений файл.':mix.state==='unavailable'?mix.error:'Голос готовий. Залишилося зберегти файл із музикою й ефектами.';

@@ -34,7 +34,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
                    patch.object(store, 'import_asset_file', side_effect=self.import_audio),
                    patch.object(narration.languages, 'run', side_effect=self.assemble),
                    patch.object(lab, 'snapshot', side_effect=lambda cid: {'settings': self.settings.copy(), 'reference': {'sha256': 'reference', 'approved': True}}),
-                   patch.object(narration, 'ACTIVE', set()), patch.object(lab, 'ACTIVE', set()),
+                   patch.object(narration, 'ACTIVE', set()), patch.object(narration,'HEYGEN_QUEUE',[]), patch.object(lab, 'ACTIVE', set()),
                    patch.object(lab, 'NARRATIONS', {}), patch.object(lab, '_AUDIO_USERS', {}),
                    patch.object(narration.threading, 'Thread', side_effect=self.worker)]
         for item in patches:
@@ -87,28 +87,57 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
         return [store.read_json(narration.root(pid) / 'job.json') for pid in self.projects]
 
-    def test_two_projects_of_one_channel_reach_heygen_together_with_isolated_settings(self):
-        both = threading.Barrier(2)
+    def test_heygen_projects_wait_in_order_with_isolated_settings(self):
+        entered=threading.Event();order=[]
         def synthesize(settings):
-            both.wait(5)
+            order.append(settings['text']);entered.set()
             self.assertTrue(self.release.wait(5))
             return settings['text'].encode()
         with patch.object(lab.heygen_voice, 'synthesize', side_effect=synthesize) as paid:
-            first, second = self.projects.values()
-            narration.start(first, 'First project sentence.')
-            self.settings['heygen_expressiveness'] = .8
-            narration.start(second, 'Second project sentence.')
-            self.assertEqual(set(lab.NARRATIONS), set(self.projects))
-            self.assertEqual(lab.ACTIVE, set())
-            self.release.set()
-            jobs = self.finished()
-        self.assertEqual([job['status'] for job in jobs], ['done', 'done'])
-        self.assertEqual([job['render_settings']['heygen_expressiveness'] for job in jobs], [.5, .8])
-        self.assertEqual(paid.call_count, 2)
-        self.assertEqual(lab.NARRATIONS, {})
-        for pid, text in zip(self.projects, ['First project sentence.', 'Second project sentence.']):
-            entries = store.read_json(narration.root(pid) / 'phrases.json')
-            self.assertEqual((narration.root(pid) / (entries[0]['key'] + '.mp3')).read_bytes(), text.encode())
+            first,second=self.projects.values()
+            narration.start(first,'First project sentence.')
+            self.assertTrue(entered.wait(5))
+            self.settings['heygen_expressiveness']=.8
+            narration.start(second,'Second project sentence.')
+            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
+            self.assertEqual(narration.snapshot(second['id'])['job']['queue_position'],1)
+            self.assertEqual(paid.call_count,1)
+            self.release.set();jobs=self.finished()
+        self.assertEqual([j['status'] for j in jobs],['done','done'])
+        self.assertEqual([j['render_settings']['heygen_expressiveness'] for j in jobs],[.5,.8])
+        self.assertEqual(order,['First project sentence.','Second project sentence.'])
+        self.assertEqual(narration.HEYGEN_QUEUE,[])
+
+    def test_queued_heygen_project_can_be_cancelled_without_paid_work(self):
+        entered=threading.Event()
+        def synthesize(settings):
+            entered.set();self.assertTrue(self.release.wait(5));return b'take'
+        with patch.object(lab.heygen_voice,'synthesize',side_effect=synthesize) as paid:
+            first,second=self.projects.values()
+            narration.start(first,'First project sentence.');self.assertTrue(entered.wait(5))
+            narration.start(second,'Second project sentence.');narration.cancel(second['id'])
+            self.release.set();jobs=self.finished()
+        paid.assert_called_once()
+        self.assertEqual([j['status'] for j in jobs],['done','cancelled'])
+        self.assertEqual(narration.HEYGEN_QUEUE,[])
+
+    def test_assembly_follows_script_order_and_keeps_repeated_lines_despite_cache_file_order(self):
+        project = next(iter(self.projects.values()))
+        text = 'First project sentence. Second project sentence. First project sentence. Final project sentence.'
+        settings, ref, entries, quote = narration.spec(project, text)
+        for entry in reversed(entries):
+            (narration.root(project['id']) / (entry['key'] + '.mp3')).write_bytes(entry['text'].encode())
+        with patch.object(lab.heygen_voice, 'synthesize') as paid:
+            narration.start(project, text)
+            self.workers[-1].join(5)
+        self.assertFalse(self.workers[-1].is_alive())
+        job = store.read_json(narration.root(project['id']) / 'job.json')
+        self.assertEqual(job['status'], 'done', job.get('error'))
+        listing = (narration.root(project['id']) / 'concat.txt').read_text().splitlines()
+        actual = [(narration.root(project['id']) / line[6:-1]).read_bytes().decode() for line in listing]
+        self.assertEqual(actual, narration.phrases(text))
+        self.assertEqual(len(listing), 4)
+        paid.assert_not_called()
 
     def test_identical_concurrent_phrases_share_one_take_and_one_project_charge(self):
         entered = threading.Event()
@@ -123,7 +152,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
             narration.start(first, text)
             self.assertTrue(entered.wait(5))
             narration.start(second, text)
-            self.wait_for_users(source, 3)  # producer, nested cache writer, waiting project
+            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
             self.release.set()
             jobs = self.finished()
         self.assertEqual([job['status'] for job in jobs], ['done', 'done'])
@@ -132,7 +161,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.assertAlmostEqual(sum(amounts), len(text) * 30 / 1_000_000)
         self.assertEqual(sum(amount > 0 for amount in amounts), 1)
 
-    def test_waiting_duplicate_does_not_repeat_a_failed_provider_call(self):
+    def test_each_explicit_queued_project_attempts_its_failed_phrase_once(self):
         entered = threading.Event()
         def fail(settings):
             entered.set()
@@ -145,26 +174,26 @@ class NarrationConcurrencyTests(unittest.TestCase):
             narration.start(first, text)
             self.assertTrue(entered.wait(5))
             narration.start(second, text)
-            self.wait_for_users(source, 3)
+            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
             self.release.set()
             jobs = self.finished()
-        paid.assert_called_once()
+        self.assertEqual(paid.call_count,2)
         self.assertEqual([job['status'] for job in jobs], ['failed', 'failed'])
         self.assertEqual([job['error'] for job in jobs], ['Provider refused', 'Provider refused'])
         self.assertEqual(lab.NARRATIONS, {})
 
     def test_cancel_and_completion_release_only_their_project_and_keep_reference_protected(self):
-        entered = threading.Barrier(3)
+        entered = threading.Event()
         first_release = threading.Event()
         def synthesize(settings):
-            entered.wait(5)
+            entered.set()
             self.assertTrue((first_release if settings['text'].startswith('First') else self.release).wait(5))
             return b'audio'
         with patch.object(lab.heygen_voice, 'synthesize', side_effect=synthesize):
             first, second = self.projects.values()
             narration.start(first, 'First project sentence.')
             narration.start(second, 'Second project sentence.')
-            entered.wait(5)
+            self.assertTrue(entered.wait(5))
             with self.assertRaises(store.StudioError):
                 narration.start(first, 'Repeated click sentence.')
             narration.cancel(first['id'])
@@ -188,6 +217,25 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.assertFalse(narration.ACTIVE)
         self.assertFalse(lab.in_use(self.cid))
         self.assertEqual(narration.snapshot(project['id'])['job']['status'], 'failed')
+
+    def test_automatic_handoff_keeps_the_narration_reserved_until_the_next_stage_is_registered(self):
+        import episode_automation
+        entered=threading.Event()
+        def handoff(pid,job):
+            self.assertEqual(job['status'],'done')
+            self.assertIn(pid,narration.ACTIVE)
+            self.assertTrue(lab.in_use(self.cid))
+            self.assertIn(store.read_json(narration.root(pid)/'job.json')['status'],{'queued','running'})
+            entered.set();self.assertTrue(self.release.wait(5))
+        with patch.object(lab.heygen_voice,'synthesize',return_value=b'audio'), \
+                patch.object(episode_automation,'after_voice',side_effect=handoff):
+            project=next(iter(self.projects.values()))
+            narration.start(project,'Full saved sentence.')
+            self.assertTrue(entered.wait(5))
+            self.assertEqual(narration.snapshot(project['id'])['job']['status'],'running')
+            self.release.set();self.workers[-1].join(5)
+        self.assertEqual(narration.snapshot(project['id'])['job']['status'],'done')
+        self.assertNotIn(project['id'],narration.ACTIVE)
 
     def test_elevenlabs_and_fish_also_synthesize_different_projects_in_parallel(self):
         for provider in ['elevenlabs', 'fishaudio']:

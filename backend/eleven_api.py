@@ -319,7 +319,11 @@ def ui_catalog() -> dict:
                 finally:
                     with _ui_lock:
                         _refreshing.discard(signature)
-            threading.Thread(target=refresh_metadata, daemon=True).start()
+            try:
+                threading.Thread(target=refresh_metadata, daemon=True).start()
+            except Exception:
+                _refreshing.discard(signature)
+                # The saved catalog is still usable. A later UI read may retry the refresh.
     return result
 
 

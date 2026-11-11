@@ -18,6 +18,7 @@ class NarrationEndingTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
+        data=patch.object(store,'DATA_ROOT',self.root/'data');data.start();self.addCleanup(data.stop)
         self.source=self.root/'original.wav'
         self.samples=array.array('h',(round(10000*math.sin(2*math.pi*330*i/48000)) for i in range(48000)))
         with wave.open(str(self.source),'wb') as wav:
@@ -54,6 +55,22 @@ class NarrationEndingTest(unittest.TestCase):
         self.assertEqual(ending.import_audio(self.project,first['path'])['id'],first['id'])
         self.assertEqual(self.imports,1)
         self.assertAlmostEqual(store.media_duration(Path(first['path'])),2.5,places=3)
+
+    def test_local_effects_are_reversible_and_keep_one_closing_pause(self):
+        dry=ending.import_audio(self.project,self.source)
+        reverb={'enabled':True,'preset':'office','amount':70}
+        noise={'enabled':True,'amount':60}
+        wet=ending.import_audio(self.project,self.source,reverb=reverb,room_noise=noise)
+        self.assertNotEqual(dry['id'],wet['id'])
+        self.assertTrue(ending.prepared(wet))
+        self.assertAlmostEqual(store.media_duration(Path(wet['path'])),2.5,places=3)
+        decoded=subprocess.check_output(['ffmpeg','-v','error','-i',wet['path'],'-ac','1','-f','f32le','-'])
+        samples=array.array('f');samples.frombytes(decoded)
+        self.assertGreater(max(abs(x) for x in samples[48000:57600]),.0001)
+        self.assertLess(max(abs(x) for x in samples[-4800:]),.0001)
+        self.assertEqual(ending.import_audio(self.project,self.source,reverb=reverb,room_noise=noise)['id'],wet['id'])
+        self.assertEqual(ending.import_audio(self.project,self.source)['id'],dry['id'])
+        self.assertEqual(self.imports,2)
 
     def test_cached_file_does_not_reencode_and_modified_output_is_rebuilt(self):
         path,_=ending.prepare_file(self.project['id'],self.source)

@@ -42,10 +42,13 @@ async function fillStudioSpace(){
 
 async function openSpace(project){
   modal('Звільнити місце','<p class="space-note">Рахуємо, скільки займає кеш випуску…</p>',[]);
+  const generation=state.modalGeneration,navigation=state.navigation;
+  const current=()=>state.modalGeneration===generation&&state.navigation===navigation;
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(project.id)}/space`);}
-  catch(error){$('modal-body').innerHTML=`<p class="space-note">${esc(error.message)}</p>`;return;}
-  if(!data.total){modal('Звільнити місце','<p class="space-note">У цього випуску немає кешу, який можна звільнити.</p>',[{label:'Добре',primary:true,run:closeModal}]);return;}
+  catch(error){if(current())$('modal-body').innerHTML=`<p class="space-note">${esc(error.message)}</p>`;return;}
+  if(!current())return;
+  if(!data.total){modal('Звільнити місце','<p class="space-note">У цього випуску немає кешу, який можна звільнити.</p>',[]);return;}
   const rows=[data.build?`<li><b>${spaceSize(data.build)}</b><span>Робочі файли рендеру Razgon: кожен кадр окремим відео, звук без стиснення, ролик без звуку, смуги перевірки стиків.</span></li>`:'',
     data.cache?`<li><b>${spaceSize(data.cache)}</b><span>Кеш студії: рендери експорту, стоп-кадри й аркуші стоку. Студія зробить їх знову, коли знадобляться.</span></li>`:'',
     data.old_renders?`<li><b>${spaceSize(data.old_renders)}</b><span>Старі версії кадрів (${data.old_count}), які лишались тільки для кнопки «Скасувати». Ці кроки скасування зникнуть разом із ними.</span></li>`:''].join('');
@@ -57,7 +60,7 @@ async function openSpace(project){
       const button=$('modal-actions').querySelector('.danger');button.disabled=true;
       try{
         const result=await api(`/api/projects/${encodeURIComponent(project.id)}/space`,'POST',{});
-        closeModal();status(`Звільнено ${spaceSize(result.freed)} у випуску «${project.name}».`);
+        if(button.isConnected)closeModal();status(`Звільнено ${spaceSize(result.freed)} у випуску «${project.name}».`);
       }catch(error){button.disabled=false;status(error.message,true);}
     }}]);
   if(blocked)$('modal-actions').querySelector('.danger').disabled=true;

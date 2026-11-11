@@ -16,9 +16,9 @@ function harness(api){
   modes.innerHTML='<button data-entry="title"></button><button data-entry="topics"></button><button data-entry="reference"></button>';
   let uuid=0;
   const context=vm.createContext({state:{channel:{id:'channel-a'}},$:id=>({'episode-ideas':root,'new-project-name':input,'modal-actions':actions,'modal-backdrop':backdrop,'modal-body':root,'modal-title':heading,'episode-entry-options':modes,'episode-reference-url':referenceInput,'episode-reference':referenceBox,'episode-reference-status':note,'episode-reference-copy':copy,'ideas-refresh':headerRefresh})[id],
-    modal:(title)=>{context.title=title;backdrop.hidden=false},closeModal:()=>{backdrop.hidden=true;root.isConnected=false},
+    modal:(title,body,actions)=>{context.title=title;context.modalActions=actions;backdrop.hidden=false},closeModal:()=>{backdrop.hidden=true;root.isConnected=false},
     api:async(...args)=>{calls.push(args);return api(...args)},esc:s=>s,projectCostIcons:{claude_code:'<svg></svg>'},status:()=>{},
-    refreshProjects:async()=>{},showProjectList:()=>{},pollChannelActivity:()=>{},selectProject:async id=>selected.push(id),projectActivities:new Map(),
+    refreshProjects:async()=>{},showProjectList:()=>{},pollChannelActivity:()=>{},selectProject:async id=>selected.push(id),renderMontageMake:()=>{context.inlineRendered=true},projectActivities:new Map(),
     crypto:{randomUUID:()=>`request-${++uuid}`},document:{createElement:element},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout:()=>{}});
   vm.runInContext(source,context);return {context,root,input,actions,calls,timers,selected,modes,referenceInput,referenceBox,note,copy,headerRefresh};
 }
@@ -29,18 +29,50 @@ test('New episode opens the empty own-title field without generating topics',asy
   assert.equal(h.input.value,'');assert.equal(h.input.readOnly,false);assert.doesNotMatch(h.root.innerHTML,/Нові теми/);assert.doesNotMatch(h.root.innerHTML,/Ідеї DeepSeek/);
   assert.equal(h.actions.nodes[0].hidden,false);assert.equal(h.actions.nodes[0].disabled,true);assert.equal(h.input.hidden,false);
 });
-test('a project opens its saved hooks without any provider or catalog request',async()=>{
-  const h=harness(()=>assert.fail('No network request for saved hooks'));
-  await h.context.openNewEpisodeWizard({projectId:'project-a',draft:hooks});
-  assert.equal(h.input.value,'A fresh title');assert.equal(h.input.readOnly,true);assert.equal(h.actions.nodes[0].hidden,true);
-  assert.match(h.root.innerHTML,/First hook/);assert.match(h.root.innerHTML,/Нові зачини/);assert.match(h.root.innerHTML,/Скасувати/);
+test('own title submits through the modal busy lock and cannot open a project after closing',async()=>{
+  let finish;
+  const h=harness(async(url,method)=>method==='POST'?new Promise(resolve=>finish=resolve):topics);
+  await h.context.openNewEpisodeWizard();h.input.value='My episode';h.input.oninput();
+  h.actions.nodes[0].disabled=true; // the shared modal locks the clicked action first
+  const pending=h.context.modalActions[0].run();
+  assert.equal(h.calls.filter(c=>c[1]==='POST').length,1);
+  h.context.closeModal();finish({project:{id:'new-project'}});await pending;
+  assert.deepEqual(h.selected,[]);
 });
-test('refreshing hooks sends one project-bound explicit request',async()=>{
-  const h=harness(async()=>({...hooks,status:'running'}));await h.context.openNewEpisodeWizard({projectId:'project-a',draft:hooks});
-  await h.root.querySelector('#openings-refresh').onclick();
-  assert.equal(h.calls.length,1);assert.equal(h.calls[0][0],'/api/projects/project-a/episode-draft');
-  assert.equal(h.calls[0][2].action,'openings');assert.equal(h.calls[0][2].refresh,true);assert.ok(h.calls[0][2].request_id);
-  assert.match(h.root.innerHTML,/export-spinner/);assert.equal(h.timers.length,1);
+test('an older catalog read cannot replace a selected topic or trigger a stale daily request',async()=>{
+  let first;
+  const h=harness(async()=>h.calls.length===1?new Promise(resolve=>first=resolve):topics);
+  const opening=h.context.openNewEpisodeWizard();
+  await h.modes.nodes[1].onclick();h.root.querySelectorAll('[data-idea]')[0].onclick();
+  h.input.value='My edited title';h.root.words.value='2345';
+  first({...topics,stale:true});await opening;
+  assert.equal(h.input.value,'My edited title');assert.equal(h.input.hidden,false);
+  assert.equal(h.root.words.value,'2345');assert.equal(h.calls.length,2);
+});
+test('a failed opening request preserves the edited title and word count for correction',async()=>{
+  const h=harness(async(url,method)=>{if(method==='POST')throw Error('Temporarily unavailable');return topics});
+  await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();h.root.querySelectorAll('[data-idea]')[0].onclick();
+  h.input.value='My edited title';h.root.words.value='2345';
+  await h.root.querySelector('#ideas-create-openings').onclick();
+  assert.equal(h.input.value,'My edited title');assert.equal(h.root.words.value,'2345');
+  assert.ok(h.root.messages.some(s=>s.includes('Temporarily unavailable')));
+});
+test('a late project draft cannot replace the script panel after project navigation',async()=>{
+  let finish;const h=harness(()=>new Promise(resolve=>finish=resolve));h.context.state.project={id:'project-a'};
+  const opening=h.context.openNewEpisodeWizard({projectId:'project-a'});
+  h.context.state.project={id:'project-b'};finish(hooks);await opening;
+  assert.equal(h.context.state.episodeDraft,undefined);assert.equal(h.context.inlineRendered,undefined);
+});
+test('saved hooks open in the script area without a dialog or model request',async()=>{
+  const h=harness(()=>{throw Error('unexpected request')});h.context.state.project={id:'project-a'};
+  await h.context.openNewEpisodeWizard({projectId:'project-a',draft:hooks});
+  assert.equal(h.calls.length,0);assert.equal(h.context.title,undefined);assert.equal(h.context.inlineRendered,true);
+  assert.equal(h.context.state.episodeDraft,hooks);
+});
+test('an opening link for another project navigates to that project instead of opening a popup',async()=>{
+  const h=harness(()=>{throw Error('unexpected request')});
+  await h.context.openNewEpisodeWizard({projectId:'project-a',draft:hooks});
+  assert.deepEqual(h.selected,['project-a']);assert.equal(h.context.title,undefined);
 });
 test('selected topic creates a new episode only after pressing Create openings',async()=>{
   const h=harness(async(url,method)=>method==='POST'?({...hooks,status:'running'}):topics);
@@ -66,10 +98,6 @@ test('yesterday failed ideas get one guarded attempt when the tab opens',async()
   assert.match(h.root.innerHTML,/DeepSeek пропонує/);
 });
 
-test('closed project dialog ignores delayed polling',async()=>{
-  const h=harness(()=>assert.fail('Closed draft must not poll'));await h.context.openNewEpisodeWizard({projectId:'project-a',draft:{...hooks,status:'running'}});
-  h.context.closeModal();await h.timers[0]();assert.equal(h.calls.length,0);
-});
 test('cancelled and completed hooks do not reopen when selecting a project',()=>{
   const h=harness(()=>{});assert.equal(h.context.episodeDraftPending(hooks),true);
   assert.equal(h.context.episodeDraftPending({...hooks,cancelled:true}),false);
@@ -95,6 +123,12 @@ test('Copy imports title and reference without provider work, and openings submi
   assert.equal(h.calls.length,1); // pasting alone is free and starts nothing
   await h.copy.onclick();assert.equal(h.calls.length,2);assert.equal(h.input.value,'Source title');
   assert.equal(h.input.hidden,false);assert.match(h.root.innerHTML,/local\/reference.jpg/);
+  assert.equal(h.copy.disabled,true);
+  assert.doesNotMatch(h.root.innerHTML,/id="reference-back"/);
+  h.input.value='Keep my edited title';
+  await h.copy.onclick();
+  h.referenceInput.onkeydown({key:'Enter',preventDefault(){}});
+  assert.equal(h.calls.length,2);assert.equal(h.input.value,'Keep my edited title');
   h.input.value='My improved title';
   await h.root.querySelector('#reference-openings').onclick();
   assert.equal(h.calls[2][2].action,'clone_openings');assert.equal(h.calls[2][2].title,'My improved title');

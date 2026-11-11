@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import word_blacklist
 from pathlib import Path
 
 HOME = Path.home()
@@ -132,12 +133,24 @@ def claude_memory(channel: str, limit: int = 30000, scripts_only: bool = False) 
 
 def for_channel(folder: Path, root: Path) -> dict:
     """Everything a script writer of this channel must follow, by source."""
-    return {
-        "author_writing_rules": writing_rules(),
-        "youtube_script_rules": script_sections(root / "AGENTS.md"),
-        "channel_script_rules": script_sections(folder / "AGENTS.md"),
-        "claude_memory_notes": claude_memory(folder.name, scripts_only=True),
-    }
+    import store
+    portable = store.read_json(store.DATA_ROOT / 'channels' / store.channel_id(folder) / 'portable-rules.json', {}) or {}
+    if isinstance(portable.get('author'), dict):
+        result = dict(portable['author'])
+    else:
+        result = {
+            "author_writing_rules": writing_rules(),
+            "youtube_script_rules": script_sections(root / "AGENTS.md"),
+            "channel_script_rules": script_sections(store.channel_rules_source(folder)),
+            "claude_memory_notes": claude_memory(folder.name, scripts_only=True),
+        }
+    entries=word_blacklist.current()
+    result.pop('studio_word_blacklist',None)
+    if word_blacklist.managed():
+        result={key:word_blacklist.without_legacy_bans(value) if isinstance(value,str) else value for key,value in result.items()}
+        result['studio_word_blacklist']=entries
+    elif entries:result['studio_word_blacklist']=entries
+    return result
 
 
 def check(text: str, workdir: Path) -> tuple[bool | None, str]:
@@ -145,14 +158,19 @@ def check(text: str, workdir: Path) -> tuple[bool | None, str]:
     import subprocess
     import sys
     import tempfile
+    import os
+    blacklist=word_blacklist.message(text)
     if not PROVERKA.is_file():
-        return None, "Автоматична перевірка сценарію недоступна: proverka.py не знайдено."
+        return (False,blacklist) if blacklist else (None,"Автоматична перевірка сценарію недоступна: proverka.py не знайдено.")
     with tempfile.NamedTemporaryFile("w", suffix=".txt", dir=workdir, delete=False, encoding="utf-8") as f:
         f.write(text)
         name = f.name
     try:
-        out = subprocess.run([sys.executable, str(PROVERKA), "--voiceover", name], capture_output=True, text=True, timeout=120)
+        env=dict(os.environ)
+        if word_blacklist.managed():env['VIDEOKEY_MANAGED_WORD_BLACKLIST']='1'
+        out = subprocess.run([sys.executable, str(PROVERKA), "--voiceover", name], capture_output=True, text=True, timeout=120,env=env)
     finally:
         Path(name).unlink(missing_ok=True)
     report = (out.stdout + out.stderr).strip()
-    return out.returncode == 0, report.replace(name, "сценарій")
+    if blacklist:report+='\n'+blacklist
+    return out.returncode == 0 and not blacklist, report.replace(name, "сценарій")

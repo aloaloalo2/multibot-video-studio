@@ -145,7 +145,8 @@
 .channel-select,#add-channel,.project-views button,.library-tabs button,.icon-button,.transport button,.frame-group-clip,.track-clip,.transition-join,.transport input[type=range],.speech-issues summary,.speech-existing summary,.timeline-add-menu summary,.plan-zoom button,.transition-filters button,.transition-favorite,.agent-reasoning select,.pixabay-kind select{transition:background-color .12s,color .12s,filter .12s,box-shadow .12s,opacity .12s;}
 .transport input[type=range]{cursor:pointer;}
 @media(hover:hover){
-.channel-select:hover,#add-channel:hover{background:#242428;color:#f1f1f2;}
+.channel-select:hover{background:transparent;color:#f1f1f2;}
+#add-channel:hover{background:#242428;color:#f1f1f2;}
 .project-views button:not(.active):hover,.editor-open .project-views button:not(.active):hover{background:#2c2c33;color:#f1f1f2;}
 .library-tabs button:not(.active):hover{background:#26262b;color:#e6e6ea;}
 .icon-button:not(:disabled):hover{background:#3b3b42;color:#fff;}

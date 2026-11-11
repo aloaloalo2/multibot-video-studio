@@ -8,27 +8,33 @@ const open=source.slice(source.indexOf('async function openThumbnail('),source.i
 const generation=source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
 test('Codex action sends wishes to trending mode and Claude remains primary on the right',async()=>{
-  let actions;const calls=[];let heading;
-  const c=vm.createContext({api:async()=>({title:'¿Qué pasaría?',script:'Texto español.'}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
-    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',dataset:{},classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
+  let actions;const calls=[];let heading,html;
+  const saved={p:{status:'done',wishes:'Акцент на проблемі.\nБез зайвих елементів.'},other:{status:'failed',wishes:'Інше побажання'}};
+  const c=vm.createContext({state:{},api:async url=>({title:'¿Qué pasaría?',script:'Texto español.',job:saved[url.split('/')[3]]}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
+    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?{children:actions.map(item=>({textContent:item.label,classList:{add(){}}}))}:{value:'Make the face large',dataset:{},classList:{add(){}}},projectCostIcons:{claude_code:'<svg/>'},esc:s=>s,
     document:{querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
     generateThumbnail:(...args)=>calls.push(args),status(){}});
   vm.runInContext(open,c);await vm.runInContext("openThumbnail({id:'p',name:'Spanish video'})",c);
   assert.equal(heading,'New Preview');assert.equal(actions.length,3);assert.equal(actions[1].label,'Створити з Codex');assert.equal(actions[2].label,'Створити з Claude');assert.equal(actions[2].primary,true);
+  const wishes=()=>html.match(/id="thumb-create-wishes"[^>]*>([\s\S]*?)<\/textarea>/)[1];
+  assert.equal(wishes(),saved.p.wishes);
   actions[1].run();assert.equal(calls[0][1],'trending');assert.equal(calls[0][2],'Make the face large');
+  await c.openThumbnail({id:'other'});assert.equal(wishes(),saved.other.wishes);
+  await c.openThumbnail({id:'empty'});assert.equal(wishes(),'');
+  await c.openThumbnail({id:'p'});assert.equal(wishes(),saved.p.wishes);
 });
 test('trending request preserves source title/script and creates a new image without a base',async()=>{
   const calls=[];
-  const c=vm.createContext({thumbnailSources:new Map([['p',{title:'¿Qué pasaría?',script:'Texto español.'}]]),
+  const c=vm.createContext({state:{},thumbnailSources:new Map([['p',{title:'¿Qué pasaría?',script:'Texto español.'}]]),
     api:async(...args)=>{calls.push(args);return args[1]==='POST'?{job:{status:'running',writer:'trending'}}:{writers:['trending']};},thumbnailRuns:new Map(),
     $:()=>({hidden:true}),showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status(){}});
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'trending','More emotion')",c);
   const body=calls.find(args=>args[1]==='POST')[2];assert.equal(body.writer,'trending');assert.equal(body.title,'¿Qué pasaría?');
-  assert.equal(body.script,'Texto español.');assert.equal(body.base,undefined);
+  assert.equal(body.script,'Texto español.');assert.equal(body.base,undefined);assert.equal(body.wishes,'More emotion');
 });
 test('an older running server cannot silently launch the normal paid mode for a trending request',async()=>{
   const calls=[];let error;
-  const c=vm.createContext({thumbnailSources:new Map(),$:()=>null,api:async(...args)=>{calls.push(args);return {};},status:text=>error=text});
+  const c=vm.createContext({state:{},thumbnailSources:new Map(),$:()=>null,api:async(...args)=>{calls.push(args);return {};},status:text=>error=text});
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'trending','Idea')",c);
   assert.equal(calls.length,1);assert.notEqual(calls[0][1],'POST');assert.match(error,/перезапуску/);
 });
@@ -36,7 +42,7 @@ test('an older running server cannot silently launch the normal paid mode for a 
 test('host checkbox sends the explicit per-run choice and is omitted when unavailable',async()=>{
   for(const choice of [true,false,null]){
     let body;
-    const c=vm.createContext({thumbnailSources:new Map(),thumbnailRuns:new Map(),
+    const c=vm.createContext({state:{},thumbnailSources:new Map(),thumbnailRuns:new Map(),
       $:id=>id==='thumb-use-hero'?(choice===null?null:{checked:choice}):{hidden:true},
       api:async(url,method,value)=>{body=value;return {job:{status:'running'}};},
       showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw new Error(message);}});
@@ -50,19 +56,20 @@ test('clone mode reads the chosen URL once and sends a per-cover reference witho
   for(const mode of ['clone','new']){
     const calls=[],backdrop={hidden:true,dataset:{thumbnailProject:'p',thumbnailMode:mode}};
     const c=vm.createContext({state:{channel:{id:'c'}},thumbnailSources:new Map([['p',{title:'Our episode',script:'Our script',reference_selection:true}]]),thumbnailRuns:new Map(),
-      $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:null,
+      $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:id==='thumb-use-hero'?{checked:false}:null,
       api:async(...args)=>{calls.push(args);return args[0].endsWith('/idea-reference')?{id:'abcdefghijk',url:'https://youtu.be/abcdefghijk'}:{job:{status:'running'}};},
       showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw Error(message);}});
     vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',channel_id:'c'},'claude','Wishes')",c);
     assert.equal(calls.length,mode==='clone'?2:1);
     const posted=calls.at(-1);assert.equal(posted[0],'/api/projects/p/thumbnail');
     assert.equal(posted[2].reference_id,mode==='clone'?'abcdefghijk':'');assert.equal(posted[2].title,'Our episode');
+    assert.equal(posted[2].use_hero,mode==='clone');
     if(mode==='clone')assert.equal(calls[0][2].url,'https://youtu.be/abcdefghijk');
   }
 });
 test('empty clone URL starts no metadata read or paid generation',async()=>{
   let calls=0,message;
-  const c=vm.createContext({thumbnailSources:new Map([['p',{reference_selection:true}]]),
+  const c=vm.createContext({state:{},thumbnailSources:new Map([['p',{reference_selection:true}]]),
     $:id=>id==='modal-backdrop'?{dataset:{thumbnailProject:'p',thumbnailMode:'clone'}}:id==='thumb-reference-url'?{value:' '}:null,
     api:async()=>{calls++;},status:text=>message=text});
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'claude','')",c);
@@ -81,16 +88,25 @@ test('a displayed matching reference is reused for generation without another me
 function referenceFixture(data,api){
   const controls={},source={};
   const element=()=>({hidden:false,isConnected:true,value:'',textContent:'',dataset:{},listeners:{},classList:{toggle(){}},addEventListener(event,handler){this.listeners[event]=handler;},removeAttribute(name){delete this[name];},setAttribute(){},querySelector(){return this.label||(this.label={textContent:''});}});
-  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-state','modal-actions'])controls[id]=element();
+  for(const id of ['modal-backdrop','thumb-reference-url','thumb-reference-preview','thumb-reference-image','thumb-reference-caption','thumb-reference-field','thumb-brief-layout','thumb-create-wishes','modal-body','thumb-reference-state','thumb-reference-load','thumb-state','modal-actions'])controls[id]=element();
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
+  const heroLabel={hidden:false};if(data.hero_reference)controls['thumb-use-hero']={checked:false,closest:()=>heroLabel};
   const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element(),element(),element()];
   controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector==='#modal-actions button'?writers:[];
   const c=vm.createContext({$:id=>controls[id],state:{channel:{id:'c'}},thumbnailSources:new Map([['p',source]]),thumbnailFrames:2,showThumbnailState(){},api,setTimeout,clearTimeout});
   vm.runInContext(sourceText(),c);
   c.data=data;vm.runInContext("setupThumbnailModes({id:'p',channel_id:'c'},data)",c);
-  return {controls,buttons,source,writers};
+  return {controls,buttons,source,writers,heroLabel};
 }
 function sourceText(){return source.slice(source.indexOf('function setupThumbnailModes('),source.indexOf('const thumbnailLanguageRuns='));}
+
+test('regular thumbnails accept a zero-frame minimum while animated thumbnails retain their requirement',()=>{
+  for(const minimum of [0,2]){
+    const {writers,controls}=referenceFixture({pictures:0,creation_min_frames:minimum},()=>{throw Error('opening starts no work');});
+    assert.ok(writers.every(button=>(button.dataset.gated==='1')===(minimum>0)));
+    assert.equal(controls['thumb-state'].textContent.includes('готові кадри'),minimum>0);
+  }
+});
 
 test('saved clone preview appears beside wishes on opening without a metadata or model request',()=>{
   const reference={id:'abcdefghijk',url:'https://youtu.be/abcdefghijk',thumbnail_url:'/cached.jpg',title:'Source title'};
@@ -102,6 +118,7 @@ test('saved clone preview appears beside wishes on opening without a metadata or
   assert.equal(controls['thumb-reference-image'].title,'Source title');
   assert.match(controls['thumb-create-wishes'].placeholder,/клонованого/);
   assert.equal(source.reference,reference);
+  assert.equal(controls['thumb-reference-load'].disabled,true);
 });
 
 test('a late reference response cannot replace the newer pasted URL or a closed modal',async()=>{
@@ -114,6 +131,9 @@ test('a late reference response cannot replace the newer pasted URL or a closed 
   pending[1]({id:'new',thumbnail_url:'/new.jpg'});await second;
   pending[0]({id:'old',thumbnail_url:'/old.jpg'});await first;
   assert.equal(controls['thumb-reference-image'].src,'/new.jpg');
+  assert.equal(controls['thumb-reference-load'].disabled,true);
+  field.value='https://youtu.be/12345678902';field.listeners.input();
+  assert.equal(controls['thumb-reference-load'].disabled,false);
   field.value='https://youtu.be/zzzzzzzzzzz';const third=field.listeners.change();
   controls['thumb-reference-preview'].isConnected=false;
   pending[2]({id:'closed',thumbnail_url:'/closed.jpg'});await third;
@@ -162,4 +182,36 @@ test('clone writer labels follow the selected mode and concurrent reference read
   assert.equal(controls['modal-actions'].hidden,false);
   buttons[0].listeners.click();
   assert.deepEqual(writers.map(button=>button.label.textContent),['Створити з DeepSeek','Створити з Codex','Створити з Claude']);
+});
+
+
+test('clone mode hides the redundant hero switch and normal thumbnails retain it',()=>{
+  const reference={id:'abcdefghijk',url:'https://youtu.be/abcdefghijk',thumbnail_url:'/cached.jpg'};
+  const {heroLabel,buttons}=referenceFixture({hero_reference:true,clone_reference:reference},()=>{throw Error('no request');});
+  assert.equal(heroLabel.hidden,true);
+  buttons[0].listeners.click();assert.equal(heroLabel.hidden,false);
+  buttons[1].listeners.click();assert.equal(heroLabel.hidden,true);
+});
+
+test('a late preview read cannot reopen a replaced dialog or a previous project',async()=>{
+  for(const change of ['navigation','modal','newer-request']){
+    let finish;const state={navigation:1,modalGeneration:1};let dialogs=0;
+    const c=vm.createContext({state,api:()=>new Promise(resolve=>finish=resolve),modal:()=>dialogs++});
+    vm.runInContext(open,c);const pending=c.openThumbnail({id:'p'});
+    if(change==='navigation')state.navigation++;
+    if(change==='modal')state.modalGeneration++;
+    if(change==='newer-request')state.thumbnailOpenRequest++;
+    finish({title:'Old result'});await pending;assert.equal(dialogs,0);
+  }
+});
+
+test('preview generation completion leaves a newer preview dialog open',async()=>{
+  let finish,closed=0;
+  const state={modalGeneration:1},backdrop={hidden:false,dataset:{thumbnailProject:'p'},classList:{contains:()=>true}};
+  const c=vm.createContext({state,thumbnailSources:new Map(),thumbnailRuns:new Map(),
+    $:id=>id==='modal-backdrop'?backdrop:null,api:()=>new Promise(resolve=>finish=resolve),
+    closeModal:()=>closed++,showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status(){}});
+  vm.runInContext(generation,c);const pending=c.generateThumbnail({id:'p',name:'Episode'},'claude','Wishes');
+  state.modalGeneration++;finish({job:{status:'running'}});await pending;
+  assert.equal(closed,0);assert.equal(c.thumbnailRuns.get('p').status,'running');
 });

@@ -14,17 +14,22 @@ import store
 import languages
 import eleven_api
 import heygen_voice
+import fish_voice
 import eleven_voices
 import voice_reference_drafts as reference_drafts
+import narration_effects
+import narration_tempo
 
 TRIAL_CHANNEL = 'b012a0e49c3b1c18'
+MIN_SPEED, MAX_SPEED = .87, 1.05
 MODELS = {'eleven_v4_turbo': 'Eleven v4 Turbo', 'eleven_v4': 'Eleven v4'}
 DELIVERY = {'neutral': '', 'conversational': '[Warm, conversational tone] ', 'calm': '[Calm, relaxed voice] '}
 DEFAULT_TEXT = 'Давайте спокойно разберёмся, что здесь происходит. На первый взгляд всё кажется довольно простым. Но есть одна деталь, на которую стоит обратить внимание. Сейчас я объясню её на обычном примере.'
-DEFAULTS = {'heygen_expressiveness':.5, 'heygen_model':'heygen-voice-1-turbo-free', 'heygen_voice_id':'', 'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
+DEFAULTS = {'heygen_starfish_speed':1., 'heygen_starfish_ssml':False, 'heygen_starfish_locale':'', 'heygen_expressiveness':.5, 'heygen_model':'heygen-voice-1-turbo-free', 'heygen_voice_id':'', 'provider': 'elevenlabs', 'language': 'ru', 'model': 'eleven_v4_turbo', 'delivery': 'conversational',
             'stability': .5, 'similarity_boost': .75, 'fish_engine': languages.FISH_ENGINE,
-            'temperature': .7, 'top_p': .7, 'speed': 1., 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
+            'temperature': .7, 'top_p': .7, 'speed': 1., 'reverb': narration_effects.DEFAULT, 'room_noise': narration_effects.NOISE_DEFAULT, 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
 PREPARATION_VERSION = 1
+DEFAULTS.update(fish_voice_id='', eleven_voice_id='')
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -71,6 +76,15 @@ def validated(raw):
     if raw is not None and not isinstance(raw, dict):
         raise store.StudioError('Невірні налаштування голосу')
     data = {**DEFAULTS, **{k: v for k, v in (raw or {}).items() if k in DEFAULTS}}
+    data['reverb'] = narration_effects.normalize(data['reverb'])
+    data['room_noise'] = narration_effects.noise_options(data['room_noise'])
+    remote_speed=data['heygen_starfish_speed']
+    if isinstance(remote_speed,bool) or not isinstance(remote_speed,(int,float)) or not math.isfinite(remote_speed) or not .5<=remote_speed<=2:
+        raise store.StudioError('Швидкість Starfish має бути від 50% до 200%')
+    if type(data['heygen_starfish_ssml']) is not bool:raise store.StudioError('Невірний формат тексту Starfish')
+    locale=data['heygen_starfish_locale']
+    if not isinstance(locale,str) or len(locale)>35 or (locale and not re.fullmatch(r'[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*',locale)):
+        raise store.StudioError('Невірний код вимови Starfish, наприклад uk-UA')
     if type(data['noise_cleanup']) is not bool:
         raise store.StudioError('Очищення шуму має бути увімкнене або вимкнене')
     if type(data['chunk_length']) is not int or not 100 <= data['chunk_length'] <= 300:
@@ -83,8 +97,8 @@ def validated(raw):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
     if data['heygen_model'] not in heygen_voice.MODELS or not isinstance(data['heygen_voice_id'],str) or (data['heygen_voice_id'] and not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',data['heygen_voice_id'])):raise store.StudioError('Невірна модель або голос HeyGen')
     speed=data['speed']
-    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not .9 <= speed <= 1.1:
-        raise store.StudioError('Швидкість має бути від 90% до 110%')
+    if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not MIN_SPEED <= speed <= MAX_SPEED:
+        raise store.StudioError('Швидкість має бути від 87% до 105%')
     for key in ['stability', 'similarity_boost', 'temperature', 'top_p', 'heygen_expressiveness']:
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
@@ -92,6 +106,10 @@ def validated(raw):
     if not isinstance(data['text'], str) or not 10 <= len(data['text'].strip()) <= 2000:
         raise store.StudioError('Для зразка введіть від 10 до 2000 символів')
     data['text'] = data['text'].strip()
+    for field in ('fish_voice_id','eleven_voice_id'):
+        value=data[field]
+        if not isinstance(value,str) or (value and not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',value)):
+            raise store.StudioError('Невірний ID голосу')
     return data
 
 
@@ -108,21 +126,44 @@ def reference(cid):
 def fingerprint(settings, ref):
     if settings['provider']=='heygen':
         effective={k:settings[k] for k in ['heygen_model','heygen_voice_id','language','text','speed']}
-        if settings.get('heygen_expressiveness',.5)!=.5:effective['heygen_expressiveness']=settings['heygen_expressiveness']
+        if settings['heygen_model']=='starfish':
+            effective.update({k:settings.get(k,DEFAULTS[k]) for k in ['heygen_starfish_speed','heygen_starfish_ssml','heygen_starfish_locale']})
+        elif settings.get('heygen_expressiveness',.5)!=.5:effective['heygen_expressiveness']=settings['heygen_expressiveness']
         return hashlib.sha256(json.dumps(effective,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     # Preparation affects the remote reference, never overwrite/reuse a sample of the original recording.
-    reference_key = ref['sha256'] + (f':clean-{PREPARATION_VERSION}' if settings['noise_cleanup'] else '')
+    reference_key = ref['sha256'] + (f':clean-{PREPARATION_VERSION}' if settings['noise_cleanup'] and not selected_voice_id(settings) else '')
     if settings['provider'] == 'elevenlabs':
         # Retain existing ElevenLabs samples when adding a second provider.
         effective = {k: settings[k] for k in ['language', 'model', 'delivery', 'stability', 'similarity_boost', 'text']}
         if settings['direction']: effective['direction'] = settings['direction']
+        if settings.get('eleven_voice_id'):effective['eleven_voice_id']=settings['eleven_voice_id']
         if settings.get('speed',1.) != 1.:effective['speed']=settings['speed']
         return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 1}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     fields = ['provider', 'language', 'text', 'fish_engine', 'temperature', 'top_p']
     effective = {k: settings[k] for k in fields}
+    if settings.get('fish_voice_id'):effective['fish_voice_id']=settings['fish_voice_id']
     if settings.get('speed',1.) != 1.:effective['speed'] = settings['speed']
     if settings['chunk_length'] != 200: effective['chunk_length'] = settings['chunk_length']
     return hashlib.sha256(json.dumps({'settings': effective, 'reference': reference_key, 'version': 3}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def sample_fingerprint(settings, ref):
+    # A service sample is a dry take; Studio processing is auditioned independently.
+    return fingerprint({**settings, 'speed': 1.}, ref)
+
+
+def local_preview_source(cid, settings=None, ref=None):
+    store.get_channel_folder(cid)
+    settings = settings or snapshot(cid)['settings']
+    ref = ref or effective_reference(cid, settings)
+    original = original_path(settings, ref) if ref else None
+    if original and original.is_file():
+        return original
+    raise store.StudioError('Спочатку створіть зразок голосу', 404)
+
+
+def tempo_preview(cid, speed):
+    return narration_tempo.preview(local_preview_source(cid), narration_tempo.speed(speed))
 
 
 def delivery_prefix(settings):
@@ -157,15 +198,44 @@ def prepared_source(cid, settings, ref):
     return target
 
 
+def selected_voice_id(settings):
+    field={'heygen':'heygen_voice_id','fishaudio':'fish_voice_id','elevenlabs':'eleven_voice_id'}.get(settings.get('provider'))
+    return settings.get(field,'') if field else ''
+
+
 def effective_reference(cid, settings):
-    if settings['provider']=='heygen':
-        if not settings['heygen_voice_id']:return None
-        return {'sha256':hashlib.sha256(settings['heygen_voice_id'].encode()).hexdigest(),'duration':0,'filename':'Голос HeyGen'}
+    voice_id=selected_voice_id(settings)
+    if voice_id:
+        return {'sha256':hashlib.sha256(voice_id.encode()).hexdigest(),'duration':0,'filename':'Голос '+settings['provider']}
+    if settings['provider']=='heygen':return None
     return reference(cid)
 
 
+def saved_voice_ids(cid, settings=None):
+    """Read existing remote identities without uploads or synthesis."""
+    root=folder(cid);settings=settings or validated(store.read_json(root/'settings.json',{}))
+    result={'heygen':settings.get('heygen_voice_id',''), 'fishaudio':settings.get('fish_voice_id',''),
+            'elevenlabs':settings.get('eleven_voice_id','')}
+    if not result['elevenlabs']:
+        ref=reference(cid)
+        if ref:
+            source=root/'reference.mp3'
+            prepared=root/'prepared'/(prepared_key(ref)+'.mp3')
+            if settings['noise_cleanup'] and not ref.get('approved'):
+                if not prepared.is_file():return result
+                source=prepared
+            digest=hashlib.sha256(source.read_bytes()).hexdigest()
+            owner=store.read_json(root/'reference.json',{}).get('clone_owner') or cid
+            rows=(store.read_json(store.DATA_ROOT/'voice-clones/elevenlabs.json',{}) or {}).get('voices',{}).values()
+            try:account=hashlib.sha256(languages.key('elevenlabs').encode()).hexdigest()
+            except (RuntimeError,store.StudioError):return result
+            matches=[v for v in rows if v.get('account')==account and v.get('channel_id')==owner and v.get('language')==settings['language'] and v.get('audio_sha256')==digest]
+            if matches:result['elevenlabs']=max(matches,key=lambda v:v.get('updated_at',0)).get('voice_id','')
+    return result
+
+
 def estimate(settings):
-    if settings['provider']=='heygen':return {'unit':'usd','amount':len(settings['text'])*heygen_voice.RATES[settings['heygen_model']]}
+    if settings['provider']=='heygen':return heygen_voice.estimate(settings)
 
     if settings['provider'] == 'fishaudio':
         spec = languages.FISH_ENGINES[settings['fish_engine']]
@@ -178,20 +248,24 @@ def estimate(settings):
 def snapshot(cid):
     root = folder(cid)
     saved = store.read_json(root / 'settings.json', {})
-    if isinstance(saved.get('speed'), (int,float)) and not isinstance(saved.get('speed'),bool):saved['speed']=max(.9,min(1.1,saved['speed']))
+    if isinstance(saved.get('speed'), (int,float)) and not isinstance(saved.get('speed'),bool):saved['speed']=max(MIN_SPEED,min(MAX_SPEED,saved['speed']))
     settings = validated(saved)
     local_ref=reference(cid)
     ref = effective_reference(cid,settings)
     job = store.read_json(root / 'job.json', {})
     if job.get('status') == 'running' and cid not in ACTIVE:
         job = {**job, 'status': 'failed', 'error': 'Студію перезапустили. Автоматичної повторної оплати не буде.'}
-    current = fingerprint(settings, ref) if ref else None
+    current = sample_fingerprint(settings, ref) if ref else None
     if job.get('status') == 'done' and job.get('fingerprint') != current:
         job = {}
     receipt = store.read_json(root / 'samples' / (current + '.json'), {}) if current else {}
-    prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and settings['provider']!='heygen' and settings['noise_cleanup'] else None
-    return {'settings': settings, 'reference': local_ref, 'job': job,
-            'heygen_models':[{'id':k,'name':v,'rate':heygen_voice.RATES[k]} for k,v in heygen_voice.MODELS.items()],
+    prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and not selected_voice_id(settings) and settings['provider']!='heygen' and settings['noise_cleanup'] else None
+    preview = original_path(settings, ref).is_file() if ref else False
+    return {'settings': settings, 'reference': local_ref, 'job': job, 'voice_ids':saved_voice_ids(cid,settings),
+            'local_preview_tempo': True,
+            'local_effects_version': narration_effects.VERSION,
+            'local_preview': f'/api/channels/{cid}/voice-lab/preview?v={sample_fingerprint(settings,ref)}' if preview else None,
+            'heygen_models':[{'id':k,'name':v,'rate':heygen_voice.RATES[k],**({'per_minute':heygen_voice.STARFISH_PER_MINUTE} if k=='starfish' else {})} for k,v in heygen_voice.MODELS.items()],
             'cached_original': bool(ref and (original_path(settings,ref).is_file() or (settings['provider']=='elevenlabs' and (root/'samples'/(fingerprint({**settings,'speed':1.},ref)+'.mp3')).is_file()))),
             'cached_fish_original': bool(ref and settings['provider']=='fishaudio' and fish_raw_path(settings,ref).is_file()),
             'sample_matches_settings': bool(current and job.get('fingerprint') == current),
@@ -220,12 +294,14 @@ def copy_profile(source_cid, target_cid):
         if (target / 'reference.mp3').exists():
             raise store.StudioError('У каналі вже є голос', 409)
         ref = reference(source_cid)
-        if not ref: raise store.StudioError('У вихідному каналі немає прикладу голосу')
+        source_settings=validated(store.read_json(source/'settings.json',{}))
+        if not ref and not selected_voice_id(source_settings): raise store.StudioError('У вихідному каналі немає голосу')
         for name in ['settings.json', 'reference.mp3', 'reference.json']:
-            shutil.copy2(source / name, target / name)
-        meta = store.read_json(target / 'reference.json', {})
-        meta['clone_owner'] = meta.get('clone_owner') or source_cid
-        store.atomic_json(target / 'reference.json', meta)
+            if (source/name).is_file():shutil.copy2(source / name, target / name)
+        if ref:
+            meta = store.read_json(target / 'reference.json', {})
+            meta['clone_owner'] = meta.get('clone_owner') or source_cid
+            store.atomic_json(target / 'reference.json', meta)
         for name in ['prepared', 'samples']:
             if (source / name).is_dir(): shutil.copytree(source / name, target / name, dirs_exist_ok=True)
         for file in source.glob('fish-reference-*'):
@@ -254,6 +330,7 @@ def accept_reference(cid, token, cleaned):
         reference_drafts.accept(root, token, cleaned)
         settings = validated(store.read_json(root/'settings.json', {}))
         settings['noise_cleanup'] = False  # the approved file is final; never process it again
+        settings.update(fish_voice_id='',eleven_voice_id='')
         store.atomic_json(root/'settings.json', settings)
     return snapshot(cid)
 
@@ -269,6 +346,11 @@ def remove(cid):
                 file.replace(archive / f'{time.time_ns()}-{name}')
         (root / 'job.json').unlink(missing_ok=True)
         settings = validated(store.read_json(root / 'settings.json', {}))
+        field={'fishaudio':'fish_voice_id','elevenlabs':'eleven_voice_id'}.get(settings['provider'])
+        if field and settings.get(field):
+            archive=root/'previous';archive.mkdir(exist_ok=True)
+            store.atomic_json(archive/f'{time.time_ns()}-settings.json',settings)
+            settings[field]='';store.atomic_json(root/'settings.json',settings)
         if settings['provider'] == 'heygen' and settings['heygen_voice_id']:
             # Unlink this channel's choice; keep the remote voice and every paid sample.
             store.atomic_json(root / 'previous' / f'{time.time_ns()}-settings.json', settings)
@@ -278,6 +360,7 @@ def remove(cid):
 
 
 def clone(cid, settings, ref):
+    if settings.get('eleven_voice_id'):return languages.key('elevenlabs'),settings['eleven_voice_id']
     root = folder(cid)
     source = Path(ref.get('prepared_path') or root / 'reference.mp3')
     secret = languages.key('elevenlabs')
@@ -306,6 +389,7 @@ def synthesis(secret, voice, settings):
 
 def fish_reference(cid, settings, ref):
     """One short local reference, recognised once. No remote model creation or fallback billing."""
+    if settings.get('fish_voice_id'):return {'reference_id':settings['fish_voice_id']}
     root = folder(cid)
     source = Path(ref.get('prepared_path') or root / 'reference.mp3')
     source_key = prepared_key(ref) if settings['noise_cleanup'] else ref['sha256']
@@ -363,7 +447,8 @@ def fish_raw_path(settings, ref):
 
 
 def fish_synthesis(secret, voice, settings, raw_key=None):
-    body = {'text': settings['text'], 'references': [voice], 'prosody': {'speed': 1.}, 'format': 'mp3', 'mp3_bitrate': 128,
+    identity={'reference_id':settings.get('fish_voice_id') or voice['reference_id']} if settings.get('fish_voice_id') or voice.get('reference_id') else {'references':[voice]}
+    body = {'text': settings['text'], **identity, 'prosody': {'speed': 1.}, 'format': 'mp3', 'mp3_bitrate': 128,
             'normalize': True, 'language': settings['language'], 'latency': 'normal', 'chunk_length': settings['chunk_length'],
             'temperature': settings['temperature'], 'top_p': settings['top_p']}
     packed=languages.msgpack(body)
@@ -390,7 +475,7 @@ def run(cid, settings, ref, job):
         fish = settings['provider'] == 'fishaudio'
         if settings['provider']!='heygen':
             with audio_guard(root / 'reference.mp3'):
-                ref = {**ref, 'prepared_path': str(prepared_source(cid, settings, ref))}
+                if not selected_voice_id(settings):ref = {**ref, 'prepared_path': str(prepared_source(cid, settings, ref))}
                 with LOCK:
                     job['stage'] = 'reference' if fish else 'clone';store.atomic_json(root / 'job.json', job)
                 if fish:
@@ -402,7 +487,8 @@ def run(cid, settings, ref, job):
                 job['stage'] = 'speech';store.atomic_json(root / 'job.json', job)
         with audio_guard(original_path(settings,ref)):
             cached=original_path(settings,ref).is_file()
-            audio = heygen_synthesis(settings,ref) if settings['provider']=='heygen' else fish_synthesis(secret, voice, settings, raw_key=fish_raw_path(settings,ref).stem) if fish else eleven_local_synthesis(secret, voice, settings,ref)
+            sample_settings = {**settings, 'speed': 1.}
+            audio = heygen_synthesis(sample_settings,ref) if settings['provider']=='heygen' else fish_synthesis(secret, voice, sample_settings, raw_key=fish_raw_path(settings,ref).stem) if fish else eleven_local_synthesis(secret, voice, sample_settings,ref)
             if cached:
                 job['estimate']={**job['estimate'],'amount':0}
                 if settings['provider']=='elevenlabs':job['estimated_credits']=0
@@ -431,7 +517,7 @@ def start(cid, raw, client_id):
         old = store.read_json(root / 'job.json', {})
         ref = effective_reference(cid,settings)
         if not ref: raise store.StudioError('Виберіть голос HeyGen' if settings['provider']=='heygen' else 'Додайте приклад голосу')
-        key = fingerprint(settings, ref)
+        key = sample_fingerprint(settings, ref)
         original=original_path(settings,ref)
         # Existing 100% samples are already valid originals. Preserve their paid generation.
         previous=root/'samples'/(fingerprint({**settings,'speed':1.},ref)+'.mp3')
@@ -455,7 +541,7 @@ def start(cid, raw, client_id):
         # Save the reservation before either cloning or speech. Restart never replays a paid call.
         cost = {'unit':'credits' if settings['provider']=='elevenlabs' else 'usd','amount':0} if original_path(settings,ref).is_file() else estimate(settings)
         prepared = root / 'prepared' / (prepared_key(ref) + '.mp3')
-        needs_cleanup = settings['provider']!='heygen' and settings['noise_cleanup'] and not (prepared.is_file() and store.read_json(prepared.with_suffix('.json'), {}).get('status') == 'done')
+        needs_cleanup = not selected_voice_id(settings) and settings['provider']!='heygen' and settings['noise_cleanup'] and not (prepared.is_file() and store.read_json(prepared.with_suffix('.json'), {}).get('status') == 'done')
         job = {'status': 'running', 'stage': 'speech' if settings['provider']=='heygen' else 'cleanup' if needs_cleanup else ('reference' if settings['provider'] == 'fishaudio' else 'clone'),
                'provider': settings['provider'], 'client_id': client_id, 'fingerprint': key, 'started_at': time.time(),
                'settings': settings.copy(),
@@ -463,7 +549,15 @@ def start(cid, raw, client_id):
         store.atomic_json(root / 'settings.json', settings)
         store.atomic_json(root / 'job.json', job)
         ACTIVE.add(cid)
-        threading.Thread(target=run, args=(cid, settings.copy(), ref.copy(), job), daemon=True).start()
+        try:
+            threading.Thread(target=run, args=(cid, settings.copy(), ref.copy(), job), daemon=True).start()
+        except Exception:
+            job.update(status='failed', error='Не вдалося запустити створення зразка', finished_at=time.time())
+            try:
+                store.atomic_json(root / 'job.json', job)
+            finally:
+                ACTIVE.discard(cid)
+            raise
     return snapshot(cid)
 
 
@@ -479,8 +573,51 @@ def audio_file(cid, kind, fingerprint=None):
     return target
 
 
+def create_fish_voice(cid, raw):
+    settings=validated(raw);root=folder(cid);ref=reference(cid)
+    if settings['provider']!='fishaudio':raise store.StudioError('Виберіть Fish Audio')
+    if settings.get('fish_voice_id'):return snapshot(cid)
+    if not ref:raise store.StudioError('Спочатку додайте запис голосу')
+    with LOCK:
+        if in_use(cid):raise store.StudioError('Дочекайтеся завершення озвучення цього каналу',409)
+        baseline=store.read_json(root/'settings.json',{})
+        ACTIVE.add(cid)
+    try:
+        source=prepared_source(cid,settings,ref)
+        voice=fish_reference(cid,settings,{**ref,'prepared_path':str(source)})
+        secret=languages.key('fishaudio')
+        identity=hashlib.sha256(json.dumps({'account':hashlib.sha256(secret.encode()).hexdigest(),
+            'audio':hashlib.sha256(voice['audio']).hexdigest(),'text':voice['text'],'language':settings['language']},sort_keys=True).encode()).hexdigest()
+        receipt=store.DATA_ROOT/'fish-clones'/(identity+'.json');receipt.parent.mkdir(parents=True,exist_ok=True)
+        with audio_guard(receipt):
+            saved=store.read_json(receipt,{})
+            voice_id=saved.get('voice_id')
+            if not voice_id:
+                if saved.get('status') in ('creating','uncertain'):
+                    raise store.StudioError('Попереднє збереження голосу не має підтвердження. Перевірте Fish і вставте ID вручну; повторне завантаження не виконано')
+                store.atomic_json(receipt,{'status':'creating','started_at':time.time()})
+                try:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        path=Path(tmp)/'reference.mp3';path.write_bytes(voice['audio'])
+                        name=store.channel_record(store.get_channel_folder(cid)).get('name','Голос каналу')
+                        voice_id=fish_voice.create(path,voice['text'],name+' '+settings['language'],secret)
+                except Exception as error:
+                    store.atomic_json(receipt,{'status':'rejected' if isinstance(error,fish_voice.Rejected) else 'uncertain','finished_at':time.time()})
+                    raise
+                store.atomic_json(receipt,{'status':'done','voice_id':voice_id,'finished_at':time.time()})
+        with LOCK:
+            if store.read_json(root/'settings.json',{})!=baseline:
+                raise store.StudioError('Голос збережено у Fish, але налаштування каналу змінилися. Відкрийте їх знову і повторно натисніть збереження голосу для підключення наявного ID',409)
+            settings['fish_voice_id']=voice_id
+            store.atomic_json(root/'settings.json',settings)
+    finally:
+        with LOCK:ACTIVE.discard(cid)
+    return snapshot(cid)
+
+
 def create_heygen_voice(cid, raw):
     settings=validated(raw);root=folder(cid);ref=reference(cid)
+    if settings['heygen_model']=='starfish':raise store.StudioError('Для Starfish виберіть голос із його каталогу або введіть сумісний ID')
     if not ref:raise store.StudioError('Спочатку додайте запис голосу')
     with LOCK:
         if in_use(cid):raise store.StudioError('Дочекайтеся завершення озвучення цього каналу',409)

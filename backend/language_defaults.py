@@ -66,6 +66,10 @@ def selection(pid: str) -> tuple[dict,dict]:
     settings['fish_styles'][settings['fish_engine']]=settings['fish_style']
     voices={};examples={}
     for code in codes:
+        remote=languages.remote_voice_ids(pid,code)
+        if remote:
+            voices[code]={'remote_only':True,'voice_ids':remote,'clone':remote.get('elevenlabs')}
+            continue
         example=languages.voice_for(pid,code,original=False)
         if example:
             raw=example['path'].read_bytes();text=example['text']
@@ -98,7 +102,7 @@ def status(pid: str) -> dict:
             old_choices=(previous.get('language_settings') or {}).get(code) or previous.get('settings') or {}
             settings_match=bool(saved) and effective(old_choices)==effective(payload['language_settings'][code])
             earlier=(previous.get('voices') or {}).get(code) or {}
-            matches=(voice or {}).get('sha256')==earlier.get('sha256')
+            matches=((voice or {}).get('voice_ids')==earlier.get('voice_ids') if (voice or {}).get('remote_only') or earlier.get('remote_only') else (voice or {}).get('sha256')==earlier.get('sha256'))
             if not matches and settings_match and voice and earlier and code in examples:
                 version=saved.get('version','')
                 if __import__('re').fullmatch(r'[0-9a-f]{32}',version):
@@ -146,6 +150,7 @@ def save(pid: str, code: str | None = None) -> dict:
         base=root(selected['channel_id']);version=uuid.uuid4().hex;folder=base/version
         folder.mkdir(parents=True)
         for language,voice in voices.items():
+            if voice and voice.get('remote_only'):continue
             if not voice:continue
             dest=folder/language;dest.mkdir()
             if language not in affected:
@@ -177,6 +182,11 @@ def pin_narration(pid: str, code: str) -> None:
         for key in ('provider','eleven_engine','fish_engine','fish_style','fish_styles'):
             if key in resolved:data[key]=copy.deepcopy(resolved[key])
         data.setdefault('languages',{}).setdefault(code,{})['narration']=languages.narration_choices(pid,code)
+        remote=languages.remote_voice_ids(pid,code)
+        if remote:
+            data['languages'][code]['voice_ids']=copy.deepcopy(remote)
+            languages.save_state(pid,data)
+            return
         example=languages.voice_for(pid,code,original=False)
         if example and example['from'] in ('defaults','channel'):
             project=store.load_project(pid)
@@ -225,6 +235,10 @@ def apply(project: dict, explicit: bool = False) -> bool:
                 data['languages'][code]['use_original_voice']=True
                 continue
             data['languages'][code].pop('use_original_voice',None)
+            if voice.get('remote_only'):
+                data['languages'][code]['voice_ids']=copy.deepcopy(voice['voice_ids'])
+                continue
+            data['languages'][code].pop('voice_ids',None)
             src=base/saved['version']/code;dest.mkdir(parents=True,exist_ok=True)
             for name in ('own-voice.mp3','own-voice.txt','own-voice.json'):
                 if (src/name).is_file():shutil.copy2(src/name,dest/name)
@@ -258,6 +272,12 @@ def reference(cid: str, code: str) -> dict | None:
 def saved_clone(cid: str, code: str) -> str | None:
     saved=store.read_json(root(cid)/'current.json',{}) or {}
     return (((saved.get('payload') or {}).get('voices') or {}).get(code) or {}).get('clone')
+
+
+def remote_ids(cid,code):
+    saved=store.read_json(root(cid)/'current.json',{}) or {}
+    voice=(((saved.get('payload') or {}).get('voices') or {}).get(code) or {})
+    return copy.deepcopy(voice.get('voice_ids') or {}) if voice.get('remote_only') else {}
 
 
 def settings(cid: str, code: str | None = None) -> dict:

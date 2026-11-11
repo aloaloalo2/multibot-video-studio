@@ -13,7 +13,7 @@ video and the picture with its prompt in «Превью», as the channel rules 
 """
 from __future__ import annotations
 
-import filecmp, json, re, shutil, subprocess, threading, time
+import filecmp, json, re, shutil, subprocess, tempfile, threading, time
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
@@ -33,7 +33,7 @@ TRENDING_RULES = Path(__file__).parent / "prompts" / "trending_thumbnail.md"
 # the prompt is the creative half of the thumbnail (user, 30 October 2026: «краще, щоб Claude Code писав промпт, як і
 # раніше було... получались дуже круті результати»)
 PROMPT_EFFORT = "high"
-# the thumbnail takes its look from the video's own frames, so a few must be made first (user, 30 October 2026)
+# Animated projects take their look from made frames; regular projects can start from their script and title.
 MIN_FRAMES = 2
 STILLS = 3
 ACTIVE: set[str] = set()
@@ -93,7 +93,7 @@ def versions(pid: str) -> list[dict]:
         number = int(match.group(1))
         prompt = work / f"Промпт прев'ю v{number}.txt"
         head = prompt.read_text(encoding="utf-8", errors="replace")[:200] if " до " not in path.name and prompt.is_file() else ""
-        writer = "deepseek" if head.startswith("[DeepSeek]") else "trending" if head.startswith("[Трендове прев’ю") else "edit" if head.startswith("[Правка") else None
+        writer = "deepseek" if head.startswith("[DeepSeek]") else "trending" if head.startswith(("[Трендове прев’ю", "[Клонування · Codex]")) else "edit" if head.startswith("[Правка") else None
         edit = re.match(r"\[Правка Превью (?:до )?v(\d+)\.png\] (.*)", head)
         items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
                       **({"from": int(edit.group(1)), "notes": edit.group(2).strip()} if edit else {}),
@@ -123,6 +123,10 @@ def choose(pid: str, name: str) -> dict:
     return {"versions": versions(pid)}
 
 
+def creation_min_frames(project: dict) -> int:
+    return MIN_FRAMES if store.project_animated(project) else 0
+
+
 def defaults(pid: str) -> dict:
     project = store.load_project(pid)
     import idea_reference
@@ -133,8 +137,8 @@ def defaults(pid: str) -> dict:
     if not script and project.get("episode_path") and (folder / "Сценарий.txt").is_file():
         script = (folder / "Сценарий.txt").read_text(encoding="utf-8", errors="replace")
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
-            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else MIN_FRAMES,
-            "creation_min_frames": MIN_FRAMES, "reference_selection": True, "clone_reference": clone,
+            "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else creation_min_frames(project),
+            "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
             "versions": versions(pid), "writers": ["claude", "deepseek", "trending"], "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
@@ -263,6 +267,57 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) 
 Відповідай тільки самим промптом англійською, без вступу, пояснень і лапок навколо. Не пиши, куди зберегти файл: це додасть студія."""
 
 
+def clone_brief(title: str, wishes: str, name: str, refs: list[Path]) -> str:
+    """One isolated reference-adaptation contract for all prompt writers, without new-idea rules."""
+    import idea_reference
+    images = '\n'.join(str(path) for path in refs)
+    return ("Write the English image-generation prompt for an original image built from the reference idea. "
+            "Inspect the attached images (use Read for these local image files if available):\n" + images + "\n\n"
+            + idea_reference.thumbnail_rules(title, name)
+            + "\nAUTHOR'S EXPLICIT CHANGES FOR THIS CLONE ONLY:\n" + (wishes.strip() or 'None. Keep its idea and wording; create original visuals.')
+            + "\nReturn only the image prompt. Quote the exact lettering read from the source image, in its original language. "
+            "The separate image generator cannot see the source: fully describe the new image, with no source filenames or reference-relative instructions. "
+            "Your role at this step is to write the prompt; the Studio runs image generation afterward.")
+
+
+def write_prompt_codex(text: str, work: Path, refs: list[Path], name: str) -> tuple[str, dict]:
+    """A fresh text-only authoring session; its visual context never reaches the drawing session."""
+    output = work / ('codex-prompt-' + Path(name).stem + '.txt')
+    output.unlink(missing_ok=True)
+    command = [str(CODEX), "exec", "--ephemeral", "-s", "read-only", "--skip-git-repo-check",
+               "-C", str(work), "--output-last-message", str(output)]
+    for ref in refs: command += ["-i", str(ref)]
+    result = subprocess.run(command + ["-"], input=text + "\nWrite the prompt only. Do not generate any image or invoke image generation in this session.",
+                            cwd=work, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
+    written = output.read_text(encoding='utf-8').strip() if output.is_file() else ''
+    (work / ('Лог промпту ' + Path(name).stem + '.txt')).write_text(result.stdout + result.stderr, encoding='utf-8')
+    if result.returncode or len(written) < 200:
+        raise RuntimeError('Codex не написав промпт прев’ю. ' + (result.stderr or result.stdout)[-300:])
+    return written, {}
+
+
+def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None):
+    """An isolated fresh session receives text and optional host identity, with no competitor pixels/files/history."""
+    with tempfile.TemporaryDirectory(prefix='videokey-new-thumbnail-') as temp:
+        clean = Path(temp)
+        command = [str(CODEX), "exec", "--ephemeral", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(clean)]
+        if hero:
+            portrait = clean / 'Головний герой.png'
+            shutil.copyfile(hero, portrait)
+            command += ['-i', str(portrait)]
+        instructions = drawing(prompt, name) + """
+Create the image from scratch from the written description above. This is a new image-generation session.
+The competitor thumbnail is not an input to this session. Do not open, retrieve, trace or edit it.
+Use only the written scene description and exact lettering. An attached channel portrait, if any, supplies host identity only.
+Include that host only when the written scene calls for a presenter; keep object-only scenes people-free and neutral subjects distinct.
+Generate original scene pixels, typography and composition. Save one new PNG in this working directory.
+"""
+        result = subprocess.run(command + ['-'], input=instructions, cwd=clean, text=True, capture_output=True, timeout=TIMEOUT)
+        made = clean / name
+        if made.is_file(): shutil.copyfile(made, work / name)
+        return result
+
+
 def drawing(prompt_text: str, name: str) -> str:
     """What Codex gets: Claude's prompt, word for word, and where the one picture goes."""
     return f"""{prompt_text.strip()}
@@ -325,22 +380,26 @@ def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id:
         raise RuntimeError("Додайте ключ OpenRouter у налаштуваннях студії") from None
     # DeepSeek has no Read tool: what Claude would open is attached here instead
     text = re.sub(r"\nПеред тим як писати, подивись інструментом Read ці картинки[^\n]*\n", "\nКартинки стилю й героя прикріплені нижче.\n", text)
-    link = episode_link(folder)
+    cloning = any(path.name == 'idea-reference.jpg' for path in refs)
+    link = None if cloning else episode_link(folder)
     bible = Path(link["project"]) / "story" / "bible.md" if isinstance(link, dict) and link.get("project") else None
     if bible and bible.is_file():
         text = re.sub(r"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: [^\n]*\n", "", text)
         text += "\n\nГерої, їхній вигляд і світ ролику (story bible):\n" + bible.read_text(encoding="utf-8", errors="replace")[:8000]
     content = [{"type": "text", "text": text}]
-    for index, path in enumerate([*refs, *examples(folder)[1]][:4], 1):
+    images = refs if cloning else [*refs, *examples(folder)[1]]
+    for index, path in enumerate(images[:4], 1):
         try:
             with Image.open(path) as source:
                 image = source.convert("RGB")
-            image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-            out = io.BytesIO(); image.save(out, format="JPEG", quality=88)
-            role = "Main character identity reference. Match this character; other images do not replace their identity." if path.name == 'Головний герой.png' else "Scene or style reference."
+            image.thumbnail((1600, 1600) if cloning else (1024, 1024), Image.Resampling.LANCZOS)
+            out = io.BytesIO(); image.save(out, format="JPEG", quality=95 if cloning else 88)
+            role = "Main character identity reference. Match this character; other images do not replace their identity." if path.name == 'Головний герой.png' else "CLONE ANALYSIS SOURCE ONLY. Read exact lettering, visual idea and subject roles; describe an original new scene in the text prompt." if path.name == 'idea-reference.jpg' else "Scene or style reference."
             content.append({"type": "text", "text": f"Reference image {index}: {path.name}. {role}"})
             content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()}})
         except (OSError, UnidentifiedImageError):
+            if cloning and path.name == 'idea-reference.jpg':
+                raise RuntimeError('Не вдалося прочитати прев’ю для клонування. Додайте посилання ще раз.') from None
             continue
     payload = {"model": agent_openrouter.MODEL, "max_tokens": 8000, "usage": {"include": True}, "messages": [{"role": "user", "content": content}]}
     request = urllib.request.Request(agent_openrouter.BASE + "/chat/completions", data=json.dumps(payload).encode(), method="POST",
@@ -373,8 +432,9 @@ and reply only with the saved path."""
 
 
 def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> None:
-    data = state(pid) or {}
+    data = {}
     try:
+        data = state(pid) or {}
         project = store.load_project(pid)
         # the episode folder may be gone: its parent is still the channel with its approved samples and style frames
         folder = Path(project["episode_path"])
@@ -384,7 +444,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         name = f"Превью v{number}.png"
         import idea_reference
         clone, clone_image = idea_reference.thumbnail_reference(project, reference_id)
-        hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
+        hero, hero_rules = channel_hero.prepare(project, work, True if clone and not base else use_hero) if not base or use_hero is not None else (None, '')
         if clone and not base:
             # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
             hero_rules = '\nГоловний герой.png is our host identity reference ONLY when replacing a source presenter. Do not add this host to neutral story-subject or object-only concepts.\n' if hero else ''
@@ -394,42 +454,52 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             refs, answer = [version_file(pid, base)], {}
             written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
-            if channel_wishes:
+            if channel_wishes and not clone:
                 wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
             if clone:
                 snapshot = work / 'idea-reference.jpg'
                 shutil.copyfile(clone_image, snapshot)
                 refs = [snapshot]
-                wishes += '\n' + idea_reference.thumbnail_rules(title, name)
             else:
                 refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
-            # 1. Claude (or DeepSeek, on trial) picks the moment and writes the prompt; it is kept even if the drawing fails
-            if writer == "trending":
+            # Each writer sees the same clone-only rules and source image. New ideas retain their own brief.
+            prompt_refs = ([*refs, hero] if clone and hero else ([hero] if hero else []) + refs)
+            if clone:
+                text = clone_brief(title, wishes, name, prompt_refs) + hero_rules
+                if writer == "trending":
+                    written, answer = write_prompt_codex(text, work, prompt_refs, name)
+                else:
+                    written, answer = write_prompt_deepseek(text, folder, prompt_refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
+            elif writer == "trending":
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
-                note = "[Трендове прев’ю · Codex] " + written
             else:
-                prompt_refs = ([hero] if hero else []) + refs
                 text = brief(title, script, wishes, folder, prompt_refs) + hero_rules
                 written, answer = write_prompt_deepseek(text, folder, prompt_refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
-                note = ("[DeepSeek] " if writer == "deepseek" else "") + written
+            note = ("[DeepSeek] " if writer == "deepseek" else ("[Клонування · Codex] " if clone else "[Трендове прев’ю · Codex] ") if writer == "trending" else "") + written
         if hero:
-            refs = [hero, *refs]
-        if not base and channel_wishes and channel_wishes not in written:
+            refs = [*refs, hero] if clone and not base else [hero, *refs]
+        if clone and not base:
+            # The reference belongs only to prompt analysis. The drawing session is intentionally source-free.
+            note += "\n[Нова генерація з текстового промпту; картинка конкурента не передається генератору]\n"
+        elif not base and channel_wishes and channel_wishes not in written:
             preferences = "\nChannel thumbnail preferences (apply these; specific wishes for this thumbnail take priority):\n" + channel_wishes + "\n"
             written += preferences
             note += preferences
-        written += hero_rules
-        note += hero_rules
+        if not clone or base:
+            written += hero_rules
+            note += hero_rules
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
-        # 2. Codex draws it with the channel's style frames attached
-        command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
-        for ref in refs:
-            command += ["-i", str(ref)]
-        result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
-                                capture_output=True, timeout=TIMEOUT)
+        # Clone drawings run in a fresh, clean workspace with text and optional host identity only.
+        if clone and not base:
+            result = draw_clone_from_text(written, name, work, hero)
+        else:
+            command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
+            for ref in refs: command += ["-i", str(ref)]
+            result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
+                                    capture_output=True, timeout=TIMEOUT)
         (work / f"Лог генерації v{number}.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
         made = work / name
         try:
@@ -451,10 +521,14 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             image_delivery.copy_png(made, folder / PREVIEW)
         data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
-        late = ("DeepSeek" if writer == "deepseek" else "Claude") + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
+        late = ({"deepseek": "DeepSeek", "trending": "Codex"}.get(writer, "Claude")) + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
         data.update(status="failed", error=late, finished_at=time.time())
     except (OSError, RuntimeError, store.StudioError) as error:
         data.update(status="failed", error=str(error), finished_at=time.time())
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        data.update(status='failed', error='Не вдалося завершити прев’ю. Збережені версії доступні.', finished_at=time.time())
     finally:
         try:
             store.atomic_json(job_path(pid), data)
@@ -484,8 +558,9 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
     title, script, wishes = (str(value or "").strip() for value in (title, script, wishes))
     if not title:
         raise store.StudioError("Вкажіть заголовок")
-    if not base and not clone and store.picture_count(project) < MIN_FRAMES:
-        raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {MIN_FRAMES} кадри ролику: з них береться стиль", 409)
+    required = creation_min_frames(project)
+    if not base and not clone and required and store.picture_count(project) < required:
+        raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {required} кадри ролику: з них береться стиль", 409)
     if not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)
     with LOCK:
@@ -502,9 +577,22 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 number = 1 + max((item['number'] for item in versions(pid)), default=0)
                 base = f"Превью до v{number}.png"
                 shutil.copy2(source, keep_dir(pid) / base)
-        ACTIVE.add(pid)
-        data = {"status": "running", "stage": "drawing" if base or writer == "trending" else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
+        data = {"status": "running", "stage": "drawing" if base or writer == "trending" and not clone else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
                 "writer": writer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {})}
-        store.atomic_json(job_path(pid), data)
-    threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id), daemon=True).start()
+        ACTIVE.add(pid)
+        try:
+            store.atomic_json(job_path(pid), data)
+        except Exception:
+            ACTIVE.discard(pid)
+            raise
+    try:
+        threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id), daemon=True).start()
+    except Exception:
+        data.update(status='failed', error='Не вдалося запустити створення прев’ю', finished_at=time.time())
+        try:
+            store.atomic_json(job_path(pid), data)
+        finally:
+            with LOCK:
+                ACTIVE.discard(pid)
+        raise
     return data

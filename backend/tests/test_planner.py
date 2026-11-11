@@ -172,3 +172,11 @@ class PlannerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GermanDateSentenceTests(unittest.TestCase):
+    def test_ordinal_month_dates_stay_inside_the_sentence(self):
+        for month in ('Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'):
+            text = f'Das gilt seit dem 1. {month} 2024. Prüfe die Zahl.'
+            self.assertEqual(planner.split_sentences(text), [f'Das gilt seit dem 1. {month} 2024.', 'Prüfe die Zahl.'])
+        self.assertEqual(planner.split_sentences('Die Zahl ist 1. Danach geht es weiter.'), ['Die Zahl ist 1.', 'Danach geht es weiter.'])

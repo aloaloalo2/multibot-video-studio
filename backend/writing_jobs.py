@@ -8,6 +8,7 @@ import threading
 import time
 
 import project_costs
+import process_cleanup
 import store
 
 LOCK = threading.RLock()
@@ -90,6 +91,7 @@ def run(command, prompt, root, identity, timeout=900):
         check()
         return process.returncode, answer
     finally:
+        process_cleanup.stop_group(process)
         if (job or {}).get('cancelled'):
             state = 'cancelled'
         with LOCK:

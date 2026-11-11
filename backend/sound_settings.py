@@ -81,7 +81,7 @@ def normalize(value=None):
 def saved_for_project(project):
     import store
     try:
-        settings = store.read_json(store.get_channel_folder(project['channel_id'], include_disabled=True) / store.PLAN_CONFIG, {})
+        settings = store.read_channel_settings(store.get_channel_folder(project['channel_id'], include_disabled=True), {})
     except (store.StudioError, OSError, KeyError):
         settings = {}
     return settings.get('sound')

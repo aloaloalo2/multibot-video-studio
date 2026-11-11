@@ -1,5 +1,6 @@
 """YouTube metadata returned alongside an Opus script, kept out of spoken text."""
 import hashlib
+import json
 import os
 import re
 import uuid
@@ -32,6 +33,14 @@ def validate(value, title):
     if not isinstance(value, dict):
         raise ValueError('Opus не повернув метадані. Сценарій збережено; можна окремо дописати метадані.')
     titles, description, tags = (value.get(k) for k in ('titles', 'description', 'tags'))
+    # The author selected the primary title. Punctuation drift from the model cannot block the whole bundle.
+    if isinstance(titles, list) and len(titles) == 3 and all(isinstance(item, str) and item.strip() for item in titles):
+        titles = [item.strip() for item in titles]
+        if title not in titles:
+            titles = [title, *titles[1:]]
+    if isinstance(description, str):
+        description = description.replace('\\r\\n', '\n').replace('\\n', '\n')
+
     def strings(items, count):
         return (isinstance(items, list) and len(items) == count
                 and all(isinstance(s, str) and s.strip() and '\n' not in s.strip() for s in items)
@@ -48,7 +57,7 @@ def validate(value, title):
     return {'titles': [s.strip() for s in titles], 'description': description.strip(), 'tags': [s.strip() for s in tags]}
 
 
-def save(project, value, script):
+def save(project, value, script, *, author='Opus'):
     # Accepted metadata, including hand-written files, is never replaced by a writing job.
     if exists(project):
         return str(path(project))
@@ -69,6 +78,22 @@ def save(project, value, script):
     finally:
         tmp.unlink(missing_ok=True)
     store.atomic_json(store.project_dir(project['id']) / 'publication-metadata.json', {
-        **value, 'author': 'Opus', 'script_sha256': hashlib.sha256(script.strip().encode()).hexdigest(),
+        **value, 'author': author, 'script_sha256': hashlib.sha256(script.strip().encode()).hexdigest(),
         'file': str(destination)})
     return str(destination)
+
+
+def save_generated(project, value, script, complete):
+    """Normalize locally first; at most one short metadata-only model call when content is absent/invalid."""
+    if exists(project):
+        return str(path(project))
+    try:
+        value = validate(value, project['name'])
+    except ValueError as error:
+        prompt = (PROMPT + '\nReturn only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}. '
+                  'Do not rewrite the script. The selected title is authoritative.\n'
+                  + json.dumps({'channel':project.get('channel_name',''), 'selected_title':project['name'],
+                                            'topic_excerpt':script[:800], 'validation_error':str(error)}, ensure_ascii=False))
+        result = complete(prompt)
+        return save(project, result.get('metadata'), script)
+    return save(project, value, script)

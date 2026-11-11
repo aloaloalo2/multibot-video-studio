@@ -168,12 +168,17 @@ class ThumbnailTest(unittest.TestCase):
     def tools(self, picture=True, answer=None, metadata=False):
         """Claude Code answers with a prompt, Codex saves the picture; each call is recorded."""
         self.calls = []
+        self.draw_workspaces = []
         def run(command, **kwargs):
             self.calls.append((command, kwargs))
             if command[0] == "claude":
                 reply = answer or {"result": "A neon close-up of the frozen hero. " * 8, "total_cost_usd": 0.2}
                 return subprocess.CompletedProcess(command, 0, json.dumps(reply), "")
-            self.assertIn("-i", command)                      # the channel's style frame is attached
+            if '--output-last-message' in command:
+                Path(command[command.index('--output-last-message') + 1]).write_text('A new scene with an older channel host and clear medical objects. Exact lettering: "5 МИНУТ". Original camera angle, lighting and environment. ' * 3)
+                return subprocess.CompletedProcess(command, 0, 'prompt written', '')
+            self.draw_workspaces.append({p.name for p in Path(kwargs['cwd']).iterdir()})
+            if not (self.studio / 'idea-reference.json').is_file(): self.assertIn('-i', command)
             if picture:
                 path = Path(kwargs["cwd"]) / "Превью v1.png"
                 Image.new("RGB", (16, 9), (0, 0, 255)).save(path)
@@ -184,16 +189,60 @@ class ThumbnailTest(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0 if picture else 1, "ok", "" if picture else "quota")
         return patch.object(subprocess, "run", side_effect=run)
 
-    def test_clone_uses_reference_before_frames_and_conditional_host_without_extra_prompt_author(self):
+    def test_all_clone_writers_pass_only_the_authored_prompt_to_a_fresh_drawing_session(self):
+        Image.new('RGB', (64, 36)).save(self.studio / 'idea-reference.jpg')
+        store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
+        produced = 'An original scene with a new camera angle. Exact lettering: "5 МИНУТ". ' * 4
+        for writer in ('claude', 'deepseek', 'trending'):
+            with self.subTest(writer=writer), self.tools(), \
+                 patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(None, '')), \
+                 patch.object(thumbnail_gen.director, 'channel_settings', return_value={'thumbnail_wishes': 'UNRELATED CHANNEL WISH'}), \
+                 patch.object(thumbnail_gen, 'brief', side_effect=AssertionError('ordinary brief must not run')), \
+                 patch.object(thumbnail_gen, 'trending', side_effect=AssertionError('new concept rules must not run')), \
+                 patch.object(thumbnail_gen, 'write_prompt', return_value=(produced, {})) as claude, \
+                 patch.object(thumbnail_gen, 'write_prompt_deepseek', return_value=(produced, {})) as deepseek, \
+                 patch.object(thumbnail_gen, 'write_prompt_codex', return_value=(produced, {})) as codex:
+                thumbnail_gen.run(self.project['id'], 'Context title', 'Unrelated script', 'Change only the background to blue', writer=writer)
+                self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
+                command, drawing = self.calls[-1]
+                self.assertIn(produced.strip(), drawing['input'])
+                self.assertNotIn('-i', command)
+                self.assertNotIn('idea-reference.jpg', drawing['input'])
+                self.assertNotIn('UNRELATED CHANNEL WISH', drawing['input'])
+                self.assertNotIn('Unrelated script', drawing['input'])
+                self.assertNotEqual(drawing['cwd'], thumbnail_gen.keep_dir(self.project['id']))
+                self.assertEqual(self.draw_workspaces, [set()])
+                author = deepseek if writer == 'deepseek' else codex if writer == 'trending' else claude
+                self.assertIn('Transcribe EVERY visible thumbnail phrase verbatim', author.call_args.args[0])
+                self.assertIn('Change only the background to blue', author.call_args.args[0])
+                self.assertNotIn('UNRELATED CHANNEL WISH', author.call_args.args[0])
+                for image in thumbnail_gen.keep_dir(self.project['id']).glob('*.png'): image.unlink()
+
+    def test_deepseek_clone_gets_primary_image_without_unrelated_style_examples(self):
+        import io
+        import credentials
+        source = Path(self.tmp.name) / 'idea-reference.jpg'
+        Image.new('RGB', (1280, 720)).save(source)
+        response = {'choices': [{'message': {'content': 'Preserve the exact text and composition. ' * 12}}]}
+        with patch.object(credentials, 'vault') as vault, patch.object(thumbnail_gen, 'examples', side_effect=AssertionError('no unrelated images')), \
+             patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(response).encode())) as opened:
+            vault.return_value.read.return_value = 'test-only'
+            thumbnail_gen.write_prompt_deepseek('Keep source text', self.episode, [source])
+        content = json.loads(opened.call_args.args[0].data)['messages'][0]['content']
+        self.assertEqual(len([item for item in content if item['type'] == 'image_url']), 1)
+        self.assertIn('CLONE ANALYSIS SOURCE ONLY', content[1]['text'])
+        self.assertIn('exact lettering', content[1]['text'])
+
+    def test_codex_clone_separates_source_analysis_from_drawing_and_uses_automatic_host(self):
         Image.new('RGB', (32, 18)).save(self.studio / 'idea-reference.jpg')
         store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
         work = thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
         hero = work / 'Головний герой.png';Image.new('RGB', (16, 16)).save(hero)
-        with self.tools(), patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(hero, 'Include this recognizable person prominently')), \
+        with self.tools(), patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(hero, 'Include this recognizable person prominently')) as prepared, \
              patch.object(thumbnail_gen, 'frame_stills') as frames, patch.object(thumbnail_gen, 'write_prompt') as writer:
-            thumbnail_gen.run(self.project['id'], 'Our title', 'Our script', '', writer='trending')
+            thumbnail_gen.run(self.project['id'], 'Our title', 'Our script', '', writer='trending', use_hero=False)
         self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
-        self.assertEqual(len(self.calls), 1);frames.assert_not_called();writer.assert_not_called()
+        self.assertEqual(len(self.calls), 2);frames.assert_not_called();writer.assert_not_called();self.assertIs(prepared.call_args.args[2], True)
         command, sent = self.calls[0]
         self.assertIn(str(work / 'idea-reference.jpg'), command)
         self.assertIn(str(hero), command)
@@ -202,8 +251,14 @@ class ThumbnailTest(unittest.TestCase):
         self.assertIn('Replace this demonstrator with our attached channel hero', sent['input'])
         self.assertIn('people-free', sent['input'])
         self.assertNotIn('Include this recognizable person prominently', sent['input'])
+        draw_command, draw_sent = self.calls[1]
+        self.assertNotIn(str(work / 'idea-reference.jpg'), draw_command)
+        self.assertIn('--ephemeral', draw_command)
+        self.assertNotEqual(draw_sent['cwd'], work)
+        self.assertEqual(self.draw_workspaces, [{'Головний герой.png'}])
+        self.assertNotIn('idea-reference.jpg', draw_sent['input'])
         thumbnail_gen.ACTIVE.clear()
-        with patch.object(thumbnail_gen, 'CODEX', Path(sys.executable)), patch.object(thumbnail_gen.threading, 'Thread'):
+        with patch.object(thumbnail_gen, 'CODEX' , Path(sys.executable)), patch.object(thumbnail_gen.threading, 'Thread'):
             self.assertEqual(thumbnail_gen.start(self.project['id'], 'Our title', 'Our script')['status'], 'running')
 
     def test_a_run_keeps_the_old_thumbnail_and_puts_the_new_one_in_place(self):
@@ -292,6 +347,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual([Image.open(path).getpixel((0, 0))[0] for path in stills], [20, 60, 100])   # first, middle, last
 
     def test_start_needs_a_title_and_two_made_frames(self):
+        self.project['project_kind'] = 'animated'
         with self.assertRaises(store.StudioError):
             thumbnail_gen.start(self.project["id"], " ", "S")
         self.made_frames(1)
@@ -299,6 +355,33 @@ class ThumbnailTest(unittest.TestCase):
             thumbnail_gen.start(self.project["id"], "T", "S")
         self.assertEqual(caught.exception.status, 409)
         self.made_frames(2)
+
+    def test_regular_project_starts_each_writer_without_frames_and_keeps_its_context(self):
+        self.project['project_kind'] = 'regular'
+        data = thumbnail_gen.defaults(self.project['id'])
+        self.assertEqual((data['pictures'], data['min_frames'], data['creation_min_frames']), (0, 0, 0))
+        for writer in ('claude', 'deepseek', 'trending'):
+            thumbnail_gen.ACTIVE.clear()
+            with self.subTest(writer=writer), patch.object(thumbnail_gen, 'CODEX', Path(sys.executable)), \
+                    patch.object(thumbnail_gen.threading, 'Thread') as thread:
+                job = thumbnail_gen.start(self.project['id'], 'Our title', 'Full script.', 'Our wishes', writer=writer)
+                self.assertEqual(job['status'], 'running')
+                self.assertEqual(thread.call_args.kwargs['args'][1:5], ('Our title', 'Full script.', 'Our wishes', writer))
+        thumbnail_gen.ACTIVE.clear()
+        with self.assertRaisesRegex(store.StudioError, 'заголовок'):
+            thumbnail_gen.start(self.project['id'], ' ', 'Full script.')
+
+    def test_animated_frame_requirement_uses_project_kind_and_legacy_channel_fallback(self):
+        self.project['project_kind'] = 'animated'
+        data = thumbnail_gen.defaults(self.project['id'])
+        self.assertEqual((data['min_frames'], data['creation_min_frames']), (2, 2))
+        del self.project['project_kind']
+        self.project['channel_id'] = 'legacy'
+        with patch.object(store, 'get_channel_folder', return_value=self.episode.parent), \
+                patch.object(store, 'channel_animated', return_value=True):
+            self.assertEqual(thumbnail_gen.creation_min_frames(self.project), 2)
+            self.project['project_kind'] = 'regular'
+            self.assertEqual(thumbnail_gen.creation_min_frames(self.project), 0)
 
     def test_a_razgon_episode_takes_its_style_from_frames_drawn_as_code(self):
         razgon = Path(self.tmp.name) / "razgon" / "projects" / "05-test"
