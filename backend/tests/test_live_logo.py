@@ -69,4 +69,46 @@ class LiveLogoTest(unittest.TestCase):
         three=logo_layer.bind({**self.project,'width':640})
         self.assertNotEqual(two['branding_version'],three['branding_version'])
 
+    def test_import_collision_copy_is_removed_and_the_managed_clip_identity_survives(self):
+        current = store.load_project(self.pid)
+        managed_id = logo_layer.clips(current)[0][1]['id']
+        copied = self.root/'channel_logo-4f90ed3f.png'
+        copied.write_bytes(self.logo.read_bytes())
+        current['assets'].append({'id':'copy','path':str(copied),'source':'local'})
+        current['tracks'].insert(0, {'id':'copied-plate','clips':[
+            {'id':'duplicate','asset_id':'copy','title':'Плашка каналу','kind':'image','start':0,'duration':10}]})
+        current['scene_groups'].append({'id':'copied-group','role':'overlay','clip_ids':['duplicate']})
+        store.save_project(current)
+        saved = store.project_path(self.pid).read_bytes()
+        resolved = store.load_project(self.pid)
+        self.assertEqual([c['id'] for _,c in logo_layer.clips(resolved)], [managed_id])
+        self.assertNotIn('duplicate', [c['id'] for t in resolved['tracks'] for c in t['clips']])
+        self.assertFalse(any('duplicate' in group['clip_ids'] for group in resolved['scene_groups']))
+        self.assertEqual(store.project_path(self.pid).read_bytes(), saved)
+        self.assertEqual(resolved['revision'], current['revision'])
+        self.assertTrue(copied.is_file())
+        store.atomic_json(self.channel/store.PLAN_CONFIG, {'logo':{'enabled':False}})
+        disabled = store.load_project(self.pid)
+        self.assertFalse(logo_layer.clips(disabled))
+
+    def test_unrelated_name_plate_with_similar_filename_is_preserved(self):
+        self.project['assets'].append({'id':'portrait','path':str(self.root/'channel_logo-portrait.png'),'source':'local'})
+        self.project['tracks'].append({'id':'portrait-layer','clips':[
+            {'id':'portrait','asset_id':'portrait','title':'Плашка каналу','kind':'image','start':0,'duration':10}]})
+        store.save_project(self.project)
+        resolved = store.load_project(self.pid)
+        self.assertIn('portrait', [c['id'] for t in resolved['tracks'] for c in t['clips']])
+
+    def test_both_frame_briefs_reserve_logo_space_and_assign_branding_to_studio(self):
+        import production
+        project = {**self.project, 'name':'Branding test'}
+        request = {'frames':3,'total_frames':10,'start':0,'end':30}
+        with patch.object(production.channel_branding,'reserved_zone',return_value='reserved corner'), \
+             patch.object(production.director,'channel_settings',return_value={}):
+            for brief in (production.brief, production.photo_brief):
+                text = brief(project, request)
+                self.assertIn('Логотип і плашку каналу додає сама студія.', text)
+                self.assertIn('не імпортуй копій', text)
+                self.assertIn('reserved corner', text)
+
 if __name__=='__main__':unittest.main()

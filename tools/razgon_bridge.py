@@ -234,7 +234,7 @@ def prepare(args) -> None:
     height = int(project.get("height") or 1080)
     width = int(project.get("width") or 1920)
     config_path = target / "config.json"
-    # A new film takes the channel's look from the Studio channel settings: style, text style and logo.
+    # Drawing uses the channel style; Studio alone owns the channel branding layer.
     channel = next((c for c in studio.call("GET", "/api/channels").get("channels", []) if c["id"] == project.get("channel_id")), {})
     animation = (channel.get("settings") or {}).get("animation") or {}
     fresh = not config_path.is_file()
@@ -251,16 +251,9 @@ def prepare(args) -> None:
     config = channel_style(config, animation, args.style, styles)
     config.update({"aspect": "9:16" if height > width else "16:9", "resolution": RESOLUTIONS.get(min(width, height), "1080p"),
                    "fps": fps, "voiceover": "input/" + voice_dst.name, "script": "input/script.txt", "duration": round(duration, 3)})
-    if not config.get("overlay") and channel:
-        logo = target / "input" / "channel_logo.png"
-        frame_w, frame_h = (width, height)
-        try:
-            request = urllib.request.Request(f"{studio.url}/api/channels/{channel['id']}/logo-overlay.png?w={frame_w}&h={frame_h}")
-            with urllib.request.urlopen(request, timeout=60) as response:
-                logo.write_bytes(response.read())
-            config["overlay"] = "input/channel_logo.png"
-        except urllib.error.HTTPError:
-            pass   # no logo, or switched off for this channel
+    # Reused workspaces can still contain the former copied channel plate.
+    # It must not become part of animation drawing or be imported onto the timeline.
+    config.pop("overlay", None)
     write_json(config_path, config)
 
     sentences = [{"i": i, "start": item["start"], "end": item["end"], "text": item["text"]} for i, item in enumerate(timing["sentences"])]
@@ -653,35 +646,8 @@ def _bed_from_whole_mix(razgon: Path, MIX) -> Path | None:
 
 
 def ensure_overlay(studio: "Studio", razgon: Path, project: dict, duration: float) -> dict:
-    """Put the channel plashka (config.json "overlay", a transparent full-frame PNG) on the top layer of the Studio
-    timeline for the whole video, as its own "Плашка каналу" frame group, so it is seen in the editor and in exports."""
-    config = read_json(razgon / "config.json")
-    if not config.get("overlay"):
-        return project
-    image = (razgon / config["overlay"]).resolve()
-    if not image.is_file():
-        raise BridgeError(f"Немає файлу плашки: {image}")
-    old = next((clip for _, clip in all_clips(project) if clip.get("title") == OVERLAY_TITLE), None)
-    if old and abs(old["start"]) < 1e-3 and abs(old["start"] + old["duration"] - duration) < 1e-3:
-        # clips added later (frames, sketches) get new layers on top: keep the plashka layer above all of them
-        top = len(project["tracks"]) - 1
-        layer = next(track for track in project["tracks"] if any(c["id"] == old["id"] for c in track.get("clips", [])))
-        if project["tracks"].index(layer) != top:
-            project = studio.batch(project, [{"type": "move_layer", "payload": {"layer_id": layer["id"], "to_index": top}}])
-        return project
-    if old:
-        project = studio.batch(project, [{"type": "delete_clip", "payload": {"clip_id": old["id"]}}])
-    asset = studio.import_file(project["id"], image)
-    project = studio.project(project["id"])   # importing the file bumps the revision
-    project = studio.batch(project, [{"type": "add_layer", "payload": {"name": OVERLAY_TITLE, "to_index": len(project["tracks"])}}])
-    layer = [track for track in project["tracks"] if track.get("name") == OVERLAY_TITLE and not track.get("clips")][-1]
-    project = studio.batch(project, [{"type": "add_clip", "payload": {"layer_id": layer["id"], "kind": "image", "asset_id": asset["id"],
-                                                                      "start": 0, "duration": duration, "title": OVERLAY_TITLE}}])
-    clip = next(clip for _, clip in all_clips(project) if clip.get("title") == OVERLAY_TITLE)
-    # Studio may already attach the channel plate to its managed overlay group when adding the clip.
-    if any(clip["id"] in group.get("clip_ids", []) for group in project.get("scene_groups", [])):
-        return project
-    return studio.batch(project, [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": OVERLAY_TITLE, "role": "overlay"}}])
+    """Compatibility hook. Branding is resolved by Studio, never by the animation bridge."""
+    return project
 
 
 def overlay(args) -> None:
@@ -689,7 +655,7 @@ def overlay(args) -> None:
     link = read_json(razgon / "story" / "studio_frames.json")
     studio = Studio(args.studio_url or link["studio_url"])
     project = ensure_overlay(studio, razgon, studio.project(link["project_id"]), float(link["duration"]))
-    print("Плашка каналу на таймлайні: " + ("так" if any(c.get("title") == OVERLAY_TITLE for _, c in all_clips(project)) else "немає overlay у config.json"))
+    print("Оформлення каналу додає студія: " + ("увімкнено" if any(c.get("channel_logo") or c.get("title") == LOGO_TITLE for _, c in all_clips(project)) else "вимкнено"))
 
 
 def push(args) -> None:
@@ -1238,7 +1204,7 @@ def main() -> None:
     w.add_argument("--razgon", required=True)
     w.add_argument("--studio-url")
     w.set_defaults(run=sound)
-    o = sub.add_parser("overlay", help="покласти плашку каналу (config.json overlay) верхнім шаром на весь ролик")
+    o = sub.add_parser("overlay", help="перевірити оформлення каналу, яким керує студія")
     o.add_argument("--razgon", required=True)
     o.add_argument("--studio-url")
     o.set_defaults(run=overlay)

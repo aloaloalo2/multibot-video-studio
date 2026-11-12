@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -19,7 +20,8 @@ def clips(project: dict):
         asset=assets.get(clip.get('asset_id'),{})
         return (clip.get('channel_logo') is True or clip.get('title')==LOGO_TITLE
                 or asset.get('source')=='channel-logo'
-                or (clip.get('title')=='Плашка каналу' and Path(asset.get('path','')).name=='channel_logo.png'))
+                or (clip.get('title')=='Плашка каналу'
+                    and re.fullmatch(r'channel_logo(?:-[0-9a-f]{8})?\.png', Path(asset.get('path','')).name, re.I)))
     return [(track,clip) for track in project.get('tracks',[]) for clip in track.get('clips',[]) if managed(clip)]
 
 
@@ -57,7 +59,7 @@ def bind(project: dict) -> dict:
     project['branding_version']=stamp or 'off'
     if not current and not visible:return project
     # Keep one stable clip/row identity so selection and saved references survive replacement.
-    track,clip=current[0] if current else ({'id':'channel-logo-layer','name':LOGO_TITLE,'type':'universal','clips':[]},
+    track,clip=next((item for item in current if item[1].get('channel_logo') is True), current[0]) if current else ({'id':'channel-logo-layer','name':LOGO_TITLE,'type':'universal','clips':[]},
         {'id':'channel-logo-clip','kind':'image','start':0,'duration':duration,'trim_start':0,'volume':1,
          'x':.5,'y':.5,'width':1,'height':1,'scale':1,'opacity':1,'keyframes':[],
          'transition':{'type':'cut','duration':0}})

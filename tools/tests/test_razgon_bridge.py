@@ -63,22 +63,42 @@ class FrameSlotsTest(unittest.TestCase):
             razgon_bridge.channel_style({}, {'style':'custom-missing'})
         self.assertEqual(razgon_bridge.channel_style({}, {'style':'care'},'dusk')['style'],'dusk')
 
-    def test_channel_plate_already_grouped_by_studio_is_not_grouped_twice(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            (root / "plate.png").write_bytes(b"fixture")
-            (root / "config.json").write_text(json.dumps({"overlay": "plate.png"}))
-            initial = {"id": "p", "tracks": [], "scene_groups": []}
-            layer = {"id": "t", "name": razgon_bridge.OVERLAY_TITLE, "clips": []}
-            added_layer = {**initial, "tracks": [layer]}
-            clip = {"id": "c", "title": razgon_bridge.OVERLAY_TITLE, "start": 0, "duration": 10}
-            grouped = {**initial, "tracks": [{**layer, "clips": [clip]}],
-                       "scene_groups": [{"id": "managed", "role": "overlay", "clip_ids": ["c"]}]}
-            studio = SimpleNamespace(import_file=Mock(return_value={"id": "a"}), project=Mock(return_value=initial),
-                                     batch=Mock(side_effect=[added_layer, grouped]))
-            self.assertIs(razgon_bridge.ensure_overlay(studio, root, initial, 10), grouped)
-            self.assertEqual(studio.batch.call_count, 2)
-            self.assertFalse(any(a["type"] == "group_clips" for call in studio.batch.call_args_list for a in call.args[1]))
+    def test_animation_bridge_never_adds_moves_or_imports_channel_branding(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root/'config.json').write_text(json.dumps({'overlay':'missing-old-plate.png'}))
+                clips = [{'id':'managed','title':'Логотип каналу','channel_logo':True}] if enabled else []
+                project = {'id':'p','branding_version':'current' if enabled else 'off',
+                           'tracks':[{'id':'logo-layer','clips':clips}],'scene_groups':[]}
+                studio = Mock()
+                self.assertIs(razgon_bridge.ensure_overlay(studio, root, project, 10), project)
+                self.assertEqual(studio.mock_calls, [])
+
+    def test_prepare_uses_studio_branding_for_new_and_reused_animation_workspaces(self):
+        for reused in (False, True):
+            with self.subTest(reused=reused), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder); (root/'render.mjs').write_text('')
+                source = root/'source.wav'; source.write_bytes(b'voice fixture')
+                target = root/'projects/demo'; target.mkdir(parents=True)
+                if reused:
+                    (target/'config.json').write_text(json.dumps({'overlay':'input/channel_logo.png','style':'dusk'}))
+                project = {'id':'p','name':'Test','channel_id':'c','episode_path':str(root/'episode'),'fps':25,'width':1920,'height':1080}
+                plan = {'script':'Spoken words.','script_sha256':'script',
+                        'timing':{'status':'audio_synced','audio':{'duration':10},
+                                  'sentences':[{'text':'Spoken words.','start':0,'end':10}]},
+                        'frames':[{'number':1,'start':0,'end':10,'sentences':['Spoken words.'],'format':'razgon_2d'}]}
+                def call(method, path, *args):
+                    return {'channels':[{'id':'c','settings':{'animation':{'style':'dusk'}}}]} if path=='/api/channels' else {}
+                studio = SimpleNamespace(url='http://fixture',project=Mock(return_value=project),plan=Mock(return_value=plan),call=Mock(side_effect=call))
+                args = SimpleNamespace(studio_url='http://fixture',project_id='p',studio_dir=str(root),slug=None,style=None)
+                with patch.object(razgon_bridge,'Studio',return_value=studio), \
+                     patch.object(razgon_bridge,'episode_target',return_value=target), \
+                     patch.object(razgon_bridge,'voice_asset',return_value={'id':'voice','path':str(source)}), \
+                     patch.object(razgon_bridge.urllib.request,'urlopen',side_effect=AssertionError('Animation must not fetch branding')):
+                    razgon_bridge.prepare(args)
+                self.assertNotIn('overlay',json.loads((target/'config.json').read_text()))
+                self.assertFalse((target/'input/channel_logo.png').exists())
 
     def test_reset_frames_go_back_from_a_rendered_clip_to_a_code_block(self):
         link = {"project_id": "p" * 24, "fps": 25, "duration": 10.0,
