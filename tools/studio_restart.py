@@ -71,6 +71,11 @@ def listener() -> int | None:
     return int(out[0]) if out else None
 
 
+def listener_root(pid: int) -> Path | None:
+    result = subprocess.run(['lsof', '-a', '-p', str(pid), '-d', 'cwd', '-Fn'], capture_output=True, text=True)
+    return next((Path(line[1:]).resolve() for line in result.stdout.splitlines() if line.startswith('n')), None)
+
+
 def prepare() -> bool:
     request=urllib.request.Request(STUDIO+'/api/studio/restart/prepare',data=b'{}',headers={'Content-Type':'application/json'},method='POST')
     try:
@@ -112,10 +117,18 @@ def start() -> int:
 
 
 def main():
+    global APP
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="лише показати, що зараз виконується, нічого не змінювати")
     parser.add_argument("--force", action="store_true", help="перезапустити, навіть якщо щось виконується")
+    parser.add_argument("--stop-only", action="store_true", help="лише безпечно зупинити перед відновленням оновлень")
+    parser.add_argument("--root", type=Path, help="папка студії для одноразового відновлення оновлень")
     args = parser.parse_args()
+    if args.root:
+        candidate=args.root.resolve()
+        if not (candidate/'backend/app.py').is_file() or not (candidate/'.git').exists():
+            sys.exit('Це не папка VideoKey Studio з Git.')
+        APP=candidate
 
     running = alive()
     work = busy_work() if running else []
@@ -128,12 +141,18 @@ def main():
         sys.exit("Перезапуск обірве це. Дочекайтеся завершення або запустіть з --force, якщо користувач погодив.")
 
     old = listener()
+    if old and args.stop_only:
+        if not running:sys.exit('Порт студії зайнятий іншою програмою. Її залишено без змін.')
+        if listener_root(old)!=APP.resolve():sys.exit('Запущено іншу копію студії. Її залишено без змін.')
     if old and running and not args.force:
         if not prepare():
             again=busy_work()
             if again:sys.exit('Перезапуск не виконано: '+', '.join(again))
     if old and not stop(old):
         sys.exit(f"Стара студія (pid {old}) не зупинилася за 10 с, нову не запускаю")
+    if args.stop_only:
+        print('Студію безпечно зупинено.' if old else 'Студія вже зупинена.')
+        return
     pid = start()
     print(f"Студію запущено окремо від сесії агента: pid {pid}, {STUDIO}/")
 

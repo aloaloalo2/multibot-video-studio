@@ -1,21 +1,16 @@
 /* Check for a new Studio version without interrupting the current project. */
 const updateButton = document.getElementById('studio-update');
-// The button wears a download mark (an arrow into a tray); a stopped update shows a warning mark instead.
+// Updating code keeps local edits in a recovery point; the normal action stays a single Update button.
 const updateIcons={download:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>',
   reload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>',
   warning:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4L12 4zM12 10v4.5M12 17.2v.3"/></svg>'};
 function setUpdateLabel(text,icon){updateButton.innerHTML=`${updateIcons[icon] || ''}<span>${text}</span>`;}
 let updateBoot = null, updateWaiting = false, updatePageOutdated = false, updateTimer = null, updateBlocked = null;
 
-// Why a new version cannot arrive, in plain words, and what to do (backend/updater.py names the files or the branch).
+// Only genuine personal-data conflicts need an explanation before changing files.
 function updateReasonHtml(state){
   const files=(state.files||[]).map(name=>`<li><code>${esc(name)}</code></li>`).join('')+(state.more?`<li>і ще ${state.more}</li>`:'');
-  const after='<p>Після цього кнопка «Оновити студію» з’явиться сама.</p>';
-  if(state.status==='local_changes')return `<p>На GitHub є нова версія студії. Оновлення зупинилося, бо в папці студії на цьому комп’ютері є змінені або зайві файли, і студія не хоче їх затерти.</p><ul>${files}</ul><p>Попросіть агента переглянути ці файли: потрібне зберегти в Git, зайве прибрати.</p>${after}`;
-  if(state.status==='diverged')return `<p>На GitHub є нова версія студії, а на цьому комп’ютері є свої зміни коду, яких на GitHub немає. Студія не змішує їх сама.</p><p>Попросіть агента об’єднати ці зміни з версією на GitHub.</p>${after}`;
-  if(state.status==='unsafe_update')return `<p>Нова версія студії замінила б файл, якого немає в Git:</p><ul>${files}</ul><p>Перенесіть цей файл з папки студії в інше місце або попросіть агента розібратися.</p>${after}`;
-  if(state.status==='other_branch')return `<p>Папка студії стоїть на гілці «${esc(state.branch||'')}», тому нові версії з main сюди не приходять. Так буває, коли агент перемкнув папку на свою гілку для роботи.</p><p>Коли агент закінчить, попросіть його злити гілку в main і повернути папку на main.</p>${after}`;
-  if(state.status==='update_failed')return `<p>На GitHub є нова версія студії, але на цьому комп’ютері вона не запустилася, тому студія лишилась на попередній версії і працює як раніше.</p><p>Найчастіше нової версії бракує якогось пакета. Попросіть агента: «перевір студію командою python3 tools/doctor.py і встанови, чого бракує».</p>${state.error?`<details><summary>Технічна причина</summary><pre>${esc(state.error)}</pre></details>`:''}${after}`;
+  if(state.status==='unsafe_update')return `<p>Ця версія зачепила б особисті дані або ключі доступу. Їх залишено на місці.</p><ul>${files}</ul><p>Потрібно виправити склад оновлення на GitHub.</p>`;
   return '';
 }
 
@@ -41,8 +36,9 @@ async function pollStudioUpdates(){
     }
     if(!updateWaiting && !updatePageOutdated && !updateQueued){
       updateBlocked=updateReasonHtml(result)?result:null;
-      updateButton.hidden=result.status!=='available'&&!updateBlocked;
-      setUpdateLabel(updateBlocked?'Оновлення зупинене':'Оновити студію',updateBlocked?'warning':'download');
+      updateButton.hidden=!['available','update_failed','local_changes','diverged','other_branch'].includes(result.status)&&!updateBlocked;
+      setUpdateLabel('Оновити студію','download');
+      updateButton.title=result.error||'Локальні правки коду буде збережено в резервну копію.';
       updateButton.classList.toggle('update-blocked',!!updateBlocked);
     }
   }catch{}
@@ -76,7 +72,7 @@ async function applyStudioUpdate(){
 }
 updateButton.addEventListener('click',()=>{
   if(updatePageOutdated){location.reload();return;}
-  if(updateBlocked){modal('Оновлення зупинене',updateReasonHtml(updateBlocked),[]);return;}
+  if(updateBlocked){modal('Не вдалося оновити',updateReasonHtml(updateBlocked),[]);return;}
   if(updateQueued){updateNote('Оновлення почнеться саме, щойно робота закінчиться.');return;}
   applyStudioUpdate();
 });

@@ -5,7 +5,7 @@
     python3 tools/doctor.py --install  # also puts in what can be put in without the author: Python packages,
                                        # the speech model, the Razgon studio's packages
 
-Run it on a new Mac after cloning, or when «Оновлення зупинене» says a new version did not start.
+Run it on a new Mac after cloning, or when a new version cannot start.
 """
 from __future__ import annotations
 
@@ -124,10 +124,10 @@ def main(argv=None) -> int:
                  "offline": "GitHub зараз недоступний", "not_configured": "папка не прив'язана до GitHub",
                  "local_changes": "у папці студії є змінені файли", "diverged": "є свої зміни, яких немає на GitHub",
                  "other_branch": f"папка стоїть на гілці «{state.get('branch')}», а не на main",
-                 "unsafe_update": "оновлення замінило б файл поза Git", "update_failed": "нова версія не запустилася на цьому Mac"}
+                 "unsafe_update": "оновлення зачіпає особисті дані або ключі", "update_failed": "нова версія не запустилася на цьому Mac"}
         good = state["status"] in {"current", "available", "offline"}
         report.line(good, f"оновлення з GitHub: {words.get(state['status'], state['status'])}",
-                    "попросіть агента повернути папку на main і зберегти або прибрати зміни")
+                    "перевірте технічну причину; локальні правки коду зберігаються автоматично")
     except Exception as error:
         report.line(False, "оновлення з GitHub", str(error)[:200])
 

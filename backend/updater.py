@@ -4,8 +4,11 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
+
+from update_backup import UpdateBackup
 
 
 class UpdateError(Exception):
@@ -17,7 +20,7 @@ class Updater:
         self.root = Path(root).resolve()
         self.lock = threading.RLock()
         self.state = {'status': 'not_configured'}
-        self.failed = None   # a GitHub version that did not load here: offered again only when a newer one comes
+        self.failed = None   # A failed version stays available for an explicit retry after fixing dependencies.
 
     def git(self, *arguments, check=True, timeout=30):
         env = dict(os.environ, GIT_TERMINAL_PROMPT='0', GCM_INTERACTIVE='never')
@@ -33,57 +36,32 @@ class Updater:
     def text(self, *arguments):
         return self.git(*arguments).stdout.decode('utf-8', 'replace').strip()
 
-    def _changed_files(self):
-        """Files of the studio folder that differ from Git or are not in it (ignored ones aside)."""
-        out = self.git('status', '--porcelain=v1', '-z', '--untracked-files=all').stdout.split(b'\0')
-        names, skip = [], False
-        for entry in out:
-            if skip:          # the old name of a renamed file
-                skip = False
-                continue
-            if len(entry) > 3:
-                names.append(os.fsdecode(entry[3:]))
-                skip = entry[:1] in (b'R', b'C')
-        return names
-
-    def _off_main(self):
-        """The branch the folder stands on when it is not main and GitHub's main has commits it lacks: such a
-        folder never receives the new versions (an agent switched it to its own branch and left it there)."""
-        branch = self.text('rev-parse', '--abbrev-ref', 'HEAD')
-        if branch == 'main' or self.git('rev-parse', '--verify', '--quiet', 'origin/main', check=False).returncode:
-            return None
-        if self.git('merge-base', '--is-ancestor', 'origin/main', 'HEAD', check=False).returncode == 0:
-            return None
-        return branch
+    @staticmethod
+    def protected(name):
+        parts = Path(name).parts
+        normalized = '/'.join(parts).casefold()
+        return (normalized == 'backend' or normalized == 'backend/data' or normalized.startswith('backend/data/')
+                or any(part.casefold() == '.env' or (part.casefold().startswith('.env.')
+                       and part.casefold() not in {'.env.example', '.env.sample', '.env.template'})
+                       or part.casefold().endswith(('.key', '.pem')) for part in parts))
 
     def _inspect(self):
-        """What an update would do now. A blocked update says why: the files in the way, or the branch."""
+        """Offer new main commits; local code is preserved automatically when applying them."""
         if not (self.root / '.git').exists():
             return {'status': 'not_configured'}
-        upstream = self.git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}', check=False)
-        if upstream.returncode or not upstream.stdout.decode('utf-8', 'replace').strip().startswith('origin/'):
-            branch = self._off_main()
-            return {'status': 'other_branch', 'branch': branch} if branch else {'status': 'not_configured'}
+        if self.git('rev-parse', '--verify', '--quiet', 'origin/main', check=False).returncode:
+            return {'status': 'not_configured'}
         local = self.text('rev-parse', 'HEAD')
-        remote = self.text('rev-parse', '@{upstream}')
-        if local == remote:
-            branch = self._off_main()
-            return {'status': 'other_branch', 'branch': branch} if branch else {'status': 'current'}
-        changed = self._changed_files()
-        if changed:
-            return {'status': 'local_changes', 'files': changed}
-        if self.git('merge-base', '--is-ancestor', 'HEAD', '@{upstream}', check=False).returncode != 0:
-            return {'status': 'diverged'}
-        changed = self.git('diff', '--name-only', '-z', 'HEAD', '@{upstream}').stdout.split(b'\0')
-        tracked = set(self.git('ls-files', '-z').stdout.split(b'\0'))
+        remote = self.text('rev-parse', 'origin/main')
+        if local == remote or self.git('merge-base', '--is-ancestor', remote, 'HEAD', check=False).returncode == 0:
+            return {'status': 'current'}
+        changed = self.git('diff', '--name-only', '-z', 'HEAD', remote).stdout.split(b'\0')
         for raw in filter(None, changed):
             name = os.fsdecode(raw)
-            if name == 'backend/data' or name.startswith('backend/data/'):
-                return {'status': 'unsafe_update', 'files': [name]}
-            if raw not in tracked and (self.root / name).exists():
+            if self.protected(name):
                 return {'status': 'unsafe_update', 'files': [name]}
         if remote == self.failed:
-            return {'status': 'update_failed', 'error': self.state.get('error', '')}
+            return {'status': 'update_failed', 'revision': remote, 'error': self.state.get('error', '')}
         return {'status': 'available', 'revision': remote}
 
     def refresh(self):
@@ -108,7 +86,10 @@ class Updater:
             return None
         check = 'import sys; sys.path[:0] = ["backend", "engine"]; import app'
         try:
-            result = subprocess.run([sys.executable, '-c', check], cwd=str(self.root), capture_output=True, timeout=120)
+            with tempfile.TemporaryDirectory(prefix='videokey-import-check-') as cache:
+                # Read fresh source without leaving new bytecode behind for a possible rollback.
+                result = subprocess.run([sys.executable, '-B', '-X', 'pycache_prefix=' + cache, '-c', check],
+                                        cwd=str(self.root), capture_output=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return str(exc)
         return None if result.returncode == 0 else result.stderr.decode('utf-8', 'replace').strip()[-600:]
@@ -118,20 +99,33 @@ class Updater:
         studio always starts (31 October 2026: a new package missing on the Mac would otherwise leave it dead)."""
         with self.lock:
             state = self._inspect()
-            if state['status'] != 'available':
-                raise UpdateError('Оновлення недоступне або є незбережені зміни програми.')
-            before = self.text('rev-parse', 'HEAD')
-            self.git('merge', '--ff-only', '--no-edit', state['revision'])
-            problem = self.starts()
-            if problem:
-                self.git('reset', '--keep', before)
+            if state['status'] not in {'available', 'update_failed'}:
+                raise UpdateError('Оновлення зараз недоступне.')
+            backup = None
+            try:
+                backup = UpdateBackup(self, state['revision'])
+                backup.prepare()
+                self.git('checkout', '-B', 'main', state['revision'])
+                backup.checked_out()
+                problem = self.starts()
+                if problem:
+                    raise UpdateError(problem)
+                backup.complete()
+            except Exception as error:
+                problem = str(error)
+                if backup:
+                    try:
+                        backup.restore()
+                    except Exception:
+                        problem += '\nНе вдалося автоматично повернути всі файли. Резервна копія: ' + str(backup.folder)
                 self.failed = state['revision']
-                self.state = {'status': 'update_failed', 'error': problem}
-                raise UpdateError('Нова версія студії не запускається на цьому комп’ютері, тому студія лишилась на попередній.')
-            self.state = {'status': 'current'}
+                self.state = {'status': 'update_failed', 'error': problem, 'backup': str(backup.folder) if backup else None}
+                raise UpdateError('Не вдалося оновити студію. Попередні файли збережено; можна спробувати ще раз.') from error
+            self.failed = None
+            self.state = {'status': 'current', 'backup': str(backup.folder)}
 
     def public_state(self):
-        """The status for the page; a blocked update also names up to eight files in the way, or the branch."""
+        """Compact readiness, genuine failures, protected paths and the local recovery point."""
         with self.lock:
             state = {'status': self.state['status']}
             if self.state.get('files'):
@@ -140,13 +134,15 @@ class Updater:
                 state['branch'] = self.state['branch']
             if self.state.get('error'):
                 state['error'] = self.state['error'][-400:]
+            if self.state.get('backup'):
+                state['backup'] = self.state['backup']
             return state
 
 
 def update_at_start(root):
     manager = Updater(root)
     status = manager.refresh()['status']
-    if status == 'available':
+    if status in {'available', 'update_failed'}:
         try:
             manager.apply()
             return 'updated'
@@ -162,5 +158,5 @@ if __name__ == '__main__':
             print('Студію оновлено.')
         elif outcome == 'error':
             print('Нова версія не запускається на цьому комп’ютері: студія лишилась на попередній. Причину показує кнопка у студії.')
-        elif outcome in {'local_changes', 'diverged', 'unsafe_update', 'other_branch'}:
-            print('Оновлення пропущено: причину показує кнопка «Оновлення зупинене» у студії.')
+        elif outcome == 'unsafe_update':
+            print('Оновлення зачіпає особисті дані або ключі. Файли залишено на місці.')

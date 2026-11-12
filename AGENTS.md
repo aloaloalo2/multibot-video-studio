@@ -202,20 +202,15 @@ slower, and the settings say so. An all-Razgon film keeps the bridge's own encod
 is no longer in the settings: photos move with the saved `motion_easing`, «Плавно» (ease_in_out) by default. Tests:
 `backend/tests/test_agent_tools.py`, `backend/tests/test_updater.py`, `engine/tests/test_still_window.py`.
 
-## Updates say why they stop (31 October 2026)
+## One-click updates with local code recovery (12 November 2026)
 
-The studio updates itself from GitHub (`backend/updater.py`: a fetch every 2 minutes, «Оновити студію» when the
-folder's branch on GitHub is ahead, a fast-forward and a restart on the click; «Запустить студию.command» updates before
-it starts). An update that cannot run no longer hides: the button reads «Оновлення зупинене» and its dialog
-(`frontend/updates.js`, `updateReasonHtml`) says why and what to do. `local_changes` names the changed or stray files
-of the folder (ignored ones aside, up to eight and a count), `diverged` means local commits GitHub lacks,
-`unsafe_update` names the untracked file the update would replace, `other_branch` names the branch the folder stands
-on while GitHub's main has commits it lacks (an agent switched the folder and left it). Changed files while nothing new
-waits on GitHub read as `current`: no notice for an author or agent at work. A new version that does not load on this
-Mac (`Updater.starts` imports the server; a package missing, a syntax error) is taken back with `git reset --keep` and
-reads `update_failed` with the error until a newer version comes; the button never restarts the studio while any work
-of `agent_view.studio_status` runs (director, frame agent, thumbnail, the studio's agent, not only exports and speech).
-The fetch runs outside the updater's lock. `requirements.txt` lists the Python packages and `tools/doctor.py
+The studio fetches GitHub every two minutes. «Оновити студію» applies new origin/main commits even with local code edits, private local commits, another branch or an untracked code collision. Do not show a blocking local-changes dialog or require an agent to merge an installation manually. Before checkout, update_backup creates a private manifest under the Git directory's studio-update-backups, preserves HEAD/main in refs/studio-update-backups, saves staged and unstaged tracked edits with a native Git stash, and moves only untracked/ignored paths the new code would replace. Unrelated untracked files stay in place. Never clean the installation, discard code without a recovery point, publish backup refs or follow a colliding symlink into another folder. Existing local main history must also be saved when updating from another branch.
+
+Project storage, settings and real .env/key/PEM files cannot be replaced by a release. A fresh-source import check uses an isolated bytecode location. Any checkout/import failure restores the original branch, HEAD, index, working text and moved collision paths, preserving the recovery point. A failed build retains its real error and permits an explicit retry of the same version after dependencies are fixed. No automatic retry loop. Working commits containing the current main stay current until genuinely new main commits arrive.
+
+«Оновити студію.command» is the one-time macOS bootstrap for an older blocked updater. It asks for the actual checkout, fetches only the configured official origin, extracts updater/update_backup/studio_restart from one Git revision into a temporary folder, and uses studio_restart --root --stop-only before updating. That stop checks all jobs and verifies the listener's working folder; another copy or an unrelated service is preserved. The helper restarts the updated or restored installation through the normal tool. Keep its executable bit in the downloadable ZIP. Opening the helper never bypasses active-job guards.
+
+The normal update button keeps the existing server-side queue while any work of agent_view.studio_status runs (director, frame agent, thumbnail, narration, writing or exports). The fetch runs outside the updater's lock. requirements.txt lists the Python packages and tools/doctor.py
 [--install]` checks a Mac end to end (packages, ffmpeg, node, the Whisper model, Claude, Codex, the Pixabay key,
 Razgon's node_modules, the update state, that the server loads). `backend/waveforms.py` reads PCM peaks with `array`
 (audioop is gone from Python 3.13). Tests: `backend/tests/test_updater.py`, `tools/tests/test_doctor.py`.
