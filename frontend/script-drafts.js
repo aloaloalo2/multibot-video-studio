@@ -12,6 +12,7 @@ function scriptDraftEntry(project){
   let entry=scriptDraftCache.get(project.id);
   const epoch=project.restarted_at||0;
   if(entry&&entry.epoch!==epoch){clearTimeout(entry.timer);scriptDraftCache.delete(project.id);entry=null;}
+  if(entry&&typeof state!=='undefined'&&state.episodeDraft?.project_id===project.id){acceptScriptRevision(project,state.episodeDraft);entry=scriptDraftCache.get(project.id);}
   if(entry?.localOnly&&!entry.dirty&&entry.pending&&project.voice_script?.text===entry.text)commitScriptDraft(project,project.voice_script);
   if(entry?.loaded&&project.voice_script?.sha256&&entry.base_sha256!==project.voice_script.sha256&&!entry.dirty&&!entry.pending&&!entry.saving){entry.loaded=false;entry.text=undefined;entry.originalSHA=project.voice_script.sha256;}
   if(!entry){
@@ -49,12 +50,21 @@ function scriptDraftNotify(entry){
     const empty=scriptDraftCanCreateOpenings(entry);
     const pending=typeof state!=='undefined'&&state.episodeDraft?.project_id===entry.pid&&typeof episodeDraftPending==='function'&&episodeDraftPending(state.episodeDraft);
     if(create){create.hidden=!empty||!!pending;create.disabled=!!entry.openingsStarting;}
-    const label=box.querySelector('.script-draft-status');label.textContent=text;label.title=entry.error||'';label.hidden=!!create&&empty;
-    const editing=box.querySelector('.script-editing-open');if(editing)editing.hidden=empty;
+    const hasScript=!!entry.text?.trim();
+    const label=box.querySelector('.script-draft-status');label.textContent=text;label.title=entry.error||'';
+    label.hidden=!entry.error&&(!hasScript||entry.loaded&&!entry.dirty&&!entry.saving&&!entry.localOnly);
+    const editing=box.querySelector('.script-editing-open');if(editing)editing.hidden=!hasScript||!!pending;
     const retry=box.querySelector('.script-draft-retry');retry.hidden=!entry.error;retry.title=entry.conflict?'Зберегти мою версію':'Повторити збереження';retry.setAttribute('aria-label',retry.title);
     box.querySelector('.script-draft-history').hidden=!entry.history_count;
   }
   if(typeof updateProjectNextAction==='function')updateProjectNextAction();
+}
+function acceptScriptRevision(project,data){
+  const entry=scriptDraftCache.get(project.id),base=data.revision_base;
+  if(!data.manual_revision||data.status!=='done'||!base||!entry||entry.dirty||entry.saving||entry.version!==base.version||entry.sha256!==base.sha256)return;
+  clearTimeout(entry.timer);scriptDraftCache.delete(project.id);
+  try{localStorage.removeItem(scriptDraftLocalKey(entry));}catch{}
+  if(typeof voiceScriptDraft!=='undefined')delete voiceScriptDraft[project.id];
 }
 async function ensureScriptDraft(project){
   const entry=scriptDraftEntry(project);

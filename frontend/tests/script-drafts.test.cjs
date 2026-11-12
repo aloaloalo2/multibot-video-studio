@@ -118,3 +118,40 @@ test('empty loaded manual projects show the openings action only after safe draf
   assert.equal(can({loaded:true,text:'  '}),true);
   for(const entry of [{loaded:false,text:''},{loaded:true,text:'Script'},{loaded:true,text:'',dirty:true},{loaded:true,text:'',saving:true},{loaded:true,text:'',error:'offline'},{loaded:true,text:'',conflict:true}])assert.equal(can(entry),false);
 });
+
+test('empty scripts have no saved label or Opus action and saved scripts use the action without redundant text',()=>{
+  const h=fixture(),entry=h.c.scriptDraftEntry(h.project),label={},editing={},create={},retry={setAttribute(){}},history={};
+  const box={isConnected:true,querySelector:selector=>({'.script-draft-status':label,'.script-editing-open':editing,'.script-draft-create-openings':create,'.script-draft-retry':retry,'.script-draft-history':history})[selector]};
+  entry.labels.add(box);entry.loaded=true;entry.text='';h.c.scriptDraftNotify(entry);
+  assert.equal(label.hidden,true);assert.equal(editing.hidden,true);assert.equal(create.hidden,false);
+  entry.text='Complete script.';h.c.scriptDraftNotify(entry);
+  assert.equal(label.hidden,true);assert.equal(editing.hidden,false);assert.equal(create.hidden,true);
+  entry.error='Saving failed';h.c.scriptDraftNotify(entry);assert.equal(label.hidden,false);
+});
+
+test('completed Opus wishes refresh only the exact working draft used for the request',async()=>{
+  const h=fixture();await h.c.ensureScriptDraft(h.project);const entry=h.c.scriptDraftEntry(h.project);
+  const done={manual_revision:true,status:'done',revision_base:{version:entry.version,sha256:entry.sha256}};
+  h.c.acceptScriptRevision(h.project,done);assert.notEqual(h.c.scriptDraftEntry(h.project),entry);
+  await h.c.ensureScriptDraft(h.project);const current=h.c.scriptDraftEntry(h.project);
+  h.c.editScriptDraft(h.project,'Newer local changes.');
+  h.c.acceptScriptRevision(h.project,{...done,revision_base:{version:current.version,sha256:current.sha256}});
+  assert.equal(h.c.scriptDraftEntry(h.project),current);assert.equal(current.text,'Newer local changes.');
+});
+
+test('Opus action stays hidden throughout the inline writing workflow even with a cached first draft',async()=>{
+  const h=fixture(),entry=await h.c.ensureScriptDraft(h.project),editing={},label={},create={},retry={setAttribute(){}},history={};
+  entry.labels.add({isConnected:true,querySelector:selector=>({'.script-draft-status':label,'.script-editing-open':editing,'.script-draft-create-openings':create,'.script-draft-retry':retry,'.script-draft-history':history})[selector]});
+  h.c.state={episodeDraft:null};h.c.episodeDraftPending=data=>!!data?.project_id&&!data.completed&&!data.cancelled&&data.status!=='cancelled';
+  for(const stage of ['openings','script','editing','metadata']){
+    for(const status of ['queued','running','cancelling','failed']){
+      h.c.state.episodeDraft={project_id:h.project.id,stage,status,completed:false,script_saved:true};
+      h.c.scriptDraftNotify(entry);assert.equal(editing.hidden,true,stage+' '+status);
+    }
+  }
+  h.c.state.episodeDraft={project_id:'another-project',stage:'editing',status:'running'};
+  h.c.scriptDraftNotify(entry);assert.equal(editing.hidden,false);
+  h.c.state.episodeDraft={project_id:h.project.id,stage:'editing',status:'done',completed:true};
+  h.c.scriptDraftNotify(entry);assert.equal(editing.hidden,false);
+  entry.text='';h.c.scriptDraftNotify(entry);assert.equal(editing.hidden,true);
+});

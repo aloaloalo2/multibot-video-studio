@@ -231,6 +231,13 @@ def start_project(pid, body):
                 return public(current)
             raise store.StudioError('У цьому випуску Opus ще працює. Дочекайтеся завершення запиту.', 409)
         if action == 'editing':
+            if 'wishes' in body or data.get('manual_revision') and data.get('editing_status') in {'failed', 'cancelled'}:
+                import script_revisions
+                revision = body if 'wishes' in body else {**body, 'wishes': data.get('revision_wishes'),
+                    'expected_version': (data.get('revision_base') or {}).get('version'),
+                    **{key: (data.get('revision_base') or {}).get(key) for key in ('base_sha256', 'epoch', 'sha256')}}
+                script_revisions.prepare(project, data, revision)
+                return launch(cid, data, action, body.get('request_id'))
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
             if script_editing.latest(pid).get('status') == 'done':
@@ -246,15 +253,9 @@ def start_project(pid, body):
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
             script = project['voice_script']['text']
-            signature = hashlib.sha256(script.strip().encode()).hexdigest()
-            # Older accepted episodes keep their script; metadata recovery cannot impose newer length rules on them.
-            if data.get('completed') and data.get('status') == 'done' and not data.get('review_required'):
-                data['metadata_accepted_script_sha256'] = signature
+            # Word counts describe the ready author's result; they cannot veto metadata recovery.
             data['length'] = script_length(script, data.get('target_words'))
-            if data['length'] and not data['length']['passed'] and data.get('metadata_accepted_script_sha256') != signature:
-                data.update(completed=False, review_required=True, error=length_message(data['length']))
-                save_draft(cid, data, make_current=False)
-                raise store.StudioError(data['error'])
+            data['review_required'] = False
             if episode_metadata.exists(project):
                 data.update(completed=True, metadata_saved=True, status='done', error=None)
                 save_draft(cid, data, make_current=False)
@@ -646,6 +647,13 @@ def _work(cid, data):
         root = store.project_dir(data['project_id']) if data.get('project_id') else path(cid).parent / 'idea-runs' / data['id']
         root.mkdir(parents=True, exist_ok=True)
         identity = stage + '-' + uuid.uuid4().hex
+        if stage == 'editing' and data.get('manual_revision'):
+            import script_revisions
+            session = data['author_session']
+            script_revisions.run(store.load_project(data['project_id']), data, ctx,
+                lambda prompt: opus(prompt, root, identity, cid, session=session, resume=True, cost_category='script_editing'),
+                root / (identity + '-receipt.json'))
+            return
         if stage == 'editing':
             project = store.load_project(data['project_id'])
             original = project['voice_script']['text']
@@ -653,17 +661,14 @@ def _work(cid, data):
             script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},data['target_words'],session,
                 lambda prompt,phase: opus(prompt,root,identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),root/(identity+'-receipt.json'))
             writing_jobs.check()
-            passed, report = author_rules.check(script, root)
             with LOCK:
+                writing_jobs.check()
                 project = store.load_project(data['project_id'])
                 if project['voice_script']['text'] != original:
                     raise ValueError('Автор змінив сценарій під час редактури. Правки Opus збережено окремо.')
-                if passed is False:
-                    script_editing.validation_failed(project['id'],report[-500:])
-                    raise ValueError('Редакція потребує перевірки: ' + report[-300:])
                 store.save_project_source(project, script)
                 data.update(editing_status='done', script_saved=True, actual_words=words(script),
-                            length=script_length(script,data['target_words']),review_required=passed is not True or bool(script_editing.latest(project['id']).get('editorial_report',{}).get('unresolved')))
+                            length=script_length(script,data['target_words']),review_required=False)
                 draft = store.read_json(root/'script-draft.json',{}) or {}
                 store.atomic_json(root/'script-draft.json',{**draft,'script':script,'author':'Opus, саморедактура','saved_at':time.time()})
                 data['metadata_file'] = episode_metadata.save_generated(project,draft.get('metadata'),script,
@@ -674,18 +679,16 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
             data['length'] = script_length(script, data.get('target_words'))
-            accepted = data.get('metadata_accepted_script_sha256') == hashlib.sha256(script.strip().encode()).hexdigest()
-            if data['length'] and not data['length']['passed'] and not accepted:
-                data['completed'] = False
-                raise ValueError(length_message(data['length']))
             result = opus(episode_metadata.PROMPT + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
                           + json.dumps({'channel': project['channel_name'], 'selected_title': project['name'],
                                         'topic_excerpt': script[:800], 'ending_excerpt': script[-800:]}, ensure_ascii=False)
                           + '\nReturn JSON only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}.',
                           root, identity, cid)
             writing_jobs.check()
+            if (store.load_project(project['id']).get('voice_script') or {}).get('text') != script:
+                raise ValueError('Сценарій змінено під час створення метаданих. Новий текст збережено.')
             data['metadata_file'] = episode_metadata.save(project, result.get('metadata'), script)
-            data.update(completed=True, metadata_saved=True, actual_words=words(script))
+            data.update(completed=True, metadata_saved=True, actual_words=words(script), review_required=False)
             data.update(status='done', finished_at=time.time())
             return
         compact_context, context_metrics = writer_context.compact(ctx)
@@ -741,9 +744,9 @@ def _work(cid, data):
                     + episode_metadata.PROMPT + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
                     '"description":"...","tags":["...","...","..."]}}.', root, identity, cid, session=session)
                 script = result.get('script')
-                if not isinstance(script, str) or words(script) < 100 or not script.strip().startswith(data['opening'].strip()):
-                    raise ValueError('Opus не повернув повний сценарій із вибраним зачином')
-                # Persist the full first answer before an optional paid correction or local checker can fail.
+                if not isinstance(script, str) or not script.strip():
+                    raise ValueError('Opus не повернув сценарій')
+                # Preserve the full author answer before same-session self-review.
                 with LOCK:
                     writing_jobs.check()
                     project = store.load_project(data['project_id'])
@@ -756,43 +759,17 @@ def _work(cid, data):
                     data.update(script_saved=True, actual_words=words(script), length=script_length(script, data['target_words']))
                     save_draft(cid, data, make_current=False)
                 original = script
-                # the author's own check (proverka.py): its errors go back to Opus once, with the script, to be fixed
-                passed, report = author_rules.check(script, root)
-                data['check'] = {'passed': passed, 'report': report[-3000:]}
-                save_draft(cid, data, make_current=False)
-                length = script_length(script, data['target_words'])
-                if passed is False or not length['passed']:
-                    writing_jobs.check()
-                    problems = (report[-4000:] if passed is False else '')
-                    if not length['passed']:
-                        problems += (f"\nMeasured full script: {length['actual']} words. Required: {length['minimum']} to {length['maximum']} words inclusive. "
-                                     "Adjust its length while preserving the title promise, factual meaning, natural voice and the selected opening. Add useful explanation when short; remove repetition when long. No padding.")
-                    fixed = opus(brief + '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening'] + '\nYOUR SCRIPT:\n' + script
-                                 + '\nFix these content/length problems in one pass:\n' + problems
-                                 + f"\nKeep the complete result within {length['minimum']} to {length['maximum']} letter words. Preserve unaffected passages. Return JSON only {{\"script\":\"...\"}}.",
-                                 root, 'fix-' + identity, cid, session=session, resume=True).get('script')
-                    if isinstance(fixed, str) and fixed.strip().startswith(data['opening'].strip()) and words(fixed) >= 100:
-                        candidate = script_length(fixed, data['target_words'])
-                        if candidate['passed'] or (not length['passed'] and abs(candidate['actual']-candidate['target']) < abs(length['actual']-length['target'])):
-                            script = fixed
-                            passed, report = author_rules.check(script, root)
                 data.update(editing_status='running',completed=False)
                 save_draft(cid,data,make_current=False)
-                before_editor=script
                 review_identity='self-review-'+identity
                 script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},
                     data['target_words'],session,
                     lambda prompt,phase: opus(prompt,root,review_identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),
                     root/(review_identity+'-receipt.json'))
                 writing_jobs.check()
-                if script!=before_editor:passed,report=author_rules.check(script,root)
-                if passed is False:
-                    script_editing.validation_failed(data['project_id'],report[-500:])
-                    raise ValueError('Саморедактура Opus потребує перевірки: '+report[-300:])
                 data['editing_status']='done'
-                data['check'] = {'passed': passed, 'report': report[-3000:]}
                 data['length'] = script_length(script, data['target_words'])
-                data['review_required'] = passed is not True or not data['length']['passed'] or bool(script_editing.latest(data['project_id']).get('editorial_report',{}).get('unresolved'))
+                data['review_required'] = False
                 with LOCK:
                     writing_jobs.check()
                     project = store.load_project(data['project_id'])
@@ -803,9 +780,6 @@ def _work(cid, data):
                         store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                      'author': 'Opus, саморедактура', 'saved_at': time.time()})
                     data.update(actual_words=words(script))
-                    if not data['length']['passed']:
-                        data['completed'] = False
-                        raise ValueError(length_message(data['length']))
                     data['metadata_file'] = episode_metadata.save_generated(project, result.get('metadata'), script,
                         lambda prompt: opus(prompt, root, 'metadata-fix-' + identity, cid))
                     data.update(completed=True, metadata_saved=True)
@@ -835,7 +809,8 @@ def _work(cid, data):
                 if data['status'] == 'done' and data.get('completed') and data['stage'] in {'script', 'metadata', 'editing'}:
                     completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
                     import episode_automation
-                    episode_automation.after_script(data['project_id'], data)
+                    if not data.get('manual_revision'):
+                        episode_automation.after_script(data['project_id'], data)
             finally:
                 key = data.get('project_id') or cid
                 if ACTIVE.get(key, {}).get('run_id') == data.get('run_id'):

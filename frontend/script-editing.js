@@ -5,7 +5,48 @@ function scriptEditingCost(data){
   return label+(data.cost_usd==null&&data.unknown_request_costs?' + невідома частина':'');
 }
 const scriptEditingIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 5.5 18.5 10.5M4 20l4.5-1 12-12a2.1 2.1 0 0 0-4-4l-12 12L4 20Z"/><path d="M12 20h8"/></svg>';
+const scriptRevisionWishes=new Map();
 function createScriptEditingButton(project){
+  const button=document.createElement('button');button.type='button';button.hidden=true;
+  button.className='history-button outline script-editing-open script-revision-open';
+  button.innerHTML=projectCostIcons.claude_code;
+  button.title='Внести правки через Opus';button.setAttribute('aria-label',button.title);
+  button.onclick=()=>openScriptRevision(project).catch(error=>status(error.message,true));
+  return button;
+}
+async function openScriptRevision(project){
+  const pid=project.id,navigation=state.navigation;
+  const entry=await flushScriptDraft(project);
+  if(state.project?.id!==pid||state.navigation!==navigation||!entry.text?.trim())return;
+  let ready=false,sending=false,payload=null;
+  modal('Правки сценарію',`<div class="script-revision-form"><textarea id="script-revision-wishes" aria-label="Побажання до правок" maxlength="12000" rows="5" placeholder="Опишіть, що додати, прибрати або змінити у сценарії…"></textarea><p class="muted" id="script-revision-note" role="status">Перевіряємо сесію Opus…</p><button type="button" class="secondary script-revision-report" hidden>${scriptEditingIcon}<span>Звіт про редактуру</span></button></div>`,[
+    {label:'Внести правки',primary:true,enabled:()=>ready&&!sending&&!!field.value.trim(),run:async()=>{
+      if(!current()||!ready||sending)return;
+      const wishes=field.value.trim();if(!wishes)return;
+      sending=true;action.disabled=true;field.disabled=true;note.hidden=false;note.className='muted';note.textContent='Передаємо побажання Opus…';
+      try{
+        const latest=await flushScriptDraft(project);if(!current())return;
+        if(!payload||payload.wishes!==wishes||payload.sha256!==latest.sha256)payload={action:'editing',wishes,request_id:crypto.randomUUID(),expected_version:latest.version,base_sha256:latest.base_sha256,epoch:latest.epoch,sha256:latest.sha256};
+        const data=await api(`/api/projects/${pid}/episode-draft`,'POST',payload);if(!current())return;
+        state.episodeDraft=data;closeModal();renderMontageMake();refreshProjects().catch(()=>{});
+      }catch(error){if(current()){note.textContent=error.message;note.className='episode-error';}}
+      finally{sending=false;if(current()){field.disabled=false;action.disabled=!ready||!field.value.trim();}}
+    }}
+  ]);
+  const generation=state.modalGeneration,root=$('modal-body').querySelector('.script-revision-form'),field=root.querySelector('textarea'),note=root.querySelector('#script-revision-note'),action=$('modal-actions').querySelector('button');
+  const current=()=>root.isConnected&&state.project?.id===pid&&state.navigation===navigation&&state.modalGeneration===generation;
+  action.disabled=true;action.innerHTML=projectCostIcons.claude_code+'<span>Внести правки</span>';action.classList.add('icon-label-button');field.value=scriptRevisionWishes.get(pid)||'';
+  field.oninput=()=>{scriptRevisionWishes.set(pid,field.value);action.disabled=!ready||sending||!field.value.trim();};field.focus();
+  try{
+    const data=await api(`/api/projects/${pid}/script-editing/status`);if(!current())return;
+    ready=!!data.author_revision_supported&&!!data.can_revise;
+    if(!field.value&&data.revision_wishes){field.value=data.revision_wishes;scriptRevisionWishes.set(pid,field.value);}
+    note.textContent=ready?'':data.revision_reason||'Потрібне оновлення студії для правок у сесії автора.';
+    note.hidden=ready;action.disabled=!ready||!field.value.trim();
+    const report=root.querySelector('.script-revision-report');report.hidden=!data.available;report.onclick=()=>openScriptEditing(project);
+  }catch(error){if(current()){note.textContent=error.message;note.className='episode-error';}}
+}
+function createScriptEditingReportButton(project){
   const button=document.createElement('button');button.type='button';button.className='history-button outline script-editing-open';button.innerHTML=scriptEditingIcon;button.disabled=true;
   const describe=text=>{button.title=text;button.setAttribute('aria-label',text);};
   describe('Редактури сценарію ще немає');
@@ -55,7 +96,7 @@ async function openScriptEditing(project,identity=null){
   try{
     const data=await api(`/api/projects/${pid}/script-editing${identity?'/'+identity:''}`);if(!current())return;
     if(!data.available){root.innerHTML='<p class="muted">Редактура з’явиться тут після написання нового сценарію. Готові попередні випуски автоматично не змінюються.</p>';return;}
-    const editorName=data.provider==='claude_code'?'Opus, саморедактура':'DeepSeek (історичний звіт)';
+    const editorName=data.provider==='claude_code'?(data.mode==='author_revision_v1'?'Opus, правки за побажаннями':'Opus, саморедактура'):'DeepSeek (історичний звіт)';
     const amount=scriptEditingCost(data);
     const statusLabel={running:'Редагування триває',done:'Редакція готова',failed:'Редагування не завершено',cancelled:'Редагування зупинено'}[data.status]||data.status;
     root.innerHTML=`<div class="script-editing-summary"><strong>${esc(statusLabel)}</strong><span>${esc(editorName)} · ${esc(amount)}</span><span>${data.before_words??'невідомо'} → ${data.after_words??'невідомо'} слів</span><span>Змінено ${data.comparison_unit==='fragment'?'фрагментів':'абзаців'}: ${data.changed_paragraphs||0} · Видалено: ${data.deleted_paragraphs||0}</span>${data.total_paragraphs?`<span>Перевірено ${data.completed_paragraphs||0} з ${data.total_paragraphs} · Окремих запитів: ${data.requests?.length||0}${data.reused_paragraphs?` · Відновлено: ${data.reused_paragraphs}`:''}</span><span>Міркування: ${esc(data.reasoning_effort||'невідомо')}</span>`:''}</div>${data.required_passes?`<p class="muted">Завершено етапів: ${Number(data.completed_passes||0)} з ${Number(data.required_passes)}</p>`:''}${data.error?`<p class="episode-error" role="alert">${esc(data.error)}</p>`:''}${data.status==='done'&&!data.matches_current?'<p class="muted">Поточний текст відрізняється від цієї редакції. Звіт зберігає результат саме цього запуску.</p>':''}${data.editorial_summary?`<p class="script-editing-reason">${esc(data.editorial_summary)}</p>`:''}${data.provider==='claude_code'?'<p class="muted">Витрата Claude показана як приблизний розподіл підписки: API-еквівалент ÷ 35. Чек містить API-еквівалент, це не окреме списання з балансу.</p>':''}<p class="muted">Вилучений текст підсвічено червоним, доданий зеленим.</p><label class="check"><input type="checkbox" class="script-editing-only-changed" checked>Показувати лише змінені абзаци</label><div class="script-editing-rows"></div>`;

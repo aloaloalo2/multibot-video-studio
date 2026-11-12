@@ -37,6 +37,7 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
       if(!connected()||expected!==generation)return;
       const before=state.project.voice_script?.text||'';
       if(voiceScriptDraft[pid]===before)delete voiceScriptDraft[pid];
+      if(typeof acceptScriptRevision==='function')acceptScriptRevision(state.project,next);
       state.episodeDraft=next;current=next;state.project=fresh.project;dispose();delete panel.dataset.planKey;renderProject();return;
     }
     state.episodeDraft=next;current=next;draw(next);
@@ -72,7 +73,7 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     signature=nextSignature;
     const error=data.status==='failed'?`<p class="episode-error" role="alert">${esc(data.error||'Не вдалося завершити запит.')}</p>`:'';
     if(['queued','running','cancelling'].includes(data.status)){
-      const label=data.status==='cancelling'?'Зупиняємо роботу':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):{openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій';
+      const label=data.status==='cancelling'?'Зупиняємо роботу':data.manual_revision?'Opus вносить ваші правки':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):{openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій';
       root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><span class="export-spinner" aria-hidden="true"></span><strong>${label}</strong></div>${button('episode-draft-stop','Зупинити','stop')}</div>`;
       root.querySelector('#episode-draft-stop').disabled=data.status==='cancelling';
       root.querySelector('#episode-draft-stop').onclick=()=>request({action:'cancel'});
@@ -83,8 +84,9 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
       root.innerHTML=error+`<h3>${unfinished?'Чернетку збережено, саморедактуру не завершено':'Сценарій готовий'}</h3><div class="episode-draft-actions">${button('episode-draft-show-script','Показати сценарій','open')}${button('episode-draft-metadata','Дописати метадані · Opus','title',true)}</div>`;
       root.querySelector('#episode-draft-metadata').onclick=()=>request({action:'metadata'});
       if(unfinished){const retry=root.querySelector('#episode-draft-metadata');retry.textContent='Продовжити саморедактуру · Opus';retry.disabled=!data.author_session;retry.onclick=()=>request({action:'editing'});}
+      if(unfinished&&data.manual_revision){const retry=root.querySelector('#episode-draft-metadata');retry.textContent='Внести правки · Opus';retry.onclick=()=>openScriptRevision(state.project);}
       if(data.editing_status){
-        root.append(createScriptEditingButton(state.project));
+        root.append(createScriptEditingReportButton(state.project));
       }
       root.querySelector('#episode-draft-show-script').onclick=()=>{state.episodeDraft=null;dispose();delete panel.dataset.planKey;renderProject();};return;
     }

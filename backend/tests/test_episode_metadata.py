@@ -121,12 +121,13 @@ class MetadataTest(unittest.TestCase):
             thread.assert_not_called()
             self.assertTrue(result['metadata_saved'])
 
-    def test_optional_correction_failure_keeps_original_and_recovers_metadata_locally(self):
+    def test_local_checker_cannot_trigger_paid_correction_or_stop_metadata(self):
         data = self.draft()
-        with patch.object(ideas, 'opus', side_effect=[{'script':self.script, 'metadata':self.value}, RuntimeError('offline')]), \
-                patch.object(ideas.author_rules, 'check', return_value=(False,'Concrete issue')):
+        with patch.object(ideas, 'opus', side_effect=[{'script':self.script, 'metadata':self.value}, RuntimeError('Unexpected correction')]) as model, \
+                patch.object(ideas.author_rules, 'check', return_value=(False,'Concrete issue')) as checker:
             ideas.work(self.cid, data)
-        self.assertEqual(data['status'], 'failed')
+        model.assert_called_once();checker.assert_not_called()
+        self.assertEqual(data['status'], 'done')
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'], self.script.strip())
         saved = store.read_json(store.project_dir(self.pid)/'script-draft.json')
         self.assertEqual(saved['metadata'], self.value)
@@ -134,7 +135,7 @@ class MetadataTest(unittest.TestCase):
             result = ideas.start_project(self.pid, {'action':'metadata'})
         model.assert_not_called(); worker.assert_not_called()
         self.assertTrue(result['metadata_saved'])
-        self.assertFalse(result['check']['passed'])
+        self.assertFalse(result['review_required'])
 
     def test_metadata_recovery_preserves_legacy_accepted_script_under_new_length_minimum(self):
         script=self.script_with_words(160)
@@ -152,7 +153,7 @@ class MetadataTest(unittest.TestCase):
         self.assertFalse(retry['length']['passed'])
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'],script.strip())
 
-    def test_legacy_metadata_length_acceptance_does_not_apply_to_a_changed_script(self):
+    def test_metadata_recovery_uses_latest_saved_script_without_a_length_veto(self):
         script=self.script_with_words(160)
         store.save_project_source(self.project,script)
         store.atomic_json(store.project_dir(self.pid)/'episode-draft.json',{**self.draft(),'status':'done','completed':True})
@@ -160,60 +161,58 @@ class MetadataTest(unittest.TestCase):
             ideas.start_project(self.pid,{'action':'metadata'})
         retry=store.read_json(store.project_dir(self.pid)/'episode-draft.json')
         store.save_project_source(store.load_project(self.pid),self.script_with_words(150))
-        with patch.object(ideas,'opus') as model:
+        with patch.object(ideas,'opus',return_value={'metadata':self.value}) as model:
             ideas.work(self.cid,retry)
-        model.assert_not_called();self.assertEqual(retry['status'],'failed')
-        self.assertFalse(metadata.exists(self.project))
+        model.assert_called_once();self.assertEqual(retry['status'],'done')
+        self.assertTrue(metadata.exists(self.project))
+        self.assertEqual(retry['actual_words'],150)
 
-    def test_missing_checker_requires_review_without_paid_correction(self):
+    def test_unavailable_checker_does_not_require_manual_review(self):
         data = self.draft()
         with patch.object(ideas,'opus',return_value={'script':self.script,'metadata':self.value}) as model, \
                 patch.object(ideas.author_rules,'check',return_value=(None,'Unavailable')):
             ideas.work(self.cid,data)
         model.assert_called_once()
-        self.assertTrue(data['review_required'])
+        self.assertFalse(data['review_required'])
         self.assertTrue(data['completed'])
 
     def script_with_words(self, count):
         return 'A selected opening. ' + 'detail ' * (count-3)
 
-    def test_length_and_content_issues_share_one_correction_and_corrected_count_is_checked(self):
-        data=self.draft();short=self.script_with_words(160);corrected=self.script_with_words(200)
-        with patch.object(ideas,'opus',side_effect=[{'script':short,'metadata':self.value},{'script':corrected}]) as model, \
-                patch.object(ideas.author_rules,'check',side_effect=[(False,'A concrete content issue'),(True,'OK')]):
+    def test_ready_script_length_is_measured_without_an_extra_paid_correction(self):
+        data=self.draft();short=self.script_with_words(160)
+        with patch.object(ideas,'opus',side_effect=[{'script':short,'metadata':self.value},AssertionError('No content retry')]) as model, \
+                patch.object(ideas.author_rules,'check',side_effect=AssertionError('No local content veto')):
             ideas.work(self.cid,data)
-        self.assertEqual(model.call_count,2)
-        self.assertIn('A concrete content issue',model.call_args_list[1].args[0])
-        self.assertIn('186 to 214',model.call_args_list[1].args[0])
-        self.assertEqual(data['actual_words'],200)
-        self.assertTrue(data['length']['passed'])
+        self.assertEqual(model.call_count,1)
+        self.assertEqual(data['actual_words'],160)
+        self.assertFalse(data['length']['passed'])
         self.assertTrue(data['completed'])
-        self.assertEqual(store.load_project(self.pid)['voice_script']['text'],corrected.strip())
+        self.assertEqual(store.load_project(self.pid)['voice_script']['text'],short.strip())
 
-    def test_failed_length_correction_keeps_draft_without_marking_complete_or_metadata_bypass(self):
+    def test_short_author_result_completes_and_reuses_its_saved_metadata(self):
         data=self.draft();short=self.script_with_words(160)
         with patch.object(ideas,'opus',return_value={'script':short,'metadata':self.value}) as model, \
                 patch.object(ideas.author_rules,'check',return_value=(True,'OK')):
             ideas.work(self.cid,data)
-        self.assertEqual(model.call_count,2)
-        self.assertEqual(data['status'],'failed')
-        self.assertFalse(data['completed'])
+        self.assertEqual(model.call_count,1)
+        self.assertEqual(data['status'],'done')
+        self.assertTrue(data['completed'])
         self.assertFalse(data['length']['passed'])
-        self.assertIn('186 до 214',data['error'])
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'],short.strip())
-        self.assertFalse(metadata.exists(store.load_project(self.pid)))
+        self.assertTrue(metadata.exists(store.load_project(self.pid)))
         with patch.object(ideas,'Thread') as worker:
-            with self.assertRaisesRegex(store.StudioError,'±7%'):
-                ideas.start_project(self.pid,{'action':'metadata'})
+            ready=ideas.start_project(self.pid,{'action':'metadata'})
         worker.assert_not_called()
+        self.assertTrue(ready['completed'])
 
-    def test_author_edit_during_check_cannot_be_overwritten(self):
+    def test_author_edit_during_editorial_work_cannot_be_overwritten(self):
         data = self.draft()
         def check(*args):
             store.save_project_source(store.load_project(self.pid),'Author changed this script.')
-            return True,'OK'
+            return self.script
         with patch.object(ideas,'opus',return_value={'script':self.script,'metadata':self.value}), \
-                patch.object(ideas.author_rules,'check',side_effect=check):
+                patch.object(ideas.script_editing,'self_review',side_effect=check):
             ideas.work(self.cid,data)
         self.assertEqual(data['status'],'failed')
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'],'Author changed this script.')

@@ -2532,6 +2532,10 @@ select option{background:#232327;color:#f1f1f2}
 .script-draft-tools{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0}
 .script-draft-status{font-size:11px;color:#969aa5;white-space:nowrap}
 .script-draft-tools .history-button{width:27px;height:27px;padding:5px;flex:none}
+.script-draft-tools .script-revision-open{display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
+.script-revision-form textarea{display:block;width:100%;min-height:110px;box-sizing:border-box;resize:vertical}
+.script-revision-form .script-revision-report{margin-top:12px;display:inline-flex;align-items:center;gap:7px;font-size:12px}
+.script-revision-report svg{width:16px;height:16px}
 .script-history{display:grid;gap:12px;min-width:0}
 .script-history label{display:grid;gap:6px}
 .script-history textarea,.working-script-editor textarea{width:100%;resize:vertical;min-height:100px}

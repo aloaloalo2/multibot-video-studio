@@ -48,8 +48,6 @@ def after_script(pid, draft):
     if not text.strip():
         return
     def launch():
-        if draft.get('review_required'):
-            raise store.StudioError('Сценарій потребує перевірки перед автоозвучкою.')
         import project_narration
         if pid in project_narration.ACTIVE:
             return

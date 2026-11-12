@@ -21,13 +21,21 @@ test('editor button uses an icon, stays disabled without a report, and enables o
  for(const available of [false,true]){
   const button={isConnected:true,setAttribute(name,value){this[name]=value;}};
   const c=vm.createContext({document:{createElement:()=>button},state:{project:{id:'p'}},api:async()=>({available}),esc:String});vm.runInContext(source,c);
-  c.createScriptEditingButton({id:'p'});assert.equal(button.disabled,true);assert.match(button.innerHTML,/<svg/);
+  c.createScriptEditingReportButton({id:'p'});assert.equal(button.disabled,true);assert.match(button.innerHTML,/<svg/);
   await Promise.resolve();await Promise.resolve();assert.equal(button.disabled,!available);
   assert.match(button.title,available?/Редактура/:/ще немає/);
  }
  let resolve;const button={isConnected:true,setAttribute(){}};const state={project:{id:'p'}};
  const c=vm.createContext({document:{createElement:()=>button},state,api:()=>new Promise(r=>resolve=r),esc:String});vm.runInContext(source,c);
- c.createScriptEditingButton({id:'p'});state.project={id:'other'};resolve({available:true});await Promise.resolve();await Promise.resolve();assert.equal(button.disabled,true);
+ c.createScriptEditingReportButton({id:'p'});state.project={id:'other'};resolve({available:true});await Promise.resolve();await Promise.resolve();assert.equal(button.disabled,true);
+});
+
+test('revision toolbar has only the Opus icon and opens no provider or status request by itself',()=>{
+ const button={setAttribute(name,value){this[name]=value;}};let calls=0;
+ const c=vm.createContext({document:{createElement:()=>button},projectCostIcons:{claude_code:'<svg class="opus"></svg>'},api:()=>calls++});
+ vm.runInContext(source,c);c.createScriptEditingButton({id:'p'});
+ assert.equal(button.hidden,true);assert.match(button.innerHTML,/class="opus"/);assert.equal((button.innerHTML.match(/<svg/g)||[]).length,1);
+ assert.match(button['aria-label'],/Внести правки/);assert.equal(calls,0);
 });
 
 test('author cost is approximate subscription allocation with raw API equivalent retained',()=>{

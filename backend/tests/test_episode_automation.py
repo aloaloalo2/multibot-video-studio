@@ -26,6 +26,11 @@ class EpisodeAutomationTests(unittest.TestCase):
         with patch.object(project_narration,'start') as start,patch.object(project_narration,'snapshot',return_value={}),patch.object(project_narration,'ACTIVE',set()):
             for _ in range(2):auto.after_script(self.project['id'],{'completed':True})
         start.assert_called_once_with(self.project,'Saved full script.')
+    def test_old_editorial_review_flag_cannot_block_completed_author_handoff(self):
+        self.flags={'auto_narration':True}
+        with patch.object(project_narration,'start') as start,patch.object(project_narration,'snapshot',return_value={}),patch.object(project_narration,'ACTIVE',set()):
+            auto.after_script(self.project['id'],{'completed':True,'review_required':True})
+        start.assert_called_once_with(self.project,'Saved full script.')
     def test_failed_handoff_does_not_auto_retry_and_surfaces_in_the_narration_player(self):
         self.flags={'auto_narration':True}
         with patch.object(project_narration,'start',side_effect=store.StudioError('No channel voice')) as start,patch.object(project_narration,'snapshot',return_value={}),patch.object(project_narration,'ACTIVE',set()):

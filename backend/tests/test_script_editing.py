@@ -13,6 +13,18 @@ import writing_jobs
 
 REAL_REVIEW=editor.self_review
 
+class ResearchFollowupTest(unittest.TestCase):
+    def test_fact_check_followups_preserve_report_without_blocking_automation(self):
+        report={'editorial_report':{'unresolved':[{'issue':'Check study','needs_fact_check':True}]}}
+        with patch.object(editor,'latest',return_value=report):
+            self.assertFalse(editor.requires_review('project'))
+        self.assertEqual(len(report['editorial_report']['unresolved']),1)
+
+    def test_editorial_notes_are_not_manual_approval_gates(self):
+        for row in [{'issue':'Broken logic','needs_fact_check':False},{'issue':'Legacy issue'}]:
+            with self.subTest(row=row),patch.object(editor,'latest',return_value={'editorial_report':{'unresolved':[row]}}):
+                self.assertFalse(editor.requires_review('project'))
+
 def assessment():
     scores={k:{'score':7,'reason':'Конкретна редакторська причина'} for k in editor.SCORE_KEYS}
     return {'assessment_type':'subjective_editorial','before_scores':scores,'after_scores':scores,
@@ -83,11 +95,24 @@ class SelfReviewTest(unittest.TestCase):
         with self.assertRaises(OSError):self.review(failed)
         d=editor.latest(self.project['id']);self.assertEqual(d['status'],'failed');self.assertEqual(d['before'],self.text)
         self.assertNotIn('after',d);self.assertEqual(d['cost_usd'],.12)
-    def test_blacklist_grammar_contract_and_length_errors_preserve_candidate(self):
+    def test_ready_script_survives_advisory_blacklist_report_and_length_findings(self):
         for response,ctx,target in [(self.response(self.text+' banned'),{'studio_word_blacklist':['banned']},None),
                  ({'script':self.text}, {},None),(self.response(),{},1000)]:
-            with self.subTest(ctx=ctx,target=target),self.assertRaises(ValueError):self.review(lambda prompt:response,ctx,target)
-            self.assertEqual(editor.latest(self.project['id'])['status'],'failed')
+            with self.subTest(ctx=ctx,target=target):
+                self.assertEqual(self.review(lambda prompt:response,ctx,target),response['script'].strip())
+            self.assertEqual(editor.latest(self.project['id'])['status'],'done')
+            self.assertEqual(self.project['voice_script']['text'],self.text)
+    def test_new_numeric_examples_and_punctuation_do_not_block_ready_author_text(self):
+        candidate=self.text+'\n\nIn a town with 1,000 dollars and 1,000 bags of rice, each bag costs a dollar. — A hypothetical example.'
+        self.assertEqual(self.review(lambda prompt:self.response(candidate)),candidate)
+        self.assertEqual(editor.latest(self.project['id'])['completed_passes'],2)
+        self.assertFalse(editor.requires_review(self.project['id']))
+    def test_empty_or_malformed_script_still_stops_without_automatic_retry(self):
+        for response in ({'script':''},{'script':None},{}):
+            calls=[]
+            def reply(prompt):calls.append(prompt);return response
+            with self.subTest(response=response),self.assertRaises(ValueError):self.review(reply)
+            self.assertEqual(len(calls),1)
             self.assertEqual(self.project['voice_script']['text'],self.text)
     def test_concurrent_author_edit_wins(self):
         def reply(prompt):self.project['voice_script']['text']='Author replacement';return self.response()
@@ -108,7 +133,7 @@ class SelfReviewTest(unittest.TestCase):
         self.assertFalse(report['changes'][0]['comparison_verified'])
         self.assertTrue(report['unresolved'])
 
-    def test_slop_prompt_requires_deletion_and_keeps_the_approved_length_gate(self):
+    def test_slop_prompt_requests_approved_length_without_a_local_veto(self):
         prompts=[]
         def reply(prompt):prompts.append(prompt);return self.response()
         self.review(reply)
@@ -119,9 +144,9 @@ class SelfReviewTest(unittest.TestCase):
         self.assertIn('вся надежда сегодняшнего разговора',prompts[0])
         self.assertIn('перемены в тарелке имеют смысл',prompts[0])
         self.assertIn('Нижня межа не виправдовує',prompts[0])
-        with self.assertRaisesRegex(ValueError,'слів; потрібно'):
-            self.review(lambda prompt:self.response(),target=1000)
-        self.assertEqual(editor.latest(self.project['id'])['status'],'failed')
+        self.review(lambda prompt:self.response(),target=1000)
+        self.assertEqual(editor.latest(self.project['id'])['status'],'done')
+        self.assertFalse(editor.latest(self.project['id'])['length']['passed'])
         self.assertTrue(editor.latest(self.project['id']).get('after'))
 
     def test_current_blacklist_is_injected_and_reread_after_author_response(self):
@@ -131,7 +156,7 @@ class SelfReviewTest(unittest.TestCase):
             entries[:]=['useful']
             return self.response(self.text.replace('clear','natural'))
         with patch.object(editor.word_blacklist,'managed',return_value=True),patch.object(editor.word_blacklist,'current',side_effect=lambda:list(entries)):
-            with self.assertRaisesRegex(ValueError,'useful'):self.review(reply,{'studio_word_blacklist':['obsolete']})
+            self.review(reply,{'studio_word_blacklist':['obsolete']})
         report=editor.latest(self.project['id'])
         self.assertEqual(report['blacklist_snapshot'],['clear'])
         self.assertEqual(report['blacklist_final_check']['entries'],['useful'])
@@ -158,14 +183,14 @@ class SelfReviewTest(unittest.TestCase):
         self.assertEqual([r['phase'] for r in report['requests']],['main','refinement'])
         self.assertEqual(report['required_passes'],2);self.assertEqual(report['completed_passes'],2)
 
-    def test_named_remaining_problems_require_real_refinement_or_unresolved_flag(self):
+    def test_named_remaining_problems_remain_report_evidence_without_vetoing_script(self):
         response=self.response()
         response['refinement_report']['remaining_weaknesses']=[{'location':'Opening','problem':'Empty conclusion'}]
-        with self.assertRaisesRegex(ValueError,'без доопрацювання'):
-            self.review(lambda prompt:response)
+        self.review(lambda prompt:response)
         report=editor.latest(self.project['id'])
-        self.assertEqual(report['status'],'failed')
-        self.assertEqual(report['completed_passes'],1)
+        self.assertEqual(report['status'],'done')
+        self.assertEqual(report['completed_passes'],2)
+        self.assertTrue(report['report_warnings'])
         self.assertEqual(self.project['voice_script']['text'],self.text)
 
     def test_both_live_prompts_cover_all_agreed_quality_checks(self):

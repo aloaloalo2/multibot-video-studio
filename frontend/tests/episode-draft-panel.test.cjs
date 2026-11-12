@@ -12,7 +12,7 @@ const hooks={project_id:'p',stage:'openings',status:'done',target_words:2000,ope
 function fixture(api,initial=hooks){
   const root=node(),panel={dataset:{}},calls=[],timers=new Map(),state={project:{id:'p'},view:'editor',episodeDraft:initial};let seq=0,rendered=0;
   const c=vm.createContext({state,api:async(...args)=>{calls.push(args);return api(...args)},episodeDraftPending:d=>!!d?.project_id&&!d.completed&&!d.cancelled,
-    createScriptEditingButton:()=>node(),episodeIcon:()=>'<svg></svg>',esc:s=>String(s),document:{createElement:node},voiceScriptDraft:{},crypto:{randomUUID:()=>`request-${++seq}`},
+    createScriptEditingReportButton:()=>node(),episodeIcon:()=>'<svg></svg>',esc:s=>String(s),document:{createElement:node},voiceScriptDraft:{},crypto:{randomUUID:()=>`request-${++seq}`},
     renderProject(){rendered++},refreshProjects:async()=>{},setTimeout:fn=>{const id=++seq;timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id)});
   vm.runInContext(source,c);c.mountEpisodeDraftPanel(root,'p',initial,panel);
   return {c,root,panel,calls,state,timers,rendered:()=>rendered};

@@ -80,12 +80,46 @@ def root(pid):
 
 def availability(pid):
     """A lightweight existence read for the script toolbar; never load full before/after text."""
-    return {'available': (root(pid)/'latest.json').is_file(), 'editor_mode':EDITOR_MODE,
+    import script_revisions
+    return {**script_revisions.availability(pid), 'available': (root(pid)/'latest.json').is_file(), 'editor_mode':EDITOR_MODE,
             'editor_policy':EDITOR_POLICY,'required_editorial_passes':2,'author_session_review':True}
 
 
 def latest(pid):
     return store.read_json(root(pid) / 'latest.json', {}) or {}
+
+
+def requires_review(pid):
+    """Compatibility for callers: the author's ready script needs no local approval."""
+    return False
+
+
+def author_report(value, warnings, phase, *, refinement=False):
+    """Keep usable report evidence without discarding a ready script over report defects."""
+    result = dict(value) if isinstance(value, dict) else {}
+    if not refinement:
+        try:
+            validate_editorial_report(value)
+        except ValueError as error:
+            warnings.append({'phase': phase, 'message': str(error)})
+        for name in ('before_scores', 'after_scores'):
+            scores = result.get(name)
+            result[name] = {key: dict(row) for key, row in (scores.items() if isinstance(scores, dict) else [])
+                           if key in SCORE_KEYS and isinstance(row, dict) and type(row.get('score')) is int
+                           and 1 <= row['score'] <= 10 and isinstance(row.get('reason'), str)}
+    fields = [('remaining_weaknesses' if refinement else 'weaknesses', ('location', 'problem')),
+              ('actions' if refinement else 'changes', ('before', 'after', 'reason')),
+              ('unresolved', ('location', 'issue'))]
+    for name, required in fields:
+        rows = result.get(name)
+        valid = [dict(row) for row in rows if isinstance(row, dict)
+                 and all(isinstance(row.get(key), str) for key in required)] if isinstance(rows, list) else []
+        if refinement and (not isinstance(rows, list) or len(valid) != len(rows)):
+            warnings.append({'phase': phase, 'message': 'Некоректний список у звіті: ' + name})
+        result[name] = valid
+    if not isinstance(result.get('summary'), str):
+        result['summary'] = ''
+    return result
 
 
 def _save(folder, data):
@@ -142,7 +176,8 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
             'model':session['model'],'reasoning_effort':session['effort'],'session_id':session['session_id'],
             'provider':'claude_code','cost_basis':'api_equivalent','cost_usd':None,'requests':[],
             'before':text,'before_sha256':digest(text),'before_words':word_count(text),'paragraphs':[],
-            'editor_policy':EDITOR_POLICY,'blacklist_snapshot':blacklist,'required_passes':2,'completed_passes':0}
+            'editor_policy':EDITOR_POLICY,'blacklist_snapshot':blacklist,'required_passes':2,'completed_passes':0,
+            'report_warnings':[],'checks_advisory':True}
     store.atomic_text(folder/'before.txt',text);_save(folder,report)
 
     def check_source():
@@ -192,13 +227,13 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         prompt+='\nCURRENT COMPLETE DRAFT TO REVISE:\n'+text
         store.atomic_text(folder/'prompt.txt',prompt)
         main=call(prompt,'main')
-        intermediate=main.get('script')
+        intermediate=main.get('script') if isinstance(main,dict) else None
         if not isinstance(intermediate,str) or not intermediate.strip():
             raise ValueError('Opus не повернув повну основну редакцію сценарію')
         intermediate=intermediate.strip()
         store.atomic_text(folder/'intermediate.txt',intermediate)
         report.update(intermediate=intermediate,intermediate_words=word_count(intermediate))
-        main_report=validate_editorial_report(main.get('editorial_report'))
+        main_report=author_report(main.get('editorial_report'),report['report_warnings'],'main')
         report.update(main_editorial_report=main_report,completed_passes=1)
         store.atomic_json(folder/'main-editorial-report.json',main_report);_save(folder,report)
         check_source()
@@ -212,24 +247,17 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         refine_prompt+='\nMAIN EDITORIAL REPORT:\n'+json.dumps(main_report,ensure_ascii=False)
         result=call(refine_prompt,'refinement')
         store.atomic_json(folder/'author-response.json',result)
-        candidate=result.get('script')
-        if not isinstance(candidate,str) or word_count(candidate)<100:
+        candidate=result.get('script') if isinstance(result,dict) else None
+        if not isinstance(candidate,str) or not candidate.strip():
             raise ValueError('Opus не повернув повний сценарій після доопрацювання')
         candidate=candidate.strip()
         report.update(after=candidate,after_sha256=digest(candidate),after_words=word_count(candidate))
         store.atomic_text(folder/'after.txt',candidate)
-        final_report=validate_editorial_report(result.get('editorial_report'))
-        refinement=result.get('refinement_report')
-        if not isinstance(refinement,dict):raise ValueError('Немає звіту про залишкові слабкі місця та доопрацювання')
-        for name,fields in [('remaining_weaknesses',('location','problem')),('actions',('before','after','reason')),
-                            ('unresolved',('location','issue'))]:
-            rows=refinement.get(name)
-            if not isinstance(rows,list) or any(not isinstance(row,dict) or any(not isinstance(row.get(k),str) for k in fields) for row in rows):
-                raise ValueError('Некоректний звіт доопрацювання: '+name)
-        if not isinstance(refinement.get('summary'),str) or any(type(r.get('needs_fact_check')) is not bool for r in refinement['unresolved']):
-            raise ValueError('Некоректний підсумок доопрацювання')
+        final_report=author_report(result.get('editorial_report'),report['report_warnings'],'refinement')
+        refinement=author_report(result.get('refinement_report'),report['report_warnings'],'refinement',refinement=True)
         if refinement['remaining_weaknesses'] and not refinement['unresolved'] and (not refinement['actions'] or candidate==intermediate):
-            raise ValueError('Opus назвав залишкові недоліки без доопрацювання або чесного позначення невирішених питань')
+            report['report_warnings'].append({'phase':'refinement',
+                'message':'Opus назвав залишкові недоліки без зафіксованих правок у звіті.'})
         final_report['before_scores']=main_report['before_scores']
         final_report['intermediate_scores']=main_report['after_scores']
         final_report['unresolved']+=refinement['unresolved']
@@ -253,13 +281,8 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         final_blacklist=word_blacklist.current() if word_blacklist.managed() else blacklist
         report['blacklist_final_check']={'entries':final_blacklist,'changed_during_review':final_blacklist!=blacklist,
             'matches':word_blacklist.matches(candidate,final_blacklist)}
-        blocked=word_blacklist.message(candidate,final_blacklist)
-        if blocked:raise ValueError(blocked)
-        if '—' in candidate or '–' in candidate:raise ValueError('Саморедактура містить довге тире')
-        numbers=lambda value:set(re.findall(r'\d+(?:[.,]\d+)?',value))
-        if numbers(candidate)-numbers(text):raise ValueError('Саморедактура додала або змінила число; потрібен перегляд')
-        if not minimum<=report['after_words']<=maximum:
-            raise ValueError(f"Після саморедактури {report['after_words']} слів; потрібно {minimum}..{maximum}. Обидві версії збережено.")
+        report['length']={'actual':report['after_words'],'minimum':minimum,'maximum':maximum,
+                          'passed':minimum<=report['after_words']<=maximum}
         report.update(status='done',finished_at=time.time())
         return candidate
     except Exception as error:
@@ -317,5 +340,8 @@ def view(pid, identity=None):
             'total_cost_usd':sum((row.get('known_cost_usd') if type(row.get('known_cost_usd')) in (int,float) else row.get('cost_usd')) or 0 for row in runs),
             'unknown_charges':sum(row.get('unknown_request_costs') if row.get('unknown_request_costs') is not None else int(row.get('cost_usd') is None) for row in runs)}
     current=(store.load_project(pid).get('voice_script') or {}).get('text','')
+    if report.get('mode')=='author_revision_v1':
+        import script_drafts
+        current=script_drafts.current(pid)['text']
     report['matches_current']=digest(current)==report.get('after_sha256')
     return report
