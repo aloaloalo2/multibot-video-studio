@@ -212,8 +212,7 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   ready.append(actions);panel.classList.add('has-ready-narration');panel.append(ready);renderNarrationAnalysis(panel,pid);return ready;
 }
 function channelVoiceAvailable(profile){
-  const settings=profile?.settings||{};
-  return !!voiceLabVoiceId(settings)||(settings.provider!=='heygen'&&!!profile?.reference);
+  return voiceLabAvailable(profile?.settings,profile?.reference);
 }
 
 function renderNarrationGeneration(panel,scriptInput=null){
@@ -222,11 +221,14 @@ function renderNarrationGeneration(panel,scriptInput=null){
   panel.append(box);
   const details=box.querySelector('.narration-choice-profile');
   const cid=state.project.channel_id;let profile=null,currentJob=null,voiceReady=false;
-  api(`/api/channels/${cid}/voice-lab`).then(data=>{
+  async function loadProfile(){
+    details.dataset.voiceState='loading';details.textContent='Завантажуємо голос…';actionState(busy?currentJob?.status:'idle');
+    try{const data=await api(`/api/channels/${cid}/voice-lab`);
+    if(!narrationConnected())return;
     profile=data;voiceReady=channelVoiceAvailable(data);if(currentJob)renderRunning(currentJob);
-    if(!details.isConnected)return;details.replaceChildren();
+    details.dataset.voiceState=voiceReady?'ready':'missing';details.replaceChildren();
     actionState(busy?currentJob?.status:'idle');updateQuote();
-    if(!voiceReady){details.innerHTML='<div class="narration-voice-missing" role="status"><span aria-hidden="true">⚠</span><div><strong>Зразок голосу</strong><small>Немає голосу каналу. Додайте зразок у налаштуваннях каналу.</small></div></div>';return;}
+    if(!voiceReady){details.innerHTML='<div class="narration-voice-missing" role="status"><span aria-hidden="true">⚠</span><div><strong>Голос каналу</strong><small>Виберіть голос або додайте ID у налаштуваннях каналу. Для Fish Audio та ElevenLabs також можна додати аудіозразок.</small></div></div>';return;}
     const settings=data.settings||{},service=settings.provider==='heygen'?'HeyGen':settings.provider==='fishaudio'?'Fish Audio':'ElevenLabs';
     const model=(settings.provider==='heygen'?data.heygen_models:settings.provider==='fishaudio'?data.fish_models:data.models)?.find(x=>x.id===(settings.provider==='heygen'?settings.heygen_model:settings.provider==='fishaudio'?settings.fish_engine:settings.model))?.name || '';
     const heading=document.createElement('div');heading.className='narration-voice-heading';details.append(heading);
@@ -242,7 +244,11 @@ function renderNarrationGeneration(panel,scriptInput=null){
       };
       heading.append(toggle);details.append(sample);
     }
-  }).catch(()=>{if(details.isConnected)details.textContent='Не вдалося завантажити налаштування голосу';});
+    }catch(error){if(!narrationConnected())return;voiceReady=false;details.dataset.voiceState='error';details.replaceChildren();
+      const note=document.createElement('p');note.setAttribute('role','status');note.textContent='Не вдалося завантажити налаштування голосу. '+error.message;
+      const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.textContent='Повторити завантаження';retry.onclick=loadProfile;details.append(note,retry);actionState(busy?currentJob?.status:'idle');
+    }
+  }
   const text=scriptInput || box.querySelector('textarea'),button=box.querySelector('.narration-action-icon'),info=box.querySelector('.narration-status-row p');
   if(!scriptInput){text.value=narrationScriptValue(state.project,state.plan);if(typeof bindScriptDraft==='function')bindScriptDraft(text,state.project,panel);}
   const estimate=document.createElement('small');estimate.className='narration-cost';box.querySelector('.narration-status-row').append(estimate);
@@ -255,16 +261,16 @@ function renderNarrationGeneration(panel,scriptInput=null){
   updateScriptWordCount(panel,text.value);
   text.addEventListener('input',()=>updateScriptWordCount(panel,text.value));
   updateQuote();
-  let busy=false;
+  let busy=false,requestPending=false;
   function actionState(mode='idle'){
-    const running=mode==='running'||mode==='queued',waiting=mode==='cancelling';
-    const label=waiting?'Зупиняємо озвучення':mode==='queued'?'Зняти з черги':running?'Зупинити озвучення':'Озвучити сценарій';
-    box.querySelector('.narration-status-row').hidden=!running&&!waiting&&!voiceReady;
-    button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=waiting||(!running&&(!voiceReady||text.value.trim().length<10));
-    button.innerHTML=waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
-    if(!running&&!waiting)button.innerHTML+='<span>Озвучити сценарій</span>';
-    const choices=panel.querySelector('.narration-choices');if(choices)choices.hidden=running||waiting;
-    box.classList.toggle('is-generating',running||waiting);text.readOnly=running||waiting;
+    const running=mode==='running'||mode==='queued',waiting=mode==='cancelling',starting=requestPending&&!busy;
+    const label=starting?'Готуємо озвучення':waiting?'Зупиняємо озвучення':mode==='queued'?'Зняти з черги':running?'Зупинити озвучення':'Озвучити сценарій';
+    box.querySelector('.narration-status-row').hidden=!running&&!waiting&&!starting&&!voiceReady;
+    button.hidden=false;button.setAttribute('aria-label',label);button.title=label;button.disabled=requestPending||waiting||(!running&&(!voiceReady||text.value.trim().length<10));
+    button.innerHTML=starting||waiting?exportSpinner:running?'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg>';
+    if(!running&&!waiting)button.innerHTML+=`<span>${label}</span>`;
+    const choices=panel.querySelector('.narration-choices');if(choices)choices.hidden=running||waiting||starting;
+    box.classList.toggle('is-generating',running||waiting||starting);text.readOnly=running||waiting||starting;
   }
   function renderRunning(job){
     const settings=job.render_settings||{...profile?.settings,provider:job.provider};
@@ -285,6 +291,7 @@ function renderNarrationGeneration(panel,scriptInput=null){
   const scheduleNarrationPoll=(delay=1500)=>{clearTimeout(narrationPollTimer);if(narrationConnected())narrationPollTimer=setTimeout(poll,delay);};
   async function poll(){
     if(!narrationConnected())return;
+    if(requestPending){scheduleNarrationPoll();return;}
     if(narrationPolling){scheduleNarrationPoll();return;}
     narrationPolling=true;clearTimeout(narrationPollTimer);const version=narrationPollVersion;
     try{const {job}=await api(`/api/projects/${pid}/narration`);
@@ -300,24 +307,24 @@ function renderNarrationGeneration(panel,scriptInput=null){
         busy=false;currentJob=null;actionState();if(voiceScriptDraft[pid]===undefined){text.value=narrationScriptValue(state.project,state.plan,job);updateScriptWordCount(panel,text.value);}button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         let ready=box.querySelector('.narration-ready');if(ready&&ready.dataset.asset!==job.asset_id){ready.remove();ready=null;}
         ready??=appendReadyNarration(box,pid,job,info,poll);
-        ready.hidden=text.value.trim()!==(job.script||'').trim();if(ready.hidden)info.textContent='Сценарій змінено. Озвучте нову версію.';
+        ready.hidden=text.value.trim()!==(job.script||'').trim();box.classList.toggle('has-ready-narration',!ready.hidden);if(ready.hidden)info.textContent='Сценарій змінено. Озвучте нову версію.';
       }
       else if(job?.status==='cancelled'){busy=false;currentJob=null;actionState();info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
       else if(job?.status==='failed'){busy=false;currentJob=null;actionState();info.textContent=job.error;}
       else{busy=false;currentJob=null;info.textContent='';actionState();}
-    }catch(error){if(narrationConnected()){info.textContent=error.message;if(busy)actionState(currentJob?.status||'running');else button.disabled=!voiceReady;if(error.httpStatus!==404)scheduleNarrationPoll(3000);}}
+    }catch(error){if(narrationConnected()){info.textContent=error.message;actionState(busy?currentJob?.status||'running':'idle');if(error.httpStatus!==404)scheduleNarrationPoll(3000);}}
     finally{narrationPolling=false;}
   }
-  button.onclick=async()=>{if(busy){narrationPollVersion++;actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});await poll();}catch(error){info.textContent=error.message;actionState('running');}return;}if(!voiceReady)return;button.disabled=true;text.readOnly=true;narrationPollVersion++;const submittedScript=text.value,submittedProject=state.project;try{
+  button.onclick=async()=>{if(requestPending||!narrationConnected())return;if(busy){requestPending=true;narrationPollVersion++;actionState('cancelling');try{await api(`/api/projects/${pid}/narration/cancel`,'POST',{});requestPending=false;await poll();}catch(error){requestPending=false;if(narrationConnected()){info.textContent=error.message;actionState(currentJob?.status||'running');scheduleNarrationPoll();}}return;}if(!voiceReady||text.value.trim().length<10)return;requestPending=true;clearTimeout(quoteTimer);quoteVersion++;narrationPollVersion++;actionState();const submittedScript=text.value,submittedProject=state.project;try{
     if(typeof flushScriptDraft==='function')await flushScriptDraft(submittedProject);
     if(!narrationConnected())return;
     const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:submittedScript});
     info.textContent=`Із кешу: ${quote.cached} з ${quote.total} фраз.`;
     const cost=priceLabel(quote);estimate.textContent=cost;
     if(!narrationConnected())return;
-    const result=await api(`/api/projects/${pid}/narration/start`,'POST',{text:submittedScript,resume:true});if(!narrationConnected())return;if(result.voice_script){state.project.voice_script=result.voice_script;if(typeof commitScriptDraft==='function')commitScriptDraft(state.project,result.voice_script);}box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;await poll();
-  }catch(error){if(narrationConnected()){info.textContent=error.message;button.disabled=false;text.readOnly=false;scheduleNarrationPoll(0);}}};
-  poll();return box;
+    const result=await api(`/api/projects/${pid}/narration/start`,'POST',{text:submittedScript,resume:true});if(!narrationConnected())return;if(result.voice_script){state.project.voice_script=result.voice_script;if(typeof commitScriptDraft==='function')commitScriptDraft(state.project,result.voice_script);}box.querySelector('.narration-ready')?.remove();box.classList.remove('has-ready-narration');busy=true;requestPending=false;await poll();
+  }catch(error){requestPending=false;if(narrationConnected()){info.textContent=error.message;actionState();scheduleNarrationPoll();}}};
+  loadProfile();poll();return box;
 }
 function renderVoiceStart(panel){
   const project=state.project,direct=directMontage();

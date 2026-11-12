@@ -12,6 +12,10 @@ test('the main path advances from hook through narration, video and export',()=>
 test('missing channel voice gives a concrete reason and settings destination',()=>{
   const value=decide({hasVoice:false});assert.equal(value.disabled,true);assert.equal(value.settings,'voice');assert.match(value.reason,/голосу/);
 });
+test('voice profile read errors have their own recovery reason',()=>{
+  const value=decide({voiceError:true,hasVoice:false});
+  assert.equal(value.disabled,true);assert.match(value.reason,/Повторіть завантаження/);assert.doesNotMatch(value.reason,/Немає голосу/);
+});
 test('a voice file remains usable without a configured channel voice',()=>{
   assert.equal(decide({hasVoice:false,fileMode:true}).kind,'file');
   const value=decide({hasVoice:false,fileMode:true,hasFile:true,uploadEnabled:true});assert.equal(value.kind,'upload');assert.equal(value.disabled,false);
@@ -61,4 +65,21 @@ test('choosing a narration file keeps its local Create video button visible',()=
   assert.equal(elements['project-next-action'].disabled,false);
   assert.match(elements['project-next-action'].innerHTML,/Створити відео/);
   assert.equal(marks.has('workflow-action-target'),false);
+});
+
+test('a ready provider quote retains the local narration action and header dispatch',async()=>{
+  const marks=new Set();let starts=0;
+  const local={disabled:false,classList:{add:k=>marks.add(k),remove:k=>marks.delete(k)},click:()=>starts++};
+  const elements={'project-next-step':{},'project-next-action':{},'project-next-reason':{},'project-next-settings':{dataset:{}},'export-open':{}};
+  const context={model:{script:'Saved Fish script',hasScriptField:true,hasVoice:true,narrationEnabled:true},root:{classList:{contains:()=>true}},targets:{narrate:local}};
+  marks.add('workflow-action-target');
+  const block=source.slice(source.indexOf('function updateProjectNextAction()'),source.indexOf("if(typeof document!=="));
+  const testContext=vm.createContext({projectNextContext:()=>context,projectNextAction:c.projectNextAction,state:{view:'editor'},$:id=>elements[id],esc:String,projectNextIcons:{narrate:''},delegatedWorkflowTarget:local,projectNextBusy:false});
+  vm.runInContext(block,testContext);testContext.updateProjectNextAction();
+  assert.equal(marks.has('workflow-action-target'),false);
+  assert.equal(elements['project-next-action'].disabled,false);
+  assert.match(elements['project-next-action'].innerHTML,/Озвучити/);
+  await testContext.runProjectNextAction();assert.equal(starts,1);
+  context.model.narrationEnabled=false;local.disabled=true;
+  await testContext.runProjectNextAction();assert.equal(starts,1);
 });

@@ -9,6 +9,17 @@ import channel_voice_lab as lab
 import store
 
 class NarrationTests(unittest.TestCase):
+    def test_all_service_ids_quote_without_local_reference_or_synthesis(self):
+        for provider,field in [('fishaudio','fish_voice_id'),('elevenlabs','eleven_voice_id'),('heygen','heygen_voice_id')]:
+            with self.subTest(provider=provider),tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp);settings=lab.validated({'provider':provider,field:'saved-service-voice'})
+                project={'id':'0'*24,'channel_id':'1'*16}
+                with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'snapshot',return_value={'settings':settings,'reference':None}),patch.object(lab,'reference',side_effect=AssertionError('Local reference must not be read')),patch.object(lab,'estimate',return_value={'amount':0}),patch.object(lab.eleven_api,'balance',return_value={}),patch.object(lab,'fish_synthesis') as fish,patch.object(lab,'synthesis') as eleven,patch.object(lab.heygen_voice,'synthesize') as heygen:
+                    _,ref,entries,quote=narration.spec(project,'First complete sentence. Second complete sentence.')
+                    self.assertTrue(ref['sha256']);self.assertEqual(len(entries),2)
+                    self.assertEqual(quote['provider'],provider);self.assertEqual(quote['estimated_usd'],0)
+                    fish.assert_not_called();eleven.assert_not_called();heygen.assert_not_called()
+
     def test_cache_changes_only_edited_phrase(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);settings=lab.validated({'text':'Some sample text.'})
@@ -52,6 +63,13 @@ class NarrationTests(unittest.TestCase):
     def test_invalid_text_rejected_before_paid_work(self):
         for text in [None,'',123,'x'*200001]:
             with self.assertRaises(store.StudioError):narration.phrases(text)
+    def test_interrupted_cancellation_returns_retryable_status_without_restarting_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pid='0'*24
+            with patch.object(store,'project_dir',return_value=Path(tmp)),patch.object(store,'load_project',return_value={'id':pid}),patch.object(narration,'ACTIVE',set()),patch.object(narration,'run') as worker:
+                store.atomic_json(narration.root(pid)/'job.json',{'status':'cancelling'})
+                self.assertEqual(narration.snapshot(pid)['job']['status'],'failed')
+                worker.assert_not_called()
     def test_failure_keeps_completed_phrase_and_does_not_retry(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);project={'id':'0'*24,'channel_id':'1'*16};settings=lab.validated({})

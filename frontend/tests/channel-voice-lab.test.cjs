@@ -60,6 +60,53 @@ test('saved voice IDs work without local reference files and invalidate other vo
   assert.match(source,/data-copy-voice/);
   assert.match(source,/base\+'\/fish-clone'/);
 });
+test('readiness uses only the selected service and HeyGen requires a remote voice',()=>{
+  for(const [provider,field] of [['fishaudio','fish_voice_id'],['elevenlabs','eleven_voice_id'],['heygen','heygen_voice_id']]){
+    assert.equal(context.voiceLabAvailable({provider,[field]:'saved'},null),true);
+    assert.equal(context.voiceLabAvailable({provider},null),false);
+    assert.equal(context.voiceLabAvailable({provider},{filename:'reference.mp3'}),provider!=='heygen');
+    for(const other of ['fish_voice_id','eleven_voice_id','heygen_voice_id'].filter(key=>key!==field)){
+      assert.equal(context.voiceLabAvailable({provider,[other]:'dormant-id'},null),false);
+    }
+  }
+});
+test('a transient sample status failure retries only its read and restores the completed sample',async()=>{
+  const source=fs.readFileSync(path.join(__dirname,'..','channel-voice-lab.js'),'utf8');
+  const block=source.slice(source.indexOf('  const poll=async()=>'),source.indexOf('  const audition=async draft=>'));
+  let calls=0,rendered=0,played=0,scheduled;
+  const c=vm.createContext({data:{job:{status:'running'}},base:'/voice-lab',current:()=>true,
+    api:async(...args)=>{assert.equal(args.length,1);if(!calls++)throw Error('Temporary failure');return {job:{status:'done'}};},
+    sample:()=>rendered++,playSample:()=>played++,message(){},setTimeout:(fn,delay)=>{scheduled={fn,delay};return 1;}});
+  vm.runInContext(block+'\nthis.readStatus=poll;',c);await c.readStatus();
+  assert.equal(scheduled.delay,3000);await scheduled.fn();
+  assert.equal(calls,2);assert.equal(rendered,1);assert.equal(played,1);
+});
+test('channel voice settings can recover from an initial read failure without synthesis',async()=>{
+  const source=fs.readFileSync(path.join(__dirname,'..','channel-voice-lab.js'),'utf8');
+  const begin=source.indexOf('  const load=async()=>');
+  const end=source.indexOf('  await load();',begin)+'  await load();'.length;
+  let calls=0,draws=0;const retry={},box={querySelector:()=>retry};
+  const c=vm.createContext({box,data:null,base:'/voice-lab',current:()=>true,esc:String,
+    api:async(...args)=>{assert.equal(args.length,1);if(!calls++)throw Error('Temporary read error');return {settings:{provider:'fishaudio',fish_voice_id:'saved'}};},draw:()=>draws++});
+  await vm.runInContext('(async()=>{'+source.slice(begin,end)+'})()',c);
+  assert.match(box.innerHTML,/Temporary read error/);assert.equal(draws,0);
+  await retry.onclick({currentTarget:retry});assert.equal(calls,2);assert.equal(draws,1);
+  assert.equal(c.data.settings.fish_voice_id,'saved');
+});
+test('sample preparation cannot be submitted twice while an earlier start is pending',async()=>{
+  const source=fs.readFileSync(path.join(__dirname,'..','channel-voice-lab.js'),'utf8');
+  const begin=source.indexOf("    box.querySelector('.voice-lab-listen').addEventListener('click',async()=>");
+  const end=source.indexOf('    sample();\n    if(data.job',begin);
+  let click,finish,calls=0;const button={};
+  const c=vm.createContext({box:{querySelector:()=>({addEventListener:(name,fn)=>click=fn,...button})},
+    sampleStarting:false,data:{settings:{},job:{}},read:()=>({provider:'fishaudio',fish_voice_id:'saved'}),
+    voiceLabAvailable:context.voiceLabAvailable,voiceLabSampleState:()=>({cached:false}),base:'/voice-lab',crypto:{randomUUID:()=> 'fixture-id'},
+    api:()=>{calls++;return new Promise(resolve=>finish=resolve);},current:()=>true,
+    sample(){},estimate(){},poll(){},playSample(){},message(){},setTimeout(){}});
+  vm.runInContext(source.slice(begin,end),c);
+  const pending=click();await click();assert.equal(calls,1);assert.equal(c.sampleStarting,true);
+  finish({job:{status:'running'}});await pending;assert.equal(c.sampleStarting,false);
+});
 test('Starfish sample identity and duration quote use only its active controls',()=>{
   const s={...settings,provider:'heygen',heygen_model:'starfish',heygen_voice_id:'voice',speed:1,heygen_starfish_speed:1,heygen_starfish_ssml:false,heygen_starfish_locale:''};
   const saved={...ready,settings:s};

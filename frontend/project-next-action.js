@@ -26,6 +26,7 @@ function projectNextAction(model){
   if(!model.script.trim())return action('script','Додати сценарій');
   if(!model.hasScriptField)return action('edit','Переглянути правки',{reason:model.pendingScript?'Озвучка потребує нової версії сценарію':''});
   if(model.voiceLoading)return action('wait','Завантажуємо голос',{disabled:true});
+  if(model.voiceError)return action('narrate','Озвучити',{disabled:true,reason:'Не вдалося завантажити налаштування голосу. Повторіть завантаження в блоці озвучення.',settings:'voice'});
   if(!model.hasVoice)return action('narrate','Озвучити',{disabled:true,reason:'Немає голосу каналу',settings:'voice'});
   return action('narrate','Озвучити',{disabled:!model.narrationEnabled,reason:!model.narrationEnabled?'Підготовка озвучки':''});
 }
@@ -61,7 +62,7 @@ function projectNextContext(){
     fileMode:root.querySelector('.narration-from-file')?.getAttribute('aria-pressed')==='true',hasFile:!!root.querySelector('.voice-drop.has-file'),uploadEnabled:!!upload&&!upload.disabled,
     readyVoice:!!ready&&!ready.hidden&&!ready.closest('[hidden]'),createEnabled:!!ready?.querySelector('.narration-plan-action:not([disabled])'),createReason:root.querySelector('.narration-create-error')?.textContent||'',
     directionRecovery:!!root.querySelector('.episode-director:not([hidden]) button:not([disabled])'),directionRecoveryLabel:root.querySelector('.episode-director button')?.textContent,directionRecoveryReason:direction?.creation_error||direction?.error,
-    voiceLoading:voice?.querySelector('.narration-choice-profile')?.textContent==='Завантажуємо голос…',hasVoice:!!voice&&!voice.querySelector('.narration-voice-missing')&&voice.querySelector('.narration-choice-settings'),narrationEnabled:!!narrate&&!narrate.disabled,
+    voiceLoading:voice?.querySelector('.narration-choice-profile')?.textContent==='Завантажуємо голос…',voiceError:voice?.querySelector('.narration-choice-profile')?.dataset.voiceState==='error',hasVoice:!!voice&&!voice.querySelector('.narration-voice-missing')&&voice.querySelector('.narration-choice-settings'),narrationEnabled:!!narrate&&!narrate.disabled,
   };
   return {model,root,field,targets:{narrate,create:ready?.querySelector('.narration-plan-action'),frames,upload,openings:root.querySelector('#episode-draft-refresh'),metadata:root.querySelector('#episode-draft-metadata'),direction:root.querySelector('.episode-director:not([hidden]) button:not([disabled])')}};
 }
@@ -76,8 +77,8 @@ function updateProjectNextAction(){
   if(button.innerHTML!==markup)button.innerHTML=markup;
   button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=!decision.settings;
   settings.dataset.section=decision.settings||'';
-  // Keep the file-import action beside the chosen file; moving it to the header looked like it vanished.
-  const target=decision.kind==='upload'?null:context.targets[decision.kind]||null;
+  // Keep voice actions beside the file or provider quote as well as in the header.
+  const target=['upload','narrate'].includes(decision.kind)?null:context.targets[decision.kind]||null;
   if(delegatedWorkflowTarget!==target){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=target;target?.classList.add('workflow-action-target');}
   if(!context.root.classList.contains('workflow-guided'))context.root.classList.add('workflow-guided');
 }
@@ -111,7 +112,7 @@ if(typeof document!=='undefined'){
   if(root&&typeof MutationObserver!=='undefined'){
     let scheduled=false;
     const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;updateProjectNextAction();});};
-    new MutationObserver(schedule).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden','class','aria-pressed']});
+    new MutationObserver(schedule).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden','class','aria-pressed','data-voice-state']});
     root.addEventListener('input',schedule);
   }
 }

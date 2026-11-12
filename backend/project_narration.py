@@ -171,7 +171,7 @@ def tempo_preview(pid, speed):
 
 def snapshot(pid):
     job=store.read_json(root(pid)/'job.json',{})
-    if job.get('status') in {'queued','running'} and pid not in ACTIVE:
+    if job.get('status') in {'queued','running','cancelling'} and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
     if job.get('status')=='queued':
         with HEYGEN_TURN:

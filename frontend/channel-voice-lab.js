@@ -11,6 +11,9 @@ function voiceLabSampleKey(s){
   return JSON.stringify(fields.map(k=>[k,k==='speed'?(s[k]??1):s[k]]));
 }
 function voiceLabVoiceId(s){return s?.[s.provider==='heygen'?'heygen_voice_id':s.provider==='fishaudio'?'fish_voice_id':'eleven_voice_id']||'';}
+function voiceLabAvailable(settings,reference){
+  return !!voiceLabVoiceId(settings)||(settings?.provider!=='heygen'&&!!reference);
+}
 function voiceLabHeygenCost(s,models){
   const spec=models?.find(m=>m.id===s.heygen_model),text=s.heygen_model==='starfish'&&s.heygen_starfish_ssml?s.text.replace(/<[^>]*>/g,''):s.text;
   return [...text].length*(spec?.rate||0)/(s.heygen_model==='starfish'?(s.heygen_starfish_speed??1):1);
@@ -31,10 +34,10 @@ async function bindChannelVoiceLab(channel){
   const slot=document.getElementById('channel-voice-settings');
   if(slot)slot.append(box);else document.querySelector('.logo-section').after(box);
   const base=`/api/channels/${channel.id}/voice-lab`;
-  let data,timer,localPreview,noisePreview;
+  let data,timer,localPreview,noisePreview,sampleStarting=false;
   const cleanup=new MutationObserver(()=>{if(!box.isConnected||$('modal-backdrop').hidden){localPreview?.dispose();noisePreview?.dispose();clearTimeout(timer);cleanup.disconnect();}});
   cleanup.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
-  const current=()=>box.isConnected;
+  const current=()=>box.isConnected&&!$('modal-backdrop').hidden;
   const read=()=>({heygen_starfish_speed:Number(box.querySelector('[name=heygen_starfish_speed]').value)/100,heygen_starfish_ssml:box.querySelector('[name=heygen_starfish_ssml]').value==='ssml',heygen_starfish_locale:box.querySelector('[name=heygen_starfish_locale]').value.trim(),heygen_expressiveness:Number(box.querySelector('[name=heygen_expressiveness]').value)/100,heygen_model:box.querySelector('[name=heygen_model]').value,heygen_voice_id:box.querySelector('[name=heygen_voice_id]').value.trim(),provider:box.querySelector('[name=provider]').value,fish_engine:box.querySelector('[name=fish_engine]').value,
     fish_voice_id:box.querySelector('[name=fish_voice_id]').value.trim(),eleven_voice_id:box.querySelector('[name=eleven_voice_id]').value.trim(),speed:Number(box.querySelector('[name=speed]').value)/100,reverb:readVoiceReverb(box),room_noise:readVoiceNoise(box),noise_cleanup:data.settings.noise_cleanup,chunk_length:data.settings.chunk_length,direction:box.querySelector('[name=direction]').value.trim(),temperature:Number(box.querySelector('[name=temperature]').value)/100,top_p:Number(box.querySelector('[name=top_p]').value)/100,language:box.querySelector('[name=language]').value,model:box.querySelector('[name=model]').value,
     delivery:box.querySelector('[name=delivery]').value,stability:Number(box.querySelector('[name=stability]').value)/100,
@@ -72,7 +75,7 @@ async function bindChannelVoiceLab(channel){
     box.querySelectorAll('[data-heygen-engine]').forEach(el=>{el.hidden=!heygen||el.dataset.heygenEngine!==(starfish?'starfish':'voice');});
     box.querySelector('.voice-lab-identity').hidden=!heygen;
     box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
-    box.querySelector('.voice-lab-listen').disabled=!(voiceLabVoiceId(settings)||data.reference)||data.job?.status==='running';
+    box.querySelector('.voice-lab-listen').disabled=!voiceLabAvailable(settings,data.reference)||data.job?.status==='running'||sampleStarting;
     box.querySelector('.voice-lab-actions').hidden=ready;
     const fishCreate=box.querySelector('.fish-create-voice');
     fishCreate.disabled=!data.reference||!!settings.fish_voice_id;
@@ -107,7 +110,7 @@ async function bindChannelVoiceLab(channel){
   const poll=async()=>{
     if(!current())return;
     try{const wasRunning=data.job?.status==='running';data=await api(base);if(!current())return;sample();if(data.job?.status==='running')timer=setTimeout(poll,1600);else if(wasRunning&&data.job?.status==='done')playSample();}
-    catch(error){message(error.message,true);}
+    catch(error){if(current()){message(error.message,true);if(data.job?.status==='running'&&error.httpStatus!==404)timer=setTimeout(poll,3000);}}
   };
   const audition=async draft=>{
     const dialog=document.createElement('dialog');dialog.className='voice-reference-dialog';
@@ -149,7 +152,7 @@ async function bindChannelVoiceLab(channel){
       <label data-provider="heygen">Модель<select name="heygen_model">${(data.heygen_models||[]).map(m=>`<option value="${m.id}" ${m.id===s.heygen_model?'selected':''}>${esc(m.name.replace(/^HeyGen /,''))}</option>`).join('')}</select></label><label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
 
-      <div class="voice-lab-source"><h4>Приклад голосу</h4><div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload" ${data.reference||s.provider==='heygen'&&s.heygen_voice_id?'hidden':''}>Додати аудіо або відео<input type="file" accept="audio/*,video/*" hidden></label>${data.reference||s.provider==='heygen'&&s.heygen_voice_id?`<button type="button" class="voice-lab-remove" aria-label="Прибрати голос">${trashIcon}</button>`:''}</div>
+      <div class="voice-lab-source"><h4>Приклад голосу</h4><div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload" ${data.reference||voiceLabVoiceId(s)?'hidden':''}>Додати аудіо або відео<input type="file" accept="audio/*,video/*" hidden></label>${data.reference||voiceLabVoiceId(s)?`<button type="button" class="voice-lab-remove" aria-label="Прибрати голос">${trashIcon}</button>`:''}</div>
       <small class="voice-lab-preparation-status" ${data.reference?.cleanup_applied?'':'hidden'}>Вибрано очищену версію</small><div class="voice-lab-prepared"></div></div>
       <div class="voice-lab-identity" data-provider="heygen"><div class="voice-lab-identity-actions"><button type="button" class="secondary heygen-load-voices">Вибрати голос</button><button type="button" class="secondary heygen-create-voice">Створити із запису</button></div><select class="heygen-voice-list" aria-label="Голос HeyGen" hidden></select></div>
       ${[['heygen','heygen_voice_id','HeyGen'],['fishaudio','fish_voice_id','Fish Audio'],['elevenlabs','eleven_voice_id','ElevenLabs']].map(([provider,field,label])=>`<details class="voice-lab-advanced voice-id-details" data-provider="${provider}"><summary>ID голосу</summary><label for="voice-id-${provider}">ID голосу ${label}</label><div class="voice-id-field"><input id="voice-id-${provider}" name="${field}" value="${esc(s[field]||'')}" placeholder="Вставте ID з цього самого акаунта" autocomplete="off" spellcheck="false"><button type="button" class="voice-id-copy" data-copy-voice="${field}" data-service="${provider}" aria-label="Скопіювати ID голосу ${label}" title="Скопіювати ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div>${!s[field]&&data.voice_ids?.[provider]?`<small class="voice-known-id">Збережений ID: <code>${esc(data.voice_ids[provider])}</code></small>`:''}${provider==='fishaudio'?'<div class="voice-id-actions"><button type="button" class="secondary fish-create-voice">Зберегти голос у Fish</button></div>':''}</details>`).join('')}
@@ -212,17 +215,25 @@ async function bindChannelVoiceLab(channel){
       }catch(error){message(error.message,true);label.classList.remove('is-off');}
     });
     box.querySelector('.voice-lab-listen').addEventListener('click',async()=>{
+      if(sampleStarting||data.job?.status==='running'||!voiceLabAvailable(read(),data.reference))return;
       if(voiceLabSampleState(read(),data).cached&&box.querySelector('.voice-lab-result audio')){playSample();return;}
-      const button=box.querySelector('.voice-lab-listen');button.disabled=true;
+      sampleStarting=true;const button=box.querySelector('.voice-lab-listen');button.disabled=true;
       try{
         data=await api(base+'/sample','POST',{settings:read(),client_id:crypto.randomUUID()});
+        if(!current())return;
         sample();
         if(data.job?.status==='running')timer=setTimeout(poll,1000);
         else playSample();
-      }catch(error){message(error.message,true);estimate();}
+      }catch(error){if(current())message(error.message,true);}
+      finally{sampleStarting=false;if(current())estimate();}
     });
     sample();
     if(data.job?.status==='running')timer=setTimeout(poll,1500);
   };
-  try{data=await api(base);draw();}catch(error){box.innerHTML=`<h3>Голос</h3><p>${esc(error.message)}</p>`;}
+  const load=async()=>{
+    try{data=await api(base);if(current())draw();}
+    catch(error){if(!current())return;box.innerHTML=`<h3>Голос</h3><p role="status">${esc(error.message)}</p><button type="button" class="secondary voice-lab-retry">Повторити завантаження</button>`;
+      box.querySelector('.voice-lab-retry').onclick=async event=>{event.currentTarget.disabled=true;await load();};}
+  };
+  await load();
 }

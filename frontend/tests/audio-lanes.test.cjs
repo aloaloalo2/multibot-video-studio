@@ -26,7 +26,7 @@ test('muting a compact sound row affects only its audio layers in one undoable a
     {type:'set_layer_mute',payload:{layer_id:'a',muted:true}},{type:'set_layer_mute',payload:{layer_id:'b',muted:true}}]);
 });
 
-test('original narration requires a configured reference or selected HeyGen voice',()=>{
+test('original narration accepts a service voice ID without a local file',()=>{
   const c=load(plan,'function channelVoiceAvailable(','function renderNarrationGeneration(');
   vm.runInContext(read('channel-voice-lab.js'),c);
   assert.equal(c.channelVoiceAvailable({settings:{provider:'elevenlabs',model:'eleven_v4_turbo'}}),false);
@@ -39,7 +39,7 @@ test('original narration requires a configured reference or selected HeyGen voic
 
 test('missing voice disables generation while a running narration can always be stopped',()=>{
   const row={},button={setAttribute(){}},c=load(plan,"  function actionState(mode='idle')",'  function renderRunning(job)',{
-    voiceReady:false,text:{value:'A complete scenario'},button,box:{classList:{toggle(){}},querySelector:()=>row},panel:{querySelector:()=>null},exportSpinner:'spinner'});
+    voiceReady:false,requestPending:false,text:{value:'A complete scenario'},button,box:{classList:{toggle(){}},querySelector:()=>row},panel:{querySelector:()=>null},exportSpinner:'spinner'});
   c.actionState();assert.equal(button.disabled,true);assert.equal(row.hidden,true);
   c.actionState('running');assert.equal(button.disabled,false);assert.equal(row.hidden,false);
   c.actionState('cancelling');assert.equal(button.disabled,true);
