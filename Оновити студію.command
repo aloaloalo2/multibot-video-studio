@@ -1,9 +1,81 @@
 #!/bin/zsh
 # One-time recovery for an older updater. Normal future updates use the Studio button.
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-repair_folder="${0:A:h}"
-if [[ ! -f "$repair_folder/backend/app.py" || ! -e "$repair_folder/.git" ]]; then
-  repair_folder=$(/usr/bin/osascript -e 'POSIX path of (choose folder with prompt "Виберіть папку VideoKey Studio")') || exit 0
+echo 'Знаходимо студію…'
+repair_folder=$(/usr/bin/python3 - "${0:A:h}" <<'FIND_STUDIO'
+import json
+import pathlib
+import subprocess
+import sys
+
+OFFICIAL = {'https://github.com/aloaloalo2/multibot-video-studio',
+            'git@github.com:aloaloalo2/multibot-video-studio'}
+
+def capture(arguments):
+    try:
+        result = subprocess.run(arguments, capture_output=True, timeout=4)
+        return result.stdout.decode('utf-8', 'replace') if result.returncode == 0 else ''
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+
+def official_root(path):
+    try:
+        root = pathlib.Path(path).expanduser().resolve()
+        if not (root / '.git').exists() or not (root / 'backend/app.py').is_file():
+            return None
+        origin = capture(['git', '-C', str(root), 'remote', 'get-url', 'origin']).strip().removesuffix('.git')
+        return root if origin in OFFICIAL else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+def running_root():
+    roots = set()
+    for pid in set(capture(['lsof', '-tiTCP:8770', '-sTCP:LISTEN']).split()):
+        if not pid.isdigit():
+            continue
+        for line in capture(['lsof', '-a', '-p', pid, '-d', 'cwd', '-Fn']).splitlines():
+            if line.startswith('n'):
+                root = official_root(line[1:])
+                if root:
+                    roots.add(root)
+    if len(roots) > 1:
+        raise SystemExit('Відкрийте одну потрібну студію та повторіть запуск оновлення.')
+    return next(iter(roots), None)
+
+def find_root(beside):
+    active = running_root()
+    if active:
+        return active
+    home = pathlib.Path.home()
+    try:
+        config = json.loads((home / 'Library/Application Support/VideoKey Studio/config.json').read_text(encoding='utf-8'))
+        registered = official_root(pathlib.Path(config['command']).parent)
+        if registered:
+            return registered
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    adjacent = official_root(beside)
+    if adjacent:
+        return adjacent
+    names = ('VideoKey Studio', 'MultiBot Video Studio', 'multibot-video-studio', 'multibot-video-studio-main')
+    bases = (home / 'Applications', home / 'Documents', home / 'Desktop', home / 'Downloads', home / 'Documents/YOUTUBE')
+    candidates = {base / name for base in bases for name in names}
+    indexed = capture(['mdfind', '-onlyin', str(home), 'kMDItemFSName == "Запустить студию.command"'])
+    candidates.update(pathlib.Path(item).parent for item in indexed.splitlines()[:100] if item)
+    found = {root for path in candidates if (root := official_root(path))}
+    if len(found) == 1:
+        return found.pop()
+    if found:
+        raise SystemExit('Знайдено кілька копій. Відкрийте потрібну студію як завжди та повторіть запуск оновлення.')
+    raise SystemExit('Спочатку відкрийте студію звичайним способом, потім запустіть цей файл ще раз.')
+
+if __name__ == '__main__':
+    print(find_root(sys.argv[1]))
+FIND_STUDIO
+)
+if [[ $? != 0 || -z "$repair_folder" ]]; then
+  read -r '?Натисніть Enter, щоб закрити це вікно.'
+  exit 1
 fi
 repair_python='/usr/bin/python3'
 [[ -x "$repair_folder/.venv/bin/python3" ]] && repair_python="$repair_folder/.venv/bin/python3"
@@ -16,7 +88,7 @@ import tempfile
 
 root = pathlib.Path(sys.argv[1]).resolve()
 if not (root / 'backend/app.py').is_file() or not (root / '.git').exists():
-    raise SystemExit('Оберіть папку самої студії, у якій є backend та frontend.')
+    raise SystemExit('Відкрийте студію звичайним способом і запустіть цей файл ще раз.')
 
 def git(*arguments):
     try:
@@ -31,7 +103,7 @@ def git(*arguments):
 origin = git('remote', 'get-url', 'origin').decode().strip().removesuffix('.git')
 if origin not in {'https://github.com/aloaloalo2/multibot-video-studio',
                   'git@github.com:aloaloalo2/multibot-video-studio'}:
-    raise SystemExit('Ця папка підключена до іншого репозиторію. Файли залишено без змін.')
+    raise SystemExit('Ця копія підключена до іншого репозиторію. Файли залишено без змін.')
 
 print('Завантажуємо новий механізм оновлення…', flush=True)
 git('fetch', '--quiet', '--no-tags', 'origin')

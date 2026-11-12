@@ -228,15 +228,22 @@ if '--stop-only' in sys.argv and os.environ.get('VIDEOKEY_BOOTSTRAP_TEST_BUSY'):
         if broken:(self.author/'backend/app.py').write_text('import deliberately_missing_bootstrap_fixture\n')
         self.git(self.author,'add','backend');self.publish()
         (self.install/'app.txt').write_text('local edits')
-        code=(repository/'Оновити студію.command').read_text().split("<<'PY'\n",1)[1].split('\nPY\n',1)[0]
+        launcher=(repository/'Оновити студію.command').read_text()
+        discovery=launcher.split("<<'FIND_STUDIO'\n",1)[1].split('\nFIND_STUDIO\n',1)[0]
+        code=launcher.split("<<'PY'\n",1)[1].split('\nPY\n',1)[0]
         prelude='''import subprocess
+import sys
 original_run=subprocess.run
 def run(arguments,*args,**kwargs):
- if arguments[:4]==['git','remote','get-url','origin']:
+ if arguments[:4]==['git','remote','get-url','origin'] or arguments[:2]==['git','-C']:
   return subprocess.CompletedProcess(arguments,0,stdout=b'https://github.com/aloaloalo2/multibot-video-studio.git\\n',stderr=b'')
+ if arguments[0]=='lsof':
+  output=b'42\\n' if '-tiTCP:8770' in arguments else b'p42\\nn'+sys.argv[1].encode()+b'\\n'
+  return subprocess.CompletedProcess(arguments,0,stdout=output,stderr=b'')
  return original_run(arguments,*args,**kwargs)
 subprocess.run=run
 '''
+        prelude+='\nnamespace={"__name__":"discovery_fixture"}\nexec('+repr(discovery)+',namespace)\nsys.argv[1]=str(namespace["find_root"]("/Downloads"))\n'
         log=Path(self.temp.name)/'recovery-events.jsonl'
         result=subprocess.run([sys.executable,'-c',prelude+'\nexec('+repr(code)+')',str(self.install)],
             capture_output=True,text=True,timeout=30,env={**os.environ,'VIDEOKEY_BOOTSTRAP_TEST_LOG':str(log),
