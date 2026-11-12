@@ -8,7 +8,7 @@
 
 A frame is a Studio frame (story/studio_frames.json) or, without one, a shot (story/shots.json). `sheets` renders three
 stills of every frame from the live code (at 20%, 50% and 80% of it, away from the transitions at its edges) and lays
-them out in build/review/review_NN.png, four frames per sheet: frame number, time, takes and the narration line above
+them out in build/review/review_frames_<ids>.png, four frames per sheet: frame number, time, takes and the narration line above
 the three pictures. Open every sheet and check every frame against the checklist in references/render-qc.md
 («Frame review»): bodies and poses that are physically wrong (lying on a bed, sitting on a chair, holding things,
 standing on the floor), things that float, overlap or pass through each other, a picture that does not match the
@@ -66,15 +66,19 @@ def frames_of(proj: Path) -> list[dict]:
 
 
 def thumb(path: Path):
-    return Image.open(path).convert("L").resize((128, 72), Image.BOX) if path.is_file() else None
+    if not path.is_file():
+        return None
+    with Image.open(path) as picture:
+        return picture.convert("RGB").resize((128, 72), Image.BOX)
 
 
 def same_picture(a, b) -> bool:
     """Two stills of one moment are the same picture when no more than a few pixels of their 128×72 thumbnails differ
-    by more than 10 levels: a speck of drifting dust is not a change, a moved arm or a new object is."""
+    by more than 10 levels in any colour channel: a speck of drifting dust is not a change,
+    a moved arm, changed colour or a new object is."""
     if a is None or b is None:
         return False
-    return sum(ImageChops.difference(a, b).histogram()[11:]) <= 3
+    return sum(max(pixel) > 10 for pixel in ImageChops.difference(a, b).getdata()) <= 3
 
 
 def pick(spec: str, total: int | None) -> set[int]:
@@ -93,6 +97,12 @@ def load_state(path: Path) -> dict:
     return json.loads(path.read_text()) if path.is_file() else {"frames": {}}
 
 
+def save_state(path, state):
+    temporary = path.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+    os.replace(temporary, path)
+
+
 def code_mtime(proj: Path) -> float:
     root = proj.parent.parent
     files = [p for d in ("scenes", "story", "assets", "input") for p in (proj / d).rglob("*") if p.is_file()]
@@ -108,17 +118,20 @@ def sheets(proj: Path, root: Path, a) -> None:
     state = load_state(state_path)
     sources = fingerprints(proj, root, frames)
     keep = state_path.parent / "frames"
+    times_by_frame = {}
+    for f in frames:
+        lo, hi = f['start'] + min(.5,(f['end']-f['start'])*.2), f['end'] - min(.5,(f['end']-f['start'])*.2)
+        times_by_frame[f['n']] = [round(round(min(hi,max(lo,f['start']+(f['end']-f['start'])*k))*fps)/fps,2) for k in SPOTS]
     def reusable(f):
         old = state["frames"].get(str(f["n"]), {})
         return (not old.get("errors") and old.get("source") == sources[f["n"]] and old.get("scale") == a.scale
-                and old.get("times") and all((keep / f"{t:.2f}.png").is_file() for t in old["times"]))
+                and old.get("times") == times_by_frame[f['n']] and all((keep / f"{t:.2f}.png").is_file() for t in old["times"]))
     todo = [f for f in frames if f["n"] in want and (getattr(a, "all", False) or not reusable(f))]
-    if not todo:
+    if not todo and all(state['frames'].get(str(f['n']),{}).get('verdict') == 'ok' for f in frames if f['n'] in want):
         print("No changed frames: saved stills and visual verdicts reused. No renderer started.")
         return
     for f in todo:   # on the frame grid, inside the frame, away from its first and last 0.5 s (transitions)
-        lo, hi = f["start"] + min(0.5, (f["end"] - f["start"]) * 0.2), f["end"] - min(0.5, (f["end"] - f["start"]) * 0.2)
-        f["times"] = [round(round(min(hi, max(lo, f["start"] + (f["end"] - f["start"]) * k)) * fps) / fps, 2) for k in SPOTS]
+        f['times'] = times_by_frame[f['n']]
     out = proj / "build" / "review"
     keep = out / "frames"
     keep.mkdir(parents=True, exist_ok=True)
@@ -157,13 +170,23 @@ def sheets(proj: Path, root: Path, a) -> None:
             old = {}
         state["frames"][str(f["n"])] = {**old, "pixels": digest, "times": f["times"], "takes": f["takes"],
                                          "source": sources[f["n"]], "scale": a.scale, "errors": sorted(set(errors))[:40]}
-    for p in out.glob("review_*.png"):
-        p.unlink()
-    w, h = todo[0]["imgs"][0].size
+    show = [f for f in frames if f['n'] in want and
+            (state['frames'].get(str(f['n']),{}).get('verdict') != 'ok' or state['frames'][str(f['n'])].get('errors'))]
+    for f in show:
+        f['times'] = state['frames'][str(f['n'])]['times']
+        if 'imgs' not in f:
+            f['imgs'] = [Image.open(keep / f'{t:.2f}.png').convert('RGB') for t in f['times']]
+    if not show:
+        state['errors'] = sorted({e for v in state['frames'].values() for e in v.get('errors',[])})[:40]
+        save_state(state_path,state)
+        print('Pictures unchanged: saved visual verdicts retained. No repeated visual review needed.')
+        return
+    w, h = show[0]["imgs"][0].size
     head, gap = 54, 8
     f1, f2 = font(22), font(16)
-    for s in range(0, len(todo), PER_SHEET):
-        group = todo[s:s + PER_SHEET]
+    sheets = []
+    for s in range(0, len(show), PER_SHEET):
+        group = show[s:s + PER_SHEET]
         sheet = Image.new("RGB", (w * 3 + gap * 2, (h + head + gap) * len(group)), (14, 14, 16))
         d = ImageDraw.Draw(sheet)
         for k, f in enumerate(group):
@@ -176,12 +199,16 @@ def sheets(proj: Path, root: Path, a) -> None:
             for j, im in enumerate(f["imgs"]):
                 sheet.paste(im, (j * (w + gap), y + head))
                 d.text((j * (w + gap) + 6, y + head + 4), f"{f['times'][j]:.2f}s", font=f2, fill=(255, 255, 255))
-        sheet.save(out / f"review_{s // PER_SHEET + 1:02d}.png")
+        path = out / ('review_frames_' + '_'.join(f'{f["n"]:03d}' for f in group) + '.png')
+        sheet.save(path)
+        sheets.append(path)
     state["sheets_at"] = time.time()
     state["total"] = len(frames)
     state["errors"] = sorted({e for v in state["frames"].values() for e in v.get("errors", [])})[:40]
-    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1))
-    print(f"Sheets: {out}/review_NN.png ({-(-len(todo) // PER_SHEET)} sheets, {len(todo)} frames, 3 stills each)")
+    save_state(state_path,state)
+    print(f'Sheets: {len(sheets)} for {len(show)} frames needing review; rendered {len(todo)} frames.')
+    for path in sheets:
+        print(str(path))
     if reset:
         print(f"{reset} frames changed since their verdict and need a new look")
     if errors:
@@ -195,12 +222,21 @@ def mark(proj: Path, a) -> None:
     state = load_state(state_path)
     if not state["frames"]:
         sys.exit("Run `sheets` first")
-    for n in sorted(pick(a.frames, state.get("total", 10 ** 6))):
+    units = frames_of(proj)
+    wanted = pick(a.frames, None)
+    if not wanted or wanted - {f['n'] for f in units}:
+        sys.exit('Unknown frame selection')
+    sources = fingerprints(proj,proj.parent.parent,[f for f in units if f['n'] in wanted])
+    for n in sorted(wanted):
         entry = state["frames"].get(str(n))
         if not entry:
             sys.exit(f"Frame {n} has no stills yet: run `sheets` for it first")
+        if entry.get('source') != sources[n] or not entry.get('times') or not all((state_path.parent/'frames'/f'{t:.2f}.png').is_file() for t in entry['times']):
+            sys.exit(f'Frame {n} changed or has missing stills: run `sheets` before marking it')
+    for n in sorted(wanted):
+        entry = state['frames'][str(n)]
         entry.update(verdict=a.verdict, note=a.note or "", at=time.time())
-    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+    save_state(state_path,state)
     print(f"Marked {a.frames} {a.verdict}" + (f": {a.note}" if a.note else ""))
 
 

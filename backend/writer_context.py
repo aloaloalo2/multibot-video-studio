@@ -34,11 +34,11 @@ def compact(context):
         if not isinstance(row, dict) or not isinstance(row.get('title'), str):continue
         key = ' '.join(unicodedata.normalize('NFC', row['title']).split()).casefold()
         # Retain every supplied subject label, including conflicting historical labels.
-        identity = (key, row.get('subject') or '')
-        topics[identity] = {name: row[name] for name in ('title', 'subject') if isinstance(row.get(name), str)}
+        identity = (key, row.get('subject') or '', row.get('premise') or '')
+        topics[identity] = {name: row[name] for name in ('title', 'subject', 'premise') if isinstance(row.get(name), str)}
     if topics:
-        for key, subject in list(topics):
-            if subject:topics.pop((key, ''), None)
+        for key, subject, premise in list(topics):
+            if subject or premise:topics.pop((key, '', ''), None)
         result['topic_exclusions'] = list(topics.values())
         for key in ('previous_titles', 'previous_suggestions', 'previous_topic_history'):result.pop(key, None)
     after = len(encode(result))

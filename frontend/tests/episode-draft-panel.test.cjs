@@ -12,7 +12,7 @@ const hooks={project_id:'p',stage:'openings',status:'done',target_words:2000,ope
 function fixture(api,initial=hooks){
   const root=node(),panel={dataset:{}},calls=[],timers=new Map(),state={project:{id:'p'},view:'editor',episodeDraft:initial};let seq=0,rendered=0;
   const c=vm.createContext({state,api:async(...args)=>{calls.push(args);return api(...args)},episodeDraftPending:d=>!!d?.project_id&&!d.completed&&!d.cancelled,
-    episodeIcon:()=>'<svg></svg>',esc:s=>String(s),document:{createElement:node},voiceScriptDraft:{},crypto:{randomUUID:()=>`request-${++seq}`},
+    createScriptEditingButton:()=>node(),episodeIcon:()=>'<svg></svg>',esc:s=>String(s),document:{createElement:node},voiceScriptDraft:{},crypto:{randomUUID:()=>`request-${++seq}`},
     renderProject(){rendered++},refreshProjects:async()=>{},setTimeout:fn=>{const id=++seq;timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id)});
   vm.runInContext(source,c);c.mountEpisodeDraftPanel(root,'p',initial,panel);
   return {c,root,panel,calls,state,timers,rendered:()=>rendered};
@@ -73,4 +73,12 @@ test('an older poll cannot replace the script stage after a hook is selected',as
   finish(hooks);await pending;
   assert.equal(h.state.episodeDraft.stage,'script');assert.equal(h.state.episodeDraft.status,'running');
   assert.match(h.root.innerHTML,/Opus пише сценарій/);
+});
+
+test('failed self-review exposes a draft and resumes its author instead of metadata bypass',async()=>{
+ const data={...hooks,stage:'script',status:'failed',script_saved:true,editing_status:'failed',author_session:{session_id:'same-author'}};
+ const h=fixture(async()=>({...data,status:'running',stage:'editing'}),data);
+ assert.match(h.root.innerHTML,/саморедактуру не завершено/);
+ const retry=h.root.querySelector('#episode-draft-metadata');assert.equal(retry.textContent,'Продовжити саморедактуру · Opus');
+ await retry.onclick();assert.equal(h.calls[0][2].action,'editing');assert.match(h.root.innerHTML,/Opus перевіряє й редагує свій сценарій/);
 });

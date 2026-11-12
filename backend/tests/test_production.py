@@ -50,6 +50,38 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.project['production_request']['session_id'],'existing-session')
         self.assertFalse(self.project['production_request']['paused'])
 
+    def test_ready_frames_skip_model_but_still_require_current_quality(self):
+        for passed in (False, True):
+            with self.subTest(passed=passed):
+                self.project['production_request']=dict(REQUEST)
+                receipt={'passed':passed,'errors':[] if passed else ['Stale review']}
+                with patch.object(store,'made_frames',return_value=[1,2,3]), \
+                     patch.object(production,'drawn',return_value=True), \
+                     patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+                     patch.object(production.production_quality,'check',return_value=receipt) as quality, \
+                     patch.object(production.director,'claude') as model:
+                    production.run(self.project['id'],Path('claude'))
+                model.assert_not_called()
+                self.assertEqual(quality.call_args.args[1]['review_frames'],[1,2,3])
+                self.assertEqual(self.project['production_request']['status'],'done' if passed else 'failed')
+
+    def test_short_final_session_receives_only_its_frame_ids_and_real_time_bounds(self):
+        self.project['production_request']={**REQUEST,'frames':53,'total_frames':53,'end':106}
+        plan={'frames':[{'number':n,'start':(n-1)*2,'end':n*2} for n in range(1,54)]}
+        with patch.object(store,'load_project_plan',return_value=plan), \
+             patch.object(store,'made_frames',return_value=list(range(1,41))), \
+             patch.object(production,'drawn',return_value=True), \
+             patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+             patch.object(production.production_quality,'check',return_value={'passed':True,'errors':[]}), \
+             patch.object(production.production_context,'write',return_value=(Path('context.json'),'Current work')), \
+             patch.object(production.director,'claude',return_value=(0,{'result':'Ready'})) as model:
+            production.run(self.project['id'],Path('claude'))
+        self.assertEqual(model.call_count,1)
+        prompt=model.call_args.args[1]
+        self.assertIn('лише кадри студії 41-53 з 53, від 80.00 до 106.00',prompt)
+        self.assertNotIn('лише кадри студії 1-53',prompt)
+        self.assertEqual(self.project['production_request']['status'],'done')
+
     def test_paused_queued_worker_never_launches_or_changes_state(self):
         pid=self.project['id'];self.project['production_request'].update(paused=True,status='failed')
         before=json.loads(json.dumps(self.project))
@@ -75,7 +107,7 @@ class ProductionTest(unittest.TestCase):
 
     def test_brief_names_the_frames_and_the_limits(self):
         text = production.brief(self.project, REQUEST)
-        for part in ("кадри студії 1–3 з 73", "slots --razgon <проєкт> --frames 1,2,3", "codex_image.py", '"assets": false',
+        for part in ("кадри студії 1-3 з 73", "slots --razgon <проєкт> --frames 1,2,3", "codex_image.py", '"assets": false',
                      "Не роби фінальний MP4", "«Експорт MP4»"):
             self.assertIn(part, text)
         self.assertNotIn("push --razgon", text)                                        # the agent renders no frames
@@ -112,7 +144,7 @@ class ProductionTest(unittest.TestCase):
     def test_a_photo_channel_gets_its_own_brief_and_is_done_when_its_frames_stand_on_the_timeline(self):
         self.animated = False
         text = production.photo_brief(self.project, REQUEST)
-        for part in ("кадри студії 1–3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "без стикменів",
+        for part in ("кадри студії 1-3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "без стикменів",
                      "razgon_bridge.py", "Не запускай експорт"):
             self.assertIn(part, text)
         plan = {"frames": [{"number": n, "start": 2.0 * (n - 1), "end": 2.0 * n} for n in range(1, 4)]}
@@ -120,10 +152,13 @@ class ProductionTest(unittest.TestCase):
         self.project["tracks"] = [{"clips": [picture(1), picture(2), {"id": "p", "kind": "animation", "start": 0, "duration": 6, "title": "Плашка"}]}]
         answer = {"result": "Кадри готові", "total_cost_usd": 1.0}
         with patch.object(production.director, "claude", return_value=(0, answer)) as claude, \
-                patch.object(store, "load_project_plan", return_value=plan), patch.object(production.logo_layer, "place"):
+                patch.object(store, "load_project_plan", return_value=plan), patch.object(production.logo_layer, "place"), \
+                patch.object(production.director.agent_storage, "get_memory", return_value="Shared Agent rules for generated frames"):
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
             self.assertEqual(self.project["production_request"]["status"], "failed")     # frame 3 is not on the timeline
+            self.assertIn("Shared Agent rules for generated frames", claude.call_args.args[1])
+            self.assertIn("створенні й доборі кадрів", claude.call_args.args[1])
             self.assertIn("place", claude.call_args.args[1])                              # the photo brief went to Opus
             self.project["tracks"][0]["clips"].append(picture(3))
             production.ACTIVE.add(self.project["id"])

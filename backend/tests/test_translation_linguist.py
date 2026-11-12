@@ -94,6 +94,47 @@ class LinguistTest(unittest.TestCase):
         self.assertEqual(linguist.restore_number_words('En 2015.','En dos mil catorce.','es'),'En 2015.')
         self.assertEqual(linguist.restore_number_words('En 2014.','En dos mil catorce.','es'),'En dos mil catorce.')
 
+    def test_saved_native_year_correction_survives_a_former_local_false_alarm_without_requests(self):
+        self.options.update(language='pl', language_name='Polish', source='In January 2022, the volcano erupted.',
+                            current='W styczniu tysiąc dziewięćset dwudziestego drugiego roku wybuchł wulkan.')
+        fixed='W styczniu dwa tysiące dwudziestego drugiego roku wybuchł wulkan.'
+        self.ledger['3']={
+            'fingerprint':recovery.fingerprint(['linguist-v1','pl',self.options['source'],self.options['current']]),
+            'status':'blocked','error':linguist.GUARD_ERROR,'guard_requested':True,'candidate':fixed,
+            'decision':{'id':3,'action':'replace','text':fixed,'reason':'Correct the source year to 2022.'},
+            'guard_decision':{'id':3,'action':'replace','text':fixed,'reason':'The native year already matches 2022.'}}
+        self.assertEqual(self.run_decisions([]),fixed)
+        self.assertEqual(self.ledger['3']['status'],'resolved')
+        self.assertNotIn('error',self.ledger['3'])
+        self.assertEqual(self.calls,[])
+
+    def test_unapproved_candidate_and_real_linguist_block_cannot_be_recovered(self):
+        identity=recovery.fingerprint(['linguist-v1','es',self.options['source'],self.options['current']])
+        for changes in (
+            {'candidate':'Unapproved different wording.'},
+            {'guard_decision':{'id':3,'action':'block','reason':'The source fact is unresolved.'}},
+            {'guard_decision':{'id':4,'action':'replace','text':self.options['current'],'reason':'Wrong identity.'}},
+            {'status':'guard_requested'},
+            {'error':'The source fact is unresolved.'},
+            {'fingerprint':'different-source'},
+        ):
+            with self.subTest(changes=changes):
+                self.ledger['3']={
+                    'fingerprint':identity,'status':'blocked','error':linguist.GUARD_ERROR,
+                    'candidate':self.options['current'],
+                    'guard_decision':{'id':3,'action':'replace','text':self.options['current'],'reason':'Faithful.'},
+                    **changes}
+                self.assertIsNone(linguist.reuse(**{key:self.options[key] for key in
+                    ('index','language','source','current','ledger','save','validate')}))
+
+    def test_foreign_or_unspoken_saved_candidate_still_fails_local_format_validation(self):
+        self.ledger['3']={
+            'fingerprint':recovery.fingerprint(['linguist-v1','es',self.options['source'],self.options['current']]),
+            'status':'blocked','error':linguist.GUARD_ERROR,'candidate':'In 2015.',
+            'guard_decision':{'id':3,'action':'replace','text':'In 2015.','reason':'Claimed approval.'}}
+        self.assertIsNone(linguist.reuse(**{key:self.options[key] for key in
+            ('index','language','source','current','ledger','save','validate')}))
+
     def test_contradictory_checker_evidence_is_not_an_error_or_an_approval(self):
         answer=json.dumps({'ok':False,'ids':[0,1],'issues':[{'id':1,'reason':"Actually correct. No error."}]})
         self.assertEqual(recovery.audit_evidence(answer,[0,1]),({},[0]))

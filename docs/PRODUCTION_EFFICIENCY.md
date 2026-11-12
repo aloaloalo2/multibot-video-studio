@@ -15,7 +15,11 @@
 
 `frame_review.py sheets` створює по три стоп-кадри нових або змінених кадрів. Цей аркуш використовується для перевірки змісту, композиції, поз і якості. Другий суцільний `render.mjs --sheet` для тієї самої версії не потрібен.
 
-Перевірка зберігає відбитки вмісту файлів. Незмінений кадр використовує готові зображення. Зміна шоту враховує також сусідні стики та імпортовані модулі. Зміна спільного рушія, декорації, стилю чи асетів вимагає нової перевірки залежних кадрів. `status` перевіряє актуальність кожного кадру, навіть після роботи лише над вибраним діапазоном. `sheets --all` примусово оновлює всі стоп-кадри.
+Перевірка зберігає відбитки вмісту файлів. Незмінений кадр використовує готові зображення. Зміна шоту враховує також сусідні стики та імпортовані модулі. Зміна спільного рушія, декорації, стилю чи використаного асета вимагає нової перевірки залежних кадрів. `status` перевіряє актуальність кожного кадру, навіть після роботи лише над вибраним діапазоном. `sheets --all` примусово оновлює всі стоп-кадри.
+
+Статичний аналіз сцен читає реєстрації `take`, зокрема масиви, імпорти й назви зображень. Нова невикористана картинка, промпт генерації або сторонній запис в `assets/index.json` зберігають попередні схвалення. Для невідомого динамічного вибору картинок залишається консервативна перевірка всіх можливих асетів. Аналізатор використовує парсер установленого Playwright, без окремого сервісу чи платних запитів.
+
+Аркуші мають назви з номерами кадрів, наприклад `review_frames_021_022_023_024.png`. Наступна партія зберігає попередні аркуші. Повторна команда показує точні шляхи лише до аркушів, що потребують перегляду; для схвалених незмінених кадрів рендер не запускається. Свіже схвалення вимагає актуальних стоп-кадрів. Після зміни коду з однаковою картинкою зберігається попередній візуальний висновок; помилки виконання все одно блокують здачу.
 
 Початковий перегляд усіх нових кадрів залишається обов'язковим. Після правки переглядайте змінені кадри та їхні стики. Перевірки руху й продуктивності виконуйте для відповідних діапазонів. Повний рендер запускає користувач.
 
@@ -33,4 +37,8 @@
 
 ## Sequential frame checkpoints
 
-Agent and Task tools are disabled in the Claude CLI. One agent works through batches of exactly five pending frames (only the final remaining batch may be smaller), reuses shared code, saves each frame immediately and checks the batch before moving on. The derived handoff names missing takes separately from existing scene files. This prevents repeated broad assignments after a pause. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
+Agent and Task tools are disabled in the Claude CLI. One agent works through batches of exactly five pending frames (only the final remaining batch may be smaller), reuses shared code, saves each frame immediately and checks the batch before moving on. Each fresh session receives at most twenty explicit pending frame ids with their real time bounds, including a short final continuation. Every command in the brief uses that same scope. The derived handoff names only takes overlapping each frame, including individual parts of a joined shot. It is read once per batch. A new scene-specific helper belongs in its own module so earlier shared code stays stable. Current scoped visual approval is verified before the next session; genuine failures stop with saved progress. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
+
+## Локальна перевірка оптимізації, 12 листопада 2026
+
+На копії готового ролика про вулкани з 53 кадрами додавання невикористаного зображення, промпту, запису реєстру чи модуля майбутніх шотів раніше скидало перевірку всіх 53 кадрів. Після виправлення кожна з цих дій зберігає всі схвалення. Зміна використаної картинки аеропорту зачіпає кадри 24-27; зміна її сцени також перевіряє ці 4 кадри. Це вимірювання повторних перевірок. Час і витрати наступного виробничого запуску потрібно оцінити окремо за його журналами.

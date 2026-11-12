@@ -76,7 +76,8 @@ function updateProjectNextAction(){
   if(button.innerHTML!==markup)button.innerHTML=markup;
   button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=!decision.settings;
   settings.dataset.section=decision.settings||'';
-  const target=context.targets[decision.kind]||null;
+  // Keep the file-import action beside the chosen file; moving it to the header looked like it vanished.
+  const target=decision.kind==='upload'?null:context.targets[decision.kind]||null;
   if(delegatedWorkflowTarget!==target){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=target;target?.classList.add('workflow-action-target');}
   if(!context.root.classList.contains('workflow-guided'))context.root.classList.add('workflow-guided');
 }

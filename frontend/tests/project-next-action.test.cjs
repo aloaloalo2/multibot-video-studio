@@ -50,3 +50,15 @@ test('metadata and director recovery use their own explicit steps',()=>{
   assert.equal(decide({directionRecovery:true}).kind,'direction');
   assert.equal(decide({directionRecovery:true,pendingScript:true}).kind,'narrate');
 });
+
+test('choosing a narration file keeps its local Create video button visible',()=>{
+  const marks=new Set(),local={classList:{add:k=>marks.add(k),remove:k=>marks.delete(k)}};
+  const elements={'project-next-step':{},'project-next-action':{},'project-next-reason':{},'project-next-settings':{dataset:{}},'export-open':{}};
+  const context={model:{script:'Saved script',fileMode:true,hasFile:true,uploadEnabled:true},root:{classList:{contains:()=>true}},targets:{upload:local}};
+  const block=source.slice(source.indexOf('function updateProjectNextAction()'),source.indexOf('function focusWorkflowScript('));
+  const testContext=vm.createContext({projectNextContext:()=>context,projectNextAction:c.projectNextAction,state:{view:'editor'},$:id=>elements[id],esc:String,projectNextIcons:{create:''},delegatedWorkflowTarget:null,projectNextBusy:false});
+  vm.runInContext(block,testContext);testContext.updateProjectNextAction();
+  assert.equal(elements['project-next-action'].disabled,false);
+  assert.match(elements['project-next-action'].innerHTML,/Створити відео/);
+  assert.equal(marks.has('workflow-action-target'),false);
+});

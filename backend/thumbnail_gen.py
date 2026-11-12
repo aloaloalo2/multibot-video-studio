@@ -23,6 +23,7 @@ import frame_progress
 import store
 import job_timing
 import channel_hero
+import agent_storage
 import image_delivery
 import thumbnail_compare
 
@@ -464,6 +465,13 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
             hero_rules = '\nГоловний герой.png is our host identity reference ONLY when replacing a source presenter. Do not add this host to neutral story-subject or object-only concepts.\n' if hero else ''
         channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
+        try:
+            agent_rules = agent_storage.get_memory(project['channel_id']).strip()
+        except (store.StudioError, KeyError):
+            agent_rules = ''
+        if agent_rules:
+            wishes = ("Shared channel Agent rules (apply relevant thumbnail wishes; specific current wishes take priority):\n"
+                      + agent_rules + "\n\nSpecific wishes for this thumbnail:\n" + wishes)
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
             refs, answer = [version_file(pid, base)], {}

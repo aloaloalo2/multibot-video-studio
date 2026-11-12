@@ -6,6 +6,7 @@ const channelSettingsPaths={
   montage:'<path d="M4 5h16M4 12h16M4 19h16M8 2v6m8 1v6m-6 1v6"/>',
   voice:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
   sound:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',
+  competitors:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 21v-2a6 6 0 0 1 12 0v2m2-7a5 5 0 0 1 6 5v2"/>',
   languages:'<path d="M3 5h11M8 3v2M5 5c0 5 4 9 8 10M12 5c0 4-3 8-8 11m10 5 4-11 4 11m-6.5-4h5"/>',
   thumbnails:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
   formats:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -38,7 +39,7 @@ function channelSettingsSummary(values,limit=3){
   return active.slice(0,limit).map(item=>`${item.label} ${item.amount}%`).join(' · ')+(active.length>limit?` · +${active.length-limit}`:'');
 }
 function channelSettingsEditable(field){
-  return !field.closest('.voice-player');
+  return !field.closest('.voice-player,.channel-competitors');
 }
 function channelSettingsResetAnchor(field){
   const anchor=field.closest('.tempo-scale')?.nextElementSibling||field.nextElementSibling;
@@ -62,12 +63,12 @@ function organizeChannelSettings(channel){
     ['projects','Основне','Для нових проєктів','Основне'],
     ['script','Сценарій','Зачини та повний текст'],
     ['look','Оформлення','Стиль і логотип'],
-    ['montage','Монтаж',''],
     ['voice','Озвучка','Голос і автоматизація'],
     ['thumbnails','Прев’ю','Герой і побажання'],
     ['sound','Звук','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
-    ['advanced','Розширене','Формат відео й правила','Розширене']
+    ['advanced','Розширене','Формат відео й правила','Розширене'],
+    ['competitors','Конкуренти','Канали для майбутніх ідей']
   ];
   const panels={},tabs={},summaries=new Map();
   const preferenceKey=`channel-settings-panel:${channel.id}`;
@@ -123,7 +124,7 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
-  move('.settings-agent-memory','montage',{icon:'memory',title:'Правила монтажера'});
+  move('.settings-agent-memory','projects',{icon:'memory',title:'Правила Агентів'});
   move('.settings-script-wishes','script',{icon:'script'});
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Логотип'});

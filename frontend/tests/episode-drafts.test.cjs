@@ -98,6 +98,36 @@ test('yesterday failed ideas get one guarded attempt when the tab opens',async()
   assert.match(h.root.innerHTML,/DeepSeek пропонує/);
 });
 
+test('daily preparation and manual refresh show the same busy state while POST is pending',async()=>{
+  for(const refresh of [false,true]){
+    let finish;
+    const h=harness(async(url,method)=>method==='POST'?new Promise(resolve=>finish=resolve):({...topics,stale:!refresh}));
+    await h.context.openNewEpisodeWizard();
+    await h.modes.nodes[1].onclick();
+    if(refresh)h.headerRefresh.onclick();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.match(h.root.innerHTML,/export-spinner/);
+    assert.match(h.root.innerHTML,/DeepSeek пропонує нові теми/);
+    assert.equal(h.headerRefresh.disabled,true);
+    assert.equal(h.calls.filter(c=>c[1]==='POST').length,1);
+    finish({...topics,stale:false,status:'running'});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.match(h.root.innerHTML,/DeepSeek пропонує нові теми/);
+  }
+});
+
+test('a stale response never starts a loop of automatic POST requests',async()=>{
+  let posts=0;
+  const h=harness(async(url,method)=>{
+    if(method==='POST'&&++posts>1)throw Error('Repeated automatic POST');
+    return {...topics,stale:true};
+  });
+  await h.context.openNewEpisodeWizard();await h.modes.nodes[1].onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(posts,1);
+  assert.ok(h.root.messages.some(s=>s.includes('оновити')));
+});
+
 test('cancelled and completed hooks do not reopen when selecting a project',()=>{
   const h=harness(()=>{});assert.equal(h.context.episodeDraftPending(hooks),true);
   assert.equal(h.context.episodeDraftPending({...hooks,cancelled:true}),false);

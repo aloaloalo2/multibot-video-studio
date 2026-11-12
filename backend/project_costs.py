@@ -63,6 +63,21 @@ def collect(root: Path, data: dict) -> dict:
         events[f"{provider}:{key}"] = {"provider": provider, "amount": amount if number(amount) else None,
                                        "category": category, "estimated": estimated}
 
+    # Recover durable per-paragraph receipts if a later status/accounting write was interrupted.
+    for path in (root / 'script-editing').glob('*/requests/*/receipt.json'):
+        row=read(path)
+        if isinstance(row,dict) and row.get('status')!='cancelled_before_submission':
+            if row.get('request_id') and row.get('attempt_id'):
+                events.pop('openrouter:'+row['attempt_id'],None)
+            put(row.get('request_id') or row.get('attempt_id') or str(path.relative_to(root)),
+                'openrouter',row.get('cost_usd'),category='script_editing')
+
+    for path in list((root/'script-editing').glob('*/author-receipt.json'))+list((root/'script-editing').glob('*/author-receipts/*.json')):
+        row=read(path)
+        if isinstance(row,dict):
+            put(row.get('identity') or str(path.relative_to(root)), 'claude_code',
+                row.get('incremental_cost_usd'),category='script_editing')
+
     for path in (root / "languages").glob("*/translation-attempts/*/*.json"):
         row = read(path)
         if isinstance(row, dict):

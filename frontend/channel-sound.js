@@ -15,6 +15,10 @@ function channelSoundMarkup(){
       <div id="transition-categories" class="channel-sound-categories"></div>
       <p class="channel-sound-note">Режисер обирає доречні переходи й чергує позначені звуки. М’які склейки переважно залишаються тихими.</p>
     </details>
+    <details class="channel-sound-group"><summary><span>SFX для анімацій</span><small>Добірка Mixkit</small></summary>
+      <p class="channel-sound-note">Ці звуки використовуються в нових анімаціях і показуються окремими кліпами на доріжці SFX. Дозволені для YouTube з монетизацією.</p>
+      <div id="animation-sfx-library" class="channel-sound-categories"></div>
+    </details>
   </section>`;
 }
 function bindChannelSound(saved){
@@ -52,6 +56,21 @@ function bindChannelSound(saved){
   api('/api/sound-effects').then(data=>{
     if(!root.isConnected)return;
     root.transitionSoundsReady=Array.isArray(data.transitions);
+    const library=root.querySelector('#animation-sfx-library');
+    for(const row of data.library||[]){
+      const item=document.createElement('div');item.className='channel-sound-category';
+      const label=document.createElement('span');label.textContent=row.label;
+      const play=document.createElement('button');play.type='button';play.className='sound-preview';
+      play.textContent='▶';play.setAttribute('aria-label','Прослухати '+row.label);play.setAttribute('aria-pressed','false');
+      play.addEventListener('click',async()=>{
+        const active=play.classList.contains('playing');stop();if(active)return;
+        const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=.3;sample=audio;
+        audio.addEventListener('ended',stop,{once:true});audio.addEventListener('error',stop,{once:true});
+        play.classList.add('playing');play.setAttribute('aria-pressed','true');
+        try{await audio.play();}catch(error){stop();status('Не вдалося прослухати звук.',true);}
+      });item.append(label,play);library.append(item);
+    }
+    if(!data.library?.length)library.textContent='Добірка SFX ще не імпортована.';
     for(const group of groups){
       const rows=data[group.key==='effects'?'categories':'transitions'];
       if(!Array.isArray(rows)){group.list.textContent='Доступно після оновлення студії.';continue;}

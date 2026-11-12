@@ -43,6 +43,17 @@ class FrameProgressTest(unittest.TestCase):
             "for (const id of ['e01', 'e02', 'e03']) take(id, (g, t) => world(g, t));")
         self.assertEqual(frame_progress.drawn("p" * 24), [1, 2])
 
+    def test_array_registration_and_joined_parts_are_counted_by_their_own_intervals(self):
+        (self.razgon/'story/shots.json').write_text(json.dumps({'shots':[{'id':'e01','start':0,'end':12,
+            'parts':[{'id':'e01','start':0},{'id':'e02','start':5},{'id':'e03','start':8}]}]}))
+        scene=self.razgon/'scenes/shots/e01_joined.js'
+        scene.write_text("take(['e01','e02'], draw);")
+        self.assertEqual(frame_progress.drawn('p'*24),[1])
+        scene.write_text("take(['e01','e02'], draw); registerShot('e03', draw);")
+        self.assertEqual(frame_progress.drawn('p'*24),[1,2])
+        self.assertEqual(frame_progress.frame_takes([{'id':'e01','start':0,'end':12,
+            'parts':[{'id':'e01','start':0},{'id':'e02','start':5},{'id':'e03','start':8}]}],5,8),['e02'])
+
     def test_an_episode_without_razgon_has_no_drawn_frames(self):
         with patch.object(store, "load_project", return_value={"id": "p" * 24, "episode_path": self.tmp.name}):
             self.assertEqual(frame_progress.drawn("p" * 24), [])

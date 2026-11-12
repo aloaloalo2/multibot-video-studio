@@ -97,3 +97,36 @@ class ProjectCostsTest(unittest.TestCase):
         saved=json.loads((self.root/'project-costs.json').read_text())
         self.assertEqual(saved['summary']['languages_usd'],.1)
         self.assertNotIn('messages',str(saved))
+
+    def test_editor_receipts_recover_cost_and_replace_pending_identity_once(self):
+        path=self.save('script-editing/run/requests/one/receipt.json',
+                       {'attempt_id':'pending-one','status':'submitted','cost_usd':None})
+        self.save('script-editing/run/requests/cancelled/receipt.json',
+                  {'attempt_id':'cancelled','status':'cancelled_before_submission','cost_usd':None})
+        data=self.collect()
+        self.assertEqual(project_costs.totals(data)['providers']['openrouter']['unknown'],1)
+        path.write_text(json.dumps({'attempt_id':'pending-one','request_id':'or-editor-1',
+                                    'status':'received','cost_usd':.004}))
+        data=self.collect(data);data=self.collect(data)
+        result=project_costs.totals(data)['providers']['openrouter']
+        self.assertEqual(result['requests'],1)
+        self.assertEqual(result['unknown'],0)
+        self.assertEqual(result['usd'],.004)
+
+    def test_author_self_review_receipts_keep_api_equivalence_separate_from_cash(self):
+        self.save('script-editing/run/author-receipt.json',{'identity':'self-review-one','total_cost_usd':1.2,'incremental_cost_usd':.7})
+        self.save('script-editing/legacy/requests/one/receipt.json',{'attempt_id':'legacy','request_id':'or-editor','status':'received','cost_usd':.003})
+        data=self.collect();data=self.collect(data)
+        result=project_costs.totals(data)['providers']
+        self.assertEqual(result['claude_code']['usd'],.7)
+        self.assertEqual(result['claude_code']['requests'],1)
+        self.assertEqual(result['openrouter']['usd'],.003)
+
+    def test_both_whole_script_phase_receipts_recover_increments_once(self):
+        self.save('script-editing/run/author-receipts/main.json',{'identity':'review-main','total_cost_usd':1.4,'incremental_cost_usd':.2})
+        self.save('script-editing/run/author-receipts/refinement.json',{'identity':'review-refine','total_cost_usd':1.5,'incremental_cost_usd':.1})
+        self.save('script-editing/run/author-receipt.json',{'identity':'review-refine','total_cost_usd':1.5,'incremental_cost_usd':.1})
+        data=self.collect();data=self.collect(data)
+        result=project_costs.totals(data)['providers']['claude_code']
+        self.assertEqual(result['requests'],2)
+        self.assertAlmostEqual(result['usd'],.3)

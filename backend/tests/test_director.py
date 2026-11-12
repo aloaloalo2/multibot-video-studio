@@ -40,6 +40,8 @@ class DirectorTest(unittest.TestCase):
         memory.assert_called_once_with(PROJECT["channel_id"])
         self.assertIn("Наукові схеми", text)
         self.assertIn("Сині плашки", text)
+        self.assertIn("Правила Агентів", text)
+        self.assertIn("створенні й доборі кадрів", text)
         self.assertIn("Акценти на кадрах увімкнені", text)
 
     def test_claude_memory_reaches_the_director_with_a_bounded_budget(self):

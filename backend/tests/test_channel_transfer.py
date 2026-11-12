@@ -17,6 +17,16 @@ import director
 
 
 class ChannelTransferTests(unittest.TestCase):
+    def test_competitors_are_portable_with_saved_names_and_avatars(self):
+        source=store.create_channel('Competitor source')
+        target=store.create_channel('Competitor target')
+        record={'competitors':[{'id':'UC'+'a'*22,'name':'Saved name','url':'https://www.youtube.com/channel/UC'+'a'*22,'icon_url':'data:image/png;base64,YQ=='}]}
+        source_path=store.DATA_ROOT/'channels'/source['id']/'competitors.json'
+        store.atomic_json(source_path,record)
+        raw=transfer.export_bundle(source['id'])
+        transfer.import_bundle(target['id'],raw,lambda cid:None)
+        self.assertEqual(store.read_json(store.DATA_ROOT/'channels'/target['id']/'competitors.json'),record)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()

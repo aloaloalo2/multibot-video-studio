@@ -28,10 +28,12 @@ import job_timing
 import script_drafts
 import status_views
 import thumbnail_compare
+import script_editing
 import technical_files
 import covers
 import channel_transfer
 import channel_api
+import trending_videos
 import style_lab
 import director
 import spend_report
@@ -873,10 +875,12 @@ def project_jobs(pid: str) -> dict:
 
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
+    if trending_videos.busy():
+        result['busy'].append('оновлення добірки конкурентів')
     import episode_ideas
     for data in episode_ideas.active_work():
         cid = data['channel_id']
-        kind = {'openings': 'створення зачинів', 'metadata': 'створення метаданих'}.get(data['stage'], 'створення сценарію')
+        kind = 'редактура сценарію' if data.get('editing_status')=='running' or data['stage']=='editing' else {'openings': 'створення зачинів', 'metadata': 'створення метаданих'}.get(data['stage'], 'створення сценарію')
         result['busy'].append(kind + ': ' + (data.get('project_id') or cid))
         result['active_channels'] = sorted(set(result['active_channels']) | {cid})
         if data.get('project_id'):
@@ -1201,6 +1205,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        if path == "/api/trending-videos":
+            return self.json_response(trending_videos.view())
+        editing = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-editing(?:/(status|[0-9a-f]{32}))?', path)
+        if editing:
+            return self.json_response(script_editing.availability(editing.group(1)) if editing.group(2)=='status' else script_editing.view(*editing.groups()))
+
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(?:/(history|baseline|stale|[0-9a-f]{32}))?', path)
         if draft:
             pid, kind = draft.groups()
@@ -1231,14 +1241,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/update':
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if path in {"/api/health", "/health"}:
-            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "export_queue": True, "create_video": True})
+            return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "manual_project_openings": True, "topic_premise_novelty": True, "trending_videos": True, "trending_use_idea": True, "export_queue": True, "create_video": True})
         draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
         if draft_match:
             import episode_ideas
             return self.json_response(episode_ideas.public(episode_ideas.read_project(draft_match.group(1))))
         if path == "/api/sound-effects":
             import sound_settings
-            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog()})
+            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "library": __import__("sfx_library").catalog()})
+        library_match = re.fullmatch(r"/api/sfx-library/([0-9]+)\.wav", path)
+        if library_match:
+            import sfx_library
+            row = next((r for r in sfx_library.catalog() if r['mixkit_id'] == library_match.group(1)), None)
+            if row is None:
+                raise store.StudioError('Звук не знайдено', 404)
+            return self.serve_media(Path(row['name']), cache=True)
         sound_match = re.fullmatch(r"/api/sound-effects/([a-z]+)\.wav", path)
         if sound_match:
             import sound_settings
@@ -1505,11 +1522,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(store.razgon_link(store.load_project(match.group(1))) or {})
         if path.startswith("/api/"):
             raise store.StudioError("Сторінку не знайдено", 404)
+        if path in ("/trending", "/trending/"):
+            return self.serve_static("/")
         if re.fullmatch(r"/channels/[0-9a-f]{16}(?:/projects/[0-9a-f]{24}(?:/(?:plan|agent|preview|languages))?)?/?", path):
             return self.serve_static("/")
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        if path == "/api/trending-videos/use" and method == "POST":
+            return self.json_response(trending_videos.use_idea(body), 202)
+        if path == "/api/trending-videos/refresh" and method == "POST":
+            return self.json_response(trending_videos.refresh())
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)
         if draft and method == ('POST' if draft.group(2) else 'PATCH'):
             return self.json_response(script_drafts.restore(draft.group(1), body) if draft.group(2) else script_drafts.save(draft.group(1), body))

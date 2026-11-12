@@ -23,7 +23,7 @@ import store
 MAX_BYTES = 128 * 1024 * 1024
 MAX_FILES = 512
 FORMAT = 'videokey-channel-settings'
-ROOT_FILES = ('icon.png', 'logo.png', 'thumbnail-hero.png', 'custom-styles.json', 'portable-rules.json')
+ROOT_FILES = ('competitors.json', 'icon.png', 'logo.png', 'thumbnail-hero.png', 'custom-styles.json', 'portable-rules.json')
 VOICE_FILES = ('settings.json', 'reference.mp3', 'reference.json')
 
 

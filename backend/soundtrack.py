@@ -4,8 +4,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import shutil
+from pathlib import Path
 
 import sound_settings
+import sfx_library
 import store
 
 PREFIX = 'Звук ролика · '
@@ -25,7 +28,9 @@ def place(ctx, spec, *, transition=False):
     if not math.isfinite(total) or not .1 <= total <= 36000:
         raise ValueError('Спочатку додайте озвучку або кадри з тривалістю')
     allowed = set(sound_settings.transition_names(sound) if transition else sound_settings.allowed_names(sound))
-    known = {name for _, _, names in sound_settings.CATEGORIES for name in names} | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
+    library = {row['name']: row for row in sfx_library.catalog()} if store.project_animated(ctx.project) and not transition else {}
+    allowed.update(sfx_library.allowed(sound) if library else [])
+    known = set(library) | {name for _, _, names in sound_settings.CATEGORIES for name in names} | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
     events = []
     for cue in cues:
         if not isinstance(cue, dict) or cue.get('name') not in known:
@@ -34,7 +39,10 @@ def place(ctx, spec, *, transition=False):
         if not math.isfinite(at) or not math.isfinite(duration) or not 0 <= at <= total - .1 or not .1 <= duration <= 6:
             raise ValueError('Невірний час звукового ефекту')
         if cue['name'] in allowed:
-            events.append({'name': cue['name'], 't': round(at, 3), 'dur': min(duration, total - at),
+            gain = float(cue.get('gain', -8))
+            if not math.isfinite(gain) or not -60 <= gain <= 6:
+                raise ValueError('Невірна гучність SFX')
+            events.append({**({'gain': gain} if cue['name'] in library else {}), 'name': cue['name'], 't': round(at, 3), 'dur': min(duration, total - at),
                            **({'join': cue['join']} if transition else {})})
     use_music = music and sound['music']['enabled'] and sound['music']['generate']
     existing = {c.get('title', '') for layer in ctx.project['tracks'] for c in layer['clips']}
@@ -79,15 +87,22 @@ def place(ctx, spec, *, transition=False):
         for index in range(count):
             at = index * length
             add(path, PREFIX + f'музика {index + 1}', at, min(length, total - at), .35)
-    module = sound_settings.audio_module('sfx') if events else None
+    module = sound_settings.audio_module('sfx') if any(c['name'] not in library for c in events) else None
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]
-        path = folder / f'sfx-v1-{cue["name"]}-{cue["dur"]:.3f}.wav'
-        with sound_settings.LOCK:
+        row = library.get(cue['name'])
+        if row:
+            source = Path(row['name'])
+            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '.wav')
             if not path.exists():
-                module.write_wav(str(path), module.make(cue['name'], dur=cue['dur'], seed=7))
-        title = TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else PREFIX + cue['name'] + ' ' + key
-        add(path, title, cue['t'], cue['dur'], .12)
+                shutil.copy2(source, path)
+        else:
+            path = folder / f'sfx-v1-{cue["name"]}-{cue["dur"]:.3f}.wav'
+            with sound_settings.LOCK:
+                if not path.exists():
+                    module.write_wav(str(path), module.make(cue['name'], dur=cue['dur'], seed=7))
+        title = (PREFIX + 'SFX · ' + row['label'] + ' ' + key) if row else (TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else PREFIX + cue['name'] + ' ' + key)
+        add(path, title, cue['t'], min(cue['dur'], row['duration_seconds']) if row else cue['dur'], min(1.5, .12 * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 

@@ -32,6 +32,7 @@ function scriptDraftLocal(entry){
   try{localStorage.setItem(scriptDraftLocalKey(entry),JSON.stringify({format:2,epoch:entry.epoch,text:entry.text,version:entry.version,base_sha256:entry.base_sha256,sequence:entry.sequence}));entry.localSaved=true;}
   catch{entry.localSaved=false;}
 }
+function scriptDraftCanCreateOpenings(entry){return !!entry.loaded&&!entry.error&&!entry.conflict&&!entry.dirty&&!entry.saving&&!(entry.text||'').trim();}
 function scriptDraftNotify(entry){
   if(typeof voiceScriptDraft!=='undefined'){
     if(entry.dirty||entry.pending)voiceScriptDraft[entry.pid]=entry.text;
@@ -44,7 +45,12 @@ function scriptDraftNotify(entry){
   for(const box of entry.labels){
     if(!box.isConnected){entry.labels.delete(box);continue;}
     const text=entry.conflict?'Конфлікт правок':entry.error?(entry.localSaved?'Збережено в браузері':'Не збережено'):entry.dirty||entry.saving?'Зберігаємо…':entry.localOnly?'Збереження в браузері':entry.loaded?'Збережено':'Завантажуємо…';
-    const label=box.querySelector('.script-draft-status');label.textContent=text;label.title=entry.error||'';
+    const create=box.querySelector('.script-draft-create-openings');
+    const empty=scriptDraftCanCreateOpenings(entry);
+    const pending=typeof state!=='undefined'&&state.episodeDraft?.project_id===entry.pid&&typeof episodeDraftPending==='function'&&episodeDraftPending(state.episodeDraft);
+    if(create){create.hidden=!empty||!!pending;create.disabled=!!entry.openingsStarting;}
+    const label=box.querySelector('.script-draft-status');label.textContent=text;label.title=entry.error||'';label.hidden=!!create&&empty;
+    const editing=box.querySelector('.script-editing-open');if(editing)editing.hidden=empty;
     const retry=box.querySelector('.script-draft-retry');retry.hidden=!entry.error;retry.title=entry.conflict?'Зберегти мою версію':'Повторити збереження';retry.setAttribute('aria-label',retry.title);
     box.querySelector('.script-draft-history').hidden=!entry.history_count;
   }
@@ -163,9 +169,11 @@ function bindScriptDraft(field,project,panel){
 }
 function bindScriptDraftStatus(heading,project){
   const entry=scriptDraftEntry(project),box=document.createElement('div');box.className='script-draft-tools';
-  box.innerHTML=`<small class="script-draft-status" role="status"></small><button type="button" class="script-draft-retry history-button outline" hidden>${scriptDraftIcon}</button><button type="button" class="script-draft-history history-button outline" hidden title="Історія правок сценарію" aria-label="Історія правок сценарію">${scriptDraftIcon}</button>`;
+  box.innerHTML=`<small class="script-draft-status" role="status"></small><button type="button" class="script-draft-create-openings secondary" hidden><svg class="script-openings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17h6m-5 3h4M9 14.5a5 5 0 1 1 6 0L14 17h-4z"/><path d="m19 2 .7 2.3L22 5l-2.3.7L19 8l-.7-2.3L16 5l2.3-.7L19 2ZM4 8H2m3-4L3.5 2.5M4 14l-1.5 1.5"/></svg><span>Створити зачини</span></button><button type="button" class="script-draft-retry history-button outline" hidden>${scriptDraftIcon}</button><button type="button" class="script-draft-history history-button outline" hidden title="Історія правок сценарію" aria-label="Історія правок сценарію">${scriptDraftIcon}</button>`;
+  box.querySelector('.script-draft-create-openings').onclick=()=>openManualProjectOpenings(project).catch(error=>status(error.message,true));
   box.querySelector('.script-draft-retry').onclick=()=>retryScriptDraft(project);
   box.querySelector('.script-draft-history').onclick=()=>openScriptDraftHistory(project);
+  box.append(createScriptEditingButton(project));
   heading.append(box);entry.labels.add(box);scriptDraftNotify(entry);
 }
 async function openScriptDraftHistory(project){

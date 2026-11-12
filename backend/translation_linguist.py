@@ -11,6 +11,39 @@ class Unresolved(RuntimeError):
     pass
 
 
+GUARD_ERROR = 'Рішення лінгвіста не пройшло перевірку мови, чисел або точних років.'
+
+
+def reuse(*, index, language, source, current, ledger, save, validate):
+    """Reuse an exact saved approval, including a former local-number false alarm.
+
+    Missing provider replies and a linguist's factual block remain unresolved.
+    Only the saved approved wording can be recovered, never an arbitrary candidate.
+    """
+    record = ledger.get(str(index)) or {}
+    if record.get('fingerprint') != recovery.fingerprint(['linguist-v1', language, source, current]):
+        return None
+    if record.get('status') == 'resolved':
+        value = record.get('value', '')
+        return value if validate(value) else None
+    if record.get('status') != 'blocked' or record.get('error') != GUARD_ERROR:
+        return None
+    try:
+        choice = decision(json.dumps(record.get('guard_decision') or record.get('decision')), index)
+    except Unresolved:
+        return None
+    if choice['action'] not in ('keep', 'replace'):
+        return None
+    value = current if choice['action'] == 'keep' else choice['text']
+    value = restore_number_words(' '.join(value.split()), current, language)
+    if value != record.get('candidate') or not validate(value):
+        return None
+    record.update(status='resolved', value=value)
+    record.pop('error', None)
+    save()
+    return value
+
+
 def restore_number_words(text, previous, language):
     """Reuse an unambiguous spoken form of the same number, without another model call."""
     _, old, supported = numeric_comparison.normalized(previous, language)
@@ -55,6 +88,10 @@ def resolve(*, index, language, language_name, source, current, issue, context, 
     request(model, messages, max_tokens) records costs; validate checks local language/number anchors.
     """
     key = str(index)
+    saved = reuse(index=index, language=language, source=source, current=current,
+                  ledger=ledger, save=save, validate=validate)
+    if saved is not None:
+        return saved
     identity = recovery.fingerprint(['linguist-v1', language, source, current])
     record = ledger.get(key)
     if record and record.get('fingerprint') != identity:
@@ -92,7 +129,7 @@ def resolve(*, index, language, language_name, source, current, issue, context, 
         save()
     if record['status'] == 'requested':
         raise Unresolved('Відповідь лінгвіста на попередній запит не збережена. Автоматичного повторного списання немає.')
-    guard_error = 'Рішення лінгвіста не пройшло перевірку мови, чисел або точних років.'
+    guard_error = GUARD_ERROR
     repair_guard = record['status'] == 'blocked' and record.get('error') == guard_error and not record.get('guard_requested')
     if record['status'] == 'guard_requested':
         raise Unresolved('Відповідь на точкове виправлення ще не збережена. Автоматичного повторного списання немає.')

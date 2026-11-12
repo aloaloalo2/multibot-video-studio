@@ -12,8 +12,6 @@ def add_usage(total, value):
 
 def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None):
     targets = sorted(set(targets))
-    if len(targets) <= SESSION_FRAMES:
-        return launch(None, '', 0)
     previous = previous or {}
     completed = set(previous.get('completed_frames') or []) & set(targets)
     summary = str(previous.get('summary') or '')[-1200:]
@@ -26,7 +24,7 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None):
         frames = targets[start:start + SESSION_FRAMES]
         if set(frames) <= completed and verify(frames):continue
         completed.difference_update(frames)
-        code, raw = launch(frames, summary, index)
+        code, raw = launch(frames, summary, index if len(targets) > SESSION_FRAMES else 0)
         answer = copy.deepcopy(raw)
         cost += float(raw.get('total_cost_usd') or 0)
         add_usage(usage, raw.get('usage'))

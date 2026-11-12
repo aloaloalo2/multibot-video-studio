@@ -169,10 +169,10 @@ function compactSoundRows(entries){
     const clip=entry.clip,title=clip?.title||'';
     const family=clip?.kind==='audio'&&entry.layer.clips.every(c=>c.kind==='audio')
       ? /^(?:Звук ролика · )?(?:музика|музыка|music)(?:\s|$)/iu.test(title)?'music'
-        : /^Звук (?:ролика|переходу) · /u.test(title)?'effects':null : null;
+        : /^Звук ролика · SFX · /u.test(title)?'sfx': /^Звук (?:ролика|переходу) · /u.test(title)?'effects':null : null;
     if(!family){rows.push(entry);continue;}
     let row=families.get(family);
-    if(!row){row={title:family==='music'?'Музика':'Звук ролика',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
+    if(!row){row={title:family==='music'?'Музика':family==='sfx'?'SFX':'Звук ролика',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
     row.soundItems.push(entry);row.z=Math.max(row.z,entry.z);
   }
   for(const row of families.values())row.soundItems.sort((a,b)=>Number(a.clip.start)-Number(b.clip.start));

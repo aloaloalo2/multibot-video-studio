@@ -384,23 +384,20 @@ class TranslationLengthIntegrationTest(unittest.TestCase):
         self.save.assert_not_called()
         self.speak.assert_not_called()
 
-    def test_cached_semantic_approval_cannot_bypass_a_current_exact_year_failure(self):
-        source='In 2000, researchers studied mice.'
-        bad='En dos mil uno, estudiaron ratones.'
-        fixed='En dos mil, estudiaron ratones.'
+    def test_cached_native_year_approval_is_not_overruled_by_the_local_number_parser(self):
+        source='In June 1982, the plane entered an ash cloud.'
+        text='W czerwcu tysiąc dziewięćset osiemdziesiątego drugiego roku samolot wleciał w chmurę popiołu.'
         src={**self.source,'script':source}
         segments=[{**self.lines[0],'source':source}]
-        draft=languages.translation_draft('test','es',src,[source],self.job,segments)
-        draft.seed([bad])
-        draft.save(audited={'0':languages.translation_recovery.fingerprint(['number-aware-v2','es',source,bad])})
-        def reply(messages,max_tokens=12000):
-            if 'Independently compare' in messages[0]['content']:
-                return json.dumps({'ok':True,'ids':[0]}),.001
-            return json.dumps({'0':fixed}),.001
-        self.ask.side_effect=reply
-        result,_=languages.before_translate('test','es',src,[bad],[source],self.job,draft=draft)
-        self.assertIn('Independently compare',self.ask.call_args_list[0].args[0][0]['content'])
-        self.assertEqual(result,[fixed])
+        draft=languages.translation_draft('test','pl',src,[source],self.job,segments)
+        draft.seed([text])
+        draft.save(audited={'0':languages.translation_recovery.fingerprint(['number-aware-v2','pl',source,text])})
+        with patch.object(languages.translation_budget,'number_refinement_plan',return_value={'available':False,'ids':[]}):
+            with patch.object(languages.translation_budget,'missing_source_years',side_effect=AssertionError('Local year veto')):
+                result,cost=languages.before_translate('test','pl',src,[text],[source],self.job,draft=draft)
+        self.assertEqual(result,[text])
+        self.assertEqual(cost,0)
+        self.ask.assert_not_called()
         self.speak.assert_not_called()
 
 

@@ -14,7 +14,7 @@ const episodeIconPaths={
 function episodeIcon(name){return `<svg class="episode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${episodeIconPaths[name]||episodeIconPaths.episode}</svg>`;}
 
 function episodeDraftPending(data){
-  return !!data?.project_id&&!data.completed&&!data.cancelled&&data.status!=='cancelled'&&['openings','script','metadata'].includes(data.stage);
+  return !!data?.project_id&&!data.completed&&!data.cancelled&&data.status!=='cancelled'&&['openings','script','metadata','editing'].includes(data.stage);
 }
 
 async function openNewEpisodeWizard({projectId=null,draft=null}={}){
@@ -44,7 +44,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   $('episode-name-field')?.append(create);
   const channelEndpoint=`/api/channels/${cid}/episode-ideas`;
   const generation=state.modalGeneration,navigation=state.navigation;
-  let sending=false,lastData=null,timer=null,reference=null,referenceVersion=0,readVersion=0,entry='title',topicSelected=false;
+  let sending=false,lastData=null,timer=null,reference=null,referenceVersion=0,readVersion=0,entry='title',topicSelected=false,dailyRequested=false;
   const entryTitles={title:'',topics:'',reference:''};
   const entryChoices=$('episode-entry-options'),entryButtons=entryChoices?[...entryChoices.querySelectorAll('button')]:[];
   const entryTools=$('episode-entry-tools'),ideasRefresh=$('ideas-refresh');
@@ -64,7 +64,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     if(entry==='reference'){
       if(reference){input.value=entryTitles.reference||reference.title;input.hidden=false;drawReference();}
       $('episode-reference-url').focus();
-    }else if(entry==='topics')return poll();
+    }else if(entry==='topics'){showLoading('Завантажуємо ідеї');return poll();}
     else if(entry==='title')input.focus();
   }
   entryButtons.forEach(button=>button.onclick=()=>selectEntry(button.dataset.entry));
@@ -76,12 +76,14 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   function showError(error,retry){
     if(!connected())return;
     if(lastData&&!topicSelected&&entry!=='reference')draw(lastData,true);
+    if(ideasRefresh)ideasRefresh.disabled=sending;
     const note=document.createElement('div');note.innerHTML=errorBox(error.message)+`<button class="secondary episode-action">${episodeIcon('refresh')}<span>Спробувати ще раз</span></button>`;
     note.querySelector('button').onclick=retry;root.prepend(note);
   }
   async function request(body){
     if(sending||!connected())return;body={...body,request_id:body.request_id||crypto.randomUUID()};sending=true;readVersion++;clearTimeout(timer);entryButtons.forEach(button=>button.disabled=true);
     root.querySelectorAll('button').forEach(b=>b.disabled=true);create.disabled=true;
+    if(body.action==='ideas'){dailyRequested=true;showLoading('DeepSeek пропонує нові теми');}
     try{
       const data=await api(channelEndpoint,'POST',body);sending=false;
       if(!connected())return;
@@ -132,6 +134,14 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     try{const data=await api(`${channelEndpoint}?view=topics`);if(connected()&&version===readVersion)draw(data);}
     catch(error){if(connected()&&version===readVersion)showError(error,poll);}
   }
+  function showLoading(label,targetWords=lastData?.target_words){
+    if(ideasRefresh)ideasRefresh.disabled=true;
+    root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${targetWords?targetWords.toLocaleString('uk-UA')+' слів':'Готуємо список ідей'}</small></div></div>`;
+  }
+  function prepareIdeas(){
+    if(dailyRequested){showError(new Error('Не вдалося оновити список ідей. Спробуйте ще раз.'),()=>request({action:'ideas',refresh:true}));return;}
+    return request({action:'ideas',if_stale:true});
+  }
   function draw(data,passive=false){
     if(!connected())return;lastData=data;clearTimeout(timer);
     if(entry==='reference'){if(reference)drawReference();return;}
@@ -139,17 +149,17 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     if(ideasRefresh){ideasRefresh.hidden=entry!=='topics';ideasRefresh.disabled=sending||data.status==='running';}
     topicSelected=false;
     input.value=data.selected?.title||'';input.readOnly=false;input.hidden=true;showCreate(false);
-    if(data.stale&&!passive){request({action:'ideas',if_stale:true});return;}
+    if(data.stale&&!passive){prepareIdeas();return;}
     if(data.status==='running'){
       const label={ideas:'DeepSeek пропонує нові теми',openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage];
-      root.innerHTML=`<div class="episode-writing" role="status"><span class="export-spinner"></span><div><strong>${label}</strong><small>${data.target_words?data.target_words.toLocaleString('uk-UA')+' слів':'Для збереженого сценарію'}</small></div></div>`;
+      showLoading(label,data.target_words);
       timer=setTimeout(poll,2000);return;
     }
     const error=data.status==='failed'?errorBox(data.error||'Запит не завершено'):'';
     if(!data.ideas){
       if(passive){root.innerHTML=error;return;}
       if(data.status==='failed'){root.innerHTML=error+`<button class="secondary episode-action" id="ideas-retry">${episodeIcon('refresh')}<span>Спробувати ще раз</span></button>`;root.querySelector('#ideas-retry').onclick=()=>request({action:'ideas',refresh:true});}
-      else request({action:'ideas',if_stale:true});
+      else prepareIdeas();
       return;
     }
     root.innerHTML=error+`<div class="episode-options episode-topic-options">${data.ideas.map((row,i)=>(data.used_idea_indexes||[]).includes(i)?'':`<button data-idea="${i}">${episodeIcon('episode')}<span><strong>${esc(row.title)}</strong>${row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>${(data.used_idea_indexes||[]).length>=data.ideas.length?'<p class="muted">Усі ці теми вже використані. Натисніть ↻, щоб отримати нові.</p>':''}`;

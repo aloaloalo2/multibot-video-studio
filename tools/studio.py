@@ -101,6 +101,19 @@ def point(text: str | None):
     return parts
 
 
+def frame_ranges(spec: str) -> list[tuple[int, int]]:
+    ranges = []
+    for part in spec.split(','):
+        match = re.fullmatch(r'\s*([1-9]\d*)(?:-([1-9]\d*))?\s*', part)
+        if not match:
+            raise Failure('Кадри: вкажіть номери або діапазони, наприклад 1,3,5-8')
+        low, high = int(match[1]), int(match[2] or match[1])
+        if high < low:
+            raise Failure('Кінець діапазону кадрів має бути не меншим за початок')
+        ranges.append((low, high))
+    return ranges
+
+
 def moment(project: dict, text: str) -> float:
     """Seconds from "83.4", "1:23.4" or a frame: "f12" (its middle), "f12:start", "f12:end" (its last video frame)."""
     match = re.fullmatch(r"f(\d+)(?::(start|mid|end))?", text.strip())
@@ -365,11 +378,11 @@ def main(argv=None) -> int:
         if args.command == "plan":
             data, made = call("GET", f"/api/projects/{pid}/plan"), set(call("GET", f"/api/projects/{pid}/frames-drawn").get("made", []))
             frames = (data.get("plan") or {}).get("frames") or []
-            low, high = (int(x) for x in (args.frames.split("-") + [args.frames])[:2]) if args.frames else (1, 10 ** 6)
+            selected = frame_ranges(args.frames) if args.frames else None
             shown = 0
             for f in frames:
                 n = int(f["number"])
-                if not low <= n <= high or (args.todo and n in made):
+                if (selected is not None and not any(low <= n <= high for low, high in selected)) or (args.todo and n in made):
                     continue
                 words = " ".join(f.get("sentences") or [])
                 idea = f" | {f['visual']}" if f.get("visual") else ""

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import sfx_library
 import importlib.util
 import sys
 import threading
@@ -108,7 +109,7 @@ def apply_config(config, value, *, animated=False):
         return result
     sound = normalize(value)
     result['music'] = {**(result.get('music') or {}), **sound['music']}
-    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + ([] if animated else transition_names(sound))}
+    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + (sfx_library.allowed(sound) if animated else transition_names(sound))}
     return result
 
 
@@ -177,11 +178,12 @@ def instructions(project, *, scoped=False, include_workflow=True):
     text += ('Музика вимкнена. Не створюй і не додавай фонову музику.\n' if not music['enabled'] else
              'Використовуй фонову музику. Її можна створити локально.\n' if music['generate'] else
              'Використовуй лише вже додану музику. Нову музику не генеруй.\n')
-    names = allowed_names(sound)
-    text += ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Використовуй їх для акцентів і появи елементів усередині кадру. Зберігай чіткість голосу.\n' if names else
-             'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n')
     import store
     animated = store.project_animated(project)
+    downloaded = sfx_library.instructions(sound) if animated else ''
+    names = allowed_names(sound)
+    text += downloaded or ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Використовуй їх для акцентів і появи елементів усередині кадру. Зберігай чіткість голосу.\n' if names else
+             'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n')
     transitions = [] if animated else transition_names(sound)
     text += ('Окремі звуки переходів: ' + ', '.join(transitions) + '. Обирай лише доречні стики, чергуй типи. Більшість м’яких склейок залишай тихими.\n' if transitions else 'Звуки переходів вимкнено. Монтажні акценти мають окремий вибір.\n')
     if scoped:

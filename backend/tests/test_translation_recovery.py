@@ -138,6 +138,61 @@ class ContinuationTest(unittest.TestCase):
         self.assertEqual(len(calls),3)
         self.assertFalse(any('senior native' in x for x in calls))
 
+    def test_native_linguist_owns_spelled_years_without_a_local_numeric_veto(self):
+        source='In June 1982, the plane entered an ash cloud.'
+        text='W czerwcu tysiąc dziewięćset osiemdziesiątego drugiego roku samolot wleciał w chmurę popiołu.'
+        with patch.object(languages.translation_budget,'missing_source_years',side_effect=AssertionError('Local year veto')):
+            with patch.object(languages,'ask',return_value=(json.dumps({'ok':True,'ids':[0]}),.001)) as ask:
+                values,cost=languages.before_translate('p','pl',{'script':source},[text],[source],self.job)
+        self.assertEqual(values,[text])
+        self.assertAlmostEqual(cost,.001)
+        self.assertEqual(ask.call_count,1)
+
+    def test_resume_reuses_linguist_correction_and_good_neighbour_without_paid_rechecks(self):
+        from translation_linguist import GUARD_ERROR
+        units=['The first phrase.','In January 2022, the volcano erupted.']
+        lines=['Pierwsze zdanie.','W styczniu tysiąc dziewięćset dwudziestego drugiego roku wybuchł wulkan.']
+        fixed='W styczniu dwa tysiące dwudziestego drugiego roku wybuchł wulkan.'
+        src={'script':' '.join(units)}
+        draft=languages.translation_draft('p','pl',src,units,self.job)
+        draft.seed(lines)
+        draft.save(audited={'0':recovery.fingerprint(['number-aware-v2','pl',units[0],lines[0]])},
+            semantic_issues={'1':GUARD_ERROR},linguist={'1':{
+                'fingerprint':recovery.fingerprint(['linguist-v1','pl',units[1],lines[1]]),
+                'status':'blocked','error':GUARD_ERROR,'guard_requested':True,'candidate':fixed,
+                'guard_decision':{'id':1,'action':'replace','text':fixed,'reason':'Correct source year.'}}})
+        with patch.object(languages,'ask',side_effect=AssertionError('Repeated paid request')):
+            values,cost=languages.before_translate('p','pl',src,lines,units,self.job,draft=draft)
+        self.assertEqual(values,[lines[0],fixed])
+        self.assertEqual(cost,0)
+        self.assertEqual(draft.data['semantic_issues'],{})
+        self.assertEqual(draft.data['linguist']['1']['status'],'resolved')
+
+    def test_resumed_linguist_wording_is_not_reverted_by_an_old_optional_length_repair(self):
+        from translation_linguist import GUARD_ERROR
+        source='In January 2022, the volcano erupted.'
+        old='W styczniu tysiąc dziewięćset dwudziestego drugiego roku wybuchł wulkan.'
+        fixed='W styczniu dwa tysiące dwudziestego drugiego roku wybuchł wulkan.'
+        src={'script':source}
+        draft=languages.translation_draft('p','pl',src,[source],self.job)
+        draft.seed([old])
+        draft.save(semantic_issues={'0':GUARD_ERROR},linguist={'0':{
+            'fingerprint':recovery.fingerprint(['linguist-v1','pl',source,old]),
+            'status':'blocked','error':GUARD_ERROR,'candidate':fixed,
+            'guard_decision':{'id':0,'action':'replace','text':fixed,'reason':'Correct year.'}}},
+            single_pass_repairs={'0':{'status':'returned','value':old}})
+        plan={'available':True,'ids':[0],'report':{'within_budget':True},'pending_ids':[0],
+              'phrases':[{'id':0,'source_chars':20,'translated_chars':100,'within_budget':False,'difference_percent':400}]}
+        with patch.object(languages.translation_budget,'number_refinement_plan',return_value=plan):
+            with patch.object(languages,'ask',side_effect=AssertionError('Repeated paid request')):
+                first,cost=languages.before_translate('p','pl',src,[old],[source],self.job,draft=draft)
+                # The title may fail after saving this draft, so a second resume
+                # must also preserve the accepted wording and exact-pair audit.
+                second,again=languages.before_translate('p','pl',src,first,[source],self.job,draft=draft)
+        self.assertEqual(first,[fixed])
+        self.assertEqual(second,[fixed])
+        self.assertEqual(cost+again,0)
+
     def test_missing_id_retry_does_not_repeat_good_neighbour(self):
         requests, audits = [], []
         def ask(messages, max_tokens=12000):

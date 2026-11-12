@@ -46,7 +46,7 @@ const seconds = value => Number.isFinite(Number(value)) ? Math.max(0, Number(val
 const clock = value => { const n = Math.floor(seconds(value)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
 const projectIcon='<svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4m10-8h4m-4 8h4m-11-5 4 3-4 3z"/></svg>';
 
-function locationRoute(){const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview|languages))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':match[3]==='/languages'?'langs':'editor'}:null;}
+function locationRoute(){if(/^\/trending\/?$/.test(location.pathname))return {view:'trending'};const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview|languages))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':match[3]==='/languages'?'langs':'editor'}:null;}
 let restoreGeneration=0,restoreTimer=null;
 function cancelLocationRestore(){restoreGeneration++;if(restoreTimer!==null){clearTimeout(restoreTimer);restoreTimer=null;}state.restoringProject=false;$('project-loading').hidden=true;}
 async function restoreCurrentLocation(){
@@ -64,7 +64,7 @@ async function restoreCurrentLocation(){
   }
 }
 function syncRoute(replace=false){
-  const path=state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':state.view==='thumb'?thumbRoute:state.view==='langs'?'/languages':''):''}`:'/';
+  const path=state.view==='trending'?'/trending':state.channel?`/channels/${state.channel.id}${state.project?'/projects/'+state.project.id+(state.view==='plan'?'/plan':state.view==='agent'?'/agent':state.view==='thumb'?thumbRoute:state.view==='langs'?'/languages':''):''}`:'/';
   if(location.pathname!==path || location.search || location.hash)history[replace?'replaceState':'pushState'](null,'',path);
 }
 
@@ -177,6 +177,7 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
   if(health.api_version!==2 || health.layer_mode!=='item' || health.plan_workflow!=='audio_required')throw new Error('Запущена стара копія студії. Потрібен перезапуск студії та оновлення сторінки.');
   state.channels = data.channels || [];
   renderChannels();
+  if(route?.view==='trending'){openTrendingVideos({updateUrl:false});return true;}
   if (!state.channels.length) {
     if(route)throw new Error('Канал тимчасово недоступний');
     ++state.navigation;stopPlayback();state.assets=[];state.pixabay=[];state.selected=null;state.selectedTransition=null;
@@ -206,14 +207,14 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
-    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','озвучення сценарію','розпізнавання озвучки','режисура'].includes(kind);
+    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура'].includes(kind);
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
-    if(['створення зачинів','створення сценарію','створення метаданих'].includes(kind)){
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'DeepSeek редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
       const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title='Зупинити роботу Opus';stop.setAttribute('aria-label','Зупинити роботу Opus');
       stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
       (card.querySelector('.project-actions')||card).append(stop);
@@ -234,7 +235,7 @@ async function pollChannelActivity(){
   if(document.hidden||channelActivityPending)return;
   channelActivityPending=true;
   try{
-    const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
+    const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
     for(const task of activity.activities||[])projectActivities.set(task.project_id,task.kind);
@@ -277,7 +278,7 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
   if (!channel) return false;
   const data=loadProjects?await api(`/api/projects?channel=${encodeURIComponent(id)}`):{projects:[]};
   if(navigation!==state.navigation)return false;
-  state.channel=channel;
+  state.channel=channel;state.view='editor';
   state.project=null; state.selected=null;state.selectedTransition=null; state.assets=[]; state.pixabay=[];state.projects=data.projects || [];
   renderChannels();
   if(updateUrl)syncRoute();
@@ -400,11 +401,12 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
 }
 
 function showProjectList() {
+  if(state.view==='trending'){const id=state.trendingPreviousChannel || state.channels[0]?.id;if(id){selectChannel(id).catch(error=>status(error.message,true));return;}}
   cancelLocationRestore();
   ++state.navigation;
   if(state.exportWatch){clearInterval(state.exportWatch);state.exportWatch=null;}
   if(state.poll){clearTimeout(state.poll);state.poll=null;}
-  stopPlayback();state.project=null;state.selected=null;state.selectedTransition=null;state.selectedTrack=null;
+  stopPlayback();if(state.view==='trending')state.view='editor';state.project=null;state.selected=null;state.selectedTransition=null;state.selectedTrack=null;
   state.audioNodes=[];state.previewNodes.clear();state.previewSignature='';$('preview-audio-container').replaceChildren();$('preview-composition').replaceChildren();renderProject();
   syncRoute();
   if(state.channel){
@@ -695,7 +697,12 @@ function renderProject() {
   }
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent='';
-  $('channel-overview').hidden=!!state.project || state.restoringProject;
+  const trending=state.view==='trending'&&!state.project;
+  $('trending-page').hidden=!trending;
+  $('trending-videos').classList.toggle('active',trending);
+  $('trending-videos').setAttribute('aria-current',trending?'page':'false');
+  if(trending){channelName.textContent='Зараз у тренді';document.title='Зараз у тренді | VideoKey Studio';}
+  $('channel-overview').hidden=trending || !!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
   $('editor-workspace').classList.toggle('animation-workspace',!!state.project&&projectAnimated());
@@ -1144,7 +1151,7 @@ function openChannelSettings(channel) {
     <section class="settings-section settings-script-wishes"><h3>Побажання сценаристу</h3><textarea id="settings-script-wishes" rows="6" maxlength="30000" placeholder="Подача, мова, звернення до глядача, початок і завершення сценарію">${esc(original.script_wishes || '')}</textarea></section>
     <section class="settings-section settings-thumbnail-wishes"><h3>Побажання до прев’ю</h3><textarea id="settings-thumbnail-wishes" rows="3" maxlength="4000" placeholder="Стиль, композиція, текст та інші побажання для прев’ю каналу">${esc(original.thumbnail_wishes || '')}</textarea></section><section class="settings-section regular-only settings-accents"><h3>Акценти на кадрах</h3><label class="check"><input id="settings-accents" type="checkbox" ${original.accents?'checked':''}>Творчі акценти від режисера</label><p>Режисер обирає підписи, плашки, виділення, стрілки й ефекти за змістом кадру та стилем каналу. Частота й подача залежать від його творчого задуму.</p></section>
     ${channelSoundMarkup()}<section class="settings-section" id="channel-voices"><h3>Голоси для перекладу</h3><p>Завантажуємо…</p></section>
-    <section class="settings-section settings-agent-memory"><h3>Правила монтажера</h3><p>Зберігаються в каналі та діють у всіх його випусках.</p><textarea id="channel-agent-memory" aria-label="Правила монтажера" rows="5" maxlength="30000" placeholder="Композиція, рух, підписи та особливості каналу" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
+    <section class="settings-section settings-agent-memory"><h3>Правила Агентів</h3><p>Спільна пам’ять побажань каналу для сценаріїв, режисури, створення кадрів, монтажу й прев’ю.</p><textarea id="channel-agent-memory" aria-label="Правила Агентів" rows="5" maxlength="30000" placeholder="Усі побажання каналу: подача, стиль кадрів, персонажі, рух, підписи та прев’ю" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
@@ -1163,6 +1170,7 @@ function openChannelSettings(channel) {
   $('modal-backdrop').classList.add('settings-modal-open');
   const settingsLayout=organizeChannelSettings(channel);
   bindChannelTransfer(channel);
+  bindChannelCompetitors(channel);
   bindChannelSound(original.sound);
   const showPlanMode=()=>{
     const direct=$('settings-plan-mode').value==='direct';

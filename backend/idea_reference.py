@@ -114,9 +114,13 @@ def inspect(cid, url):
             raise store.StudioError('Не вдалося отримати ролик YouTube. Перевірте посилання й доступність відео.', 502) from error
 
 
-def start_openings(cid, body):
+def start_openings(cid, body, *, source=None, receipt_path=None):
     import episode_ideas as ideas
-    reference = read(cid, body.get('reference_id'))
+    use_thumbnail = body.get('use_thumbnail', True)
+    if type(use_thumbnail) is not bool:
+        raise store.StudioError('Оберіть, чи використовувати прев’ю конкурента')
+    reference = source if source is not None else read(cid, body.get('reference_id'))
+    folder(cid, reference['id'])
     title = store.validated_name(body.get('title', reference['title']))
     count = body.get('target_words')
     if type(count) is not int or not 200 <= count <= 15000:
@@ -124,23 +128,26 @@ def start_openings(cid, body):
     request_id = body.get('request_id')
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', request_id):
         raise store.StudioError('Оновіть вікно й повторіть створення зачинів')
-    receipt = folder(cid, reference['id']).parent / 'requests' / (request_id + '.json')
+    receipt = receipt_path or folder(cid, reference['id']).parent / 'requests' / (request_id + '.json')
     with ideas.LOCK:
         saved = store.read_json(receipt, {}) or {}
         if saved.get('project_id'):
-            if (saved.get('reference_id'), saved.get('title'), saved.get('target_words')) != (reference['id'], title, count):
+            if (saved.get('channel_id', cid), saved.get('reference_id'), saved.get('title'), saved.get('target_words'), saved.get('use_thumbnail', True)) != (cid, reference['id'], title, count, use_thumbnail):
                 raise store.StudioError('Цей запит уже використано для іншого випуску', 409)
             return ideas.public(ideas.read_project(saved['project_id']))
         ctx = ideas.context(cid)
         project = store.create_project(cid, title)
         pid = project['id']
-        shutil.copyfile(folder(cid, reference['id']) / 'thumbnail.jpg', store.project_dir(pid) / 'idea-reference.jpg')
-        store.atomic_json(store.project_dir(pid) / 'idea-reference.json', reference)
+        if use_thumbnail:
+            shutil.copyfile(folder(cid, reference['id']) / 'thumbnail.jpg', store.project_dir(pid) / 'idea-reference.jpg')
+            store.atomic_json(store.project_dir(pid) / 'idea-reference.json', reference)
+        store.atomic_json(store.project_dir(pid) / 'idea-source.json', {**reference, 'use_thumbnail': use_thumbnail})
         data = {'id': uuid.uuid4().hex, 'project_id': pid, 'context': ctx, 'target_words': count,
-                'selected': {'title': title}, 'selected_index': -1, 'clone_reference': reference,
+                'selected': {'title': title}, 'selected_index': -1, 'idea_source': reference,
                 'sample_count': ctx['sample_count']}
+        if use_thumbnail: data['clone_reference'] = reference
         ideas.save_draft(cid, data)
-        store.atomic_json(receipt, {'project_id': pid, 'reference_id': reference['id'], 'title': title, 'target_words': count})
+        store.atomic_json(receipt, {'project_id': pid, 'channel_id': cid, 'reference_id': reference['id'], 'title': title, 'target_words': count, 'use_thumbnail': use_thumbnail})
         return ideas.launch(cid, data, 'openings', request_id)
 
 

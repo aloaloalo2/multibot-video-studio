@@ -87,3 +87,12 @@ class WritingJobsTest(unittest.TestCase):
         self.assertEqual(command[command.index('--tools')+1],'')
         self.assertNotIn('--resume',command)
         self.assertEqual(result['script'],'example')
+
+    def test_resumed_session_records_only_increment_and_retains_raw_cumulative(self):
+        cmd=[sys.executable,'-c','import json;print(json.dumps({"total_cost_usd":1.8}))']
+        jobs.run(cmd,'',self.root,'test',previous_session_cost=1.2)
+        self.assertAlmostEqual(self.amount(),.6)
+        self.assertEqual(self.receipt()['total_cost_usd'],1.8)
+        self.assertEqual(self.receipt()['cost_baseline_usd'],1.2)
+        jobs.run(cmd,'',self.root,'test',previous_session_cost=None)
+        self.assertIsNone(self.amount())

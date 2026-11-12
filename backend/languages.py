@@ -1222,8 +1222,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         audited = draft.data.setdefault('audited', {})
         for round_number in range(1):
             pending = [i for i in (range(len(values)) if indexes is None else indexes)
-                if audited.get(str(i)) != audit_key(i, values[i]) or not valid_line(values[i])
-                or translation_budget.missing_source_years(source_units[i],values[i],code)]
+                if audited.get(str(i)) != audit_key(i, values[i]) or not valid_line(values[i])]
             if not pending:
                 return values
             issues = {}
@@ -1275,10 +1274,6 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     continue
                 missing_checks=[i for i in group if i not in covered]
                 failed.update({i: 'Запишіть числа словами й збережіть потрібну мову.' for i in covered if not valid_line(values[i])})
-                for i in covered:
-                    missing = translation_budget.missing_source_years(source_units[i], values[i], code)
-                    if missing:
-                        failed[i] = 'Preserve these exact source years in natural target-language words: '+', '.join(missing)+'. Correct any misspelled number words.'
                 issues.update(failed)
                 rejected = draft.data.setdefault('rejected', {})
                 for i in covered:
@@ -1300,6 +1295,26 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 return values
             return {'lines': values, 'issues': issues}
     current = list(texts)
+    # The native linguist owns number/date fidelity. A local parser's inability
+    # to read a declined year must not reject its already approved correction.
+    ledger = draft.data.get('linguist') or {}
+    linguist_approved = set()
+    for i, value in enumerate(current):
+        saved = translation_linguist.reuse(index=i, language=code, source=source_units[i], current=value,
+            ledger=ledger, save=lambda: draft.save(linguist=ledger), validate=valid_line)
+        if saved is not None:
+            current[i] = saved
+            linguist_approved.add(i)
+            draft.data.setdefault('audited', {})[str(i)] = audit_key(i, saved)
+            draft.data.setdefault('semantic_issues', {}).pop(str(i), None)
+        else:
+            previous = ledger.get(str(i)) or {}
+            if (previous.get('status') == 'resolved' and previous.get('value') == value
+                    and draft.data.get('audited', {}).get(str(i)) == audit_key(i, value)):
+                linguist_approved.add(i)
+    if ledger:
+        draft.save(lines=current, audited=draft.data.get('audited', {}),
+                   semantic_issues=draft.data.get('semantic_issues', {}))
     job['translation_length']=translation_budget.assessment(src['script'],'\n'.join(current),source_language,code,
         source_units=source_units,translated_units=current)
     job['translation_length']['target_tolerance_percent']=round(100*translation_budget.SCRIPT_TOLERANCE)
@@ -1328,7 +1343,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
         reason['issue'] += f' Measured narration pacing: target about {target} spoken-text letters; shorten by {abs(percent):g}%.'
         if reason.get('percent') is None or percent<reason['percent']:
             reason['percent']=percent
-    candidates=replacements(current,{i:reason for i,reason in reasons.items() if not issues.get(i,'').startswith('Перевіряльник')})
+    candidates=replacements(current,{i:reason for i,reason in reasons.items()
+        if i not in linguist_approved and not issues.get(i,'').startswith('Перевіряльник')})
     changed={i:value for i,value in candidates.items() if value!=current[i]}
     if plan.get('available'):
         proposed=translation_budget.number_refinement_plan(src['script'],
@@ -1380,11 +1396,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 charge(cost)
                 return answer
             def validate(value):
-                return bool(value) and valid_line(value) and not translation_budget.missing_source_years(source_units[i],value,code)
+                return bool(value) and valid_line(value)
             def validation_issue(value):
-                missing=translation_budget.missing_source_years(source_units[i],value,code)
-                if missing:
-                    return 'The replacement has the wrong or missing source year(s): '+', '.join(missing)+'. Spell these exact years in natural target-language words. Do not substitute a different year.'
                 return 'The replacement contains foreign-language text, unspoken numerals/symbols, or is empty. Use complete native-language narration with every number in words.'
             try:
                 candidate[i]=translation_linguist.resolve(index=i,language=code,language_name=ENGLISH[code],
@@ -1402,7 +1415,7 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                 unresolved[i]=str(error)
     if unresolved:
         draft.save(lines=candidate,semantic_issues={str(i):reason for i,reason in unresolved.items()})
-        pause('Лінгвіст не підтвердив перевірку змісту окремих фраз: '+ '; '.join(unresolved.values()))
+        pause('Лінгвіст не підтвердив перевірку змісту окремих фраз: '+ '; '.join(dict.fromkeys(unresolved.values())))
     current=candidate
     final_plan=translation_budget.number_refinement_plan(src['script'],current,source_units,source_language,code)
     state=translation_budget.assessment(src['script'],'\n'.join(current),source_language,code,

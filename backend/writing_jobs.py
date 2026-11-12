@@ -1,6 +1,7 @@
 """Cancellable author processes, with a receipt even when no terminal answer arrives."""
 from contextlib import contextmanager
 import json
+import math
 import os
 import signal
 import subprocess
@@ -53,7 +54,7 @@ def cancel(job):
 
 
 @job_timing.measure('service')
-def run(command, prompt, root, identity, timeout=900):
+def run(command, prompt, root, identity, timeout=900, *, session_cwd=None, category='script', previous_session_cost=0):
     check()
     job = getattr(LOCAL, 'job', None)
     receipt = root / (identity + '-receipt.json')
@@ -61,14 +62,14 @@ def run(command, prompt, root, identity, timeout=900):
     record = {'status': 'starting', 'started_at': started, 'identity': identity}
     store.atomic_json(receipt, record)
     # Unknown charges stay unknown if the CLI is interrupted or returns malformed output.
-    project_costs.record_at(root, 'claude_code', None, identity=identity, category='script')
+    project_costs.record_at(root, 'claude_code', None, identity=identity, category=category)
     process, answer, output = None, {}, ''
     state = 'failed'
     try:
         with LOCK:
             check()
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       text=True, cwd=root, start_new_session=True)
+                                       text=True, cwd=session_cwd or root, start_new_session=True)
             if job is not None:
                 PROCESSES[id(job)] = process
         try:
@@ -99,6 +100,11 @@ def run(command, prompt, root, identity, timeout=900):
         with LOCK:
             if job is not None and PROCESSES.get(id(job)) is process:
                 PROCESSES.pop(id(job), None)
+        cumulative=answer.get('total_cost_usd')
+        valid=lambda n:type(n) in (int,float) and math.isfinite(n) and n>=0
+        incremental=(cumulative-previous_session_cost if valid(cumulative) and valid(previous_session_cost)
+                     and cumulative>=previous_session_cost else None)
         store.atomic_json(receipt, {**answer, **record, 'status': state, 'finished_at': time.time(),
-                                    'output': output if not answer else None})
-        project_costs.record_at(root, 'claude_code', answer.get('total_cost_usd'), identity=identity, category='script')
+                                    'output': output if not answer else None,
+                                    'cost_baseline_usd':previous_session_cost,'incremental_cost_usd':incremental})
+        project_costs.record_at(root, 'claude_code', incremental, identity=identity, category=category)

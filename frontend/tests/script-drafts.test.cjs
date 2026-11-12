@@ -110,3 +110,11 @@ test('deleted projects and exhausted browser storage remain visible failures on 
   h.c.localStorage.setItem=()=>{throw Error('quota')};await h.c.ensureScriptDraft(h.project);h.c.editScriptDraft(h.project,'Unsaved edit.');
   await assert.rejects(h.c.flushScriptDraft(h.project),/Не вдалося зберегти/);assert.equal(h.c.scriptDraftEntry(h.project).dirty,true);
 });
+
+
+test('empty loaded manual projects show the openings action only after safe draft loading',()=>{
+  const h=fixture(),can=h.c.scriptDraftCanCreateOpenings;
+  assert.equal(can({loaded:true,text:''}),true);
+  assert.equal(can({loaded:true,text:'  '}),true);
+  for(const entry of [{loaded:false,text:''},{loaded:true,text:'Script'},{loaded:true,text:'',dirty:true},{loaded:true,text:'',saving:true},{loaded:true,text:'',error:'offline'},{loaded:true,text:'',conflict:true}])assert.equal(can(entry),false);
+});

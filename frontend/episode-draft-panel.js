@@ -72,15 +72,20 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     signature=nextSignature;
     const error=data.status==='failed'?`<p class="episode-error" role="alert">${esc(data.error||'Не вдалося завершити запит.')}</p>`:'';
     if(['queued','running','cancelling'].includes(data.status)){
-      const label=data.status==='cancelling'?'Зупиняємо роботу':{openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій';
+      const label=data.status==='cancelling'?'Зупиняємо роботу':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):{openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій';
       root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><span class="export-spinner" aria-hidden="true"></span><strong>${label}</strong></div>${button('episode-draft-stop','Зупинити','stop')}</div>`;
       root.querySelector('#episode-draft-stop').disabled=data.status==='cancelling';
       root.querySelector('#episode-draft-stop').onclick=()=>request({action:'cancel'});
       timer=setTimeout(poll,2000);return;
     }
     if(data.script_saved||data.stage==='metadata'){
-      root.innerHTML=error+`<h3>Сценарій готовий</h3><div class="episode-draft-actions">${button('episode-draft-show-script','Показати сценарій','open')}${button('episode-draft-metadata','Дописати метадані · Opus','title',true)}</div>`;
+      const unfinished=data.editing_status&&data.editing_status!=='done';
+      root.innerHTML=error+`<h3>${unfinished?'Чернетку збережено, саморедактуру не завершено':'Сценарій готовий'}</h3><div class="episode-draft-actions">${button('episode-draft-show-script','Показати сценарій','open')}${button('episode-draft-metadata','Дописати метадані · Opus','title',true)}</div>`;
       root.querySelector('#episode-draft-metadata').onclick=()=>request({action:'metadata'});
+      if(unfinished){const retry=root.querySelector('#episode-draft-metadata');retry.textContent='Продовжити саморедактуру · Opus';retry.disabled=!data.author_session;retry.onclick=()=>request({action:'editing'});}
+      if(data.editing_status){
+        root.append(createScriptEditingButton(state.project));
+      }
       root.querySelector('#episode-draft-show-script').onclick=()=>{state.episodeDraft=null;dispose();delete panel.dataset.planKey;renderProject();};return;
     }
     const hooks=data.openings?.length?data.openings:data.previous_openings;
@@ -94,4 +99,33 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
   }
   root.updateDraft=next=>{if(sending)return;generation++;current=next;draw(next);};
   draw(initial);
+}
+
+
+async function openManualProjectOpenings(project){
+  const pid=project.id,navigation=state.navigation;
+  if(state.project?.id!==pid)return;
+  const health=await api('/api/health');
+  const supported=health.manual_project_openings===true;
+  const entry=await flushScriptDraft(project);
+  if(state.project?.id!==pid||state.navigation!==navigation)return;
+  if((entry.text||'').trim())throw Error('У проєкті вже є сценарій.');
+  const existing=state.episodeDraft;
+  if(existing?.project_id===pid&&episodeDraftPending(existing)){renderProject();return;}
+  const requestId=crypto.randomUUID();let modalGeneration;
+  const current=()=>state.project?.id===pid&&state.navigation===navigation&&state.modalGeneration===modalGeneration;
+  modal('Створити зачини',`<p>${esc(project.name)}</p><label class="episode-word-count">Обсяг сценарію <input id="manual-opening-words" type="number" min="200" max="15000" step="1" value="2000"> слів</label>${supported?'':'<p class="muted">Оновлення буде доступне після завершення поточної роботи студії. Потім оновіть сторінку.</p>'}`,[{
+    label:'Створити зачини · Opus',icon:'magic',primary:true,enabled:()=>supported,run:async()=>{
+      const input=$('manual-opening-words'),count=Number(input?.value);
+      if(!Number.isInteger(count)||count<200||count>15000)throw Error('Задайте від 200 до 15000 слів.');
+      if(!current())return;
+      const latest=await flushScriptDraft(project);
+      if((latest.text||'').trim())throw Error('У проєкті вже є сценарій.');
+      if(!current())return;
+      const data=await api(`/api/projects/${encodeURIComponent(pid)}/episode-draft`,'POST',{action:'openings',target_words:count,request_id:requestId});
+      if(!current())return;
+      state.episodeDraft=data;closeModal();renderProject();
+    }
+  }]);
+  modalGeneration=state.modalGeneration;
 }

@@ -21,7 +21,14 @@ class ProductionSessionsTest(unittest.TestCase):
 
     def test_short_work_keeps_the_existing_single_session(self):
         launch=Mock(return_value=(0,{'result':'done'}))
-        sessions.run([1,2,3],launch,None,None,None,None);launch.assert_called_once_with(None,'',0)
+        sessions.run([41,42,43],launch,lambda _:True,Mock(),lambda:False,lambda _:False)
+        launch.assert_called_once_with([41,42,43],'',0)
+
+    def test_empty_work_never_opens_a_paid_session(self):
+        launch=Mock()
+        code,_=sessions.run([],launch,lambda _:True,Mock(),lambda:False,lambda _:False)
+        self.assertEqual(code,0)
+        launch.assert_not_called()
 
     def test_verified_checkpoint_skips_completed_work_without_paid_replay(self):
         code,_=self.run_job(previous={'completed_frames':list(range(1,21)),'summary':'Earlier work'})

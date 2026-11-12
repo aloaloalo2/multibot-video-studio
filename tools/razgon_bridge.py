@@ -572,6 +572,8 @@ def render_bed(razgon: Path) -> Path | None:
         channel = next(c for c in studio.call("GET", "/api/channels")["channels"] if c["id"] == project["channel_id"])
         config = sound_settings.apply_config(config, channel.get("settings", {}).get("sound"), animated=project.get("project_kind", channel.get("settings", {}).get("channel_kind")) == "animated")
     story = sound_settings.filter_story(story, config)
+    import sfx_library
+    story = sfx_library.without_library(story)
     if not (config.get("music") or {}).get("generate", True) and not (config.get("music") or {}).get("file"):
         config["music"]["enabled"] = False
     level = audio_level.measure(razgon / config["voiceover"])
@@ -886,6 +888,9 @@ def sound(args) -> None:
     if plan["script_sha256"] != link["script_sha256"] or plan.get("timing", {}).get("audio", {}).get("sha256") != link.get("audio_sha256"):
         raise BridgeError("План у студії змінився після prepare. Запустіть prepare ще раз і перевірте шоти")
     wait_for_renders()
+    sys.path.insert(0, str(STUDIO_BACKEND))
+    import sfx_library
+    sfx_library.place(studio, pid, read_json(razgon / "story" / "shots.json"))
     wav = render_bed(razgon)
     if wav is None:
         project = studio.project(pid)

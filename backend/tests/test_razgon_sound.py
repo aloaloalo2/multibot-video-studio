@@ -117,6 +117,7 @@ class RazgonSoundTest(unittest.TestCase):
                 patch.object(store, "save_project", side_effect=lambda project: saved.update(project)), \
                 patch.object(production.director, "claude", return_value=(0, {"result": "Кадри 1–2 готові"})), \
                 patch.object(production.frame_progress, "drawn", return_value=[1, 2]), patch.object(production.logo_layer, "place"), \
+                patch.object(production.production_quality, "check", return_value={"passed": True, "frames": [1, 2], "errors": []}), \
                 patch.object(razgon_sound, "start") as sound:
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))

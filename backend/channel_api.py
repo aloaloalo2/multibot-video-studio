@@ -4,6 +4,7 @@ from pathlib import Path
 
 import agent_storage
 import channel_branding
+import channel_competitors
 import channel_hero
 import channel_transfer
 import channel_voice_lab
@@ -14,6 +15,10 @@ import style_lab
 
 
 def get(self, path, query, *, ensure_idle):
+    match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/competitors', path)
+    if match:
+        return self.json_response({'competitors': channel_competitors.read(match.group(1))})
+
     transfer = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-(export|backups)', path)
     if transfer:
         cid, kind = transfer.groups()
@@ -116,6 +121,15 @@ def get(self, path, query, *, ensure_idle):
 
 
 def mutate(self, method, path, body, *, ensure_idle, choose_folder):
+    match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/competitors(?:/(UC[A-Za-z0-9_-]{22}))?', path)
+    if match:
+        cid, identity = match.groups()
+        if method == 'POST' and not identity:
+            return self.json_response(channel_competitors.add(cid, body.get('url')))
+        if method == 'DELETE' and identity:
+            return self.json_response(channel_competitors.remove(cid, identity))
+        raise store.StudioError('Невідомий запит', 404)
+
     backup = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-backups/([0-9a-f]{32})(/restore)?', path)
     if backup:
         cid, bid, restore = backup.groups()

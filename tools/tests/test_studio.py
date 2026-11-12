@@ -123,6 +123,20 @@ class StudioToolTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(sent[-1][2]["ops"], [{"op": "place", "frame": 4, "asset_id": "f" * 20, "trim_start": 2.0}])
 
+    def test_plan_accepts_sparse_continuation_scope_and_rejects_invalid_ranges(self):
+        code, out, _, _ = self.run_tool('plan', 'горбунов 23', '--frames', '1,3')
+        self.assertEqual(code, 0)
+        self.assertIn('Печінка', out)
+        self.assertIn('Овочі', out)
+        self.assertNotIn('Жир накопичується', out)
+        code, out, _, _ = self.run_tool('plan', 'горбунов 23', '--frames', '2-3')
+        self.assertEqual(code, 0)
+        self.assertIn('Жир накопичується', out)
+        self.assertNotIn('Печінка', out)
+        for spec in ('3-1','0','1,','1-2-3','bad'):
+            with self.subTest(spec=spec):
+                self.assertEqual(self.run_tool('plan','горбунов 23','--frames',spec)[0], 1)
+
     def test_still_prints_the_picture_and_the_preview_link_at_the_same_moment(self):
         code, out, _, sent = self.run_tool("still", "горбунов 23", "f12")
         self.assertEqual(code, 0)

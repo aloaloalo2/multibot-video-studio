@@ -15,10 +15,25 @@ class TitleCleanupTest(unittest.TestCase):
         self.assertEqual(accepted[4]['title'], '9 Geräusche am Auto!')
         self.assertEqual(ideas.clean_title('1.5 Liter im Motor?'), '1.5 Liter im Motor?')
 
+    def test_invisible_soft_hyphens_do_not_reach_titles_or_translations(self):
+        self.assertEqual(ideas.clean_title('Що, якщо ти проки\u00adнешся?'), 'Що, якщо ти прокинешся?')
+        self.assertEqual(ideas.clean_title('1. What\u200b If?'), 'What If?')
+        self.assertIn('word endings, agreement, person, tense, syntax', ideas.TOPIC_PROMPT)
+        self.assertIn('BOTH the original titles and Ukrainian translations', ideas.TOPIC_PROMPT)
+
     def test_numbering_cannot_hide_a_previous_title(self):
         rows = [{'title': f'{i + 1}. {i + 5} Geräusche am Auto!'} for i in range(5)]
         with self.assertRaises(ValueError):
             ideas.validate_titles({'ideas': rows}, {'previous_titles': ['1. 5 Geräusche am Auto!']})
+
+    def test_reworded_titles_with_same_subject_are_rejected(self):
+        rows = [{'title':f'Fresh headline number {i}!', 'subject':f'different subject {i}'} for i in range(5)]
+        rows[0]['subject'] = 'choosing winter tyres'
+        with self.assertRaises(ValueError):
+            ideas.validate_titles({'ideas':rows}, {'previous_titles':[], 'previous_topic_history':[{'title':'Old tyre headline', 'subject':'Choosing winter tyres'}]})
+        rows[0]['subject'] = rows[1]['subject']
+        with self.assertRaises(ValueError):
+            ideas.validate_titles({'ideas':rows}, {'previous_titles':[]})
 
 
 class ReadingTranslationTest(unittest.TestCase):
@@ -62,6 +77,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         ideas.ACTIVE.clear()
         ideas.path(self.cid).unlink(missing_ok=True)
         ideas.topics_path(self.cid).unlink(missing_ok=True)
+        ideas.path(self.cid).with_name('episode-idea-history.json').unlink(missing_ok=True)
     request = fixtures.BackendTest.request
     def test_saved_suggestions_are_cleaned_without_resetting_work(self):
         saved = {'status':'done', 'stage':'ideas', 'id':'saved-draft', 'target_words':1200,
@@ -121,6 +137,26 @@ class EpisodeIdeasTest(unittest.TestCase):
         model.assert_called_once()
         self.assertIn('each exactly 6 complete sentences', model.call_args.args[0])
 
+    def test_refresh_retains_more_than_25_old_suggestions_and_subjects(self):
+        older = [{'title':f'Older subject headline {i}', 'subject':f'central subject {i}'} for i in range(40)]
+        ideas.suggestion_history(self.cid, {'ideas':older})
+        latest = self.topics()
+        data = self.begin({'action':'ideas','refresh':True})
+        self.assertIn(older[0]['title'], data['context']['previous_suggestions'])
+        self.assertIn(older[-1], data['context']['previous_topic_history'])
+        with patch.object(ideas, 'deepseek', side_effect=ValueError('No new result')) as model:
+            self.finish(data)
+        prompt = model.call_args.args[0]
+        self.assertIn('radically different central SUBJECT', prompt)
+        self.assertIn('ALL-CAPS', prompt)
+        self.assertIn('question marks and exclamation marks', prompt)
+        self.assertIn(older[0]['title'], prompt)
+        self.assertEqual(ideas.catalog(self.cid)['ideas'], latest['ideas'])
+        history = ideas.suggestion_history(self.cid)
+        self.assertEqual(len(history), 45)
+        self.assertEqual(history[0], older[0])
+        model.assert_called_once()
+
     def test_http_stage_is_reserved_once_and_hides_private_context(self):
         with patch.object(ideas,'Thread') as thread:
             code,data=self.request('/api/channels/'+self.cid+'/episode-ideas','POST',{'action':'ideas'})
@@ -138,7 +174,7 @@ class EpisodeIdeasTest(unittest.TestCase):
         return ideas.read(self.cid)
     def topics(self):
         data = self.begin({'action':'ideas'})
-        with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'A fresh {self._testMethodName[:20]} story number {i}', 'uk':'Українська назва'} for i in range(5)]}):
+        with patch.object(ideas, 'deepseek', return_value={'ideas':[{'title':f'Fresh {self._testMethodName.replace("_", "")[:20]} story number {i}', 'uk':'Українська назва'} for i in range(5)]}):
             return self.finish(data)
     def test_edited_topic_title_reaches_project_and_opus_without_changing_the_catalog(self):
         topics = self.topics()
@@ -165,8 +201,9 @@ class EpisodeIdeasTest(unittest.TestCase):
         try:
             store.update_channel_settings(self.cid, {'script_wishes':'Use a warm greeting and short concrete examples.'})
             hooks=[{'text':'A complete vivid hook with useful spoken details. '*6,'uk':''} for _ in range(4)]
-            with patch.object(ideas,'opus',return_value={'openings':hooks}) as model:
+            with patch.object(ideas,'opus',return_value={'openings':hooks}) as model, patch.object(ideas.agent_storage,'get_memory',return_value='Shared channel wishes apply to this writing step'):
                 self.finish(data)
+            self.assertIn('Shared channel wishes apply to this writing step',model.call_args.args[0])
             self.assertIn('Use a warm greeting',model.call_args.args[0])
             self.assertNotIn('"memory":',model.call_args.args[0])
             data=self.begin({'action':'script','index':0})
@@ -277,6 +314,21 @@ class EpisodeIdeasTest(unittest.TestCase):
 if __name__=='__main__': unittest.main()
 
 class LazyIdeasTest(EpisodeIdeasTest):
+    def test_yesterday_completed_topics_start_once_instead_of_returning_stale_cache(self):
+        self.topics()
+        with patch.object(ideas,'today',return_value='2099-01-02'), patch.object(ideas,'Thread') as thread:
+            self.assertTrue(ideas.catalog(self.cid)['stale'])
+            first=ideas.start(self.cid,{'action':'ideas','if_stale':True,'request_id':'daily-first'})
+            self.assertEqual(first['status'],'running')
+            self.assertFalse(first['stale'])
+            second=ideas.start(self.cid,{'action':'ideas','if_stale':True,'request_id':'daily-second'})
+            self.assertEqual(second['id'],first['id'])
+            self.assertEqual(thread.call_count,1)
+            ideas.ACTIVE.clear()
+            failed=ideas.start(self.cid,{'action':'ideas','if_stale':True,'request_id':'after-restart'})
+            self.assertEqual(failed['status'],'failed')
+            self.assertEqual(thread.call_count,1)
+
     def test_opening_ideas_reserves_one_attempt_per_day_and_reading_is_free(self):
         with patch.object(ideas, 'Thread') as thread:
             self.assertTrue(ideas.catalog(self.cid)['stale'])

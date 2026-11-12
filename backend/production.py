@@ -92,16 +92,18 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     root = store.YOUTUBE_ROOT
     episode = Path(project["episode_path"])
     rel = episode.relative_to(root) if root in episode.parents else episode
-    frames = ",".join(str(n) for n in range(1, request["frames"] + 1))
-    remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
+    numbers = request.get('session_frames') or list(range(1, request['frames'] + 1))
+    frames = ",".join(map(str, numbers))
+    scope = f'{numbers[0]}-{numbers[-1]}' if numbers == list(range(numbers[0], numbers[-1] + 1)) else frames
+    remarks = (f"Автор подивився кадри {scope} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні сцени, перевір змінені кадри й їхні сусідні стики та зроби крок 4.\n\n"
                if notes.strip() else "")
     if request.get("continuation_mode") == "handoff":
         remarks = f"Продовження зі збережених файлів:\n{notes.strip()}\n\n"
-    return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено, автор натиснув «Створити {request['frames']} кадрів».
+    return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено. Поточне завдання: кадри {scope}.
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
-Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
+Запит: лише кадри студії {scope} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
@@ -117,7 +119,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
 кладе сама після твоєї роботи, без рендеру.
-1. Сцени шотів, через які проходять кадри 1–{request['frames']} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль бери зі збережених налаштувань каналу; герої й декорації зберігають послідовність випусків.
+1. Сцени шотів, через які проходять кадри {scope} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль бери зі збережених налаштувань каналу; герої й декорації зберігають послідовність випусків.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше перевір assets/library-picks.json і вже прикріплені предмети.
    Далі один точний пошук: python3 "{store.razgon_rel()}/tools/library.py" search <слова> --limit 6 --sheet <аркуш.png> і use.
    Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
@@ -137,7 +139,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Довгі перевірки (cut_check.py, frame_review.py, render.mjs) запускай на передньому плані з timeout до 600000 мс і чекай результату
 в тій самій команді, без run_in_background: коли ти закінчуєш відповідь, сесія закривається, і фонова перевірка обривається разом з нею.
 
-Не роби фінальний MP4, не змінюй режисуру й стиль, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
+Не роби фінальний MP4 і нічого не публікуй. Збережи режисуру й стиль. Кадри поза переліком {scope} не змінюй. Експорт запускає автор.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Готую стоп-кадри 1–3 для перевірки».
 Працюй із короткою картою кадрів студії. Помічників не запускай.
 Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
@@ -252,21 +254,26 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     rel = episode.relative_to(root) if root in episode.parents else episode
     tools = store.app_rel() + "/tools"
     people = people_rules(project)
-    remarks = (f"Автор подивився кадри 1–{request['frames']} і просить виправити:\n{notes.strip()}\n\n"
+    numbers = request.get('session_frames') or list(range(1, request['frames'] + 1))
+    scope = f'{numbers[0]}-{numbers[-1]}' if numbers == list(range(numbers[0], numbers[-1] + 1)) else ','.join(map(str,numbers))
+    summary_scope = f'{numbers[0]}-{numbers[-1]}'
+    text_target = 'N --text' if request.get('session_frames') else 'all-text'
+    razgon_scope = ' --frames ' + ','.join(map(str,numbers)) if request.get('session_frames') else ''
+    remarks = (f"Автор подивився кадри {scope} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
     if request.get("continuation_mode") == "handoff":
         remarks = f"Продовження зі збережених файлів:\n{notes.strip()}\n\n"
     return f"""Ти монтажер випуску в VideoKey Studio. План кадрів іде за озвучкою, автор натиснув «Почати створення ролика».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
-Запит: кадри студії 1–{request['frames']} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
+Запит: лише кадри студії {scope} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
 Спершу прочитай правила каналу {episode.parent / 'AGENTS.md'} (і {root / 'AGENTS.md'}, якщо він є): там стиль і що в якому форматі.
 Великі документи студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для цієї роботи нижче.
-План кадрів по рядку на кадр (час, формат, ідея режисера, слова, ✓ зроблено): python3 "{tools}/studio.py" plan {project['id']} --frames 1-{request['frames']} --todo
-Що вже стоїть на таймлайні і які проблеми: python3 "{tools}/studio.py" summary {project['id']} --issues.
+План кадрів по рядку на кадр (час, формат, ідея режисера, слова, ✓ зроблено): python3 "{tools}/studio.py" plan {project['id']} --frames {scope} --todo
+Що вже стоїть на таймлайні і які проблеми: python3 "{tools}/studio.py" summary {project['id']} --frames {summary_scope} --issues.
 Правила студії, які легко порушити: кожен кадр стоїть у свій час плану (place робить це сам); озвучку й плашку каналу не чіпай;
 у кадрі одна головна картинка чи відео; стокове відео не коротше за кадр (place перевіряє); експорт запускає тільки автор.
 
@@ -274,7 +281,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Логотип і плашку каналу додає сама студія. Не малюй їх у сценах, не імпортуй копій і не додавай окремих шарів оформлення каналу.
 Якщо зона задана, розташовуй заголовки, підписи, стрілки й ключові об’єкти поза нею у всіх кадрах, включно з Razgon.
 На перевірці початку, середини й кінця кадру враховуй накладений логотип. Якщо він перекриває зміст, змісти зміст; логотип не пересувай.
-{remarks}Твоє завдання: кадри 1–{request['frames']}, кожен за своїм форматом у плані і за змістом своїх слів.
+{remarks}Твоє завдання: кадри {scope}, кожен за своїм форматом у плані і за змістом своїх слів.
 {PHOTO_STYLE_WISH}
 {motion_direction.EXECUTION}
 Пріоритет автора для створених зображень Codex: {director.channel_settings(project).get('generated_image_style') or 'Стиль за змістом кадру'}.
@@ -305,26 +312,26 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Підписи розташовуй над діаграмами й декором: для PNG із текстом передай foreground=true; нативний текст студія ставить зверху.
    Залиши для підписів окреме місце, перевір траєкторії руху та зону логотипа. Стовпчики не повинні проходити крізь текст.
    Перевір початок, середину, кінець, стики та моменти максимального зближення елементів. Цей формат не потребує проєкту Razgon.
-5. Текстові кадри (text) робиш сам одним кроком: python3 "{tools}/studio.py" place {project['id']} all-text ставить слова кожного ще не
-   поставленого текстового кадру на весь екран.
+5. Текстові кадри (text): python3 "{tools}/studio.py" place {project['id']} {text_target} ставить слова текстового кадру на весь екран.
+   Працюй лише з номерами поточного завдання.
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
    python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
-   python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>: блоки-код стануть лише на кадри формату razgon_2d.
+   python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>{razgon_scope}: блоки-код стануть лише на кадри формату razgon_2d.
 {FULL_FRAME_RULE}
    Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> --motion zoom_in|zoom_out|pan_left|pan_right|none.
    Без --motion картинка лишається нерухомою. Пресет застосовуй лише коли він відповідає постановці цього кадру;
    власний напрямок, масштаб, час і рух окремих елементів задавай явно через keyframes API.
-5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames 1-{request['frames']} --issues без проблем, і стоп-кадр
+5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames {summary_scope} --issues без проблем, і стоп-кадр
    кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN --small: половинний розмір, учетверо дешевший на
    перегляд; повний розмір лише коли береш координати для акценту) ти переглядаєш очима: картинка відповідає словам кадру,
    {people['check']}, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
 {accents_step(project, tools)}
 7. Переходи: коли всі кадри запиту стоять, python3 "{tools}/studio.py" transitions {project['id']} --share 0.7 ставить оформлені
    переходи приблизно на 70% стиків за правилами каналу (у текстовий кадр зрізом, без двох однакових переходів, крім розчинення, поспіль).
-   Текстові кадри place … all-text сам оформлює: розмитий фон із картинки випуску, тон підкладки, поява слів у такт голосу.
+   Текстові кадри place … {text_target} сам оформлює: розмитий фон із картинки випуску, тон підкладки, поява слів у такт голосу.
 
 Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
-Не запускай експорт, не змінюй план і налаштування каналу, не чіпай кадри після {request['frames']}-го і нічого не публікуй.
+Збережи план і налаштування каналу. Кадри поза переліком {scope} не змінюй. Не запускай експорт: його запускає автор.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською повним реченням, наприклад «Шукаю стокове фото для кадру 3.».
 Довгі команди запускай на передньому плані з timeout до 600000 мс, без run_in_background.
 Працюй послідовно самостійно. Помічників не запускай.
@@ -387,26 +394,38 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         signature = production_context.digest({'request':request['id'],'script':request.get('script_sha256'),'frames':(store.load_project_plan(pid) or {}).get('frames',[]),'repair':request.get('repair_frames'),'wishes':request.get('task_notes',request.get('notes',''))})
+        last_review = {}
         def cancelled():
             current = store.load_project(pid).get('production_request') or {}
             return director.cancelled(pid,'production') or current.get('paused') or current.get('id') != request['id']
         def verify(numbers):
-            return drawn(pid,request['frames'],numbers) and production_quality.check(store.load_project(pid),{**request,'review_frames':numbers})['passed']
+            nonlocal last_review
+            if not drawn(pid,request['frames'],numbers):
+                return False
+            last_review = production_quality.check(store.load_project(pid),{**request,'review_frames':numbers})
+            return last_review['passed']
         def checkpoint(receipt):
             with store.LOCK:
                 if cancelled():raise InterruptedError('Створення кадрів зупинено')
                 set_request(pid,session_checkpoint={**receipt,'signature':signature})
         def launch(numbers,summary,index):
+            nonlocal last_review
+            last_review = {}
             current=store.load_project(pid)
             scoped={**request,**({'session_frames':numbers,'summary':summary} if numbers else {})}
+            if numbers:
+                selected=[f for f in (store.load_project_plan(pid) or {}).get('frames',[]) if f['number'] in numbers]
+                if selected:
+                    scoped.update(start=min(f['start'] for f in selected),end=max(f['end'] for f in selected))
             if numbers and scoped.get('repair_frames'):scoped['repair_frames']=numbers
             text = repair_brief(current,scoped,notes) if scoped.get('repair_frames') else brief(current, scoped, notes) if store.project_animated(current) else photo_brief(current, scoped, notes)
             text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames') or numbers)) + director.animation_style(current) + director.channel_memory(current)
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
-            text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')))+production_quality.INSTRUCTIONS
+            text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')),
+                batch=bool(numbers) and not scoped.get('repair_frames'))+production_quality.INSTRUCTIONS
             if numbers:
                 text += '\nЦей короткий запуск охоплює ЛИШЕ кадри '+','.join(map(str,numbers))+'. Працюй партіями по 5 всередині цієї області. Після перевірки всіх цих кадрів заверши відповідь стислим підсумком. Наступну область студія передасть окремій новій сесії. Не використовуй all-text або інші команди, які змінюють кадри поза цією областю.'
-            session_log=log.with_name(log.stem+f'-session-{index:02d}.log') if numbers else log
+            session_log=log.with_name(log.stem+f'-session-{index:02d}.log') if index else log
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             remaining = deadline - time.monotonic()
             if remaining <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
@@ -414,6 +433,9 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         previous=request.get('session_checkpoint') or {}
         if previous.get('signature') != signature or request.get('continuation_mode') != 'handoff':previous={}
         code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous)
+        if last_review and not last_review['passed']:
+            fields['quality'] = last_review
+            answer['result'] = ' '.join(last_review.get('errors') or [answer.get('result','')])[:1600]
         spent_before = float(request.get("cost_usd") or 0) if notes.strip() else 0
         fields.update(cost_usd=spent_before + float(answer.get("total_cost_usd") or 0) if answer.get("total_cost_usd") else request.get("cost_usd"),
                       session_id=answer.get("session_id") or request.get("session_id"),
@@ -430,7 +452,8 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 logo_layer.place(pid)   # the channel logo from the settings goes over the new frames
             except (OSError, store.StudioError):
                 pass
-            review = production_quality.check(store.load_project(pid), request)
+            final_request = {**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))}
+            review = production_quality.check(store.load_project(pid), final_request)
             fields.update(quality=review, status='done' if review['passed'] else 'failed')
             if not review['passed']:
                 fields['error'] = ' '.join(review['errors'])[:1600]

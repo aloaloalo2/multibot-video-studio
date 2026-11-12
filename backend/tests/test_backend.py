@@ -325,6 +325,9 @@ class BackendTest(unittest.TestCase):
         cls.director_starts = []
         cls.director_patch = patch.object(director, "start", side_effect=lambda pid, reason="voice": cls.director_starts.append((pid, reason)) or {"status": "queued"})
         cls.director_patch.start()
+        # Existing workflow fixtures do not buy editorial inference; editor tests mock its transport separately.
+        cls.editor_patch = patch('script_editing.self_review', side_effect=lambda pid,text,ctx,target_words,*args,**kw:text)
+        cls.editor_patch.start()
         cls.channel = store.YOUTUBE_ROOT / "Test Channel"
         cls.channel.mkdir(parents=True)
         store.atomic_json(store.channel_settings_path(cls.channel), {"short_sentence_words": 5, "opening_clip_count": 6, "opening_seconds": 90, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 70, "animation": 20}})
@@ -339,6 +342,7 @@ class BackendTest(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join(timeout=3)
         cls.director_patch.stop()
+        cls.editor_patch.stop()
         store.YOUTUBE_ROOT, store.DATA_ROOT, store.PROJECTS_ROOT, store.DISABLED_PATH, store.GLOBAL_SETTINGS_PATH, app.JOBS_ROOT = cls.originals
         cls.tmp.cleanup()
 

@@ -80,3 +80,14 @@ test('missing channel voice defaults to upload while active synthesis stays on i
   assert.equal(c.narrationInitialMode({source:'file'},voice,'Saved script.'),'file');
   assert.equal(c.narrationInitialMode({},{settings:{provider:'heygen'}},'Saved script.'),'file');
 });
+
+test('downloaded animation SFX have their own row and retain independent clip edits',()=>{
+  const c=load(groups,'function compactSoundRows(','function appendGroupedMediaClip(');
+  const entry=(title,id)=>{const clip={id,title,kind:'audio',start:2,duration:.5,volume:.08};return {clip,layer:{id:'l'+id,clips:[clip]},z:1};};
+  const sfx=entry('Звук ролика · SFX · Поява abc','sfx'),voice=entry('Озвучка','voice'),music=entry('Звук ролика · музика 1','music');
+  const rows=c.compactSoundRows([voice,music,sfx]);
+  const lane=rows.find(r=>r.soundFamily==='sfx');
+  assert.equal(lane.title,'SFX');assert.equal(lane.soundItems[0],sfx);
+  assert.equal(rows.find(r=>r.soundFamily==='music').soundItems[0],music);
+  assert.equal(rows[0],voice);assert.equal(sfx.clip.volume,.08);
+});

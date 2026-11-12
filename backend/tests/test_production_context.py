@@ -48,6 +48,35 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text())["mode"], "repair")
         self.assertEqual(json.dumps(self.plan), before)
 
+    def test_joined_shot_requires_only_the_parts_overlapping_each_frame(self):
+        story={'shots':[{'id':'s1','start':0,'end':9,'parts':[
+            {'id':'s1','start':0},{'id':'s2','start':3},{'id':'s3','start':6}]}]}
+        (self.rz/'story/shots.json').write_text(json.dumps(story))
+        (self.rz/'scenes/a.js').write_text("take(['s1','s2'], {});")
+        packet=context.build(self.project,self.request)
+        self.assertEqual([f['takes'] for f in packet['frames']],[['s1'],['s2'],['s3']])
+        self.assertEqual([f['missing_takes'] for f in packet['frames']],[[],[],['s3']])
+
+    def test_scoped_creation_has_consistent_frame_limits_in_every_action(self):
+        request={**self.request,'frames':53,'total_frames':53,'session_frames':list(range(21,41))}
+        text=production.brief(self.project,request)
+        self.assertIn('лише кадри студії 21-40',text)
+        self.assertNotIn('кадри 1–53',text)
+        self.assertIn('--frames '+','.join(map(str,range(21,41))),text)
+        self.assertNotIn('після 53-го',text)
+        guide=context.instructions('Current work',batch=True)
+        self.assertIn('поточної частини',guide)
+        self.assertNotIn('Після завершення кожного кадру',guide)
+
+    def test_sparse_photo_scope_never_uses_all_text_or_unscoped_slots(self):
+        request={**self.request,'frames':53,'total_frames':53,'session_frames':[21,23,25]}
+        text=production.photo_brief(self.project,request)
+        self.assertIn('лише кадри студії 21,23,25',text)
+        self.assertIn('--frames 21,23,25 --todo',text)
+        self.assertIn('summary test --frames 21-25',text)
+        self.assertIn('slots --razgon <проєкт Razgon> --frames 21,23,25',text)
+        self.assertNotIn('all-text',text)
+
     def test_selected_repair_targets_ready_frames_and_only_keeps_neighbours_as_context(self):
         packet=context.build(self.project,{**self.request,'repair_frames':[2]},repair=True)
         self.assertEqual(packet['pending_frames'],[2])

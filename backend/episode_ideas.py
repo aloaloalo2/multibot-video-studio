@@ -1,5 +1,6 @@
 """Bounded channel ideas, then Opus openings and a script. No voice or frames are started."""
 import hashlib
+import topic_novelty
 import json
 import re
 import threading
@@ -19,8 +20,10 @@ import project_costs
 import completion_notices
 import episode_metadata
 import author_rules
+import agent_storage
 import word_blacklist
 import writing_jobs
+import script_editing
 import topics as channel_topics
 import writer_context
 import channel_profile
@@ -64,9 +67,30 @@ def topics_path(cid):
     return path(cid).with_name('episode-topics.json')
 
 
+def suggestion_history(cid, previous=None):
+    """Persistent channel-local exclusions survive refreshes, failures and project drafts."""
+    target = path(cid).with_name('episode-idea-history.json')
+    saved = store.read_json(target, {}) or {}
+    rows = list(saved.get('ideas') or [])
+    previous = previous or {}
+    rows += [{'title': title} for title in (previous.get('context') or {}).get('previous_suggestions', []) if isinstance(title, str)]
+    rows += previous.get('ideas') or []
+    unique = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('title'), str): continue
+        key = re.sub(r'\W', '', row['title']).casefold()
+        if key:
+            unique[key] = {**unique.get(key, {}), **{k: row[k] for k in ('title', 'subject', 'premise') if isinstance(row.get(k), str)}}
+    history = list(unique.values())
+    if history != saved.get('ideas', []):
+        store.atomic_json(target, {'ideas': history})
+    return history
+
+
 def remember_topics(cid, data):
     # The channel catalog survives opening, retrying or cancelling an older project.
     if not data.get('ideas'): return
+    suggestion_history(cid, data)
     saved = {k: data[k] for k in ('ideas', 'day', 'attempt_day', 'target_words', 'sample_count', 'context', 'used_idea_indexes') if k in data}
     saved['id'] = data.get('ideas_id', data['id'])
     saved.update(status='done', error=None, topic_projects={})
@@ -176,6 +200,17 @@ def start_project(pid, body):
         project = store.load_project(pid)
         cid, action = project['channel_id'], body.get('action')
         data = read_project(pid)
+        if not data and action == 'openings':
+            draft = store.read_json(store.project_dir(pid) / 'script-draft.json', {}) or {}
+            if (project.get('voice_script') or {}).get('text', '').strip() or str(draft.get('text', '')).strip():
+                raise store.StudioError('У випуску вже є сценарій. Збережені правки залишено без змін.', 409)
+            ctx = context(cid)
+            count = body.get('target_words', ctx['target_words'])
+            if type(count) is not int or not 200 <= count <= 15000:
+                raise store.StudioError('Задайте від 200 до 15000 слів')
+            data = {'id': uuid.uuid4().hex, 'project_id': pid, 'context': ctx,
+                    'selected': {'title': project['name']}, 'target_words': count,
+                    'sample_count': ctx.get('sample_count', 0), 'manual_topic': True}
         if not data and action == 'metadata':
             data = {'id': uuid.uuid4().hex, 'project_id': pid, 'context': {'channel': project['channel_name']},
                     'selected': {'title': project['name']}}
@@ -195,7 +230,19 @@ def start_project(pid, body):
             if current.get('stage') == action and not body.get('refresh'):
                 return public(current)
             raise store.StudioError('У цьому випуску Opus ще працює. Дочекайтеся завершення запиту.', 409)
+        if action == 'editing':
+            if not (project.get('voice_script') or {}).get('text'):
+                raise store.StudioError('Спершу збережіть сценарій')
+            if script_editing.latest(pid).get('status') == 'done':
+                return public(data)
+            if not data.get('author_session'):
+                raise store.StudioError('Немає збереженої сесії автора для саморедактури. Історичний звіт залишено без змін.',409)
+            data.update(editing_retry=True, completed=False)
+            return launch(cid, data, action, body.get('request_id'))
         if action == 'metadata':
+            editorial = script_editing.latest(pid)
+            if editorial and editorial.get('status') != 'done':
+                raise store.StudioError('Спершу завершіть саморедактуру Opus або перегляньте її помилку у звіті',409)
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
             script = project['voice_script']['text']
@@ -282,6 +329,7 @@ def context(cid):
     # and the director's memory. Earlier only the first 16 000 characters of each AGENTS.md went in.
     rules = author_rules.for_channel(folder, store.YOUTUBE_ROOT)
     return {'channel': folder.name, 'previous_titles': channel_topics.history(folder),
+            'channel_agent_rules': agent_storage.get_memory(cid),
             'samples': samples, **recommended_length(cid, samples),
             **rules, 'script_wishes': store.read_channel_settings(folder, {}).get('script_wishes', '')}
 
@@ -352,23 +400,40 @@ def deepseek(prompt, root, identity):
     return unpack(message.get('content') if isinstance(message, dict) else None)
 
 
-def opus(prompt, root, identity, cid):
+def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script'):
     # Pure writing: no tools, no old conversation, no access to paid production commands.
-    effort = store.channel_effort({'channel_id': cid})
+    effort = session['effort'] if session else store.channel_effort({'channel_id': cid})
     if getattr(writing_jobs.LOCAL, 'job', None) is not None:
         writing_jobs.LOCAL.job['effort'] = effort
-    cmd = [str(director.executable()), '--model', director.MODEL, '--effort', effort, '--strict-mcp-config',
+    cmd = [str(director.executable()), '--model', session['model'] if session else director.MODEL, '--effort', effort, '--strict-mcp-config',
            '--tools', '', '--setting-sources', '', '--output-format', 'json', '-p']
-    code, answer = writing_jobs.run(cmd, prompt, root, identity)
+    if session:cmd += ['--resume' if resume else '--session-id', session['session_id']]
+    options={'session_cwd':session_cwd} if session_cwd else {}
+    if cost_category!='script':options['category']=cost_category
+    if session:
+        baseline=session.get('api_cost_usd')
+        if baseline is None and not resume:baseline=0
+        options['previous_session_cost']=baseline
+    code, answer = writing_jobs.run(cmd, prompt, root, identity, **options)
+    if session and project_costs.number(answer.get('total_cost_usd')):
+        session['api_cost_usd']=answer['total_cost_usd']
     if code or answer.get('is_error'):
         raise RuntimeError(director.limit_stop(answer) or 'Opus не завершив відповідь. Готові результати збережені.')
+    if session and answer.get('session_id')!=session['session_id']:
+        raise RuntimeError('Opus не підтвердив ту саму сесію автора. Чернетка не видається як готова.')
+    if session and any((value.get('canonicalModel') or name)!=session['model']
+                       for name,value in (answer.get('modelUsage') or {}).items()):
+        raise RuntimeError('Claude повернув іншу модель. Автоматичну підміну автора не прийнято.')
     return unpack(answer.get('result') or '')
 
 
 # One bounded request: choose varied editorial angles internally, return only five finished titles.
 TOPIC_PROMPT = r"""
 Propose exactly 5 fresh, compelling YouTube video topics for this channel's audience.
-Current author instruction: create a varied set of click-worthy titles. Use previous titles to learn
+Current author instruction: create bold, highly clickable titles with stronger curiosity and emotion.
+Use natural question marks and exclamation marks across the set, and one short emphasized
+ALL-CAPS word or phrase in some titles where it strengthens the hook. Never make whole titles
+uppercase or force the same punctuation formula onto all five. Preserve accurate promises. Use previous titles to learn
 language, subject, audience and voice; do not copy their sentence structure or their opening pattern.
 A strong title combines a concrete recognizable subject, a meaningful stake or useful promise,
 and a specific unanswered detail that makes the viewer curious. Put the strongest words early.
@@ -384,19 +449,55 @@ Keep each title natural, understandable and specific. Avoid empty hype, vague se
 facts, fake urgency, unsupported medical claims, cure guarantees or guaranteed outcomes.
 The future script must be able to deliver the title's promise. Channel history contains examples,
 not performance analytics; do not invent CTR, search trends or claims that a formula guarantees views.
+Refresh means a radically different central SUBJECT, not another title or angle on the same topic.
+Treat previous_titles, previous_suggestions and previous_topic_history as exclusions, even if unused.
+Changing punctuation, CAPS, numbers, age, season, wording, or an emotional hook does not create a new topic.
+Move to different concrete subjects, viewer problems, situations or phenomena within the channel niche.
+For example, a previous topic about choosing winter tyres excludes tyre age, markings, buying mistakes
+and choosing a tyre test as refreshed ideas; consider unrelated car systems or driving problems instead.
+The five new ideas must also be clearly separated from each other by their central subject AND underlying premise.
+The author explicitly rejects slot substitution: "What if you ate only bread?", "What if you ate only
+honey?" and "What if you ate only ice cream?" are ONE idea family: an exclusive single food diet.
+Changing the food, object, species, character, city, duration or number within the same experiment,
+viewer question, causal mechanism and expected story does not create a fresh idea. After that family
+has been suggested, exclude the WHOLE family, even when the suggestion was never selected.
+Infer these families from old titles even when their history lacks premise labels. Apply this to
+EVERY channel: exchanging a vehicle part, health ingredient or collectible inside an otherwise
+reusable explanation is not sufficient novelty. Stay within the channel's niche while finding a new
+central viewer question, situation, causal mechanism and story progression. A broad genre such as
+"What If", car repair or health is not itself an excluded premise. Distinct phenomena within it remain valid.
+For each idea also return premise: a short neutral English description of the underlying scenario or
+viewer question with interchangeable object/food/person slots removed. Example: "consequences of an
+exclusive single food diet", not "eating only honey". Reuse the same premise wording from history for
+related candidates, then replace that candidate internally before responding. Five fresh ideas must
+have five distinct premises and none may overlap any excluded premise. Ask yourself whether changing
+one or two nouns in an old title or reusing most of its script would produce the candidate. If yes,
+discard it and choose a substantially different idea inside this SAME request.
+For each idea return subject: a short neutral English description of its concrete central subject,
+using the same subject wording as history whenever the underlying topic is the same. Reject any
+candidate that could mostly reuse a previous episode's core explanation or practical advice.
+Before finalizing, compare the core subject of every candidate with ALL excluded topics and replace
+nearby topics internally in this same request. No extra critic call or paid retry.
 Exclude earlier topics, previous_suggestions and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
 Use plain titles without list numbering or list markers, no colon, dash or hyphen of any kind,
 and a maximum of 100 characters per title. Preserve the channel language and tone.
 Keep existing digits as digits; do not spell out numbers in titles.
 For non-Ukrainian/non-Russian titles add a natural Ukrainian reading translation in uk.
+Before returning, proofread BOTH the original titles and Ukrainian translations for spelling,
+word endings, agreement, person, tense, syntax and idiomatic phrasing. Keep Ukrainian free of
+Russian forms and mixed-language words. Translate hypothetical What If questions consistently.
+For example, use Ukrainian "ти прокинешся і забудеш", never "ти прокинется і забув".
+Remove invisible soft hyphens and zero-width formatting artifacts. Perform this proofreading
+inside this same request; do not return an unchecked first translation.
 Never translate Russian or Ukrainian titles into Ukrainian; for those always return uk="".
 Before responding, silently compare the five and rewrite repetitive hooks within this same response.
-Return only JSON {"ideas":[{"title":"...","uk":"..."}]} with exactly five entries, no analysis or alternatives.
+Return only JSON {"ideas":[{"title":"...","uk":"...","subject":"concrete central subject","premise":"underlying idea without interchangeable object slots"}]} with exactly five entries, no analysis or alternatives.
 """
 
 
 def clean_title(text):
     # Remove list markers, preserving numbers belonging to the title itself.
+    text = text.translate(str.maketrans('', '', '\u00ad\u200b\ufeff'))
     return re.sub(r'^(?:\s*\d+[.)]\s+)+', '', text.strip()).strip()
 
 
@@ -404,6 +505,9 @@ def validate_titles(result, ctx):
     titles = result.get('ideas')
     if not isinstance(titles, list) or len(titles) != 5: raise ValueError('DeepSeek не повернув список нових тем')
     existing = {re.sub(r'\W', '', clean_title(t)).casefold() for t in ctx['previous_titles'] + ctx.get('previous_suggestions', []) if isinstance(t, str)}
+    subjects = {re.sub(r'\W', '', row['subject']).casefold() for row in ctx.get('previous_topic_history', []) if isinstance(row, dict) and isinstance(row.get('subject'), str)}
+    compared = [t for t in ctx['previous_titles'] + ctx.get('previous_suggestions', []) if isinstance(t, str)]
+    premises = [r.get('premise') for r in ctx.get('previous_topic_history', []) if isinstance(r, dict)]
     accepted = []
     for item in titles:
         if not isinstance(item, dict): continue
@@ -412,10 +516,18 @@ def validate_titles(result, ctx):
         title, uk = clean_title(title), reading_translation(title, clean_title(uk))
         if not 5 <= len(title) <= 100 or re.search(r'[:：\-–—]', title): continue
         key = re.sub(r'\W', '', title).casefold()
-        if key in existing: continue
+        if key in existing or any(topic_novelty.slot_rewrite(title, old) for old in compared): continue
+        premise = item.get('premise')
+        if topic_novelty.repeated_premise(premise, premises): continue
+        subject = item.get('subject')
+        subject_key = re.sub(r'\W', '', subject).casefold() if isinstance(subject, str) else ''
+        if subject_key and subject_key in subjects: continue
+        if subject_key: subjects.add(subject_key)
         existing.add(key)
-        accepted.append({'title': title.strip(), 'uk': uk[:180]})
-    if len(accepted) != 5: raise ValueError('Недостатньо нових тем. Попередні варіанти збережені.')
+        compared.append(title)
+        if isinstance(premise, str) and premise.strip(): premises.append(premise)
+        accepted.append({'title': title.strip(), 'uk': uk[:180], **({'subject': subject.strip()[:300]} if subject_key else {}), **({'premise': premise.strip()[:300]} if isinstance(premise, str) and premise.strip() else {})})
+    if len(accepted) != 5: raise ValueError('Не отримано 5 достатньо нових ідей. Потрібні різні задуми, а не заміна слів у заголовку. Попередні варіанти збережені.')
     return accepted
 
 
@@ -439,14 +551,14 @@ def start(cid, body):
                 return saved_topics
         if action == 'openings' and data.get('stage') == 'openings' and is_running(cid, data) and data.get('selected_index') == body.get('index'):
             return public(data)
-        if action == 'ideas' and data.get('ideas') and not body.get('refresh'): return public(catalog(cid, data))
+        if action == 'ideas' and data.get('ideas') and not body.get('refresh') and not body.get('if_stale'): return public(catalog(cid, data))
         if action == 'ideas':
             save_draft(cid, data)
             ctx = context(cid)
             previous = store.read_json(topics_path(cid), {}) or data
-            recent = (previous.get('context') or {}).get('previous_suggestions', [])
-            ctx['previous_suggestions'] = (recent + [row['title'] for row in previous.get('ideas', [])
-                                                     if isinstance(row, dict) and isinstance(row.get('title'), str)])[-25:]
+            history = suggestion_history(cid, previous)
+            ctx['previous_suggestions'] = [row['title'] for row in history]
+            ctx['previous_topic_history'] = history
             data = {'id': uuid.uuid4().hex, 'context': ctx, 'target_words': ctx['target_words'], 'sample_count': ctx['sample_count'], 'day': today(), 'attempt_day': today(), 'stale': False}
         elif action == 'openings':
             index = body.get('index')
@@ -524,6 +636,7 @@ def _work(cid, data):
         # Read current writer preferences at each step, including jobs prepared before a settings edit.
         try:
             ctx = {**ctx, **author_rules.for_channel(store.get_channel_folder(cid), store.YOUTUBE_ROOT),
+                   'channel_agent_rules': agent_storage.get_memory(cid),
                    'script_wishes': store.read_channel_settings(store.get_channel_folder(cid), {}).get('script_wishes', '')}
         except (store.StudioError, OSError):
             pass
@@ -533,6 +646,30 @@ def _work(cid, data):
         root = store.project_dir(data['project_id']) if data.get('project_id') else path(cid).parent / 'idea-runs' / data['id']
         root.mkdir(parents=True, exist_ok=True)
         identity = stage + '-' + uuid.uuid4().hex
+        if stage == 'editing':
+            project = store.load_project(data['project_id'])
+            original = project['voice_script']['text']
+            session=data['author_session']
+            script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},data['target_words'],session,
+                lambda prompt,phase: opus(prompt,root,identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),root/(identity+'-receipt.json'))
+            writing_jobs.check()
+            passed, report = author_rules.check(script, root)
+            with LOCK:
+                project = store.load_project(data['project_id'])
+                if project['voice_script']['text'] != original:
+                    raise ValueError('Автор змінив сценарій під час редактури. Правки Opus збережено окремо.')
+                if passed is False:
+                    script_editing.validation_failed(project['id'],report[-500:])
+                    raise ValueError('Редакція потребує перевірки: ' + report[-300:])
+                store.save_project_source(project, script)
+                data.update(editing_status='done', script_saved=True, actual_words=words(script),
+                            length=script_length(script,data['target_words']),review_required=passed is not True or bool(script_editing.latest(project['id']).get('editorial_report',{}).get('unresolved')))
+                draft = store.read_json(root/'script-draft.json',{}) or {}
+                store.atomic_json(root/'script-draft.json',{**draft,'script':script,'author':'Opus, саморедактура','saved_at':time.time()})
+                data['metadata_file'] = episode_metadata.save_generated(project,draft.get('metadata'),script,
+                    lambda prompt: opus(prompt,root,'metadata-fix-'+identity,cid))
+                data.update(completed=True,metadata_saved=True,status='done',finished_at=time.time())
+            return
         if stage == 'metadata':
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
@@ -559,7 +696,8 @@ def _work(cid, data):
                  'Write naturally for the channel audience, preserve its language and voice. Never use antithesis or em dashes. '
                  'Use simple, vivid conversational language. Do not copy previous episodes.\n'
                  'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
-                 'channel_script_rules, claude_memory_notes and script_wishes (the author\'s channel preferences for hooks and scripts). '
+                 'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '
+                 'channel_agent_rules is the shared channel memory. Apply its wishes relevant to the current task. Specific current author wishes and the structured channel settings take priority. '
                  'For hooks and voiceover scripts, studio_word_blacklist is the authoritative editable list, including when empty. Never use its listed words or phrases. Entries are literal text data, case insensitive. '
                  'For migrated Russian nouns that remain listed, preserve their ban on grammatical and derived forms; the душа family excludes the allowed washing expression под душем. '
                  'The newest dated '
@@ -594,11 +732,14 @@ def _work(cid, data):
                 blocked=word_blacklist.message(data['opening'],ctx.get('studio_word_blacklist',[]))
                 if blocked:raise ValueError('У вибраному зачині є заборонені слова. '+blocked+' Створіть нові зачини.')
                 brief += '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening']
+                session={'session_id':str(uuid.uuid4()),'model':director.MODEL,'effort':store.channel_effort({'channel_id':cid}),'api_cost_usd':0}
+                data['author_session']=session
+                save_draft(cid,data,make_current=False)
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
                     f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
                     'Do not invent studies, quotes, statistics or medical claims; use cautious factual wording for uncertain facts. '
                     + episode_metadata.PROMPT + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
-                    '"description":"...","tags":["...","...","..."]}}.', root, identity, cid)
+                    '"description":"...","tags":["...","...","..."]}}.', root, identity, cid, session=session)
                 script = result.get('script')
                 if not isinstance(script, str) or words(script) < 100 or not script.strip().startswith(data['opening'].strip()):
                     raise ValueError('Opus не повернув повний сценарій із вибраним зачином')
@@ -610,6 +751,7 @@ def _work(cid, data):
                         raise ValueError('У випуску вже є сценарій. Збережений текст не перезаписано.')
                     store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                  'author': 'Opus', 'saved_at': time.time()})
+                    store.atomic_text(root/'script-first-draft.txt',script)
                     store.save_project_source(project, script)
                     data.update(script_saved=True, actual_words=words(script), length=script_length(script, data['target_words']))
                     save_draft(cid, data, make_current=False)
@@ -628,15 +770,29 @@ def _work(cid, data):
                     fixed = opus(brief + '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening'] + '\nYOUR SCRIPT:\n' + script
                                  + '\nFix these content/length problems in one pass:\n' + problems
                                  + f"\nKeep the complete result within {length['minimum']} to {length['maximum']} letter words. Preserve unaffected passages. Return JSON only {{\"script\":\"...\"}}.",
-                                 root, 'fix-' + identity, cid).get('script')
+                                 root, 'fix-' + identity, cid, session=session, resume=True).get('script')
                     if isinstance(fixed, str) and fixed.strip().startswith(data['opening'].strip()) and words(fixed) >= 100:
                         candidate = script_length(fixed, data['target_words'])
                         if candidate['passed'] or (not length['passed'] and abs(candidate['actual']-candidate['target']) < abs(length['actual']-length['target'])):
                             script = fixed
                             passed, report = author_rules.check(script, root)
+                data.update(editing_status='running',completed=False)
+                save_draft(cid,data,make_current=False)
+                before_editor=script
+                review_identity='self-review-'+identity
+                script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},
+                    data['target_words'],session,
+                    lambda prompt,phase: opus(prompt,root,review_identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),
+                    root/(review_identity+'-receipt.json'))
+                writing_jobs.check()
+                if script!=before_editor:passed,report=author_rules.check(script,root)
+                if passed is False:
+                    script_editing.validation_failed(data['project_id'],report[-500:])
+                    raise ValueError('Саморедактура Opus потребує перевірки: '+report[-300:])
+                data['editing_status']='done'
                 data['check'] = {'passed': passed, 'report': report[-3000:]}
                 data['length'] = script_length(script, data['target_words'])
-                data['review_required'] = passed is not True or not data['length']['passed']
+                data['review_required'] = passed is not True or not data['length']['passed'] or bool(script_editing.latest(data['project_id']).get('editorial_report',{}).get('unresolved'))
                 with LOCK:
                     writing_jobs.check()
                     project = store.load_project(data['project_id'])
@@ -645,7 +801,7 @@ def _work(cid, data):
                     if script != original:
                         store.save_project_source(project, script)
                         store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
-                                                                     'author': 'Opus', 'saved_at': time.time()})
+                                                                     'author': 'Opus, саморедактура', 'saved_at': time.time()})
                     data.update(actual_words=words(script))
                     if not data['length']['passed']:
                         data['completed'] = False
@@ -662,6 +818,8 @@ def _work(cid, data):
     except writing_jobs.Cancelled:
         data.update(status='cancelled', cancelled=True, error=None, finished_at=time.time())
     except Exception as error:
+        if data.get('editing_status') == 'running' or data.get('stage') == 'editing':
+            data['editing_status']='failed'
         data.update(status='failed', error=str(error)[:400])
     finally:
         with LOCK:
@@ -674,7 +832,7 @@ def _work(cid, data):
                     topics.update(status='failed', error=data.get('error'))
                     store.atomic_json(topics_path(cid), topics)
                 if data['status'] == 'done' and data['stage'] == 'ideas': remember_topics(cid, data)
-                if data['status'] == 'done' and data.get('completed') and data['stage'] in {'script', 'metadata'}:
+                if data['status'] == 'done' and data.get('completed') and data['stage'] in {'script', 'metadata', 'editing'}:
                     completion_notices.record({'id': 'script-' + data['id'], 'project_id': data['project_id'], 'status': 'complete'}, data['finished_at'])
                     import episode_automation
                     episode_automation.after_script(data['project_id'], data)

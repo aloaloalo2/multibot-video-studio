@@ -13,7 +13,8 @@ from pathlib import Path
 import store
 
 # any take id: What If's e01, e51 and the per-frame f004s01 of a mixed episode (Alexey Gorbunov, 31 October 2026)
-TAKE = re.compile(r"take\(\s*['\"]([\w-]+)['\"]")
+TAKE = re.compile(r"(?:take|registerShot)\(\s*['\"]([\w-]+)['\"]")
+TAKE_ARRAY = re.compile(r"(?:take|registerShot)\(\s*\[([^\]]*)\]")
 # a take in several parts registers them in a loop: for (const id of ['e51', 'e52']) take(id, ...)
 TAKE_LOOP = re.compile(r"for\s*\(\s*const\s+(\w+)\s+of\s+\[([^\]]*)\]\s*\)\s*take\(\s*\1\b")
 SHOT_ID = re.compile(r"['\"]([\w-]+)['\"]")
@@ -23,9 +24,26 @@ _CACHE: dict[str, tuple[tuple, list[int]]] = {}
 def taken(text: str) -> set[str]:
     """The shot ids a scene file registers, written out or in a loop."""
     ids = set(TAKE.findall(text))
+    for items in TAKE_ARRAY.findall(text):
+        ids |= set(SHOT_ID.findall(items))
     for _, items in TAKE_LOOP.findall(text):
         ids |= set(SHOT_ID.findall(items))
     return ids
+
+
+def frame_takes(shots: list[dict], start: float, end: float) -> list[str]:
+    """Only the takes whose own intervals overlap this accepted Studio frame."""
+    result = []
+    for shot in shots:
+        if shot['start'] >= end - .001 or shot['end'] <= start + .001:
+            continue
+        parts = shot.get('parts') or [shot]
+        for index, part in enumerate(parts):
+            a = max(shot['start'], part.get('start', shot['start']))
+            b = min(shot['end'], parts[index + 1]['start'] if index + 1 < len(parts) else shot['end'])
+            if a < end - .001 and b > start + .001 and part['id'] not in result:
+                result.append(part['id'])
+    return result
 
 
 def razgon_project(project: dict) -> Path | None:
@@ -51,7 +69,7 @@ def drawn(pid: str) -> list[int]:
     shots = (store.read_json(story, {}) or {}).get("shots") or []
     result = []
     for frame in (store.read_json(frames, {}) or {}).get("frames") or []:
-        ids = [shot["id"] for shot in shots if shot["start"] < frame["end"] - 1e-3 and shot["end"] > frame["start"] + 1e-3]
+        ids = frame_takes(shots, frame['start'], frame['end'])
         if ids and all(item in registered for item in ids):
             result.append(int(frame["number"]))
     _CACHE[pid] = (key, result)
