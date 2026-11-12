@@ -1,4 +1,4 @@
-"""One channel preference for PNG objects in both editable animation formats."""
+"""Shared channel permissions for both editable animation formats."""
 import store
 
 QUALITY_RULES = '''
@@ -23,13 +23,23 @@ def universal(project, settings):
     return (kind if kind in {'regular','animated'} else settings.get('channel_kind','regular')) != 'animated'
 
 
+def stickmen_allowed(project, settings):
+    return not universal(project, settings) and (settings.get('animation') or {}).get('allow_stickmen', True) is not False
+
+
 def people_rules(project, settings):
     if universal(project, settings):
         return ('\nВ універсальному проєкті стримана документальна подача людей діє для всіх форматів, включно з animation та razgon_2d. '
                 'Стікмени, дудли й мультяшні ведучі заборонені. Використовуй реалістичні зображення людей або '
                 'коректну анатомічну ілюстрацію за змістом; враховуй вік аудиторії. Назва Razgon означає інструмент, '
                 'а не дозвіл змінити образ людей. Чужий приклад зі стікменом не переносити в цей канал.\n')
-    return ''
+    if stickmen_allowed(project, settings):
+        return ('\nСтікмени дозволені у нових анімаційних кадрах animation та razgon_2d. '
+                'Використовуй їх за доречності до задуму й збереженого стилю персонажів каналу.\n')
+    return ('\nСтікмени заборонені у нових кадрах цього анімаційного проєкту, включно з animation та razgon_2d. '
+            'Коли потрібні люди, показуй повноцінних анімованих персонажів з виразною формою тіла у стилі каналу. '
+            'Не додавай фігур із круглою головою та тулубом і кінцівками з паличок, також із готових асетів чи скопійованих сцен. '
+            'Уже прийняті кадри зберігай.\n')
 
 TEXT_RULES = ('\nЧитабельність тексту обов’язкова. Заголовки закріплюй у координатах екрана без постійного зуму, хитання чи дрейфу; після короткої появи вони нерухомі. '
               'Підпис предмета може рухатися лише разом із цим предметом в одній групі. Тінь або сяйво не додавай до вже контрастного тексту. '

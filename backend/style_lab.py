@@ -72,6 +72,8 @@ def validate(animation) -> None:
         raise StyleLabError("Невідомий стиль анімації")
     if "assets" in animation and not isinstance(animation["assets"], bool):
         raise StyleLabError("Невірний перемикач асетів")
+    if "allow_stickmen" in animation and not isinstance(animation["allow_stickmen"], bool):
+        raise StyleLabError("Невірний перемикач стікменів")
     if "title_font" in animation and animation["title_font"] not in TITLE_FONTS + LEGACY_FONTS:
         raise StyleLabError("Невідомий шрифт заголовків")
     if "accent" in animation and not (isinstance(animation["accent"], str) and HEX.fullmatch(animation["accent"])):

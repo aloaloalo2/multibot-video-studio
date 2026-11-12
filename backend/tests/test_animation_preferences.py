@@ -9,6 +9,31 @@ import production
 import director
 
 class AnimationPreferencesTest(unittest.TestCase):
+    def test_animated_stickmen_are_an_optional_permission_with_a_compatible_default(self):
+        project={'project_kind':'animated'}
+        for animation in ({},{'allow_stickmen':True}):
+            settings={'animation':animation}
+            self.assertTrue(pref.stickmen_allowed(project,settings))
+            self.assertIn('Стікмени дозволені',pref.people_rules(project,settings))
+        disabled={'animation':{'allow_stickmen':False}}
+        self.assertFalse(pref.stickmen_allowed(project,disabled))
+        self.assertIn('Стікмени заборонені',pref.people_rules(project,disabled))
+        self.assertIn('повноцінних анімованих персонажів',pref.people_rules(project,disabled))
+        for allowed in [True,False]:
+            self.assertFalse(pref.stickmen_allowed({'project_kind':'regular'},{'animation':{'allow_stickmen':allowed}}))
+        self.assertFalse(pref.stickmen_allowed({}, {'channel_kind':'animated','animation':{'allow_stickmen':False}}))
+
+    def test_current_stickmen_permission_reaches_planning_and_execution_in_both_asset_modes(self):
+        project={'channel_id':'test','project_kind':'animated'}
+        for allowed in [True,False]:
+            for assets in [True,False]:
+                settings={'channel_kind':'animated','animation':{'assets':assets,'allow_stickmen':allowed}}
+                with patch.object(pref.store,'get_channel_folder',return_value=Path('/tmp/channel')),patch.object(pref.store,'read_json',return_value=settings):
+                    for planning in [True,False]:
+                        text=pref.instructions(project,planning=planning)
+                        self.assertIn('Стікмени '+('дозволені' if allowed else 'заборонені'),text)
+                    self.assertIn('Стікмени '+('дозволені' if allowed else 'заборонені'),production.mixed_assets_step(project))
+
     def test_real_people_preference_applies_to_both_animation_formats_and_asset_modes(self):
         for people in ['real','real_older','stickman']:
             for enabled in [True,False]:

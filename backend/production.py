@@ -181,7 +181,7 @@ def people_style(project: dict) -> str:
     except (store.StudioError, KeyError):
         settings = {}
     import animation_preferences
-    if animation_preferences.universal(project, settings):
+    if not animation_preferences.stickmen_allowed(project, settings):
         return 'real_older' if settings.get('people_style') == 'real_older' else 'real'
     return settings.get("people_style") if settings.get("people_style") in PEOPLE_STYLES else "stickman"
 

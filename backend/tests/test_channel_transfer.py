@@ -17,6 +17,19 @@ import director
 
 
 class ChannelTransferTests(unittest.TestCase):
+    def test_stickmen_permission_saves_and_roundtrips_with_backup_restore(self):
+        for allowed in [False,True]:
+            with self.subTest(allowed=allowed):
+                store.update_channel_settings(self.cid,{'channel_kind':'animated','animation':{'style':'dusk','assets':False,'allow_stickmen':allowed}})
+                store.update_channel_settings(self.tid,{'channel_kind':'animated','animation':{'allow_stickmen':not allowed}})
+                raw=transfer.export_bundle(self.cid)
+                result=transfer.import_bundle(self.tid,raw,lambda cid:None)
+                settings=store.read_channel_settings(self.target)
+                self.assertIs(settings['animation']['allow_stickmen'],allowed)
+                self.assertEqual(settings['animation']['style'],'dusk')
+                transfer.restore_backup(self.tid,result['backup_id'],lambda cid:None)
+                self.assertIs(store.read_channel_settings(self.target)['animation']['allow_stickmen'],not allowed)
+
     def test_competitors_are_portable_with_saved_names_and_avatars(self):
         source=store.create_channel('Competitor source')
         target=store.create_channel('Competitor target')

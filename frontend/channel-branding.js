@@ -52,6 +52,7 @@ function brandingSections(channel,projectDefaults=''){
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <div class="style-toolbar"><label>Шрифт<select id="style-title-font">${titleFonts.map(font=>`<option style="font-family:'${esc(font)}'" value="${esc(font)}" ${(titleFonts.includes(animation.title_font)?animation.title_font:'Nunito')===font?'selected':''}>${font}</option>`).join('')}</select></label>
           <label class="logo-toggle" title="PNG предмети для кодової анімації та Razgon, в універсальних і анімаційних проєктах. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> PNG асети</label>
+          <label class="logo-toggle animated-only" title="Дозволяти стікменів у нових анімаційних кадрах."><input id="style-stickmen" type="checkbox" ${animation.allow_stickmen!==false?'checked':''}> Стікмени</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div></section>`;
 }
@@ -258,5 +259,5 @@ function bindBranding(channel){
   const displayName=()=>{const name=$('channel-name').value.trim();if(!name)throw new Error('Вкажіть назву каналу.');return name===(channel.folder_name || channel.name)?null:name;};
   return ()=>({display_name:displayName(),channel_kind:kind(),
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Number($('logo-margin').value),opacity:Number($('logo-opacity').value),version},
-    animation:{...(chosen?{style:chosen}:{}),...textStyle()}});
+    animation:{...animation,...(chosen?{style:chosen}:{}),...textStyle(),allow_stickmen:$('style-stickmen').checked}});
 }

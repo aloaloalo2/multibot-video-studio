@@ -49,6 +49,13 @@ class StyleLabTest(unittest.TestCase):
         self.assertEqual(style_lab.razgon_text({"title_font": "Nunito", "accent": "#112233"}), {"fonts": {"title": "Nunito", "ui": "Nunito", "serif": "Nunito"}, "ui": {"accent": "#112233"}})
         self.assertEqual(style_lab.razgon_text(None), {})
 
+    def test_stickmen_permission_accepts_only_real_booleans(self):
+        for allowed in [True,False]:
+            store.validate_settings({'weights':{'animation':100},'animation':{'allow_stickmen':allowed}})
+        for invalid in [None,0,1,'yes','false']:
+            with self.subTest(value=invalid),self.assertRaises(store.StudioError):
+                store.validate_settings({'weights':{'animation':100},'animation':{'allow_stickmen':invalid}})
+
     def test_presets_times_and_lab_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

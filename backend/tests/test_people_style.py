@@ -27,6 +27,12 @@ class PeopleStyleTest(unittest.TestCase):
             self.assertIs(rules["rule"], production.PEOPLE)
             self.assertIn("без живих людей", rules["stock"])
 
+    def test_disabled_stickmen_override_legacy_picture_choice_only_for_future_prompts(self):
+        settings={'people_style':'stickman','animation':{'allow_stickmen':False}}
+        self.assertIs(self.rules(settings)['rule'],production.PEOPLE_REAL)
+        settings['animation']['allow_stickmen']=True
+        self.assertIs(self.rules(settings)['rule'],production.PEOPLE)
+
     def test_real_people_for_a_channel_that_asks(self):
         rules = self.rules({"people_style": "real"})
         self.assertIs(rules["rule"], production.PEOPLE_REAL)
