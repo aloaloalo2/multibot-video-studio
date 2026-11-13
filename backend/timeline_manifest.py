@@ -14,7 +14,7 @@ def valid_local_source(path: Path, project: dict) -> bool:
     return path.is_file() and (branding or any(store.under(path, root) for root in store.media_roots(project)) or store.under(path, Path(project["episode_path"])))
 
 
-def build(project: dict, *, visual_only=False) -> dict:
+def build(project: dict, *, visual_only=False, include_transitions=True) -> dict:
     layers = []
     assets = {asset["id"]: asset for asset in store.discover_assets(project)}
     # the voice at 100% is the Studio's standard level (audio_level.py): the export plays its leveled copy, made now
@@ -55,7 +55,8 @@ def build(project: dict, *, visual_only=False) -> dict:
                 rendered_clips[-1].pop("preset")
                 rendered_clips[-1].pop("preset_duration")
         layers.append({"id": layer["id"], "z": z, "clips": rendered_clips})
-    joins.transport(project,layers)
+    if include_transitions:
+        joins.transport(project,layers)
     if not visual_count:
         raise store.StudioError("Додайте хоча б один візуальний кліп перед експортом")
     return {"width": int(project.get("width", 1920)), "height": int(project.get("height", 1080)), "fps": int(project.get("fps", 30)), "duration": float(project.get("duration", 0)), "layer_mode": "item", "timeline_layers": layers}

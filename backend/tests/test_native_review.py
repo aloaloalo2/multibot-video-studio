@@ -59,19 +59,37 @@ class NativeReviewTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             review.batch(self.project,[1],sheet['ticket'])
 
-    def test_outgoing_join_affects_next_frame_without_reopening_the_finished_one(self):
+    def test_transitions_never_invalidate_frame_content_approval(self):
+        self.project['tracks']=[{'id':'track','clips':[
+            {'id':str(n),'kind':'image','start':n-1,'duration':1} for n in (1,2)]}]
         original=review.prepare(self.project,self.frames)
-        clip=self.manifest['timeline_layers'][0]['clips'][0]
-        clip.update(native_duration=1,duration=1.5,join_out={'type':'crossfade','duration':.5,'seam':1})
+        self.project['join_transitions']=[{'id':'join','type':'crossfade','duration':.5,'seam':1,
+                                        'from_ref':'clip:1','to_ref':'clip:2'}]
         joined=review.prepare(self.project,self.frames)
         self.assertEqual(original[1][0],joined[1][0])
-        self.assertNotEqual(original[2][0],joined[2][0])
+        self.assertEqual(original[2][0],joined[2][0])
         self.assertEqual(joined[1][1]['timeline_layers'][0]['clips'][0]['duration'],1.5)
-        clip['preset']='fade_out'
+        self.project['join_transitions'][0]['type']='ribbon_tricolor'
+        changed=review.prepare(self.project,self.frames)
+        self.assertEqual(joined[1][0],changed[1][0])
+        self.assertEqual(joined[2][0],changed[2][0])
+        self.manifest['timeline_layers'][0]['clips'][0]['preset']='fade_out'
         self.assertNotEqual(original[1][0],review.prepare(self.project,self.frames)[1][0])
-        clip.pop('preset')
-        self.manifest['timeline_layers'].insert(0,{'z':0,'clips':[]})
-        self.assertEqual(joined[1][0],review.prepare(self.project,self.frames)[1][0])
+
+    def test_animation_and_text_joins_preserve_approved_content(self):
+        for kind in ('animation','text'):
+            with self.subTest(kind=kind):
+                self.project['tracks']=[{'id':'track','clips':[
+                    {'id':str(n),'kind':kind,'start':n-1,'duration':1} for n in (1,2)]}]
+                self.project['join_transitions']=[]
+                for layer in self.manifest['timeline_layers']:
+                    layer['clips'][0].update(type=kind,keyframes=[{'time':0,'x':.2},{'time':1,'x':.4}])
+                before=review.prepare(self.project,self.frames)
+                self.project['join_transitions']=[{'id':'join','type':'zoom_out','duration':.35,'seam':1,
+                                                'from_ref':'clip:1','to_ref':'clip:2'}]
+                after=review.prepare(self.project,self.frames)
+                self.assertEqual([v[0] for v in before.values()],[v[0] for v in after.values()])
+                self.assertIn('join_out',after[1][1]['timeline_layers'][0]['clips'][0])
 
     def test_no_preapproval_after_missing_stills_or_unplaced_content(self):
         sheet=review.batch(self.project,[1])

@@ -1,4 +1,5 @@
 """Three export stills per finished Studio frame. A visual verdict belongs to the exact sheet the agent opened."""
+import copy
 import hashlib
 import json
 import os
@@ -18,7 +19,12 @@ def prepare(project, frames):
     import timeline_manifest
     import render
     from render_cache import RenderCache, renderer_version, visual_key
-    manifest = timeline_manifest.build(project, visual_only=True)
+    content = timeline_manifest.build(project, visual_only=True, include_transitions=False)
+    manifest = copy.deepcopy(content)
+    # Display the finished join, but keep its envelope and neighbouring tails out
+    # of the content approval identity. The export manifest still includes joins.
+    import joins
+    joins.transport(project, manifest['timeline_layers'])
     fps = manifest['fps']
     root = store.project_dir(project['id'])
     cache = RenderCache(root / 'render-cache')
@@ -28,27 +34,16 @@ def prepare(project, frames):
         first, end = (render.frame_index(frame[k], fps) for k in ('start', 'end'))
         if first >= end:
             raise store.StudioError('Кадр закороткий для перевірки.')
-        layers, signature_layers = [], []
-        for layer in sorted(manifest['timeline_layers'], key=lambda row: row['z']):
-            clips = [c for c in layer['clips'] if render.frame_index(c['start'], fps) < end
-                     and render.frame_index(c['start'] + c['duration'], fps) > first]
-            if clips:
-                local = []
-                for clip in clips:
-                    outgoing = clip.get('join_out')
-                    ordinary_image = (clip['type'] == 'image' and not clip.get('preset')
-                                      and not clip.get('visual_effect') and clip.get('transition', {}).get('type','cut') == 'cut')
-                    if outgoing and ordinary_image and render.frame_index(outgoing['seam'],fps) >= end:
-                        # This extra tail is drawn in the next frame. Restore the exact
-                        # original geometry for stills that precede the seam.
-                        clip = dict(clip)
-                        clip.pop('join_out')
-                        clip['duration'] = clip.pop('native_duration')
-                        if clip.get('keyframes'):
-                            clip['keyframes'] = clip['keyframes'][:-1]
-                    local.append(clip)
-                signature_layers.append({'z':len(layers), 'clips':local})
-                layers.append({'z':len(layers), 'clips':clips})
+        def local_layers(source):
+            result=[]
+            for layer in sorted(source, key=lambda row: row['z']):
+                clips=[c for c in layer['clips'] if render.frame_index(c['start'],fps)<end
+                       and render.frame_index(c['start']+c['duration'],fps)>first]
+                if clips:
+                    result.append({'z':len(result),'clips':clips})
+            return result
+        layers=local_layers(manifest['timeline_layers'])
+        signature_layers=local_layers(content['timeline_layers'])
         if not layers:
             raise store.StudioError(f"Кадр {frame['number']} ще порожній.")
         window = {**manifest, 'duration': end/fps, 'timeline_layers': layers}
