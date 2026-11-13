@@ -2702,3 +2702,5 @@ select option{background:#232327;color:#f1f1f2}
 .channel-settings-panel .settings-montage-fonts h3{display:flex;align-items:center;gap:9px}
 .settings-montage-fonts small{display:block;margin-top:8px;color:#9297a3;font-size:11px}
 .channel-main-group #channel-voice-settings{min-width:0}
+
+#episode-ideas>.trend-idea-check{display:flex;flex-direction:row;align-items:center;gap:9px;margin:12px 0;font-size:13px;color:var(--ui-control-text)}

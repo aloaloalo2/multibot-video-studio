@@ -5,10 +5,10 @@ const source=fs.readFileSync(path.join(__dirname,'../trending-videos.js'),'utf8'
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;return {promise:new Promise((r,j)=>{resolve=r;reject=j;}),resolve:value=>resolve(value),reject:error=>reject(error)};};
 function harness({submitReply,recommendation}={}){
-  const fields={channel:{value:'own',disabled:false},title:{value:'Exact competitor title',disabled:false},words:{value:'2000',disabled:false},use_thumbnail:{checked:true,disabled:false}};
+  const fields={channel:{value:'own',disabled:false},title:{value:'Exact competitor title',disabled:false},words:{value:'2000',disabled:false},use_thumbnail:{checked:true,disabled:false},use_hero:{checked:true,disabled:false,closest:()=>({title:''})}};
   const note={hidden:true,textContent:''},button={disabled:false},calls=[],navigations=[];
   const root={isConnected:true,querySelector:selector=>selector==='.trend-idea-feedback'?note:fields[selector.match(/name="([^"]+)"/)[1]],querySelectorAll:()=>Object.values(fields)};
-  const state={channels:[{id:'own',name:'Our channel'},{id:'other',name:'Other'}],navigation:3,modalGeneration:0};
+  const state={channels:[{id:'own',name:'Our channel',hero_reference:{url:'/host.png'}},{id:'other',name:'Other'}],navigation:3,modalGeneration:0};
   const elements={'modal-backdrop':{hidden:false},'modal-body':{querySelector:()=>root},'modal-actions':{querySelector:()=>button}};
   const h={fields,note,button,calls,navigations,root,state,action:null,html:'',used:[]};
   const context=vm.createContext({state,bindTitleTranslation:(input,options)=>{h.translation=options;return {refresh(){},dispose(){}};},crypto:{randomUUID:()=> 'stable-request-id'},esc:String,$:id=>elements[id],modal:(title,html,actions)=>{state.modalGeneration++;h.html=html;h.action=actions[0];},closeModal:()=>{state.modalGeneration++;root.isConnected=false;},api:async(path,method='GET',body)=>{
@@ -60,4 +60,12 @@ test('creating openings waits for the chosen title translation',async()=>{
   const h=harness();h.open();await tick();h.translation.onBusy(true);
   assert.equal(h.button.disabled,true);await h.action.run();assert.ok(h.calls.every(c=>c.method==='GET'));
   h.translation.onBusy(false);assert.equal(h.button.disabled,false);
+});
+
+test('host choice reaches the idea request and resets when the selected channel has no host',async()=>{
+  const h=harness();h.open();await tick();
+  h.fields.use_hero.checked=false;await h.action.run();
+  assert.equal(h.calls.find(c=>c.method==='POST').body.use_hero,false);
+  const other=harness();other.open();await tick();other.fields.channel.value='other';other.fields.channel.onchange();
+  assert.equal(other.fields.use_hero.checked,false);assert.equal(other.fields.use_hero.disabled,true);
 });

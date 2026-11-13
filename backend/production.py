@@ -447,7 +447,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 recovered.update({f['number'] for f in candidates} - set(native_review.missing(current,candidates)))
             if recovered:
                 previous = {**previous,'completed_frames':sorted(recovered | set(previous.get('completed_frames') or []))}
-        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous)
+        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous, pending_review=lambda:last_review.get('pending_review',[]))
         if last_review and not last_review['passed']:
             fields['quality'] = last_review
             answer['result'] = ' '.join(last_review.get('errors') or [answer.get('result','')])[:1600]

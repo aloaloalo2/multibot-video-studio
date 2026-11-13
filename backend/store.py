@@ -739,6 +739,11 @@ def production_state(project: dict) -> dict | None:
         return None
     state = {"status": request["status"], "frames": int(request.get("frames") or 0), "first": int(request.get("first") or 1),
              "limit": bool(request.get("limit")), "paused": bool(request.get("paused"))}
+    state['finished_at']=request.get('finished_at')
+    if request.get('error'):state['error']=str(request['error'])[:600]
+    import production
+    if project.get('id') in production.ACTIVE and not (request.get('paused') or request.get('limit')):
+        state['status']='in_progress'
     if request.get('quality'):
         state['quality'] = {'passed': request['quality'].get('passed')}
     if request["status"] in {"requested", "in_progress", "failed"}:

@@ -101,6 +101,23 @@ class CloneEpisodeTest(unittest.TestCase):
             self.assertTrue(image.startswith(b'\xff\xd8'))
             thread.assert_not_called()
 
+    def test_explicit_host_choice_is_saved_replayed_and_passed_to_thumbnail(self):
+        for enabled in (True,False):
+            body={'reference_id':VIDEO,'title':'Host choice','target_words':1200,
+                  'request_id':'host-choice-'+str(enabled),'use_hero':enabled}
+            with patch.object(ideas,'context',return_value={'channel':'Test','sample_count':0}), \
+                 patch.object(ideas,'Thread'),patch('channel_hero.info',return_value={'url':'/host.png'}):
+                draft=reference.start_openings(self.cid,body)
+                self.assertEqual(draft['clone_use_hero'],enabled)
+                self.assertEqual(reference.start_openings(self.cid,body)['project_id'],draft['project_id'])
+                with self.assertRaises(store.StudioError):
+                    reference.start_openings(self.cid,{**body,'use_hero':not enabled})
+            data=ideas.read_project(draft['project_id']);data['opening']='Chosen opening'
+            with patch('thumbnail_gen.state',return_value={}),patch('thumbnail_gen.preview',return_value=None),patch('thumbnail_gen.start') as start:
+                reference.start_thumbnail(data)
+                self.assertEqual(start.call_args.kwargs['use_hero'],enabled)
+            ideas.ACTIVE.clear()
+
     def test_auto_thumbnail_starts_at_hook_selection_once_before_script_finishes(self):
         body = {'action': 'clone_openings', 'reference_id': VIDEO, 'title': 'Clone cover',
                 'target_words': 1200, 'request_id': 'early-cover'}

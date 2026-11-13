@@ -116,6 +116,9 @@ def inspect(cid, url):
 
 def start_openings(cid, body, *, source=None, receipt_path=None):
     import episode_ideas as ideas
+    use_hero=body.get('use_hero')
+    if use_hero is not None and type(use_hero) is not bool:
+        raise store.StudioError('Оберіть, чи використовувати ведучого каналу')
     use_thumbnail = body.get('use_thumbnail', True)
     if type(use_thumbnail) is not bool:
         raise store.StudioError('Оберіть, чи використовувати прев’ю конкурента')
@@ -132,22 +135,27 @@ def start_openings(cid, body, *, source=None, receipt_path=None):
     with ideas.LOCK:
         saved = store.read_json(receipt, {}) or {}
         if saved.get('project_id'):
-            if (saved.get('channel_id', cid), saved.get('reference_id'), saved.get('title'), saved.get('target_words'), saved.get('use_thumbnail', True)) != (cid, reference['id'], title, count, use_thumbnail):
+            if (saved.get('channel_id', cid), saved.get('reference_id'), saved.get('title'), saved.get('target_words'), saved.get('use_thumbnail', True), saved.get('use_hero')) != (cid, reference['id'], title, count, use_thumbnail, use_hero):
                 raise store.StudioError('Цей запит уже використано для іншого випуску', 409)
             return ideas.public(ideas.read_project(saved['project_id']))
+        if use_hero:
+            import channel_hero
+            if not channel_hero.info(cid):
+                raise store.StudioError('Спершу додайте фото ведучого в налаштуваннях каналу.',409)
         ctx = ideas.context(cid)
         project = store.create_project(cid, title)
         pid = project['id']
         if use_thumbnail:
             shutil.copyfile(folder(cid, reference['id']) / 'thumbnail.jpg', store.project_dir(pid) / 'idea-reference.jpg')
             store.atomic_json(store.project_dir(pid) / 'idea-reference.json', reference)
-        store.atomic_json(store.project_dir(pid) / 'idea-source.json', {**reference, 'use_thumbnail': use_thumbnail})
+        store.atomic_json(store.project_dir(pid) / 'idea-source.json', {**reference, 'use_thumbnail': use_thumbnail, 'use_hero':use_hero})
         data = {'id': uuid.uuid4().hex, 'project_id': pid, 'context': ctx, 'target_words': count,
                 'selected': {'title': title}, 'selected_index': -1, 'idea_source': reference,
                 'sample_count': ctx['sample_count']}
+        if use_hero is not None:data['clone_use_hero']=use_hero
         if use_thumbnail: data['clone_reference'] = reference
         ideas.save_draft(cid, data)
-        store.atomic_json(receipt, {'project_id': pid, 'channel_id': cid, 'reference_id': reference['id'], 'title': title, 'target_words': count, 'use_thumbnail': use_thumbnail})
+        store.atomic_json(receipt, {'project_id': pid, 'channel_id': cid, 'reference_id': reference['id'], 'title': title, 'target_words': count, 'use_thumbnail': use_thumbnail, 'use_hero':use_hero})
         return ideas.launch(cid, data, 'openings', request_id)
 
 
@@ -214,7 +222,8 @@ def start_thumbnail(data):
         project = store.load_project(data['project_id'])
         if (thumbnail_gen.state(project['id']) or {}).get('status') or thumbnail_gen.preview(project):
             return
-        thumbnail_gen.start(project['id'], project['name'], data['opening'], writer='trending')
+        thumbnail_gen.start(project['id'], project['name'], data['opening'], writer='trending',
+                            **({'use_hero':data['clone_use_hero']} if 'clone_use_hero' in data else {}))
     except Exception as error:
         data['clone_thumbnail_error'] = str(error)[:300]
         ideas.save_draft(data['channel_id'], data, make_current=False)

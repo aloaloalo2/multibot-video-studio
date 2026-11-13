@@ -43,3 +43,14 @@ class QualityTest(unittest.TestCase):
         self.assertEqual(process.call_args.args[0][-3:],['status','--frames','2'])
         self.assertNotIn('sheets',process.call_args.args[0])
         self.assertEqual(result['visual_review'],[2])
+
+    def test_only_stale_or_missing_visual_review_receipts_allow_targeted_continuation(self):
+        plan={'frames':[{'number':n,'format':'razgon_2d'} for n in range(21,31)]}
+        for extra,expected in (('',[25]),('  RENDER ERROR  broken scene',[])):
+            output='Frames reviewed ok: 10/10\n  changed frames needing fresh stills: 25\n'+extra
+            with patch.object(store,'load_project_plan',return_value=plan), \
+                 patch.object(quality.frame_progress,'razgon_project',return_value=Path('/tmp/review-fixture')), \
+                 patch.object(quality.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout=output,stderr='')):
+                result=quality.check({'id':'fixture'},{'frames':30,'review_frames':list(range(21,31))})
+            self.assertFalse(result['passed'])
+            self.assertEqual(result['pending_review'],expected)

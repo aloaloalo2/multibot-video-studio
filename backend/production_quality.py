@@ -1,5 +1,6 @@
 """Read cached visual review and check changed native labels before declaring a run done."""
 import json
+import re
 import subprocess
 import sys
 
@@ -40,6 +41,8 @@ def _check(project, request):
                  request.get('repair_frames') or range(1, int(request['frames']) + 1))
     frames = [f for f in plan.get('frames', []) if f['number'] in wanted]
     missing = wanted - {f['number'] for f in frames}
+    pending_review=set()
+    review_only=True
     errors = ['Кадри відсутні у плані: ' + ', '.join(map(str, sorted(missing)))] if missing else []
     native = {f['number'] for f in frames if f.get('format') == 'animation'}
     if native:
@@ -77,9 +80,21 @@ def _check(project, request):
                     capture_output=True, text=True, timeout=30)
                 if result.returncode:
                     errors.append('Перевірка кадрів Razgon не підтверджена: ' + (result.stdout + result.stderr).strip()[-1200:])
+                    lines=(result.stdout+result.stderr).strip().splitlines()
+                    pending_lines=[line.strip() for line in lines if line.strip().startswith((
+                        'changed frames needing fresh stills:','not reviewed:','missing cached stills:'))]
+                    clean=bool(pending_lines) and all(line.startswith('Frames reviewed ok:') or line.strip() in pending_lines for line in lines)
+                    if clean:
+                        found={int(n) for line in pending_lines for n in re.findall(r'\d+',line)}
+                        if found.issubset(wanted):pending_review.update(found)
+                        else:review_only=False
+                    else:review_only=False
+
             except (OSError, subprocess.TimeoutExpired) as error:
                 errors.append('Не вдалося прочитати перевірку кадрів Razgon: ' + str(error)[:200])
+    retryable=bool(pending_review) and review_only and all(error.startswith('Перевірка кадрів Razgon не підтверджена:') for error in errors)
     return {'passed': not errors, 'frames': sorted(wanted), 'errors': errors,
+            'pending_review':sorted(pending_review) if retryable else [],
             'native_labels': len(native), 'visual_review': razgon_numbers}
 
 

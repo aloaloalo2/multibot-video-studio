@@ -69,7 +69,7 @@ test('clone mode reads the chosen URL once and sends a per-cover reference witho
     assert.equal(calls.length,mode==='clone'?2:1);
     const posted=calls.at(-1);assert.equal(posted[0],'/api/projects/p/thumbnail');
     assert.equal(posted[2].reference_id,mode==='clone'?'abcdefghijk':'');assert.equal(posted[2].title,'Our episode');
-    assert.equal(posted[2].use_hero,mode==='clone');
+    assert.equal(posted[2].use_hero,false);
     if(mode==='clone')assert.equal(calls[0][2].url,'https://youtu.be/abcdefghijk');
   }
 });
@@ -191,12 +191,12 @@ test('clone writer labels follow the selected mode and concurrent reference read
 });
 
 
-test('clone mode hides the redundant hero switch and normal thumbnails retain it',()=>{
+test('host choice stays available in both clone and new-thumbnail modes',()=>{
   const reference={id:'abcdefghijk',url:'https://youtu.be/abcdefghijk',thumbnail_url:'/cached.jpg'};
   const {heroLabel,buttons}=referenceFixture({hero_reference:true,clone_reference:reference},()=>{throw Error('no request');});
-  assert.equal(heroLabel.hidden,true);
+  assert.equal(heroLabel.hidden,false);
   buttons[0].listeners.click();assert.equal(heroLabel.hidden,false);
-  buttons[1].listeners.click();assert.equal(heroLabel.hidden,true);
+  buttons[1].listeners.click();assert.equal(heroLabel.hidden,false);
 });
 
 test('a late preview read cannot reopen a replaced dialog or a previous project',async()=>{

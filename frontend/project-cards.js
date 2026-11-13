@@ -50,7 +50,7 @@ function updateProjectCard(card,project){
   if(working||stopped){
     if(!box){box=document.createElement('div');box.className='project-making project-production-state';open.insertBefore(box,meta);}
     box.classList.toggle('stopped',stopped);
-    box.title=stopped?'Відкрийте випуск, щоб продовжити або почати ще раз':'';
+    box.title=stopped?(making.error||'Відкрийте випуск, щоб продовжити роботу'):'';
     const text=working?`Створюємо кадри · ${done} з ${total}`:`${making.paused?'На паузі':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}`;
     if(box._working!==working){
       box.innerHTML=`<span class="project-export-label">${working?exportSpinner:''}<span class="project-production-label"></span></span>${working?'<span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0"><span></span></span>':''}`;

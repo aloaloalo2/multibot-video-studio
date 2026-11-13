@@ -33,6 +33,17 @@ class ProductionTest(unittest.TestCase):
         self.animated = True
         production.ACTIVE.clear()
 
+    def test_card_reports_live_worker_as_working_even_if_disk_receipt_is_failed(self):
+        pid=self.project['id']
+        self.project['production_request'].update(status='failed',error='Old status')
+        production.ACTIVE.add(pid)
+        try:
+            with patch.object(store,'listed_plan',return_value={}),patch.object(store,'made_frames',return_value=[]):
+                shown=store.production_state(self.project)
+            self.assertEqual(shown['status'],'in_progress')
+            self.assertEqual(self.project['production_request']['status'],'failed')
+        finally:production.ACTIVE.clear()
+
     def test_pause_preserves_session_montage_and_can_resume(self):
         pid=self.project['id'];before=json.loads(json.dumps(self.project['tracks']))
         self.project['production_request']['status']='in_progress'

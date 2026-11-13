@@ -323,7 +323,7 @@ def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None):
 Create the image from scratch from the written description above. This is a new image-generation session.
 The competitor thumbnail is not an input to this session. Do not open, retrieve, trace or edit it.
 Use only the written scene description and exact lettering. An attached channel portrait, if any, supplies host identity only.
-Include that host only when the written scene calls for a presenter; keep object-only scenes people-free and neutral subjects distinct.
+Follow the explicit host inclusion choice in the written prompt. When the host is requested, use the attached portrait's exact identity, face and age. Keep neutral subjects distinct.
 Generate original scene pixels, typography and composition. Save one new PNG in this working directory.
 """
         result = subprocess.run(command + ['-'], input=instructions, cwd=clean, text=True, capture_output=True, timeout=TIMEOUT)
@@ -408,8 +408,11 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         name = f"Превью v{number}.png"
         import idea_reference
         clone, clone_image = idea_reference.thumbnail_reference(project, reference_id)
-        hero, hero_rules = channel_hero.prepare(project, work, True if clone and not base else use_hero) if not base or use_hero is not None else (None, '')
-        if clone and not base:
+        hero, hero_rules = channel_hero.prepare(project, work, use_hero) if not base or use_hero is not None else (None, '')
+        if use_hero is True:
+            if not hero:raise store.StudioError('Не знайдено фото ведучого каналу для цього прев’ю.',409)
+            hero_rules += '\nEXPLICIT HOST CHOICE FOR THIS IMAGE: include the exact attached channel host prominently, preserving identity, facial features and age. This overrides earlier optional-host or people-free suggestions. Never substitute a generic person or the source presenter.\n'
+        if clone and not base and use_hero is None:
             # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
             hero_rules = '\nГоловний герой.png is our host identity reference ONLY when replacing a source presenter. Do not add this host to neutral story-subject or object-only concepts.\n' if hero else ''
         channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
@@ -457,7 +460,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             preferences = "\nChannel thumbnail preferences (apply these; specific wishes for this thumbnail take priority):\n" + channel_wishes + "\n"
             written += preferences
             note += preferences
-        if not clone or base:
+        if not clone or base or use_hero is not None:
             written += hero_rules
             note += hero_rules
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")

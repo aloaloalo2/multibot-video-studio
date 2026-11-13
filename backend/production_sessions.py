@@ -10,7 +10,7 @@ def add_usage(total, value):
         elif isinstance(number, (int, float)) and not isinstance(number, bool):total[key] = total.get(key, 0) + number
 
 
-def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None):
+def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, pending_review=None):
     targets = sorted(set(targets))
     previous = previous or {}
     completed = set(previous.get('completed_frames') or []) & set(targets)
@@ -39,7 +39,20 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None):
         answer.update(total_cost_usd=cost, usage=usage.copy(), modelUsage=copy.deepcopy(models), duration_ms=duration, num_turns=turns)
         if cancelled():raise InterruptedError('Створення кадрів зупинено')
         if code or raw.get('is_error') or stop(raw):return code or 1, answer
-        if not verify(frames):
+        valid=verify(frames)
+        pending=sorted(set(pending_review() or [])) if not valid and pending_review else []
+        if pending and set(pending)<=set(frames):
+            if cancelled():raise InterruptedError('Створення кадрів зупинено')
+            code,raw=launch(pending,summary+'\nПотрібен лише актуальний візуальний огляд цих кадрів. Збережи готові сцени, зображення й таймлайн. Зроби аркуші змінених кадрів, переглянь і зафіксуй результат. Виправляй композицію лише за виявленим дефектом.',1000+index)
+            answer=copy.deepcopy(raw)
+            cost+=float(raw.get('total_cost_usd') or 0)
+            add_usage(usage,raw.get('usage'));add_usage(models,raw.get('modelUsage'))
+            duration+=raw.get('duration_ms') or 0;turns+=raw.get('num_turns') or 0
+            answer.update(total_cost_usd=cost,usage=copy.deepcopy(usage),modelUsage=copy.deepcopy(models),duration_ms=duration,num_turns=turns)
+            if cancelled():raise InterruptedError('Створення кадрів зупинено')
+            if code or raw.get('is_error') or stop(raw):return code or 1,answer
+            valid=verify(frames)
+        if not valid:
             answer.update(is_error=True, result='Поточний пакет кадрів не завершений або не пройшов перевірку. Готові результати збережено.')
             return 1, answer
         completed.update(frames)

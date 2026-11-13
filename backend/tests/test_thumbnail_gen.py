@@ -204,14 +204,24 @@ class ThumbnailTest(unittest.TestCase):
                 self.assertNotIn('UNRELATED CHANNEL WISH', author.call_args.args[0])
                 for image in thumbnail_gen.keep_dir(self.project['id']).glob('*.png'): image.unlink()
 
-    def test_codex_clone_separates_source_analysis_from_drawing_and_uses_automatic_host(self):
+    def test_clone_host_opt_out_reaches_analysis_and_drawing_without_host_image(self):
+        Image.new('RGB',(32,18)).save(self.studio/'idea-reference.jpg')
+        store.atomic_json(self.studio/'idea-reference.json',{'title':'Source'})
+        with self.tools(),patch.object(thumbnail_gen.channel_hero,'prepare',return_value=(None,'HOST EXCLUDED')) as prepare:
+            thumbnail_gen.run(self.project['id'],'Title','Script','',writer='trending',use_hero=False)
+        self.assertIs(prepare.call_args.args[2],False)
+        self.assertEqual(thumbnail_gen.state(self.project['id'])['status'],'done')
+        self.assertEqual(self.draw_workspaces,[set()])
+        self.assertIn('HOST EXCLUDED',self.calls[-1][1]['input'])
+
+    def test_codex_clone_separates_source_analysis_from_drawing_and_obeys_explicit_host(self):
         Image.new('RGB', (32, 18)).save(self.studio / 'idea-reference.jpg')
         store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
         work = thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
         hero = work / 'Головний герой.png';Image.new('RGB', (16, 16)).save(hero)
         with self.tools(), patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(hero, 'Include this recognizable person prominently')) as prepared, \
              patch.object(thumbnail_gen, 'frame_stills') as frames, patch.object(thumbnail_gen, 'write_prompt') as writer:
-            thumbnail_gen.run(self.project['id'], 'Our title', 'Our script', '', writer='trending', use_hero=False)
+            thumbnail_gen.run(self.project['id'], 'Our title', 'Our script', '', writer='trending', use_hero=True)
         self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
         self.assertEqual(len(self.calls), 2);frames.assert_not_called();writer.assert_not_called();self.assertIs(prepared.call_args.args[2], True)
         command, sent = self.calls[0]
@@ -221,13 +231,14 @@ class ThumbnailTest(unittest.TestCase):
         self.assertIn('ear-and-nose coordination exercise', sent['input'])
         self.assertIn('Replace this demonstrator with our attached channel hero', sent['input'])
         self.assertIn('people-free', sent['input'])
-        self.assertNotIn('Include this recognizable person prominently', sent['input'])
+        self.assertIn('Include this recognizable person prominently', sent['input'])
         draw_command, draw_sent = self.calls[1]
         self.assertNotIn(str(work / 'idea-reference.jpg'), draw_command)
         self.assertIn('--ephemeral', draw_command)
         self.assertNotEqual(draw_sent['cwd'], work)
         self.assertEqual(self.draw_workspaces, [{'Головний герой.png'}])
         self.assertNotIn('idea-reference.jpg', draw_sent['input'])
+        self.assertIn('EXPLICIT HOST CHOICE FOR THIS IMAGE',draw_sent['input'])
         thumbnail_gen.ACTIVE.clear()
         with patch.object(thumbnail_gen, 'CODEX' , Path(sys.executable)), patch.object(thumbnail_gen.threading, 'Thread'):
             self.assertEqual(thumbnail_gen.start(self.project['id'], 'Our title', 'Our script')['status'], 'running')

@@ -74,7 +74,7 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   let generation,root,submit,titleTranslator,ready=false,sending=false,translating=false,wordsEdited=false,channelRead=0;
   const live=()=>root?.isConnected&&state.modalGeneration===generation&&state.navigation===navigation&&!$('modal-backdrop').hidden;
   const valid=()=>ready&&!sending&&!translating&&!!root?.querySelector('[name="channel"]').value&&!!root?.querySelector('[name="title"]').value.trim();
-  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>Заголовок<input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></label>${video.title_uk?`<p class="trend-title-uk">${esc(video.title_uk)}</p>`:''}<img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="episode-word-count">Обсяг сценарію <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
+  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>Заголовок<input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></label>${video.title_uk?`<p class="trend-title-uk">${esc(video.title_uk)}</p>`:''}<img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="episode-word-count">Обсяг сценарію <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
     label:'Створити зачини',primary:true,enabled:valid,run:async()=>{
       if(!live()||!valid())return;
       const cid=root.querySelector('[name="channel"]').value,title=root.querySelector('[name="title"]').value.trim();
@@ -85,13 +85,13 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
       const useThumbnail=root.querySelector('[name="use_thumbnail"]').checked;
       sending=true;note.hidden=true;root.querySelectorAll('input,select').forEach(field=>field.disabled=true);titleTranslator.refresh();
       try{
-        const draft=await api('/api/trending-videos/use','POST',{channel_id:cid,video_id:video.id,title,target_words:count,use_thumbnail:useThumbnail,request_id:requestId});
+        const draft=await api('/api/trending-videos/use','POST',{channel_id:cid,video_id:video.id,title,target_words:count,use_thumbnail:useThumbnail,use_hero:useThumbnail&&root.querySelector('[name="use_hero"]').checked,request_id:requestId});
         onUsed();
         if(!live())return;
         closeModal();
         if(await selectChannel(cid))await selectProject(draft.project_id);
       }catch(error){if(live()){note.hidden=false;note.textContent=error.message;}}
-      finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);submit.disabled=!valid();titleTranslator.refresh();}}
+      finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);submit.disabled=!valid();titleTranslator.refresh();syncHero();}}
     }
   }]);
   generation=state.modalGeneration;root=$('modal-body').querySelector('.trend-idea-form');submit=$('modal-actions').querySelector('button');submit.disabled=true;
@@ -99,6 +99,14 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   titleTranslator=bindTitleTranslation(root.querySelector('[name="title"]'),{channelId:()=>root.querySelector('[name="channel"]').value,live,enabled:()=>!sending,onBusy:value=>{translating=value;if(live())submit.disabled=!valid();}});
   $('modal-body').channelSettingsCleanup=()=>titleTranslator.dispose();
   root.querySelector('[name="words"]').oninput=()=>{wordsEdited=true;};
+  const syncHero=()=>{
+    const field=root.querySelector('[name="use_hero"]'),hasHero=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;
+    field.disabled=sending||!hasHero||!root.querySelector('[name="use_thumbnail"]').checked;
+    if(!hasHero)field.checked=false;
+    field.closest('label').title=hasHero?'':'Додайте ведучого в налаштуваннях каналу';
+  };
+  root.querySelector('[name="use_thumbnail"]').onchange=syncHero;
+  syncHero();
   async function recommendation(){
     const version=++channelRead,cid=root.querySelector('[name="channel"]').value;
     if(!cid)return;
@@ -107,7 +115,7 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
       if(live()&&version===channelRead&&!sending&&!wordsEdited&&Number.isInteger(data.target_words))root.querySelector('[name="words"]').value=data.target_words;
     }catch(error){/* The editable default remains available when a recommendation cannot be read. */}
   }
-  root.querySelector('[name="channel"]').onchange=()=>{submit.disabled=!valid();titleTranslator.refresh();recommendation();};
+  root.querySelector('[name="channel"]').onchange=()=>{submit.disabled=!valid();titleTranslator.refresh();const field=root.querySelector('[name="use_hero"]');field.checked=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;syncHero();recommendation();};
   api('/api/health').then(health=>{
     if(!live())return;ready=health.trending_use_idea===true;submit.disabled=!valid();
     if(!ready){const note=root.querySelector('.trend-idea-feedback');note.hidden=false;note.textContent='Оновлення стане доступним після безпечного перезапуску студії';}

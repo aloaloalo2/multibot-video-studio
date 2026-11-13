@@ -58,3 +58,21 @@ class ProductionSessionsTest(unittest.TestCase):
         save=Mock(side_effect=OSError('disk full'))
         with self.assertRaises(OSError):self.run_job(checkpoint=save)
         self.assertEqual(self.launch.call_count,1)
+
+    def test_stale_visual_review_continues_only_pending_frames_and_records_both_costs(self):
+        launch=Mock(side_effect=lambda ns,summary,index:(0,{'result':'reviewed','total_cost_usd':.1,'usage':{'input_tokens':20}}))
+        verify=Mock(side_effect=[False,True]);save=Mock()
+        code,answer=sessions.run(range(21,31),launch,verify,save,lambda:False,lambda _:False,pending_review=lambda:[25])
+        self.assertEqual(code,0)
+        self.assertEqual([call.args[0] for call in launch.call_args_list],[list(range(21,31)),[25]])
+        self.assertIn('лише актуальний візуальний огляд',launch.call_args_list[1].args[1])
+        self.assertAlmostEqual(answer['total_cost_usd'],.2)
+        self.assertEqual(answer['usage']['input_tokens'],40)
+        self.assertEqual(save.call_args.args[0]['completed_frames'],list(range(21,31)))
+
+    def test_visual_review_continuation_is_bounded_and_never_expands_its_scope(self):
+        for pending,count in (([5],2),([15],1)):
+            launch=Mock(return_value=(0,{'result':'returned'}))
+            code,_=sessions.run(range(1,11),launch,lambda _:False,Mock(),lambda:False,lambda _:False,pending_review=lambda:pending)
+            self.assertNotEqual(code,0)
+            self.assertEqual(launch.call_count,count)

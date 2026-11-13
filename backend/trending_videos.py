@@ -159,7 +159,7 @@ def use_idea(body):
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', request_id):
         raise store.StudioError('Оновіть вікно й повторіть створення зачинів')
     payload = {'reference_id': identity, 'title': title, 'target_words': count,
-               'request_id': request_id, 'use_thumbnail': use_thumbnail}
+               'request_id': request_id, 'use_thumbnail': use_thumbnail, 'use_hero':body.get('use_hero')}
     receipt = store.DATA_ROOT / 'trending-idea-requests' / (request_id+'.json')
     def replay():
         return idea_reference.start_openings(cid, payload, source={'id': identity, 'title': title}, receipt_path=receipt)

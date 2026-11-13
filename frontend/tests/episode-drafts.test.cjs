@@ -5,7 +5,7 @@ const hooks={status:'done',stage:'openings',project_id:'project-a',target_words:
 function element(){
   let html='';return {isConnected:true,hidden:false,value:'',readOnly:false,nodes:[],messages:[],classList:{add(){},remove(){}},focus(){},after(){},remove(){this.isConnected=false},setAttribute(key,value){this[key]=value},
     set innerHTML(value){html=value;this.nodes=[...value.matchAll(/<button\b([^>]*)>/g)].map(m=>({disabled:m[1].includes('disabled'),hidden:false,classList:{add(){},remove(){}},setAttribute(key,value){this[key]=value},dataset:{entry:/data-entry="([^"]+)"/.exec(m[1])?.[1],opening:/data-opening="(\d+)"/.exec(m[1])?.[1],idea:/data-idea="(\d+)"/.exec(m[1])?.[1]},id:/id="([^"]+)"/.exec(m[1])?.[1]}));if(value.includes('id="idea-words"'))this.words={value:'1200'};},
-    get innerHTML(){return html},querySelector(s){return s==='#idea-words'?this.words:s==='button'?this.nodes[0]:this.nodes.find(b=>'#'+b.id===s)},
+    get innerHTML(){return html},querySelector(s){return s==='#reference-use-hero'?{checked:false}:s==='#idea-words'?this.words:s==='button'?this.nodes[0]:this.nodes.find(b=>'#'+b.id===s)},
     querySelectorAll(s){return s==='button'?this.nodes:this.nodes.filter(b=>s==='[data-opening]'?b.dataset.opening!==undefined:b.dataset.idea!==undefined)},
     prepend(node){this.messages.unshift(node.innerHTML)}
   };

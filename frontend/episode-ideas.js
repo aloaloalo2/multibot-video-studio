@@ -106,8 +106,8 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   function drawReference(){
     if(!reference||!connected())return;
     showCreate(false);input.readOnly=false;input.hidden=false;
-    root.innerHTML=`<div class="episode-reference-card"><img src="${esc(reference.thumbnail_url)}" alt="Прев’ю референсу"><span>${esc(reference.author)}</span></div><label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="1" value="${lastData?.target_words||2000}"> слів</label><div class="episode-topic-actions"><button class="primary glow-action thumb-writer-button" id="reference-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
-    root.querySelector('#reference-openings').onclick=()=>request({action:'clone_openings',reference_id:reference.id,title:input.value.trim(),target_words:Number(root.querySelector('#idea-words').value)});
+    root.innerHTML=`<div class="episode-reference-card"><img src="${esc(reference.thumbnail_url)}" alt="Прев’ю референсу"><span>${esc(reference.author)}</span></div><label class="trend-idea-check"><input id="reference-use-hero" type="checkbox" ${state.channel?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="1" value="${lastData?.target_words||2000}"> слів</label><div class="episode-topic-actions"><button class="primary glow-action thumb-writer-button" id="reference-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
+    root.querySelector('#reference-openings').onclick=()=>request({action:'clone_openings',reference_id:reference.id,use_hero:root.querySelector('#reference-use-hero').checked,title:input.value.trim(),target_words:Number(root.querySelector('#idea-words').value)});
     root.querySelector('#reference-openings').disabled=sending||translating;titleTranslator.refresh();
   }
   async function importReference(){

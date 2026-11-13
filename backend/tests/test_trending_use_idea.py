@@ -37,6 +37,12 @@ class TrendingUseIdeaTests(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):p.stop()
         ideas.ACTIVE.clear()
+    def test_trend_preserves_explicit_channel_host_choice(self):
+        with patch.object(reference,'inspect',return_value=self.source),patch('channel_hero.info',return_value={'url':'/host.png'}):
+            code,data=self.request('/api/trending-videos/use','POST',{**self.body,'use_thumbnail':True,'use_hero':True})
+        self.assertEqual(code,202,data)
+        self.assertTrue(ideas.read_project(data['project_id'])['clone_use_hero'])
+
     def test_title_only_creates_normal_project_without_reference_media_or_thumbnail_job(self):
         with patch.object(reference,'inspect') as inspect:
             code,data=self.request('/api/trending-videos/use','POST',self.body)
