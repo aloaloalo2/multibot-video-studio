@@ -54,3 +54,34 @@ class QualityTest(unittest.TestCase):
                 result=quality.check({'id':'fixture'},{'frames':30,'review_frames':list(range(21,31))})
             self.assertFalse(result['passed'])
             self.assertEqual(result['pending_review'],expected)
+
+    def test_native_stale_review_requests_only_affected_frames(self):
+        plan={'frames':[{'number':n,'format':'image'} for n in range(1,11)]}
+        with patch.object(store,'load_project_plan',return_value=plan), \
+             patch('native_review.missing',return_value=[4,5]), \
+             patch.object(quality.subprocess,'run') as external:
+            result=quality.check({'id':'fixture'},{'frames':82,'review_frames':list(range(1,11)),
+                                                         'native_review_frames':list(range(1,83))})
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['pending_review'],[4,5])
+        external.assert_not_called()
+
+    def test_native_review_does_not_hide_real_label_defects(self):
+        plan={'frames':[{'number':4,'format':'animation'}]}
+        with patch.object(store,'load_project_plan',return_value=plan), \
+             patch.object(quality.montage_ops,'frame_groups',return_value=[{'number':4,'clips':[{'kind':'text'}]}]), \
+             patch.object(quality.native_animation,'validate_label',side_effect=store.StudioError('Кадр 4: текст поза екраном')), \
+             patch('native_review.missing',return_value=[4]):
+            result=quality.check({'id':'fixture'},{'frames':4,'review_frames':[4],'native_review_frames':[4]})
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['pending_review'],[])
+        self.assertIn('Кадр 4: текст поза екраном',result['errors'])
+
+    def test_mixed_native_and_razgon_review_can_finish_in_one_scoped_followup(self):
+        plan={'frames':[{'number':4,'format':'image'},{'number':5,'format':'razgon_2d'}]}
+        with patch.object(store,'load_project_plan',return_value=plan), \
+             patch('native_review.missing',return_value=[4]), \
+             patch.object(quality.frame_progress,'razgon_project',return_value=Path('/tmp/review-fixture')), \
+             patch.object(quality.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout='not reviewed: 5',stderr='')):
+            result=quality.check({'id':'fixture'},{'frames':5,'review_frames':[4,5],'native_review_frames':[4,5]})
+        self.assertEqual(result['pending_review'],[4,5])

@@ -66,6 +66,7 @@ def _check(project, request):
         import native_review
         pending = native_review.missing(project, native_visuals)
         if pending:
+            pending_review.update(pending)
             errors.append('Потрібен огляд готової композиції кадрів Studio: ' + ', '.join(map(str,pending)))
     razgon_numbers = sorted(f['number'] for f in frames if f.get('format') == 'razgon_2d')
     if razgon_numbers:
@@ -92,7 +93,7 @@ def _check(project, request):
 
             except (OSError, subprocess.TimeoutExpired) as error:
                 errors.append('Не вдалося прочитати перевірку кадрів Razgon: ' + str(error)[:200])
-    retryable=bool(pending_review) and review_only and all(error.startswith('Перевірка кадрів Razgon не підтверджена:') for error in errors)
+    retryable=bool(pending_review) and review_only and all(error.startswith(('Перевірка кадрів Razgon не підтверджена:', 'Потрібен огляд готової композиції кадрів Studio:')) for error in errors)
     return {'passed': not errors, 'frames': sorted(wanted), 'errors': errors,
             'pending_review':sorted(pending_review) if retryable else [],
             'native_labels': len(native), 'visual_review': razgon_numbers}

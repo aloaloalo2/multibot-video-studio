@@ -44,6 +44,20 @@ class ProductionTest(unittest.TestCase):
             self.assertEqual(self.project['production_request']['status'],'failed')
         finally:production.ACTIVE.clear()
 
+    def test_stale_native_review_can_resume_but_real_defect_cannot(self):
+        self.project['production_request'].update(status='failed',quality={'frames':[1,2,3]})
+        with patch.object(production.production_quality,'check',return_value={'pending_review':[2]}), \
+             patch.object(production,'start') as start:
+            production.resume(self.project['id'])
+        start.assert_called_once()
+        self.assertEqual(self.project['production_request']['continuation_mode'],'handoff')
+        self.assertIn('актуальний візуальний огляд',start.call_args.args[1])
+        self.project['production_request']['status']='failed'
+        with patch.object(production.production_quality,'check',return_value={'pending_review':[]}), \
+             patch.object(production,'start') as start:
+            with self.assertRaises(store.StudioError):production.resume(self.project['id'])
+        start.assert_not_called()
+
     def test_pause_preserves_session_montage_and_can_resume(self):
         pid=self.project['id'];before=json.loads(json.dumps(self.project['tracks']))
         self.project['production_request']['status']='in_progress'

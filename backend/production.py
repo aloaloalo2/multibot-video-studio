@@ -532,11 +532,19 @@ def resume(pid: str) -> dict:
     with LOCK:
         if pid in ACTIVE:
             raise store.StudioError('Ще зупиняємо попередню роботу. Спробуйте за кілька секунд.',409)
-    request = store.load_project(pid).get("production_request") or {}
-    # a run stopped before the limit was marked keeps only the CLI's English note
-    if request.get("status") != "failed" or not (request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
+    project = store.load_project(pid)
+    request = project.get("production_request") or {}
+    review_pending = False
+    saved_review = request.get('quality') or {}
+    if request.get('status') == 'failed' and saved_review.get('frames'):
+        current_review = production_quality.check(project, {**request, 'review_frames': saved_review['frames']})
+        review_pending = bool(current_review.get('pending_review'))
+    # A completed batch with stale visual receipts can resume from its saved files.
+    if request.get("status") != "failed" or not (review_pending or request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
         raise store.StudioError("Агент не стоїть на паузі")
-    notes=("Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
+    notes=("Заверши актуальний візуальний огляд готових кадрів і продовж решту зі збережених файлів. "
+           "Збережи готові сцени й матеріали, без повторного створення схвалених кадрів і без рендеру відео.") if review_pending else (
+           "Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
            "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else RESUME
     return fix(pid, notes, handoff=True)
 
