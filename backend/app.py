@@ -68,6 +68,7 @@ import completion_notices
 import project_narration
 import channel_voice_lab
 import agent_view
+import channel_activity
 import montage_ops
 from timeline_manifest import build as timeline_manifest, valid_local_source
 import thumbnails
@@ -827,6 +828,39 @@ def project_jobs(pid: str) -> dict:
     return jobs
 
 
+def channel_task_outcome(task):
+    kind, cid, pid = task['kind'], task['channel_id'], task.get('project_id')
+    if kind == 'експорт':
+        return load_job(task['job_id']).get('status')
+    if kind == 'зразок голосу':
+        return store.read_json(channel_voice_lab.folder(cid) / 'job.json', {}).get('status')
+    if kind == 'зразок перекладу':
+        return store.read_json(channel_translation_voices.folder(cid, task['language']) / 'job.json', {}).get('status')
+    if kind in {'створення зачинів', 'створення сценарію', 'створення метаданих', 'редактура сценарію', 'ідеї'}:
+        import episode_ideas
+        data = episode_ideas.read_project(pid) if pid else episode_ideas.read(cid)
+        return 'cancelled' if data.get('cancelled') else data.get('status')
+    return project_jobs(pid).get(kind)
+
+
+def channel_completion_status(result, exports):
+    tasks = list(result['activities'])
+    for job in exports:
+        if job.get('status') in agent_view.BUSY:
+            try:
+                cid = store.listed_project(store.project_dir(job['project_id']) / 'project.json').get('channel_id')
+                tasks.append({'channel_id': cid, 'project_id': job['project_id'], 'kind': 'експорт', 'job_id': job['id']})
+            except (OSError, ValueError, store.StudioError):
+                pass
+    for cid in channel_voice_lab.ACTIVE.copy():
+        result['active_channels'] = sorted(set(result['active_channels']) | {cid})
+        tasks.append({'channel_id': cid, 'kind': 'зразок голосу'})
+    for cid, code in channel_translation_voices.ACTIVE.copy():
+        tasks.append({'channel_id': cid, 'kind': 'зразок перекладу', 'language': code})
+    result['channel_notices'] = channel_activity.notices.update(result['active_channels'], tasks, channel_task_outcome)
+    return result
+
+
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
     # A live frame worker must block an update even when its project metadata
@@ -849,8 +883,7 @@ def studio_work_status(exports):
         kind = 'редактура сценарію' if data.get('editing_status')=='running' or data['stage']=='editing' else {'openings': 'створення зачинів', 'metadata': 'створення метаданих'}.get(data['stage'], 'створення сценарію')
         result['busy'].append(kind + ': ' + (data.get('project_id') or cid))
         result['active_channels'] = sorted(set(result['active_channels']) | {cid})
-        if data.get('project_id'):
-            result['activities'].append({'project_id': data['project_id'], 'channel_id': cid, 'kind': kind, 'status': 'running'})
+        result['activities'].append({'project_id': data.get('project_id'), 'channel_id': cid, 'kind': kind if data.get('project_id') else 'ідеї', 'status': 'running'})
     return result
 
 
@@ -1260,7 +1293,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/studio/status":
             with JOBS_LOCK:
                 jobs = [dict(entry['job']) for entry in ACTIVE_EXPORTS.values()]
-            result = studio_work_status(jobs)
+            result = channel_completion_status(studio_work_status(jobs), jobs)
             result['busy'] += ['озвучення: тест голосу каналу' for _ in channel_voice_lab.ACTIVE.copy()]
             return self.json_response(result)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/export/active", path)

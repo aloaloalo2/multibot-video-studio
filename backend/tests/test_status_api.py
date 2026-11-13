@@ -44,3 +44,19 @@ class StatusAPITest(unittest.TestCase):
         with urllib.request.urlopen(self.base_url+url) as response:
             self.assertEqual(response.headers.get_content_type(),'image/jpeg');self.assertEqual(response.read()[:2],b'\xff\xd8')
         self.assertEqual(self.request('/api/projects/'+'0'*24+'/thumbnail?compact=1')[0],404)
+
+    def test_channel_notice_follows_real_receipt_without_starting_work(self):
+        from channel_activity import Notices
+        task={'channel_id':self.cid,'project_id':self.project['id'],'kind':'створення кадрів','status':'running'}
+        with patch.object(app.channel_activity,'notices',Notices()), \
+                patch.object(app,'studio_work_status',return_value={'busy':['work'],'active_channels':[self.cid],'activities':[task]}), \
+                patch.object(app,'project_jobs',return_value={'створення кадрів':'done'}) as receipts:
+            code,data=self.request('/api/studio/status')
+            self.assertEqual(code,200)
+            self.assertEqual(data['channel_notices'],{})
+            receipts.assert_not_called()
+            with patch.object(app,'studio_work_status',return_value={'busy':[],'active_channels':[],'activities':[]}):
+                code,data=self.request('/api/studio/status')
+            self.assertEqual(code,200)
+            self.assertEqual(data['channel_notices'][self.cid]['status'],'done')
+            receipts.assert_called_once_with(self.project['id'])

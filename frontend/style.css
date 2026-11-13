@@ -2704,3 +2704,9 @@ select option{background:#232327;color:#f1f1f2}
 .channel-main-group #channel-voice-settings{min-width:0}
 
 #episode-ideas>.trend-idea-check{display:flex;flex-direction:row;align-items:center;gap:9px;margin:12px 0;font-size:13px;color:var(--ui-control-text)}
+
+.channel-busy.is-complete,.channel-busy.is-stopped{width:16px;height:16px;min-width:16px;border:0;border-radius:0;animation:none;display:inline-flex;align-items:center;justify-content:center}
+.channel-busy.is-complete{color:#65eab1}
+.channel-busy.is-stopped{color:#f2bc47}
+.channel-busy.is-complete svg,.channel-busy.is-stopped svg{width:16px;height:16px}
+.channel-busy[hidden]{display:none}

@@ -201,6 +201,28 @@ function channelIdentityIcon(channel){
   return channel?.icon_url?`<img class="channel-icon channel-avatar" src="${esc(channel.icon_url)}" alt="" draggable="false">`:channelIcon;
 }
 const channelActivity=new Set(),projectActivities=new Map();
+const channelNoticeStorage='videokey-channel-notices';
+let channelNoticeData={};
+try{channelNoticeData=JSON.parse(localStorage.getItem(channelNoticeStorage))||{};}catch{}
+function saveChannelNotices(){try{localStorage.setItem(channelNoticeStorage,JSON.stringify(channelNoticeData));}catch{}}
+function acknowledgeChannelNotice(id){
+  const notice=channelNoticeData[id];
+  if(notice){notice.seen=notice.id;saveChannelNotices();}
+  renderChannelNotices();
+}
+function renderChannelNotices(){
+  for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
+    const badge=button.querySelector('.channel-busy');if(!badge)continue;
+    const id=button.dataset.channelId,notice=channelNoticeData[id];
+    const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen;
+    const stopped=notice?.status==='stopped';
+    badge.hidden=!busy&&!unread;
+    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'');
+    badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'square':'check'):'';
+    const label=busy?'У каналі триває робота':stopped?'Роботу зупинено':'Роботу завершено';
+    badge.setAttribute('aria-label',label);badge.title=label;
+  }
+}
 let channelActivityPending=false;
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
@@ -241,7 +263,7 @@ async function pollChannelActivity(){
     const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
-    for(const task of activity.activities||[])projectActivities.set(task.project_id,task.kind);
+    for(const task of activity.activities||[])if(task.project_id)projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
@@ -251,9 +273,10 @@ async function pollChannelActivity(){
     if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
-    for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
-      const spinner=button.querySelector('.channel-busy');if(spinner)spinner.hidden=!channelActivity.has(button.dataset.channelId);
+    for(const [id,notice] of Object.entries(activity.channel_notices||{})){
+      channelNoticeData[id]={...notice,seen:channelNoticeData[id]?.seen};
     }
+    saveChannelNotices();renderChannelNotices();
   }catch(error){console.warn('Стан каналів тимчасово недоступний',error);}
   finally{channelActivityPending=false;}
 }
@@ -266,10 +289,11 @@ function renderChannels() {
   for (const channel of state.channels) {
     const row=document.createElement('div'); row.className='channel-item'+(state.channel?.id===channel.id?' active':''); row.setAttribute('role','listitem');
     const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIdentityIcon(channel)}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
-    choose.addEventListener('click',()=>selectChannel(channel.id).catch(error=>status(error.message,true)));
+    choose.addEventListener('click',()=>{acknowledgeChannelNotice(channel.id);selectChannel(channel.id).catch(error=>status(error.message,true));});
     row.dataset.channelId=channel.id;row.append(choose); list.append(row);
   }
   wireChannelOrder(list);
+  renderChannelNotices();
   pollChannelActivity();
 }
 
