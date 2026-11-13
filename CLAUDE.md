@@ -50,11 +50,7 @@ one project (`"Горбунов 23"`).
 - `python3 tools/studio.py still P f12` (or `83.4`, `1:23.4`, `f12:start`, `f12:end`) — a PNG of the export at that
   moment, drawn by the export's own renderer, and a link that opens the preview at the same moment (`?t=`). Compare the
   two before saying an edit looks right; Razgon code frames are not drawn in a still.
-- `python3 tools/studio.py accent P 12 text --phrase "слова голосу" --at 1290,190 --style card` (or `arrow --from x,y
-  --to x,y --word слово`, `circle --at x,y --radii 190,70`, `card --at x,y --size w,h`, `image --path file --at x,y`)
-  — an accent in the frame's group, glued to the photo's pan and zoom. Points are pixels of the frame at its middle
-  moment, as the still of `f12` shows it; `--space photo` takes fractions of the picture. Words of `--phrase` appear in
-  time with the voice. `clear-accents P 12` removes them.
+- `python3 tools/studio.py accent P FRAME KIND` places a director-designed accent. Pick the detail and appearance from the narration, current channel and real frame. Choose `--color` and the appropriate motion (`still`, `fade`, `animated`). A `circle` accepts `--line dashed`; a `text` accepts `--style plain` or `--style card --card-color COLOR --card-opacity FRACTION`. Use `--word` or `--phrase` to synchronize with speech. Coordinates are frame pixels at the middle of the shot, or photo fractions with `--space photo`. `clear-accents P FRAME` removes the accents in that frame.
 - `python3 tools/studio.py replace P --frame 12 FILE` — a new picture, with the clip's title, box and motion kept.
 - `python3 tools/studio.py plan P [--frames 1-20] [--todo]` — the plan a line a frame: time, format, the director's idea,
   the words and ✓ when the frame is made. Read it instead of the plan's JSON.

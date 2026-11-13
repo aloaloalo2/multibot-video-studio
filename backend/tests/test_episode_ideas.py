@@ -205,11 +205,15 @@ class EpisodeIdeasTest(unittest.TestCase):
                 self.finish(data)
             self.assertIn('Shared channel wishes apply to this writing step',model.call_args.args[0])
             self.assertIn('Use a warm greeting',model.call_args.args[0])
+            self.assertIn('studio_audience_policy',model.call_args.args[0])
+            self.assertIn('Росії',model.call_args.args[0])
             self.assertNotIn('"memory":',model.call_args.args[0])
             data=self.begin({'action':'script','index':0})
             with patch.object(ideas,'opus',side_effect=ValueError('Stop after capturing the script brief')) as model:
                 self.finish(data)
             self.assertIn('Use a warm greeting',model.call_args.args[0])
+            self.assertIn('studio_audience_policy',model.call_args.args[0])
+            self.assertIn('Росії',model.call_args.args[0])
             # An incomplete set of variants stays failed with no hidden paid retry.
             data=self.begin({'action':'openings','index':1,'new_episode':True})
             with patch.object(ideas,'opus',return_value={'openings':[{'text':'A complete vivid hook with useful spoken details. '*10,'uk':''}]*3}) as model:

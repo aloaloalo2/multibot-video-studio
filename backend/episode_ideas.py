@@ -343,12 +343,12 @@ def unpack(text):
 
 
 @job_timing.measure('service')
-def deepseek(prompt, root, identity):
+def deepseek(prompt, root, identity, *, max_tokens=3500, cost_category='script'):
     import agent_openrouter
     try: key = credentials.vault().read(credentials.service_name('openrouter'))
     except RuntimeError: raise RuntimeError('Додайте ключ OpenRouter у налаштуваннях студії') from None
     payload = {'model': agent_openrouter.MODEL, 'messages': [{'role': 'user', 'content': prompt}],
-               'max_tokens': 3500, 'reasoning': {'effort': 'none'},
+               'max_tokens': max_tokens, 'reasoning': {'effort': 'none'},
                # Relace's shared pool repeatedly returns 429; choose another low-cost endpoint once.
                'provider': {'require_parameters': True, 'allow_fallbacks': False,
                             'ignore': ['relace'], 'sort': 'price'},
@@ -390,7 +390,7 @@ def deepseek(prompt, root, identity):
     except OSError:
         store.atomic_json(root / 'topic-response.json', {'error': {'type': 'connection', 'model': agent_openrouter.MODEL}})
         raise RuntimeError('З’єднання з OpenRouter перервалося. Попередні теми збережено. Повторіть запит вручну пізніше.') from None
-    project_costs.record_at(root, 'openrouter', (result.get('usage') or {}).get('cost'), identity=result.get('id') or identity, category='script')
+    project_costs.record_at(root, 'openrouter', (result.get('usage') or {}).get('cost'), identity=result.get('id') or identity, category=cost_category)
     choices = result.get('choices') or []
     choice = choices[0] if choices and isinstance(choices[0], dict) else {}
     message = choice.get('message') or {}
@@ -641,6 +641,8 @@ def _work(cid, data):
                    'script_wishes': store.read_channel_settings(store.get_channel_folder(cid), {}).get('script_wishes', '')}
         except (store.StudioError, OSError):
             pass
+        import audience_policy
+        ctx['studio_audience_policy'] = audience_policy.text()
         ctx['previous_titles'] = channel_topics.history(store.get_channel_folder(cid))
         ctx.pop('memory', None)  # Montage instructions stay with the director, outside the writer's token budget.
         if stage=='ideas':ctx.pop('studio_word_blacklist',None)
@@ -679,7 +681,7 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
             data['length'] = script_length(script, data.get('target_words'))
-            result = opus(episode_metadata.PROMPT + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
+            result = opus(episode_metadata.prompt() + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
                           + json.dumps({'channel': project['channel_name'], 'selected_title': project['name'],
                                         'topic_excerpt': script[:800], 'ending_excerpt': script[-800:]}, ensure_ascii=False)
                           + '\nReturn JSON only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}.',
@@ -698,6 +700,7 @@ def _work(cid, data):
                  'Repeated rule paragraphs appear once. topic_exclusions is the complete combined ledger of previous_titles, previous_suggestions and previous_topic_history; all its titles and subjects remain exclusions. '
                  'Write naturally for the channel audience, preserve its language and voice. Never use antithesis or em dashes. '
                  'Use simple, vivid conversational language. Do not copy previous episodes.\n'
+                 'studio_audience_policy is the current Studio-wide audience rule and overrides historical examples or Russia-targeted localization preferences. '
                  'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
                  'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '
                  'channel_agent_rules is the shared channel memory. Apply its wishes relevant to the current task. Specific current author wishes and the structured channel settings take priority. '
@@ -741,7 +744,7 @@ def _work(cid, data):
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
                     f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
                     'Do not invent studies, quotes, statistics or medical claims; use cautious factual wording for uncertain facts. '
-                    + episode_metadata.PROMPT + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
+                    + episode_metadata.prompt() + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
                     '"description":"...","tags":["...","...","..."]}}.', root, identity, cid, session=session)
                 script = result.get('script')
                 if not isinstance(script, str) or not script.strip():

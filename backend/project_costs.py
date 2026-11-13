@@ -27,9 +27,20 @@ def record_at(root: Path, provider: str, amount, *, identity=None, category="thu
         path = root / "project-costs.json"
         data = store.read_json(path, {}) or {}
         events = data.setdefault("events", {})
-        events[f"{provider}:{identity}"] = {
+        previous = events.get(f"{provider}:{identity}", {})
+        events[f"{provider}:{identity}"] = {**previous,
             "provider": provider, "amount": amount if number(amount) else None,
             "estimated": estimated, "category": category}
+        # Keep attribution at the existing billing boundary; observing costs never starts another request.
+        try:
+            import job_timing
+            trace = job_timing.CURRENT.get()
+            if trace is not None and trace.project_id == root.name and not previous.get('workflow'):
+                events[f"{provider}:{identity}"].update(workflow=trace.workflow, run_id=trace.id)
+                if trace.language:
+                    events[f"{provider}:{identity}"]["language"] = trace.language
+        except (ImportError, AttributeError):
+            pass
         if language:
             events[f"{provider}:{identity}"]["language"] = language
         store.atomic_json(path, data)
@@ -60,7 +71,7 @@ def collect(root: Path, data: dict) -> dict:
         previous = events.get(f"{provider}:{key}", {})
         if provider == 'elevenlabs' and estimated and previous and not previous.get('estimated') and number(previous.get('amount')):
             return
-        events[f"{provider}:{key}"] = {"provider": provider, "amount": amount if number(amount) else None,
+        events[f"{provider}:{key}"] = {**previous, "provider": provider, "amount": amount if number(amount) else None,
                                        "category": category, "estimated": estimated}
 
     # Recover durable per-paragraph receipts if a later status/accounting write was interrupted.
@@ -140,7 +151,8 @@ def collect(root: Path, data: dict) -> dict:
         if not isinstance(rows, list):
             continue
         config = store.read_json(path.parent / "request.json", {}) or {}
-        if config.get("provider") != "elevenlabs":
+        provider=config.get("provider")
+        if provider not in ("elevenlabs","heygen"):
             continue
         for index, row in enumerate(rows):
             # Stable through moving parts to history; cached audio copies have no paid request.
@@ -150,7 +162,7 @@ def collect(root: Path, data: dict) -> dict:
                 identity = hashlib.sha256(json.dumps(stable, sort_keys=True).encode()).hexdigest() if row.get("started_at") else f"{path.relative_to(root)}:{index}"
             actual = row.get("actual_cost")
             known = number(actual) and row.get("status") == "complete"
-            put(identity, "elevenlabs", actual if known else row.get("estimated_cost"),
+            put(identity, provider, actual if known else row.get("estimated_cost"),
                 category="voice", estimated=not known)
 
     return data

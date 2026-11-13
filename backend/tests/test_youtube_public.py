@@ -42,6 +42,40 @@ class PublicYouTubeTests(unittest.TestCase):
         with patch.object(youtube,'page') as page,self.assertRaises(Exception):youtube.collect('http://127.0.0.1')
         page.assert_not_called()
 
+    def test_members_only_content_is_an_expected_exclusion(self):
+        data={'playabilityStatus':{'status':'UNPLAYABLE','reason':'Available to channel members',
+              'errorScreen':{'playerLegacyDesktopYpcOfferRenderer':{'offerId':'sponsors_only_video'}}}}
+        with patch.object(youtube,'page',return_value='ytInitialPlayerResponse = '+json.dumps(data)):
+            with self.assertRaises(youtube.SkippedVideo):youtube.video(VIDEO,CHANNEL)
+        initial={'metadata':{'channelMetadataRenderer':{'externalId':CHANNEL,'title':'C'}}}
+        with patch.object(youtube,'page',return_value='ytInitialData = '+json.dumps(initial)),patch.object(youtube,'cards',return_value=[{'id':VIDEO,'age':5}]),patch.object(youtube,'video',side_effect=youtube.SkippedVideo('members only')):
+            result=youtube.collect(CHANNEL)
+        self.assertEqual(result['failed_videos'],0);self.assertEqual(result['skipped_videos'],1);self.assertEqual(result['videos'],[])
+
+    def test_generic_playback_failure_stays_retryable(self):
+        data={'playabilityStatus':{'status':'UNPLAYABLE','reason':"This content isn't available. Try again later."}}
+        with patch.object(youtube,'page',return_value='ytInitialPlayerResponse = '+json.dumps(data)):
+            with self.assertRaises(ValueError) as error:youtube.video(VIDEO,CHANNEL)
+        self.assertNotIsInstance(error.exception,youtube.SkippedVideo)
+
+    def test_partial_retry_reuses_fresh_videos_and_keeps_old_failed_metadata(self):
+        import time
+        initial={'metadata':{'channelMetadataRenderer':{'externalId':CHANNEL,'title':'C'}}}
+        previous={'updated_at':time.time(),'videos':[{'id':VIDEO,'views':4000},
+            {'id':'12345678901','views':6000,'fetched_at':0}]}
+        with patch.object(youtube,'page',return_value='ytInitialData = '+json.dumps(initial)),patch.object(youtube,'cards',return_value=[{'id':VIDEO,'age':5},{'id':'12345678901','age':6}]),patch.object(youtube,'video',side_effect=ValueError('Temporary failure')) as fetch:
+            result=youtube.collect(CHANNEL,previous)
+        fetch.assert_called_once_with('12345678901',CHANNEL)
+        self.assertEqual(result['videos'],previous['videos']);self.assertEqual(result['failed_video_ids'],['12345678901'])
+
+    def test_failed_pagination_keeps_first_page_and_saved_peers(self):
+        initial={'metadata':{'channelMetadataRenderer':{'externalId':CHANNEL,'title':'C'}},'continuationCommand':{'token':'next'}}
+        raw='ytcfg.set('+json.dumps({'INNERTUBE_CONTEXT':{'client':{}}})+');ytInitialData = '+json.dumps(initial)
+        previous={'updated_at':0,'videos':[{'id':'12345678901','views':6000}]}
+        with patch.object(youtube,'page',return_value=raw),patch.object(youtube,'cards',return_value=[{'id':VIDEO,'age':2}]),patch.object(youtube,'continuation',side_effect=RuntimeError('Unavailable')),patch.object(youtube,'video',return_value={'id':VIDEO,'views':9000}):
+            result=youtube.collect(CHANNEL,previous)
+        self.assertTrue(result['pagination_incomplete']);self.assertEqual({v['id'] for v in result['videos']},{VIDEO,'12345678901'})
+
     def test_pagination_skips_non_json_config_setters(self):
         initial={'metadata':{'channelMetadataRenderer':{'externalId':CHANNEL,'title':'C'}},'continuationCommand':{'token':'next'}}
         raw="ytcfg.set('EMERGENCY', 'x');ytcfg.set("+json.dumps({'INNERTUBE_CONTEXT':{'client':{'clientName':'WEB'}}})+");var ytInitialData = "+json.dumps(initial)

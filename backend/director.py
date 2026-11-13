@@ -24,6 +24,7 @@ import job_timing
 import motion_direction
 import process_cleanup
 import work_guard
+import montage_context
 
 MODEL = store.DEFAULT_DIRECTOR_MODEL
 EFFORT = "high"
@@ -77,14 +78,18 @@ def animated(project: dict) -> bool:
 
 
 def brief(project: dict) -> str:
-    text = razgon_brief(project) if animated(project) else frames_brief(project)
+    is_animated = animated(project)
+    text = razgon_brief(project) if is_animated else frames_brief(project)
     settings = channel_settings(project)
     if settings.get("generated_image_style"):
         text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
-    if settings.get("accents"):
-        text += "\nАкценти на кадрах увімкнені. Продумай власне монтажне рішення для цього каналу: де підкреслити деталь, показати ім’я, важливе число або тезу; де використати простий текст, плашку, стрілку, коло чи доречний стильний ефект. У полі idea відповідних кадрів зазнач задум, момент і вигляд акценту. Частоту й форму визначай за змістом, ритмом, стилем каналу та пам’яттю автора. Зберігай читабельність і вільну зону логотипа.\n"
+    if settings.get("accents") or is_animated:
+        text += ("\nАкценти на кадрах увімкнені. " if settings.get("accents") else "\nУ постановці анімованої сцени: ")
+        text += motion_direction.ACCENTS + "\nУ задумі відповідного кадру запиши ціль, вигляд і момент появи, щоб монтажер міг відтворити рішення.\n"
+    else:
+        text += "\nДодаткові акценти поверх кадрів вимкнені в налаштуваннях каналу.\n"
     import animation_preferences
-    return text + animation_preferences.instructions(project, planning=True) + sound_brief(project) + animation_style(project) + channel_memory(project)
+    return text + montage_context.rules(project) + montage_context.COMMANDS + animation_preferences.instructions(project, planning=True) + sound_brief(project, include_workflow=not is_animated) + animation_style(project) + channel_memory(project)
 
 
 def sound_brief(project: dict, *, scoped=False, include_workflow=True) -> str:
@@ -101,14 +106,14 @@ def channel_settings(project: dict) -> dict:
 
 def channel_memory(project: dict) -> str:
     try:
-        memory = agent_storage.get_memory(project["channel_id"]).strip()
+        memory = montage_context.sections(agent_storage.get_memory(project["channel_id"]).strip())
     except (store.StudioError, KeyError):
         memory = ""
     # the Claude Code memory notes of this channel and of all channels (author_rules.py), so the director and the frame
     # agent work by the same notes a Claude Code session in the YOUTUBE folder does (user, 8 November 2026)
     try:
         import author_rules
-        notes = author_rules.claude_memory(store.get_channel_folder(project["channel_id"], include_disabled=True).name, limit=20000)
+        notes = author_rules.claude_memory(store.get_channel_folder(project["channel_id"], include_disabled=True).name, limit=20000, montage_only=True)
     except (store.StudioError, KeyError, OSError):
         notes = ""
     text = ""
@@ -165,7 +170,7 @@ def frames_brief(project: dict) -> str:
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
-Спершу прочитай правила каналу {store.channel_rules_source(channel)}: як ділити озвучку на кадри і для чого який формат; сценарії інших випусків не читай.
+Правила монтажу цього каналу наведені в завданні нижче. Повні AGENTS.md, CLAUDE.md, сценарії інших випусків і архіви не читай.
 
 Твоє завдання: план кадрів за змістом озвучки.
 1. python3 "{studio}/tools/studio.py" sentences {project['id']} показує пронумеровані речення з часом, формати каналу з їхніми частками та обмеження.
@@ -188,48 +193,40 @@ def frames_brief(project: dict) -> str:
 
 
 def razgon_brief(project: dict) -> str:
+    """The author directs from one compact contract; the local helper handles file plumbing."""
     root = store.YOUTUBE_ROOT
-    episode = Path(project["episode_path"])
-    channel = episode.parent
+    episode = Path(project['episode_path'])
     rel = episode.relative_to(root) if root in episode.parents else episode
-    SOUND_DESIGN = f"{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/references/sound-design.md"
-    return f"""Ти режисер анімаційного випуску в VideoKey Studio. Озвучку щойно розпізнано, план студії «За озвучкою».
-
-Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}», канал «{channel.name}».
-Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
-Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
-
+    tool = store.APP_ROOT / 'tools/direction.py'
+    packet = store.project_dir(project['id']) / 'director-context.txt'
+    return f"""Ти режисер анімаційного випуску VideoKey Studio. Озвучка й сценарій уже прийняті.
+Випуск «{project['name']}», id {project['id']}, папка «{rel}», канал «{episode.parent.name}».
+Твоє творче завдання: зв’язні епізоди, смислові шоти, композиція, камера, переходи, PNG предмети та доречні звукові події.
 {motion_direction.PLANNING}
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {store.channel_rules_source(channel)} і навик режисури Razgon
-({store.razgon_rel()}/skills або плагін «{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video»: storytelling і story breakdown).
-Великі документи самої студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для режисури є тут, у правилах каналу й у навику.
-Як зроблено режисуру раніше, подивись в одному-двох найновіших випусках ({store.razgon_rel()}/projects/*/story/gen_shots.py,
-ls -t покаже найновіші), а не в усіх.
+Порядок для цього запуску:
+1. Одна команда готує робочу папку, чинний стиль і компактний пакет з усіма реченнями та технічною схемою:
+   python3 "{tool}" prepare {project['id']}
+2. Прочитай "{packet}" один раз. Він містить точну схему direction.json, переходи, музику й вибір звуків.
+   Склади режисуру за змістом усієї озвучки й запиши один story/direction.json у надрукованій робочій папці.
+   Речення групуєш сам: одна безперервна дія може охоплювати багато речень; наступний шот продовжує попередній стан.
+   Повний перелік SFX і музичні повороти продумай разом з усіма шотами, до запуску перевірки.
+3. Одна команда перевіряє всі поля, слова й час подій, direction_check.py, цілісність озвучки та записує план кадрів у Studio:
+   python3 "{tool}" apply {project['id']} <абсолютний-шлях/story/direction.json>
+   Вона сама зберігає shots.json, beats.json і bible.md та виконує razgon_bridge.py plan.
+   Виправляй лише конкретні помилки з цього звіту; збери всі виправлення перед одним повторним запуском.
+   Не додавай по одному необов’язковому ефекту після успішної перевірки. На WARN дай коротке змістовне пояснення в bible.
 
-Твоє завдання: режисура, звук і план кадрів, кроки 3–5 правил каналу.
-1. python3 "{store.app_rel()}/tools/episode.py" "{rel}" показує, на якому кроці випуск. Якщо проєкту Razgon ще немає:
-   python3 "{store.app_rel()}/tools/razgon_bridge.py" prepare --project-id {project['id']}
-2. Режисура за змістом озвучки: напиши story/gen_shots.py проєкту Razgon (таблиця дублів: речення, епізод, декорація, перехід, що в кадрі)
-   і запусти його. Кадри ділиш за змістом, не за кількістю слів. Кожна дія відбувається рівно в одному шоті: наступний шот
-   описує наступний крок і починає з того стану, яким закінчився попередній, а не повторює дію. Дія в тому самому місці лишається
-   одним шотом (JOIN), мітка set означає реальне місце, а перехід ставиш лише там, де справді змінюється сцена. Потім python3 {store.razgon_rel()}/tools/direction_check.py --project <проєкт>
-   має пройти без FAIL. На WARN відповідай у story/bible.md або виправляй.
-3. Звук фільму лише в межах вибору автора з розділу ЗВУК РОЛИКА нижче. Для вимкнених пунктів пропусти відповідну роботу. Дозволені звуки за {SOUND_DESIGN}: там назви ефектів, їхні правила й гучності. Музичний план (music) пишеш у gen_shots.py, як у попередніх випусках.
-   Ефекти й атмосферу запиши в story/shots.json окремим скриптом story/gen_sound.py: напиши його й запусти, він читає shots.json і timeline/words.json.
-   - "sfx" для всього фільму: [{{"t": 81.4, "name": "ding", "gain": -10, "seed": 3, "shot": "e12", "why": "слова, під які він звучить"}}], де t означає
-     секунди від початку фільму. Ефект звучить на видиму подію шоту (поява, удар, відкриття, число, перехід) у мить її слова, приблизно один
-     на 15–25 секунд. Два ефекти не стоять ближче ніж за 0,3 с, і голос лишається чистим.
-   - "amb" на більшості шотів за місцем дії: {{"name": "city", "gain": -24, "seed": 7}} (rain, wind, city, roomtone, murmur, hum), від −18 до −28.
-   gen_shots.py при кожному запуску бере їх з попереднього shots.json, щоб нова нарізка шотів не стерла звук:
-   old = json.loads(шлях.read_text()) якщо файл є, sfx=old.get("sfx", []) у story і amb=old_amb.get(id шоту), де old_amb = {{s["id"]: s.get("amb") for s in old.get("shots", [])}}.
-   Після кожного запуску gen_shots.py запускай і gen_sound.py. direction_check.py рахує ефекти й атмосферу і попереджає, коли їх мало або вони накладаються.
-   Музику й ефекти на таймлайн студія кладе сама, щойно ти закінчиш, без рендеру: push для цього не потрібен.
-4. python3 "{store.app_rel()}/tools/razgon_bridge.py" check --razgon <проєкт>, потім python3 "{store.app_rel()}/tools/razgon_bridge.py" plan --razgon <проєкт>: план кадрів іде в студію.
-
-Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй стиль у config.json і нічого не публікуй: це наступні кроки, і їх запускає користувач.
-Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Читаю правила каналу».
-Наприкінці коротко напиши українською: скільки шотів, кадрів студії і звукових ефектів вийшло, які епізоди, що лишилося з WARN і що не вдалося, якщо таке було."""
+Для справді неоднозначного слова отримай лише його речення:
+python3 "{tool}" words {project['id']} --sentence N
+Джерела та таймінги захищено підписом у пакеті. Зміна озвучки або налаштувань вимагає свіжого пакета.
+Схему не потрібно відновлювати з чужого випуску. Не читай попередні gen_shots.py, gen_sound.py, код мосту,
+рендерера чи мікшера для звичайної режисури; потрібний контракт уже в пакеті. Не пиши службових генераторів
+і скриптів для виведення всіх послівних таймінгів. Особливий технічний дефект діагностуй лише за конкретною помилкою.
+Правила каналу й актуальні побажання наведені нижче. Етапи сценарію, озвучки, малювання, перевірки картинок
+та експорту поза цим завданням. Не малюй сцени, не генеруй картинки, не рендери відео, не змінюй налаштування
+каналу й нічого не публікуй. Логотип додає Studio, залиш його зону вільною.
+Наприкінці коротко українською повідом кількість шотів, кадрів і SFX, зміст епізодів та реальні зауваження."""
 
 
 def spent(answer: dict, started: float | None = None) -> dict:
@@ -298,7 +295,7 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     if model not in store.DIRECTOR_MODELS:
         raise store.StudioError("Невідома модель режисера")
-    command = [str(cli), "--model", model, "--effort", effort, "--strict-mcp-config", "--permission-mode", "acceptEdits",
+    command = [str(cli), "--model", model, "--effort", effort, "--strict-mcp-config", "--safe-mode", "--setting-sources", "", "--permission-mode", "acceptEdits",
                "--disallowedTools", "Agent", "Task",
                "--allowedTools", *ALLOWED, "--output-format", "stream-json", "--verbose", "-p"] + (["--resume", resume] if resume else [])
     for folder in (store.APP_ROOT, store.DATA_ROOT):

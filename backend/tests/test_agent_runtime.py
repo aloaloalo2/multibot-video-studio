@@ -47,6 +47,18 @@ class AgentRuntimeTest(unittest.TestCase):
                 agent_runtime.execute(pid, "add_clip", args, self.callbacks, False)
         self.assertEqual(len(store.load_project(pid)["tracks"][0]["clips"]), 1)
 
+    def test_accent_tool_honors_channel_switch_and_forwards_the_directors_design(self):
+        pid = self.project["id"]
+        design = {"frame": "1", "kind": "circle", "color": "#cc342d", "line": "dashed", "motion": "still"}
+        args = {**design, "expected_revision": 0}
+        with patch.object(store, "plan_readiness", return_value={"plan_ready": True}), patch.object(agent_runtime.montage_ops, "run") as run:
+            with patch.object(store, "read_channel_settings", return_value={"accents": False}), self.assertRaises(store.StudioError):
+                agent_runtime.execute(pid, "add_accent", args, self.callbacks, False)
+            run.assert_not_called()
+            with patch.object(store, "read_channel_settings", return_value={"accents": True}):
+                agent_runtime.execute(pid, "add_accent", args, self.callbacks, False)
+            run.assert_called_once_with(pid, [{"op": "accent", **design}], 0)
+
     def test_image_generation_requires_explicit_permission(self):
         with patch.object(agent_runtime.agent_image, "generate_transparent_asset") as generate:
             with self.assertRaises(store.StudioError):

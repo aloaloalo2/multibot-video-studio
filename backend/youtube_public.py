@@ -11,6 +11,11 @@ import store
 from idea_reference import NoRedirect
 
 VIDEO_ID = re.compile(r'[A-Za-z0-9_-]{11}')
+VIDEO_TTL = 6 * 3600
+
+
+class SkippedVideo(ValueError):
+    """Known non-public or unfinished content is outside the public trend feed."""
 
 
 def embedded(raw, name):
@@ -71,9 +76,16 @@ def page(url):
 def video(identity, expected_channel):
     raw=page('https://www.youtube.com/watch?v='+identity+'&hl=en')
     data=embedded(raw,'ytInitialPlayerResponse')
+    playability=data.get('playabilityStatus',{})
+    offer=playability.get('errorScreen',{}).get('playerLegacyDesktopYpcOfferRenderer',{})
+    reason=str(playability.get('reason') or '').lower()
+    if offer.get('offerId')=='sponsors_only_video' or any(term in reason for term in ('members-only','channel\'s members','private video','video has been removed','video is no longer available')):
+        raise SkippedVideo('Restricted public video')
     details=data.get('videoDetails',{})
     micro=data.get('microformat',{}).get('playerMicroformatRenderer',{})
-    if details.get('videoId')!=identity or details.get('channelId')!=expected_channel or details.get('isLive') or details.get('isUpcoming'):
+    if details.get('isLive') or details.get('isUpcoming') or playability.get('status')=='LIVE_STREAM_OFFLINE':
+        raise SkippedVideo('Live or upcoming video')
+    if details.get('videoId')!=identity or details.get('channelId')!=expected_channel:
         raise ValueError('Unavailable public video')
     published=micro.get('publishDate') or micro.get('uploadDate')
     if not published or not details.get('lengthSeconds') or 'viewCount' not in details:
@@ -81,7 +93,7 @@ def video(identity, expected_channel):
     date=dt.datetime.fromisoformat(published.replace('Z','+00:00'))
     if date.tzinfo is None:date=date.replace(tzinfo=dt.timezone.utc)
     return {'id':identity,'title':details['title'],'published_at':date.isoformat(),'published_ts':date.timestamp(),
-            'views':int(details['viewCount']),'duration':int(details['lengthSeconds'])}
+            'views':int(details['viewCount']),'duration':int(details['lengthSeconds']),'fetched_at':time.time()}
 
 
 def continuation(token, context):
@@ -93,13 +105,13 @@ def continuation(token, context):
     return json.loads(raw)
 
 
-def collect(identity):
+def collect(identity, previous=None):
     if not channel_competitors.CHANNEL_ID.fullmatch(identity):raise store.StudioError('Некоректний канал YouTube')
     raw=page('https://www.youtube.com/channel/'+identity+'/videos?hl=en')
     initial=embedded(raw,'ytInitialData')
     meta=initial.get('metadata',{}).get('channelMetadataRenderer',{})
     if meta.get('externalId')!=identity:raise ValueError('Channel identity mismatch')
-    rows=cards(initial)
+    rows=cards(initial);pagination_failed=False
     current=initial
     # Up to 120 latest uploads, stopping once the displayed dates reach 90 days.
     for _ in range(3):
@@ -113,19 +125,32 @@ def collect(identity):
             if isinstance(cfg,dict) and isinstance(cfg.get('INNERTUBE_CONTEXT'),dict):
                 context=cfg['INNERTUBE_CONTEXT'];break
         if not context:break
-        current=continuation(token,context)
+        try:current=continuation(token,context)
+        except Exception:
+            pagination_failed=True;break
         rows=list({v['id']:v for v in rows+cards(current)}.values())
     candidates=[v for v in rows[:120] if v['age'] is None or v['age']<=100]
     if not rows:raise ValueError('No public channel videos found')
-    videos=[];failures=0
+    previous=previous or {};known={v['id']:v for v in previous.get('videos',[]) if VIDEO_ID.fullmatch(v.get('id',''))}
+    videos=[];failed=[];skipped=[]
     def fetch(item):
-        try:return video(item['id'],identity)
-        except Exception:return None
+        saved=known.get(item['id'])
+        if saved and time.time()-saved.get('fetched_at',previous.get('updated_at',0))<VIDEO_TTL:
+            return ('ok',saved)
+        try:return ('ok',video(item['id'],identity))
+        except SkippedVideo:return ('skip',item['id'])
+        except Exception:return ('failed',item['id'])
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        for item in pool.map(fetch,candidates):
-            if item is None:failures+=1
-            else:videos.append(item)
-    if candidates and not videos:raise ValueError('Video metadata unavailable')
+        for status,item in pool.map(fetch,candidates):
+            if status=='ok':videos.append(item)
+            elif status=='skip':skipped.append(item)
+            else:
+                failed.append(item)
+                if item in known:videos.append(known[item])
+    if candidates and not videos and failed:raise ValueError('Video metadata unavailable')
+    if pagination_failed:
+        present={v['id'] for v in videos}|set(skipped)
+        videos.extend(v for key,v in known.items() if key not in present)
     subscribers=None
     header=initial.get('header',{})
     for value in walk(header,'content'):
@@ -136,4 +161,5 @@ def collect(identity):
             subscribers=count(text(value));break
     return {'name':meta['title'],'subscribers':subscribers,'updated_at':time.time(),'videos':videos,
             'sample_truncated':len(rows)>=120 and all(v['age'] is None or v['age']<90 for v in rows),
-            'failed_videos':failures,'source':'youtube-public'}
+            'failed_videos':len(failed),'failed_video_ids':failed,'skipped_videos':len(skipped),'skipped_video_ids':skipped,
+            'pagination_incomplete':pagination_failed,'source':'youtube-public'}

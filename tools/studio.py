@@ -168,6 +168,10 @@ def main(argv=None) -> int:
     summary.add_argument("--frames", help="діапазон номерів, напр. 10-20")
     summary.add_argument("--issues", action="store_true", help="лише кадри з проблемами")
     summary.add_argument("--json", action="store_true")
+    review = commands.add_parser("review", help="аркуш трьох моментів кожного готового кадру Studio")
+    review.add_argument("project")
+    review.add_argument("--frames", required=True)
+    review.add_argument("--approve", metavar="TICKET", help="підтвердити саме переглянутий аркуш")
     still = commands.add_parser("still", help="стоп-кадр експорту в заданий момент")
     still.add_argument("project")
     still.add_argument("time")
@@ -191,7 +195,13 @@ def main(argv=None) -> int:
     accent.add_argument("--size", help="ширина й висота картки чи картинки: w,h")
     accent.add_argument("--width", type=float, help="найдовший рядок підпису, px")
     accent.add_argument("--font-size", type=int)
-    accent.add_argument("--style", choices=["card", "tag", "yellow", "white"])
+    accent.add_argument("--style", choices=["plain", "card", "tag", "yellow", "white"])
+    accent.add_argument("--line", choices=["solid", "dashed"], help="обводка для circle")
+    accent.add_argument("--motion", choices=["still", "fade", "animated"], help="поява графіки або підкладки тексту")
+    accent.add_argument("--card-color", help="колір підкладки або підкреслення тексту")
+    accent.add_argument("--card-opacity", type=float, help="непрозорість підкладки тексту від 0 до 1")
+    accent.add_argument("--opacity", type=float, help="непрозорість окремої плашки card від 0 до 1")
+    accent.add_argument("--radius", type=float, help="заокруглення плашки у пікселях")
     accent.add_argument("--entrance", help="поява слів: up, pop, blur_up, fade, …")
     accent.add_argument("--word", help="з'явитися на цьому слові голосу")
     accent.add_argument("--appear", type=float, help="з'явитися через стільки секунд від початку кадру")
@@ -248,6 +258,7 @@ def main(argv=None) -> int:
     pick.add_argument("--trim", type=float, help="з якої секунди відео почати")
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
+    transitions.add_argument("--frames", help="лише стики на вході у вибрані кадри")
     transitions.add_argument("--share", type=float, default=.7)
     transitions.add_argument("--seed", type=int, default=23)
     transitions.add_argument("--replace", action="store_true", help="розставити заново, не зберігаючи наявні")
@@ -326,6 +337,21 @@ def main(argv=None) -> int:
             data = call("POST", f"/api/projects/{pid}/number-fixes", {"fixes": fixes, "dry_run": args.dry_run})
             print(("Перевірка пройшла" if args.dry_run else "Записано") + f": змінено фраз {data['changed']}, ручних записів {data['fixes']}")
             return 0
+        if args.command == "review":
+            ranges = frame_ranges(args.frames)
+            if any(b-a >= 5 for a,b in ranges):
+                raise Failure("На аркуші може бути до п’яти кадрів.")
+            numbers = sorted({n for a,b in ranges for n in range(a,b+1)})
+            review = call("POST", f"/api/projects/{pid}/frame-review", {"frames":numbers, "ticket":args.approve})
+            if review.get("sheet"):
+                print(review["sheet"])
+                import shlex
+                command = [sys.executable, str(Path(__file__).resolve()), "review", pid, "--frames",
+                           ",".join(map(str,review["frames"])), "--approve", review["ticket"]]
+                print("Після перегляду: " + shlex.join(command))
+            else:
+                print("Кадри схвалено." if args.approve else "Актуальні схвалення збережено.")
+            return 0
         if args.command == "still":
             at = moment(project, args.time)
             data = call("POST", f"/api/projects/{pid}/still", {"time": at, "frames": args.frames, "cpu": args.cpu})
@@ -351,7 +377,9 @@ def main(argv=None) -> int:
             spec = {"op": "accent", "frame": int(args.frame) if args.frame.isdigit() else args.frame, "kind": args.kind, "space": args.space}
             for key, value in (("text", args.text), ("phrase", args.phrase), ("at", point(args.at)), ("from", point(args.tail)), ("to", point(args.head)),
                                ("radii", point(args.radii)), ("size", point(args.size)), ("width", args.width), ("font_size", args.font_size), ("style", args.style),
-                               ("entrance", args.entrance), ("word", args.word), ("appear", args.appear), ("color", args.color), ("path", args.path)):
+                               ("entrance", args.entrance), ("word", args.word), ("appear", args.appear), ("color", args.color), ("path", args.path),
+                               ("motion", args.motion), ("line", args.line), ("card_color", args.card_color), ("card_opacity", args.card_opacity),
+                               ("opacity", args.opacity), ("radius", args.radius)):
                 if value is not None:
                     spec[key] = value
             if args.kind == "arrow":
@@ -445,7 +473,13 @@ def main(argv=None) -> int:
             run_ops(project, [spec], False)
             return 0
         if args.command == "transitions":
-            run_ops(project, [{"op": "transitions", "share": args.share, "seed": args.seed, "replace": args.replace}], args.dry_run)
+            spec = {"op": "transitions", "share": args.share, "seed": args.seed, "replace": args.replace}
+            if args.frames:
+                ranges = frame_ranges(args.frames)
+                if any(b-a > 1000 for a,b in ranges):
+                    raise Failure("Завеликий діапазон кадрів.")
+                spec["frames"] = sorted({n for a,b in ranges for n in range(a,b+1)})
+            run_ops(project, [spec], args.dry_run)
             return 0
         if args.command == "ops":
             text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")

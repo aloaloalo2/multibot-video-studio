@@ -37,6 +37,7 @@ TRENDING_RULES = Path(__file__).parent / "prompts" / "trending_thumbnail.md"
 # раніше було... получались дуже круті результати»)
 PROMPT_EFFORT = "high"
 # Animated projects take their look from made frames; regular projects can start from their script and title.
+PROMPT_WRITERS = ("claude", "trending")
 MIN_FRAMES = 2
 STILLS = 3
 ACTIVE: set[str] = set()
@@ -150,7 +151,7 @@ def defaults(pid: str) -> dict:
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else creation_min_frames(project),
             "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
-            "versions": versions(pid), "writers": ["claude", "deepseek", "trending"], "image_editing": True,
+            "versions": versions(pid), "writers": list(PROMPT_WRITERS), "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
 
 
@@ -382,59 +383,6 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
     return written, answer
 
 
-# A trial the author asked for on 1 November 2026: DeepSeek (OpenRouter) writes the prompt instead of Claude Opus, from
-# the same brief, the same reference frames (sent as pictures) and the story bible (sent as text), so the two prompts can
-# be compared on the same Codex drawing. «Згенерувати з DeepSeek» in the thumbnail window starts it.
-@job_timing.measure('service')
-def write_prompt_deepseek(text: str, folder: Path, refs: list[Path], project_id: str | None = None) -> tuple[str, dict]:
-    import base64, io, urllib.request
-    import agent_openrouter, credentials
-    try:
-        key = credentials.vault().read(credentials.service_name("openrouter"))
-    except RuntimeError:
-        raise RuntimeError("Додайте ключ OpenRouter у налаштуваннях студії") from None
-    # DeepSeek has no Read tool: what Claude would open is attached here instead
-    text = re.sub(r"\nПеред тим як писати, подивись інструментом Read ці картинки[^\n]*\n", "\nКартинки стилю й героя прикріплені нижче.\n", text)
-    cloning = any(path.name == 'idea-reference.jpg' for path in refs)
-    link = None if cloning else episode_link(folder)
-    bible = Path(link["project"]) / "story" / "bible.md" if isinstance(link, dict) and link.get("project") else None
-    if bible and bible.is_file():
-        text = re.sub(r"Герої, їхній вигляд і світ ролику описані тут, прочитай перед тим як писати: [^\n]*\n", "", text)
-        text += "\n\nГерої, їхній вигляд і світ ролику (story bible):\n" + bible.read_text(encoding="utf-8", errors="replace")[:8000]
-    content = [{"type": "text", "text": text}]
-    images = refs if cloning else [*refs, *examples(folder)[1]]
-    for index, path in enumerate(images[:4], 1):
-        try:
-            with Image.open(path) as source:
-                image = source.convert("RGB")
-            image.thumbnail((1600, 1600) if cloning else (1024, 1024), Image.Resampling.LANCZOS)
-            out = io.BytesIO(); image.save(out, format="JPEG", quality=95 if cloning else 88)
-            role = "Main character identity reference. Match this character; other images do not replace their identity." if path.name == 'Головний герой.png' else "CLONE ANALYSIS SOURCE ONLY. Read exact lettering, visual idea and subject roles; describe an original new scene in the text prompt." if path.name == 'idea-reference.jpg' else "Scene or style reference."
-            content.append({"type": "text", "text": f"Reference image {index}: {path.name}. {role}"})
-            content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()}})
-        except (OSError, UnidentifiedImageError):
-            if cloning and path.name == 'idea-reference.jpg':
-                raise RuntimeError('Не вдалося прочитати прев’ю для клонування. Додайте посилання ще раз.') from None
-            continue
-    payload = {"model": agent_openrouter.MODEL, "max_tokens": 8000, "usage": {"include": True}, "messages": [{"role": "user", "content": content}]}
-    request = urllib.request.Request(agent_openrouter.BASE + "/chat/completions", data=json.dumps(payload).encode(), method="POST",
-                                     headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=PROMPT_TIMEOUT) as response:
-            result = json.load(response)
-        if project_id:
-            import project_costs
-            project_costs.record_at(store.project_dir(project_id), 'openrouter', (result.get('usage') or {}).get('cost'),
-                                    identity=result.get('id'))
-        written = str(result["choices"][0]["message"]["content"] or "").strip()
-    except (OSError, ValueError, KeyError, IndexError, TypeError):
-        raise RuntimeError("DeepSeek не відповів. Перевірте ключ OpenRouter і спробуйте ще раз") from None
-    written = re.sub(r"^```\w*\n|\n```$", "", written).strip()
-    if len(written) < 200:
-        raise RuntimeError("DeepSeek не написав промпт прев'ю. " + written[-300:])
-    return written, {"total_cost_usd": (result.get("usage") or {}).get("cost")}
-
-
 def editing(notes: str, name: str) -> str:
     """What Codex gets for an author's remark on a thumbnail already made: the picture itself is attached."""
     return f"""Edit the attached YouTube thumbnail. Change only this, as the author asks (in Ukrainian or Russian):
@@ -493,13 +441,13 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 if writer == "trending":
                     written, answer = write_prompt_codex(text, work, prompt_refs, name)
                 else:
-                    written, answer = write_prompt_deepseek(text, folder, prompt_refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
+                    written, answer = write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
             elif writer == "trending":
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
             else:
                 text = brief(title, script, wishes, folder, prompt_refs) + hero_rules
-                written, answer = write_prompt_deepseek(text, folder, prompt_refs, pid) if writer == "deepseek" else write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
-            note = ("[DeepSeek] " if writer == "deepseek" else ("[Клонування · Codex] " if clone else "[Трендове прев’ю · Codex] ") if writer == "trending" else "") + written
+                written, answer = write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
+            note = (("[Клонування · Codex] " if clone else "[Трендове прев’ю · Codex] ") if writer == "trending" else "") + written
         if hero:
             refs = [*refs, hero] if clone and not base else [hero, *refs]
         if clone and not base:
@@ -548,7 +496,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 image_delivery.copy_png(made, folder / PREVIEW)
             data.update(status="done", file=name, finished_at=time.time(), error=None)
     except subprocess.TimeoutExpired as error:
-        late = ({"deepseek": "DeepSeek", "trending": "Codex"}.get(writer, "Claude")) + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
+        late = ("Codex" if writer == "trending" else "Claude") + " не написав промпт за 10 хвилин" if error.timeout == PROMPT_TIMEOUT else "Codex не встиг за 20 хвилин"
         data.update(status="failed", error=late, finished_at=time.time())
     except (OSError, RuntimeError, store.StudioError) as error:
         data.update(status="failed", error=str(error), finished_at=time.time())
@@ -567,7 +515,8 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
 def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> dict:
     if use_hero is not None and not isinstance(use_hero, bool):
         raise store.StudioError('Оберіть, чи використовувати головного героя', 400)
-    writer = writer if writer in {"deepseek", "trending"} else "claude"
+    if writer not in PROMPT_WRITERS:
+        raise store.StudioError("Для промпту прев’ю оберіть Codex або Claude", 400)
     if writer == "trending" and base:
         raise store.StudioError("Трендове прев’ю створюється як нова версія, без бази для редагування", 400)
     if base is not None and (not isinstance(base, str) or not base):

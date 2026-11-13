@@ -91,6 +91,15 @@ class StudioToolTest(unittest.TestCase):
                                         "font_size": 46, "style": "card"}])
         self.assertIn("застосовано дій: 3, версія 8", out)
 
+    def test_director_controls_reach_the_montage_operation(self):
+        code, _, _, sent = self.run_tool("accent", "горбунов 23", "12", "text", "--style", "card", "--text", "Теза",
+                                        "--at", "500,300", "--color", "#ffeeaa", "--card-color", "#002233",
+                                        "--card-opacity", "0.4", "--radius", "0", "--motion", "still")
+        self.assertEqual(code, 0)
+        op = sent[-1][2]["ops"][0]
+        self.assertEqual([op[k] for k in ("color", "card_color", "card_opacity", "radius", "motion")],
+                         ["#ffeeaa", "#002233", .4, 0, "still"])
+
     def test_place_sends_the_frame_with_its_picture_or_its_text(self):
         code, _, _, sent = self.run_tool("place", "горбунов 23", "4", "/tmp/k.png", "--motion", "none")
         self.assertEqual(code, 0)

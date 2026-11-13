@@ -17,7 +17,7 @@ test('recognition and director status is replaced once and cleared when work end
   const c=vm.createContext({document,projectActivities:activities,exportSpinner:'spinner'});
   vm.runInContext(activitySource,c);
   const render=()=>vm.runInContext('renderProjectActivities()',c);
-  render();render();
+  render();const initial=children[0];render();assert.equal(children[0],initial);
   assert.equal(children.length,1);assert.equal(classes.has('stage-working'),true);assert.equal(attributes['aria-busy'],'true');
   assert.match(children[0].innerHTML,/Розпізнаємо озвучку/);
   activities.set('p','режисура');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/Режисер складає план/);

@@ -28,6 +28,7 @@ import math
 import random
 import re
 import subprocess
+from functools import cached_property
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -37,12 +38,14 @@ import native_animation
 import soundtrack
 import joins
 import store
+import style_lab
 import typography
 import word_timing
 
 YELLOW, NAVY, INK, WHITE = "#ffd23a", "#0b2f78", "#101418", "#ffffff"
 ENTRANCES = ["up", "pop", "blur_up", "fade"]
 STYLES = {   # text colour, card colour (None: no card), shadow of the text
+    "plain": (WHITE, None, None),
     "card": (WHITE, NAVY, None),
     "tag": (NAVY, WHITE, None),
     "yellow": (YELLOW, None, None),
@@ -310,14 +313,25 @@ def _anchor(ctx: Context, kind: str, payload: dict, path=None):
 
 
 def animated(ctx: Context, frame: dict, picture, title: str, payload: dict, keys: list[dict], base: dict, at: float,
-             duration: float, top: float = 1.0, path=None) -> None:
+             duration: float, top: float = 1.0, path=None, motion: str = "animated") -> None:
     """Add a glued accent with its entrance: the glued clip appears when the entrance ends, the entrance clip plays
     from `at` (seconds into the clip) over it."""
     kind = title.split()[-1]
     length = ENTRANCE.get(kind, .6)
-    at = max(0.0, min(at, duration - length - .2))
+    if motion == "animated" and max(at, 0) + length + .08 > duration:
+        motion = "fade"
+    if motion in {"still", "fade"}:
+        at = max(0.0, min(at, duration))
+        end = min(duration, at + (.22 if motion == "fade" else 0))
+        fades = [{"time": 0, "opacity": 0}, {"time": max(0, at - (.001 if motion == "still" else 0)), "opacity": 0},
+                 {"time": end, "opacity": top}]
+        ctx.add(frame, picture, title, {**payload, **base, "opacity": top, "keyframes": merge(keys, fades), "accent_motion": motion})
+        return
+    if motion != "animated":
+        raise OpError("Невідомий рух акценту")
+    at = max(0.0, at)
     shown = round(at + length, 3)
-    fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(shown - .04, 3), "opacity": 0.0}, {"time": shown, "opacity": top}]
+    fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(shown - .001, 3), "opacity": 0.0}, {"time": shown, "opacity": top}]
     steady = {**payload, **base, "scale": 1.0, "opacity": top, "keyframes": merge(keys, fades)}
     ctx.add(frame, picture, title, steady)
     ctx.actions.append(_entrance_action(ctx, frame, picture, title, steady, at, length, top, path))
@@ -328,7 +342,7 @@ def _entrance_action(ctx, frame, picture, title, steady, at, length, top, path) 
     clip = {**steady, "easing": (picture.clip.get("easing", ctx.easing) if picture else ctx.easing)}
     (ox, oy), (dx, dy) = _anchor(ctx, kind, steady, path)
     points, tau = [], 0.0
-    span = length + .08          # a little over the glued clip's first visible frame: no gap at the hand-over
+    span = length if top < 1 else length + .08  # translucent layers would darken if both were visible
     while tau <= span + 1e-9:
         t = at + tau
         px, py, s = keyframe_value(clip, "x", t) * ctx.W, keyframe_value(clip, "y", t) * ctx.H, keyframe_value(clip, "scale", t)
@@ -349,7 +363,7 @@ def _entrance_action(ctx, frame, picture, title, steady, at, length, top, path) 
 
 # ---------------------------------------------------------------- drawn accents
 
-def draw_arrow(path: Path, tail, head, bend: float, colors=(YELLOW, INK)):
+def draw_arrow(path: Path, tail, head, bend: float, colors):
     """A hand-drawn arrow with a dark edge; returns its canvas centre and size in frame pixels."""
     (x0, y0), (x1, y1) = tail, head
     length = math.hypot(x1 - x0, y1 - y0)
@@ -377,15 +391,24 @@ def draw_arrow(path: Path, tail, head, bend: float, colors=(YELLOW, INK)):
     return ((left + right) / 2, (top + bottom) / 2), (right - left, bottom - top)
 
 
-def draw_circle(path: Path, radii, colors=(YELLOW, INK)):
+def draw_circle(path: Path, radii, colors, line="solid"):
     rx, ry = radii
     margin, scale = 24, 2
     image = Image.new("RGBA", (int((2 * rx + 2 * margin) * scale), int((2 * ry + 2 * margin) * scale)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     box = [margin * scale, margin * scale, (2 * rx + margin) * scale, (2 * ry + margin) * scale]
     fill, edge = colors
-    draw.ellipse(box, outline=edge, width=15 * scale)
-    draw.ellipse([v + (3 * scale if i < 2 else -3 * scale) for i, v in enumerate(box)], outline=fill, width=8 * scale)
+    inset = min(3 * scale, int(min(rx, ry) * scale / 2))
+    inner = [v + (inset if i < 2 else -inset) for i, v in enumerate(box)]
+    if line == "dashed":
+        count = max(6, round(math.pi * (rx + ry) / 35))
+        for i in range(count):
+            start, end = 360 * i / count, 360 * (i + .62) / count
+            draw.arc(box, start, end, fill=edge, width=15 * scale)
+            draw.arc(inner, start, end, fill=fill, width=8 * scale)
+    else:
+        draw.ellipse(box, outline=edge, width=15 * scale)
+        draw.ellipse(inner, outline=fill, width=8 * scale)
     image.resize((image.width // scale, image.height // scale), Image.LANCZOS).save(path)
     return (2 * rx + 2 * margin, 2 * ry + 2 * margin)
 
@@ -408,7 +431,6 @@ class Context:
         self.actions: list[dict] = []
         self.groups: dict[str, str] = {}     # clip title -> the new frame group it opens (place)
         self.report: list[str] = []
-        self.entrance = 0
         self.easing = project.get("settings", {}).get("motion_easing", "ease_in_out")
         # per-channel looks (saved channel settings): the project snapshot first, the channel's current file else, so a
         # project made before the setting still follows it
@@ -419,6 +441,11 @@ class Context:
             except (store.StudioError, OSError, ValueError):
                 channel = {}
         self.text_look = project.get("settings", {}).get("text_look") or channel.get("text_look", "varied")
+        self.animation_style = channel.get("animation") or project.get("settings", {}).get("animation") or {}
+
+    @cached_property
+    def accent_color(self):
+        return style_lab.accent_color(self.project.get("channel_id"), self.animation_style) or WHITE
 
     def words(self) -> list[dict]:
         if self._words is None:
@@ -536,25 +563,33 @@ def accent(ctx: Context, spec: dict) -> None:
     kind = spec.get("kind")
     index = (sum(1 for c in frame["clips"] if is_accent(c) and not is_entrance(c)) +
              sum(1 for a in ctx.actions if a["type"] == "add_clip" and a["payload"].get("group_id") == frame["group"]["id"] and not is_entrance(a["payload"])))
-    colors = (spec.get("color", YELLOW), spec.get("edge", INK))
+    motion = spec.get("motion", "animated")
+    if kind in {"arrow", "circle"}:
+        colors = (spec.get("color") or ctx.accent_color, spec.get("edge", INK))
     if kind == "text":
         _accent_text(ctx, frame, picture, spec, start, duration, mid, index)
     elif kind == "arrow":
         tail, head = _point(ctx, picture, spec, "from", mid), _point(ctx, picture, spec, "to", mid)
         path = ctx.drawn_file("arrow", {"tail": tail, "head": head, "bend": spec.get("bend", .15), "colors": colors})
         centre, size = draw_arrow(path, tail, head, float(spec.get("bend", .15)), colors)
-        _accent_picture(ctx, frame, picture, f"{index} стрілка", path, centre, size, _moment(ctx, frame, spec, start), duration, mid)
+        _accent_picture(ctx, frame, picture, f"{index} стрілка", path, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
     elif kind == "circle":
         centre = _point(ctx, picture, spec, "at", mid)
         radii = spec.get("radii") or [120, 80]
-        path = ctx.drawn_file("circle", {"radii": radii, "colors": colors})
-        size = draw_circle(path, radii, colors)
-        _accent_picture(ctx, frame, picture, f"{index} коло", path, centre, size, _moment(ctx, frame, spec, start), duration, mid)
+        if not isinstance(radii, (list, tuple)) or len(radii) != 2:
+            raise OpError("Потрібні два радіуси контуру")
+        radii = [store.finite_float(r, 1, limit, "Радіус поза межами кадру") for r, limit in zip(radii, (ctx.W, ctx.H))]
+        line = spec.get("line", "solid")
+        if line not in ("solid", "dashed"):
+            raise OpError("Тип контуру має бути solid або dashed")
+        path = ctx.drawn_file("circle", {"radii": radii, "colors": colors, "line": line})
+        size = draw_circle(path, radii, colors, line)
+        _accent_picture(ctx, frame, picture, f"{index} коло", path, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
     elif kind == "image":
         source = Path(spec["path"]).expanduser() if spec.get("path") else Path(store.resolve_asset(ctx.project, spec["asset_id"])["path"])
         centre = _point(ctx, picture, spec, "at", mid)
         size = spec.get("size") or [300, 300]
-        _accent_picture(ctx, frame, picture, f"{index} картинка", source, centre, size, _moment(ctx, frame, spec, start), duration, mid)
+        _accent_picture(ctx, frame, picture, f"{index} картинка", source, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
     elif kind == "card":
         centre = _point(ctx, picture, spec, "at", mid)
         w, h = spec.get("size") or [400, 120]
@@ -562,16 +597,16 @@ def accent(ctx: Context, spec: dict) -> None:
         animated(ctx, frame, picture, f"{index} картка", {"kind": "animation", "content_type": "shape", "color": spec.get("color", NAVY),
                                                           "width": w / ctx.W, "height": h / ctx.H, "mask": "rounded",
                                                           "corner_radius": float(spec.get("radius", min(24, h / 2)))},
-                 keys, base, _moment(ctx, frame, spec, start), duration, float(spec.get("opacity", .9)))
+                 keys, base, _moment(ctx, frame, spec, start), duration, float(spec.get("opacity", .9)), motion=motion)
     else:
         raise OpError("Невідомий вид акценту: text, arrow, circle, card або image")
     ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: {kind}")
 
 
-def _accent_picture(ctx, frame, picture, title, path, centre, size, at, duration, mid):
+def _accent_picture(ctx, frame, picture, title, path, centre, size, at, duration, mid, motion):
     keys, base = _glued(picture, centre, mid, duration, ctx)
     animated(ctx, frame, picture, title, {"kind": "image", "asset_id": ctx.asset_for(path), "width": size[0] / ctx.W, "height": size[1] / ctx.H},
-             keys, base, at, duration, path=path)
+             keys, base, at, duration, path=path, motion=motion)
 
 
 def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index):
@@ -589,9 +624,9 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
         at = start + float(spec.get("appear", 0.3))
         words = [(token, at + .12 * k) for k, token in enumerate(str(phrase).split())]
     words[-1] = (words[-1][0].rstrip(".,!?:;"), words[-1][1])
-    style = spec.get("style", "card")
+    style = spec.get("style", "card" if ctx.text_look == "dim" or spec.get("card_color") else "plain")
     if style not in STYLES:
-        raise OpError("Стиль підпису: card, tag, yellow або white")
+        raise OpError("Стиль підпису: plain, card, tag, yellow або white")
     color, card, shadow = STYLES[style]
     family, weight = spec.get("font_family") or ctx.project.get("font_family") or "Montserrat", int(spec.get("font_weight", 700))
     centre = _point(ctx, picture, spec, "at", mid)
@@ -613,19 +648,19 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
     if card or style == "white":
         under = ({"title": "картка", "centre": centre, "size": (right - left + (72 if dim else 40), bottom - top + (34 if dim else 22)),
                   "color": "#000000" if dim else spec.get("card_color", card), "at": first,
-                  "top": .72 if dim else .9 if style == "card" else .96, "radius": 0 if dim else min(24, (bottom - top + 22) / 2)} if card else
-                 {"title": "риска", "centre": (centre[0], centre[1] + (bottom - top) / 2 + 8), "size": (right - left, 12), "color": spec.get("card_color", YELLOW),
+                  "top": .72 if dim else .9 if style == "card" else .96, "radius": float(spec.get("radius", 0 if dim else min(24, (bottom - top + 22) / 2)))} if card else
+                 {"title": "риска", "centre": (centre[0], centre[1] + (bottom - top) / 2 + 8), "size": (right - left, 12), "color": spec.get("card_color") or ctx.accent_color,
                   "at": words[-1][1] - start + .2, "top": 1.0, "radius": 4})
         keys, base = _glued(picture, under["centre"], mid, duration, ctx, pin)
         animated(ctx, frame, picture, f"{index} {under['title']}", {"kind": "animation", "content_type": "shape", "color": under["color"],
                                                                      "width": under["size"][0] / ctx.W, "height": under["size"][1] / ctx.H,
                                                                      "mask": "rounded" if under["radius"] else "none", "corner_radius": under["radius"]},
-                 keys, base, max(0.0, under["at"] - (ENTRANCE.get(under["title"], .5) if under["title"] == "картка" else 0)), duration, under["top"])
+                 keys, base, max(0.0, under["at"] - (ENTRANCE["картка"] if under["title"] == "картка" and spec.get("motion", "animated") == "animated" else 0)),
+                 duration, float(spec.get("card_opacity", under["top"])), motion=spec.get("motion", "animated"))
     keys, base = _glued(picture, (bx, by), mid, duration, ctx, pin)
-    entrance = spec.get("entrance") or ENTRANCES[ctx.entrance % len(ENTRANCES)]
-    ctx.entrance += 1
+    entrance = spec.get("entrance") or "fade"
     ctx.add(frame, picture, f"{index} текст", {"kind": "text", "text": " ".join(w["text"] for w in placed), **base, "width": box / ctx.W, "height": height / ctx.H,
-                                              "font_size": stub["font_size"], "font_family": family, "font_weight": weight, "color": spec.get("text_color", color),
+                                              "font_size": stub["font_size"], "font_family": family, "font_weight": weight, "color": spec.get("text_color") or spec.get("color") or color,
                                               "text_words": placed, "word_entrance": {"type": entrance, "duration": 0.22, "distance": 14}, "shadow": shadow,
                                               "text_role": "label", "keyframes": keys})
 
@@ -822,7 +857,12 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
     tokens = _timed_tokens(ctx, planned)
     if tokens and len(tokens) == len(payload["text"].split()):
         family = ctx.project.get("font_family") or "Golos"
-        box, stub = _text_layout(ctx, tokens, 1500, 760, 68, family, 700, start)
+        fps = int(ctx.project.get("fps") or 25)
+        # Keep the background on the plan boundary. Anchor the text layer to the video
+        # frame containing its first word, with word timings relative to that layer.
+        onset = max(start, min(math.floor(tokens[0][1] * fps) / fps, end - 1 / fps))
+        payload.update(start=onset, duration=end-onset)
+        box, stub = _text_layout(ctx, tokens, 1500, 760, 68, family, 700, onset)
         # every word, the first too, waits for its own moment in the voice (AGENTS.md, 20 October 2026; user 8 November
         # 2026: «текст вже появився, хоча про нього ми ще не говорили»): no pulling the first word to the frame's start
         payload.update(width=box / ctx.W, height=760 / ctx.H, x=.5, y=.5, font_size=stub["font_size"], font_family=family, font_weight=700,
@@ -888,6 +928,13 @@ def transitions(ctx: Context, spec: dict) -> None:
     for a, b in zip(ctx.frames, ctx.frames[1:]):
         if abs(a["end"] - b["start"]) <= 1 / fps + .001:
             seams.append((a, b, "group:" + a["group"]["id"], "group:" + b["group"]["id"]))
+    scope = spec.get("frames")
+    if scope is not None:
+        if not isinstance(scope,list) or not scope or any(type(n) is not int or n < 1 for n in scope):
+            raise OpError("Вкажіть номери кадрів для переходів.")
+        if set(scope) - {f["number"] for f in ctx.frames}:
+            raise OpError("Спершу поставте вибрані кадри на таймлайн.")
+        seams = [seam for seam in seams if seam[1]["number"] in scope]
     keep = not spec.get("replace")
     designed = sum(1 for _, _, f, t in seams if keep and (f, t) in existing)
     target = round(share * len(seams))
@@ -972,19 +1019,19 @@ def reglue(ctx: Context, spec: dict) -> None:
             keys, base = _glued(picture, centre, mid, duration, ctx, pin)
             fades = [{"time": p["time"], "opacity": p["opacity"]} for p in accent_clip.get("keyframes") or [] if "opacity" in p]
             kind = accent_kind(accent_clip)
-            if text or kind not in ENTRANCE or not fades:
+            if text or accent_clip.get("accent_motion") in ("fade", "still") or kind not in ENTRANCE or not fades:
                 ctx.actions.append({"type": "update_clip", "payload": {"clip_id": accent_clip["id"],
                                                                         "patch": {"x": base["x"], "y": base["y"], "scale": 1.0, "keyframes": merge(keys, fades)}}})
                 done += 1
                 continue
-            top = float(fades[-1]["opacity"]) or 1.0
+            top = float(fades[-1]["opacity"])
             old = by_title.get(accent_clip["title"])
             shown = next((float(p["time"]) for p in fades if float(p["opacity"]) > 0), .3)
             at = float(old["start"]) - float(accent_clip["start"]) if old else max(0.0, shown - .25)
             length = ENTRANCE[kind]
-            at = max(0.0, min(at, duration - length - .2))
+            at = max(0.0, min(at, duration - length - (.08 if top >= 1 else 0)))
             visible = round(at + length, 3)
-            fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(visible - .04, 3), "opacity": 0.0}, {"time": visible, "opacity": top}]
+            fades = [{"time": 0.0, "opacity": 0.0}, {"time": round(visible - .001, 3), "opacity": 0.0}, {"time": visible, "opacity": top}]
             steady = {**accent_clip, **base, "scale": 1.0, "keyframes": merge(keys, fades)}
             ctx.actions.append({"type": "update_clip", "payload": {"clip_id": accent_clip["id"],
                                                                     "patch": {"x": base["x"], "y": base["y"], "scale": 1.0, "keyframes": steady["keyframes"]}}})

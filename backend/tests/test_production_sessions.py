@@ -15,8 +15,8 @@ class ProductionSessionsTest(unittest.TestCase):
 
     def test_long_work_is_scoped_and_costs_include_all_fresh_sessions(self):
         code,answer=self.run_job();self.assertEqual(code,0)
-        self.assertEqual([len(call.args[0]) for call in self.launch.call_args_list],[20,20,5])
-        self.assertEqual(answer['usage']['input_tokens'],30);self.assertAlmostEqual(answer['total_cost_usd'],.3)
+        self.assertEqual([len(call.args[0]) for call in self.launch.call_args_list],[10,10,10,10,5])
+        self.assertEqual(answer['usage']['input_tokens'],50);self.assertAlmostEqual(answer['total_cost_usd'],.5)
         self.assertEqual(self.receipt.call_args.args[0]['remaining_frames'],[])
 
     def test_short_work_keeps_the_existing_single_session(self):
@@ -32,8 +32,19 @@ class ProductionSessionsTest(unittest.TestCase):
 
     def test_verified_checkpoint_skips_completed_work_without_paid_replay(self):
         code,_=self.run_job(previous={'completed_frames':list(range(1,21)),'summary':'Earlier work'})
-        self.assertEqual(code,0);self.assertEqual(self.launch.call_args_list[0].args[0],list(range(21,41)))
-        self.assertEqual(self.launch.call_count,2)
+        self.assertEqual(code,0);self.assertEqual(self.launch.call_args_list[0].args[0],list(range(21,31)))
+        self.assertEqual(self.launch.call_count,3)
+
+    def test_partial_checkpoint_resumes_only_unapproved_or_changed_frames(self):
+        saved={1,2,3,4,5}
+        current={1,2,4,5}
+        def launch(frames,summary,index):
+            self.assertEqual(frames,[3,6,7,8])
+            current.update(frames)
+            return 0, {'result':'ready'}
+        code,_=sessions.run(list(range(1,9)),launch,lambda ns:set(ns)<=current,Mock(),
+                            lambda:False,lambda _:False,previous={'completed_frames':sorted(saved)})
+        self.assertEqual(code,0)
 
     def test_failure_quota_or_incomplete_frames_never_launch_another_session(self):
         for answer,valid in (({'is_error':True},True),({'limit':True},True),({'result':'not complete'},False)):

@@ -43,6 +43,7 @@ class DirectorTest(unittest.TestCase):
         self.assertIn("Правила Агентів", text)
         self.assertIn("створенні й доборі кадрів", text)
         self.assertIn("Акценти на кадрах увімкнені", text)
+        self.assertIn(director.motion_direction.ACCENTS, text)
 
     def test_claude_memory_reaches_the_director_with_a_bounded_budget(self):
         import author_rules
@@ -50,14 +51,14 @@ class DirectorTest(unittest.TestCase):
                 patch.object(store, "get_channel_folder", return_value=Path("/channels/Test")), \
                 patch.object(author_rules, "claude_memory", return_value="Нотатки автора") as memory:
             text = director.channel_memory(PROJECT)
-        memory.assert_called_once_with("Test", limit=20000)
+        memory.assert_called_once_with("Test", limit=20000, montage_only=True)
         self.assertIn("Поточні правила каналу", text)
         self.assertIn("Нотатки автора", text)
 
     def test_brief_names_the_episode_steps_and_the_limits(self):
         text = director.brief(PROJECT)
-        for part in (PROJECT["id"], "What If/05 Test", 'tools/razgon_bridge.py" prepare', "gen_shots.py", "direction_check.py",
-                     'tools/razgon_bridge.py" plan', "Не малюй сцени"):
+        for part in (PROJECT["id"], "What If/05 Test", 'tools/direction.py" prepare', 'director-context.txt', 'direction_check.py',
+                     'tools/direction.py" apply', 'Не малюй сцени'):
             self.assertIn(part, text)
 
     def test_saved_style_and_description_reach_planning_and_scene_generation(self):
@@ -80,7 +81,7 @@ class DirectorTest(unittest.TestCase):
         text = director.brief(PROJECT)
         for part in (PROJECT["id"], 'tools/studio.py" sentences', 'tools/studio.py" frames', "--dry-run", "director-frames.json", "Не шукай стоки"):
             self.assertIn(part, text)
-        self.assertNotIn("razgon_bridge", text)
+        self.assertNotIn("razgon_bridge", director.frames_brief(PROJECT))
 
     def test_direction_starts_after_the_voice_only_when_it_is_due(self):
         with patch.object(director, "start") as start:
@@ -132,6 +133,9 @@ class DirectorTest(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertEqual(command[command.index('--disallowedTools') + 1:command.index('--disallowedTools') + 3], ['Agent', 'Task'])
         self.assertNotIn('Agent', director.ALLOWED)
+        self.assertIn('--safe-mode', command)
+        self.assertEqual(command[command.index('--setting-sources')+1], '')
+        self.assertEqual(command[command.index('--permission-mode')+1], 'acceptEdits')
 
     def test_selected_model_and_effort_reach_the_cli(self):
         for model in store.DIRECTOR_MODELS:

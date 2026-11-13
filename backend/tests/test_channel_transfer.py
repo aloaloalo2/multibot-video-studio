@@ -17,6 +17,36 @@ import director
 
 
 class ChannelTransferTests(unittest.TestCase):
+    def test_translation_models_roundtrip_separately_for_each_language(self):
+        import channel_translation_voices as choices,language_defaults,languages
+        payload={'settings':{},'languages':['uk','es','ru'],'voices':{
+            'ru':{'remote_only':True,'voice_ids':{'elevenlabs':'old-ru'}},
+            'uk':{'remote_only':True,'voice_ids':{'elevenlabs':'uk-voice'},'clone':'uk-voice'},
+            'es':{'remote_only':True,'voice_ids':{'fishaudio':'es-voice'}}}}
+        store.atomic_json(language_defaults.root(self.cid)/'current.json',{'version':'e'*32,'payload':payload,'signature':language_defaults.signature(payload)})
+        choices.save(self.cid,{'uk':{'provider':'elevenlabs','eleven_engine':'eleven_v4_turbo'},
+                               'ru':{'provider':'heygen','heygen_model':'starfish','heygen_voice_id':'ru-starfish'},
+                               'es':{'provider':'fishaudio','fish_engine':'drama-3','fish_style':'normal'}})
+        bundle=transfer.export_bundle(self.cid);transfer.import_bundle(self.tid,bundle,lambda cid:None)
+        self.assertEqual(language_defaults.settings(self.tid,'uk')['eleven_engine'],'eleven_v4_turbo')
+        self.assertEqual(language_defaults.settings(self.tid,'es')['fish_engine'],'drama-3')
+        self.assertEqual(language_defaults.remote_ids(self.tid,'uk')['elevenlabs'],'uk-voice')
+        self.assertEqual(language_defaults.remote_ids(self.tid,'es')['fishaudio'],'es-voice')
+        self.assertEqual(language_defaults.remote_ids(self.tid,'ru'),{'elevenlabs':'old-ru','heygen':'ru-starfish'})
+        self.assertEqual(language_defaults.settings(self.tid,'ru')['heygen_model'],'starfish')
+        with patch.object(languages,'request',side_effect=AssertionError('no clone or speech request')):
+            rows={row['code']:row for row in languages.channel_voices(self.tid)['voices']}
+        self.assertTrue(rows['uk']['remote_only']);self.assertEqual(rows['es']['settings']['provider'],'fishaudio')
+
+    def test_sfx_choices_roundtrip_even_without_the_sound_pack_on_target(self):
+        choice = {'enabled': False, 'ids': ['123', '999999999']}
+        store.update_channel_settings(self.cid, {'sound': {'library': choice}})
+        bundle = transfer.export_bundle(self.cid)
+        _, files = transfer.read_bundle(bundle)
+        self.assertFalse(any('sfx-library/' in name for name in files))
+        transfer.import_bundle(self.tid, bundle, lambda cid: None)
+        self.assertEqual(store.read_channel_settings(self.target)['sound']['library'], choice)
+
     def test_stickmen_permission_saves_and_roundtrips_with_backup_restore(self):
         for allowed in [False,True]:
             with self.subTest(allowed=allowed):
@@ -172,6 +202,15 @@ class ChannelTransferTests(unittest.TestCase):
         transfer.import_bundle(self.tid,raw,lambda cid:None)
         self.assertEqual(store.global_settings()['word_blacklist'],['слово отримувача'])
         self.assertEqual(author_rules.for_channel(self.target,self.youtube)['studio_word_blacklist'],['слово отримувача'])
+
+    def test_channel_archive_keeps_global_audience_policy_owned_by_the_receiving_studio(self):
+        raw=transfer.export_bundle(self.cid)
+        _,files=transfer.read_bundle(raw)
+        self.assertNotIn('studio_audience_policy',json.loads(files['channel/portable-rules.json'])['author'])
+        transfer.import_bundle(self.tid,raw,lambda cid:None)
+        with patch.object(author_rules.audience_policy,'text',return_value='Current receiving Studio audience policy'):
+            rules=author_rules.for_channel(self.target,self.youtube)
+        self.assertEqual(rules['studio_audience_policy'],'Current receiving Studio audience policy')
 
     def test_rejects_traversal_unknown_members_corruption_and_symlinks(self):
         raw = transfer.export_bundle(self.cid)

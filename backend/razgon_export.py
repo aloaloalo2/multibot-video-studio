@@ -173,6 +173,8 @@ def export_job(project: dict) -> dict | None:
             raise store.StudioError(f"Кадри Razgon ще не відрендерені, а студія не може їх зібрати: {reason}.", 409) from None
         return None
     spec["render"] = sum(1 for path in spec["clips"].values() if path is None)
+    import sound_settings
+    spec['sound_policy'] = {'sound': sound_settings.saved_for_project(project), 'animated': store.project_animated(project)}
     return spec
 
 

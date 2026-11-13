@@ -44,16 +44,34 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
                     scene_issues.append({"file": str(path.relative_to(razgon)), "missing": spec})
             for shot in frame_progress.taken(source):
                 owners.setdefault(shot, []).append(str(path))
+    selected=set(request.get('session_frames') or request.get('repair_frames') or [])
+    words = None
+    if selected:
+        import word_timing
+        needed = [f for f in frames if f['number'] in selected and f.get('sentence_timings')]
+        if needed:
+            import analysis_jobs
+            try:
+                job = analysis_jobs.latest(pid, lambda jid: store.read_json(store.DATA_ROOT/'jobs'/(jid+'.json'), {}) or {})
+                words = (job.get('report') or {}).get('aligned_words') or []
+            except (OSError, ValueError, KeyError, store.StudioError):
+                words = []
     rows = []
     for f in frames:
+        timed = []
+        if words and f["number"] in selected:
+            try:
+                timed = word_timing.frame_tokens(f,words)
+            except (ValueError, KeyError, TypeError):
+                pass
         takes = frame_progress.frame_takes(story.get('shots', []), f['start'], f['end'])
         rows.append({"number": f["number"], "start": f["start"], "end": f["end"], "format": f.get("format"),
                      "idea_preview": (f.get("visual") or f.get("scene") or "")[:100],
                      "text_preview": " ".join(f.get("sentences", []))[:100],
-                     "made": f["number"] in made, "takes": takes,
+                     "idea": f.get("visual") or f.get("scene") or "", "sentences": f.get("sentences", []),
+                     "made": f["number"] in made, "takes": takes, "timed_words":timed,
                      "missing_takes": [t for t in takes if not owners.get(t)],
                      "scene_files": sorted({str(Path(p).relative_to(razgon)) for t in takes for p in owners.get(t, [])})})
-    selected=set(request.get('session_frames') or request.get('repair_frames') or [])
     targets = sorted(selected) if selected else [r["number"] for r in rows if not r["made"]]
     if selected:
         context=set(selected)
@@ -61,6 +79,17 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
             if row['number'] in selected:
                 context.update(r['number'] for r in rows[max(0,i-1):i+2])
         rows=[{**r,'editable':r['number'] in selected} for r in rows if r['number'] in context]
+    sources = {"plan": str(store.project_plan_file(project) or store.project_dir(pid) / "imported-plan.json"),
+               "shots": str(razgon / "story/shots.json") if razgon else None}
+    if selected:
+        root = store.project_dir(pid)
+        artwork = Path(project["episode_path"]) / "кадри"
+        sources["work"] = str(root / 'work')
+        sources["artwork"] = str(artwork)
+        sources["existing_art"] = [str(p) for n in sorted(selected) for p in [artwork / f'кадр_{n:03d}.png'] if p.is_file()]
+        sources["props"] = sorted(p.name for p in (artwork/'асети').glob('*.png'))[:60]
+        sources["helpers"] = [str(p) for work in sorted(root.glob('work*')) if work.is_dir()
+                              for p in sorted(work.glob('*.py')) if p.stem in ('anim','assets','place','groups','split','common')][:16]
     return {"schema": 1, "project_id": pid, "request_id": request["id"],
             "mode": "batch" if request.get('session_frames') else "continue" if request.get("continuation_mode") == "handoff" else "repair" if repair else "build",
             "task_notes": str(request.get("task_notes") or "")[:4000],"repair_frames":sorted(selected) if request.get('repair_frames') else [],
@@ -68,8 +97,7 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
             "previous_summary": str(request.get("summary") or "")[-1200:],
             "plan_sha256": digest(plan.get("frames", [])),
             "script_sha256": plan.get("script_sha256"), "razgon_project": str(razgon) if razgon else None,
-            "sources": {"plan": str(store.project_plan_file(project) or store.project_dir(pid) / "imported-plan.json"),
-                        "shots": str(razgon / "story/shots.json") if razgon else None},
+            "sources": sources,
             "issues": issues, "scene_issues": scene_issues, "pending_frames": targets, "frames": rows,
             "batch_size": FRAME_BATCH_SIZE, "frame_batches": [targets[i:i + FRAME_BATCH_SIZE] for i in range(0, len(targets), FRAME_BATCH_SIZE)]}
 
@@ -91,6 +119,15 @@ def text(packet: dict) -> str:
     lines = [f"Проєкт {packet['project_id']}. Карта чинного монтажу, не окремий план.",
              f"Razgon: {packet.get('razgon_project') or 'немає'}", f"План: {packet['sources']['plan']}",
              "Повний зміст конкретних кадрів: tools/studio.py plan <id> --frames N-M."]
+    sources = packet['sources']
+    if sources.get('work'):
+        lines += ['Робочі скрипти цієї серії партій: '+sources['work'], 'Кадри випуску: '+sources['artwork']]
+        if sources['existing_art']:
+            lines.append('Вже збережені PNG для цих номерів: '+', '.join(sources['existing_art']))
+        if sources['props']:
+            lines.append('Готові PNG у кадри/асети: '+', '.join(sources['props']))
+        if sources['helpers']:
+            lines.append('Відомі допоміжні скрипти цього проєкту: '+', '.join(sources['helpers']))
     if packet.get("task_notes"):
         lines += ["Збережені побажання автора:", packet["task_notes"]]
     if packet.get('repair_frames'):
@@ -106,6 +143,11 @@ def text(packet: dict) -> str:
         missing = ",".join(f.get("missing_takes", [])) or "немає"
         lines.append(f"{f['number']:03d} {f['start']:.2f}-{f['end']:.2f} {state} {f['format']} "
                      + ",".join(f["takes"]) + " | " + ", ".join(f["scene_files"]) + " | відсутні дублі: " + missing)
+        if f.get('editable') or not (packet.get('session_frames') or packet.get('repair_frames')):
+            lines.append('Ідея: ' + f.get('idea', ''))
+            lines.append('Озвучка: ' + ' '.join(f.get('sentences', [])))
+            if f.get('timed_words'):
+                lines.append('Слова, секунди від початку кадру: ' + ' '.join(f'{word}@{at-f["start"]:.2f}' for word,at in f['timed_words']))
     lines.extend("УВАГА: " + issue for issue in packet["issues"])
     lines.extend(f"Відсутній імпорт: {v['file']} -> {v['missing']}" for v in packet.get("scene_issues", []))
     return "\n".join(lines) + "\n"
@@ -118,10 +160,9 @@ def instructions(summary: str, *, scoped=False, batch=False) -> str:
 Працюй послідовними пакетами по 5 кадрів. Код зберігай одразу, готові сцени та предмети використовуй повторно.
 Дописуй лише відсутні дублі з карти. Імпорти й допоміжні файли читай лише за потреби поточного пакета.
 Стабільні спільні бібліотеки зберігай. Нові допоміжні функції для наступної частини винось в окремий локальний модуль.
-Після пакета один раз запусти frame_review.py sheets --frames <номери пакета> --scale 0.3 і переглянь його аркуші.
-Для незмінених кадрів використовуй збережені вердикти; додавання асета не є приводом повторно оглядати весь ролик.
-Зміну спільного коду перевір у залежних кадрах. Кешована перевірка status має залишатися чесною.
-Перевір лише наявні сусідні стики. Відсутній майбутній дубль поза поточними кадрами не є браком готової частини.
+Кожен кадр збережи, щойно готовий. Заверши PNG, титри, акценти, рух і переходи партії перед візуальним схваленням.
+Команди для цієї партії вже в завданні. Studio та Razgon готують по три моменти кадру. Переглянь лише повернені аркуші.
+Для незмінених кадрів використовуй збережені вердикти. Додатковий момент бери для конкретного сумнівного руху чи стику.
 Не запускай загальні text-check, logic-check, speed-check або другий render --sheet поверх уже перевірених аркушів.
 Після збереження й перевірки всієї частини заверши сесію. Нову частину передасть студія.
 Не перечитуй увесь сценарій чи матеріали інших випусків. Помічників, фонових сесій і експорту не запускай.

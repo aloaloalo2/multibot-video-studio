@@ -13,8 +13,8 @@ class TrendTests(unittest.TestCase):
     def video(self, identity, age, views, duration=600):
         return dict(id=identity, published_ts=self.now-age*86400, views=views, duration=duration)
     def test_relative_performance_and_window(self):
-        peers=[self.video(str(i), i+3, (i+3)*100) for i in range(8)]
-        hit=self.video('hit',2,600)
+        peers=[self.video(str(i), i+3, (i+3)*1000) for i in range(8)]
+        hit=self.video('hit',2,6000)
         old=self.video('old',15,90000)
         future=self.video('future',-1,90000)
         result=trends.rank(peers+[hit,old,future], self.now)
@@ -24,17 +24,58 @@ class TrendTests(unittest.TestCase):
         peers=[self.video(str(i),5,500) for i in range(6)]
         self.assertEqual(trends.rank(peers+[self.video('short',2,90000,60)],self.now),[])
         self.assertEqual(trends.rank([self.video('alone',2,90000)], self.now),[])
-    def test_no_fixed_view_threshold(self):
+    def test_4000_views_is_inclusive_and_low_view_peers_still_define_baseline(self):
         peers=[self.video(str(i),5,50) for i in range(5)]
-        self.assertEqual(trends.rank(peers+[self.video('small',2,100)],self.now)[0]['id'],'small')
+        for views in (0,100,3999,4000,4001):
+            with self.subTest(views=views):
+                result=trends.rank(peers+[self.video('candidate',2,views)],self.now)
+                self.assertEqual([v['id'] for v in result],['candidate'] if views>=4000 else [])
+                if result:
+                    self.assertEqual(result[0]['sample_size'],5)
+                    self.assertEqual(result[0]['baseline_daily'],10)
+        strong=[self.video(str(i),5,50000) for i in range(5)]
+        self.assertEqual(trends.rank(strong+[self.video('weak-relative',2,4000)],self.now),[])
     def test_cached_aggregation_deduplicates_and_filters_removed(self):
         with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value={'channel':{'name':'C','for_channels':[{'id':'a','name':'A'},{'id':'b','name':'B'}]}}),patch.object(trends.time,'time',return_value=self.now):
-            videos=[self.video(str(i),5,500) for i in range(5)]+[self.video('hit',2,1000)]
+            videos=[self.video(str(i),5,500) for i in range(5)]+[self.video('hit',2,10000),self.video('below-minimum',2,3999)]
             store.atomic_json(trends.cache_path(),{'channel':{'name':'C','subscribers':None,'videos':videos,'updated_at':self.now},'removed':{'videos':videos}})
             result=trends.view()
             self.assertEqual(len(result['videos']),1)
             self.assertEqual(len(result['videos'][0]['for_channels']),2)
             self.assertFalse(result['needs_refresh'])
+
+    def test_exact_used_ids_disappear_without_altering_ranking_or_similar_titles(self):
+        linked={'channel':{'name':'C','for_channels':[{'id':'a','name':'A'},{'id':'b','name':'B'}]}}
+        videos=[self.video(str(i),5,500) for i in range(5)]+[
+            {**self.video('abcdefghijk',2,10000),'title':'The same title'},
+            {**self.video('abcdefghijZ',2,10000),'title':'The same title'}]
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value=linked),patch.object(trends.time,'time',return_value=self.now):
+            cache={'channel':{'name':'C','subscribers':None,'videos':videos,'updated_at':self.now}}
+            store.atomic_json(trends.cache_path(),cache)
+            before=trends.view()['videos']
+            self.assertEqual(len(before),2)
+            store.atomic_json(Path(tmp)/'trending-idea-requests/old-request.json',{'reference_id':'abcdefghijk','project_id':'deleted-project','title':'Previous title'})
+            result=trends.view()['videos']
+            self.assertEqual([v['id'] for v in result],['abcdefghijZ'])
+            self.assertEqual(result[0]['score'],next(v['score'] for v in before if v['id']=='abcdefghijZ'))
+            self.assertEqual(len(result[0]['for_channels']),2)
+            self.assertEqual(store.read_json(trends.cache_path()),cache)
+
+    def test_only_creation_receipts_consume_sources_and_refresh_skips_used_titles(self):
+        class InlineThread:
+            def __init__(self,target,**kwargs):self.target=target
+            def start(self):self.target()
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends.time,'time',return_value=self.now),patch.object(trends,'LAST_START',0),patch.object(trends,'RUNNING',False),patch.object(trends,'ERRORS',[]),patch.object(trends,'sources',return_value={'channel':{'name':'C'}}),patch.object(trends.threading,'Thread',InlineThread),patch.object(trends.trending_titles,'update') as translate:
+            root=Path(tmp)/'trending-idea-requests'
+            store.atomic_json(root/'used.json',{'reference_id':'abcdefghijk','project_id':'existing'})
+            store.atomic_json(root/'inspected.json',{'reference_id':'abcdefghijZ'})
+            store.atomic_json(root/'invalid.json',{'reference_id':'../invalid','project_id':'existing'})
+            (root/'corrupt.json').write_text('{')
+            self.assertEqual(trends.used_video_ids(),{'abcdefghijk'})
+            videos=[self.video(str(i),5,500) for i in range(5)]+[self.video('abcdefghijk',2,10000),self.video('abcdefghijZ',2,10000),self.video('below-minimum',2,3999)]
+            store.atomic_json(trends.cache_path(),{'channel':{'name':'C','subscribers':None,'videos':videos,'updated_at':self.now}})
+            trends.refresh()
+            self.assertEqual([v['id'] for v in translate.call_args.args[0]],['abcdefghijZ'])
     def test_refresh_preserves_cache_and_reports_partial_failure(self):
         class InlineThread:
             def __init__(self, target, **kwargs):self.target=target
@@ -44,12 +85,22 @@ class TrendTests(unittest.TestCase):
             cache={'fresh':{'updated_at':self.now,'videos':[]},'bad':{'updated_at':0,'videos':[]}}
             store.atomic_json(trends.cache_path(),cache)
             trends.refresh()
-            collect.assert_called_once_with('bad')
+            collect.assert_called_once_with('bad',cache['bad'])
             self.assertEqual(store.read_json(trends.cache_path()),cache)
             self.assertFalse(trends.RUNNING)
             self.assertIn('Bad',trends.ERRORS[0])
             self.assertNotIn('secret',trends.ERRORS[0])
             self.assertFalse(trends.refresh()['running'])
+
+    def test_fresh_partial_sources_can_retry_without_reloading_complete_sources(self):
+        class InlineThread:
+            def __init__(self,target,**kwargs):self.target=target
+            def start(self):self.target()
+        linked={key:{'name':key} for key in ('partial','complete')}
+        cache={key:{'updated_at':self.now,'videos':[],'failed_videos':int(key=='partial')} for key in linked}
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value=linked),patch.object(trends,'LAST_START',0),patch.object(trends,'RUNNING',False),patch.object(trends.time,'time',return_value=self.now),patch.object(trends.threading,'Thread',InlineThread),patch.object(trends,'collect',return_value={**cache['partial'],'failed_videos':0}) as collect,patch.object(trends.trending_titles,'update'):
+            store.atomic_json(trends.cache_path(),cache);trends.refresh()
+        collect.assert_called_once_with('partial',cache['partial'])
 
 
 class TrendHTTPTests(unittest.TestCase):

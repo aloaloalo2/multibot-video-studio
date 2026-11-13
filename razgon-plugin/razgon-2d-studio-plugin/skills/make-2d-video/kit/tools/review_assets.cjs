@@ -145,6 +145,24 @@ for (let pass = 0; pass < 8; pass++) {
   }});
   if (!changed) break;
 }
+// Scene modules are loaded for registration. A named helper that nobody imports
+// or calls cannot select a PNG. Keep the conservative path for open module graphs.
+const imported = new Set();
+let closed = modules.every(m => m.ast);
+for (const module of modules) if (module.ast) babel.traverse(module.ast, {
+  ImportDeclaration(p) {
+    for (const spec of p.node.specifiers) {
+      if (spec.type === 'ImportNamespaceSpecifier' && !p.node.source.value.startsWith('/engine/')) closed = false;
+      if (spec.imported) imported.add(spec.imported.name || spec.imported.value);
+    }
+  },
+  ExportAllDeclaration() { closed = false; },
+  ExportSpecifier(p) { imported.add(p.node.local.name || p.node.local.value); },
+  enter(p) {
+    if (p.node.type === 'ImportExpression' || p.node.type === 'Import' || p.node.type === 'ExportNamespaceSpecifier') closed = false;
+  },
+  ReferencedIdentifier(p) { if (['eval','Function'].includes(p.node.name)) closed = false; }
+});
 const output = {};
 for (const module of modules) {
   const names = new Set(), takes = new Set(), patterns = new Set();
@@ -153,6 +171,13 @@ for (const module of modules) {
   const loader = path.basename(module.path) === 'assets.js' && module.source.includes("fetch('/project/assets/index.json'") && module.source.includes('/project/assets/${name}.png');
   if (module.ast) babel.traverse(module.ast, {
     Program(p) { global = !p.get('body').every(pureTopLevel); },
+    FunctionDeclaration(p) {
+      const name = p.node.id?.name;
+      if (!closed || !name || !p.parentPath.isExportNamedDeclaration() || imported.has(name)) return;
+      const binding = p.parentPath.scope.getBinding(name);
+      // Babel includes the export declaration itself in referencePaths.
+      if (binding?.constant && binding.referencePaths.every(ref => ref.node === p.parentPath.node)) p.skip();
+    },
     StringLiteral(p) { names.add(p.node.value); },
     ReferencedIdentifier(p) {
       if (!apis.has(p.node.name)) return;

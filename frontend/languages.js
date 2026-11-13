@@ -102,7 +102,15 @@ function drawLangs(id){
 const langIcons={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',redo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',upload:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14"/></svg>',trash:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13"/></svg>',back:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>'};
 const micIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 const langWaveIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4"/></svg>';
-function langHasVoice(item){return !!(item.remote_voice_ids?.[item.provider] || item.own_voice || item.channel_voice || langData?.source?.voice);}
+function langRemoteVoice(item){
+  return (item.provider==='heygen' && item.narration?.heygen_voice_id) || item.remote_voice_ids?.[item.provider];
+}
+function langHasVoice(item){
+  if(langRemoteVoice(item))return true;
+  if(item.provider==='heygen' && langSpec(item).engine==='starfish')return false;
+  if(Object.values(item.remote_voice_ids || {}).some(Boolean))return false;
+  return !!(item.own_voice || item.channel_voice || langData?.source?.voice);
+}
 function langHeardWarn(example){return example?.heard===false?'<p class="lang-warn">Не вдалося розпізнати слова в прикладі. Для точнішого голосу запишіть або завантажте чіткіший запис без фонового шуму.</p>':'';}
 function langOwnBlock(item){
   const own=item.own_voice,shared=item.channel_voice,fromOriginal=!!langData?.source?.voice;
@@ -110,7 +118,7 @@ function langOwnBlock(item){
   // акценту на створенні аудіо»; «кнопки… просто значки»): its label, a compact player and icons
   const model=item.fish_model?'<i class="lang-model-mark" title="Збережена модель голосу у Fish: звучить чистіше, ніж швидкий клон">✓ модель</i>':'';
   const add=(again)=>`<button type="button" class="lang-icon lang-own-record" title="${again?'Записати заново':'Записати себе'}" aria-label="${again?'Записати заново':'Записати себе'}">${micIcon}</button><label class="lang-icon lang-own-file" role="button" tabindex="0" title="Завантажити приклад голосу" aria-label="Завантажити приклад голосу">${langIcons.upload}<input type="file" accept="audio/*,video/*" hidden></label>`;
-  if(item.remote_voice_ids?.[item.provider])return `<div class="lang-own has-voice"><span class="lang-own-label">Голос збережений у сервісі</span><details class="voice-lab-advanced"><summary>ID голосу</summary><code>${esc(item.remote_voice_ids[item.provider])}</code></details></div>`;
+  if(langRemoteVoice(item))return `<div class="lang-own has-voice"><span class="lang-own-label">Голос збережений у сервісі</span><details class="voice-lab-advanced"><summary>ID голосу</summary><code>${esc(langRemoteVoice(item))}</code></details></div>`;
   if(own)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора${model?`<small>${model}</small>`:''}</span><div class="lang-player" data-kind="own"></div>
     <div class="lang-own-actions"><button type="button" class="lang-icon lang-own-remove" title="Прибрати приклад" aria-label="Прибрати приклад">${langIcons.trash}</button></div>${langHeardWarn(own)}</div>`;
   if(shared)return `<div class="lang-own has-voice"><span class="lang-own-label">Голос диктора<small>з налаштувань каналу ${model}</small></span><div class="lang-player" data-kind="channel"></div>
@@ -186,14 +194,14 @@ function channelVoiceDefaults(settings){
   if(!settings)return '';
   return `<div class="channel-voice-defaults"><span class="channel-voice-defaults-label">Збережені налаштування ✓</span><div class="channel-voice-defaults-values"><span>Сервіс <strong>${esc(settings.provider_name)}</strong></span><span>Модель <strong>${esc(settings.engine_name)}</strong></span>${settings.style_name?`<span>Подача <strong>${esc(settings.style_name)}</strong></span>`:''}</div></div>`;
 }
-async function bindChannelVoices(channel){
+async function bindLegacyChannelVoices(channel,initial=null){
   const section=document.getElementById('channel-voices');if(!section)return;
   const base=`/api/channels/${encodeURIComponent(channel.id)}/voices`;
   const draw=data=>{
     if(!section.isConnected)return;
     section.querySelectorAll('audio').forEach(audio=>audio.pause());
     const have=new Set(data.voices.map(item=>item.code));
-    section.innerHTML=`<h3>Голоси для перекладу</h3><p>Ці голоси й налаштування автоматично використовуються в нових випусках. У кожному випуску їх можна змінити.</p>
+    section.innerHTML=`<h3>Голоси для перекладу</h3><p>Голоси застосовуються до випусків, де цю мову ще не озвучено.</p>
       ${channelVoiceDefaults(data.narration_defaults)}
       <div class="channel-voices-list">${data.voices.map(item=>`<div class="channel-voice" data-code="${item.code}"><span class="channel-voice-name">${langFlag(item.code)} ${esc(item.name)}</span><div class="lang-player"></div><button type="button" class="project-action delete channel-voice-remove" title="Прибрати приклад" aria-label="Прибрати приклад ${esc(item.name)}">×</button></div>`).join('') || '<p class="lang-off">Ще немає жодного прикладу.</p>'}</div>
       <div class="channel-voice-add"><select aria-label="Мова прикладу"><option value="">Мова прикладу…</option>${data.languages.filter(item=>!have.has(item.code)).map(item=>`<option value="${item.code}">${langFlags[item.code] || ''} ${esc(item.name)} · ${esc(item.label)}</option>`).join('')}</select>
@@ -209,7 +217,7 @@ async function bindChannelVoices(channel){
     record.addEventListener('click',()=>langRecord(record,section,send));
     file.addEventListener('change',()=>{const chosen=file.files[0];if(chosen&&pick.value)send(chosen,chosen.name);});
   };
-  try{draw(await api(base));}catch(error){section.innerHTML=`<h3>Голоси для перекладу</h3><p>${esc(error.message)}</p>`;}
+  try{draw(initial||await api(base));}catch(error){section.innerHTML=`<h3>Голоси для перекладу</h3><p>${esc(error.message)}</p>`;}
 }
 
 // The episode's own voice on top, to compare with (user, 2 November 2026: «має бути ще один блок оригінал… аудіо
@@ -279,12 +287,15 @@ function langNumberComparison(item){
   return `Лише літери, з урахуванням чисел: ${percent}% · оригінал ${number(value.source_chars)} · переклад ${number(value.translated_chars)} літер${limit?` · межа ±${limit}%`:''}`;
 }
 
+function langModelField(provider){
+  return {elevenlabs:'eleven_engine',fishaudio:'fish_engine',heygen:'heygen_model'}[provider];
+}
 function langSpec(item){
   const choices=item?.narration || {},provider=item?.provider || langData.provider;
   const base=langData.providers.find(entry=>entry.id===provider) || langData.providers[0];
-  const engine=choices[provider==='elevenlabs'?'eleven_engine':'fish_engine'] || base.engine;
+  const engine=choices[langModelField(provider)] || base.engine;
   const style=choices.fish_styles?.[engine] || choices.fish_style || base.style;
-  return {...base,engine,style,free:provider==='fishaudio'&&(base.engines||[]).some(entry=>entry.id===engine&&entry.per_char===0)};
+  return {...base,engine,style,free:provider!=='elevenlabs'&&(base.engines||[]).some(entry=>entry.id===engine&&entry.per_char===0)};
 }
 
 let langVoiceDialog=null;
@@ -295,7 +306,7 @@ function langVoiceSummary(id,item){
   card.innerHTML=`<button type="button" class="lang-voice-open" aria-label="Налаштування голосу: ${esc(item.name)}" title="Змінити голос і налаштування">
     <strong>${micIcon}<span>Голос диктора</span></strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>
     <span>${esc(spec.name)}<small>${esc(engine?.name||spec.engine)}${spec.styles?' · '+esc(spec.styles.find(style=>style.id===spec.style)?.name||''):''}</small></span></button>
-    ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${item.remote_voice_ids?.[item.provider]?'Голос збережений у сервісі':langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
+    ${kind?`<div class="lang-summary-player lang-own has-voice"><div class="lang-player" data-kind="${kind}"></div></div>`:`<span class="lang-summary-source">${langRemoteVoice(item)?'Голос збережений у сервісі':langData.source?.voice?'Голос з оригіналу':'Додайте аудіо'}</span>`}`;
   card.querySelector('.lang-voice-open').onclick=()=>langOpenVoiceSettings(id,item.code);
   langWirePlayers(id,card,item);
   return card;
@@ -330,14 +341,14 @@ function langOpenVoiceSettings(id,code){
 }
 
 async function langChangeVoiceSetting(id,event){
-    const select=event.target.closest('.lang-chip-select select[data-field], .lang-engine select[data-field]');if(!select)return;
+    const select=event.target.closest('.lang-chip-select select[data-field], .lang-engine select[data-field], .lang-chip-select input[data-field]');if(!select)return;
     const field=select.dataset.field || 'engine';
     const code=select.closest('.lang-voice-setup')?.dataset.code;
     const entry=langData.items.find(item=>item.code===code);if(!entry)return;
     const controls=select.closest('.lang-voice-setup');controls.dataset.saving='1';showLangJob();
     try{
       const data=await api(`/api/projects/${encodeURIComponent(id)}/languages/provider`,'POST',
-        {code,provider:langSpec(entry).id,[field]:select.value});
+        {code,provider:langSpec(entry).id,[field]:select.value.trim()});
       if(state.project?.id===id){langData=data;drawLangs(id);}
     }catch(error){langNote(controls,error.message,true);}
     finally{delete controls.dataset.saving;showLangJob();}
@@ -351,6 +362,7 @@ function langVoiceSetup(id,item){
   card.innerHTML=`<div class="lang-voice-panel lang-reference-panel">${langOwnBlock(item)}</div>
         <div class="lang-voice-panel lang-voice-bar"><span class="lang-panel-title">Налаштування озвучення</span><label class="lang-chip-select" title="Сервіс озвучення"><span>Сервіс</span><select data-field="provider">${langData.providers.map(service=>`<option value="${service.id}"${service.id===spec.id?' selected':''}>${esc(service.name)}</option>`).join('')}</select></label>
           ${spec.engines?`<label class="lang-chip-select" title="Модель ${esc(spec.name)}"><span>Рушій</span><select data-field="engine">${spec.engines.map(engine=>`<option value="${engine.id}"${engine.id===spec.engine?' selected':''}>${esc(engine.name)}${spec.id!=='elevenlabs'&&engine.note?' · '+esc(engine.note):''}</option>`).join('')}</select></label>`:''}
+          ${spec.id==='heygen'?`<label class="lang-chip-select"><span>ID голосу</span><input data-field="voice_id" maxlength="128" aria-label="ID голосу HeyGen" value="${esc(item.narration?.heygen_voice_id || '')}" placeholder="${esc(item.remote_voice_ids?.heygen || (spec.engine==='starfish'?'ID голосу Starfish':'Автоматично з прикладу'))}"></label>`:''}
           ${spec.styles?`<label class="lang-chip-select" title="Варіативність подачі голосу. Кожен рушій зберігає свій вибір."><span>Подача</span><select data-field="style">${spec.styles.map(style=>`<option value="${style.id}"${style.id===spec.style?' selected':''}>${esc(style.name)}</option>`).join('')}</select></label>`:''}
           ${item.text&&(!readyVoice||langSamplePreview.has(`${id}:${item.code}`))?`<div class="lang-inline-sample">
             <button type="button" class="lang-sample-run lang-sample-round" title="${hasSample?'Відтворити готовий зразок безкоштовно':'Зразок: оберіть кількість речень'}" aria-label="Послухати зразок"${hasSample?'':' aria-haspopup="menu" aria-expanded="false"'}${langHasVoice(item)?'':' data-blocked="1" disabled'}>${playIcon}</button>
@@ -662,7 +674,8 @@ async function langStart(id,kind,code,extra={}){
   const thumbnailKey=`${id}:${code}`;
   if(kind==='thumbnail'){langThumbnailPending.add(thumbnailKey);langThumbnailDialog?.dialog.close();showLangJob();}
   try{
-    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',{provider:langSpec(langData.items.find(item=>item.code===code)).id,...extra});
+    const payload=(kind==='sample'||kind==='voice')?{...extra,expected_provider:langSpec(langData.items.find(item=>item.code===code)).id}:extra;
+    const {job}=await api(`/api/projects/${encodeURIComponent(id)}/languages/${code}/${kind}`,'POST',payload);
     if(state.project?.id!==id)return;
     if(kind==='voice'){langSamplePreview.delete(`${id}:${code}`);const sample=document.querySelector(`#project-langs .lang-voice-setup[data-code="${code}"] .lang-inline-sample`);sample?.querySelectorAll('audio').forEach(audio=>audio.pause());}
     if(kind==='sample')langSamplePreview.add(`${id}:${code}`);

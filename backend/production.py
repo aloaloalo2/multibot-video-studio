@@ -29,9 +29,10 @@ import razgon_sound
 import store
 import job_timing
 import production_quality
+import montage_context
 
 TIMEOUT = 6 * 3600
-# Frame creation and direction both use high effort (user choice, 5 November 2026).
+# New frame runs use the author-selected channel effort; high is only the CLI fallback.
 EFFORT = "high"
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
@@ -107,15 +108,16 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
-Спершу прочитай правила: {root / 'AGENTS.md'}, {episode.parent / 'AGENTS.md'} і навики Razgon
-(«{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills»: make-2d-video, render-video). Великі документи самої
-студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: це зайві токени, а все потрібне для кадрів є тут і в навиках. python3 "{store.app_rel()}/tools/episode.py" "{rel}" показує, де випуск.
+Правила монтажу цього каналу наведені нижче. Читай лише потрібні розділи Razgon
+«{store.app_rel()}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/references/engine-api.md»
+та style-bible.md. Етапи встановлення, написання сценарію, режисури та повного рендеру вже поза цим завданням.
+Повні AGENTS.md, CLAUDE.md, архіви й сценарії інших випусків не читай.
 
 Зона логотипа, яку треба залишити вільною від тексту й важливих об’єктів: {channel_branding.reserved_zone(project)}.
 Логотип і плашку каналу додає сама студія. Не малюй їх у сценах, не імпортуй копій і не додавай окремих шарів оформлення каналу.
 Якщо зона задана, розташовуй заголовки, підписи, стрілки й ключові об’єкти поза нею у всіх кадрах, включно з Razgon.
 На перевірці початку, середини й кінця кадру враховуй накладений логотип. Якщо він перекриває зміст, змісти зміст; логотип не пересувай.
-{remarks}Твоє завдання: крок 7 правил каналу для цих кадрів.
+{remarks}Твоє завдання: реалізувати поточні кадри за наведеними нижче правилами.
 Кадри, сцени яких уже написані, не переробляй, якщо автор не просить правок саме до них.
 Звук фільму (music, sfx і amb у story/shots.json) розставив режисер: не видаляй і не переписуй його. Музику й ефекти на таймлайн студія
 кладе сама після твоєї роботи, без рендеру.
@@ -127,8 +129,9 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
 3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
-   Переглянь аркуші й познач результат через mark; direction_check.py без FAIL. Один набір аркушів для перевірки композиції й логіки.
+   Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots, потім переглянь аркуші партії й познач результат через mark.
 {motion_direction.EXECUTION}
+{motion_direction.ACCENTS}
 {QUALITY.replace("<студія>", store.app_rel())}
 4. python3 "{store.app_rel()}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
@@ -142,7 +145,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 Не роби фінальний MP4 і нічого не публікуй. Збережи режисуру й стиль. Кадри поза переліком {scope} не змінюй. Експорт запускає автор.
 Автор бачить твої дії наживо: поле description кожної команди пиши коротко українською, наприклад «Готую стоп-кадри 1–3 для перевірки».
 Працюй із короткою картою кадрів студії. Помічників не запускай.
-Наприкінці коротко напиши українською: які кадри готові, які предмети додано, що лишилося або не вдалося."""
+Для наступної партії залиш номери кадрів, шляхи до створених асетів і допоміжних скриптів та відкриті питання."""
 
 
 # How people look in a channel's pictures: «Люди в кадрах» (`people_style` in saved channel settings). Stick figures are the
@@ -198,16 +201,6 @@ def people_rules(project: dict) -> dict:
     return {"rule": PEOPLE, "stock": "без живих людей", "check": "люди лише стикмени"}
 
 
-# What the «Акценти на кадрах» setting asks of any agent, on any Mac: the rules live here, not in a conversation
-# (user, 6 November 2026: «щоб ця галочка сама по собі інформацію давала… на іншому комп'ютері… щоб там теж так було»).
-ACCENT_RULES = """Це творче монтажне рішення режисера для конкретного каналу. Враховуй його стиль, пам’ять автора, задум кадру й ритм мовлення.
-- Обирай доречну форму: простий текст, плашка, важлива теза, ім’я, назва, число, стрілка, коло, підкреслення або стильний візуальний ефект. Чергуй подачу за змістом.
-- Частоту, тривалість, появу й рух визначай сам. Фіксованої квоти кадрів або текстових акцентів немає. Підкреслюй те, що допомагає глядачу зрозуміти думку.
-- Насамперед опрацьовуй створені й додані зображення; у відео додавай акцент, коли він доречний. Готову анімацію доповнюй лише за потреби, зберігаючи її композицію.
-- Синхронізуй появу зі словами диктора. Текст короткий, природний і достовірний, важливі імена та назви дозволені. Зберігай головний об’єкт, читабельність і вільне місце для логотипа.
-- Стандартні стрілки, кола й підписи створюй через accent; плашки, іншу графіку та ефекти через звичайні інструменти монтажу й анімації студії. Усі елементи мають бути видимими в перегляді й експорті."""
-
-
 def accents_step(project: dict, tools: str) -> str:
     """What the channel's settings say about accents (an arrow, a ring or a caption over a picture, «Акценти на кадрах»)."""
     try:
@@ -216,12 +209,12 @@ def accents_step(project: dict, tools: str) -> str:
         settings = {}
     if not settings.get("accents"):
         return ("6. Акцентів (стрілок, кіл, підписів поверх фото) не додавай: у налаштуваннях каналу вони вимкнені.")
-    return f"""6. Обов’язковий крок: акценти увімкнені в налаштуваннях каналу.
-   Пройди фото (спершу згенеровані, потім стокові) і там, де акцент допомагає зрозуміти сказане, додай його. Не за квотою «кожен третій кадр»: за змістом озвучки.
-{ACCENT_RULES}
-   Спершу подивись стоп-кадр (python3 "{tools}/studio.py" still {project['id']} fN), щоб узяти точки, потім
-   python3 "{tools}/studio.py" accent {project['id']} N arrow --from x,y --to x,y --word слово (або circle --at x,y --radii rx,ry, text --phrase "слова голосу" --at x,y).
-   Перевір стоп-кадром кінця кадру (fN:end), що акцент на місці. У підсумку назви кадри з акцентами."""
+    return f"""Акценти увімкнені. Реалізуй задум із плану там, де його потребує кадр.
+{motion_direction.ACCENTS}
+   У команді python3 "{tools}/studio.py" accent {project['id']} N KIND явно передай обраний --color, для графіки вкажи --motion, для тексту --style і --entrance.
+   Для контуру circle є --line dashed, для стрілки arrow є --motion animated (два рухи до цілі); still і fade дають спокійну появу.
+   Для підпису text доступні --style plain або card, --card-color і --card-opacity від 0 до 1. Власну графіку можна поставити через image або редаговані шари.
+   Перевір результат на фінальному аркуші партії разом із рештою шарів."""
 
 
 def mixed_assets_step(project: dict) -> str:
@@ -257,6 +250,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     numbers = request.get('session_frames') or list(range(1, request['frames'] + 1))
     scope = f'{numbers[0]}-{numbers[-1]}' if numbers == list(range(numbers[0], numbers[-1] + 1)) else ','.join(map(str,numbers))
     summary_scope = f'{numbers[0]}-{numbers[-1]}'
+    transition_scope = ' --frames ' + ','.join(map(str,numbers)) if request.get('session_frames') else ''
     text_target = 'N --text' if request.get('session_frames') else 'all-text'
     razgon_scope = ' --frames ' + ','.join(map(str,numbers)) if request.get('session_frames') else ''
     remarks = (f"Автор подивився кадри {scope} і просить виправити:\n{notes.strip()}\n\n"
@@ -270,9 +264,8 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
 
-Спершу прочитай правила каналу {episode.parent / 'AGENTS.md'} (і {root / 'AGENTS.md'}, якщо він є): там стиль і що в якому форматі.
-Великі документи студії (її AGENTS.md, CLAUDE.md, docs/) і сценарії інших випусків не читай: усе потрібне для цієї роботи нижче.
-План кадрів по рядку на кадр (час, формат, ідея режисера, слова, ✓ зроблено): python3 "{tools}/studio.py" plan {project['id']} --frames {scope} --todo
+Правила монтажу цього каналу наведені нижче. Повні AGENTS.md, CLAUDE.md, архіви й сценарії інших випусків не читай.
+Карта передачі вже містить задум, слова й таймінги. Якщо рядок відсутній: python3 "{tools}/studio.py" plan {project['id']} --frames {scope} --todo
 Що вже стоїть на таймлайні і які проблеми: python3 "{tools}/studio.py" summary {project['id']} --frames {summary_scope} --issues.
 Правила студії, які легко порушити: кожен кадр стоїть у свій час плану (place робить це сам); озвучку й плашку каналу не чіпай;
 у кадрі одна головна картинка чи відео; стокове відео не коротше за кадр (place перевіряє); експорт запускає тільки автор.
@@ -286,7 +279,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 {motion_direction.EXECUTION}
 Пріоритет автора для створених зображень Codex: {director.channel_settings(project).get('generated_image_style') or 'Стиль за змістом кадру'}.
 Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
-1. Картинки автора першими: якщо автор сам поклав картинки чи відео в папку випуску (find "{rel}" -maxdepth 2 -type f),
+1. Спочатку перевір перелік готових PNG та шляхів у карті. Якщо автор додав картинки чи відео в папку випуску,
    а вони пасують до кадру, бери їх.
 2. Стокові фото й відео (формати stock_photo, stock_video): python3 "{tools}/studio.py" stock {project['id']} N "англійські слова" [--video]
    складає аркуш пронумерованих варіантів Pixabay для кадру N; подивись його (Read) і вибери за змістом слів кадру, {people['stock']},
@@ -296,8 +289,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Це може бути фото, інфографіка, схема, рентген, ілюстрація чи будь-який інший доречний стиль. Вибирай стиль за змістом кадру. Через термінал:
    промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
    Фото малюй по чотири на одному аркуші 2×2 (кадри однієї орієнтації разом, білі проміжки між ними) і ріж аркуш скриптом на
-   чотири файли без білих ліній по краях, як у «Алексей Горбунов/23 Овощи и печень/Фото кадров/run.py»: це вчетверо менше генерацій.
-   Кожне вирізане фото перевір окремо; одиночне фото малюй тільки для останніх кадрів, коли до четвірки не вистачає.
+   чотири файли без білих ліній по краях. Переглянь краї кожного фото на спільному аркуші готових кадрів; одиночне фото малюй тільки для останніх кадрів, коли до четвірки не вистачає.
    {people['rule']}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
@@ -321,12 +313,12 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> --motion zoom_in|zoom_out|pan_left|pan_right|none.
    Без --motion картинка лишається нерухомою. Пресет застосовуй лише коли він відповідає постановці цього кадру;
    власний напрямок, масштаб, час і рух окремих елементів задавай явно через keyframes API.
-5. Перевірка: python3 "{tools}/studio.py" summary {project['id']} --frames {summary_scope} --issues без проблем, і стоп-кадр
-   кожного кадру (python3 "{tools}/studio.py" still {project['id']} fN --small: половинний розмір, учетверо дешевший на
-   перегляд; повний розмір лише коли береш координати для акценту) ти переглядаєш очима: картинка відповідає словам кадру,
-   {people['check']}, нічого не обрізано, текст читається. Кадр із вадою виправ (replace) і перевір ще раз.
+5. Заверши композицію партії з п’яти кадрів: розстав PNG, титри, рух, акценти й переходи. Для звичайних кадрів
+   Studio виконай команду review з карти. Вона збирає три моменти кожного кадру в один локальний аркуш.
+   Відкрий аркуш один раз: зображення відповідає озвучці, {people['check']}, краї чисті, текст і акценти читаються.
+   Схвали надрукованою командою. Якщо є дефект, виправ кадр і відкрий актуальний аркуш для зміненого кадру.
 {accents_step(project, tools)}
-7. Переходи: коли всі кадри запиту стоять, python3 "{tools}/studio.py" transitions {project['id']} --share 0.7 ставить оформлені
+7. Переходи: щойно кадри партії стоять, до її візуального огляду, python3 "{tools}/studio.py" transitions {project['id']}{transition_scope} --share 0.7 ставить оформлені
    переходи приблизно на 70% стиків за правилами каналу (у текстовий кадр зрізом, без двох однакових переходів, крім розчинення, поспіль).
    Текстові кадри place … {text_target} сам оформлює: розмитий фон із картинки випуску, тон підкладки, поява слів у такт голосу.
 
@@ -351,10 +343,12 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
 
 def repair_brief(project: dict, request: dict, notes: str) -> str:
     frames=', '.join(map(str,request['repair_frames']))
+    accents = motion_direction.ACCENTS if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
     return f"""Ти режисер, який вносить авторські правки у готовий ролик VideoKey Studio.
 Проєкт {project['id']}: {project['name']}. Правки ЛИШЕ до кадрів: {frames}.
 Побажання автора:
 {notes}
+{accents}
 Прочитай коротку карту production-context.txt. Вона містить вибрані кадри, їхні сцени та сусідів для контексту.
 Зміни лише вибрані кадри. Інші кадри, їхні таймінги, озвучку, музику, логотип і монтаж збережи.
 Не перебудовуй весь ролик і не запускай початкову генерацію кадрів. Використовуй наявні сцени та предмети.
@@ -388,9 +382,12 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 existing = set(store.made_frames(project, store.load_project_plan(pid)))
                 pending = set(request.get('review_frames', [])) if request.get('quality_version') == 1 else set()
                 review_frames = sorted(pending | (set(range(1, int(request['frames']) + 1)) - existing))
-            request.update(quality_version=1, review_frames=review_frames)
+            native_review_frames = request.get('native_review_frames', []) if request.get('continuation_mode') == 'handoff' else []
+            if not store.project_animated(project):
+                native_review_frames = sorted(set(native_review_frames) | set(review_frames))
+            request.update(quality_version=1, review_frames=review_frames, native_review_frames=native_review_frames)
             set_request(pid, status="in_progress", started_at=started, model=model, effort=effort, error=None,
-                        limit=False, paused=False, quality_version=1, review_frames=review_frames)
+                        limit=False, paused=False, quality_version=1, review_frames=review_frames, native_review_frames=native_review_frames)
         # Every continuation gets a fresh session and a compact disk checkpoint.
         # A cold resume after quota reset must not reload the entire old history.
         signature = production_context.digest({'request':request['id'],'script':request.get('script_sha256'),'frames':(store.load_project_plan(pid) or {}).get('frames',[]),'repair':request.get('repair_frames'),'wishes':request.get('task_notes',request.get('notes',''))})
@@ -419,7 +416,8 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                     scoped.update(start=min(f['start'] for f in selected),end=max(f['end'] for f in selected))
             if numbers and scoped.get('repair_frames'):scoped['repair_frames']=numbers
             text = repair_brief(current,scoped,notes) if scoped.get('repair_frames') else brief(current, scoped, notes) if store.project_animated(current) else photo_brief(current, scoped, notes)
-            text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames') or numbers)) + director.animation_style(current) + director.channel_memory(current)
+            text += montage_context.rules(current, production=True) + montage_context.commands(current, numbers, repair=bool(scoped.get('repair_frames')))
+            text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames'))) + director.animation_style(current) + director.channel_memory(current)
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
             text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')),
                 batch=bool(numbers) and not scoped.get('repair_frames'))+production_quality.INSTRUCTIONS
@@ -431,7 +429,24 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             if remaining <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
             return director.claude(cli,text,session_log,director.activity_path(pid,'production'),max(1,int(remaining)),resume=None,effort=effort,model=model)
         previous=request.get('session_checkpoint') or {}
-        if previous.get('signature') != signature or request.get('continuation_mode') != 'handoff':previous={}
+        if previous.get('signature') != signature or request.get('continuation_mode') != 'handoff':
+            previous = {}
+        # A pause can occur after the first five were approved, before the ten-frame
+        # session returned. Only a real visual receipt can recover that partial batch.
+        if request.get('continuation_mode') == 'handoff' and not request.get('repair_frames') and not request.get('task_notes'):
+            import native_review
+            current = store.load_project(pid)
+            plan = store.load_project_plan(pid) or {}
+            made = set(store.made_frames(current, plan))
+            pending = made.intersection(request.get('review_frames') or [])
+            razgon = [f['number'] for f in plan.get('frames',[]) if f['number'] in pending and f.get('format') == 'razgon_2d']
+            recovered = production_quality.approved_razgon(current,razgon)
+            numbers = made.intersection(request.get('native_review_frames') or [])
+            candidates = [f for f in plan.get('frames',[]) if f['number'] in numbers and f.get('format') != 'razgon_2d']
+            if candidates and native_review.folder(current).is_dir():
+                recovered.update({f['number'] for f in candidates} - set(native_review.missing(current,candidates)))
+            if recovered:
+                previous = {**previous,'completed_frames':sorted(recovered | set(previous.get('completed_frames') or []))}
         code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous)
         if last_review and not last_review['passed']:
             fields['quality'] = last_review

@@ -131,8 +131,9 @@ class RazgonSoundTest(unittest.TestCase):
 
     def test_the_briefs_ask_for_the_sound_cues_and_keep_them(self):
         text = director.razgon_brief(self.project)
-        for part in ("gen_sound.py", '"t": 81.4', "15–25", "0,3 с", '"amb"', 'old.get("sfx", [])', "old_amb", "sound-design.md",
-                     "push для цього не потрібен"):
+        for part in ('tools/direction.py" prepare', 'story/direction.json',
+                     'Повний перелік SFX', 'tools/direction.py" apply',
+                     'всі поля, слова й час подій', 'Не додавай по одному'):
             self.assertIn(part, text)
         self.assertEqual(director.describe("Bash", {"command": "python3 story/gen_sound.py"}),
                          ("opus", "Розставляє звукові ефекти й атмосферу"))

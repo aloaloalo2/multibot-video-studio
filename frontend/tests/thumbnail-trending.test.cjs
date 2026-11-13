@@ -8,15 +8,19 @@ const open=source.slice(source.indexOf('function thumbnailWriterOptions('),sourc
 const generation="const thumbnailCreatePending=new Set();if(typeof thumbnailRuns==='undefined')globalThis.thumbnailRuns=new Map();if(typeof thumbnailBusy==='undefined')globalThis.thumbnailBusy=id=>thumbnailRuns.get(id)?.status==='running';if(typeof showThumbnailState==='undefined')globalThis.showThumbnailState=()=>{};\n"+source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
 test('one create action uses the remembered writer while preserving each project wishes',async()=>{
-  let actions,heading,html,choice;const calls=[],preferences=new Map();
+  let actions,heading,html,choice;const calls=[],preferences=new Map([['videokey-ui:thumbnail-writer:c','deepseek']]);
   const saved={p:{status:'done',wishes:'Акцент на проблемі.\nБез зайвих елементів.'},other:{status:'failed',wishes:'Інше побажання'}};
   const button={dataset:{},classList:{add(){}},querySelector:()=>({})},footer={append(){},prepend(){},querySelector:()=>button};
   const c=vm.createContext({state:{},api:async url=>({title:'¿Qué pasaría?',script:'Texto español.',job:saved[url.split('/')[3]]}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
     thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?footer:{value:'Make the face large',dataset:{},classList:{add(){}}},esc:s=>s,
     document:{createElement:()=>({append(){}}),querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
-    StudioUI:{preference:(key,allowed,fallback)=>preferences.get(key)||fallback,remember:(key,value)=>preferences.set(key,value),choice:(root,options)=>{choice=options;}},
+    localStorage:{getItem:key=>preferences.get(key),setItem:(key,value)=>preferences.set(key,value)},captureChoice:(root,options)=>{choice=options;},
     generateThumbnail:(...args)=>calls.push(args),status(){}});
+  const ui=vm.runInContext(fs.readFileSync(path.join(__dirname,'..','ui-controls.js'),'utf8')+'\nStudioUI;',vm.createContext({localStorage:c.localStorage}));
+  c.StudioUI={...ui,choice:c.captureChoice};
   vm.runInContext(open,c);await c.openThumbnail({id:'p',channel_id:'c'});
+  assert.deepEqual(Array.from(choice.items,item=>item.label),['Codex','Claude']);
+  assert.equal(choice.value,'claude');
   assert.equal(heading,'Нове прев’ю');assert.equal(actions.length,1);assert.equal(actions[0].label,'Створити');assert.equal(actions[0].primary,true);
   const wishes=()=>html.match(/id="thumb-create-wishes"[^>]*>([\s\S]*?)<\/textarea>/)[1];
   assert.equal(wishes(),saved.p.wishes);choice.onChange('trending');actions[0].run();

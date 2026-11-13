@@ -116,7 +116,7 @@ def sheets(proj: Path, root: Path, a) -> None:
     want = pick(a.frames, len(frames)) if a.frames else {f["n"] for f in frames}
     state_path = proj / "build" / "review" / "review.json"
     state = load_state(state_path)
-    sources = fingerprints(proj, root, frames)
+    sources = fingerprints(proj, root, [f for f in frames if f["n"] in want])
     keep = state_path.parent / "frames"
     times_by_frame = {}
     for f in frames:
@@ -231,6 +231,8 @@ def mark(proj: Path, a) -> None:
         entry = state["frames"].get(str(n))
         if not entry:
             sys.exit(f"Frame {n} has no stills yet: run `sheets` for it first")
+        if a.verdict == 'ok' and entry.get('errors'):
+            sys.exit(f'Frame {n} has a render error: fix it before marking it ok')
         if entry.get('source') != sources[n] or not entry.get('times') or not all((state_path.parent/'frames'/f'{t:.2f}.png').is_file() for t in entry['times']):
             sys.exit(f'Frame {n} changed or has missing stills: run `sheets` before marking it')
     for n in sorted(wanted):
@@ -240,7 +242,7 @@ def mark(proj: Path, a) -> None:
     print(f"Marked {a.frames} {a.verdict}" + (f": {a.note}" if a.note else ""))
 
 
-def status(proj: Path, selected: str = "") -> int:
+def status(proj: Path, selected: str = "", *, as_json=False) -> int:
     state = load_state(proj / "build" / "review" / "review.json")
     units = frames_of(proj)
     available = {f["n"] for f in units}
@@ -262,6 +264,11 @@ def status(proj: Path, selected: str = "") -> int:
     errors = sorted({error for entry in frames.values() for error in entry.get("errors", [])})
     if not selected: errors = sorted(set(errors) | set(state.get("errors") or []))
     missing = [f["n"] for f in units if not frames[str(f["n"])].get("times") or not all((proj / "build/review/frames" / f"{t:.2f}.png").is_file() for t in frames[str(f["n"])].get("times", []))]
+    if as_json:
+        approved = [n for n in sorted(wanted) if frames[str(n)].get('verdict') == 'ok'
+                    and not frames[str(n)].get('errors') and n not in stale and n not in missing]
+        print(json.dumps({'approved':approved}))
+        return 0 if len(approved) == total and total else 1
     ok = total - len(bugs) - len(unseen)
     print(f"Frames reviewed ok: {ok}/{total}")
     for n, note in sorted(bugs, key=lambda x: int(x[0])):
@@ -283,7 +290,9 @@ def main() -> None:
     s = sub.add_parser("sheets"); s.add_argument("--frames", default=""); s.add_argument("--scale", type=float, default=0.34)
     s.add_argument("--all", action="store_true", help="force new stills even when source content is unchanged")
     m = sub.add_parser("mark"); m.add_argument("frames"); m.add_argument("verdict", choices=["ok", "bug"]); m.add_argument("note", nargs="?", default="")
-    sub.add_parser("status").add_argument("--frames", default="")
+    st = sub.add_parser("status")
+    st.add_argument("--frames", default="")
+    st.add_argument("--json", action="store_true")
     a = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     proj = (root / a.project).resolve() if not Path(a.project).is_absolute() else Path(a.project)
@@ -292,7 +301,7 @@ def main() -> None:
     elif a.cmd == "mark":
         mark(proj, a)
     else:
-        sys.exit(status(proj, a.frames))
+        sys.exit(status(proj, a.frames, as_json=a.json))
 
 
 if __name__ == "__main__":

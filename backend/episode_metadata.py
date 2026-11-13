@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 import store
+import audience_policy
 
 
 PROMPT = '''Also write publication metadata in the channel language, using the finished script.
@@ -18,6 +19,10 @@ For health topics add a brief note about individual professional consultation. N
 links, sources, hashtags, timestamps or SEO lists. tags: exactly 3 distinct relevant strings.
 These metadata requirements override older metadata instructions in the reference material.
 Keep metadata entirely separate from the ready-to-speak script.'''
+
+
+def prompt():
+    return PROMPT + '\nCURRENT STUDIO AUDIENCE POLICY:\n' + audience_policy.text()
 
 
 def path(project):
@@ -90,10 +95,10 @@ def save_generated(project, value, script, complete):
     try:
         value = validate(value, project['name'])
     except ValueError as error:
-        prompt = (PROMPT + '\nReturn only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}. '
+        brief = (prompt() + '\nReturn only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}. '
                   'Do not rewrite the script. The selected title is authoritative.\n'
                   + json.dumps({'channel':project.get('channel_name',''), 'selected_title':project['name'],
                                             'topic_excerpt':script[:800], 'validation_error':str(error)}, ensure_ascii=False))
-        result = complete(prompt)
+        result = complete(brief)
         return save(project, result.get('metadata'), script)
     return save(project, value, script)

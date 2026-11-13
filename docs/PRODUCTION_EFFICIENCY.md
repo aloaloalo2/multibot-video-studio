@@ -1,5 +1,13 @@
 # Створення ролика з коротким контекстом
 
+## Короткий режисерський контракт
+
+`tools/direction.py prepare P` готує один `director-context.txt`: поточна озвучка з межами речень, точна схема, переходи, музичні настрої та дозволений звук. Режисер за змістом створює `story/direction.json` з діапазонами речень, епізодами, композицією, камерою та всіма звуковими подіями. `apply P FILE` прив'язує вибрані слова до таймінгів, формує чинні shots/beats/bible, виконує перевірку на тимчасовій копії й імпортує план звичайним мостом. Перевірка не малює кадрів і не звертається до платних моделей. `--dry-run` зберігає проєкт без змін. `words P --sentence N` показує лише потрібне речення.
+
+Схема замінює технічний пошук у попередніх генераторах і коді Studio. Усі помилки таблиці повертаються разом. Успішне повторне подання тієї самої таблиці використовує квитанцію, без нової перевірки або імпорту. Зміна голосу, сценарію, таймінгів, стилю чи звукових дозволів вимагає свіжого пакета. Чинний прийнятий план і активний монтаж автоматично не перебудовуються.
+
+На тимчасовій копії режисури Cosmos Pro перевірено всі 139 речень, 41 шот і 63 звукові події. Збережено порядок, тривалість і хвіст озвучки; наявний direction_check повернув 0 FAIL і 0 WARN. Компактний вхідний пакет має близько 19,5 тисячі символів. Повний сценарій у ньому наведено один раз. Це локальна перевірка сумісності; фактичний час та витрати наступного модельного запуску ще потрібно виміряти.
+
 Студія передає Claude Code чинний план, готові кадри й файли сцен однією картою роботи. Режисер визначає смислові кадри після озвучки. Аніматор реалізує ці кадри, зберігаючи їхні номери й таймінги. Експорт відтворює той самий код. Повторне розбиття сценарію під час анімації не потрібне.
 
 ## Передача між етапами
@@ -37,8 +45,19 @@
 
 ## Sequential frame checkpoints
 
-Agent and Task tools are disabled in the Claude CLI. One agent works through batches of exactly five pending frames (only the final remaining batch may be smaller), reuses shared code, saves each frame immediately and checks the batch before moving on. Each fresh session receives at most twenty explicit pending frame ids with their real time bounds, including a short final continuation. Every command in the brief uses that same scope. The derived handoff names only takes overlapping each frame, including individual parts of a joined shot. It is read once per batch. A new scene-specific helper belongs in its own module so earlier shared code stays stable. Current scoped visual approval is verified before the next session; genuine failures stop with saved progress. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
+Agent and Task tools are disabled in the Claude CLI. One agent works through batches of exactly five pending frames (only the final remaining batch may be smaller), reuses shared code, saves each frame immediately and checks the batch before moving on. Each fresh session receives at most ten explicit pending frame ids with their real time bounds, including a short final continuation. Every command in the brief uses that same scope. The derived handoff names only takes overlapping each frame, including individual parts of a joined shot. It is read once per batch. A new scene-specific helper belongs in its own module so earlier shared code stays stable. Current scoped visual approval is verified before the next session; genuine failures stop with saved progress. Billing recovers missing final CLI totals from matching native Claude session receipts and refreshes changed receipts locally.
 
 ## Локальна перевірка оптимізації, 12 листопада 2026
 
 На копії готового ролика про вулкани з 53 кадрами додавання невикористаного зображення, промпту, запису реєстру чи модуля майбутніх шотів раніше скидало перевірку всіх 53 кадрів. Після виправлення кожна з цих дій зберігає всі схвалення. Зміна використаної картинки аеропорту зачіпає кадри 24-27; зміна її сцени також перевіряє ці 4 кадри. Це вимірювання повторних перевірок. Час і витрати наступного виробничого запуску потрібно оцінити окремо за його журналами.
+
+
+## Скорочення контексту, 12 листопада 2026
+
+Монтажні сесії використовують CLI safe-mode зі звичайною авторизацією підписки та acceptEdits. Studio явно передає розділи загальних і канальних правил для монтажу, поточні побажання та пам’ять каналу; автоматичне завантаження сценарних CLAUDE.md вимкнене. Невідомі загальні правила зберігаються. Сценарні автори працюють зі своїм попереднім повним контекстом.
+
+Нова сесія отримує до 10 кадрів і працює двома партіями по 5. Карта містить точний текст та ідею поточних кадрів. Команди перевірки й slots передаються готовими абсолютними шляхами, по одній операції без shell-змінних і конвеєрів. slots --frames зберігає всі інші блоки. Навички make-2d-video і render-video мають окрему коротку гілку Studio без повторного циклу встановлення, режисури й повного QC.
+
+Витрати та час після зміни вимірюються за наступним звичайним запуском. Локальні тести не звертаються до платних моделей.
+
+У змішаному випуску після розміщення PNG, титрів, руху, акцентів та переходів виконайте `studio.py review P --frames 1,2,3,4,5` для звичайних кадрів. Studio дає один аркуш із трьома моментами кожного кадру й команду схвалення. Якщо один кадр має дефект, вкажіть у команді схвалення лише готові номери. Після виправлення запитайте аркуш ще раз. Збережені вердикти перевіряються локально. Для кадрів Razgon використовуйте аркуші його рендера. `transitions P --frames N,M` оформлює стики на вході у вибрані кадри.

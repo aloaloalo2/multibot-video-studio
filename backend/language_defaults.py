@@ -92,6 +92,7 @@ def status(pid: str) -> dict:
         def effective(settings):
             provider=settings.get('provider','fishaudio')
             if provider=='elevenlabs':return (provider,settings.get('eleven_engine'))
+            if provider=='heygen':return (provider,settings.get('heygen_model'),settings.get('heygen_voice_id') or '')
             engine=settings.get('fish_engine')
             style=(settings.get('fish_styles') or {}).get(engine,settings.get('fish_style'))
             return (provider,engine,style)
@@ -173,13 +174,56 @@ def save(pid: str, code: str | None = None) -> dict:
     return status(pid)
 
 
+def refresh_unvoiced(pid: str, code: str | None = None) -> None:
+    """Advance inherited settings independently for each language before display or synthesis."""
+    import languages
+    project=store.load_project(pid)
+    with LOCK,languages.LOCK:
+        data=languages.load_state(pid)
+        if not data.get('languages'):return
+        base=root(project['channel_id'])
+        saved=store.read_json(base/'current.json',{}) or {}
+        signature_now=saved.get('signature')
+        if not signature_now:return
+        payload=saved['payload']
+        changed=False
+        for lang,item in data['languages'].items():
+            if (code and code!=lang) or lang not in languages.LANGUAGES or lang not in payload['languages']:continue
+            previous=item.get('inherited_signature',data.get('defaults_signature'))
+            if previous==signature_now or item.get('voice') or item.get('samples') or languages.busy(pid,lang,'voice'):continue
+            work=languages.work_dir(pid,lang)
+            if languages.final_voice(project,lang) or any(work.glob('sample-*.mp3')):continue
+            if any(next(work.glob(pattern),None) for pattern in ('voice-cache/*.mp3','parts/*.mp3','sample-parts/*/*.mp3')):continue
+            # Older projects without a snapshot signature may have explicit local choices.
+            legacy_override=not previous and bool(item.get('narration') or data.get('provider'))
+            if legacy_override:item['custom_narration']=True
+            if not item.get('custom_narration'):
+                item['narration']={**payload.get('settings',{}),**(payload.get('language_settings') or {}).get(lang,{})}
+            if not previous and (item.get('use_original_voice') or item.get('voice_ids') or (work/'own-voice.mp3').is_file()):
+                item['custom_reference']=True
+            if previous and not item.get('custom_reference'):
+                audio=work/'own-voice.mp3'
+                # copy2 preserved the stamp of inherited references. Keep a manually uploaded
+                # legacy reference when it does not match any saved channel version.
+                copied=not item.get('channel_reference') and audio.is_file() and any(
+                    languages.example_source_stamp(path)==languages.example_source_stamp(audio)
+                    for path in base.glob('*/'+lang+'/own-voice.mp3'))
+                if item.get('channel_reference') or copied or not audio.is_file():
+                    item['channel_reference']=True
+                    item.pop('use_original_voice',None)
+                    item.pop('voice_ids',None)
+            item['inherited_signature']=signature_now
+            changed=True
+        if changed:languages.save_state(pid,data)
+
+
 def pin_narration(pid: str, code: str) -> None:
     """A run keeps its inherited voice/settings when another episode saves new defaults."""
     import languages
     with LOCK,languages.LOCK:
         data=languages.load_state(pid)
         resolved=languages.narration_settings(pid)
-        for key in ('provider','eleven_engine','fish_engine','fish_style','fish_styles'):
+        for key in ('provider','eleven_engine','fish_engine','fish_style','fish_styles','heygen_model','heygen_voice_id'):
             if key in resolved:data[key]=copy.deepcopy(resolved[key])
         data.setdefault('languages',{}).setdefault(code,{})['narration']=languages.narration_choices(pid,code)
         remote=languages.remote_voice_ids(pid,code)
@@ -202,6 +246,11 @@ def pin_narration(pid: str, code: str) -> None:
             store.atomic_json(dest/'own-voice.json',meta)
             if clone:
                 data.setdefault('clones',{})[f"elevenlabs-{code}-episode-{(dest/'own-voice.mp3').stat().st_mtime_ns}"]=clone
+        item=data['languages'][code]
+        if example:
+            item.pop('channel_reference',None)
+        elif not remote:
+            item['use_original_voice']=True
         languages.save_state(pid,data)
 
 
@@ -219,6 +268,9 @@ def apply(project: dict, explicit: bool = False) -> bool:
             if code in languages.LANGUAGES:
                 entry=data.setdefault('languages',{}).setdefault(code,{})
                 choices=(payload.get('language_settings') or {}).get(code)
+                if explicit:
+                    for key in ('channel_reference','custom_narration','custom_reference','inherited_signature','voice_ids'):
+                        entry.pop(key,None)
                 if choices:entry['narration']=copy.deepcopy(choices)
                 elif explicit:entry.pop('narration',None)
         data['defaults_signature']=saved['signature']
@@ -284,3 +336,14 @@ def settings(cid: str, code: str | None = None) -> dict:
     saved=store.read_json(root(cid)/'current.json',{}) or {}
     payload=saved.get('payload') or {}
     return copy.deepcopy({**(payload.get('settings') or {}),**((payload.get('language_settings') or {}).get(code) or {})})
+
+
+def forget_voice(cid: str, code: str, remove_language: bool = False):
+    """Unlink the saved reference while keeping its immutable files for old episodes."""
+    with LOCK:
+        path=root(cid)/'current.json';saved=store.read_json(path,{}) or {}
+        if not saved:return
+        payload=saved.get('payload') or {};payload.get('voices',{}).pop(code,None)
+        if remove_language:payload['languages']=[value for value in payload.get('languages',[]) if value!=code]
+        saved.update(payload=payload,signature=signature(payload),saved_at=time.time())
+        store.atomic_json(path,saved)

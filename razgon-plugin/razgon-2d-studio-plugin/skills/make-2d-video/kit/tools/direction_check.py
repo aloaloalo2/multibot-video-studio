@@ -152,8 +152,16 @@ if code and re.search(r"kText\([^;]*\)", code) and "overlays" not in json.dumps(
     warn("Lots of kText inside shots and no film overlays: text drawn inside a shot is cut off by the next cut. Put key text in story.overlays.")
 
 # --- sound: effects on the film's events and ambience under its shots (references/sound-design.md)
+config_file = os.path.join(P, 'config.json')
+config = json.load(open(config_file, encoding='utf-8')) if os.path.isfile(config_file) else {}
+sound = config.get('sfx') or {}
+enabled = sound.get('enabled', True)
+allowed = set(sound['allowed_names']) if 'allowed_names' in sound else None
+permitted = lambda name: enabled and (allowed is None or name in allowed)
 cues = [(s["start"] + float(c.get("at", 0)), c) for s in shots for c in s.get("sfx") or []] + \
        [(float(c["t"]) if isinstance(c.get("t"), (int, float)) else -1.0, c) for c in story.get("sfx") or []]
+cues = [(t, c) for t, c in cues if permitted(c.get('name'))]
+amb_shots = [s for s in shots if s.get('amb') and permitted(s['amb'].get('name'))]
 own = lambda name: bool(re.search(r"\.(wav|mp3|ogg|flac|m4a)$", str(name), re.I))
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "audio"))
@@ -163,7 +171,7 @@ except Exception:
     known = None   # the audio library does not load here: the names are left to the mix
 if known is not None:
     bad = sorted({str(c.get("name")) for _, c in cues if not own(c.get("name")) and c.get("name") not in known}
-                 | {str(s["amb"].get("name")) for s in shots if s.get("amb") and s["amb"].get("name") not in known})
+                 | {str(s["amb"].get("name")) for s in amb_shots if s["amb"].get("name") not in known})
     if bad:
         fail(f"Unknown sound names (the mix would stop at the export): {', '.join(bad[:8])}. The names: python audio/sfx.py --list.")
 lost = sorted({str(c["name"]) for _, c in cues if own(c.get("name")) and not os.path.exists(os.path.join(P, c["name"]))})
@@ -173,9 +181,9 @@ outside = [round(t, 2) for t, _ in cues if not 0 <= t < total]
 if outside:
     fail(f"{len(outside)} sound cues lie outside the film or have no time t (at {', '.join(map(str, outside[:6]))}).")
 times = sorted(t for t, _ in cues if 0 <= t < total)
-amb = sum(1 for s in shots if s.get("amb"))
+amb = len(amb_shots)
 notes.append(f"sound: {len(times)} effects" + (f", one per {total / len(times):.0f} s" if times else "") + f", ambience on {amb}/{len(shots)} shots")
-if total > 60:
+if total > 60 and enabled and (allowed is None or allowed):
     if not times:
         warn("No sound effects. Put a cue on the film's visible events at the moment of their word, about one per 15–25 s "
              "(story.sfx with absolute t, references/sound-design.md).")
@@ -183,7 +191,7 @@ if total > 60:
         warn(f"One sound effect per {total / len(times):.0f} s: too few for the film's events (about one per 15–25 s).")
     elif total / len(times) < 8:
         warn(f"A sound effect every {total / len(times):.1f} s crowds the voice (about one per 15–25 s).")
-    if amb < 0.5 * len(shots):
+    if allowed is None and amb < 0.5 * len(shots):
         warn(f"Ambience on {amb} of {len(shots)} shots: most shots need an amb bed of their place (−18 to −28 dB).")
 stacked = [round(b, 2) for a2, b in zip(times, times[1:]) if b - a2 < 0.3]
 if stacked:

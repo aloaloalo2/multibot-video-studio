@@ -43,6 +43,15 @@ class ThumbnailTest(unittest.TestCase):
         data = thumbnail_gen.defaults(self.project["id"])
         self.assertEqual((data["title"], data["script"], data["preview"]), ("What If You Never Blinked?", "Your eyes dry out.", False))
 
+    def test_retired_writer_is_not_offered_or_started_for_new_or_cloned_thumbnails(self):
+        pid = self.project['id']
+        self.assertEqual(thumbnail_gen.defaults(pid)['writers'], ['claude', 'trending'])
+        with patch.object(thumbnail_gen.threading, 'Thread') as worker:
+            for source in ('', 'abcdefghijk'):
+                with self.subTest(source=source), self.assertRaisesRegex(store.StudioError, 'Codex або Claude'):
+                    thumbnail_gen.start(pid, 'Title', 'Script', writer='deepseek', reference_id=source)
+            worker.assert_not_called()
+
     def test_claude_gets_the_title_wishes_script_and_the_channels_approved_prompts(self):
         refs = thumbnail_gen.references(self.episode)
         text = thumbnail_gen.brief("What If?", "The script.", "big word DRY", self.episode, refs)
@@ -63,10 +72,9 @@ class ThumbnailTest(unittest.TestCase):
     def test_trending_goes_directly_to_codex_and_is_saved_as_a_new_version(self):
         self.project['channel_id']='c'*16
         with self.tools(), patch.object(thumbnail_gen, "write_prompt") as claude, \
-             patch.object(thumbnail_gen, "write_prompt_deepseek") as deepseek, \
              patch.object(thumbnail_gen.agent_storage, "get_memory", return_value="Shared visual rules use soft daylight"):
             thumbnail_gen.run(self.project["id"], "Що буде завтра?", "Текст ролика.", "Велике обличчя", writer="trending")
-        claude.assert_not_called(); deepseek.assert_not_called()
+        claude.assert_not_called()
         self.assertEqual(len(self.calls), 1)
         command, sent = self.calls[0]
         self.assertIn("exec", command)
@@ -88,15 +96,14 @@ class ThumbnailTest(unittest.TestCase):
     def test_host_reference_and_opt_out_reach_each_thumbnail_writer_and_codex(self):
         import channel_hero
         hero=Path(self.tmp.name)/'host.png';Image.new('RGB',(16,16),'green').save(hero)
-        for writer in ('claude','deepseek','trending'):
+        for writer in ('claude','trending'):
             for enabled in (True,False):
                 for image in (self.studio/'preview').glob('*.png'):
                     image.unlink()
                 with self.subTest(writer=writer,enabled=enabled), self.tools(), \
                      patch.object(thumbnail_gen.director,'channel_settings',return_value={'thumbnail_wishes':'CHANNEL THUMBNAIL STYLE'}), \
                      patch.object(channel_hero,'prepare',return_value=(hero if enabled else None,'\nHOST INCLUDED\n' if enabled else '\nHOST EXCLUDED\n')) as prepared, \
-                     patch.object(thumbnail_gen,'write_prompt',return_value=('A carefully designed thumbnail. '*10,{})) as claude, \
-                     patch.object(thumbnail_gen,'write_prompt_deepseek',return_value=('A carefully designed thumbnail. '*10,{})) as deepseek:
+                     patch.object(thumbnail_gen,'write_prompt',return_value=('A carefully designed thumbnail. '*10,{})) as claude:
                     thumbnail_gen.run(self.project['id'],'T','S','',writer=writer,use_hero=enabled)
                     self.assertEqual(thumbnail_gen.state(self.project['id'])['status'],'done')
                     self.assertEqual(prepared.call_args.args[-1],enabled)
@@ -104,34 +111,11 @@ class ThumbnailTest(unittest.TestCase):
                     self.assertEqual(str(hero) in command,enabled)
                     self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',sent['input'])
                     self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
-                    prompt_writer=claude if writer=='claude' else deepseek if writer=='deepseek' else None
-                    if prompt_writer:
-                        self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',prompt_writer.call_args.args[0])
-                        self.assertIn('CHANNEL THUMBNAIL STYLE',prompt_writer.call_args.args[0])
+                    if writer=='claude':
+                        self.assertIn('HOST INCLUDED' if enabled else 'HOST EXCLUDED',claude.call_args.args[0])
+                        self.assertIn('CHANNEL THUMBNAIL STYLE',claude.call_args.args[0])
                     else:
                         self.assertIn('CHANNEL THUMBNAIL STYLE',sent['input'])
-
-    def test_deepseek_receives_labeled_host_image_before_scene_references(self):
-        import io
-        import credentials
-        hero=Path(self.tmp.name)/'Головний герой.png'
-        Image.new('RGB',(16,16),'green').save(hero)
-        refs=[hero]
-        for number in range(5):
-            ref=Path(self.tmp.name)/f'scene-{number}.png'
-            Image.new('RGB',(16,9),'blue').save(ref);refs.append(ref)
-        response={'choices':[{'message':{'content':'A deliberate thumbnail composition. '*12}}],'usage':{'cost':0}}
-        with patch.object(credentials,'vault') as vault, patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(response).encode())) as opened:
-            vault.return_value.read.return_value='test-only'
-            thumbnail_gen.write_prompt_deepseek('MAIN CHARACTER REFERENCE: Головний герой.png',self.episode,refs)
-        payload=json.loads(opened.call_args.args[0].data)
-        content=payload['messages'][0]['content']
-        self.assertIn('Головний герой.png',content[1]['text'])
-        self.assertIn('Main character identity',content[1]['text'])
-        self.assertEqual(content[2]['type'],'image_url')
-        self.assertIn('scene-0.png',content[3]['text'])
-        self.assertEqual(sum(item['type']=='image_url' for item in content),4)
-        opened.assert_called_once()
 
     def test_edit_uses_only_selected_image_and_preserves_old_versions(self):
         work=thumbnail_gen.keep_dir(self.project['id']);work.mkdir()
@@ -196,14 +180,13 @@ class ThumbnailTest(unittest.TestCase):
         Image.new('RGB', (64, 36)).save(self.studio / 'idea-reference.jpg')
         store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
         produced = 'An original scene with a new camera angle. Exact lettering: "5 МИНУТ". ' * 4
-        for writer in ('claude', 'deepseek', 'trending'):
+        for writer in ('claude', 'trending'):
             with self.subTest(writer=writer), self.tools(), \
                  patch.object(thumbnail_gen.channel_hero, 'prepare', return_value=(None, '')), \
                  patch.object(thumbnail_gen.director, 'channel_settings', return_value={'thumbnail_wishes': 'UNRELATED CHANNEL WISH'}), \
                  patch.object(thumbnail_gen, 'brief', side_effect=AssertionError('ordinary brief must not run')), \
                  patch.object(thumbnail_gen, 'trending', side_effect=AssertionError('new concept rules must not run')), \
                  patch.object(thumbnail_gen, 'write_prompt', return_value=(produced, {})) as claude, \
-                 patch.object(thumbnail_gen, 'write_prompt_deepseek', return_value=(produced, {})) as deepseek, \
                  patch.object(thumbnail_gen, 'write_prompt_codex', return_value=(produced, {})) as codex:
                 thumbnail_gen.run(self.project['id'], 'Context title', 'Unrelated script', 'Change only the background to blue', writer=writer)
                 self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
@@ -215,26 +198,11 @@ class ThumbnailTest(unittest.TestCase):
                 self.assertNotIn('Unrelated script', drawing['input'])
                 self.assertNotEqual(drawing['cwd'], thumbnail_gen.keep_dir(self.project['id']))
                 self.assertEqual(self.draw_workspaces, [set()])
-                author = deepseek if writer == 'deepseek' else codex if writer == 'trending' else claude
+                author = codex if writer == 'trending' else claude
                 self.assertIn('Transcribe EVERY visible thumbnail phrase verbatim', author.call_args.args[0])
                 self.assertIn('Change only the background to blue', author.call_args.args[0])
                 self.assertNotIn('UNRELATED CHANNEL WISH', author.call_args.args[0])
                 for image in thumbnail_gen.keep_dir(self.project['id']).glob('*.png'): image.unlink()
-
-    def test_deepseek_clone_gets_primary_image_without_unrelated_style_examples(self):
-        import io
-        import credentials
-        source = Path(self.tmp.name) / 'idea-reference.jpg'
-        Image.new('RGB', (1280, 720)).save(source)
-        response = {'choices': [{'message': {'content': 'Preserve the exact text and composition. ' * 12}}]}
-        with patch.object(credentials, 'vault') as vault, patch.object(thumbnail_gen, 'examples', side_effect=AssertionError('no unrelated images')), \
-             patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(response).encode())) as opened:
-            vault.return_value.read.return_value = 'test-only'
-            thumbnail_gen.write_prompt_deepseek('Keep source text', self.episode, [source])
-        content = json.loads(opened.call_args.args[0].data)['messages'][0]['content']
-        self.assertEqual(len([item for item in content if item['type'] == 'image_url']), 1)
-        self.assertIn('CLONE ANALYSIS SOURCE ONLY', content[1]['text'])
-        self.assertIn('exact lettering', content[1]['text'])
 
     def test_codex_clone_separates_source_analysis_from_drawing_and_uses_automatic_host(self):
         Image.new('RGB', (32, 18)).save(self.studio / 'idea-reference.jpg')
@@ -363,7 +331,7 @@ class ThumbnailTest(unittest.TestCase):
         self.project['project_kind'] = 'regular'
         data = thumbnail_gen.defaults(self.project['id'])
         self.assertEqual((data['pictures'], data['min_frames'], data['creation_min_frames']), (0, 0, 0))
-        for writer in ('claude', 'deepseek', 'trending'):
+        for writer in ('claude', 'trending'):
             thumbnail_gen.ACTIVE.clear()
             with self.subTest(writer=writer), patch.object(thumbnail_gen, 'CODEX', Path(sys.executable)), \
                     patch.object(thumbnail_gen.threading, 'Thread') as thread:

@@ -237,6 +237,24 @@ class LanguagesTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             languages.file_path(self.pid, "en", "sample-" + fish)
 
+    def test_heygen_episode_sample_and_full_narration_reuse_the_same_take(self):
+        work=languages.work_dir(self.pid,'ru');work.mkdir(parents=True)
+        (work/'text.txt').write_text('Сегодня мы разберём этот вопрос и рассмотрим простой пример.',encoding='utf-8')
+        languages.save_state(self.pid,{'languages':{'ru':{}}})
+        languages.set_provider(self.pid,'heygen','heygen-voice-1-turbo-free',code='ru',voice_id='ru-narrator')
+        audio=tone(self.studio/'response.mp3',3).read_bytes()
+        with patch.object(languages.heygen_voice,'key',return_value='test'),patch.object(languages.heygen_voice,'synthesize',return_value=audio) as tts:
+            for kind in ('sample','voice'):
+                with self.assertRaises(store.StudioError):
+                    languages.start(self.pid,kind,'ru',expected_provider='elevenlabs')
+                languages.start(self.pid,kind,'ru',expected_provider='heygen')
+                job=self.wait()
+                self.assertEqual(job['status'],'done',job)
+        self.assertEqual(tts.call_count,1)
+        self.assertEqual(tts.call_args.args[0]['heygen_voice_id'],'ru-narrator')
+        self.assertEqual(job['reused'],1)
+        self.assertTrue(languages.file_path(self.pid,'ru','voice').is_file())
+
     def test_a_short_voice_is_padded_to_the_video(self):
         work = languages.work_dir(self.pid, "de")
         work.mkdir(parents=True)

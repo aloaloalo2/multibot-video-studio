@@ -46,6 +46,17 @@ class SelfReviewTest(unittest.TestCase):
     def review(self,ask,ctx=None,target=None):
         return REAL_REVIEW(self.project['id'],self.text,ctx or {},target or editor.word_count(self.text),self.session,lambda prompt,phase:ask(prompt),self.receipt)
     def response(self,text=None):return {'script':text or self.text,'editorial_report':assessment(),'refinement_report':{'remaining_weaknesses':[],'actions':[],'unresolved':[],'summary':'Доопрацювання перевірено.'}}
+    def test_both_editorial_turns_receive_current_global_audience_policy_from_stale_context(self):
+        prompts=[]
+        def answer(prompt):
+            prompts.append(prompt)
+            return self.response()
+        with patch.object(editor.audience_policy,'text',return_value='CURRENT INTERNATIONAL AUDIENCE POLICY'):
+            self.review(answer,{'studio_audience_policy':'OBSOLETE AUDIENCE POLICY'})
+        self.assertEqual(len(prompts),2)
+        for prompt in prompts:
+            self.assertIn('CURRENT INTERNATIONAL AUDIENCE POLICY',prompt)
+            self.assertNotIn('OBSOLETE AUDIENCE POLICY',prompt)
     def test_same_session_and_effort_are_used_for_draft_then_author_revision(self):
         seen=[]
         def run(cmd,prompt,root,identity,**options):

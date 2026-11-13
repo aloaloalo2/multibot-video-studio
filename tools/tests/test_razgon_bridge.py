@@ -115,6 +115,22 @@ class FrameSlotsTest(unittest.TestCase):
         block = next(clip for clip in project["tracks"][0]["clips"] if clip["kind"] == "animation")
         self.assertEqual((block["start"], block["duration"], block["content_type"]), (4.0, 6.0, "shape"))
 
+    def test_scoped_slots_preserve_other_frames_and_do_not_create_future_blocks(self):
+        link = {"project_id":"p", "fps":25, "duration":12,
+                "frames":[{"number":n,"start":(n-1)*4,"end":n*4} for n in range(1,4)]}
+        other={"id":"outside","kind":"animation","title":"Razgon · кадр 003","start":9,"duration":1}
+        project={"id":"p","tracks":[{"id":"t1","clips":[other]}],"scene_groups":[]}
+        studio=FakeStudio(project)
+        with patch.object(razgon_bridge,"ensure_overlay",side_effect=lambda studio,razgon,project,duration:project):
+            razgon_bridge.ensure_frame_slots(studio,Path('/tmp/razgon'),link,project,frozenset({1}))
+        clips=[c for t in project['tracks'] for c in t['clips']]
+        self.assertEqual({c['title'] for c in clips},{'Razgon · кадр 001','Razgon · кадр 003'})
+        self.assertIn(other,clips)
+        self.assertEqual((other['start'],other['duration']),(9,1))
+        self.assertFalse(any('outside' in g['clip_ids'] for g in project['scene_groups']))
+        with self.assertRaises(razgon_bridge.BridgeError):
+            razgon_bridge.ensure_frame_slots(studio,Path('/tmp/razgon'),link,project,frozenset({99}))
+
     def test_an_agent_of_the_studio_cannot_render_frames(self):
         with tempfile.TemporaryDirectory() as folder:
             for command in ("push", "final"):

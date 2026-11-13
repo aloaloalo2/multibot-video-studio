@@ -42,6 +42,7 @@ import language_thumbnails
 import image_delivery
 import language_quality
 import eleven_api
+import heygen_voice
 import eleven_voices
 import voice_cache
 import narration_pacing
@@ -86,6 +87,7 @@ PROVIDERS = {
                    "note": "Кредити ElevenLabs"},
     "fishaudio": {"name": "Fish Audio", "per_char": 15 / 1_000_000, "bytes": True,
                   "note": "Голос копіюється з прикладу нижче"},
+    "heygen": {"name": "HeyGen", "bytes": False, "note": "Голос HeyGen для цієї мови"},
 }
 ELEVEN = "https://api.elevenlabs.io/v1"
 ELEVEN_MODEL = eleven_api.DEFAULT_MODEL
@@ -259,6 +261,8 @@ def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | N
 def price(provider: str, text: str, engine: str | None = None) -> float | None:
     """What voicing the text costs; None when the provider names no price for the engine."""
     spec = PROVIDERS[provider]
+    if provider == "heygen":
+        return heygen_voice.estimate({'text':text,'heygen_model':engine or heygen_voice.DEFAULT_MODEL})['amount']
     if provider == "elevenlabs":
         rate = eleven_api.estimate_rate(engine or ELEVEN_MODEL)
         return round(len(text) * rate, 2) if rate is not None else None
@@ -280,7 +284,7 @@ def voice_estimate(pid: str, code: str, provider: str, text: str) -> dict:
     outgoing="".join(missing)
     estimate_price=fixed_price(provider,engine)
     costs=[estimate_price(line) for line in missing]
-    base=round(sum(costs),2) if all(cost is not None for cost in costs) else None
+    base=round(sum(costs),6 if provider=='heygen' else 2) if all(cost is not None for cost in costs) else None
     return {"base":base,"paid_timing_retries":False,
             "total":len(texts),"reused":len(texts)-len(missing),"generate":len(missing),
             "characters":len(outgoing),
@@ -326,6 +330,8 @@ def narration_settings(pid: str, code: str | None = None) -> dict:
 
 
 def provider_engine(pid: str, provider: str, code: str | None = None) -> str:
+    if provider == 'heygen':
+        return narration_settings(pid,code).get('heygen_model') or heygen_voice.DEFAULT_MODEL
     return eleven_engine(pid,code) if provider == "elevenlabs" else fish_engine(pid,code)
 
 
@@ -333,6 +339,7 @@ def narration_choices(pid: str, code: str | None = None) -> dict:
     data=narration_settings(pid,code)
     return {'provider':data.get('provider') if data.get('provider') in PROVIDERS else 'fishaudio',
             'eleven_engine':eleven_engine(pid,code),'fish_engine':fish_engine(pid,code),
+            'heygen_model':data.get('heygen_model') or heygen_voice.DEFAULT_MODEL,'heygen_voice_id':data.get('heygen_voice_id') or '',
             'fish_style':fish_style(pid,code),'fish_styles':dict(data.get('fish_styles') or {})}
 
 
@@ -345,7 +352,10 @@ def made_with(pid: str, provider: str, code: str) -> dict:
     """What a voicing was made with: the voice (provider, engine, likeness, example) and the text, so the card shows a
     voicing only while all of it still holds (user, 2 November 2026: «щоб воно дівалось після будь-яких змін, бо не
     ясно, хто це згенерив»)."""
-    engine = (eleven_api.model(eleven_engine(pid,code)) or {}).get("name") if provider == "elevenlabs" else FISH_ENGINES.get(fish_engine(pid,code), {}).get("name")
+    model=provider_engine(pid,provider,code)
+    if provider=='heygen':engine=heygen_voice.MODELS[model]
+    elif provider=='elevenlabs':engine=(eleven_api.model(model) or {}).get('name')
+    else:engine=FISH_ENGINES[model]['name']
     style = FISH_STYLES.get(fish_style(pid,code), {}).get("name") if provider == "fishaudio" else None
     return {"voice_key": voice_key(pid, provider, code), "text_hash": text_hash(pid, code),
             "made_by": " · ".join(part for part in (PROVIDERS[provider]["name"], engine, style) if part)}
@@ -460,6 +470,7 @@ def voice_options(pid: str) -> dict:
 
 
 def overview(pid: str, *, compact=False) -> dict:
+    language_defaults.refresh_unvoiced(pid)
     with store.read_snapshot(), eleven_api.nonblocking_metadata(compact):
         return _overview(pid, compact=compact)
 
@@ -551,6 +562,7 @@ def _overview(pid: str, *, compact=False) -> dict:
                            **({"engines": [{"id": eid, **item} for eid, item in FISH_ENGINES.items()], "engine": engine,
                                "styles": [{"id": sid, "name": item["name"]} for sid, item in FISH_STYLES.items()], "style": fish_style(pid),
                                "free": FISH_ENGINES[engine]["per_char"] == 0} if key == "fishaudio" else
+                              {"engines":heygen_models(), "engine":provider_engine(pid,key)} if key=='heygen' else
                               {"engines": eleven["models"], "engine": eleven_engine(pid), "unit": "credits",
                                "price_source": eleven_api.API_PRICE_SOURCE, "price_checked": eleven_api.API_PRICE_CHECKED,
                                "verified": eleven["verified"], "connection_error": eleven.get("error"),
@@ -577,6 +589,7 @@ def cover(project: dict) -> Path | None:
 # ---------- keys and HTTP ----------
 
 def key(service: str) -> str:
+    if service=='heygen':return heygen_voice.key()
     try:
         return credentials.vault().read(credentials.service_name(service))
     except RuntimeError:
@@ -800,7 +813,8 @@ SPEECH_RULES = """Rules for a text that is read aloud:
 
 
 def localization(code: str) -> str:
-    rules = LOCALIZATION_RULES
+    import audience_policy
+    rules = LOCALIZATION_RULES + '\n' + audience_policy.text('translation')
     if code == 'ru':
         rules += ("\nIn compound ordinal years, only the final ordinal takes the case ending; preceding "
                   "cardinals keep their proper form, e.g. «две тысячи двадцать первого года».")
@@ -1585,7 +1599,9 @@ def read_example(folder: Path, stem: str, source: str) -> dict | None:
 
 def own_voice(pid: str, code: str | None) -> dict | None:
     """The episode's own example for a language, if the author dropped one in."""
-    return read_example(work_dir(pid, code), "own-voice", "episode") if code else None
+    if not code or (load_state(pid).get('languages',{}).get(code) or {}).get('channel_reference'):
+        return None
+    return read_example(work_dir(pid, code), "own-voice", "episode")
 
 
 def channel_voice(cid: str | None, code: str | None) -> dict | None:
@@ -1761,9 +1777,15 @@ def save_own_voice(pid: str, code: str, stream, size: int, said: str, filename: 
     with LOCK:
         if busy(pid, code, "voice"):
             raise store.StudioError("Зачекайте, доки закінчиться дія з цією мовою", 409)
-    store_example(work_dir(pid, code), "own-voice", code, stream, size, said, filename)
-    drop_samples(work_dir(pid, code))
-    update(pid,lambda data:data.setdefault("languages",{}).setdefault(code,{}).pop("use_original_voice",None))
+        store_example(work_dir(pid, code), "own-voice", code, stream, size, said, filename)
+        drop_samples(work_dir(pid, code))
+        data=load_state(pid)
+        item=data.setdefault("languages",{}).setdefault(code,{})
+        item.pop("use_original_voice",None)
+        item.pop("voice_ids",None)
+        item.pop("channel_reference",None)
+        item["custom_reference"]=True
+        save_state(pid,data)
     return overview(pid)
 
 
@@ -1774,12 +1796,13 @@ def remove_own_voice(pid: str, code: str) -> dict:
         drop_example(work_dir(pid, code), "own-voice")
         drop_samples(work_dir(pid, code))
         data=load_state(pid)
-        data.setdefault("languages",{}).setdefault(code,{})["use_original_voice"]=True
+        data.setdefault("languages",{}).setdefault(code,{}).update(use_original_voice=True,custom_reference=True)
         save_state(pid,data)
     return overview(pid)
 
 
 def channel_voices(cid: str) -> dict:
+    import channel_translation_voices
     store.get_channel_folder(cid)
     saved = language_defaults.settings(cid)
     narration = None
@@ -1787,6 +1810,9 @@ def channel_voices(cid: str) -> dict:
         provider = saved.get("provider") if saved.get("provider") in PROVIDERS else "fishaudio"
         engine = (saved.get("eleven_engine") or ELEVEN_MODEL) if provider == "elevenlabs" else (saved.get("fish_engine") or FISH_ENGINE)
         models = {item["id"]: item for item in eleven_api.FALLBACK} if provider == "elevenlabs" else FISH_ENGINES
+        if provider=='heygen':
+            engine=saved.get('heygen_model') or heygen_voice.DEFAULT_MODEL
+            models={row['id']:row for row in heygen_models()}
         style = (saved.get("fish_styles") or {}).get(engine, saved.get("fish_style")) if provider == "fishaudio" else None
         narration = {"provider": provider, "provider_name": PROVIDERS[provider]["name"],
                      "engine": engine, "engine_name": models.get(engine, {}).get("name") or engine,
@@ -1794,10 +1820,14 @@ def channel_voices(cid: str) -> dict:
     found = []
     for code in LANGUAGES:
         example = channel_voice(cid, code)
-        if example:
+        remote=language_defaults.remote_ids(cid,code)
+        if example or remote:
             found.append({"code": code, "name": LANGUAGES[code][0], "label": lang_name(code), "duration": example["duration"],
-                          "heard": example["heard"], "stamp": example["stamp"], "filename": example["filename"]})
-    return {"voices": found, "narration_defaults": narration,
+                          "heard": example["heard"], "stamp": example["stamp"], "filename": example["filename"],
+                          "settings":channel_translation_voices.choices(cid,code)} if example else {
+                          "code":code,"name":LANGUAGES[code][0],"label":lang_name(code),"remote_only":True,
+                          "settings":channel_translation_voices.choices(cid,code)})
+    return {"voices": found, "narration_defaults": narration,"voice_controls":True,"narration_options":channel_translation_voices.options(),
             "languages": [{"code": code, "name": names[0], "label": names[1]} for code, names in LANGUAGES.items()],
             "folder": str(channel_voice_dir(cid))}
 
@@ -1805,12 +1835,14 @@ def channel_voices(cid: str) -> dict:
 def save_channel_voice(cid: str, code: str, stream, size: int, said: str, filename: str = "") -> dict:
     check_code(code)
     store_example(channel_voice_dir(cid), LANGUAGES[code][0], code, stream, size, said, filename)
+    language_defaults.forget_voice(cid,code)
     return channel_voices(cid)
 
 
 def remove_channel_voice(cid: str, code: str) -> dict:
     check_code(code)
     drop_example(channel_voice_dir(cid), LANGUAGES[code][0])
+    language_defaults.forget_voice(cid,code,remove_language=True)
     return channel_voices(cid)
 
 
@@ -1895,9 +1927,26 @@ def remote_voice_ids(pid,code):
     except store.StudioError:return {}
 
 
+def heygen_models():
+    return [{'id':model,'name':name,'per_char':heygen_voice.RATES[model]} for model,name in heygen_voice.MODELS.items()]
+
+
+def translation_heygen_voice(cid,code,model,remote,example):
+    if not remote:
+        if model=='starfish':raise store.StudioError('Введіть ID сумісного голосу Starfish')
+        if not example:raise store.StudioError(NO_VOICE)
+        from channel_voice_lab import heygen_reference_id
+        remote=heygen_reference_id(cid,code,example['path'],voice_cache.file_hash(example['path']))
+    return {'heygen_voice_id':remote,'heygen_model':model,'language':code}
+
+
 def voice_id(pid: str, provider: str, code: str | None = None):
     """Resolve an explicitly saved service ID or the language's existing reference."""
     ids=remote_voice_ids(pid,code);remote=ids.get(provider)
+    if provider=='heygen':
+        remote=narration_settings(pid,code).get('heygen_voice_id') or remote
+        example=None if remote or ids else voice_for(pid,code)
+        return translation_heygen_voice(store.load_project(pid)['channel_id'],code,provider_engine(pid,provider,code),remote,example)
     if remote:
         if provider=='fishaudio':return {'model_id':remote,'engine':fish_engine(pid,code),'style':fish_style(pid,code),'language':code}
         return {'id':remote,'engine':eleven_engine(pid,code),'language':code}
@@ -1931,6 +1980,9 @@ def voice_id(pid: str, provider: str, code: str | None = None):
 def speak(provider: str, voice: str, text: str, target: Path, before: str = "", after: str = "", speed: float = 1.0) -> float | None:
     if isinstance(voice, dict) and voice.get('language'):
         language_quality.require(voice['language'], text)
+    if provider=='heygen':
+        target.write_bytes(heygen_voice.synthesize({**voice,'text':text}))
+        return None
     if provider == "elevenlabs":
         ref = voice if isinstance(voice, dict) else {"id": voice, "engine": ELEVEN_MODEL}
         model = ref["engine"]
@@ -2025,9 +2077,19 @@ def sample_text_at(text: str, size: int) -> str:
     return out
 
 
+def heygen_cache_reference(pid,code):
+    remote=narration_settings(pid,code).get('heygen_voice_id') or remote_voice_ids(pid,code).get('heygen')
+    if remote:return {'reference_id':remote}
+    example=voice_for(pid,code)
+    return {'reference':voice_cache.file_hash(example['path']) if example else None}
+
+
 def voice_key(pid: str, provider: str, code: str | None = None) -> str:
     """Which voice a sample was made with: the provider (and Fish's engine) and the example it was cloned from, so a
     new example or engine never plays an older one's sample."""
+    if provider=='heygen':
+        reference=json.dumps(heygen_cache_reference(pid,code),sort_keys=True).encode()
+        return 'heygen-'+provider_engine(pid,provider,code)+'-'+hashlib.sha256(reference).hexdigest()[:24]
     remote=remote_voice_ids(pid,code).get(provider)
     if remote:return provider+'-'+provider_engine(pid,provider,code)+'-remote-'+remote+('-'+fish_style(pid,code) if provider=='fishaudio' else '')
     example = voice_for(pid, code)
@@ -2036,6 +2098,8 @@ def voice_key(pid: str, provider: str, code: str | None = None) -> str:
 
 
 def voice_cache_context(pid: str, code: str, provider: str) -> tuple[dict,set[str]]:
+    if provider=='heygen':
+        return {'version':1,'provider':provider,'language':code,'engine':provider_engine(pid,provider,code),**heygen_cache_reference(pid,code)},set()
     remote=remote_voice_ids(pid,code).get(provider)
     if remote:
         engine=provider_engine(pid,provider,code)
@@ -2121,7 +2185,7 @@ def sample_options(pid: str, code: str, provider: str, text: str) -> dict:
     for count in SAMPLE_SENTENCES:
         pieces=sample_pieces(pid,code,text,count,cached)
         costs=[estimate_price(piece) for piece in dict.fromkeys(pieces) if piece not in cached]
-        result[str(count)]={'price':round(sum(costs),2) if all(cost is not None for cost in costs) else None,
+        result[str(count)]={'price':round(sum(costs),6 if provider=='heygen' else 2) if all(cost is not None for cost in costs) else None,
                             'sentences':sample_sentence_count(pieces)}
     return result
 
@@ -2137,7 +2201,8 @@ def sample_sentence_count(pieces: list[str]) -> int:
 def record_voice_cost(job: dict, requests: list[dict]) -> None:
     """Keep an estimate distinct from complete, per-request provider receipts."""
     estimates = [item.get('estimated_cost') for item in requests]
-    estimated = round(sum(estimates), 2) if all(eleven_api.finite_number(x) and x >= 0 for x in estimates) else None
+    precision=6 if job.get('provider')=='heygen' else 2
+    estimated = round(sum(estimates), precision) if all(eleven_api.finite_number(x) and x >= 0 for x in estimates) else None
     receipts = [item.get('actual_cost') for item in requests]
     confirmed = all(item.get('status') == 'complete' and eleven_api.finite_number(value) and value >= 0
                     for item, value in zip(requests, receipts))
@@ -2145,11 +2210,11 @@ def record_voice_cost(job: dict, requests: list[dict]) -> None:
     job.update(estimated_cost=estimated, actual_cost=actual, cost=actual if confirmed else estimated,
                cost_estimated=not confirmed, takes=len(requests))
     pid=str(job.get('key') or '').split('|')[0]
-    if requests and job.get('provider')=='elevenlabs' and re.fullmatch(r'[0-9a-f]{24}',pid):
+    if requests and job.get('provider') in ('elevenlabs','heygen') and re.fullmatch(r'[0-9a-f]{24}',pid):
         import project_costs
         entry=requests[-1]
         known=entry.get('status')=='complete' and eleven_api.finite_number(entry.get('actual_cost'))
-        project_costs.record_at(store.project_dir(pid),'elevenlabs',entry.get('actual_cost') if known else entry.get('estimated_cost'),
+        project_costs.record_at(store.project_dir(pid),job['provider'],entry.get('actual_cost') if known else entry.get('estimated_cost'),
                                 identity=entry.get('receipt_id') or str(entry.get('started_at')), category='voice', estimated=not known)
 
 
@@ -2293,6 +2358,7 @@ def prepare_unvoiced(pid,code,texts,segments,targets,job):
 
 def fixed_price(provider,engine):
     """Freeze the estimate for one run; catalogue refreshes cannot change it mid-job."""
+    if provider=='heygen':return lambda text:price(provider,text,engine)
     unit=price(provider,'x'*1000,engine)
     rate=unit/1000 if unit is not None else None
     return lambda text:round(len(text.encode('utf-8') if PROVIDERS[provider]['bytes'] else text)*rate,2) if rate is not None else None
@@ -3064,7 +3130,7 @@ def cancel(pid: str, slot: str | None = None) -> dict:
     return overview(pid)
 
 
-def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False, use_hero: bool | None = None, base: str | None = None) -> dict:
+def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: str | None = None, sentences=None, add_flag: bool | None = None, preserve_text: bool = False, cache_only: bool = False, use_hero: bool | None = None, base: str | None = None, expected_provider: str | None = None) -> dict:
     if base is not None:
         if kind != 'thumbnail' or not isinstance(base, str) or not base:
             raise store.StudioError('Оберіть прев’ю для правок',400)
@@ -3082,7 +3148,13 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
     project = store.load_project(pid)
     if kind in ('voice','refit'):
         language_mix.destination(project,code)
+    use_channel_provider=kind in ("sample","voice") and provider is None
     if kind in ("sample", "voice"):
+        language_defaults.refresh_unvoiced(pid,code)
+        if use_channel_provider:
+            provider=narration_choices(pid,code)['provider']
+            if expected_provider is not None and provider!=expected_provider:
+                raise store.StudioError('Голос каналу змінився. Оновіть вкладку «Мови» перед озвученням.',409)
         if provider not in PROVIDERS:
             raise store.StudioError("Оберіть сервіс озвучки")
         try:
@@ -3102,7 +3174,12 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
         src=source(project)
         if translation_resumable(pid,code,src,translation_model(pid,code),segments_of(store.load_project_narration(pid) or {})):
             raise store.StudioError('Спершу завершіть переклад сценарію. Озвучення ще недоступне.',409)
-        if not remote_voice_ids(pid,code).get(provider) and not voice_for(pid, code):
+        remote=remote_voice_ids(pid,code).get(provider)
+        if provider=='heygen':
+            remote=narration_settings(pid,code).get('heygen_voice_id') or remote
+            if not remote and provider_engine(pid,provider,code)=='starfish':
+                raise store.StudioError('Введіть ID сумісного голосу Starfish',409)
+        if not remote and not voice_for(pid, code):
             raise store.StudioError(NO_VOICE, 409)
         try:
             language_quality.require(code, read_text(pid, code))
@@ -3129,6 +3206,9 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
             raise store.StudioError("Зачекайте, доки закінчиться попередня дія з цією мовою" if group == "voice"
                                     else "Прев'ю цієї мови вже перекладається", 409)
         if kind in ('sample','voice','refit'):
+            language_defaults.refresh_unvoiced(pid,code)
+            if use_channel_provider and provider!=narration_choices(pid,code)['provider']:
+                raise store.StudioError('Голос каналу щойно змінився. Повторіть запуск із новим голосом.',409)
             language_defaults.pin_narration(pid,code)
         data=load_state(pid)
         selected_translation_model = translation_model(pid, code, data)
@@ -3147,9 +3227,9 @@ def start(pid: str, kind: str, code: str, provider: str | None = None, wishes: s
             store.atomic_json(store.DATA_ROOT/'language-thumbnail-options'/f"{project['channel_id']}.json",{'add_flag':add_flag})
         data.setdefault("jobs", {})[job["slot"]] = {k: v for k, v in job.items() if k != "key"}
         data["job"] = data["jobs"][job["slot"]]
-        data.setdefault("languages", {}).setdefault(code, {})
-        if provider:
-            data["provider"] = provider
+        item=data.setdefault("languages", {}).setdefault(code, {})
+        if provider and kind in ('sample','voice'):
+            item['narration']['provider']=provider
         ACTIVE.add(job['key'])
         try:
             save_state(pid, data)
@@ -3176,7 +3256,13 @@ def add(pid: str, code: str) -> dict:
     def keep(data):
         if not data.get("languages"):
             for key,value in language_defaults.settings(project["channel_id"]).items():data.setdefault(key,value)
-        data.setdefault("languages",{}).setdefault(code,{})
+        items=data.setdefault("languages",{})
+        if code not in items:
+            saved=store.read_json(language_defaults.root(project["channel_id"])/'current.json',{}) or {}
+            items[code]={}
+            if saved:
+                items[code].update(narration=language_defaults.settings(project["channel_id"],code),
+                                   inherited_signature=saved['signature'])
     update(pid,keep)
     return overview(pid)
 
@@ -3224,15 +3310,18 @@ def save_text(pid: str, code: str, text: str, title: str | None = None) -> dict:
     return overview(pid)
 
 
-def set_provider(pid: str, provider: str, engine: str | None = None, style: str | None = None, code: str | None = None) -> dict:
+def set_provider(pid: str, provider: str, engine: str | None = None, style: str | None = None, code: str | None = None, voice_id: str | None = None) -> dict:
     if code is not None:
         check_code(code)
     if provider not in PROVIDERS:
         raise store.StudioError("Невідомий сервіс озвучки")
     if engine is not None and ((provider == "fishaudio" and engine not in FISH_ENGINES)
+                               or (provider == 'heygen' and engine not in heygen_voice.MODELS)
                                or (provider == "elevenlabs" and not eleven_api.model(engine))):
         raise store.StudioError("Невідомий рушій озвучення")
-    if provider == "elevenlabs" and style is not None:
+    if voice_id is not None and (provider!='heygen' or not isinstance(voice_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{0,128}',voice_id)):
+        raise store.StudioError('Невірний ID голосу HeyGen')
+    if provider != "fishaudio" and style is not None:
         raise store.StudioError("Цей перемикач подачі належить Fish Audio")
     if style is not None and style not in FISH_STYLES:
         raise store.StudioError("Невідома подача голосу")
@@ -3243,12 +3332,18 @@ def set_provider(pid: str, provider: str, engine: str | None = None, style: str 
             if code not in data.get('languages',{}):
                 raise store.StudioError('Цю мову ще не додано до проєкту.',404)
             choices=narration_choices(pid,code)
+            data['languages'][code]['custom_narration']=True
             data=data['languages'][code].setdefault('narration',choices)
         else:
             # The legacy project-wide API explicitly applies its choice to all languages.
             for item in data.get('languages',{}).values():
                 item.pop('narration',None)
+                item['custom_narration']=True
         data["provider"] = provider
+        if provider=='heygen':
+            if engine:data['heygen_model']=engine
+            if voice_id is not None:data['heygen_voice_id']=voice_id
+            return
         if provider == "elevenlabs":
             if engine:
                 data["eleven_engine"] = engine

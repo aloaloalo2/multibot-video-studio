@@ -203,7 +203,9 @@ function fillVoiceLine(box){
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
   else{state_='empty';text='озвучку ще не додано';}
   box.dataset.state=state_;
-  box.innerHTML=`<span class="episode-voice-icon">${working?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<b>${esc(name)}</b>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
+  const script=state.project.voice_script?.text ?? state.plan?.script ?? frames.map(frame=>(frame.sentences||[]).join(' ')).join('\n\n');
+  const words=scriptWordCount(script)?`<small class="episode-voice-word-count">${scriptWordCountLabel(script)}</small>`:'';
+  box.innerHTML=`<span class="episode-voice-icon">${working?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
   if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
   const stage=box.closest('.episode-voice-block');
   if(stage){

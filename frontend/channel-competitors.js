@@ -1,4 +1,15 @@
 /* Saved competitor identities, independent of the channel settings form. */
+function competitorAddress(item){
+  const source=item.source_url||item.url||'';
+  let title=source;
+  try{title=decodeURI(source);}catch{}
+  try{
+    const url=new URL(source);
+    if(!['youtube.com','www.youtube.com','m.youtube.com'].includes(url.hostname))return {label:'YouTube',title};
+    const path=decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g,'');
+    return {label:path&&!path.startsWith('channel/')?path:'YouTube',title};
+  }catch{return {label:'YouTube',title};}
+}
 function bindChannelCompetitors(channel){
   const panel=document.querySelector('[data-settings-panel="competitors"]');if(!panel)return;
   const root=document.createElement('section');root.className='settings-section channel-competitors';
@@ -10,9 +21,10 @@ function bindChannelCompetitors(channel){
   function render(){
     if(!root.isConnected)return;
     list.innerHTML=items.map(item=>{
-      const image=typeof item.icon_url==='string'&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon_url)?`<img src="${item.icon_url}" alt="" width="44" height="44">`:'<span class="competitor-avatar-placeholder" aria-hidden="true">▶</span>';
+      const image=typeof item.icon_url==='string'&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon_url)?`<img src="${item.icon_url}" alt="" width="36" height="36">`:'<span class="competitor-avatar-placeholder" aria-hidden="true">▶</span>';
       const url=/^https:\/\/www\.youtube\.com\/channel\/UC[A-Za-z0-9_-]{22}$/.test(item.url)?item.url:'#';
-      return `<div class="competitor-row">${image}<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><strong>${esc(item.name)}</strong><small>${esc(item.source_url||item.url)}</small></a><button type="button" class="icon-button competitor-remove" data-id="${esc(item.id)}" title="Видалити конкурента" aria-label="Видалити ${esc(item.name)}" ${busy?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`;
+      const address=competitorAddress(item);
+      return `<div class="competitor-row">${image}<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><strong title="${esc(item.name)}">${esc(item.name)}</strong><small title="${esc(address.title)}">${esc(address.label)}</small></a><button type="button" class="icon-button competitor-remove" data-id="${esc(item.id)}" title="Видалити конкурента" aria-label="Видалити ${esc(item.name)}" ${busy?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`;
     }).join('');
     list.querySelectorAll('.competitor-remove').forEach(button=>button.onclick=()=>mutate('DELETE',endpoint+'/'+encodeURIComponent(button.dataset.id)));
   }

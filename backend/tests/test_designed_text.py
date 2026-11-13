@@ -109,4 +109,8 @@ class AntropovLooksTest(unittest.TestCase):
         self.assertGreaterEqual(veil["opacity"], .75)
         self.assertEqual(flow["content_type"], "gradient")
         self.assertGreater(payload["shadow"]["blur"], 15)
-        self.assertGreaterEqual(payload["text_words"][0]["start"], 1.4)   # said 1.5 s into the frame, not shown at its start
+        self.assertAlmostEqual(payload["start"] + payload["text_words"][0]["start"], 11.5, places=3)
+        self.assertAlmostEqual(payload["start"] + payload["duration"], 14)
+        self.assertEqual(background["start"], 10)
+        payload["text"] = montage_ops.display_text.clean(payload["text"])
+        montage_ops.store.apply_text_binding(ctx.project,payload,{"text_role":"full_frame","source_text":payload["text"]})

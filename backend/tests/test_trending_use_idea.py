@@ -1,4 +1,6 @@
 import sys
+import shutil
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +25,7 @@ class TrendingUseIdeaTests(unittest.TestCase):
     request=fixtures.BackendTest.request
     def setUp(self):
         ideas.ACTIVE.clear()
+        shutil.rmtree(store.DATA_ROOT/'trending-idea-requests',ignore_errors=True)
         self.body={'channel_id':self.cid,'video_id':VIDEO,'title':'Edited idea title','target_words':1200,'use_thumbnail':False,'request_id':self.id().split('.')[-1]}
         self.source={'id':VIDEO,'title':'Original competitor title','author':'Competitor','url':'https://www.youtube.com/watch?v='+VIDEO}
         root=reference.folder(self.cid,VIDEO);root.mkdir(parents=True,exist_ok=True)
@@ -77,6 +80,44 @@ class TrendingUseIdeaTests(unittest.TestCase):
             trends.use_idea({**self.body,'channel_id':other['id']})
         self.assertEqual(caught.exception.status,409)
         context.assert_not_called()
+
+    def test_used_source_blocks_new_requests_including_other_channels(self):
+        first=trends.use_idea(self.body)
+        other=store.create_channel('Other channel for stale tab')
+        with patch.object(reference,'inspect') as inspect,patch.object(ideas,'context') as context:
+            for cid in (self.cid,other['id']):
+                with self.assertRaises(store.StudioError) as caught:
+                    trends.use_idea({**self.body,'channel_id':cid,'request_id':'new-'+cid,'title':'A different title'})
+                self.assertEqual(caught.exception.status,409)
+            inspect.assert_not_called();context.assert_not_called()
+        self.assertIn(VIDEO,trends.used_video_ids())
+        store.delete_project(first['project_id'])
+        self.assertIn(VIDEO,trends.used_video_ids())
+
+    def test_another_source_with_the_same_title_remains_available(self):
+        first=trends.use_idea(self.body)
+        other='abcdefghijZ'
+        store.atomic_json(trends.cache_path(),{'competitor':{'name':'Competitor','videos':[{'id':other,'title':self.source['title']}]}})
+        second=trends.use_idea({**self.body,'video_id':other,'request_id':'another-video'})
+        self.assertNotEqual(first['project_id'],second['project_id'])
+        self.assertEqual(trends.used_video_ids(),{VIDEO,other})
+
+    def test_two_tabs_cannot_create_the_same_source_while_loading_reference(self):
+        from concurrent.futures import ThreadPoolExecutor
+        barrier=threading.Barrier(2)
+        def inspect(*args):
+            barrier.wait(timeout=5)
+            return self.source
+        def create(index):
+            try:
+                return trends.use_idea({**self.body,'use_thumbnail':True,'request_id':'race-'+str(index)})
+            except store.StudioError as error:
+                return error.status
+        with patch.object(reference,'inspect',side_effect=inspect),ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(create,range(2)))
+        self.assertEqual(sum(isinstance(result,dict) for result in results),1)
+        self.assertIn(409,results)
+        self.assertEqual(len(list((store.DATA_ROOT/'trending-idea-requests').glob('*.json'))),1)
     def test_invalid_inputs_and_outside_origin_never_start_work(self):
         with patch.object(reference,'inspect') as inspect,patch.object(ideas,'launch') as launch:
             for patch_body in ({'video_id':'../../x'},{'use_thumbnail':'false'},{'target_words':0},{'request_id':'../x'},{'video_id':'12345678901'}):

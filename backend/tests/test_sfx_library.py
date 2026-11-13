@@ -54,6 +54,33 @@ class LibraryTest(unittest.TestCase):
         self.assertEqual(body['expected_revision'], 7)
         self.assertEqual(body['ops'][0]['cues'], [{'name': self.name, 't': 12.25, 'dur': .5, 'gain': -12}])
 
+    def test_individual_selection_controls_director_and_both_mixer_paths(self):
+        import soundtrack
+        from types import SimpleNamespace
+        # Explicit library selection is independent of synthesized accent categories.
+        selected = sound_settings.normalize({'effects': {'enabled': False}, 'library': {'enabled': True, 'ids': ['123', '999']}})
+        self.assertEqual(sfx_library.allowed(selected), [self.name])
+        config = sound_settings.apply_config({}, selected, animated=True)
+        self.assertTrue(config['sfx']['enabled'])
+        self.assertEqual(config['sfx']['allowed_names'], [self.name])
+        self.assertIn(self.name, sfx_library.instructions(selected))
+        self.assertEqual(sound_settings.apply_config({}, selected)['sfx']['allowed_names'], [])
+        for choice in [{'enabled': False, 'ids': ['123']}, {'enabled': True, 'ids': []}, {'enabled': True, 'ids': ['999']}]:
+            sound = sound_settings.normalize({'effects': {'enabled': False}, 'library': choice})
+            self.assertEqual(sfx_library.allowed(sound), [])
+            self.assertNotIn(self.name, sfx_library.instructions(sound))
+            config = sound_settings.apply_config({}, sound, animated=True)
+            self.assertFalse(config['sfx']['enabled'])
+            self.assertEqual(sound_settings.filter_story({'sfx': [{'name': self.name}]}, config)['sfx'], [])
+            ctx = SimpleNamespace(project={'id': 'a'*24, 'tracks': [{'id': 'base', 'clips': [{'duration': 5}]}]}, plan=None,
+                                  actions=[], report=[])
+            with patch.object(sound_settings, 'for_project', return_value=sound), \
+                 patch.object(store, 'project_animated', return_value=True), \
+                 patch.object(store, 'media_dir', return_value=self.root), \
+                 patch.object(sound_settings, 'audio_module', side_effect=AssertionError('No synthesis')):
+                soundtrack.place(ctx, {'cues': [{'name': self.name, 't': 1, 'dur': .5}]})
+            self.assertEqual(ctx.actions, [])
+
 
 class LibraryApiTest(LibraryTest):
     @classmethod
@@ -66,6 +93,20 @@ class LibraryApiTest(LibraryTest):
         fixtures.BackendTest.tearDownClass()
 
     request = fixtures.BackendTest.request
+
+    def test_file_selection_round_trips_and_empty_list_blocks_future_placement(self):
+        cid = store.channel_id(self.channel)
+        code, result = self.request('/api/channels/'+cid, 'PATCH', {'settings': {'sound': {
+            'library': {'enabled': True, 'ids': ['123', '999']}}}})
+        self.assertEqual(code, 200, result)
+        self.assertEqual(result['channel']['settings']['sound']['library'], {'enabled': True, 'ids': ['123', '999']})
+        code, result = self.request('/api/channels/'+cid, 'PATCH', {'settings': {'sound': {'library': {'ids': []}}}})
+        self.assertEqual(code, 200, result)
+        self.assertEqual(result['channel']['settings']['sound']['library'], {'enabled': True, 'ids': []})
+        self.assertEqual(sfx_library.allowed(sound_settings.for_project({'channel_id': cid})), [])
+        code, result = self.request('/api/sound-effects')
+        self.assertEqual(code, 200)
+        self.assertTrue(result['library_selection'])
 
     def test_original_preview_and_separate_timeline_clip_reuse_and_disabled_choices(self):
         import sound_settings

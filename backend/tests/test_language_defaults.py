@@ -81,6 +81,47 @@ class LanguageDefaultsTest(unittest.TestCase):
         self.assertEqual(languages.eleven_engine(newest['id']),'eleven_v4')
         self.assertEqual(languages.eleven_engine(new['id']),'eleven_v4_turbo')
 
+    def test_unvoiced_language_follows_channel_after_translation(self):
+        language_defaults.save(self.pid)
+        pid=store.create_project('c'*16,'Waiting for narration')['id']
+        work=languages.work_dir(pid,'uk')
+        (work/'text.txt').write_text('Збережений переклад')
+        self.reference(self.pid,'uk',b'updated channel voice','updated-clone')
+        with patch.object(languages,'overview',return_value={}):
+            languages.set_provider(self.pid,'heygen',code='uk',voice_id='changed-id')
+        language_defaults.save(self.pid,'uk')
+        language_defaults.refresh_unvoiced(pid)
+        self.assertEqual(languages.narration_choices(pid,'uk')['provider'],'heygen')
+        self.assertEqual(languages.voice_id(pid,'heygen','uk')['heygen_voice_id'],'changed-id')
+        self.assertEqual(languages.voice_for(pid,'uk')['path'].read_bytes(),b'updated channel voice')
+        self.assertEqual((work/'text.txt').read_text(),'Збережений переклад')
+        self.assertIsNone(languages.own_voice(pid,'uk'))
+        self.assertEqual(languages.narration_choices(pid,'es')['provider'],'elevenlabs')
+        before=languages.state_path(pid).stat().st_mtime_ns
+        language_defaults.refresh_unvoiced(pid)
+        self.assertEqual(languages.state_path(pid).stat().st_mtime_ns,before)
+        language_defaults.pin_narration(pid,'uk')
+        self.assertEqual(languages.voice_for(pid,'uk')['from'],'episode')
+
+    def test_channel_refresh_preserves_paid_audio_and_episode_overrides(self):
+        language_defaults.save(self.pid)
+        ids=[store.create_project('c'*16,name)['id'] for name in ('Ready','Pending','Manual')]
+        (languages.work_dir(ids[0],'uk')/'voice.mp3').write_bytes(b'finished')
+        cache=languages.work_dir(ids[1],'uk')/'voice-cache'
+        cache.mkdir()
+        (cache/'take.mp3').write_bytes(b'paid phrase')
+        with patch.object(languages,'overview',return_value={}):
+            languages.set_provider(ids[2],'fishaudio',code='uk')
+            languages.remove_own_voice(ids[2],'uk')
+            languages.set_provider(self.pid,'heygen',code='uk')
+        language_defaults.save(self.pid,'uk')
+        for pid in ids:language_defaults.refresh_unvoiced(pid)
+        for pid in ids[:2]:
+            self.assertEqual(languages.narration_choices(pid,'uk')['provider'],'elevenlabs')
+            self.assertEqual(languages.voice_for(pid,'uk')['from'],'episode')
+        self.assertEqual(languages.narration_choices(ids[2],'uk')['provider'],'fishaudio')
+        self.assertIsNone(languages.voice_for(ids[2],'uk',original=False))
+
     def test_explicit_apply_to_old_project_preserves_translation_and_generated_audio(self):
         existing=store.create_project('c'*16,'Existing');pid=existing['id']
         languages.save_state(pid,{'languages':{'uk':{'voice':{'made_at':9}}}})

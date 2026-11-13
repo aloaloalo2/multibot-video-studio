@@ -8,6 +8,8 @@ import channel_competitors
 import channel_hero
 import channel_transfer
 import channel_voice_lab
+import channel_translation_voices
+import json
 import languages
 import store
 import style_copy
@@ -15,6 +17,13 @@ import style_lab
 
 
 def get(self, path, query, *, ensure_idle):
+    sample=re.fullmatch(r'/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/sample(/file)?',path)
+    if sample:
+        cid,code,file=sample.groups()
+        if file:return self.serve_media(channel_translation_voices.audio_file(cid,code,(query.get('key') or [None])[0]))
+        try:settings=json.loads(query['settings'][0]) if query.get('settings') else None
+        except (ValueError,TypeError):raise store.StudioError('Невірні налаштування зразка') from None
+        return self.json_response(channel_translation_voices.describe(cid,code,settings,(query.get('text') or [None])[0]))
     match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/competitors', path)
     if match:
         return self.json_response({'competitors': channel_competitors.read(match.group(1))})
@@ -174,6 +183,10 @@ def mutate(self, method, path, body, *, ensure_idle, choose_folder):
     if method == "POST" and path == "/api/channels/create":
         return self.json_response({"channel": store.create_channel(body["name"], body.get("copy_from"))}, 201)
 
+    match=re.fullmatch(r'/api/channels/([0-9a-f]{16})/voices/settings',path)
+    if match and method=='POST':return self.json_response(channel_translation_voices.save(match.group(1),body.get('languages')))
+    match=re.fullmatch(r'/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/sample',path)
+    if match and method=='POST':return self.json_response(channel_translation_voices.start(*match.groups(),body.get('settings'),body.get('text'),body.get('client_id')),202)
     match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/remove", path)
     if match and method == "POST":
         return self.json_response(languages.remove_channel_voice(*match.groups()))

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import sfx_library
 import importlib.util
+import re
 import sys
 import threading
 from pathlib import Path
@@ -51,7 +53,7 @@ def merge(current, patch):
 def normalize(value=None):
     if value is None:
         value = {}
-    if not isinstance(value, dict) or set(value) - {'music', 'effects', 'transitions'}:
+    if not isinstance(value, dict) or set(value) - {'music', 'effects', 'transitions', 'library'}:
         raise ValueError('Невірні налаштування звуку')
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
@@ -76,6 +78,19 @@ def normalize(value=None):
     if type(enabled) is not bool or not isinstance(styles, list) or any(not isinstance(k, str) or k not in TRANSITION_IDS for k in styles) or len(set(styles)) != len(styles):
         raise ValueError('Невідомий звук переходу або некоректний вибір')
     result['transitions'] = {'enabled': enabled, 'styles': list(styles)}
+    if 'library' in value:
+        library = value['library']
+        if not isinstance(library, dict) or set(library) - {'enabled', 'ids'} or type(library.get('enabled', True)) is not bool:
+            raise ValueError('Невірний вибір SFX для анімацій')
+        result['library'] = {'enabled': library.get('enabled', True)}
+        if 'ids' in library:
+            ids = library['ids']
+            # Stable IDs survive channel transfer even when this computer has no library installed.
+            if (not isinstance(ids, list) or len(ids) > 1000
+                    or any(not isinstance(key, str) or not re.fullmatch(r'[0-9]{1,20}', key) for key in ids)
+                    or len(set(ids)) != len(ids)):
+                raise ValueError('Невідомий або повторений SFX')
+            result['library']['ids'] = list(ids)
     return result
 
 
@@ -109,7 +124,8 @@ def apply_config(config, value, *, animated=False):
         return result
     sound = normalize(value)
     result['music'] = {**(result.get('music') or {}), **sound['music']}
-    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + (sfx_library.allowed(sound) if animated else transition_names(sound))}
+    library = sfx_library.allowed(sound) if animated else []
+    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or bool(library) or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + (library if animated else transition_names(sound))}
     return result
 
 
@@ -184,6 +200,8 @@ def instructions(project, *, scoped=False, include_workflow=True):
     names = allowed_names(sound)
     text += downloaded or ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Використовуй їх для акцентів і появи елементів усередині кадру. Зберігай чіткість голосу.\n' if names else
              'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n')
+    if animated and 'library' in sound and not downloaded:
+        text += 'У добірці SFX для анімацій немає дозволених доступних звуків. Файли цієї добірки не додавай.\n'
     transitions = [] if animated else transition_names(sound)
     text += ('Окремі звуки переходів: ' + ', '.join(transitions) + '. Обирай лише доречні стики, чергуй типи. Більшість м’яких склейок залишай тихими.\n' if transitions else 'Звуки переходів вимкнено. Монтажні акценти мають окремий вибір.\n')
     if scoped:
@@ -192,10 +210,16 @@ def instructions(project, *, scoped=False, include_workflow=True):
         return text
     if not animated:
         text += 'Операція transitions озвучує вибрані доречні стики. Для авторського вибору передай sound_frames з номерами вхідних кадрів; порожній список лишає всі переходи тихими. Операція transition_sounds оновлює тільки звук на існуючих стиках. Не дублюй ці події окремими cues.\n'
+    create_music = music['enabled'] and music['generate']
+    cues = sfx_library.allowed(sound) if downloaded else names
+    if not create_music and not cues:
+        return text + 'Нову музику й акценти всередині кадру створювати не потрібно. Окрему доріжку для них не генеруй.\n'
+    example = json.dumps({'op': 'soundtrack', 'music': create_music, 'mood': 'calm',
+                          'cues': [{'name': cues[0], 't': 12.5}] if cues else []}, ensure_ascii=False)
     text += ('Для Razgon запиши ці обмеження в config.json: music.enabled, music.generate, sfx.enabled і sfx.allowed_names; '
              'cue та amb мають використовувати тільки дозволені імена. Вимкнений пункт не потребує генерування.\n'
              'Для звичайного монтажу після створення кадрів один раз використай /ops операцію soundtrack: '
-             '{"op":"soundtrack","music":true,"mood":"calm","cues":[{"name":"whoosh","t":12.5}]}. '
+             + example + '. Постав події за реальними таймінгами свого пакета кадрів. '
              'Передай music:true лише коли музика дозволена до генерації та її ще немає; cues містять лише потрібні події. '
              'Це локальний синтез звуку, без платного API й без рендеру відео. Наявний звук не дублюй.\n')
     return text

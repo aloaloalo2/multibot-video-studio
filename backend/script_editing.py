@@ -10,6 +10,7 @@ from pathlib import Path
 import store
 import word_blacklist
 import writing_jobs
+import audience_policy
 
 CRITERIA = [
     'Unnecessary claims of significance, symbolism or historical importance',
@@ -38,6 +39,7 @@ CRITERIA = [
     'Mechanical bold emphasis',
     'Outline-like lists with repetitive inline headings',
     'Excessive long dashes',
+    'Russia-specific references, examples or audience framing that conflict with the current Studio audience policy',
 ]
 EDITOR_MODE = 'author_self_review_v1'
 EDITOR_POLICY = 'slop_check_v3'
@@ -217,6 +219,7 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         requirements={'title':ctx.get('selected_title'),'approved_opening':ctx.get('approved_opening'),
             'channel_context':{k:ctx.get(k) for k in ('channel','audience','language','narrator',
                 'channel_agent_rules','script_wishes','author_writing_rules','youtube_script_rules','channel_script_rules','claude_memory_notes')},
+            'studio_audience_policy': audience_policy.text(),
             'minimum_words':minimum,'maximum_words':maximum,'blacklist':blacklist,
             'blacklist_matching':'Case-insensitive complete words/phrases; whitespace normalized, ё=е, apostrophes normalized. '
                 'Only listed legacy families белок/белка, білок, сахар/сахара, гвоздика, душа have special derived-form matching. '
@@ -239,6 +242,7 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         check_source()
         current_blacklist=word_blacklist.current() if word_blacklist.managed() else blacklist
         refine_policy=(PROMPT_PATH.parent/'script_self_refine.txt').read_text(encoding='utf-8')
+        requirements['studio_audience_policy'] = audience_policy.text()
         refine_prompt=refine_policy+'\nCURRENT REQUIREMENTS:\n'+json.dumps({
             **requirements,'blacklist':current_blacklist,
             'blacklist_findings':word_blacklist.message(intermediate,current_blacklist)},ensure_ascii=False)

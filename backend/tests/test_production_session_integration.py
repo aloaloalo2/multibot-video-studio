@@ -38,9 +38,9 @@ class ScopedProductionTest(unittest.TestCase):
             return 0,{'result':'Scoped work saved.','total_cost_usd':.01,'session_id':str(len(scopes))}
         with patch.object(production.director,'claude',side_effect=author) as model:
             production.run(self.project['id'],Path('mock-cli'))
-        self.assertEqual([len(scope) for scope in scopes],[20,20,5]);self.assertEqual(model.call_count,3)
+        self.assertEqual([len(scope) for scope in scopes],[10,10,10,10,5]);self.assertEqual(model.call_count,5)
         request=self.project['production_request'];self.assertEqual(request['status'],'done')
-        self.assertEqual(request['session_checkpoint']['remaining_frames'],[]);self.assertAlmostEqual(request['cost_usd'],.03)
+        self.assertEqual(request['session_checkpoint']['remaining_frames'],[]);self.assertAlmostEqual(request['cost_usd'],.05)
 
     def test_pause_during_handoff_preparation_starts_no_paid_session(self):
         def pause(*args,**kwargs):

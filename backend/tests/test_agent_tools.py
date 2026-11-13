@@ -1,5 +1,6 @@
 """The agent's tools: montage operations, the project summary, the studio status, export stills and fast answers."""
 import json
+import math
 import shutil
 import sys
 import tempfile
@@ -163,6 +164,43 @@ class AgentToolsTest(unittest.TestCase):
         side = clips["K002 акцент 0 текст"]
         self.assertFalse(any("x" in p for p in side.get("keyframes", [])))           # in the black field: it stands
         self.assertTrue(any("x" in p for p in clips["K002 акцент 1 коло"]["keyframes"]))   # on the vertical photo: it moves
+
+    def test_directed_accents_survive_timeline_placement_and_reglue(self):
+        project = self.project(frames=2)
+        pid = project["id"]
+        ops = [{"op": "accent", "frame": 1, "kind": "text", "text": "30 секунд", "appear": .5, "at": [900, 320],
+                "color": "#101418", "card_color": "#ffe830", "card_opacity": .4, "radius": 0, "motion": "still"},
+               {"op": "accent", "frame": 1, "kind": "text", "text": "Деталь", "appear": 1, "at": [600, 700], "color": "#de5020"},
+               {"op": "accent", "frame": 2, "kind": "circle", "line": "dashed", "radii": [100, 80], "at": [960, 540],
+                "appear": 1.2, "motion": "fade", "color": "#ed3824"}]
+        status, result = self.request(f"/api/projects/{pid}/ops", "POST", {"ops": ops})
+        self.assertEqual(status, 200, result)
+        clips = self.clips(pid)
+        card = clips["K001 акцент 0 картка"]
+        self.assertEqual((card["color"], card["opacity"], card["corner_radius"]), ("#ffe830", .4, 0))
+        self.assertEqual(clips["K001 акцент 0 текст"]["color"], "#101418")
+        self.assertEqual(clips["K001 акцент 2 текст"]["color"], "#de5020")
+        self.assertNotIn("K001 акцент 2 картка", clips)
+        ring = clips["K002 акцент 0 коло"]
+        asset = store.resolve_asset(store.load_project(pid), ring["asset_id"])
+        with Image.open(asset["path"]) as image:
+            self.assertIn((237, 56, 36, 255), image.getdata())
+            alpha = image.getchannel("A")
+            self.assertEqual(alpha.getpixel((124, 104)), 0)
+            self.assertGreater(alpha.crop((124, 24, 140, 39)).getextrema()[1], 200)
+            outline = [alpha.getpixel((round(124 + 93 * math.cos(math.radians(deg))),
+                                       round(104 + 73 * math.sin(math.radians(deg))))) for deg in range(360)]
+            self.assertGreater(sum(v < 32 for v in outline), 30)
+            self.assertGreater(sum(v > 200 for v in outline), 120)
+        status, result = self.request(f"/api/projects/{pid}/ops", "POST", {"ops": [{"op": "reglue"}]})
+        self.assertEqual(status, 200, result)
+        clips = self.clips(pid)
+        self.assertFalse(any("поява" in title for title in clips))
+        for title, motion, at, top in [("K001 акцент 0 картка", "still", .5, .4), ("K002 акцент 0 коло", "fade", 1.2, 1)]:
+            clip = clips[title]
+            self.assertEqual(clip["accent_motion"], motion)
+            self.assertEqual(montage_ops.keyframe_value(clip, "opacity", at-.05), 0)
+            self.assertAlmostEqual(montage_ops.keyframe_value(clip, "opacity", at+.3), top)
 
     def test_dry_run_and_revision_guard_change_nothing(self):
         project = self.project(frames=2)

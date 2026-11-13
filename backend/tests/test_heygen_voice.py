@@ -10,6 +10,24 @@ import channel_voice_lab as lab
 import store
 
 class HeyGenTests(unittest.TestCase):
+    def test_new_voice_waits_for_active_then_sends_one_speech_request(self):
+        settings=lab.validated({'provider':'heygen','heygen_voice_id':'new-voice'})
+        replies=[{'data':{'status':status,'mode':'instant'}} for status in ('PENDING','PENDING','ACTIVE')]
+        replies.append({'data':{'audio_url':'https://audio.example/sample.mp3'}})
+        with patch.object(hg,'call',side_effect=replies) as call,patch.object(hg.time,'sleep') as sleep,patch.object(hg.urllib.request,'urlopen',return_value=io.BytesIO(b'mp3')):
+            self.assertEqual(hg.synthesize(settings),b'mp3')
+        path='/v3/models/audio/voices/new-voice'
+        self.assertEqual([args.args for args in call.call_args_list[:-1]],[(path,)]*3)
+        self.assertEqual(call.call_args.args[0],'/v3/models/audio/tts')
+        self.assertEqual(sleep.call_count,2)
+
+    def test_pending_timeout_and_failed_voice_do_not_submit_speech(self):
+        settings=lab.validated({'provider':'heygen','heygen_voice_id':'new-voice'})
+        for data,message in [({'status':'PENDING'},'усе ще готує'),({'status':'FAILED','failure_reason':'INVALID_AUDIO'},'прочитати запис')]:
+            with self.subTest(data=data),patch.object(hg,'VOICE_READY_TIMEOUT',0),patch.object(hg,'call',return_value={'data':data}) as call:
+                with self.assertRaisesRegex(store.StudioError,message):hg.synthesize(settings)
+                call.assert_called_once_with('/v3/models/audio/voices/new-voice')
+
     def test_starfish_catalog_uses_engine_and_keeps_compatible_voices(self):
         with patch.object(hg,'call',side_effect=[{}, {'data':[{'voice_id':'a','available_engines':['starfish']},{'voice_id':'b','available_engines':['elevenlabs']}]}, {'data':[]}]) as call:
             self.assertEqual([v['voice_id'] for v in hg.voices('starfish')['voices']],['a'])

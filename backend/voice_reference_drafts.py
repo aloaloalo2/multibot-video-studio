@@ -10,6 +10,7 @@ import languages
 import voice_cleanup
 
 CLEANUP_VERSION = voice_cleanup.VERSION
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 
 def folder(root, token):
@@ -21,7 +22,7 @@ def folder(root, token):
 
 
 def upload(root, stream, size, filename):
-    if not 0 < size <= 200 * 1024 * 1024: raise store.StudioError('Запис порожній або перевищує 200 МБ', 413)
+    if not 0 < size <= MAX_UPLOAD_BYTES: raise store.StudioError('Оберіть аудіо або відео до 2 ГБ', 413)
     token = uuid.uuid4().hex
     path = root / 'drafts' / token;path.mkdir(parents=True)
     raw = path / 'upload'
@@ -40,6 +41,9 @@ def upload(root, stream, size, filename):
         meta = {'id': token, 'filename': Path(filename).name[:200], 'duration': duration, 'clean_ready': False}
         store.atomic_json(path/'metadata.json', meta)
         return meta
+    except Exception:
+        shutil.rmtree(path,ignore_errors=True)
+        raise
     finally:
         raw.unlink(missing_ok=True)
 

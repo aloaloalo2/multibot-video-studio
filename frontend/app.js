@@ -204,13 +204,16 @@ const channelActivity=new Set(),projectActivities=new Map();
 let channelActivityPending=false;
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
-    for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
     const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура'].includes(kind);
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
+    const key=JSON.stringify(activity??null);
+    if(card._activityKey===key)continue;
+    card._activityKey=key;
+    for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
@@ -287,23 +290,29 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
   return true;
 }
 
-function projectActions(project){
+function projectActions(project,current=()=>project){
   const actions=document.createElement('div');actions.className='project-actions';
   const canCreateThumbnail=!!project.episode_path;
   const icons={delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(canCreateThumbnail)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;
-  for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(project)]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(project)]]:[]),['delete','Видалити випуск',()=>deleteProject(project)]]){
+  for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(current())]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(current())]]:[]),['delete','Видалити випуск',()=>deleteProject(current())]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
   }
   return actions;
 }
 
+const overviewProjectRequests=new Map();
 async function refreshProjects(){
   const channelId=state.channel?.id;if(!channelId)return;
-  const result=await api(`/api/projects?channel=${encodeURIComponent(channelId)}`);
-  if(state.channel?.id!==channelId)return;
-  state.projects=result.projects || [];renderOverview();
+  const navigation=state.navigation,key=`${navigation}:${channelId}`;
+  if(overviewProjectRequests.has(key))return overviewProjectRequests.get(key);
+  const request=(async()=>{
+    const result=await api(`/api/projects?channel=${encodeURIComponent(channelId)}`);
+    if(state.channel?.id!==channelId||state.navigation!==navigation)return;
+    state.projects=result.projects || [];renderOverview();
+  })().finally(()=>overviewProjectRequests.delete(key));
+  overviewProjectRequests.set(key,request);return request;
 }
 
 function renameProject(project){
@@ -450,12 +459,12 @@ async function markProjectSeen(id){
   }catch(error){console.warn('Не вдалося прибрати позначку завершення',error);}
 }
 
-function projectCardHeading(project){
+function projectCardHeading(project,current=()=>project){
   const heading=document.createElement('h2');heading.innerHTML=projectIcon;
   const button=document.createElement('button');button.type='button';button.className='project-title-rename';
   button.textContent=project.name || 'Без назви';
   button.setAttribute('aria-label',`Перейменувати випуск «${project.name || 'Без назви'}»`);
-  button.addEventListener('click',event=>{event.stopPropagation();renameProject(project);});
+  button.addEventListener('click',event=>{event.stopPropagation();renameProject(current());});
   heading.append(button);return heading;
 }
 
@@ -469,60 +478,13 @@ function renderOverview() {
   $('overview-title').textContent=state.channel?'Випуски':'Оберіть канал';
   $('overview-create').disabled=!state.channel;
   $('overview-channel-settings').disabled=!state.channel;
-  const container=$('overview-projects');container.replaceChildren();
-  if(!state.channel){container.innerHTML='<div class="overview-empty"><strong>Каналів ще немає</strong>Додайте папку каналу на лівій панелі.</div>';return;}
-  if(!state.projects.length){container.innerHTML='<div class="overview-empty"><strong>Поки немає випусків</strong>Створіть перший випуск цього каналу.</div>';return;}
-  for(const project of state.projects){
-    const card=document.createElement('article');card.className='project-card';card.dataset.projectId=project.id;card.setAttribute('aria-label',`Випуск «${project.name}»`);
-    const open=document.createElement('button');open.type='button';open.className='project-open';open.setAttribute('aria-label',`Відкрити випуск «${project.name}»`);
-    const count=project.scene_count ?? project.scenes?.length ?? 0;
-    open.innerHTML=`<div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><span class="project-created-group">${completionMark(project)}</span></div>`;
-    // While the agent makes the frames the card shows how far it got and still opens, so the author can watch the frames
-    // come in (user, 5 November 2026: «коли проект створюється… дозволено нажимати на проект… подивитися, що там відбувається»).
-    const making=project.production_request,makingState=projectProductionCardState(making,project.last_export_at),producing=makingState.working;
-    open.addEventListener('click',()=>{
-      selectProject(project.id,{view:directMontage(project)||count?'editor':'plan'}).catch(error=>status(error.message,true));
-    });
-    const length=Number(project.voice_duration || (count>0?project.duration:0));
-    if(Number.isFinite(length) && length>0){
-      const duration=document.createElement('span');duration.className='project-duration';
-      const value=length,hours=Math.floor(value/3600);
-      const formatted=hours?`${hours}:${String(Math.floor(value/60)%60).padStart(2,'0')}:${String(Math.floor(value)%60).padStart(2,'0')}`:clock(value);
-      duration.textContent=formatted;duration.title='Тривалість ролика';
-      open.querySelector('.project-meta').append(duration);
-    }
-    if(project.cover_asset_id || project.preview_mtime){
-      // The Studio picks a telling frame of the montage for the cover and fades it in once loaded.
-      const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.loading='lazy';cover.decoding='async';
-      cover.src=`/api/projects/${encodeURIComponent(project.id)}/cover?v=${encodeURIComponent(project.preview_mtime || project.updated_at || project.revision || 0)}`;
-      cover.addEventListener('load',()=>card.classList.add('cover-ready'),{once:true});
-      cover.addEventListener('error',()=>{card.classList.remove('has-cover');card.classList.add('no-cover');cover.remove();},{once:true});
-      card.classList.add('has-cover');card.append(cover);
-    }else card.classList.add('no-cover');
-    const exporting=document.createElement('div');exporting.className='project-export-state';exporting.hidden=true;open.insertBefore(exporting,open.querySelector('.project-meta'));
-    // a stopped or paused run tells it on the card too: the author was sent here to watch the frames being made
-    const stopped=makingState.stopped;
-    if(stopped){
-      const {total,done}=makingState;
-      const box=document.createElement('div');box.className='project-making stopped';
-      box.innerHTML=`<span class="project-export-label"><span>${making.paused?'На паузі':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}</span></span>`;
-      box.title='Відкрийте випуск, щоб продовжити або почати ще раз';
-      open.insertBefore(box,open.querySelector('.project-meta'));card.classList.add('production-stopped');
-    }
-    if(producing){
-      const {total,done}=makingState,progress=total?Math.round(done/total*100):0;
-      const box=document.createElement('div');box.className='project-making';
-      box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>Створюємо кадри · ${done} з ${total}</span></span><span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${progress}%"></span></span>`;
-      open.insertBefore(box,open.querySelector('.project-meta'));
-      card.classList.add('producing');card.setAttribute('aria-busy','true');
-    }
-    card.append(open,projectCardHeading(project),projectActions(project));
-    if(typeof attachProjectCosts==='function')attachProjectCosts(card,project);
-    if(producing||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))){
-      const control=productionControl(project.id,producing);control.classList.add('project-production-control');card.append(control);
-    }
-    container.append(card);
+  const container=$('overview-projects');
+  if(!state.channel||!state.projects.length){
+    const empty=state.channel?'<strong>Поки немає випусків</strong>Створіть перший випуск цього каналу.':'<strong>Каналів ще немає</strong>Додайте папку каналу на лівій панелі.';
+    if(container._empty!==empty||!container.querySelector('.overview-empty'))container.innerHTML=`<div class="overview-empty">${empty}</div>`;
+    container._empty=empty;return;
   }
+  delete container._empty;reconcileProjectCards(container,state.projects);
   renderProjectActivities();updateOverviewExports();pollOverviewExports(true);
   if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
 }
@@ -555,10 +517,11 @@ function updateOverviewExports(){
     for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active&&!button.classList.contains('thumbnail');
     if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
     const box=card.querySelector('.project-export-state');box.hidden=!active;
-    if(!active){box.replaceChildren();continue;}
+    if(!active){if(box._exportMarkup){box.replaceChildren();delete box._exportMarkup;}continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
     const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?exportQueueLabel(job):'Експорт';
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
+    const markup=`<span class="project-export-label">${exportSpinner}<span>${label}</span><strong>${progress}%</strong></span><span class="project-export-progress" role="progressbar" aria-label="Експорт" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span>`;
+    if(box._exportMarkup!==markup){box.innerHTML=markup;box._exportMarkup=markup;}
   }
 }
 let overviewExportRequest=false,overviewBatchExports=true;
@@ -698,6 +661,8 @@ function renderProject() {
   document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
   $('save-state').textContent='';
   const trending=state.view==='trending'&&!state.project;
+  document.querySelector('.app-shell').classList.toggle('trending-open',trending);
+  $('trending-toolbar').hidden=!trending;
   $('trending-page').hidden=!trending;
   $('trending-videos').classList.toggle('active',trending);
   $('trending-videos').setAttribute('aria-current',trending?'page':'false');
@@ -927,7 +892,7 @@ function renderPreview() {
     if(state.playing && video.paused)video.play().catch(()=>{});
   } else if (url && (kind.includes('image')||kind.includes('photo'))) {
     video.pause();video.hidden=true;image.hidden=false;placeholder.hidden=true;
-    if (image.src!==url) image.src=url;
+    if (image.getAttribute('src')!==url) image.src=url;
   } else {video.pause();video.hidden=true;image.hidden=true;placeholder.hidden=false;placeholder.textContent=scene ? (scene.type==='color'?'Фоновий кадр без матеріалу':`Матеріал для кадру «${scene.title || 'Кадр'}» ще не вибрано`) : 'Оберіть кадр на таймлайні';}
   const textTrack=allTracks().find(track=>track.type==='text');
   const activeText=textTrack?.clips?.filter(clip=>state.playhead>=seconds(clip.start)&&state.playhead<seconds(clip.start)+seconds(clip.duration)).map(clip=>clip.text).filter(Boolean).join(' · ');
@@ -1157,13 +1122,18 @@ function openChannelSettings(channel) {
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
     try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,sound:channelSoundValues(),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
+      const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
       if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});
       if(voiceLab?.saveVoiceSettings)await voiceLab.saveVoiceSettings(voiceSettings);
+      if(translationVoices?.saveVoiceSettings)await translationVoices.saveVoiceSettings(translationSettings);
       const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;if($('channel-name')===form)closeModal();renderChannels();
       if(state.project?.channel_id===channel.id && (original.plan_mode || 'director')!==settings.plan_mode){
         await selectProject(state.project.id,{view:state.view});
-      }else renderProject();
+      }else{
+        renderProject();
+        if(state.view==='langs'&&state.project?.channel_id===channel.id)await loadLangs(state.project.id);
+      }
       status(`Налаштування каналу «${channel.name}» збережено.`);
     }catch(error){status(error.message,true);}
   }}]);

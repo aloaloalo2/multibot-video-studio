@@ -234,6 +234,30 @@ class VoiceLabTests(unittest.TestCase):
             self.assertFalse(result['settings']['noise_cleanup'])
             with self.assertRaises(store.StudioError):lab.accept_reference(self.cid,draft['id'],False)
 
+    def test_video_reference_extracts_audio_and_replaces_old_heygen_id(self):
+        root=lab.folder(self.cid)
+        wav=root/'input.wav';wav.write_bytes(self.draft_recording())
+        video=root/'input.mp4'
+        subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=size=32x32:rate=1',
+                        '-i',str(wav),'-shortest','-c:v','libx264','-c:a','aac',str(video)],check=True)
+        lab.save(self.cid,{**lab.DEFAULTS,'heygen_voice_id':'previous-voice'})
+        raw=video.read_bytes()
+        draft=lab.upload(self.cid,io.BytesIO(raw),len(raw),'German recording.mp4')['draft']
+        self.assertGreater(draft['duration'],10)
+        result=lab.accept_reference(self.cid,draft['id'],False)
+        self.assertEqual(result['settings']['heygen_voice_id'],'')
+        self.assertEqual(result['reference']['filename'],'German recording.mp4')
+
+    def test_failed_upload_cleans_unusable_draft_and_preserves_reference(self):
+        self.reference();root=lab.folder(self.cid)
+        with self.assertRaises(store.StudioError):
+            lab.upload(self.cid,io.BytesIO(b'partial'),20,'broken.mp4')
+        self.assertEqual(list((root/'drafts').iterdir()),[])
+        self.assertEqual((root/'reference.mp3').read_bytes(),b'preserved reference')
+        with self.assertRaises(store.StudioError):
+            lab.upload(self.cid,io.BytesIO(),lab.reference_drafts.MAX_UPLOAD_BYTES+1,'large.mp4')
+        self.assertEqual(list((root/'drafts').iterdir()),[])
+
     def test_cancelled_draft_does_not_change_current_voice_and_cannot_escape_storage(self):
         self.reference();raw=self.draft_recording();root=lab.folder(self.cid)
         draft=lab.upload(self.cid,io.BytesIO(raw),len(raw),'new.wav')['draft']

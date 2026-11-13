@@ -8,6 +8,7 @@ import script_drafts
 import store
 import word_blacklist
 import writing_jobs
+import audience_policy
 
 MAX_WISHES = 12000
 
@@ -113,6 +114,7 @@ def run(project, data, ctx, ask, receipt_file):
     script_editing._save(folder, report)
     try:
         requirements = {key: ctx[key] for key in ('channel_agent_rules', 'script_wishes', 'author_writing_rules', 'youtube_script_rules', 'channel_script_rules', 'claude_memory_notes') if ctx.get(key)}
+        requirements['studio_audience_policy'] = audience_policy.text()
         requirements['word_blacklist'] = word_blacklist.current()
         requirements['selected_title'] = project['name']
         prompt = ('Revise this complete script in the SAME author session according to the new author wishes. '

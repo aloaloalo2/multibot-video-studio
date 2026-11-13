@@ -76,9 +76,10 @@ class ProductionTest(unittest.TestCase):
              patch.object(production.production_context,'write',return_value=(Path('context.json'),'Current work')), \
              patch.object(production.director,'claude',return_value=(0,{'result':'Ready'})) as model:
             production.run(self.project['id'],Path('claude'))
-        self.assertEqual(model.call_count,1)
+        self.assertEqual(model.call_count,2)
+        self.assertIn('лише кадри студії 41-50 з 53, від 80.00 до 100.00',model.call_args_list[0].args[1])
         prompt=model.call_args.args[1]
-        self.assertIn('лише кадри студії 41-53 з 53, від 80.00 до 106.00',prompt)
+        self.assertIn('лише кадри студії 51-53 з 53, від 100.00 до 106.00',prompt)
         self.assertNotIn('лише кадри студії 1-53',prompt)
         self.assertEqual(self.project['production_request']['status'],'done')
 
@@ -141,7 +142,7 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(mirror["status"], "done")
         self.assertNotIn(self.project["id"], production.ACTIVE)
 
-    def test_a_photo_channel_gets_its_own_brief_and_is_done_when_its_frames_stand_on_the_timeline(self):
+    def test_photo_channel_receives_its_brief_and_needs_visual_review_after_placement(self):
         self.animated = False
         text = production.photo_brief(self.project, REQUEST)
         for part in ("кадри студії 1-3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "без стикменів",
@@ -163,7 +164,8 @@ class ProductionTest(unittest.TestCase):
             self.project["tracks"][0]["clips"].append(picture(3))
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
-        self.assertEqual(self.project["production_request"]["status"], "done")
+        self.assertEqual(self.project["production_request"]["status"], "failed")
+        self.assertIn("огляд", self.project["production_request"]["error"])
         with patch.object(production.director, "executable", return_value=Path("claude")), patch.object(production.threading, "Thread") as thread:
             production.start(self.project["id"])
         thread.assert_called_once()                                                    # no longer only for animated channels
@@ -221,6 +223,8 @@ class ProductionTest(unittest.TestCase):
                 patch.object(store, "read_json", return_value={}):
             off = production.photo_brief(self.project, REQUEST)
         self.assertIn("studio.py\" accent", on)
+        self.assertIn(production.motion_direction.ACCENTS, on)
+        self.assertNotIn(production.motion_direction.ACCENTS, off)
         self.assertIn("не додавай", off)
         self.assertNotIn("studio.py\" accent", off)
 

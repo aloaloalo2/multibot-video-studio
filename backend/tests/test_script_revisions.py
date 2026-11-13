@@ -81,6 +81,8 @@ class ScriptRevisionsTest(unittest.TestCase):
         self.assertEqual(model.call_args.kwargs['session']['session_id'], self.session['session_id'])
         self.assertEqual(model.call_args.kwargs['session']['effort'], 'medium')
         self.assertIn('Зроби формулювання природнішими.', model.call_args.args[0])
+        self.assertIn('studio_audience_policy',model.call_args.args[0])
+        self.assertIn('Росії',model.call_args.args[0])
         auto.assert_not_called()
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'], self.before)
         self.assertEqual(script_drafts.current(self.pid)['text'], self.after)

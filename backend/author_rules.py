@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import word_blacklist
+import audience_policy
 from pathlib import Path
 
 HOME = Path.home()
@@ -98,7 +99,7 @@ PREFIXES = ("antropov", "gorbunov", "valentin", "karl", "what-if", "vetrov")
 TEXT_WORDS = ("сценар", "зачин", "тайтл", "заголов", "заборонен", "слова", "речен", "мова", "мовою", "озвуч", "фраз", "текст")
 
 
-def claude_memory(channel: str, limit: int = 30000, scripts_only: bool = False) -> str:
+def claude_memory(channel: str, limit: int = 30000, scripts_only: bool = False, montage_only: bool = False) -> str:
     """Memory notes of this channel and the notes that hold for every channel, frontmatter dropped. A note whose file
     name starts with another channel's prefix (antropov-, gorbunov-, …) stays with that channel. With scripts_only,
     only notes that speak of scripts, openings, titles or words."""
@@ -121,6 +122,11 @@ def claude_memory(channel: str, limit: int = 30000, scripts_only: bool = False) 
             continue
         if scripts_only and not any(w in low for w in TEXT_WORDS):
             continue
+        if montage_only:
+            import montage_context
+            if montage_context.WRITING.search(file.stem + ' ' + (body.splitlines()[0] if body else '')) and not montage_context.VISUAL.search(file.stem + ' ' + (body.splitlines()[0] if body else '')):
+                continue
+            body = montage_context.sections(body)
         chosen.append(f"[{file.stem}]\n{body}")
     out, size = [], 0
     for note in chosen:
@@ -144,6 +150,8 @@ def for_channel(folder: Path, root: Path) -> dict:
             "channel_script_rules": script_sections(store.channel_rules_source(folder)),
             "claude_memory_notes": claude_memory(folder.name, scripts_only=True),
         }
+    # Current Studio policy also applies to imported channel author snapshots.
+    result['studio_audience_policy'] = audience_policy.text()
     entries=word_blacklist.current()
     result.pop('studio_word_blacklist',None)
     if word_blacklist.managed():

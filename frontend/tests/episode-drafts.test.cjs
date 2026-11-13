@@ -15,7 +15,7 @@ function harness(api){
   const modes=element(),referenceInput=element(),referenceBox=element(),note=element(),heading=element(),copy=element(),headerRefresh=element();
   modes.innerHTML='<button data-entry="title"></button><button data-entry="topics"></button><button data-entry="reference"></button>';
   let uuid=0;
-  const context=vm.createContext({state:{channel:{id:'channel-a'}},$:id=>({'episode-ideas':root,'new-project-name':input,'modal-actions':actions,'modal-backdrop':backdrop,'modal-body':root,'modal-title':heading,'episode-entry-options':modes,'episode-reference-url':referenceInput,'episode-reference':referenceBox,'episode-reference-status':note,'episode-reference-copy':copy,'ideas-refresh':headerRefresh})[id],
+  const context=vm.createContext({state:{channel:{id:'channel-a'}},bindTitleTranslation:(field,options)=>{context.translation=options;return {refresh(){},dispose(){}};},$:id=>({'episode-ideas':root,'new-project-name':input,'modal-actions':actions,'modal-backdrop':backdrop,'modal-body':root,'modal-title':heading,'episode-entry-options':modes,'episode-reference-url':referenceInput,'episode-reference':referenceBox,'episode-reference-status':note,'episode-reference-copy':copy,'ideas-refresh':headerRefresh})[id],
     modal:(title,body,actions)=>{context.title=title;context.modalActions=actions;backdrop.hidden=false},closeModal:()=>{backdrop.hidden=true;root.isConnected=false},
     api:async(...args)=>{calls.push(args);return api(...args)},esc:s=>s,projectCostIcons:{claude_code:'<svg></svg>'},status:()=>{},
     refreshProjects:async()=>{},showProjectList:()=>{},pollChannelActivity:()=>{},selectProject:async id=>selected.push(id),renderMontageMake:()=>{context.inlineRendered=true},projectActivities:new Map(),

@@ -10,6 +10,8 @@ import uuid
 import agent_image
 import agent_openrouter
 import agent_storage
+import motion_direction
+import montage_ops
 import production
 import store
 
@@ -46,7 +48,22 @@ for operation, field, description in (
 ):
     TOOLS.append(tool(operation, description, {field: {"type": "string"}, "expected_revision": {"type": "integer"}}, (field, "expected_revision")))
 TOOLS.append(tool("select_elements", "Highlight clips, layers or frame groups on the timeline. Read their ids with get_project first.", {"clip_ids": {"type": "array", "items": {"type": "string"}}, "layer_ids": {"type": "array", "items": {"type": "string"}}, "group_ids": {"type": "array", "items": {"type": "string"}}}))
-EDIT_ACTIONS = {"add_clip", "group_clips", "set_transition", "delete_clip", "remove_layer", "delete_group", "ungroup_clips"}
+_POINT = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+_COLOR = {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
+_OPACITY = {"type": "number", "minimum": 0, "maximum": 1}
+ACCENT_FIELDS = {
+    "frame": {"type": "string", "description": "Frame number or scene group id"},
+    "kind": {"type": "string", "enum": ["text", "circle", "arrow", "card"]},
+    "at": _POINT, "radii": _POINT, "size": _POINT, "from": _POINT, "to": _POINT,
+    "color": _COLOR, "card_color": _COLOR, "opacity": _OPACITY, "card_opacity": _OPACITY,
+    "text": {"type": "string"}, "word": {"type": "string"}, "appear": {"type": "number"},
+    "style": {"type": "string", "enum": list(montage_ops.STYLES)},
+    "line": {"type": "string", "enum": ["solid", "dashed"]},
+    "motion": {"type": "string", "enum": ["still", "fade", "animated"]},
+    "expected_revision": {"type": "integer"},
+}
+TOOLS.append(tool("add_accent", "Place a director-designed accent in an existing frame. Points and sizes are frame pixels. For text, card_color and card_opacity style its backing. Choose the appearance for this scene.", ACCENT_FIELDS, ("frame", "kind", "color", "expected_revision")))
+EDIT_ACTIONS = {"add_clip", "add_accent", "group_clips", "set_transition", "delete_clip", "remove_layer", "delete_group", "ungroup_clips"}
 
 
 def acquire_project_guard(project_id, owner):
@@ -165,6 +182,13 @@ def execute(project_id, name, args, callbacks, allow_images):
         if type(expected) is not int:
             raise store.StudioError("Спочатку перевірте поточну версію проєкту")
         payload = {k: v for k, v in args.items() if k != "expected_revision"}
+        if name == "add_accent":
+            if payload.keys() - ACCENT_FIELDS.keys() or payload.get("kind") not in ACCENT_FIELDS["kind"]["enum"] or not re.fullmatch(r"#[0-9a-fA-F]{6}", str(payload.get("color"))):
+                raise store.StudioError("Невірні параметри акценту")
+            channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
+            if not store.read_channel_settings(channel, {}).get("accents"):
+                raise store.StudioError("Додаткові акценти вимкнено в налаштуваннях каналу")
+            return montage_ops.run(project_id, [{"op": "accent", **payload}], expected)
         if name == "add_clip" and "color" in payload and (not isinstance(payload["color"], str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", payload["color"])):
             raise store.StudioError("Колір тексту має бути заданий у форматі #RRGGBB")
         before_clips = {c["id"] for layer in project.get("tracks", []) for c in layer.get("clips", [])}
@@ -198,7 +222,7 @@ def worker(project_id, text, callbacks, allow_images, guard, reasoning_effort):
         system = ("Ти монтажер Video Studio. Працюй лише в поточному проєкті. " + workflow +
                   "Створи групу через group_clips, навіть якщо кадр поки містить один елемент; інші елементи кадру додавай з group_id. "
                   "Озвучку та інші матеріали, що тривають через декілька кадрів, залишай окремо. "
-                  "Налаштування animation.assets з get_project застосовується до предметів Razgon в універсальних і анімаційних проєктах: увімкнено означає використання PNG-предметів із бібліотеки або генерації, вимкнено означає малювання кодом. Враховуй accents із get_project: увімкнено означає опрацювати акценти на фото за правилами студії (production.ACCENT_RULES): " + production.ACCENT_RULES.replace(chr(10), ' ') + " Вимкнено означає не додавати акценти. "
+                  "Налаштування animation.assets з get_project застосовується до предметів Razgon в універсальних і анімаційних проєктах: увімкнено означає використання PNG-предметів із бібліотеки або генерації, вимкнено означає малювання кодом. Враховуй accents із get_project для додаткових акцентів на фото. Коли вимкнено, залишай фото без додаткових акцентів. " + motion_direction.ACCENTS + " "
                   "Кадри формату animation створюй редагованими шарами через op animation, add_clip і keyframes; відеофайли кадрів не рендери. Рендер відео запускає лише автор через Експорт MP4. "
                   "Перед роботою перевір наявні групи і шари через get_project, щоб не дублювати їх. Застосовуй лише доступні інструменти. "
                   "Текстові вставки створюй за змістом і стилем каналу: виділяй справді важливі тези, зберігай сенс сценарію, не вигадуй фактів. "

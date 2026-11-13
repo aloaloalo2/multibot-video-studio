@@ -4,7 +4,7 @@ import json
 import re
 import unicodedata
 
-RULE_SOURCES = ('author_writing_rules', 'youtube_script_rules', 'channel_script_rules', 'claude_memory_notes')
+RULE_SOURCES = ('studio_audience_policy', 'author_writing_rules', 'youtube_script_rules', 'channel_script_rules', 'claude_memory_notes')
 
 
 def encode(value):

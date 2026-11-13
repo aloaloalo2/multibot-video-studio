@@ -8,6 +8,26 @@ metadata:
 
 # Razgon 2D Studio: full video pipeline
 
+## Studio director task
+
+For a VideoKey Studio animated planning job, use the supplied tools/direction.py prepare/apply route. The helper prepares one director-context.txt with the exact narration, sentence boundaries, source signature, shot/sound schema and transition reference. Author one story/direction.json with semantic shot ranges, scene staging/camera, episodes, a compact bible and all requested sound events together. The local helper resolves words, writes canonical shots/beats/bible, runs technical direction/coverage checks once and imports the Studio plan. Read references/studio-direction.md only when the current task does not already explain the commands. The film's structure remains the author's creative decision.
+
+A routine Studio director job needs no previous episode's generators, bridge/player/mixer source, whole word dump or custom Python glue. Diagnose a specific reported failure with a targeted read. Gather all corrections before one further apply; after success, adding optional individual sound effects does not require another pass. Keep chosen model/effort, narration and current sound allowlists. No image, voice or video generation belongs to this stage. Standalone projects retain the pipeline below.
+
+## Studio frame task: use this bounded branch
+
+When the supplied task names VideoKey Studio frame ids and an accepted frame plan, follow this branch and the current Studio brief. The standalone pipeline below applies only when creating/exporting a separate film.
+
+- Read the supplied current scope and standing montage rules once. Full global/channel AGENTS.md, script-writing CLAUDE.md, episode archives and automatic memory are unnecessary; the Studio supplies relevant rules and saved channel wishes explicitly.
+- Read engine-api.md and style-bible.md only as needed for the current scene API and look. Direction and the script already exist. Reuse current cast/sets/takes; read full words and ideas only for the selected frames from production-context.txt.
+- Each fresh session covers at most 10 pending frames, in batches of five. Save each scene immediately. Keep newly needed scene helpers separate so future work does not invalidate earlier scenes.
+- Use ONE cached `frame_review.py sheets --frames <batch> --scale 0.3` pass for new/changed frames. Read only the exact new sheet paths printed, inspect all new frames and mark them honestly. Approved unchanged frames require no rendering or image read. After a defect, check changed dependencies and available adjacent cuts. Use scoped status before finishing; the Studio maintains whole-film readiness.
+- Do not add a routine second render --sheet, full-film text-check/logic-check/speed-check, installation, transcription, direction, sound regeneration, preview-video render or MP4 export. Targeted diagnostics remain available for a specific observed defect. The author's Export action owns the full render.
+- Execute one simple command per call with absolute quoted paths. Use Read offsets/limits and Write/Edit. For longer logic save a Python file and execute `python3 <absolute-file>`; avoid cd, shell variables, redirection, pipes and chained commands that trigger repeated permission failures. Keep the ordinary permission checks.
+- For slots always pass the exact selected frame ids. Preserve neighbouring frames, narration, soundtrack, branding and accepted assets. End with a compact checkpoint after the scoped evidence passes.
+
+
+
 For VideoKey Studio jobs, the supplied channel settings and current author brief determine the presentation in every format. Universal projects use realistic people or appropriate anatomical illustrations in every format, including Razgon; never import stick figures or doodle hosts from a sample. This stick-figure ban does not apply to animated projects, which retain their channel style. Each movement must explain an action or relationship. A readable composed hold is valid. Do not add drifting particles, glow, repeated zooms or primitive substitute props to satisfy a motion quota. Keep every caption, effect and drawing state inside its own scene. Review the current batch of up to five frames or only repaired frames and their adjacent cuts using cached stills; no full-video render or extra reviewer agent for a local edit.
 
 For an existing Studio frame plan, start from the supplied production-context.txt and execute only its session_frames or repair_frames. Direction, audio and previous parts are already saved. Read the necessary references once per fresh session; retain them while working through batches of five. Do not repeat installation, direction, whole-script reading or full-film QC for each part. Reuse existing takes and props. Only take parts that overlap the current Studio frames belong to the task; missing future parts are left for their own scope. Preserve the author's selected model, effort and visual quality.

@@ -75,9 +75,10 @@ def _rules(cid, folder):
         result = {'author': author_rules.for_channel(folder, store.YOUTUBE_ROOT),
             'director_notes': author_rules.claude_memory(folder.name, limit=30000),
             'shared_rules': author_rules._read(store.YOUTUBE_ROOT / 'AGENTS.md')}
-    # This editable list belongs to the receiving Studio, outside a channel ZIP.
+    # Global policies belong to the receiving Studio, outside the channel author snapshot.
     author = dict(result['author'])
     author.pop('studio_word_blacklist', None)
+    author.pop('studio_audience_policy', None)
     return {**result, 'author': author}
 
 
@@ -126,13 +127,22 @@ def export_bundle(cid, *, include_voice_files=False):
         current=json.loads(_json(current))
         for code,value in (current.get('payload',{}).get('voices') or {}).items():
             if not value:continue
-            if value.get('remote_only'):continue
+            choices=(current['payload'].get('language_settings') or {}).get(code) or current['payload'].get('settings') or {}
+            if value.get('remote_only'):
+                if choices.get('heygen_voice_id'):
+                    value.setdefault('voice_ids',{})['heygen']=choices['heygen_voice_id']
+                continue
             meta=store.read_json(base/version/code/'own-voice.json',{}) or {}
             audio=base/version/code/'own-voice.mp3'
             fish_id=meta.get('fish_model') if audio.is_file() and meta.get('fish_stamp')==audio.stat().st_mtime_ns else None
+            heygen_id=choices.get('heygen_voice_id')
+            if not heygen_id and value.get('sha256') and choices.get('heygen_model')!='starfish':
+                from channel_voice_lab import heygen_clone_receipt
+                receipt=heygen_clone_receipt(value['sha256'],code)
+                heygen_id=(store.read_json(receipt,{}) or {}).get('voice_id')
             ids={'elevenlabs':value.get('clone'), 'fishaudio':fish_id}
+            if heygen_id:ids['heygen']=heygen_id
             if not any(ids.values()):raise store.StudioError('Для голосу перекладу '+code+' ще немає ID. Збережіть голос у сервісі перед експортом',409)
-            choices=(current.get('payload',{}).get('language_settings') or {}).get(code) or current.get('payload',{}).get('settings') or {}
             if choices.get('provider') and not ids.get(choices['provider']):raise store.StudioError('Для вибраного сервісу перекладу '+code+' ще немає ID голосу',409)
             current['payload']['voices'][code]={'remote_only':True,'voice_ids':ids,'clone':ids['elevenlabs']}
         import language_defaults
@@ -224,7 +234,7 @@ def read_bundle(raw):
                     ids=voice.get('voice_ids',{})
                     if not isinstance(ids,dict) or not any(ids.values()):raise ValueError()
                     for provider,identity in ids.items():
-                        if provider not in ('elevenlabs','fishaudio') or (identity is not None and (not isinstance(identity,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',identity))):raise ValueError()
+                        if provider not in ('elevenlabs','fishaudio','heygen') or (identity is not None and (not isinstance(identity,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',identity))):raise ValueError()
                 elif voice and any(f"languages/{current['version']}/{code}/own-voice.{ext}" not in files for ext in ('mp3', 'txt')): raise ValueError()
         return manifest, files
     except (ValueError, TypeError, KeyError, AttributeError, OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError, RecursionError):
@@ -243,10 +253,11 @@ def _targets(cid):
 
 
 def import_bundle(cid, raw, check_idle):
-    import channel_voice_lab, languages, language_defaults, eleven_voices
+    import channel_voice_lab, languages, language_defaults, eleven_voices, channel_translation_voices
     manifest, files = read_bundle(raw)
     # Shared locks keep settings/reference edits out of the transactional replacement.
-    with channel_voice_lab.LOCK, language_defaults.LOCK, languages.LOCK, eleven_voices.LOCK, store.LOCK:
+    with channel_translation_voices.LOCK, channel_voice_lab.LOCK, language_defaults.LOCK, languages.LOCK, eleven_voices.LOCK, store.LOCK:
+        if channel_translation_voices.busy(cid):raise store.StudioError('Створюється зразок голосу перекладу. Дочекайтеся завершення.',409)
         check_idle(cid)
         import technical_files
         technical_files.migrate_channel(store.get_channel_folder(cid))

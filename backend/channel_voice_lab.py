@@ -247,6 +247,7 @@ def estimate(settings):
 
 
 def snapshot(cid):
+    from channel_translation_voices import TEXTS
     root = folder(cid)
     saved = store.read_json(root / 'settings.json', {})
     if isinstance(saved.get('speed'), (int,float)) and not isinstance(saved.get('speed'),bool):saved['speed']=max(MIN_SPEED,min(MAX_SPEED,saved['speed']))
@@ -263,6 +264,8 @@ def snapshot(cid):
     prepared = root / 'prepared' / (prepared_key(ref) + '.mp3') if ref and not selected_voice_id(settings) and settings['provider']!='heygen' and settings['noise_cleanup'] else None
     preview = original_path(settings, ref).is_file() if ref else False
     return {'settings': settings, 'reference': local_ref, 'job': job, 'voice_ids':saved_voice_ids(cid,settings),
+            'reference_max_bytes':reference_drafts.MAX_UPLOAD_BYTES,
+            'sample_texts':TEXTS,
             'local_preview_tempo': True,
             'local_effects_version': narration_effects.VERSION,
             'local_preview': f'/api/channels/{cid}/voice-lab/preview?v={sample_fingerprint(settings,ref)}' if preview else None,
@@ -331,7 +334,7 @@ def accept_reference(cid, token, cleaned):
         reference_drafts.accept(root, token, cleaned)
         settings = validated(store.read_json(root/'settings.json', {}))
         settings['noise_cleanup'] = False  # the approved file is final; never process it again
-        settings.update(fish_voice_id='',eleven_voice_id='')
+        settings.update(fish_voice_id='',eleven_voice_id='',heygen_voice_id='')
         store.atomic_json(root/'settings.json', settings)
     return snapshot(cid)
 
@@ -373,7 +376,7 @@ def clone(cid, settings, ref):
                 'labels': json.dumps(meta['labels']), 'remove_background_noise': 'false'}, [('files', p, 'audio/mpeg') for p in files])
             result = languages.request(languages.ELEVEN + '/voices/add', body, {'xi-api-key': secret, 'Content-Type': mime}, 'ElevenLabs (клон голосу)')
         return json.loads(result).get('voice_id')
-    owner = store.read_json(root / 'reference.json', {}).get('clone_owner') or cid
+    owner = ref.get('clone_owner') or store.read_json(root / 'reference.json', {}).get('clone_owner') or cid
     voice = eleven_voices.resolve(secret, owner, settings['language'], source.read_bytes(), None, create)
     return secret, voice
 
@@ -617,6 +620,26 @@ def create_fish_voice(cid, raw):
     return snapshot(cid)
 
 
+def heygen_clone_receipt(digest, language):
+    identity=hashlib.sha256(('heygen-instant-v1:'+digest+':'+language).encode()).hexdigest()
+    return store.DATA_ROOT/'heygen-clones'/(identity+'.json')
+
+
+def heygen_reference_id(cid, language, source, digest):
+    cache=heygen_clone_receipt(digest,language)
+    with audio_guard(cache):
+        found=(store.read_json(cache,{}) or {}).get('voice_id')
+        if found:return found
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/'reference.mp3'
+            languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(source),'-t','180','-vn','-ac','1','-ar','44100','-b:a','128k',str(target)],'підготувати запис для HeyGen')
+            channel=store.channel_record(store.get_channel_folder(cid))
+            voice_id=heygen_voice.clone_instant(target,channel.get('name','Голос каналу')+' '+language,language,cache.stem)
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        store.atomic_json(cache,{'voice_id':voice_id})
+        return voice_id
+
+
 def create_heygen_voice(cid, raw):
     settings=validated(raw);root=folder(cid);ref=reference(cid)
     if settings['heygen_model']=='starfish':raise store.StudioError('Для Starfish виберіть голос із його каталогу або введіть сумісний ID')
@@ -625,17 +648,7 @@ def create_heygen_voice(cid, raw):
         if in_use(cid):raise store.StudioError('Дочекайтеся завершення озвучення цього каналу',409)
         ACTIVE.add(cid)
     try:
-        identity=hashlib.sha256(('heygen-instant-v1:'+ref['sha256']+':'+settings['language']).encode()).hexdigest()
-        cache=store.DATA_ROOT/'heygen-clones'/ (identity+'.json');saved=store.read_json(cache,{})
-        voice_id=saved.get('voice_id')
-        if not voice_id:
-            import tempfile
-            with tempfile.TemporaryDirectory() as tmp:
-                target=Path(tmp)/'reference.mp3'
-                languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(root/'reference.mp3'),'-t','180','-vn','-ac','1','-ar','44100','-b:a','128k',str(target)],'підготувати запис для HeyGen')
-                channel=store.channel_record(store.get_channel_folder(cid))
-                voice_id=heygen_voice.clone_instant(target,channel.get('name','Голос каналу')+' '+settings['language'],settings['language'],identity)
-                cache.parent.mkdir(parents=True,exist_ok=True);store.atomic_json(cache,{'voice_id':voice_id})
+        voice_id=heygen_reference_id(cid,settings['language'],root/'reference.mp3',ref['sha256'])
         settings.update(provider='heygen',heygen_voice_id=voice_id)
         store.atomic_json(root/'settings.json',settings)
     finally:

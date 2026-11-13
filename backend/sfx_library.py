@@ -20,6 +20,12 @@ def catalog():
 
 
 def allowed(sound):
+    if 'library' in sound:
+        choice = sound['library']
+        if not choice['enabled']:
+            return []
+        ids = set(choice['ids']) if 'ids' in choice else None
+        return [row['name'] for row in catalog() if ids is None or row['mixkit_id'] in ids]
     if not sound['effects']['enabled']:
         return []
     categories = set(sound['effects']['categories'])

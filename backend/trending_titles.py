@@ -1,4 +1,5 @@
 """Cached Ukrainian reading translations of public competitor titles."""
+from functools import lru_cache
 import hashlib
 import json
 import re
@@ -79,11 +80,35 @@ def update(videos):
     return cache
 
 
+@lru_cache(maxsize=4096)
+def title_language(title):
+    """Classify the exact displayed title locally, including previously cached videos."""
+    import language_quality
+    if not isinstance(title,str) or sum(char.isalpha() for char in title)<3:return ''
+    if re.search('[іїєґІЇЄҐ]',title):return 'uk'
+    if re.search(r'[ыэё]|ь(?!о)|\b[а-я]+(?:ая|ые|ого|ться)\b',title.lower()):return 'ru'
+    try:
+        code,_=language_quality.identify(title[:1000])
+        return code if re.fullmatch(r'[a-z]{2,3}',code) else ''
+    except (ImportError,ValueError):
+        return ''
+
+
 def decorate(cache):
     """Attach exact-source translations to persisted public video metadata."""
     translations = store.read_json(path(), {})
+    channel_texts={}
+    for entry in cache.values():
+        for video in entry.get('videos',[]):
+            channel_texts.setdefault(video.get('competitor_id',''),[]).append(video.get('title') or '')
+    channel_languages={cid:title_language(' '.join(titles)[:1000]) for cid,titles in channel_texts.items()}
     for entry in cache.values():
         for video in entry.get('videos', []):
+            detected=title_language(video.get('title'))
+            channel_language=channel_languages.get(video.get('competitor_id',''))
+            if detected in {'bg','sr','mk','be'} and channel_language in {'uk','ru'}:
+                detected=channel_language
+            video['title_language']=detected
             uk = reading(video.get('title'), translations)
             if uk: video['title_uk'] = uk
             else: video.pop('title_uk', None)

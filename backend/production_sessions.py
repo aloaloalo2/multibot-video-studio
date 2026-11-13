@@ -1,7 +1,7 @@
 """Bound the context of long frame runs; never retry a failed or uncertain session."""
 import copy
 
-SESSION_FRAMES = 20  # Four ordinary batches of five frames per fresh author session.
+SESSION_FRAMES = 10  # Two batches of five; discard images/tool history before it dominates the next batch.
 
 
 def add_usage(total, value):
@@ -22,8 +22,13 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None):
     for index, start in enumerate(range(0, len(targets), SESSION_FRAMES), 1):
         if cancelled():raise InterruptedError('Створення кадрів зупинено')
         frames = targets[start:start + SESSION_FRAMES]
-        if set(frames) <= completed and verify(frames):continue
-        completed.difference_update(frames)
+        saved = [n for n in frames if n in completed]
+        if saved and not verify(saved):
+            # A changed neighbour must not replay the other approved frames in this scope.
+            completed.difference_update(n for n in saved if not verify([n]))
+        frames = [n for n in frames if n not in completed]
+        if not frames:
+            continue
         code, raw = launch(frames, summary, index if len(targets) > SESSION_FRAMES else 0)
         answer = copy.deepcopy(raw)
         cost += float(raw.get('total_cost_usd') or 0)

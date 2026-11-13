@@ -13,7 +13,7 @@ import store
 from storage_io import atomic_json, read_json
 
 STAGES = {
-    'preparation': 'Підготовка', 'queue': 'Черга', 'service': 'Очікування сервісу',
+    'preparation': 'Підготовка', 'queue': 'Черга', 'pause': 'Пауза', 'service': 'Очікування сервісу',
     'recognition': 'Розпізнавання', 'verification': 'Перевірки',
     'saving': 'Збереження', 'rendering': 'Рендер',
 }
@@ -238,8 +238,14 @@ def overview(pid):
             continue
     ordered = sorted(runs.values(), key=lambda row: row.get('started_at', 0), reverse=True)[:MAX_RUNS]
     totals = {stage: round(sum((row.get('stages', {}).get(stage) or {}).get('ms', 0) for row in ordered), 2) for stage in STAGES}
-    return {'runs': ordered, 'stages': STAGES, 'workflows': WORKFLOWS,
-            'stage_totals_ms': totals, 'retention': MAX_RUNS}
+    result = {'runs': ordered, 'stages': STAGES, 'workflows': WORKFLOWS,
+              'stage_totals_ms': totals, 'retention': MAX_RUNS}
+    try:
+        import performance_summary
+        result.update(performance_summary.project(ordered, store.project_dir(pid)))
+    except Exception:
+        pass  # A reporting failure cannot interrupt the job or hide the original measurements.
+    return result
 
 
 def valid_record(row, pid):

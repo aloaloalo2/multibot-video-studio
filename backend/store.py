@@ -1920,6 +1920,8 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         default_color = "#ffffff" if kind == "text" or kind == "animation" and content_type == "text" else "#f0b429" if kind == "animation" else "#101114"
         clip = {"id": uuid.uuid4().hex[:12], "kind": kind, "asset_id": asset["id"] if asset else None, "start": round(start, 3), "duration": round(duration, 3), "trim_start": 0.0, "volume": finite_float(payload.get("volume", 0 if kind == "video" else 1), 0, 1.5, "Невірна гучність"), "title": title, "text": text, "content_type": content_type, "color": str(payload.get("color", default_color)), "transition": {"type": "cut", "duration": 0.0}, "x": finite_float(payload.get("x", .5), -2, 2), "y": finite_float(payload.get("y", .5), -2, 2), "width": finite_float(payload.get("width", 1), .01, 4), "height": finite_float(payload.get("height", 1), .01, 4), "scale": finite_float(payload.get("scale", 1), .05, 8), "opacity": finite_float(payload.get("opacity", 1), 0, 1), "preset": preset, "preset_duration": preset_duration, "keyframes": validated_keyframes(payload.get("keyframes", []), duration)}
         clip["trim_start"] = trim_start
+        if payload.get("accent_motion") in ("still", "fade"):
+            clip["accent_motion"] = payload["accent_motion"]
         style_defaults={}
         if kind=='text' or content_type=='text':
             config=read_channel_settings(get_channel_folder(project['channel_id'],include_disabled=True),{}) if project.get('channel_id') else {}

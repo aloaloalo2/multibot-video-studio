@@ -44,14 +44,15 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   $('episode-name-field')?.append(create);
   const channelEndpoint=`/api/channels/${cid}/episode-ideas`;
   const generation=state.modalGeneration,navigation=state.navigation;
-  let sending=false,lastData=null,timer=null,reference=null,referenceVersion=0,readVersion=0,entry='title',topicSelected=false,dailyRequested=false;
+  let sending=false,translating=false,titleTranslator=null,lastData=null,timer=null,reference=null,referenceVersion=0,readVersion=0,entry='title',topicSelected=false,dailyRequested=false;
   const entryTitles={title:'',topics:'',reference:''};
   const entryChoices=$('episode-entry-options'),entryButtons=entryChoices?[...entryChoices.querySelectorAll('button')]:[];
   const entryTools=$('episode-entry-tools'),ideasRefresh=$('ideas-refresh');
   if(entryTools)$('modal-title').after(entryTools);
   if(ideasRefresh)ideasRefresh.onclick=()=>request({action:'ideas',refresh:true});
-  $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);referenceVersion++;(entryTools||entryChoices)?.remove();$('modal-actions').hidden=false;};
+  $('modal-body').channelSettingsCleanup=()=>{clearTimeout(timer);referenceVersion++;titleTranslator?.dispose();(entryTools||entryChoices)?.remove();$('modal-actions').hidden=false;};
   const connected=()=>root.isConnected&&!$('modal-backdrop').hidden&&state.channel?.id===cid&&state.modalGeneration===generation&&state.navigation===navigation;
+  titleTranslator=bindTitleTranslation(input,{channelId:()=>cid,live:connected,available:()=>entry==='reference'&&!!reference,enabled:()=>!sending,context:()=>reference?.id||'',onBusy:value=>{translating=value;const start=root.querySelector('#reference-openings');if(start)start.disabled=value||sending;}});
   const errorBox=message=>`<p class="episode-error" role="alert">${esc(message)}</p>`;
   function showCreate(visible){create.hidden=!visible;create.disabled=visible&&!input.value.trim();$('modal-actions').hidden=true;}
   function selectEntry(value){
@@ -60,7 +61,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     entryButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.entry===entry)));
     $('episode-reference').hidden=entry!=='reference';
     if(ideasRefresh)ideasRefresh.hidden=entry!=='topics';
-    root.hidden=entry==='title'||entry==='reference'&&!reference;showCreate(entry==='title');input.hidden=entry!=='title';
+    root.hidden=entry==='title'||entry==='reference'&&!reference;showCreate(entry==='title');input.hidden=entry!=='title';titleTranslator.refresh();
     if(entry==='reference'){
       if(reference){input.value=entryTitles.reference||reference.title;input.hidden=false;drawReference();}
       $('episode-reference-url').focus();
@@ -81,7 +82,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     note.querySelector('button').onclick=retry;root.prepend(note);
   }
   async function request(body){
-    if(sending||!connected())return;body={...body,request_id:body.request_id||crypto.randomUUID()};sending=true;readVersion++;clearTimeout(timer);entryButtons.forEach(button=>button.disabled=true);
+    if(sending||translating||!connected())return;body={...body,request_id:body.request_id||crypto.randomUUID()};sending=true;readVersion++;clearTimeout(timer);entryButtons.forEach(button=>button.disabled=true);titleTranslator.refresh();
     root.querySelectorAll('button').forEach(b=>b.disabled=true);create.disabled=true;
     if(body.action==='ideas'){dailyRequested=true;showLoading('DeepSeek пропонує нові теми');}
     try{
@@ -91,7 +92,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
       if(data.project_id){closeModal();refreshProjects().catch(()=>{});await selectProject(data.project_id);return;}
       draw(data);
     }catch(error){sending=false;showError(error,()=>request(body));}
-    finally{sending=false;if(connected()){create.disabled=!input.value.trim();entryButtons.forEach(button=>button.disabled=false);root.querySelectorAll('button').forEach(button=>button.disabled=false);}}
+    finally{sending=false;if(connected()){create.disabled=!input.value.trim();entryButtons.forEach(button=>button.disabled=false);root.querySelectorAll('button').forEach(button=>button.disabled=false);titleTranslator.refresh();}}
   }
   function chooseTopic(data,index){
     readVersion++;topicSelected=true;
@@ -107,6 +108,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     showCreate(false);input.readOnly=false;input.hidden=false;
     root.innerHTML=`<div class="episode-reference-card"><img src="${esc(reference.thumbnail_url)}" alt="Прев’ю референсу"><span>${esc(reference.author)}</span></div><label class="episode-word-count">${episodeIcon('count')}Обсяг сценарію <input id="idea-words" type="number" min="200" max="15000" step="1" value="${lastData?.target_words||2000}"> слів</label><div class="episode-topic-actions"><button class="primary glow-action thumb-writer-button" id="reference-openings">${projectCostIcons.claude_code}<span>Створити зачини · Opus</span></button></div>`;
     root.querySelector('#reference-openings').onclick=()=>request({action:'clone_openings',reference_id:reference.id,title:input.value.trim(),target_words:Number(root.querySelector('#idea-words').value)});
+    root.querySelector('#reference-openings').disabled=sending||translating;titleTranslator.refresh();
   }
   async function importReference(){
     const field=$('episode-reference-url'),note=$('episode-reference-status');

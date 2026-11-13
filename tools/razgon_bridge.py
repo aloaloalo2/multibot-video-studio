@@ -33,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 import urllib.error
@@ -545,6 +546,46 @@ def render_frames(razgon: Path, link: dict, numbers: set[int], workers: str | No
     return {frame["number"]: frame_clip(razgon, frame["number"]) for frame in link["frames"]}
 
 
+def sound_inputs(razgon: Path, policy: dict | None = None) -> tuple[dict, dict]:
+    """Apply current channel permissions even when an agent left a stale or permissive config."""
+    sys.path.insert(0, str(STUDIO_BACKEND))
+    import sound_settings
+    config, story = read_json(razgon / 'config.json'), read_json(razgon / 'story/shots.json')
+    if policy is not None:
+        config = sound_settings.apply_config(config, policy.get('sound'), animated=policy.get('animated', False))
+    elif (razgon / 'story/studio_frames.json').is_file():
+        link, _, _ = load_link(razgon)
+        # Legacy standalone links predate the Studio URL. API exports supply policy explicitly.
+        if link.get('studio_url'):
+            studio = Studio(link['studio_url'])
+            project = studio.project(link['project_id'])
+            channel = next(c for c in studio.call('GET', '/api/channels')['channels'] if c['id'] == project['channel_id'])
+            config = sound_settings.apply_config(config, channel.get('settings', {}).get('sound'),
+                    animated=project.get('project_kind', channel.get('settings', {}).get('channel_kind')) == 'animated')
+    story = sound_settings.filter_story(story, config)
+    # Older mixers do not understand generate=false; enforce it before invoking them.
+    if not (config.get('music') or {}).get('generate', True) and not (config.get('music') or {}).get('file'):
+        config['music']['enabled'] = False
+    return config, story
+
+
+@contextlib.contextmanager
+def sound_workspace(razgon: Path, config: dict, story: dict):
+    """Give CLI/legacy mixers filtered inputs without rewriting the agent's source files."""
+    root = razgon / 'build/studio'
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='sound-inputs-', dir=root) as temp:
+        target = Path(temp)
+        (target / 'story').mkdir()
+        (target / 'build').mkdir()
+        config = {**config, 'voiceover': str((razgon / config['voiceover']).resolve())}
+        if (config.get('music') or {}).get('file'):
+            config['music'] = {**config['music'], 'file': str((razgon / config['music']['file']).resolve())}
+        write_json(target / 'config.json', config)
+        write_json(target / 'story/shots.json', story)
+        yield target
+
+
 def render_bed(razgon: Path) -> Path | None:
     """Music, SFX and ambience exactly as Razgon mixes them under the voice, but without the voice
     (build/studio/music_sfx.wav). The kit's audio/mix.py gives its parts one at a time (beds), they are summed and get
@@ -557,25 +598,15 @@ def render_bed(razgon: Path) -> Path | None:
     import mix as MIX
     if not hasattr(MIX, "fit"):   # beds() yielding (part, gain, at) came with fit()
         return _bed_from_whole_mix(razgon, MIX)
-    config, story = read_json(razgon / "config.json"), read_json(razgon / "story" / "shots.json")
+    config, story = sound_inputs(razgon)
     # the Studio's one sound standard (backend/audio_level.py): music and effects at its levels in every episode, made
     # against the voice as the Studio plays it (brought to −16 LUFS), not against the file the voice service delivered
     sys.path.insert(0, str(STUDIO_BACKEND))
     import audio_level
     config = {**config, "music": {**(config.get("music") or {}), "gainDb": audio_level.MUSIC_DB},
               "sfx": {**(config.get("sfx") or {}), "gainDb": audio_level.SFX_DB}}
-    import sound_settings
-    if (razgon / "story" / "studio_frames.json").is_file():
-        link, _, _ = load_link(razgon)
-        studio = Studio(link["studio_url"])
-        project = studio.project(link["project_id"])
-        channel = next(c for c in studio.call("GET", "/api/channels")["channels"] if c["id"] == project["channel_id"])
-        config = sound_settings.apply_config(config, channel.get("settings", {}).get("sound"), animated=project.get("project_kind", channel.get("settings", {}).get("channel_kind")) == "animated")
-    story = sound_settings.filter_story(story, config)
     import sfx_library
     story = sfx_library.without_library(story)
-    if not (config.get("music") or {}).get("generate", True) and not (config.get("music") or {}).get("file"):
-        config["music"]["enabled"] = False
     level = audio_level.measure(razgon / config["voiceover"])
     voice_gain = 10 ** (audio_level.standard_db(level) / 20) if level else 1.0
     n = MIX.secs(story.get("duration") or story["shots"][-1]["end"])
@@ -607,6 +638,9 @@ def _bed_from_whole_mix(razgon: Path, MIX) -> Path | None:
     """render_bed with a kit whose mix.py has no beds(): its whole mix, captured before the master, less the voice."""
     import numpy as np
     import dsp as DSP
+    config, story = sound_inputs(razgon)
+    import sfx_library
+    story = sfx_library.without_library(story)
     captured = {}
     original_write, original_run = MIX.write_wav, MIX.subprocess.run
 
@@ -624,15 +658,15 @@ def _bed_from_whole_mix(razgon: Path, MIX) -> Path | None:
     MIX.write_wav = capture
     MIX.subprocess.run = skip_master
     argv = sys.argv
-    sys.argv = ["mix.py", "--project", str(razgon), "--video", str(razgon / "build" / "__no_video__.mp4")]
     try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            MIX.main()
+        with sound_workspace(razgon, config, story) as prepared:
+            sys.argv = ["mix.py", "--project", str(prepared), "--video", str(prepared / "build" / "__no_video__.mp4")]
+            with contextlib.redirect_stdout(io.StringIO()):
+                MIX.main()
     finally:
         MIX.write_wav, MIX.subprocess.run, sys.argv = original_write, original_run, argv
     if "mix" not in captured:
         return None
-    config = read_json(razgon / "config.json")
     voice = MIX.load_any(str(razgon / config["voiceover"]))
     n = len(captured["mix"])
     voice = np.concatenate([voice, np.zeros((max(0, n - len(voice)), 2), np.float32)])[:n]
@@ -758,8 +792,14 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     # and put back at the frame's place below
     # a block only on the frames Razgon draws: a mixed episode's photo, stock and text frames get none
     drawn = drawn_frames(link)
+    if reset:
+        unknown = reset - {f['number'] for f in link['frames']}
+        if unknown:
+            raise BridgeError('Кадри відсутні у плані: ' + ','.join(map(str, sorted(unknown))))
+        drawn = [f for f in drawn if f['number'] in reset]
     want = {FRAME_TITLE.format(f["number"]): (frame_index(f["start"], fps), frame_index(f["end"], fps)) for f in drawn}
     stale = [clip for _, clip in all_clips(project) if re.fullmatch(r"Razgon · кадр \d{3}", clip.get("title", ""))
+             and (not reset or int(clip['title'][-3:]) in reset)
              and (clip["title"] not in want or (frame_index(clip["start"], fps), frame_index(clip["start"] + clip["duration"], fps)) != want[clip["title"]]
                   or (int(clip["title"][-3:]) in reset and clip.get("kind") != "animation"))]
     if stale:
@@ -777,7 +817,8 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     project = studio.batch(project, actions)
     grouped = {cid for group in project.get("scene_groups", []) for cid in group["clip_ids"]}
     groups = [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": f"Кадр {int(m.group(1))}"}}
-              for _, clip in all_clips(project) for m in [re.fullmatch(r"Razgon · кадр (\d{3})", clip.get("title", ""))] if m and clip["id"] not in grouped]
+              for _, clip in all_clips(project) for m in [re.fullmatch(r"Razgon · кадр (\d{3})", clip.get("title", ""))]
+              if m and (not reset or int(m.group(1)) in reset) and clip["id"] not in grouped]
     if groups:
         project = studio.batch(project, groups)
     return ensure_overlay(studio, razgon, project, float(link["duration"]))
@@ -1036,7 +1077,7 @@ def video_encoder() -> tuple[str, ...]:
     return ("-c:v", "libx264", "-preset", "faster", "-crf", "18")
 
 
-def glue(razgon: Path, link: dict, config: dict, clips: list[Path], overlay: Path | None, out: Path, progress=None) -> None:
+def glue(razgon: Path, link: dict, config: dict, clips: list[Path], overlay: Path | None, out: Path, progress=None, *, sound_policy=None) -> None:
     """The frame clips back to back with the plashka on top, encoded once, then Razgon's mix of the voice with music and
     SFX at config.loudness muxed in without touching the picture. progress(phase, 0..1) hears about both steps."""
     fps = int(link["fps"])
@@ -1064,7 +1105,9 @@ def glue(razgon: Path, link: dict, config: dict, clips: list[Path], overlay: Pat
             raise BridgeError(f"ffmpeg не склеїв кадри (код {encoder.returncode})")
         progress("razgon_sound", 0.0)
     out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([sys.executable, "audio/mix.py", "--project", str(razgon), "--video", str(silent), "--out", str(out)], cwd=razgon.parents[1], check=True)
+    sound_config, story = sound_inputs(razgon, sound_policy)
+    with sound_workspace(razgon, sound_config, story) as prepared:
+        subprocess.run([sys.executable, "audio/mix.py", "--project", str(prepared), "--video", str(silent), "--out", str(out)], cwd=razgon.parents[1], check=True)
 
 
 # ---------------------------------------------------------------- the Studio's «Експорт MP4»
@@ -1103,7 +1146,7 @@ def studio_export(args) -> None:
                    completed=ready + len(finished), total=total)
         render_many(razgon, todo, fps, args.workers, args.jobs, rendered)
         clips = [sources.get(f["number"]) or frame_clip(razgon, f["number"]) for f in link["frames"]]
-        glue(razgon, link, config, clips, Path(spec["overlay"]) if spec.get("overlay") else None, Path(args.out).resolve(), glue_progress)
+        glue(razgon, link, config, clips, Path(spec["overlay"]) if spec.get("overlay") else None, Path(args.out).resolve(), glue_progress, sound_policy=spec.get('sound_policy'))
         glue_progress("razgon_sound", 1.0)
     except (BridgeError, subprocess.CalledProcessError, OSError, ValueError, KeyError) as error:
         report(stage="error", message=describe(error))

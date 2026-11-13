@@ -39,6 +39,18 @@ def film(base: Path, slug="film") -> Path:
 
 
 class StyleLabTest(unittest.TestCase):
+    def test_accent_palette_follows_channel_and_explicit_colour(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "engine").mkdir()
+            js = "const UI = {accent: '#f01020'};\n" + STYLES_JS.replace("ink: '#000',", "ui: UI,", 1)
+            (root / "engine/styles.js").write_text(js.replace("ink: '#000',", "ui: { ...UI, accent: '#67f040' },"))
+            with patch.object(store, "razgon_rel", return_value=str(root)):
+                self.assertEqual(style_lab.accent_color("a", {"style": "dusk"}), "#f01020")
+                self.assertEqual(style_lab.accent_color("b", {"style": "neon"}), "#67f040")
+                self.assertEqual(style_lab.accent_color("a", {"style": "neon", "accent": "#aa3366"}), "#aa3366")
+                self.assertIsNone(style_lab.accent_color("b", {"style": "absent"}))
+
     def test_settings_validation_and_text_style(self):
         style_lab.validate({"style": "neon", "assets": False, "title_font": "Nunito", "accent": "#ff4fa3"})
         for bad in ({"style": "Neon Noir!"}, {"assets": "yes"}, {"title_font": "Comic Sans"}, {"accent": "pink"}):

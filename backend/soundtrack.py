@@ -113,6 +113,8 @@ def transitions(ctx, spec=None):
     settings = sound_settings.for_project(ctx.project)
     pool = sound_settings.transition_names(settings)
     spec = spec or {}
+    scope = spec.get('frames')
+    scoped_labels = set()
     wanted_frames = spec.get('sound_frames')
     if wanted_frames is not None and (not isinstance(wanted_frames, list) or any(type(n) is not int for n in wanted_frames)):
         raise ValueError('sound_frames має містити номери кадрів')
@@ -126,6 +128,10 @@ def transitions(ctx, spec=None):
     limit = max(1, math.ceil(len(joins) * .4))
     for a, b in zip(ctx.frames, ctx.frames[1:]):
         key = ('group:' + a['group']['id'], 'group:' + b['group']['id'])
+        if scope is not None:
+            if b['number'] not in scope:
+                continue
+            scoped_labels.add(f'{a["number"]} → {b["number"]}')
         join = joins.get(key)
         if not join or not pool:
             continue
@@ -148,6 +154,9 @@ def transitions(ctx, spec=None):
         previous = name
     for layer in ctx.project['tracks']:
         for clip in layer['clips']:
-            if clip.get('title', '').startswith(TRANSITION_PREFIX) and clip['title'] not in wanted:
+            title = clip.get('title','')
+            if scope is not None and title.removeprefix(TRANSITION_PREFIX).split(' · ',1)[0] not in scoped_labels:
+                continue
+            if title.startswith(TRANSITION_PREFIX) and title not in wanted:
                 ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': clip['id']}})
     place(ctx, {'cues': events}, transition=True)

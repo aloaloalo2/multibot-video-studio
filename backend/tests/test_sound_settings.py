@@ -15,6 +15,21 @@ import montage_ops
 
 
 class SoundSettingsTest(unittest.TestCase):
+    def test_library_selection_is_portable_strict_and_preserved_by_partial_updates(self):
+        choice = {'enabled': False, 'ids': ['123', '999999999']}
+        normalized = sound.normalize({'library': choice})
+        self.assertEqual(normalized['library'], choice)
+        normalized['library']['ids'].append('456')
+        self.assertEqual(choice['ids'], ['123', '999999999'])
+        self.assertNotIn('library', sound.normalize())
+        self.assertEqual(sound.merge({'library': choice}, {'effects': {'enabled': False}})['library'], choice)
+        self.assertEqual(sound.merge({'library': choice}, {'library': {'enabled': True}})['library'],
+                         {'enabled': True, 'ids': choice['ids']})
+        for library in [None, [], {'enabled': 'false'}, {'ids': None}, {'ids': [123]},
+                        {'ids': ['../123']}, {'ids': ['123', '123']}, {'unknown': True}]:
+            with self.subTest(library=library), self.assertRaises(ValueError):
+                sound.normalize({'library': library})
+
     def test_transition_choices_are_separate_and_have_15_distinct_decodable_designs(self):
         import numpy as np
         import hashlib

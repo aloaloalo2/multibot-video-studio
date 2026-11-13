@@ -7,7 +7,7 @@ function fixture(api){
   const c=vm.createContext({api,state,box,pid:'p',busy:true,requestPending:false,currentJob:{status:'running'},voiceReady:true,quoteTimer:null,quoteVersion:0,
     text:{value:'Full saved script'},button:{setAttribute(){}},info:{},estimate:{},panel:{querySelector:()=>null},voiceScriptDraft:{},exportSpinner:'spinner',
     channelActivity:new Set(),projectActivities:new Map(),
-    flushScriptDraft:async()=>{},renderRunning(){renders++},updateScriptWordCount(){},narrationResultVisible:j=>j?.status==='done',
+    flushScriptDraft:async()=>{},renderRunning(){renders++},updateScriptWordCount(){},updateScriptHeadingVisibility(){},narrationResultVisible:j=>j?.status==='done',
     priceLabel:()=>'',appendReadyNarration(){renders++;return {dataset:{},hidden:false}},
     setTimeout:(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id},clearTimeout:id=>timers.delete(id)});
   vm.runInContext(source.slice(source.indexOf('function narrationScriptValue('),source.indexOf('const createVideoIcon=')),c);

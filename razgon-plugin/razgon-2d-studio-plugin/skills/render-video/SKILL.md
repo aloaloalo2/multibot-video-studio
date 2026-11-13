@@ -8,6 +8,20 @@ metadata:
 
 # /render-video: build, QC, preview and final render
 
+## Studio frame task: use this bounded branch
+
+When the supplied task names VideoKey Studio frame ids and an accepted frame plan, follow this branch and the current Studio brief. The standalone pipeline below applies only when creating/exporting a separate film.
+
+- Read the supplied current scope and standing montage rules once. Full global/channel AGENTS.md, script-writing CLAUDE.md, episode archives and automatic memory are unnecessary; the Studio supplies relevant rules and saved channel wishes explicitly.
+- Read engine-api.md and style-bible.md only as needed for the current scene API and look. Direction and the script already exist. Reuse current cast/sets/takes; read full words and ideas only for the selected frames from production-context.txt.
+- Each fresh session covers at most 10 pending frames, in batches of five. Save each scene immediately. Keep newly needed scene helpers separate so future work does not invalidate earlier scenes.
+- Use ONE cached `frame_review.py sheets --frames <batch> --scale 0.3` pass for new/changed frames. Read only the exact new sheet paths printed, inspect all new frames and mark them honestly. Approved unchanged frames require no rendering or image read. After a defect, check changed dependencies and available adjacent cuts. Use scoped status before finishing; the Studio maintains whole-film readiness.
+- Do not add a routine second render --sheet, full-film text-check/logic-check/speed-check, installation, transcription, direction, sound regeneration, preview-video render or MP4 export. Targeted diagnostics remain available for a specific observed defect. The author's Export action owns the full render.
+- Execute one simple command per call with absolute quoted paths. Use Read offsets/limits and Write/Edit. For longer logic save a Python file and execute `python3 <absolute-file>`; avoid cd, shell variables, redirection, pipes and chained commands that trigger repeated permission failures. Keep the ordinary permission checks.
+- For slots always pass the exact selected frame ids. Preserve neighbouring frames, narration, soundtrack, branding and accepted assets. End with a compact checkpoint after the scoped evidence passes.
+
+
+
 Work inside `razgon-2d-studio/` on the active project (`projects/<slug>`; if several exist, ask which one). Shared references are in `../make-2d-video/references/` relative to this skill's base directory. Read `engine-api.md`, `style-bible.md`, `director-pass.md` and `render-qc.md` before writing or fixing scenes.
 
 ## 1. Build or repair shots (one episode per batch)

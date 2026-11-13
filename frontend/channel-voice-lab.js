@@ -34,7 +34,7 @@ async function bindChannelVoiceLab(channel){
   const slot=document.getElementById('channel-voice-settings');
   if(slot)slot.append(box);else document.querySelector('.logo-section').after(box);
   const base=`/api/channels/${channel.id}/voice-lab`;
-  let data,timer,localPreview,noisePreview,sampleStarting=false;
+  let data,timer,localPreview,noisePreview,sampleStarting=false,uploading=false;
   const cleanup=new MutationObserver(()=>{if(!box.isConnected||$('modal-backdrop').hidden){localPreview?.dispose();noisePreview?.dispose();clearTimeout(timer);cleanup.disconnect();}});
   cleanup.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
   const current=()=>box.isConnected&&!$('modal-backdrop').hidden;
@@ -44,7 +44,7 @@ async function bindChannelVoiceLab(channel){
     similarity_boost:Number(box.querySelector('[name=similarity_boost]').value)/100,text:box.querySelector('textarea').value.trim()});
   const clearSample=()=>voiceLabClearSample(box.querySelector('.voice-lab-result'));
   const playSample=()=>{const selected=box.querySelector('.voice-lab-result audio');if(!selected)return;document.querySelectorAll('.voice-player audio').forEach(other=>{if(other!==selected)other.pause();});selected.play().catch(()=>{});};
-  const message=(text,error=false)=>{const el=box.querySelector('.voice-lab-status');if(el){el.textContent=text;el.classList.toggle('error',error);}};
+  const message=(text,error=false)=>{const el=box.querySelector(uploading?'.voice-lab-upload-status':'.voice-lab-status');if(el){el.textContent=text;el.classList.toggle('error',error);}};
   const localSample=(allow=voiceLabSampleKey(read())===voiceLabSampleKey(data.settings))=>{
     const slot=box.querySelector('.voice-local-preview'),local=box.querySelector('.voice-local-settings');if(!slot||!local)return;
     const source=allow?data.local_preview:null;
@@ -74,6 +74,9 @@ async function bindChannelVoiceLab(channel){
     const starfish=heygen&&settings.heygen_model==='starfish';
     box.querySelectorAll('[data-heygen-engine]').forEach(el=>{el.hidden=!heygen||el.dataset.heygenEngine!==(starfish?'starfish':'voice');});
     box.querySelector('.voice-lab-identity').hidden=!heygen;
+    const hasSource=!!data.reference||!!settings.heygen_voice_id||!!settings.eleven_voice_id||!!settings.fish_voice_id||Object.values(data.voice_ids||{}).some(Boolean);
+    box.querySelector('[data-voice-step=model]').hidden=!hasSource;
+    box.querySelector('[data-voice-step=sample]').hidden=!hasSource||!voiceLabAvailable(settings,data.reference);
     box.querySelector('.voice-lab-listen').innerHTML=`${playIcon}<span>${data.job?.status==='running'?'Створюємо зразок…':cached?'Відтворити зразок · безкоштовно':`Створити зразок · ${price}`}</span>`;
     box.querySelector('.voice-lab-listen').disabled=!voiceLabAvailable(settings,data.reference)||data.job?.status==='running'||sampleStarting;
     box.querySelector('.voice-lab-actions').hidden=ready;
@@ -82,7 +85,9 @@ async function bindChannelVoiceLab(channel){
     fishCreate.closest('.voice-id-actions').hidden=fishCreate.disabled;
     box.querySelectorAll('[data-copy-voice]').forEach(button=>button.disabled=!(box.querySelector(`[name=${button.dataset.copyVoice}]`).value.trim()||data.voice_ids?.[button.dataset.service]));
     box.querySelector('.heygen-create-voice').disabled=!data.reference||starfish;
-    box.querySelector('.heygen-create-voice').hidden=starfish;
+    box.querySelector('.heygen-create-voice').hidden=starfish||!!settings.heygen_voice_id;
+    const identityNote=box.querySelector('.voice-lab-identity-note');
+    identityNote.textContent=settings.heygen_voice_id?'✓ Голос підключено':starfish?'Вкажіть ID сумісного голосу в додаткових налаштуваннях.':'Підготуйте голос із прикріпленого запису, потім створіть зразок.';
     box.querySelectorAll('input[type=range][name],[data-reverb=amount],[data-noise=amount]').forEach(input=>{const output=input.closest('label')?.querySelector('output');if(output)output.textContent=input.value+'%';});
   };
   const preparedPlayer=()=>{
@@ -152,9 +157,9 @@ async function bindChannelVoiceLab(channel){
       <label data-provider="heygen">Модель<select name="heygen_model">${(data.heygen_models||[]).map(m=>`<option value="${m.id}" ${m.id===s.heygen_model?'selected':''}>${esc(m.name.replace(/^HeyGen /,''))}</option>`).join('')}</select></label><label data-provider="fishaudio">Модель<select name="fish_engine">${data.fish_models.map(m=>`<option value="${m.id}" ${m.id===s.fish_engine?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label data-provider="elevenlabs">Подача<select name="delivery">${[['conversational','Розмовна'],['neutral','Як у записі'],['calm','Спокійна']].map(([k,v])=>`<option value="${k}" ${k===s.delivery?'selected':''}>${v}</option>`).join('')}</select></label></div>
 
-      <div class="voice-lab-source"><h4>Приклад голосу</h4><div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload" ${data.reference||voiceLabVoiceId(s)?'hidden':''}>Додати аудіо або відео<input type="file" accept="audio/*,video/*" hidden></label>${data.reference||voiceLabVoiceId(s)?`<button type="button" class="voice-lab-remove" aria-label="Прибрати голос">${trashIcon}</button>`:''}</div>
-      <small class="voice-lab-preparation-status" ${data.reference?.cleanup_applied?'':'hidden'}>Вибрано очищену версію</small><div class="voice-lab-prepared"></div></div>
-      <div class="voice-lab-identity" data-provider="heygen"><div class="voice-lab-identity-actions"><button type="button" class="secondary heygen-load-voices">Вибрати голос</button><button type="button" class="secondary heygen-create-voice">Створити із запису</button></div><select class="heygen-voice-list" aria-label="Голос HeyGen" hidden></select></div>
+      <div class="voice-lab-source"><h4>Приклад голосу</h4><small>Аудіо або відео до 2 ГБ · від 10 секунд чіткого мовлення</small><div class="voice-lab-reference"><span class="voice-lab-reference-player"></span><label class="secondary voice-lab-upload" role="button" tabindex="0">${langIcons.upload}${data.reference?'Замінити запис':'Додати аудіо або відео'}<input type="file" accept="audio/*,video/*" hidden></label>${data.reference||voiceLabVoiceId(s)?`<button type="button" class="voice-lab-remove" aria-label="Прибрати голос">${trashIcon}</button>`:''}</div>
+      <small class="voice-lab-preparation-status" ${data.reference?.cleanup_applied?'':'hidden'}>Вибрано очищену версію</small><div class="voice-lab-prepared"></div><div class="voice-lab-upload-status" role="status" aria-live="polite"></div><progress class="voice-lab-upload-progress" max="100" value="0" hidden></progress></div>
+      <div class="voice-lab-identity" data-provider="heygen"><p class="voice-lab-identity-note muted"></p><div class="voice-lab-identity-actions"><button type="button" class="secondary heygen-create-voice">${micIcon}Підготувати мій голос</button></div><button type="button" class="secondary heygen-load-voices">Вибрати збережений голос HeyGen</button><select class="heygen-voice-list" aria-label="Голос HeyGen" hidden></select></div>
       ${[['heygen','heygen_voice_id','HeyGen'],['fishaudio','fish_voice_id','Fish Audio'],['elevenlabs','eleven_voice_id','ElevenLabs']].map(([provider,field,label])=>`<details class="voice-lab-advanced voice-id-details" data-provider="${provider}"><summary>ID голосу</summary><label for="voice-id-${provider}">ID голосу ${label}</label><div class="voice-id-field"><input id="voice-id-${provider}" name="${field}" value="${esc(s[field]||'')}" placeholder="Вставте ID з цього самого акаунта" autocomplete="off" spellcheck="false"><button type="button" class="voice-id-copy" data-copy-voice="${field}" data-service="${provider}" aria-label="Скопіювати ID голосу ${label}" title="Скопіювати ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div>${!s[field]&&data.voice_ids?.[provider]?`<small class="voice-known-id">Збережений ID: <code>${esc(data.voice_ids[provider])}</code></small>`:''}${provider==='fishaudio'?'<div class="voice-id-actions"><button type="button" class="secondary fish-create-voice">Зберегти голос у Fish</button></div>':''}</details>`).join('')}
       <div class="voice-lab-tuning">
       <div class="voice-lab-sliders"><label>Швидкість<span>${voiceTempoRange("voice-lab-speed",(s.speed??1)*100,"speed")}<output>${voiceTempoPercent((s.speed??1)*100)}%</output></span></label></div><div class="voice-lab-sliders" data-provider="elevenlabs">${[['stability','Стабільність'],['similarity_boost','Схожість із записом']].map(([k,v])=>`<label>${v}<span><input name="${k}" type="range" min="0" max="100" step="5" value="${Math.round(s[k]*100)}"><output>${Math.round(s[k]*100)}%</output></span></label>`).join('')}</div>
@@ -181,38 +186,72 @@ async function bindChannelVoiceLab(channel){
     };
     const referenceStep=step(1,'reference','Приклад голосу'),modelStep=step(2,'model','Сервіс і модель'),sampleStep=step(3,'sample','Текст і зразок');
     const reference=box.querySelector('.voice-lab-source');reference.querySelector('h4').remove();referenceStep.append(reference);
-    modelStep.append(box.querySelector('.voice-lab-service'),tuning,box.querySelector('.voice-lab-direction'),box.querySelector('.voice-lab-identity'),...box.querySelectorAll('.voice-id-details'));
-    sampleStep.append(box.querySelector('.voice-lab-text'),box.querySelector('.voice-lab-actions'),box.querySelector('.voice-lab-status'),box.querySelector('.voice-lab-result'),advanced);
-    box.append(referenceStep,modelStep,sampleStep);
-    box.querySelectorAll('.voice-id-details').forEach(details=>{details.open=!!(details.querySelector('input[name]').value.trim()||data.voice_ids?.[details.dataset.provider]);});
+    const language=box.querySelector('[name=language]').closest('label');referenceStep.append(language);
+    const deliveryOptions=document.createElement('details');deliveryOptions.className='voice-lab-advanced voice-lab-delivery-options';
+    deliveryOptions.innerHTML='<summary>Налаштувати подачу</summary><div class="voice-lab-delivery-body"></div>';
+    deliveryOptions.lastElementChild.append(tuning,box.querySelector('.voice-lab-direction'));
+    modelStep.append(box.querySelector('.voice-lab-service'),deliveryOptions,box.querySelector('.voice-lab-identity'),...box.querySelectorAll('.voice-id-details'));
+    sampleStep.append(box.querySelector('.voice-lab-text'),box.querySelector('.voice-lab-actions'),box.querySelector('.voice-lab-result'),advanced);
+    const feedback=box.querySelector('.voice-lab-status');
+    box.append(referenceStep,modelStep,feedback,sampleStep);
+    const heygenIds=box.querySelector('.voice-id-details[data-provider=heygen]');
+    heygenIds.append(box.querySelector('.heygen-load-voices'),box.querySelector('.heygen-voice-list'));
+
     localSample();
     syncVoiceReverb(box);
     if(data.reference)box.querySelector('.voice-lab-reference-player').replaceChildren(voicePlayer(null,`${base}/reference?v=${data.reference.stamp}`,{filename:data.reference.filename,playLabel:'Відтворити приклад голосу'}));
     else box.querySelector('.voice-lab-reference-player').textContent=voiceLabVoiceId(s)?'Голос збережений у сервісі':'Приклад для клонування';
 
     box.querySelector('.heygen-load-voices').onclick=async()=>{try{const model=read().heygen_model;const result=await api(base+'/heygen-voices?model='+encodeURIComponent(model));if(!current()||read().heygen_model!==model)return;const select=box.querySelector('.heygen-voice-list');select.innerHTML='<option value="">Оберіть голос</option>'+result.voices.map(v=>`<option value="${esc(v.voice_id)}">${esc(v.name||v.voice_id)} · ${esc(v.mode||'')}</option>`).join('');select.hidden=false;select.onchange=()=>{box.querySelector('[name=heygen_voice_id]').value=select.value;sample();};}catch(error){message(error.message,true);}};
-    box.querySelector('.heygen-create-voice').onclick=async(event)=>{const button=event.currentTarget;button.disabled=true;message('Готуємо запис і створюємо instant-голос HeyGen…');try{data=await api(base+'/heygen-clone','POST',{settings:read()});draw();message('Голос створено й вибрано. HeyGen може готувати його кілька секунд, після цього можна прослухати зразок.');}catch(error){message(error.message,true);button.disabled=false;}};
+    box.querySelector('.heygen-create-voice').onclick=async(event)=>{const button=event.currentTarget;button.disabled=true;message('Готуємо запис і створюємо instant-голос HeyGen…');try{data=await api(base+'/heygen-clone','POST',{settings:read()});if(!current())return;draw();message('Голос створено й вибрано. HeyGen може готувати його кілька секунд, після цього можна прослухати зразок.');}catch(error){message(error.message,true);button.disabled=false;}};
     box.querySelector('.fish-create-voice').onclick=async(event)=>{const button=event.currentTarget;button.disabled=true;message('Зберігаємо приватний голос у Fish…');try{data=await api(base+'/fish-clone','POST',{settings:read()});if(!current())return;draw();box.querySelector('[data-provider=fishaudio].voice-id-details').open=true;message('ID голосу збережено. Для наступних озвучок використовуватиметься цей ID.');}catch(error){if(current()){message(error.message,true);estimate();}}};
     box.querySelectorAll('[data-copy-voice]').forEach(button=>button.onclick=async()=>{const input=box.querySelector(`[name=${button.dataset.copyVoice}]`),value=input.value.trim()||data.voice_ids?.[button.dataset.service];if(!value)return;try{await navigator.clipboard.writeText(value);message('ID голосу скопійовано');}catch(error){input.focus();input.select();message('Виділіть ID і скопіюйте його вручну',true);}});
     let previousModel=read().heygen_model;
     box.querySelector('[name=heygen_model]').addEventListener('input',()=>{const model=read().heygen_model;if((previousModel==='starfish')!==(model==='starfish')){box.querySelector('[name=heygen_voice_id]').value='';const list=box.querySelector('.heygen-voice-list');list.replaceChildren();list.hidden=true;}previousModel=model;});
     box.voiceSettingsSnapshot=read;
-    box.saveVoiceSettings=async(settings=read())=>{data=await api(base,'POST',{settings});return data;};
+    box.saveVoiceSettings=async(settings=read())=>{if(uploading)throw new Error('Дочекайтеся завантаження запису.');data=await api(base,'POST',{settings});return data;};
     box.querySelectorAll('select[name],input[name]:not([type=file]),textarea,[data-reverb],[data-noise]').forEach(input=>input.addEventListener('input',()=>{
       if(input.closest('.voice-local-settings')){syncVoiceReverb(box);localPreview?.update();message('');}
       else {sample();return;}
       estimate();
     }));
     box.querySelector('.voice-lab-remove')?.addEventListener('click',async()=>{try{data=await api(base+'/reference/remove','POST',{});draw();}catch(error){message(error.message,true);}});
-    box.querySelector('input[type=file]').addEventListener('change',async event=>{
-      const file=event.target.files[0];if(!file)return;
-      const label=event.target.closest('label');label.classList.add('is-off');message('Завантажуємо запис для попереднього прослуховування…');
+    let previousLanguage=s.language;
+    box.querySelector('[name=language]').addEventListener('change',()=>{
+      const text=box.querySelector('.voice-lab-text textarea'),next=read().language;
+      if(text.value.trim()===data.sample_texts?.[previousLanguage]||text.value.trim()===data.settings.text&&data.settings.text==='Давайте спокойно разберёмся, что здесь происходит. На первый взгляд всё кажется довольно простым. Но есть одна деталь, на которую стоит обратить внимание. Сейчас я объясню её на обычном примере.'){
+        text.value=data.sample_texts?.[next]||text.value;sample();
+      }
+      previousLanguage=next;
+    });
+    const uploadLabel=box.querySelector('.voice-lab-upload'),fileInput=uploadLabel.querySelector('input');
+    uploadLabel.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();if(!uploading)fileInput.click();}});
+    fileInput.addEventListener('change',async event=>{
+      const file=event.target.files[0];if(!file||uploading)return;
+      const limit=data.reference_max_bytes||2*1024*1024*1024;
+      const note=box.querySelector('.voice-lab-upload-status'),progress=box.querySelector('.voice-lab-upload-progress');
+      note.classList.remove('error');
+      if(!file.size||file.size>limit){note.textContent='Оберіть аудіо або відео до 2 ГБ';note.classList.add('error');fileInput.value='';return;}
+      uploading=true;fileInput.disabled=true;uploadLabel.classList.add('is-off');progress.hidden=false;
+      message('Завантажуємо запис…');
       try{
         await api(base,'POST',{settings:read()});
-        const response=await fetch(base+'/reference',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
-        const result=await response.json();if(!response.ok)throw new Error(result.error||'Не вдалося завантажити запис');
-        label.classList.remove('is-off');await audition(result.draft);event.target.value='';
-      }catch(error){message(error.message,true);label.classList.remove('is-off');}
+        const result=await new Promise((resolve,reject)=>{
+          const request=new XMLHttpRequest();request.open('POST',base+'/reference');
+          request.setRequestHeader('Content-Type','application/octet-stream');
+          request.setRequestHeader('X-File-Name',encodeURIComponent(file.name));
+          request.upload.onprogress=event=>{if(!current())return;if(event.lengthComputable){progress.value=Math.round(event.loaded/event.total*100);note.textContent='Завантажуємо запис · '+progress.value+'%';}};
+          request.upload.onload=()=>{if(current()){progress.removeAttribute('value');note.textContent='Готуємо аудіо для прослуховування…';}};
+          request.onerror=()=>reject(new Error('Завантаження перервалось. Спробуйте ще раз.'));
+          request.onload=()=>{let result;try{result=JSON.parse(request.responseText);}catch{return reject(new Error('Не вдалося прочитати відповідь студії. Спробуйте ще раз.'));}
+            if(request.status<200||request.status>=300)return reject(new Error(result.error||'Не вдалося завантажити запис'));
+            resolve(result);};
+          request.send(file);
+        });
+        if(!current()){api(base+'/reference/discard','POST',{draft_id:result.draft.id}).catch(()=>{});return;}
+        note.textContent='Запис готовий. Прослухайте та підтвердьте його.';await audition(result.draft);
+      }catch(error){if(current()){note.textContent=error.message;note.classList.add('error');}}
+      finally{uploading=false;fileInput.disabled=false;fileInput.value='';uploadLabel.classList.remove('is-off');progress.hidden=true;progress.value=0;}
     });
     box.querySelector('.voice-lab-listen').addEventListener('click',async()=>{
       if(sampleStarting||data.job?.status==='running'||!voiceLabAvailable(read(),data.reference))return;

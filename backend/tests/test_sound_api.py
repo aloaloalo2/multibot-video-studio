@@ -80,6 +80,15 @@ class SoundApiTest(unittest.TestCase):
             self.assertEqual([c['start'] for c in audio], [5, 10])
             self.assertEqual(len(saved['scene_groups']), 3)
             self.assertIn('tr_air', audio[0]['title']); self.assertIn('tr_camera', audio[1]['title'])
+            # Replacing the entrance to frame 3 must preserve frame 2 and its sound.
+            op={'op':'transitions','frames':[3],'replace':True,'share':0}
+            code,result=self.request(f'/api/projects/{pid}/ops','POST',{'ops':[op]})
+            self.assertEqual(code,200,result)
+            scoped=store.load_project(pid)
+            self.assertEqual([j['seam'] for j in scoped['join_transitions']],[5])
+            self.assertEqual([c['id'] for layer in scoped['tracks'] for c in layer['clips'] if c['kind']=='audio'],[audio[0]['id']])
+            code,result=self.request(f'/api/projects/{pid}/actions','POST',{'type':'undo'})
+            self.assertEqual(code,200,result)
             code, result = self.request(f'/api/projects/{pid}/actions', 'POST', {'type': 'undo'})
             self.assertEqual(code, 200, result)
             saved = store.load_project(pid)

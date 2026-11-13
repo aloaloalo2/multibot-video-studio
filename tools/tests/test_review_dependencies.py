@@ -80,6 +80,22 @@ class ReviewTest(unittest.TestCase):
         after=self.hashes()
         self.assertEqual([n for n in before if before[n]!=after[n]],[1,2,3])
 
+    def test_dormant_dynamic_helper_only_affects_media_when_reachable(self):
+        helper=self.proj/'scenes/library.js'
+        helper.write_text("E.palette='blue'; export function tray(g,items){for(const name of items) pic(g,name)}")
+        before=self.hashes()
+        asset=self.proj/'assets/unrelated.png'
+        asset.write_bytes(b'new')
+        self.assertEqual(before,self.hashes())
+        scene=self.proj/'scenes/s3.js'
+        for src in ["import {tray as draw} from './library.js'; take('s3',{draw(g){draw(g,E.props)}})",
+                    "import * as lib from './library.js'; take('s3',{draw(g){lib.tray(g,E.props)}})",
+                    "take('s3',{async draw(g){const m=await import('./library.js');m.tray(g,E.props)}})"]:
+            scene.write_text(src)
+            before=self.hashes()
+            asset.write_bytes(asset.read_bytes()+b'x')
+            self.assertNotEqual(before[3],self.hashes()[3])
+
     def test_unused_pure_helper_does_not_invalidate_other_parts(self):
         before=self.hashes()
         helper=self.proj/'scenes/next-part.js'

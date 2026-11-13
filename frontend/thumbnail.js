@@ -7,7 +7,7 @@ const thumbnailRuns=new Map(),thumbnailSources=new Map();
 
 const thumbnailFrames=2;
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
-function thumbnailWriterOptions(data){return [{value:'deepseek',label:'DeepSeek'},{value:'trending',label:'Codex'},{value:'claude',label:'Claude'}].filter(item=>!data.writers||data.writers.includes(item.value));}
+function thumbnailWriterOptions(data){return [{value:'trending',label:'Codex'},{value:'claude',label:'Claude'}].filter(item=>!data.writers||data.writers.includes(item.value));}
 
 // Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
@@ -22,8 +22,9 @@ async function openThumbnail(project){
   // the title and script go as they are: the window asks only what the author wants to see, and even that may stay empty
   thumbnailSources.set(project.id,{title:data.title,script:data.script,reference_selection:data.reference_selection});
   const writers=thumbnailWriterOptions(data),preference='thumbnail-writer:'+project.channel_id;
-  let writer=StudioUI.preference(preference,writers.map(item=>item.value),'claude');
-  if(!writers.some(item=>item.value===writer))writer=writers[0]?.value||'claude';
+  if(!writers.length){status('Для прев’ю потрібен Codex або Claude. Оновіть студію.',true);return;}
+  const available=writers.map(item=>item.value);
+  let writer=StudioUI.preference(preference,available,available.includes('claude')?'claude':available[0]);
   modal('Нове прев’ю',`
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>

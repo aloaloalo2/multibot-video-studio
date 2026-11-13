@@ -59,8 +59,33 @@ def presets(root: Path) -> list[dict]:
     """Built-in Razgon styles with their names and descriptions, read from engine/styles.js."""
     text = (root / "engine" / "styles.js").read_text(encoding="utf-8")
     block = text[text.index("export const STYLES"):]
-    return [{"id": m.group(1), "name": m.group(2), "desc": m.group(3)}
-            for m in re.finditer(r"^  (\w+): \{\n\s+name: '([^']*)', desc: '([^']*)'", block, re.M)]
+    shared_ui = re.search(r"const UI\s*=\s*\{([^}]*)", text)
+    def accent(ui):
+        match = re.search(r"\baccent:\s*'(#[a-fA-F0-9]{6})'", ui)
+        return match[1] if match else None
+    shared = accent(shared_ui[1]) if shared_ui else None
+    styles = []
+    for m in re.finditer(r"^  (\w+): \{\n\s+name: '([^']*)', desc: '([^']*)'(.*?)^  \}", block, re.M | re.S):
+        ui = re.search(r"\bui:\s*\{([^}]*)", m[4])
+        color = (accent(ui[1]) if ui else None) or shared
+        styles.append({"id": m[1], "name": m[2], "desc": m[3], **({"accent": color} if color else {})})
+    return styles
+
+
+def accent_color(cid: str, animation: dict) -> str | None:
+    if animation.get("accent"):
+        return animation["accent"]
+    sid = animation.get("style")
+    if not sid:
+        return None
+    if sid.startswith(("custom-", "studio-")):
+        style = style_copy.find(cid, sid) or {}
+        return style.get("def", {}).get("ui", {}).get("accent")
+    try:
+        styles = presets(store.YOUTUBE_ROOT / store.razgon_rel())
+    except (OSError, ValueError):
+        return None
+    return next((s.get("accent") for s in styles if s["id"] == sid), None)
 
 
 def validate(animation) -> None:

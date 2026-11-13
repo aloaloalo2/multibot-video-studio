@@ -63,9 +63,18 @@ function planFrameWord(count){
 }
 
 function scriptWordCount(text){return (String(text||'').match(/\p{L}+(?:['’]\p{L}+)*/gu)||[]).length;}
+function scriptWordCountLabel(text){
+  const n=scriptWordCount(text),last=n%10,lastTwo=n%100;
+  const word=last===1&&lastTwo!==11?'слово':last>=2&&last<=4&&(lastTwo<12||lastTwo>14)?'слова':'слів';
+  return n.toLocaleString('uk-UA')+' '+word;
+}
 function updateScriptWordCount(panel,text){
   const count=panel.querySelector('.script-word-count') || panel.parentElement?.querySelector('.script-word-count');
-  if(count){const n=scriptWordCount(text),last=n%10,lastTwo=n%100;const word=last===1&&lastTwo!==11?'слово':last>=2&&last<=4&&(lastTwo<12||lastTwo>14)?'слова':'слів';count.textContent=n.toLocaleString('uk-UA')+' '+word;}
+  if(count)count.textContent=scriptWordCountLabel(text);
+}
+function updateScriptHeadingVisibility(panel){
+  const heading=panel.querySelector('.project-plan-heading') || panel.parentElement?.querySelector('.project-plan-heading');
+  if(heading)heading.hidden=!!state.plan?.timing?.audio||state.plan?.timing?.status==='audio_synced'||!!panel.querySelector('.narration-ready:not([hidden])');
 }
 
 const voiceScriptDraft={};
@@ -200,7 +209,7 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('section');ready.className='narration-ready';
   ready.voicedScript=job.script||'';ready.dataset.asset=job.asset_id||'';
   const cost=job.estimated_usd===0?'Безкоштовно':job.estimated_usd!=null?`≈ $${job.estimated_usd.toFixed(3)}`:'';
-  ready.innerHTML=`<header class="narration-ready-heading"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><div class="narration-ready-tools"><small>${esc(cost)}</small><button type="button" class="narration-settings" title="Налаштування озвучки" aria-label="Налаштування озвучки">${$('overview-channel-settings').innerHTML}</button></div></header>`;
+  ready.innerHTML=`<header class="narration-ready-heading"><div class="narration-ready-title"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><small class="episode-voice-word-count">${scriptWordCountLabel(job.script)}</small></div><div class="narration-ready-tools"><small>${esc(cost)}</small><button type="button" class="narration-settings" title="Налаштування озвучки" aria-label="Налаштування озвучки">${$('overview-channel-settings').innerHTML}</button></div></header>`;
   const headline=ready.querySelector('strong');
   const note=message=>{info.textContent=message;headline.textContent=message;};
   ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{duration:job.duration,playLabel:'Прослухати готову озвучку'}));
@@ -259,7 +268,7 @@ function renderNarrationGeneration(panel,scriptInput=null){
   async function updateQuote(){const version=++quoteVersion;if(!voiceReady||box.hidden){estimate.textContent='';return;}if(text.value.trim().length<10){estimate.textContent='Вставте сценарій, щоб побачити вартість';return;}estimate.textContent='Рахуємо вартість…';try{const quote=await api(`/api/projects/${pid}/narration/quote`,'POST',{text:text.value});if(version===quoteVersion&&box.isConnected)estimate.textContent=`${priceLabel(quote)} · ${quote.cached?`із кешу ${quote.cached}/${quote.total}`:quote.total} фраз${quote.tax_included?' · податок 20% включено':''}`;}catch(error){if(version===quoteVersion)estimate.textContent=error.message;}}
   text.oninput=()=>{box.classList.remove('has-ready-narration');const ready=box.querySelector('.narration-ready');if(ready)ready.hidden=text.value.trim()!==(ready.voicedScript||'').trim();button.hidden=false;voiceScriptDraft[pid]=text.value;quoteVersion++;clearTimeout(quoteTimer);actionState();estimate.textContent=voiceReady?'Оновлюємо оцінку…':'';quoteTimer=setTimeout(updateQuote,500);};
   updateScriptWordCount(panel,text.value);
-  text.addEventListener('input',()=>updateScriptWordCount(panel,text.value));
+  text.addEventListener('input',()=>{updateScriptWordCount(panel,text.value);updateScriptHeadingVisibility(panel);});
   updateQuote();
   let busy=false,requestPending=false;
   function actionState(mode='idle'){
@@ -304,10 +313,12 @@ function renderNarrationGeneration(panel,scriptInput=null){
         currentJob=job;busy=true;clearTimeout(quoteTimer);quoteVersion++;actionState(job.status);renderRunning(job);scheduleNarrationPoll();
       }
       else if(narrationResultVisible(job,state.project,busy)){
-        busy=false;currentJob=null;actionState();if(voiceScriptDraft[pid]===undefined){text.value=narrationScriptValue(state.project,state.plan,job);updateScriptWordCount(panel,text.value);}button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
+        busy=false;currentJob=null;actionState();if(voiceScriptDraft[pid]===undefined)text.value=narrationScriptValue(state.project,state.plan,job);button.hidden=text.value.trim()===(job.script||'').trim();estimate.textContent=job.estimated_usd===0?'Безкоштовно':priceLabel(job);info.textContent='Озвучка готова. Прослухайте її перед створенням кадрів.';
         let ready=box.querySelector('.narration-ready');if(ready&&ready.dataset.asset!==job.asset_id){ready.remove();ready=null;}
         ready??=appendReadyNarration(box,pid,job,info,poll);
         ready.hidden=text.value.trim()!==(job.script||'').trim();box.classList.toggle('has-ready-narration',!ready.hidden);if(ready.hidden)info.textContent='Сценарій змінено. Озвучте нову версію.';
+        updateScriptWordCount(panel,text.value);
+        updateScriptHeadingVisibility(panel);
       }
       else if(job?.status==='cancelled'){busy=false;currentJob=null;actionState();info.textContent='Озвучення зупинено. Готові фрази збережені в кеші.';}
       else if(job?.status==='failed'){busy=false;currentJob=null;actionState();info.textContent=job.error;}
@@ -456,6 +467,7 @@ $('view-editor').addEventListener('click',()=>setProjectView('editor'));
 $('view-agent').addEventListener('click',()=>setProjectView('agent'));
 
 function renderPlanSwitch(panel){
+  if(state.plan?.timing?.audio||state.plan?.timing?.status==='audio_synced')return;
   const heading=document.createElement('div');heading.className='project-plan-heading';
   heading.innerHTML='<h1><svg class="narration-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21v-4a7 7 0 1 1 7-10l2 4h-3v4h-3v6M19 8l2-1M19 12h3M19 16l2 1"/><path d="M13 11h1"/></svg>Сценарій</h1><small class="script-word-count"></small>';
   panel.append(heading);

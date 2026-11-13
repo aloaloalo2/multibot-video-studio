@@ -39,7 +39,7 @@ function channelSettingsSummary(values,limit=3){
   return active.slice(0,limit).map(item=>`${item.label} ${item.amount}%`).join(' · ')+(active.length>limit?` · +${active.length-limit}`:'');
 }
 function channelSettingsEditable(field){
-  return !field.closest('.voice-player,.channel-competitors');
+  return !field.closest('.voice-player,.channel-competitors,.channel-translation-audition');
 }
 function channelSettingsResetAnchor(field){
   const anchor=field.closest('.tempo-scale')?.nextElementSibling||field.nextElementSibling;
@@ -63,7 +63,7 @@ function organizeChannelSettings(channel){
     ['projects','Основне','Для нових проєктів','Основне'],
     ['script','Сценарій','Зачини та повний текст'],
     ['look','Оформлення','Стиль і логотип'],
-    ['voice','Озвучка','Голос і автоматизація'],
+    ['voice','Озвучка','Голос і зразок'],
     ['thumbnails','Прев’ю','Герой і побажання'],
     ['sound','Звук','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
@@ -86,7 +86,7 @@ function organizeChannelSettings(channel){
     const tab=document.createElement('button');tab.type='button';tab.id=`channel-settings-tab-${key}`;tab.dataset.settingsTab=key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls',`channel-settings-panel-${key}`);
     tab.innerHTML=`${channelSettingsIcon(key==='advanced'?'output':key)}<span>${label}</span>`;tab.addEventListener('click',()=>select(key));tabs[key]=tab;nav.append(tab);
     const panel=document.createElement('section');panel.className='channel-settings-panel';panel.id=`channel-settings-panel-${key}`;panel.dataset.settingsPanel=key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);
-    const heading=document.createElement('header');heading.className='channel-settings-panel-head';heading.innerHTML=`<h3>${label}</h3><p>${note}</p>`;panel.append(heading);panels[key]=panel;content.append(panel);
+    const heading=document.createElement('header');heading.className='channel-settings-panel-head';heading.innerHTML=`<h3>${label}</h3>`;panel.append(heading);panels[key]=panel;content.append(panel);
   }
   nav.addEventListener('keydown',event=>{
     const keys=definitions.map(item=>item[0]),index=keys.findIndex(key=>tabs[key]===event.target);
@@ -110,7 +110,7 @@ function organizeChannelSettings(channel){
   // Keep common project and director choices visible on the main panel.
   const defaults=body.querySelector('.channel-project-defaults'),kind=defaults.querySelector('.channel-kind-section');
   const kindSection=document.createElement('section');kindSection.className='settings-section settings-project-kind';kindSection.innerHTML='<h3>Тип роликів</h3>';kindSection.append(kind);kind.querySelector('h4').hidden=true;panels.projects.append(kindSection);
-  move('.channel-project-defaults','projects',{fold:true,title:'Робота режисера',icon:'projects'});
+  const directorGroup=move('.channel-project-defaults','projects',{fold:true,title:'Робота режисера',icon:'projects'});
   const quick=document.createElement('div');quick.className='settings-quick-grid';
   for(const [key,title,icon] of [['voice','Озвучка','voice'],['look','Оформлення','look']]){
     const button=document.createElement('button');button.type='button';button.className='settings-quick-card';button.dataset.quick=key;
@@ -124,14 +124,14 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
-  move('.settings-agent-memory','projects',{icon:'memory',title:'Правила Агентів'});
+  move('.settings-agent-memory','projects',{fold:true,icon:'memory',title:'Правила Агентів'});
   move('.settings-script-wishes','script',{icon:'script'});
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Логотип'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
   const automation=document.createElement('div');automation.className='settings-voice-automation';
   automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label>`;
-  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot,automation);
+  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);quick.after(automation);automation.after(directorGroup);
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
@@ -139,7 +139,8 @@ function organizeChannelSettings(channel){
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');
   if(danger){const area=document.createElement('div');area.className='settings-danger-zone';danger.classList.add('settings-remove-channel');area.append(danger);panels.advanced.append(area);}
-  for(const selector of ['.settings-opening>p','.settings-agent-memory>p:first-of-type']){
+  for(const selector of ['.settings-opening>p','.settings-agent-memory>p:first-of-type',
+    '.settings-output>p','.settings-accents>p','.settings-thumbnail-wishes>p']){
     const note=body.querySelector(selector);if(!note)continue;
     const help=document.createElement('details');help.className='settings-inline-help';help.innerHTML='<summary>Як це працює</summary>';note.before(help);help.append(note);
   }

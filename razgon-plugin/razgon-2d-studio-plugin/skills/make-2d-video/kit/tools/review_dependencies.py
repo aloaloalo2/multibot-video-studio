@@ -18,6 +18,20 @@ LOOP = re.compile(r"for\s*\(\s*const\s+(\w+)\s+of\s+\[([^\]]*)\]\s*\)\s*take\(\s
 IMPORT = re.compile(r"(?:from\s*|import\s*\(?\s*)['\"]([^'\"]+)['\"]")
 
 
+# These shipped drawing primitives consume geometry, styles and canvas surfaces.
+# A different implementation is analysed conservatively as a possible media reader.
+DRAWING_MODULES = {
+    "5c701fe274b96fc2a3ea8397b30797b97229fd94f966e4c16a6df535d8f3ed32",  # styles.js palette
+    "a0659f5c65659cd3fca98691906e5a6c6ac687a37d1cc5cd5411c157686ba3d3",  # styles.js palette
+    "b72e1565d5803a476942a31344007537dd0acc0e31a0e2674126cbd8f13b08e7",  # core.js
+    "1f6e201d4fc43a798d347f7e37301831b5dd342aa424c59462714daeea9fe05b",  # rig2d.js
+    "e33243d2ccd810319bcb1fda8eba689c85a743a811dcd5c64bdd1c96da11cb4a",  # ui2d.js
+    "a1953d416cf0fe5d4150d0e88ffc481437f38df6a2c9db4de7303e9e36f71692",  # fx2d.js
+    "fb2f586742b6977669da9c35c76d00b2f06c98d5e69ce8db368a85162dfe0a6e",  # overlays.js
+    "c1c4dcf721a40f2c3567cd2d034e670f31f7146d05e3fefe51e5374716d83e73",  # motion.js
+}
+
+
 def scene_usage(root, texts):
     """Use the installed renderer's parser; uncertain analysis keeps all assets."""
     try:
@@ -67,7 +81,8 @@ def fingerprints(proj: Path, root: Path, frames: list[dict]) -> dict[int, str]:
             if p in found:
                 continue
             found.add(p)
-            for spec in IMPORT.findall(texts.get(p, "")):
+            source = texts[p] if p in texts else p.read_text(encoding='utf-8', errors='replace') if p.suffix in ('.js','.mjs') else ''
+            for spec in IMPORT.findall(source):
                 target = ((root / spec.lstrip("/")) if spec.startswith("/") else p.parent / spec).resolve()
                 allowed = proj in target.parents or root / 'engine' in target.parents
                 if (target in texts or allowed and target.is_file()) and target not in found:
@@ -76,10 +91,16 @@ def fingerprints(proj: Path, root: Path, frames: list[dict]) -> dict[int, str]:
 
     # Visual runtime and shared drawing code affect every frame. Asset-generation
     # prompts, unrelated PNGs and an appended registry entry do not.
-    global_files = [proj / "config.json", Path(__file__).resolve(), Path(__file__).with_name("frame_review.py").resolve(),
+    global_files = [proj / "config.json", proj / "timeline/words.json", Path(__file__).resolve(), Path(__file__).with_name("frame_review.py").resolve(),
                     Path(__file__).with_name('review_assets.cjs').resolve(),
                     root / "render.mjs", root / "player.html", root / "live.html"]
     global_files += [p for p in (root / 'engine').rglob('*') if p.is_file()]
+    for p in global_files if usage else []:
+        if root / 'engine' in p.parents and p.suffix in ('.js','.mjs'):
+            # The engine itself is always part of the code hash. Only known
+            # geometry-only code can omit a dependency on project PNGs.
+            if file_hash(p)[1] in DRAWING_MODULES:
+                usage[str(p)] = dict(names=[], patterns=[], dynamic=False)
     media = [p for directory in ('assets','input') for p in (proj / directory).rglob('*')
              if p.is_file() and p.suffix.lower() not in {'.wav','.mp3','.m4a','.mp4'}]
     shared_paths = dependencies(shared)
