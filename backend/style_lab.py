@@ -108,7 +108,7 @@ def validate(animation) -> None:
 # Only styles with volume: gradients, light, glow or texture (user, 1 November 2026: flat styles «не підходять… об'єм не
 # видно»). Chalk, Doodle, Ink, Cut-out, «Синє на білому» and «Біле на синьому» left the choice; films already in them
 # still render, and a channel that uses one still sees it (cards(keep=…)), so saving its settings never swaps its style.
-GALLERY = ("neon", "dusk", "clinic", "blueglow", "care")
+GALLERY = ("neon", "neonblack", "dusk", "clinic", "blueglow", "care")
 
 
 def razgon_text(animation: dict | None) -> dict:

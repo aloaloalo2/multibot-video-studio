@@ -319,6 +319,9 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Невідомий вигляд текстових вставок")
     if 'typography' in value:
         if not isinstance(value['typography'],dict):raise StudioError('Invalid typography')
+        if 'accent_font_family' in value['typography']:
+            try:graphics.validate({'font_family':value['typography']['accent_font_family']})
+            except (ValueError,TypeError) as error:raise StudioError(str(error)) from None
         try:graphics.validate(value['typography'])
         except (ValueError,TypeError) as error:raise StudioError(str(error))
     if not isinstance(value.get("generated_image_style", ""), str) or len(value.get("generated_image_style", "")) > 4000:
@@ -1925,7 +1928,9 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         style_defaults={}
         if kind=='text' or content_type=='text':
             config=read_channel_settings(get_channel_folder(project['channel_id'],include_disabled=True),{}) if project.get('channel_id') else {}
-            style_defaults=config.get('typography',{})
+            style_defaults=dict(config.get('typography',{}))
+            if payload.get('text_role') in ('accent','label') and style_defaults.get('accent_font_family'):
+                style_defaults['font_family']=style_defaults['accent_font_family']
         try:clip.update(graphics.validate({**style_defaults,**payload}))
         except (ValueError,TypeError) as error:raise StudioError(str(error))
         if (kind=='text' or content_type=='text') and project.get('font_family'):

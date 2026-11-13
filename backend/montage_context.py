@@ -45,6 +45,11 @@ def rules(project, *, production=False):
             if key and key not in seen:
                 seen.add(key)
                 blocks.append(key)
+    fonts=store.read_channel_settings(channel,{}).get('typography') or {}
+    if fonts.get('font_family'):
+        blocks.append('Шрифти текстових вставок та окремих монтажних елементів Studio: основний текст '+fonts['font_family']+
+                      ', акценти й підписи '+fonts.get('accent_font_family',fonts['font_family'])+
+                      '. Шрифти сцен Razgon визначає animation.title_font.')
     return ('\nЧинні загальні та канальні правила для режисури й монтажу. '
             'Сценарій та озвучка вже прийняті. Поточний запит, налаштування каналу і наведений нижче '
             'порядок Studio мають пріоритет над історичними кроками випуску.\n' + '\n\n'.join(blocks) + '\n')

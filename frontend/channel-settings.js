@@ -62,7 +62,7 @@ function organizeChannelSettings(channel){
   const definitions=[
     ['projects','Основне','Для нових проєктів','Основне'],
     ['script','Сценарій','Зачини та повний текст'],
-    ['look','Оформлення','Стиль і логотип'],
+    ['look','Оформлення','Стиль і плашка'],
     ['voice','Озвучка','Голос і зразок'],
     ['thumbnails','Прев’ю','Герой і побажання'],
     ['sound','Звук','Музика й ефекти','Додаткове'],
@@ -73,12 +73,15 @@ function organizeChannelSettings(channel){
   const panels={},tabs={},summaries=new Map();
   const preferenceKey=`channel-settings-panel:${channel.id}`;
   function select(key,focus=false){
+    const sectionKey=['script','look','voice','thumbnails'].includes(key)?key:null;
+    if(sectionKey)key='projects';
     if(!panels[key])key='projects';
     for(const [name,panel] of Object.entries(panels)){
       const active=name===key;panel.hidden=!active;tabs[name].setAttribute('aria-selected',String(active));tabs[name].tabIndex=active?0:-1;
       if(!active)panel.querySelectorAll('audio,video').forEach(media=>media.pause());
     }
     try{sessionStorage.setItem(preferenceKey,key);}catch{}
+    if(sectionKey){const group=body.querySelector('[data-main-section="'+sectionKey+'"]');if(group){group.open=true;group.scrollIntoView({block:'nearest'});}}
     if(focus)tabs[key].focus();
   }
   for(const [key,label,note,group] of definitions){
@@ -127,7 +130,7 @@ function organizeChannelSettings(channel){
   move('.settings-agent-memory','projects',{fold:true,icon:'memory',title:'Правила Агентів'});
   move('.settings-script-wishes','script',{icon:'script'});
   move('.channel-look','look',{icon:'look'});
-  move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Логотип'});
+  move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Плашка'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
   const automation=document.createElement('div');automation.className='settings-voice-automation';
   automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label>`;
@@ -136,6 +139,20 @@ function organizeChannelSettings(channel){
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});
+  for(const [key,label,icon] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Герой і прев’ю','thumbnails']]){
+    const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=key;
+    group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
+    const inner=group.lastElementChild;
+    for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head'))inner.append(child);
+    panels.projects.append(group);tabs[key].remove();
+  }
+  const fontSection=document.createElement('section');fontSection.className='settings-section settings-montage-fonts';
+  fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
+  fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';
+  fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
+  const rules=body.querySelector('.settings-agent-memory').closest('.channel-settings-group');
+  panels.projects.append(fontSection,rules);
+
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');
   if(danger){const area=document.createElement('div');area.className='settings-danger-zone';danger.classList.add('settings-remove-channel');area.append(danger);panels.advanced.append(area);}

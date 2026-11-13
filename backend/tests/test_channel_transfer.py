@@ -17,6 +17,18 @@ import director
 
 
 class ChannelTransferTests(unittest.TestCase):
+    def test_montage_fonts_and_black_neon_roundtrip(self):
+        choices={'font_family':'Golos','accent_font_family':'Literata'}
+        store.update_channel_settings(self.cid,{'typography':choices,'animation':{'style':'neonblack','title_font':'Nunito'}})
+        bundle=transfer.export_bundle(self.cid)
+        transfer.import_bundle(self.tid,bundle,lambda cid:None)
+        saved=store.read_channel_settings(self.target)
+        self.assertEqual(saved['typography'],choices)
+        self.assertEqual(saved['animation']['title_font'],'Nunito')
+        self.assertEqual(saved['animation']['style'],'neonblack')
+        with self.assertRaises(store.StudioError):
+            store.update_channel_settings(self.cid,{'typography':{'accent_font_family':'missing-font'}})
+
     def test_translation_models_roundtrip_separately_for_each_language(self):
         import channel_translation_voices as choices,language_defaults,languages
         payload={'settings':{},'languages':['uk','es','ru'],'voices':{

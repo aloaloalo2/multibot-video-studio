@@ -829,6 +829,13 @@ def project_jobs(pid: str) -> dict:
 
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
+    # A live frame worker must block an update even when its project metadata
+    # is temporarily unreadable or its final receipt was already written.
+    visible={item['project_id'] for item in result.get('activities',[]) if item.get('kind')=='створення кадрів'}
+    for pid in production.ACTIVE.copy()-visible:
+        result['busy'].append('створення кадрів: '+pid)
+        result.setdefault('activities',[]).append({'project_id':pid,'kind':'створення кадрів','status':'running'})
+
     if trending_videos.busy():
         result['busy'].append('оновлення добірки конкурентів')
     if title_translation.busy():

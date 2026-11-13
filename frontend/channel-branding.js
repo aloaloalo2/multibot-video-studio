@@ -9,6 +9,7 @@ const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opaci
 const titleFonts=["Montserrat", "Nunito", "Roboto", "Open Sans", "Noto Sans", "Noto Serif", "Oswald", "Roboto Condensed", "Ubuntu", "Rubik", "Manrope", "Exo 2", "Comfortaa", "PT Sans", "PT Serif", "Russo One", "Unbounded"];
 // Ukrainian names for the template Razgon styles; a style the Studio does not know keeps its own name and description.
 const styleNames={neon:['Неоновий нуар','Глибокий чорний, рожево-бірюзовий контур, світні вивіски, сильне сяйво.'],
+  neonblack:['Чорний неон','Майже чорні об’єкти та фон, графітові тіні й неонове сяйво.'],
   dusk:['Кіно-сутінки','Лілові тіні, бурштинове світло, кремовий контур, широкоекранні смуги.'],
   doodle:['Дудл у зошиті','Пастель, чорна тремтлива обводка, лінії «киплять», папір.'],
   ink:['Туш','Чорно-біла графіка: сірі тони, чорний контур, без кольору.'],
@@ -30,17 +31,17 @@ function brandingSections(channel,projectDefaults=''){
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;
   return `<section class="settings-section channel-name-section"><div class="channel-identity-edit"><div class="channel-avatar-edit"><label class="channel-avatar-pick" title="Завантажити іконку каналу"><input id="channel-icon-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><span id="channel-icon-image">${channelIdentityIcon(channel)}</span></label><button id="channel-icon-remove" class="channel-avatar-remove" type="button" aria-label="Видалити іконку каналу" title="Видалити іконку" ${channel.icon_url?'':'hidden'}>${trashIcon}</button></div><div class="channel-identity-name"><label for="channel-name"><h3>Назва каналу</h3></label><input id="channel-name" type="text" maxlength="80" autocomplete="off" value="${esc(channel.name)}"></div></div><p id="channel-icon-state" class="channel-icon-state" role="status" hidden></p></section>
     <section class="settings-section channel-project-defaults"><h3>Налаштування проєктів за замовчуванням</h3>${projectDefaults}<div class="channel-model-setting"><label for="settings-director-model"><h4>Модель режисера</h4></label><select id="settings-director-model">${[["claude-opus-5-5","Opus 5.5"],["claude-fable-5-2","Fable 5.2"]].map(([value,label])=>`<option value="${value}" ${(settings.director_model||"claude-opus-5-5")===value?"selected":""}>${label}</option>`).join('')}</select></div><div class="channel-effort-setting"><label for="settings-claude-effort"><h4>Рівень зусиль Claude Code</h4></label><select id="settings-claude-effort">${[["low","Легкий"],["medium","Середній"],["high","Високий"],["xhigh","Надвисокий"]].map(([value,label])=>`<option value="${value}" ${(settings.claude_effort||"high")===value?"selected":""}>${label}</option>`).join('')}</select></div><div class="channel-kind-section"><h4>Тип проєкту</h4><div class="channel-kind-options" role="radiogroup" aria-label="Тип нових проєктів">${kindCard('regular','Універсальний','Фото, відео, графіка й анімація')}${kindCard('animated','Анімаційний','Увесь ролик в анімації')}</div></div></section>
-    <section class="settings-section logo-section"><input type="hidden" id="logo-version" value="${logo.version||0}"><div class="logo-heading"><h3>Логотип каналу</h3><label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати</label></div><div class="logo-compact-body">
+    <section class="settings-section logo-section"><input type="hidden" id="logo-version" value="${logo.version||0}"><div class="logo-heading"><h3>Плашка каналу</h3><label class="logo-switch" id="logo-switch"><input id="logo-enabled" type="checkbox" role="switch" ${logo.enabled?'checked':''}><span aria-hidden="true"></span>Показувати</label></div><div class="logo-compact-body">
       <div class="logo-file">
-        <div class="logo-tile-wrap"><label class="logo-tile" id="logo-tile" title="Додати або замінити логотип"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-          <img id="logo-tile-image" alt="Логотип каналу" hidden>
-          <span class="logo-tile-empty" id="logo-tile-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span></label><button id="logo-remove" class="logo-tile-remove" type="button" title="Видалити логотип" aria-label="Видалити логотип" hidden>${trashIcon}</button></div>
-        <div class="logo-file-info"><strong id="logo-file-title">Логотип ще не додано</strong>
+        <div class="logo-tile-wrap"><label class="logo-tile" id="logo-tile" title="Додати або замінити плашку"><input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <img id="logo-tile-image" alt="Плашка каналу" hidden>
+          <span class="logo-tile-empty" id="logo-tile-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span></label><button id="logo-remove" class="logo-tile-remove" type="button" title="Видалити плашку" aria-label="Видалити плашку" hidden>${trashIcon}</button></div>
+        <div class="logo-file-info"><strong id="logo-file-title">Плашку ще не додано</strong>
           <small id="logo-file-meta">Перетягніть картинку в квадрат або натисніть на нього. Найкраще PNG з прозорим фоном, до 6 МБ.</small>
           <button id="logo-replace" type="button" hidden>Замінити</button></div>
       </div>
       <div class="logo-place" id="logo-place" hidden>
-        <div class="logo-place-controls"><div class="logo-place-row"><span class="logo-place-label">Місце</span><div class="logo-position-grid" role="group" aria-label="Місце логотипа">${cells}</div></div>
+        <div class="logo-place-controls"><div class="logo-place-row"><span class="logo-place-label">Місце</span><div class="logo-position-grid" role="group" aria-label="Місце плашки">${cells}</div></div>
           <div class="logo-sliders">${slider('logo-size','Розмір',3,40,logo.size,'%')}${slider('logo-margin','Відступ від краю',0,15,logo.margin,'%')}${slider('logo-opacity','Видимість',10,100,logo.opacity,'%')}</div></div>
       </div>
       </div><p id="logo-feedback" class="logo-feedback" role="status" aria-live="polite"></p></section>
@@ -124,7 +125,7 @@ function bindBranding(channel){
     place(image);
     tileImage.hidden=!present;$('logo-tile-empty').hidden=present;$('logo-tile').classList.toggle('has-logo',present);
     $('logo-replace').hidden=!present;$('logo-remove').hidden=!present;$('logo-place').hidden=!present;$('logo-switch').hidden=!present;
-    $('logo-file-title').textContent=present?'Логотип каналу':'Логотип ще не додано';
+    $('logo-file-title').textContent=present?'Плашка каналу':'Плашку ще не додано';
     $('logo-file-meta').textContent=present?`${tileImage.naturalWidth} × ${tileImage.naturalHeight} пікселів${$('logo-enabled').checked?'':' · у роликах не показується'}`:'Перетягніть картинку в квадрат або натисніть на нього. Найкраще PNG з прозорим фоном, до 6 МБ.';
     $('logo-place').hidden=!present||!$('logo-enabled').checked;
     for(const mark of film.querySelectorAll('.logo-mark')){if(mark.getAttribute('src')!==logoUrl())mark.src=logoUrl();place(mark);}
@@ -234,12 +235,12 @@ function bindBranding(channel){
   const upload=async file=>{
     if(!file)return;
     if(!/^image\/(png|jpeg|webp)$/.test(file.type)){feedback.textContent='Потрібна картинка PNG, JPG або WebP.';return;}
-    if(file.size>6*1024*1024){feedback.textContent='Файл завеликий, оберіть логотип до 6 МБ.';return;}
-    feedback.textContent='Завантажуємо логотип...';
+    if(file.size>6*1024*1024){feedback.textContent='Файл завеликий, оберіть плашку до 6 МБ.';return;}
+    feedback.textContent='Завантажуємо плашку…';
     try{
       const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не вдалося прочитати файл.'));reader.readAsDataURL(file);});
       await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'POST',{data});
-      version=Date.now();load();feedback.textContent='Логотип додано. Виберіть місце й розмір і натисніть «Зберегти».';
+      version=Date.now();load();feedback.textContent='Плашку додано. Виберіть місце й розмір і натисніть «Зберегти».';
     }catch(error){feedback.textContent=error.message;}
   };
   $('logo-file').addEventListener('change',event=>{const file=event.target.files[0];event.target.value='';upload(file);});
@@ -249,7 +250,7 @@ function bindBranding(channel){
   for(const name of ['dragleave','drop'])tile.addEventListener(name,()=>tile.classList.remove('is-over'));
   tile.addEventListener('drop',event=>{event.preventDefault();upload(event.dataTransfer.files[0]);});
   $('logo-remove').addEventListener('click',async()=>{
-    try{await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'DELETE');version=Date.now();present=false;draw();feedback.textContent='Логотип видалено.';}catch(error){feedback.textContent=error.message;}
+    try{await api(`/api/channels/${encodeURIComponent(channel.id)}/logo`,'DELETE');version=Date.now();present=false;draw();feedback.textContent='Плашку видалено.';}catch(error){feedback.textContent=error.message;}
   });
   let loadedKind=null;
   const applyKind=()=>{$('modal-backdrop').dataset.channelKind=kind();backdrop();if(!styles || loadedKind!==kind())loadStyles();};
