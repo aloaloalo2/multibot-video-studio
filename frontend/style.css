@@ -2834,6 +2834,7 @@ select option{background:#232327;color:#f1f1f2}
 .ai-limit-name.claude::before,.ai-limit-name.codex::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:#e0895f}
 .ai-limit-name.codex::before{background:#8fb0ff}
 .ai-limit-left{font-size:17px;font-weight:600}
+.ai-limit-left small{font-size:11.5px;font-weight:400;color:#8d909a;margin-right:3px}
 .ai-limit-left[data-tone=low]{color:#ff6b6b}.ai-limit-left[data-tone=mid]{color:#f0b429}
 .ai-limit-bar{grid-column:1/-1;height:5px;border-radius:3px;background:#2c2d33;overflow:hidden}
 .ai-limit-bar i{display:block;height:100%;border-radius:3px;background:#e0895f}.ai-limit-bar i.codex{background:#8fb0ff}
