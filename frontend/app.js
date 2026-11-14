@@ -200,7 +200,7 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
 function channelIdentityIcon(channel){
   return channel?.icon_url?`<img class="channel-icon channel-avatar" src="${esc(channel.icon_url)}" alt="" draggable="false">`:channelIcon;
 }
-const channelActivity=new Set(),projectActivities=new Map();
+const channelActivity=new Set(),channelExporting=new Set(),projectActivities=new Map();
 const channelNoticeStorage='videokey-channel-notices';
 let channelNoticeData={};
 try{channelNoticeData=JSON.parse(localStorage.getItem(channelNoticeStorage))||{};}catch{}
@@ -219,9 +219,9 @@ function renderChannelNotices(){
     const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen;
     const stopped=notice?.status==='stopped';
     badge.hidden=!busy&&!unread;
-    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'');
+    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':'');
     badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'square':'check'):'';
-    const label=busy?'У каналі триває робота':stopped?'Роботу зупинено':'Роботу завершено';
+    const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy?'У каналі триває робота':stopped?'Роботу зупинено':'Роботу завершено';
     badge.setAttribute('aria-label',label);badge.title=label;
   }
   if(acknowledged)saveChannelNotices();
@@ -264,7 +264,7 @@ async function pollChannelActivity(){
   channelActivityPending=true;
   try{
     const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
-    const activity=await api('/api/studio/status');channelActivity.clear();projectActivities.clear();
+    const activity=await api('/api/studio/status');channelActivity.clear();channelExporting.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
     for(const task of activity.activities||[])if(task.project_id)projectActivities.set(task.project_id,task.kind);
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
@@ -275,6 +275,7 @@ async function pollChannelActivity(){
     const newProduction=(activity.activities||[]).some(task=>task.kind==='створення кадрів'&&(state.projects||[]).some(project=>project.id===task.project_id&&!['requested','in_progress'].includes(project.production_request?.status)));
     if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
     for(const id of activity.active_channels||[])channelActivity.add(id);
+    for(const id of activity.exporting_channels||[]){channelActivity.add(id);channelExporting.add(id);}
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
     for(const [id,notice] of Object.entries(activity.channel_notices||{})){
       channelNoticeData[id]={...notice,seen:channelNoticeData[id]?.seen};

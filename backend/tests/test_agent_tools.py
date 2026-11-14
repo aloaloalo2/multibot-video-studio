@@ -364,6 +364,14 @@ class AgentToolsTest(unittest.TestCase):
         status, data = self.request(f"/api/projects/{project['id']}/exports")
         self.assertEqual((status, data["active"], data["jobs"][0]["output_path"]), (200, None, "/x/Video.mp4"))
 
+    def test_a_channel_with_an_export_is_marked_for_the_amber_spinner(self):
+        project = self.project(frames=1)
+        cid = store.load_project(project["id"])["channel_id"]
+        result = agent_view.studio_status([{"project_id": project["id"], "status": "queued", "progress": 0}], lambda pid: {}, set())
+        self.assertEqual((result["exporting_channels"], result["active_channels"]), ([cid], [cid]))
+        result = agent_view.studio_status([{"project_id": project["id"], "status": "complete"}], lambda pid: {}, set())
+        self.assertEqual(result["exporting_channels"], [])
+
     def test_project_answers_reuse_readiness_until_something_it_reads_changes(self):
         project = self.project(frames=1)
         calls = []

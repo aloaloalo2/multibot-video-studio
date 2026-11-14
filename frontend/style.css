@@ -1821,6 +1821,8 @@ select option{background:#232327;color:#f1f1f2}
 .channel-busy{flex:none;width:13px;height:13px;margin-left:auto;border:2px solid #777d8b40;border-top-color:#b9becb;border-radius:50%;animation:channel-activity-spin .9s linear infinite}
 .channel-busy[hidden]{display:none}
 @keyframes channel-activity-spin{to{transform:rotate(360deg)}}
+/* a channel exporting spins in the export's amber (the project card's colour) */
+.channel-busy.is-exporting{border-color:#f5c04a40;border-top-color:#f5c04a}
 
 .thumb-modal-open .modal{width:min(820px,100%)}
 .thumb-writer-button{display:inline-flex;align-items:center;justify-content:center;gap:9px}
