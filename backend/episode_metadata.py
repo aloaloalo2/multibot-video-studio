@@ -70,6 +70,9 @@ def save(project, value, script, *, author='Opus'):
     text = ('Тайтлы для A/B-теста\n' + '\n'.join(f'{i}. {s}' for i, s in enumerate(value['titles'], 1))
             + '\n\nОписание\n' + value['description'] + '\n\nТеги\n' + ', '.join(value['tags']) + '\n')
     destination = path(project)
+    # the episode's folder may have been deleted or renamed by hand: it is made again, as at the project's creation
+    # (14 November 2026: «[Errno 2] No such file or directory … .metadata-….tmp» after a finished script)
+    destination.parent.mkdir(parents=True, exist_ok=True)
     tmp = destination.with_name('.metadata-' + uuid.uuid4().hex + '.tmp')
     try:
         tmp.write_text(text, encoding='utf-8')

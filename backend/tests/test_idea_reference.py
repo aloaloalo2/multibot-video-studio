@@ -106,37 +106,35 @@ class CloneEpisodeTest(unittest.TestCase):
             body={'reference_id':VIDEO,'title':'Host choice','target_words':1200,
                   'request_id':'host-choice-'+str(enabled),'use_hero':enabled}
             with patch.object(ideas,'context',return_value={'channel':'Test','sample_count':0}), \
-                 patch.object(ideas,'Thread'),patch('channel_hero.info',return_value={'url':'/host.png'}):
+                 patch.object(ideas,'Thread'),patch('channel_hero.info',return_value={'url':'/host.png'}), \
+                 patch('thumbnail_gen.state',return_value={}),patch('thumbnail_gen.preview',return_value=None),patch('thumbnail_gen.start') as early:
                 draft=reference.start_openings(self.cid,body)
                 self.assertEqual(draft['clone_use_hero'],enabled)
+                self.assertEqual(early.call_args.kwargs['use_hero'],enabled)   # the cover starts with the idea
                 self.assertEqual(reference.start_openings(self.cid,body)['project_id'],draft['project_id'])
                 with self.assertRaises(store.StudioError):
                     reference.start_openings(self.cid,{**body,'use_hero':not enabled})
             data=ideas.read_project(draft['project_id']);data['opening']='Chosen opening'
             with patch('thumbnail_gen.state',return_value={}),patch('thumbnail_gen.preview',return_value=None),patch('thumbnail_gen.start') as start:
                 reference.start_thumbnail(data)
-                self.assertEqual(start.call_args.kwargs['use_hero'],enabled)
+                start.assert_not_called()   # one automatic cover an idea
             ideas.ACTIVE.clear()
 
-    def test_auto_thumbnail_starts_at_hook_selection_once_before_script_finishes(self):
+    def test_auto_thumbnail_starts_with_the_idea_once_before_any_hook_is_chosen(self):
         body = {'action': 'clone_openings', 'reference_id': VIDEO, 'title': 'Clone cover',
                 'target_words': 1200, 'request_id': 'early-cover'}
-        with patch.object(ideas, 'context', return_value={'channel': 'Test', 'sample_count': 0}), patch.object(ideas, 'Thread'), patch('thumbnail_gen.start') as start:
+        with patch.object(ideas, 'context', return_value={'channel': 'Test', 'sample_count': 0}), patch.object(ideas, 'Thread'), \
+                patch('thumbnail_gen.state', return_value={}), patch('thumbnail_gen.preview', return_value=None), patch('thumbnail_gen.start', return_value={'status': 'running'}) as start:
             draft = ideas.start(self.cid, body)
-            start.assert_not_called()
-        pid = draft['project_id']
-        ideas.ACTIVE.clear()
-        data = ideas.read_project(pid)
-        data.update(status='done', openings=[{'text': 'The selected hook.'}])
-        ideas.save_draft(self.cid, data)
-        with patch.object(ideas, 'Thread'), patch('thumbnail_gen.state', return_value={}), patch('thumbnail_gen.preview', return_value=None), patch('thumbnail_gen.start', return_value={'status': 'running'}) as start:
+            pid = draft['project_id']
+            start.assert_called_once_with(pid, 'Clone cover', 'Clone cover', writer='trending')
+            self.assertTrue(ideas.read_project(pid)['clone_thumbnail_attempted'])
+            ideas.ACTIVE.clear()
+            data = ideas.read_project(pid)
+            data.update(status='done', openings=[{'text': 'The selected hook.'}])
+            ideas.save_draft(self.cid, data)
             selected = ideas.start_project(pid, {'action': 'script', 'index': 0, 'request_id': 'selected-hook'})
             self.assertEqual(selected['status'], 'running')
-            self.assertFalse(selected.get('completed'))
-            self.assertTrue(ideas.read_project(pid)['clone_thumbnail_attempted'])
-            self.assertFalse((store.load_project(pid).get('voice_script') or {}).get('text'))
-            start.assert_called_once_with(pid, 'Clone cover', 'The selected hook.', writer='trending')
-            ideas.start_project(pid, {'action': 'script', 'index': 0, 'request_id': 'selected-hook'})
             reference.start_thumbnail(ideas.read_project(pid))
             self.assertEqual(start.call_count, 1)
         ideas.ACTIVE.clear()
@@ -152,9 +150,8 @@ class CloneEpisodeTest(unittest.TestCase):
             reference.start_thumbnail(saved)
             self.assertEqual(start.call_count, 1)
 
-    def test_reference_without_selected_hook_never_starts_cover(self):
+    def test_an_own_episode_never_starts_a_clone_cover(self):
         with patch('thumbnail_gen.start') as start:
-            reference.start_thumbnail({'clone_reference': self.data})
             reference.start_thumbnail({'opening': 'Own episode hook'})
             start.assert_not_called()
 

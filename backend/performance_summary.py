@@ -133,7 +133,12 @@ def saved_costs(root):
     return result
 
 
+LOST = {'failed', 'cancelled', 'interrupted', 'unknown'}
+ORDER = {name: index for index, name in enumerate(LABELS)}
+
+
 def project(runs, root):
+    """Useful time counts finished, running and paused runs. Failed, cancelled and interrupted attempts stay separate."""
     groups = {}
     running = False
     for row in runs:
@@ -143,8 +148,13 @@ def project(runs, root):
         live = row.get('status') == 'running'
         running |= live
         group = groups.setdefault(kind, {'id': kind, 'workflow': kind, 'label': LABELS[kind],
-                                         'active_ms': 0., 'running': False})
-        group['active_ms'] += active_ms(row)
+                                         'active_ms': 0., 'running': False, 'lost_ms': 0., 'lost_runs': 0})
+        spent = active_ms(row)
+        if row.get('status') in LOST:
+            group['lost_ms'] += spent
+            group['lost_runs'] += 1
+        else:
+            group['active_ms'] += spent
         group['running'] |= live
     try:
         costs = saved_costs(root)
@@ -153,9 +163,12 @@ def project(runs, root):
     rows = []
     for group in groups.values():
         group['active_ms'] = round(group['active_ms'], 2)
-        if group['active_ms'] <= 1000:
+        group['lost_ms'] = round(group['lost_ms'], 2)
+        if group['active_ms'] + group['lost_ms'] <= 1000:
             continue
         group['cost'] = costs.get(group['workflow'], {'recorded': False})
         rows.append(group)
-    rows.sort(key=lambda row: (-row['active_ms'], row['label']))
-    return {'processes': rows, 'running': running}
+    rows.sort(key=lambda row: ORDER[row['workflow']])
+    return {'processes': rows, 'running': running,
+            'total_ms': round(sum(row['active_ms'] for row in rows), 2),
+            'lost_ms': round(sum(row['lost_ms'] for row in rows), 2)}

@@ -297,6 +297,11 @@ DEFAULT_DIRECTOR_MODEL = "claude-opus-5-5"
 DIRECTOR_MODELS = {DEFAULT_DIRECTOR_MODEL, "claude-fable-5-2"}
 
 
+def capcut_effects() -> dict:
+    """The CapCut effects a clip may carry (frontend/capcut-catalog.json, engine/capcut_fx.py draws them)."""
+    return json.loads((APP_ROOT / "frontend" / "capcut-catalog.json").read_text(encoding="utf-8"))["effects"]
+
+
 def validate_settings(value: dict) -> dict:
     if not isinstance(value, dict):
         raise StudioError("Налаштування мають бути об'єктом")
@@ -313,6 +318,19 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Назва каналу має містити від 1 до 80 символів")
     if value.get("plan_mode", "director") not in {"director", "direct"}:
         raise StudioError("Невідомий режим створення ролика")
+    if "transitions" in value:
+        # «Переходи» of the channel (user, 14 November 2026): which transitions the montage may pick and on what share
+        # of the seams it puts one (montage_ops.transitions)
+        chosen = value["transitions"]
+        if not isinstance(chosen, dict) or not isinstance(chosen.get("allowed", []), list):
+            raise StudioError("Невірні налаштування переходів")
+        unknown = [t for t in chosen.get("allowed", []) if t not in joins.CHOICES]
+        if unknown:
+            raise StudioError("Невідомі переходи: " + ", ".join(map(str, unknown[:5])))
+        share = chosen.get("share", .7)
+        if type(share) not in (int, float) or not 0 <= share <= 1:
+            raise StudioError("Частка переходів має бути від 0 до 100%")
+        value["transitions"] = {"allowed": list(dict.fromkeys(chosen.get("allowed", []))), "share": round(float(share), 3)}
     if value.get("motion_easing", "ease_in_out") not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
         raise StudioError("Невідомий тип руху")
     if value.get("text_look", "varied") not in {"varied", "dim"}:
@@ -330,7 +348,7 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Побажання до прев’ю мають містити до 4000 символів")
     if not isinstance(value.get("script_wishes", ""), str) or len(value.get("script_wishes", "")) > 30000:
         raise StudioError("Побажання сценаристу мають містити до 30000 символів")
-    for flag in ('auto_narration', 'auto_montage'):
+    for flag in ('auto_narration', 'auto_montage', 'auto_opening'):
         if type(value.get(flag, False)) is not bool:
             raise StudioError("Автоматичні дії мають бути увімкнені або вимкнені")
     weights = value.get("weights")
@@ -1862,7 +1880,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         recompute_universal_duration(project)
         joins.reconcile(project)
         return True
-    supported = {"add_layer", "remove_layer", "move_layer", "update_layer", "add_clip", "move_clip", "trim_clip", "split_clip", "replace_clip_asset", "set_clip_volume", "set_transition", "delete_clip", "update_clip"}
+    supported = {"add_layer", "add_capcut_effect", "remove_layer", "move_layer", "update_layer", "add_clip", "move_clip", "trim_clip", "split_clip", "replace_clip_asset", "set_clip_volume", "set_transition", "delete_clip", "update_clip"}
     if action not in supported or action == "set_transition" and "clip_id" not in payload:
         return False
     layers = project["tracks"]
@@ -1881,6 +1899,42 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         if len(layers) <= 1:
             raise StudioError("Останній шар не можна видалити")
         layers.remove(layer_by_id(project, str(payload["layer_id"])))
+    elif action == "add_capcut_effect":
+        # a CapCut effect (user, 14 November 2026): on one frame its row stands right above that frame's rows, on the
+        # whole film (or a stretch of it) right under the channel plate, so it acts on everything below it
+        name = payload.get("effect")
+        if name not in capcut_effects():
+            raise StudioError("Невідомий ефект CapCut")
+        overlay = {cid for g in project.get("scene_groups", []) if g.get("role") == "overlay" for cid in g.get("clip_ids", [])}
+        plate_index = next((i for i, l in enumerate(layers) if any(c["id"] in overlay for c in l.get("clips", []))), len(layers))
+        if payload.get("group_id"):
+            group = next((g for g in project.get("scene_groups", []) if g["id"] == payload["group_id"] and g.get("role") != "overlay"), None)
+            if not group:
+                raise StudioError("Кадр не знайдено", 404)
+            members = set(group["clip_ids"])
+            clips = [c for l in layers for c in l.get("clips", []) if c["id"] in members and c.get("kind") != "audio"]
+            if not clips:
+                raise StudioError("У кадрі немає зображення для ефекту")
+            start = min(float(c["start"]) for c in clips)
+            end = max(float(c["start"]) + float(c["duration"]) for c in clips)
+            index = min(plate_index, max(i for i, l in enumerate(layers) if any(c["id"] in members for c in l.get("clips", []))) + 1)
+        else:
+            film = [c for l in layers for c in l.get("clips", []) if c.get("kind") != "audio" and c["id"] not in overlay]
+            start = finite_float(payload.get("start", 0), 0, 36000, "Невірний початок ефекту")
+            end = finite_float(payload.get("end", max((float(c["start"]) + float(c["duration"]) for c in film), default=0)), 0, 36000, "Невірний кінець ефекту")
+            index = plate_index
+        if end - start < .1:
+            raise StudioError("Ефект надто короткий")
+        title = "CapCut · " + capcut_effects()[name]["name"]
+        layer = {"id": uuid.uuid4().hex[:12], "name": title, "type": "universal", "z_index": index, "clips": []}
+        layers.insert(index, layer)
+        clip = {"id": uuid.uuid4().hex[:12], "kind": "animation", "asset_id": None, "start": round(start, 3), "duration": round(end - start, 3),
+                "trim_start": 0.0, "volume": 0.0, "title": title, "text": "", "content_type": "capcut_effect", "capcut_effect": name,
+                "color": "#101114", "transition": {"type": "cut", "duration": 0.0}, "x": .5, "y": .5, "width": 1.0, "height": 1.0,
+                "scale": 1.0, "opacity": 1.0, "keyframes": [], "easing": "linear"}
+        layer["clips"].append(clip)
+        if payload.get("group_id"):
+            group["clip_ids"].append(clip["id"])
     elif action == "move_layer":
         layer = layer_by_id(project, str(payload["layer_id"]))
         index = int(payload["to_index"])
@@ -1906,8 +1960,10 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         needed_kind = "image" if kind == "animation" and content_type == "image" else kind if kind in {"video", "image", "audio"} else None
         if needed_kind and (asset is None or asset["kind"] != needed_kind):
             raise StudioError("Тип матеріалу не відповідає кліпу")
-        if kind == "animation" and content_type not in {"text", "image", "shape", "gradient"}:
+        if kind == "animation" and content_type not in {"text", "image", "shape", "gradient", "capcut_effect"}:
             raise StudioError("Невідомий тип анімації")
+        if content_type == "capcut_effect" and payload.get("capcut_effect") not in capcut_effects():
+            raise StudioError("Невідомий ефект CapCut")
         if kind in {"video", "audio"}:
             trim_start = finite_float(payload.get("trim_start", 0), 0, 36000, "Invalid source offset")
             available = media_duration(Path(asset["path"])) if asset else None
@@ -1928,6 +1984,8 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         default_color = "#ffffff" if kind == "text" or kind == "animation" and content_type == "text" else "#f0b429" if kind == "animation" else "#101114"
         clip = {"id": uuid.uuid4().hex[:12], "kind": kind, "asset_id": asset["id"] if asset else None, "start": round(start, 3), "duration": round(duration, 3), "trim_start": 0.0, "volume": finite_float(payload.get("volume", 0 if kind == "video" else 1), 0, 1.5, "Невірна гучність"), "title": title, "text": text, "content_type": content_type, "color": str(payload.get("color", default_color)), "transition": {"type": "cut", "duration": 0.0}, "x": finite_float(payload.get("x", .5), -2, 2), "y": finite_float(payload.get("y", .5), -2, 2), "width": finite_float(payload.get("width", 1), .01, 4), "height": finite_float(payload.get("height", 1), .01, 4), "scale": finite_float(payload.get("scale", 1), .05, 8), "opacity": finite_float(payload.get("opacity", 1), 0, 1), "preset": preset, "preset_duration": preset_duration, "keyframes": validated_keyframes(payload.get("keyframes", []), duration)}
         clip["trim_start"] = trim_start
+        if content_type == "capcut_effect":
+            clip["capcut_effect"] = payload["capcut_effect"]
         if payload.get("accent_motion") in ("still", "fade"):
             clip["accent_motion"] = payload["accent_motion"]
         style_defaults={}
@@ -2046,7 +2104,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
     elif action == "update_clip":
         _, clip = clip_by_id(project, str(payload["clip_id"]))
         changes = payload.get("patch", payload.get("changes", {}))
-        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text"} | graphics.FIELDS):
+        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text", "capcut_effect"} | graphics.FIELDS):
             raise StudioError("Невідоме поле кліпу")
         try:clip.update(graphics.validate(changes))
         except (ValueError,TypeError) as error:raise StudioError(str(error))
@@ -2081,6 +2139,10 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             if clip["kind"] != "animation" or content_type not in {"text", "image", "shape", "gradient"}:
                 raise StudioError("Невірний тип анімації")
             clip["content_type"] = content_type
+        if "capcut_effect" in changes:
+            if clip.get("content_type") != "capcut_effect" or changes["capcut_effect"] not in capcut_effects():
+                raise StudioError("Невідомий ефект CapCut")
+            clip["capcut_effect"] = changes["capcut_effect"]
         apply_text_binding(project,clip,changes)
         if ('font_size' in changes or 'font_family' in changes) and 'text_words' not in changes:
             typography.reflow(project,clip,project.get('font_family',clip.get('font_family','Golos')))

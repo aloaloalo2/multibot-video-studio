@@ -1,3 +1,5 @@
+// CapCut transitions (capcut.js, engine/capcut_fx.py) are drawn by the server; the seam dissolves until that video is ready
+function isCapcutTransition(type){return typeof type==='string'&&type.startsWith('capcut_t');}
 const transitionNames={cut:'Склейка',crossfade:'Розчинення',slide_left:'Зсув ліворуч',slide_right:'Зсув праворуч',slide_up:'Зсув угору',slide_down:'Зсув униз',zoom_in:'М’яке наближення',zoom_out:'М’яке віддалення'};
 let joinCacheToken='',joinCache=new Map();
 let transitionPointerDrag=null,transitionSuppressClick=false;
@@ -16,7 +18,7 @@ async function applyTransitionAtMarker(marker,type,origin){
   const previous=(state.project.join_transitions || []).find(join=>join.id===origin);
   const selected=state.selectedTransition,following=previous && selected?.fromRef===previous.from_ref && selected?.toRef===previous.to_ref;
   if(following)state.selectedTransition={fromRef:marker.dataset.fromRef,toRef:marker.dataset.toRef};
-  try{return await action('set_join_transition',{from_ref:marker.dataset.fromRef,to_ref:marker.dataset.toRef,type,duration:previous?.duration ?? (graphicTransitionPresets[type] ? .5 : .35),move_from:origin||undefined},'Перехід додано на стик.');}
+  try{return await action('set_join_transition',{from_ref:marker.dataset.fromRef,to_ref:marker.dataset.toRef,type,duration:previous?.duration ?? (isCapcutTransition(type) ? capcutDefaultDuration(type) : graphicTransitionPresets[type] ? .5 : .35),move_from:origin||undefined},'Перехід додано на стик.');}
   catch(error){if(following){state.selectedTransition=selected;renderInspector();}throw error;}
 }
 document.addEventListener('pointermove',event=>{
@@ -58,7 +60,8 @@ function transitionValues(clip,local,values){
       }else values.opacity*=incoming?(p>=.5?1:0):(p<.5?1:0);
       continue;
     }
-    if(type==='crossfade')values.opacity*=incoming?p:1-p;
+    // a CapCut transition plays its drawn video over the seam (capcut.js); until it is ready the preview dissolves
+    if(type==='crossfade'||type.startsWith('capcut_t'))values.opacity*=incoming?p:1-p;
     if(type.startsWith('slide_')){if(type==='slide_left')values.x+=incoming?progress:-progress;if(type==='slide_right')values.x+=incoming?-progress:progress;if(type==='slide_up')values.y+=incoming?progress:-progress;if(type==='slide_down')values.y+=incoming?-progress:progress;}
     if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;values.opacity*=incoming?p:1-p;}
   }
@@ -80,7 +83,7 @@ function renderTransitionInspector(join){
   const options=Object.entries(transitionNames).filter(([type])=>type!=='cut').map(([type,name])=>`<option value="${esc(type)}" ${type===join.type?'selected':''}>${esc(name)}</option>`).join('');
   box.innerHTML=`<div class="universal-properties transition-properties"><strong>Перехід</strong><small>Стик ${clock(join.seam)}</small><section><label>Вид переходу<select id="transition-property-type">${options}</select></label><label>Тривалість, с<input id="transition-property-duration" type="number" min="0.05" max="${limit}" step="0.001" value="${join.duration}"></label><label><span class="transition-speed-title">Швидкість <output id="transition-property-speed-value"></output></span><input id="transition-property-speed" type="range" min="0" max="100" step="1" aria-label="Тривалість переходу"></label><div class="transition-speed-ends"><span>Швидше</span><span>Повільніше</span></div><p id="transition-property-autosave" aria-live="polite">Збережено</p></section><button id="transition-property-remove" class="danger full trash-button" type="button">${trashIcon}<span>Прибрати перехід</span></button></div>`;
   const type=$('transition-property-type'),duration=$('transition-property-duration'),speed=$('transition-property-speed'),speedValue=$('transition-property-speed-value'),saveState=$('transition-property-autosave');
-  const midpoint=()=>{const standard=graphicTransitionPresets[type.value] ? .5 : .35;return standard<limit?standard:(.05+limit)/2;};
+  const midpoint=()=>{const standard=isCapcutTransition(type.value) ? capcutDefaultDuration(type.value) : graphicTransitionPresets[type.value] ? .5 : .35;return standard<limit?standard:(.05+limit)/2;};
   const update=(moveThumb=true)=>{const value=Number(duration.value);speed.disabled=limit<=.05;if(!Number.isFinite(value)||value<=0){speedValue.textContent='';return;}speedValue.textContent=new Intl.NumberFormat('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:3}).format(value)+' с';speed.setAttribute('aria-valuetext',speedValue.textContent);if(moveThumb){const clamped=Math.max(.05,Math.min(limit,value)),mid=midpoint();const position=clamped<=mid?50*(clamped-.05)/(mid-.05):50+50*(clamped-mid)/(limit-mid);speed.value=Number.isFinite(position)?Math.max(0,Math.min(100,Math.round(position))):50;}};
   const projectId=state.project.id;let pending=null,saving=false,removing=false,inFlightKey=null,savedKey=`${join.type}:${Number(join.duration).toFixed(3)}`,durationTimer;
   const key=entry=>`${entry.type}:${Number(entry.duration).toFixed(3)}`;
@@ -122,16 +125,18 @@ const transitionFavorites=new Set((()=>{try{const saved=JSON.parse(localStorage.
 function initTransitionLibrary(){
   const library=$('transition-library');library.replaceChildren();
   const filters=document.createElement('div');filters.className='transition-filters';
-  for(const [filter,label] of [['all','Усі'],['cinematic','Кіно'],['favorites','★ Обрані']]){const button=document.createElement('button');button.type='button';button.textContent=label;button.classList.toggle('active',transitionLibraryFilter===filter);button.setAttribute('aria-pressed',String(transitionLibraryFilter===filter));button.addEventListener('click',()=>{transitionLibraryFilter=filter;initTransitionLibrary();});filters.append(button);}library.append(filters);
+  for(const [filter,label] of [['all','Усі'],['cinematic','Кіно'],['capcut','CapCut'],['favorites','★ Обрані']]){const button=document.createElement('button');button.type='button';button.textContent=label;button.classList.toggle('active',transitionLibraryFilter===filter);button.setAttribute('aria-pressed',String(transitionLibraryFilter===filter));button.addEventListener('click',()=>{transitionLibraryFilter=filter;initTransitionLibrary();});filters.append(button);}library.append(filters);
   for(const [type,name] of Object.entries(transitionNames)){
     if(type==='cut')continue;
     if(transitionLibraryFilter==='favorites'&&!transitionFavorites.has(type))continue;
     if(transitionLibraryFilter==='cinematic'&&graphicTransitionPresets[type]?.kind!=='cinematic')continue;
+    if(transitionLibraryFilter==='capcut'&&!isCapcutTransition(type))continue;
     const row=document.createElement('div');row.className='transition-item';const button=document.createElement('button');button.type='button';button.className='transition-chip transition-graphic transition-'+type;button.draggable=true;button.dataset.transition=type;button.setAttribute('aria-label',name);
     button.addEventListener('pointerdown',event=>beginTransitionDrag(event,type));
-    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;button.append(canvas);const label=document.createElement('span');label.textContent=name;button.append(label);paintTransitionPreview(canvas,type,.3);let frame;
-    const stop=()=>{cancelAnimationFrame(frame);paintTransitionPreview(canvas,type,.3);};
-    button.addEventListener('mouseenter',()=>{const began=performance.now();cancelAnimationFrame(frame);const tick=now=>{if(!button.isConnected)return;paintTransitionPreview(canvas,type,((now-began)/1350)%1);frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);});button.addEventListener('mouseleave',stop);
+    const capcut=isCapcutTransition(type)&&capcutCatalog.transitions[type];
+    const canvas=capcut?capcutPreviewVideo(type):document.createElement('canvas');if(capcut){canvas.className='capcut-thumb';button.addEventListener('mouseenter',()=>canvas.play().catch(()=>{}));button.addEventListener('mouseleave',()=>{canvas.pause();canvas.currentTime=0;canvas.load();});}else{canvas.width=160;canvas.height=90;}button.append(canvas);const label=document.createElement('span');label.textContent=name;button.append(label);if(!capcut)paintTransitionPreview(canvas,type,.3);let frame;
+    const stop=()=>{cancelAnimationFrame(frame);if(!capcut)paintTransitionPreview(canvas,type,.3);};
+    if(!capcut)button.addEventListener('mouseenter',()=>{const began=performance.now();cancelAnimationFrame(frame);const tick=now=>{if(!button.isConnected)return;paintTransitionPreview(canvas,type,((now-began)/1350)%1);frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);});button.addEventListener('mouseleave',stop);
     button.addEventListener('dragstart',event=>{stop();event.dataTransfer.effectAllowed='copyMove';event.dataTransfer.setData('application/x-videostudio-transition',type);event.dataTransfer.setData('text/plain',name);document.body.classList.add('dragging-transition');});
     button.addEventListener('dragend',()=>document.body.classList.remove('dragging-transition'));button.addEventListener('click',()=>status('Перетягніть перехід на стик двох сусідніх кадрів.'));
     const star=document.createElement('button');star.type='button';star.className='transition-favorite';const favorite=transitionFavorites.has(type);star.textContent=favorite?'★':'☆';star.setAttribute('aria-pressed',String(favorite));star.setAttribute('aria-label',(favorite?'Прибрати з обраних: ':'Додати в обрані: ')+name);star.title=favorite?'Прибрати з обраних':'Додати в обрані';star.addEventListener('click',()=>{if(transitionFavorites.has(type))transitionFavorites.delete(type);else transitionFavorites.add(type);try{localStorage.setItem('studio.transitionFavorites',JSON.stringify([...transitionFavorites]));}catch{status('Не вдалося зберегти обрані переходи.',true);}initTransitionLibrary();});row.append(button,star);library.append(row);

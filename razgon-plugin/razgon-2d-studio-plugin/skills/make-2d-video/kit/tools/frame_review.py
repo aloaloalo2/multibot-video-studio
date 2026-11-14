@@ -274,7 +274,7 @@ def status(proj: Path, selected: str = "", *, as_json=False) -> int:
     for n, note in sorted(bugs, key=lambda x: int(x[0])):
         print(f"  BUG  кадр {n}: {note}")
     if unseen:
-        print(f"  not reviewed: {', '.join(map(str, unseen[:30]))}{'…' if len(unseen) > 30 else ''}")
+        print(f"  not reviewed: {', '.join(map(str, unseen))}")
     if stale:
         print("  changed frames needing fresh stills: " + ",".join(map(str, stale)))
     for e in errors[:8]:
@@ -296,10 +296,14 @@ def main() -> None:
     a = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     proj = (root / a.project).resolve() if not Path(a.project).is_absolute() else Path(a.project)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from project_lock import project_files
     if a.cmd == "sheets":
-        sheets(proj, root, a)
+        with project_files(proj):
+            sheets(proj, root, a)
     elif a.cmd == "mark":
-        mark(proj, a)
+        with project_files(proj):
+            mark(proj, a)
     else:
         sys.exit(status(proj, a.frames, as_json=a.json))
 

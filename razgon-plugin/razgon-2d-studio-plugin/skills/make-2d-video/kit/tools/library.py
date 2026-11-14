@@ -174,7 +174,10 @@ def main():
     elif args.cmd == "search":
         search(args.words, args.limit, args.sheet)
     else:
-        use(Path(args.project).resolve(), args.names)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from project_lock import project_files
+        with project_files(Path(args.project).resolve()):
+            use(Path(args.project).resolve(), args.names)
 
 
 if __name__ == "__main__":

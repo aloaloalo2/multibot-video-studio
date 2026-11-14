@@ -44,6 +44,14 @@ class ProductionTest(unittest.TestCase):
             self.assertEqual(self.project['production_request']['status'],'failed')
         finally:production.ACTIVE.clear()
 
+    def test_current_final_reviews_finish_saved_montage_without_another_paid_session(self):
+        self.project['production_request'].update(status='failed',quality={'frames':[1,2,3]})
+        with patch.object(production.production_quality,'check',return_value={'passed':True,'errors':[]}), \
+             patch.object(production,'drawn',return_value=True),patch.object(production,'start') as start:
+            result=production.resume(self.project['id'])
+        self.assertEqual(result['production_request']['status'],'done')
+        start.assert_not_called()
+
     def test_stale_native_review_can_resume_but_real_defect_cannot(self):
         self.project['production_request'].update(status='failed',quality={'frames':[1,2,3]})
         with patch.object(production.production_quality,'check',return_value={'pending_review':[2]}), \
@@ -89,6 +97,31 @@ class ProductionTest(unittest.TestCase):
                 model.assert_not_called()
                 self.assertEqual(quality.call_args.args[1]['review_frames'],[1,2,3])
                 self.assertEqual(self.project['production_request']['status'],'done' if passed else 'failed')
+
+    def test_final_stale_reviews_are_completed_before_marking_montage_done(self):
+        with patch.object(store,'made_frames',return_value=[1,2,3]), \
+             patch.object(production,'drawn',return_value=True), \
+             patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+             patch.object(production.production_quality,'check',side_effect=[{'passed':False,'errors':['Stale review'],'pending_review':[1,2]}, {'passed':True,'errors':[]}]), \
+             patch.object(production.production_sessions,'finish_review',return_value=(0,{'result':'checked','total_cost_usd':.2,'usage':{'input_tokens':10}})) as finish:
+            production.run(self.project['id'],Path('claude'))
+        self.assertEqual(finish.call_args.args[0],[1,2])
+        self.assertEqual(self.project['production_request']['status'],'done')
+        self.assertAlmostEqual(self.project['production_request']['cost_usd'],.2)
+
+    def test_final_review_quota_keeps_provider_reset_message(self):
+        quota={'is_error':True,'api_error':'usage_limit_reached','result':"You've hit your 5-hour limit · resets 4:40pm (Europe/Kiev)"}
+        with patch.object(store,'made_frames',return_value=[1,2,3]), \
+             patch.object(production,'drawn',return_value=True), \
+             patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+             patch.object(production.production_quality,'check',return_value={'passed':False,'errors':['Stale visual reviews'],'pending_review':[2]}), \
+             patch.object(production.production_sessions,'finish_review',return_value=(1,quota)):
+            production.run(self.project['id'],Path('claude'))
+        request=self.project['production_request']
+        self.assertTrue(request['limit'])
+        self.assertIn('16:40',request['error'])
+        self.assertNotIn('Stale',request['error'])
+        self.assertEqual(request['quality']['errors'],['Stale visual reviews'])
 
     def test_short_final_session_receives_only_its_frame_ids_and_real_time_bounds(self):
         self.project['production_request']={**REQUEST,'frames':53,'total_frames':53,'end':106}

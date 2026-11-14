@@ -19,3 +19,14 @@ button.ui-action:is(.secondary,.outline):hover:not(:disabled){background:var(--u
 .thumb-comparison{grid-column:1;grid-row:1}
 @media(max-width:900px){.thumb-workspace:has(.is-comparing){grid-template-columns:1fr}.thumb-workspace:has(.is-comparing) .thumb-compose{grid-column:1;grid-row:3}}
 @media(max-width:600px){.thumb-create-controls{gap:8px;flex-wrap:wrap;justify-content:flex-end}.thumb-create-controls .ui-choice select{min-width:100px}.thumb-comparison{gap:8px}.thumb-comparison figcaption{font-size:11px}}
+
+/* The picture the edits go to is the big, outlined one; the reference stays small and dim (user, 14 November 2026). */
+.thumb-comparison{grid-template-columns:minmax(0,.34fr) minmax(0,1fr)}
+.thumb-comparison figure:first-child{opacity:.72}
+.thumb-comparison figure:first-child img{border-radius:10px}
+.thumb-comparison figure:last-child figcaption{color:#e4e6ec;font-weight:600}
+.thumb-workspace .thumb-view-frame{border-color:#c9ccd5;box-shadow:0 0 0 1px #c9ccd5}
+.thumb-workspace .thumb-compose{border-color:#c9ccd5}
+.thumb-compose-target{display:flex;align-items:center;gap:10px;min-width:0}
+.thumb-compose-target img{width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid #c9ccd5;flex:none}
+.thumb-compose-target small{color:#a5a9b4;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

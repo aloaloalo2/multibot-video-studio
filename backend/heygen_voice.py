@@ -34,8 +34,59 @@ def key():
     try:return credentials.vault().read(credentials.service_name('heygen'))
     except RuntimeError:raise store.StudioError('Додайте ключ HeyGen у загальних налаштуваннях студії') from None
 
+RETRY_AFTER=15   # seconds before the one automatic repeat of a gateway error
+GATEWAY={502,503,504}
+# HeyGen allows 30 speech requests a minute per account (developers.heygen.com, generate-model-speech). Every narration of
+# the studio, original or translated, shares one key, so they share one budget: a little under the limit, spread over a
+# sliding minute. This replaced the one-project-at-a-time queue of HeyGen narrations (user, 14 November 2026).
+SPEECH_PATHS=('/v3/models/audio/tts','/v3/voices/speech')
+SPEECH_PER_MINUTE=28
+SPEECH_SENT=[]
+SPEECH_LOCK=threading.Lock()
+RATE_LIMIT_WAITS=4      # 429 answers waited out in a row before the narration stops
+RATE_LIMIT_MAX_WAIT=120
+
+class Gateway(Exception):
+    def __init__(self,code):self.code=code
+
+class RateLimited(Exception):
+    def __init__(self,seconds):self.seconds=seconds
+
+def speech_turn(now=time.monotonic,sleep=time.sleep):
+    """Wait until one more speech request fits into the shared minute, then count it."""
+    while True:
+        with SPEECH_LOCK:
+            moment=now()
+            while SPEECH_SENT and moment-SPEECH_SENT[0]>=60:SPEECH_SENT.pop(0)
+            if len(SPEECH_SENT)<SPEECH_PER_MINUTE:
+                SPEECH_SENT.append(moment);return
+            pause=60-(moment-SPEECH_SENT[0])+.05
+        sleep(min(max(pause,.05),5))
+
 @job_timing.measure('service')
 def call(path,body=None,*,idempotency_key=None):
+    # HeyGen's gateway sometimes answers 502/503/504 in the middle of a long narration (13 and 14 November 2026). Such an
+    # answer carries no audio, so the same request is sent once more after 15 s (user: «один автоматичний повтор там через
+    # 15 секунд»); any other error, or a second gateway error, stops as before. A 429 (over the limit) is waited out for
+    # as long as HeyGen's Retry-After says, a few times in a row: nothing was made, so nothing is paid twice.
+    speech=path.startswith(SPEECH_PATHS)
+    gateway_retried=False
+    waits=0
+    while True:
+        if speech:speech_turn()
+        try:return _call(path,body,idempotency_key=idempotency_key)
+        except RateLimited as limited:
+            waits+=1
+            if waits>RATE_LIMIT_WAITS:
+                raise store.StudioError('Ліміт запитів HeyGen не відпускає кілька хвилин поспіль. Зроблені фрази збережено, продовжіть пізніше') from None
+            time.sleep(min(max(limited.seconds,5),RATE_LIMIT_MAX_WAIT))
+        except Gateway as error:
+            if gateway_retried:
+                raise store.StudioError(f'HeyGen: помилка {error.code}, і повтор через {RETRY_AFTER} с теж не вдався. Зроблені фрази збережено, продовжіть пізніше') from None
+            gateway_retried=True
+            time.sleep(RETRY_AFTER)
+
+def _call(path,body=None,*,idempotency_key=None):
     data=json.dumps(body).encode() if body is not None else None
     headers={'X-Api-Key':key(),'Content-Type':'application/json'}
     if idempotency_key:headers['Idempotency-Key']=idempotency_key
@@ -43,6 +94,11 @@ def call(path,body=None,*,idempotency_key=None):
     try:
         with urllib.request.urlopen(request,timeout=240) as response:return json.load(response)
     except urllib.error.HTTPError as error:
+        if error.code in GATEWAY:raise Gateway(error.code) from None
+        if error.code==429:
+            try:seconds=float(error.headers.get('Retry-After') or 0)
+            except (TypeError,ValueError):seconds=0
+            raise RateLimited(seconds or 20) from None
         # Retain the provider's validation reason, never credentials or download URLs.
         detail=''
         try:

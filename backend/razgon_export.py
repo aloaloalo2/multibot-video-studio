@@ -59,8 +59,6 @@ def _film(project: dict, info: dict) -> dict:
         raise NotTheFilm("проєкт Razgon прив'язано до іншого випуску студії")
     plan = store.load_project_plan(project["id"]) or {}
     audio = (plan.get("timing") or {}).get("audio") or {}
-    if plan.get("script_sha256") != link.get("script_sha256") or audio.get("sha256") != link.get("audio_sha256"):
-        raise NotTheFilm("план у студії змінився після razgon_bridge.py prepare")
     fps = int(link["fps"])
     if int(project.get("fps", 30)) != fps:
         raise NotTheFilm("частота кадрів студії не збігається з Razgon")
@@ -126,11 +124,7 @@ def canonicalize_legacy_blocks(project: dict, info: dict) -> list[str]:
     Rendered clips and authored timing/effects are never rewritten here.
     """
     link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
-    plan = store.load_project_plan(project["id"]) or {}
-    audio = (plan.get("timing") or {}).get("audio") or {}
-    if (link.get("project_id") != project["id"] or link.get("fps") != project.get("fps")
-            or plan.get("script_sha256") != link.get("script_sha256")
-            or audio.get("sha256") != link.get("audio_sha256")):
+    if link.get("project_id") != project["id"] or link.get("fps") != project.get("fps"):
         return []
     fps = int(link["fps"])
     frames = {int(f["number"]): f for f in link.get("frames", [])}
@@ -185,10 +179,6 @@ def _mixed(project: dict, info: dict, blocks: list[dict]) -> dict:
     link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
     if link.get("project_id") != project["id"]:
         raise store.StudioError("Проєкт Razgon прив'язано до іншого випуску студії.", 409)
-    plan = store.load_project_plan(project["id"]) or {}
-    audio = (plan.get("timing") or {}).get("audio") or {}
-    if plan.get("script_sha256") != link.get("script_sha256") or audio.get("sha256") != link.get("audio_sha256"):
-        raise store.StudioError("План у студії змінився після razgon_bridge.py prepare: кадри Razgon треба оновити.", 409)
     fps = int(link["fps"])
     slots = {f["number"]: _slot(f["start"], f["end"], fps) for f in link["frames"]}
     numbers = {}

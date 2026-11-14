@@ -10,6 +10,8 @@ import store
 class TrendTests(unittest.TestCase):
     def setUp(self):
         self.now = 1800000000
+        import youtube_api   # the tests read no key of this Mac: the public-page path, one channel at a time
+        saved=patch.object(youtube_api,'key',return_value=None);saved.start();self.addCleanup(saved.stop)
     def video(self, identity, age, views, duration=600):
         return dict(id=identity, published_ts=self.now-age*86400, views=views, duration=duration)
     def test_relative_performance_and_window(self):
@@ -23,7 +25,14 @@ class TrendTests(unittest.TestCase):
     def test_short_format_and_insufficient_samples(self):
         peers=[self.video(str(i),5,500) for i in range(6)]
         self.assertEqual(trends.rank(peers+[self.video('short',2,90000,60)],self.now),[])
+        # a 2:59 film on a channel of four-minute films is no Short: it is held against the channel's films
+        films=[self.video('f'+str(i),10+i,10000,240) for i in range(5)]
+        self.assertEqual([v['id'] for v in trends.rank(films+[self.video('film',2,90000,179)],self.now)],['film'])
+        self.assertEqual(trends.rank(films+[self.video('short',2,90000,60)],self.now),[])
         self.assertEqual(trends.rank([self.video('alone',2,90000)], self.now),[])
+        # a channel of Shorts only: none of them enters the selection
+        shorts=[self.video('s'+str(i),5+i,500,40) for i in range(6)]
+        self.assertEqual(trends.rank(shorts+[self.video('viral',2,900000,30)],self.now),[])
     def test_4000_views_is_inclusive_and_low_view_peers_still_define_baseline(self):
         peers=[self.video(str(i),5,50) for i in range(5)]
         for views in (0,100,3999,4000,4001):

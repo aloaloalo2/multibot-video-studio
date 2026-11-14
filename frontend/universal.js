@@ -247,8 +247,9 @@ function renderUniversalPreview(){
       const wrapper=document.createElement('div');wrapper.className='composition-clip';wrapper.dataset.clipId=clip.id;
       wrapper._sourceSignature=sourceSignature;
       let element;
-      const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':'shape'):clip.kind;
-      if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
+      const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':clip.content_type==='capcut_effect'?'capcut':'shape'):clip.kind;
+      if(mediaKind==='capcut')element=capcutEffectElement(clip);
+      else if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
       else if(mediaKind==='image'){element=document.createElement('img');element.decoding='async';element.fetchPriority=shown.has(clip.id)?'high':'low';element.alt='';}
       else if(mediaKind==='video'){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});}
       else if(mediaKind==='text'){element=document.createElement('div');element.className='composition-text';element.textContent=clip.text || clip.title || '';element.style.color=clip.color || '#ffffff';}
@@ -293,11 +294,13 @@ function renderUniversalPreview(){
     applyGraphicStyle(wrapper,clip,frameWidth);
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
-    const video=wrapper.querySelector('video');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
+    if(clip.content_type==='capcut_effect')syncCapcutEffect(wrapper,clip,local);
+    const video=wrapper.querySelector('video:not(.capcut-loop)');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
   $('time-current').textContent=clock(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();
   renderGraphicTransitionOverlay(composition,now);
+  if(typeof renderCapcutTransitionOverlay==='function')renderCapcutTransitionOverlay(composition,now);
   syncStudioAudio();
 }
 

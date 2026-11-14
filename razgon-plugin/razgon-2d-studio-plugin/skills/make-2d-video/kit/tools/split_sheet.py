@@ -73,12 +73,14 @@ def main() -> None:
         log.append({"name": name, "box": [X0, Y0, X1, Y1], "size": [X1 - X0, Y1 - Y0], "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         print(f"{name:14s} {X1 - X0}x{Y1 - Y0} from {X0},{Y0}")
     (sheet.parent / (sheet.stem + ".crops.json")).write_text(json.dumps({"sheet": sheet.name, "props": log}, indent=1))
-    index = sorted(p.stem for p in out_dir.glob("*.png"))
-    (out_dir / "index.json").write_text(json.dumps(index))
-    # Every new prop also goes to the shared library (tools/library.py) so later videos can reuse it.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import library
-    library.add_project(project)
+    from project_lock import project_files
+    with project_files(project):
+        index = sorted(p.stem for p in out_dir.glob("*.png"))
+        (out_dir / "index.json").write_text(json.dumps(index))
+        # Every new prop also goes to the shared library (tools/library.py) so later videos can reuse it.
+        import library
+        library.add_project(project)
 
 
 if __name__ == "__main__":

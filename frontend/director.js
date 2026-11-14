@@ -81,7 +81,8 @@ function arrangeEpisode(episode){
   // The author's script, then what the recognition heard in the voice with its report (user, 31 October 2026).
   const frames=state.plan?.frames || [];
   const scriptFold=episodeFold('Ваш сценарій');
-  const script=typeof state.plan?.script==='string'?state.plan.script:state.project.voice_script?.text || frames.map(frame=>(frame.sentences || []).join(' ')).join('\n\n');
+  if(typeof addNarrationRevisionButton==='function')addNarrationRevisionButton(scriptFold,id);
+  const script=state.project.voice_script?.source==='narration-revision'?state.project.voice_script.text:typeof state.plan?.script==='string'?state.plan.script:state.project.voice_script?.text || frames.map(frame=>(frame.sentences || []).join(' ')).join('\n\n');
   if(script.trim()){const text=document.createElement('div');text.className='plan-script-text';text.textContent=script;scriptFold.append(text);}
   const heard=episodeFold('Розпізнаний текст');
   const heardText=document.createElement('div');heardText.className='plan-script-text episode-heard';
@@ -165,7 +166,9 @@ function voiceToggle(stage,id){
   const button=document.createElement('button');button.type='button';button.className='episode-voice-toggle';
   const body=stage.querySelector('.episode-voice-body'),open=!body.hidden;
   button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-controls',body.id);
-  button.innerHTML=`<span>${open?'Згорнути':directMontage()?'Сценарій і розпізнаний текст':'Сценарій, розпізнаний текст і кадри'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  button.setAttribute('aria-label',open?'Згорнути сценарій':'Розгорнути сценарій');
+  button.title=open?'Згорнути сценарій':'Розгорнути сценарій';
+  button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   button.addEventListener('click',event=>{event.stopPropagation();setVoiceOpen(stage,id,body.hidden);});
   return button;
 }
@@ -189,7 +192,7 @@ function refreshEpisode(episode=document.querySelector('.episode')){
 const voiceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>';
 // One line: the voice file, its length, how it was recognised, and the bin that starts the episode over.
 function fillVoiceLine(box){
-  const id=state.project.id,analysis=episodeAnalysis(),report=analysis?.report,job=analysis?.job,synced=!!state.project.production?.plan_ready || (directMontage() && state.plan?.timing?.status==='audio_synced');
+  const id=state.project.id,analysis=episodeAnalysis(),report=analysis?.report,job=analysis?.job,synced=!!state.project.production?.plan_ready || state.plan?.timing?.status==='audio_synced';
   const audio=state.plan?.timing?.audio || {},frames=state.plan?.frames || [];
   const name=report?.source?.name || audio.name || (audio.path?String(audio.path).split('/').pop():'') || 'Озвучка';
   const length=Number(audio.duration) || Number(frames[frames.length-1]?.end) || 0;
@@ -198,7 +201,7 @@ function fillVoiceLine(box){
   let state_,text;
   if(working){state_='working';text=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
   // recognised by the studio, or timed from a file the author brought (then there is no recognition to speak of)
-  else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
+  else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=state.project.voice_script?.source==='narration-revision'?'озвучку оновлено, таймінги збережено':percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
   else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
   else{state_='empty';text='озвучку ще не додано';}
@@ -456,7 +459,7 @@ function fillMake(make){
     start.textContent='Продовжити створення ролика';
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
-    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?'Призупинено на ваше прохання. Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
+    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?(/ліміт Codex/.test(request.error||'')?request.error:'Призупинено на ваше прохання. Готові кадри збережені.'):`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
   }else{
     start.textContent=completed?`Кадри створені · ${made.size} з ${frames.length}`:productionStartLabel(request,made.size);
     if(completed){

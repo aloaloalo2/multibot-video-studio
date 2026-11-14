@@ -106,7 +106,10 @@ def write(project: dict, request: dict, *, repair: bool = False) -> tuple[Path, 
     packet = build(project, request, repair=repair)
     if packet["issues"]:
         raise store.StudioError(" ".join(packet["issues"]), 409)
-    path = store.project_dir(project["id"]) / "production-context.json"
+    frames = packet.get("session_frames") or []
+    # two sessions of one episode run side by side: each keeps its own map, or the second would overwrite the first's
+    name = f"production-context-{frames[0]:03d}-{frames[-1]:03d}.json" if frames else "production-context.json"
+    path = store.project_dir(project["id"]) / name
     store.atomic_json(path, packet)
     short = path.with_suffix(".txt")
     short.write_text(text(packet), encoding="utf-8")
@@ -165,7 +168,8 @@ def instructions(summary: str, *, scoped=False, batch=False) -> str:
 Для незмінених кадрів використовуй збережені вердикти. Додатковий момент бери для конкретного сумнівного руху чи стику.
 Не запускай загальні text-check, logic-check, speed-check або другий render --sheet поверх уже перевірених аркушів.
 Після збереження й перевірки всієї частини заверши сесію. Нову частину передасть студія.
-Не перечитуй увесь сценарій чи матеріали інших випусків. Помічників, фонових сесій і експорту не запускай.
+Не перечитуй увесь сценарій чи матеріали інших випусків. Помічників, інших сесій Claude і експорту не запускай; Codex малює у фоні (--background).
+Сусідню частину кадрів цього випуску може одночасно робити інша сесія: її кадри не змінюй, а стик зі своєю частиною зроби за рядками «контекст».
 """
     if scoped:
         return f"""\nКоротка карта авторських правок\n{summary}

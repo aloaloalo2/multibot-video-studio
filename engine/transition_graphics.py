@@ -5,6 +5,10 @@ from pathlib import Path
 from PIL import Image,ImageDraw
 import numpy as np
 PRESETS=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'graphic-transitions.json').read_text())
+# Covers the author took out of the studio on 14 November 2026 (no project used them): the library and the channel
+# settings no longer offer them, the drawing stays so a manifest that names one still renders.
+RETIRED=json.loads((Path(__file__).resolve().parent/'retired-graphic-transitions.json').read_text())
+PRESETS={**RETIRED,**PRESETS}
 def clamp(v):return max(0,min(1,v))
 def ease(v):v=clamp(v);return v*v*(3-2*v)
 

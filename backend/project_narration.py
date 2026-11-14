@@ -25,15 +25,11 @@ def release_heygen(pid):
         HEYGEN_TURN.notify_all()
 
 
-@job_timing.measure('queue')
 def wait_heygen(pid, job):
-    with HEYGEN_TURN:
-        if pid not in HEYGEN_QUEUE:HEYGEN_QUEUE.append(pid)
-        while HEYGEN_QUEUE[0] != pid:
-            if (root(pid)/'cancel').exists():raise Cancelled()
-            HEYGEN_TURN.wait(.25)
-        if (root(pid)/'cancel').exists():raise Cancelled()
-        job.update(status='running', queue_position=None)
+    """HeyGen narrations no longer wait for each other: they share heygen_voice's per-minute budget instead (user,
+    14 November 2026: the one-project queue left a whole narration idle while the limit had room)."""
+    if (root(pid)/'cancel').exists():raise Cancelled()
+    job.update(status='running', queue_position=None)
 
 
 class Cancelled(Exception):pass
@@ -177,6 +173,9 @@ def snapshot(pid):
         with HEYGEN_TURN:
             if pid in HEYGEN_QUEUE:job['queue_position']=max(1,HEYGEN_QUEUE.index(pid))
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
+    revision=store.read_json(root(pid)/'revision-job.json',{}) or {}
+    if pid in ACTIVE and revision.get('status') in {'queued','running','cancelling'}:
+        job={**job,**revision,'revision_job':True}
     project=store.load_project(pid)
     creation=f'/api/projects/{pid}/plan/analyze' if store.project_plan_mode(project)=='direct' else f'/api/projects/{pid}/create-video'
     if not completed_job_current(project,job):job={}
@@ -189,16 +188,26 @@ def snapshot(pid):
         import narration_effects
         job['local_effects_version'] = narration_effects.VERSION
         job['audio_processing_stale']=bool(narration_effects.identity(job.get('reverb'),job.get('room_noise')) and job.get('audio_processing_version')!=narration_effects.VERSION)
-    return {'job':job,'source':project.get('narration_source'),
+    return {'job':job,'revision':revision,'source':project.get('narration_source'),
             'choices':[{'id':'script','label':'Озвучити сценарій','quote':f'/api/projects/{pid}/narration/quote','start':f'/api/projects/{pid}/narration/start','create_video':creation},
                        {'id':'file','label':'Додати аудіо або відео','upload':f'/api/projects/{pid}/assets/upload','analyze':creation}],
             'create_video_endpoint':creation,
             'source_endpoint':f'/api/projects/{pid}/narration/source'}
 
+def work_job(pid):
+    data=snapshot(pid);job=data.get('job') or {};revision=data.get('revision') or {}
+    return revision if revision.get('started_at',0)>job.get('started_at',0) else job
+
+
 def cancel(pid):
     store.load_project(pid)
     with LOCK:
         (root(pid)/'cancel').touch()
+        revision=store.read_json(root(pid)/'revision-job.json',{}) or {}
+        if pid in ACTIVE and revision.get('status') in {'queued','running','cancelling'}:
+            revision['status']='cancelling';store.atomic_json(root(pid)/'revision-job.json',revision)
+            with HEYGEN_TURN:HEYGEN_TURN.notify_all()
+            return snapshot(pid)
         job=store.read_json(root(pid)/'job.json',{})
         job['status']='cancelling' if pid in ACTIVE else 'cancelled'
         with HEYGEN_TURN:HEYGEN_TURN.notify_all()
@@ -213,9 +222,6 @@ def start(project,text,resume=False):
         if pid in ACTIVE:raise store.StudioError('Озвучення цього проєкту вже триває.',409)
         settings,ref,entries,quote=spec(project,text)
         job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed'],'render_settings':settings.copy()}
-        if settings['provider']=='heygen':
-            with HEYGEN_TURN:
-                HEYGEN_QUEUE.append(pid);job.update(status='queued',queue_position=max(1,len(HEYGEN_QUEUE)-1))
         try:
             (root(pid)/'cancel').unlink(missing_ok=True)
             store.atomic_json(root(pid)/'job.json',job)
@@ -234,6 +240,28 @@ def start(project,text,resume=False):
         raise
     return {'job':job,'voice_script':script_record}
 
+
+def phrase_audio(project,settings,ref,entry,secret=None,voice=None):
+    pid=project['id'];folder=root(pid);target=folder/(entry['key']+'.mp3');fish=settings['provider']=='fishaudio'
+    if not target.is_file():
+        params={**settings,'text':entry['text']}
+        with lab.audio_guard(lab.original_path(params,ref)):
+            raw_cached=lab.original_path(params,ref).is_file()
+            if settings['provider']=='elevenlabs' and not raw_cached:
+                previous=folder/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')
+                if previous.is_file():
+                    source=lab.original_path(params,ref);source.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,source);raw_cached=True
+            audio=lab.heygen_synthesis(params,ref) if settings['provider']=='heygen' else lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
+            cost={'unit':'credits' if settings['provider']=='elevenlabs' else 'usd','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
+            receipt={'identity':identity,'provider':settings['provider'],'amount':cost['amount'],'estimated':True,'phrase_key':entry['key'],'created_at':time.time()}
+            receipts=folder/'receipts';receipts.mkdir(exist_ok=True)
+            store.atomic_json(receipts/(identity+'.json'),receipt)
+            project_costs.record_at(store.project_dir(pid),settings['provider'],cost['amount'],identity=identity,category='narration',estimated=True)
+        pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
+        if not (store.media_duration(pending) or 0)>0:raise store.StudioError('Сервіс повернув порожню фразу')
+        pending.replace(target)
+    return target
+
 @job_timing.track('narration', project='project', job='job')
 def run(project,text,settings,ref,entries,job):
     pid=project['id'];cid=project['channel_id'];folder=None
@@ -243,7 +271,7 @@ def run(project,text,settings,ref,entries,job):
         job['cost_receipts_version']=1
         store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
-        fish=settings['provider']=='fishaudio'
+        fish=settings['provider']=='fishaudio';secret=voice=None
         if missing and settings['provider']!='heygen':
             with lab.audio_guard(lab.folder(cid)/'reference.mp3'):
                 if not lab.selected_voice_id(settings):ref={**ref,'prepared_path':str(lab.prepared_source(cid,settings,ref))}
@@ -252,23 +280,7 @@ def run(project,text,settings,ref,entries,job):
         for i,entry in enumerate(entries):
             if (folder/'cancel').exists():raise Cancelled()
             target=folder/(entry['key']+'.mp3')
-            if not target.is_file():
-                params={**settings,'text':entry['text']}
-                with lab.audio_guard(lab.original_path(params,ref)):
-                    raw_cached=lab.original_path(params,ref).is_file()
-                    if settings['provider']=='elevenlabs' and not raw_cached:
-                        previous=folder/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')
-                        if previous.is_file():
-                            source=lab.original_path(params,ref);source.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(previous,source);raw_cached=True
-                    audio=lab.heygen_synthesis(params,ref) if settings['provider']=='heygen' else lab.fish_synthesis(secret,voice,params,raw_key=lab.fish_raw_path(params,ref).stem) if fish else lab.eleven_local_synthesis(secret,voice,params,ref)
-                    cost={'unit':'credits' if settings['provider']=='elevenlabs' else 'usd','amount':0} if raw_cached else lab.estimate(params);identity='narration-'+uuid.uuid4().hex
-                    receipt={'identity':identity,'provider':settings['provider'],'amount':cost['amount'],'estimated':True,'phrase_key':entry['key'],'created_at':time.time()}
-                    receipts=folder/'receipts';receipts.mkdir(exist_ok=True)
-                    store.atomic_json(receipts/(identity+'.json'),receipt)
-                    project_costs.record_at(store.project_dir(pid),settings['provider'],cost['amount'],identity=identity,category='narration',estimated=True)
-                pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
-                if not (store.media_duration(pending) or 0)>0:raise store.StudioError('Сервіс повернув порожню фразу')
-                pending.replace(target)
+            phrase_audio(project,settings,ref,entry,secret,voice)
             job['completed']=i+1;store.atomic_json(folder/'job.json',job)
         if (folder/'cancel').exists():raise Cancelled()
         with job_timing.span('saving'):

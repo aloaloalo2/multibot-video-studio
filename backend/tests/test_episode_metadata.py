@@ -33,6 +33,14 @@ class MetadataTest(unittest.TestCase):
                 'channel_id': self.cid, 'selected': {'title': self.project['name']},
                 'opening': 'A selected opening.', 'target_words': 200}
 
+    def test_a_deleted_episode_folder_is_made_again_for_the_metadata(self):
+        import shutil
+        from pathlib import Path
+        shutil.rmtree(self.project['episode_path'])
+        saved = metadata.save(self.project, self.value, self.script)
+        self.assertTrue(Path(saved).is_file())
+        self.assertEqual(Path(saved).parent, Path(self.project['episode_path']))
+
     def test_metadata_recovery_uses_bounded_excerpts_without_resending_the_full_script(self):
         script = 'Opening context. ' + 'MiddleDetailsOnly ' * 500 + 'Ending context.'
         store.save_project_source(self.project, script)

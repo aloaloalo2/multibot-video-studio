@@ -87,7 +87,8 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
         return [store.read_json(narration.root(pid) / 'job.json') for pid in self.projects]
 
-    def test_heygen_projects_wait_in_order_with_isolated_settings(self):
+    def test_heygen_projects_run_together_with_isolated_settings(self):
+        # No project waits for another (user, 14 November 2026); heygen_voice keeps them under the per-minute limit.
         entered=threading.Event();order=[]
         def synthesize(settings):
             order.append(settings['text']);entered.set()
@@ -99,13 +100,15 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertTrue(entered.wait(5))
             self.settings['heygen_expressiveness']=.8
             narration.start(second,'Second project sentence.')
-            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
-            self.assertEqual(narration.snapshot(second['id'])['job']['queue_position'],1)
-            self.assertEqual(paid.call_count,1)
+            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'running')
+            for _ in range(500):
+                if paid.call_count==2:break
+                time.sleep(.01)
+            self.assertEqual(paid.call_count,2)   # the second began while the first was still being voiced
             self.release.set();jobs=self.finished()
         self.assertEqual([j['status'] for j in jobs],['done','done'])
         self.assertEqual([j['render_settings']['heygen_expressiveness'] for j in jobs],[.5,.8])
-        self.assertEqual(order,['First project sentence.','Second project sentence.'])
+        self.assertEqual(sorted(order),['First project sentence.','Second project sentence.'])
         self.assertEqual(narration.HEYGEN_QUEUE,[])
 
     def test_queued_heygen_project_can_be_cancelled_without_paid_work(self):
@@ -152,7 +155,6 @@ class NarrationConcurrencyTests(unittest.TestCase):
             narration.start(first, text)
             self.assertTrue(entered.wait(5))
             narration.start(second, text)
-            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
             self.release.set()
             jobs = self.finished()
         self.assertEqual([job['status'] for job in jobs], ['done', 'done'])
@@ -174,7 +176,6 @@ class NarrationConcurrencyTests(unittest.TestCase):
             narration.start(first, text)
             self.assertTrue(entered.wait(5))
             narration.start(second, text)
-            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'queued')
             self.release.set()
             jobs = self.finished()
         self.assertEqual(paid.call_count,2)

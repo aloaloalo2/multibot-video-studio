@@ -36,6 +36,11 @@ NO_RENDER = "MULTIBOT_RENDER_ON_EXPORT"   # set for the agents; tools/razgon_bri
 # The Claude Code process behind each live activity feed, so a run can be stopped with every tool it started; a feed
 # whose run was stopped on purpose (episode_restart) ends without writing its state back.
 RUNNING: dict[str, subprocess.Popen] = {}
+# A second session of the same run (two frame sessions of one episode side by side, 14 November 2026) is kept here
+# under the same feed, so a stop reaches both, and both write into one activity feed.
+RUNNING_MORE: dict[str, list] = {}
+FEEDS: dict[str, list] = {}
+FEED_LOCK = threading.Lock()
 CANCELLED: set[str] = set()
 # Bash is limited to the commands direction needs; file edits are accepted inside the YOUTUBE folder.
 # Helpers are disabled to keep frame progress local and avoid multiplying the context.
@@ -254,7 +259,7 @@ COMMANDS = [("razgon_bridge.py prepare", "opus", "Готує проєкт Razgon
             ("gen_sound.py", "opus", "Розставляє звукові ефекти й атмосферу"),
             ("direction_check", "opus", "Перевіряє режисуру"), ("razgon_bridge.py check", "opus", "Перевіряє, що шоти покривають озвучку"),
             ("razgon_bridge.py plan", "opus", "Записує план кадрів у студію"), ("razgon_bridge.py slots", "opus", "Ставить кадри кодом на таймлайн"),
-            ("codex_image.py", "codex", "Малює аркуш предметів"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
+            ("codex_image.py", "codex", "Малює аркуш картинок"), ("sheet_2x2", "opus", "Ріже аркуш на чотири картинки"), ("split_sheet", "codex", "Ріже аркуш на окремі предмети"),
             ("library.py", "opus", "Шукає предмети в бібліотеці"), ("--sheet", "razgon", "Готує стоп-кадри для перевірки"),
             ("render.mjs", "razgon", "Готує стоп-кадри для перевірки"), ("episode.py", "opus", "Дивиться, на якому кроці випуск"),
             ("frame_review", "opus", "Переглядає кадри")]
@@ -290,7 +295,7 @@ def activity_path(pid: str, kind: str) -> Path:
 
 @job_timing.measure('service')
 def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
-           effort: str = EFFORT, model: str = MODEL) -> tuple[int, dict]:
+           effort: str = EFFORT, model: str = MODEL, env: dict | None = None) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     if model not in store.DIRECTOR_MODELS:
@@ -304,8 +309,13 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     # its own process group; kill() also stops the commands, renders and helpers under it
     # the agents draw frames as code; only «Експорт MP4» renders them, so razgon_bridge.py refuses push and final here
     process = subprocess.Popen(command, cwd=store.YOUTUBE_ROOT, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, NO_RENDER: "1"})
-    RUNNING[str(activity)] = process
+                               stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, NO_RENDER: "1", **(env or {})})
+    feed = str(activity)
+    with FEED_LOCK:
+        alone = feed not in RUNNING and not RUNNING_MORE.get(feed)
+        if feed in RUNNING:RUNNING_MORE.setdefault(feed, []).append(process)
+        else:RUNNING[feed] = process
+        if alone:FEEDS[feed] = []
     expired = threading.Event()
     watchdog = None
     answer, steps = {}, []
@@ -315,7 +325,8 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
             kill(process)
         watchdog = threading.Timer(timeout, lambda: (expired.set(), kill(process)))
         watchdog.start()
-        store.atomic_json(activity, [])
+        with FEED_LOCK:
+            if not FEEDS.get(feed):store.atomic_json(activity, [])
         process.stdin.write(prompt)
         process.stdin.close()
         with log.open("w", encoding="utf-8") as out:
@@ -339,7 +350,10 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
                     action = describe(part.get("name"), part.get("input") or {}) if part.get("type") == "tool_use" else None
                     if action and (not steps or steps[-1]["text"] != action[1]):
                         steps = (steps + [{"t": time.time(), "who": action[0], "text": action[1]}])[-40:]
-                        store.atomic_json(activity, steps)
+                        with FEED_LOCK:
+                            shared = (FEEDS.get(feed, []) + [steps[-1]])[-40:]
+                            FEEDS[feed] = shared
+                            store.atomic_json(activity, shared)
         if answer:
             try:
                 process.wait(timeout=RESULT_EXIT_GRACE)
@@ -357,7 +371,14 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
         if watchdog is not None:watchdog.cancel()
         process_cleanup.stop_group(process, children=descendants(process.pid) if process.poll() is None else ())
         process.stdout.close()
-        RUNNING.pop(str(activity), None)
+        with FEED_LOCK:
+            more = RUNNING_MORE.get(feed) or []
+            if process in more:more.remove(process)
+            elif RUNNING.get(feed) is process:
+                if more:RUNNING[feed] = more.pop(0)
+                else:RUNNING.pop(feed, None)
+            if not more:RUNNING_MORE.pop(feed, None)
+            if feed not in RUNNING:FEEDS.pop(feed, None)
         import spend_report   # where this run spent the limits, saved beside the project once the log is complete
         spend_report.record_later(log)
     if expired.is_set():
@@ -418,8 +439,9 @@ def stop(pid: str, kind: str) -> None:
     if feed not in RUNNING and pid not in (ACTIVE if kind == "director" else production.ACTIVE):
         return   # nothing runs: a stop mark left here would stop the next run the moment it starts
     CANCELLED.add(feed)
-    process = RUNNING.get(feed)
-    if process:
+    with FEED_LOCK:
+        processes = [p for p in [RUNNING.get(feed), *(RUNNING_MORE.get(feed) or [])] if p]
+    for process in processes:
         kill(process)
 
 

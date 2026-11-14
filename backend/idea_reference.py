@@ -156,7 +156,9 @@ def start_openings(cid, body, *, source=None, receipt_path=None):
         if use_thumbnail: data['clone_reference'] = reference
         ideas.save_draft(cid, data)
         store.atomic_json(receipt, {'project_id': pid, 'channel_id': cid, 'reference_id': reference['id'], 'title': title, 'target_words': count, 'use_thumbnail': use_thumbnail, 'use_hero':use_hero})
-        return ideas.launch(cid, data, 'openings', request_id)
+        result = ideas.launch(cid, data, 'openings', request_id)
+    start_thumbnail(data)
+    return result
 
 
 def for_project(pid):
@@ -211,8 +213,10 @@ At the analysis step, return a complete text prompt only. Image generation happe
 
 
 def start_thumbnail(data):
-    """One automatic cover when a clone hook is selected; no paid retry on failure/restart."""
-    if not data.get('clone_reference') or not data.get('opening') or data.get('clone_thumbnail_attempted'):
+    """One automatic cover as soon as an idea is taken with the competitor's thumbnail (user, 14 November 2026: «якщо я
+    копіюю чиюсь прев'юшку, то тоді одразу ми робимо прев'юшку»), without waiting for the opening; no paid retry on
+    failure/restart."""
+    if not data.get('clone_reference') or data.get('clone_thumbnail_attempted'):
         return
     import episode_ideas as ideas
     import thumbnail_gen
@@ -222,7 +226,7 @@ def start_thumbnail(data):
         project = store.load_project(data['project_id'])
         if (thumbnail_gen.state(project['id']) or {}).get('status') or thumbnail_gen.preview(project):
             return
-        thumbnail_gen.start(project['id'], project['name'], data['opening'], writer='trending',
+        thumbnail_gen.start(project['id'], project['name'], data.get('opening') or project['name'], writer='trending',
                             **({'use_hero':data['clone_use_hero']} if 'clone_use_hero' in data else {}))
     except Exception as error:
         data['clone_thumbnail_error'] = str(error)[:300]

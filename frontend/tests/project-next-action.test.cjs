@@ -49,8 +49,8 @@ test('incomplete or paused production cannot masquerade as a finished export',()
   const value=decide({hasFrames:true,allFrames:true,canExport:false,productionReason:'Перевірте таймінги'});
   assert.equal(value.disabled,true);assert.equal(value.reason,'Перевірте таймінги');
 });
-test('metadata and director recovery use their own explicit steps',()=>{
-  assert.equal(decide({metadataPending:true}).kind,'metadata');
+test('missing metadata never takes the main button; director recovery has its own step',()=>{
+  assert.notEqual(decide({metadataPending:true,script:'Text',hasScriptField:true,hasVoice:true,narrationEnabled:true}).kind,'metadata');
   assert.equal(decide({directionRecovery:true}).kind,'direction');
   assert.equal(decide({directionRecovery:true,pendingScript:true}).kind,'narrate');
 });

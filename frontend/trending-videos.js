@@ -102,6 +102,7 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   const syncHero=()=>{
     const field=root.querySelector('[name="use_hero"]'),hasHero=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;
     field.disabled=sending||!hasHero||!root.querySelector('[name="use_thumbnail"]').checked;
+    field.closest('label').hidden=!hasHero;   // a channel without a host shows no host choice at all
     if(!hasHero)field.checked=false;
     field.closest('label').title=hasHero?'':'Додайте ведучого в налаштуваннях каналу';
   };

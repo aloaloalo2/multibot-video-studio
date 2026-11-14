@@ -73,7 +73,7 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     signature=nextSignature;
     const error=data.status==='failed'?`<p class="episode-error" role="alert">${esc(data.error||'Не вдалося завершити запит.')}</p>`:'';
     if(['queued','running','cancelling'].includes(data.status)){
-      const label=data.status==='cancelling'?'Зупиняємо роботу':data.manual_revision?'Opus вносить ваші правки':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):{openings:'Opus готує зачини',script:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій';
+      const label=data.status==='cancelling'?'Зупиняємо роботу':data.manual_revision?'Opus вносить ваші правки':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):(data.stage==='openings'&&data.auto_opening?.status==='running'?'DeepSeek обирає зачин':{openings:'Opus готує зачини',script:data.auto_opening?.status==='chosen'?`Opus пише сценарій · зачин ${data.auto_opening.index+1} обрав DeepSeek`:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій');
       root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><span class="export-spinner" aria-hidden="true"></span><strong>${label}</strong></div>${button('episode-draft-stop','Зупинити','stop')}</div>`;
       root.querySelector('#episode-draft-stop').disabled=data.status==='cancelling';
       root.querySelector('#episode-draft-stop').onclick=()=>request({action:'cancel'});
@@ -81,6 +81,15 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     }
     if(data.script_saved||data.stage==='metadata'){
       const unfinished=data.editing_status&&data.editing_status!=='done';
+      if(!unfinished){
+        // Only titles, description and tags are missing: no error text and no choices for the author (user, 14 November
+        // 2026: «Мені це все не треба… моя кнопка просто там повторити спробу»). The studio repeats it once by itself.
+        const key=pid+':'+(data.run_id||data.id||'')+':'+(data.finished_at||'');
+        root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><strong>Сценарій готовий</strong><small class="muted">Дописуємо назви, опис і теги</small></div>${button('episode-draft-metadata','Повторити','refresh')}</div>`;
+        root.querySelector('#episode-draft-metadata').onclick=()=>request({action:'metadata'});
+        if(data.status==='failed'&&!episodeMetadataAutoRetried.has(key)){episodeMetadataAutoRetried.add(key);setTimeout(()=>{if(connected())request({action:'metadata'});},400);}
+        return;
+      }
       root.innerHTML=error+`<h3>${unfinished?'Чернетку збережено, саморедактуру не завершено':'Сценарій готовий'}</h3><div class="episode-draft-actions">${button('episode-draft-show-script','Показати сценарій','open')}${button('episode-draft-metadata','Дописати метадані · Opus','title',true)}</div>`;
       root.querySelector('#episode-draft-metadata').onclick=()=>request({action:'metadata'});
       if(unfinished){const retry=root.querySelector('#episode-draft-metadata');retry.textContent='Продовжити саморедактуру · Opus';retry.disabled=!data.author_session;retry.onclick=()=>request({action:'editing'});}
@@ -91,10 +100,12 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
       root.querySelector('#episode-draft-show-script').onclick=()=>{state.episodeDraft=null;dispose();delete panel.dataset.planKey;renderProject();};return;
     }
     const hooks=data.openings?.length?data.openings:data.previous_openings;
-    root.innerHTML=`<div class="episode-openings-head"><h3>Оберіть зачин</h3></div>${error}`;
+    const autoError=data.auto_opening?.status==='failed'?`<p class="episode-error" role="alert">Автовибір не спрацював: ${esc(data.auto_opening.error||'')}</p>`:'';
+    root.innerHTML=`<div class="episode-openings-head"><h3>Оберіть зачин</h3></div>${error}${autoError}`;
     if(hooks?.length){
       const list=document.createElement('div');list.className='episode-hook-options';
-      list.innerHTML=hooks.map((hook,index)=>`<button type="button" class="episode-hook-option" data-hook="${index}" ${data.openings?.length?'':'disabled'}><strong>Варіант ${index+1}${episodeIcon('open')}</strong><span>${esc(hook.text)}</span>${hook.uk?`<small>${esc(hook.uk)}</small>`:''}</button>`).join('');
+      const auto=data.openings?.length&&Array.isArray(data.auto_opening?.scores)?data.auto_opening:null;
+      list.innerHTML=hooks.map((hook,index)=>{const score=auto?.scores?.[index];const picked=auto&&auto.index===index;return `<button type="button" class="episode-hook-option${picked?' auto-picked':''}" data-hook="${index}" ${data.openings?.length?'':'disabled'}><strong>Варіант ${index+1}${picked?' · обрав DeepSeek':''}${episodeIcon('open')}</strong><span>${esc(hook.text)}</span>${hook.uk?`<small>${esc(hook.uk)}</small>`:''}${score?`<small class="hook-score">${esc(String(score.total))}/50 · цікавість ${esc(String(score.interest))}, зрозумілість ${esc(String(score.clarity))}, без шаблону ${esc(String(score.originality))}, без слопу ${esc(String(score.low_slop))}, краса ${esc(String(score.beauty))}${score.reason?`. ${esc(score.reason)}`:''}</small>`:''}</button>`;}).join('');
       list.querySelectorAll('button').forEach(item=>item.onclick=()=>request({action:'script',index:Number(item.dataset.hook)}));root.append(list);
     }else if(!error){const empty=document.createElement('p');empty.className='muted';empty.textContent='Зачини ще не створені.';root.append(empty);}
     controls(data,!!hooks?.length);
@@ -103,6 +114,8 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
   draw(initial);
 }
 
+
+const episodeMetadataAutoRetried=new Set();
 
 async function openManualProjectOpenings(project){
   const pid=project.id,navigation=state.navigation;

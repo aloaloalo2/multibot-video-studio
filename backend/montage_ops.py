@@ -912,13 +912,27 @@ def _full_frame_text(frame: dict) -> bool:
         c.get("kind") == "text" and c.get("text_role") == "full_frame" for c in frame["clips"])
 
 
+def channel_transitions(project: dict) -> dict:
+    """The channel's «Переходи» setting: {allowed, share}; empty when the channel chose nothing."""
+    if not project.get("channel_id"):
+        return {}
+    try:
+        folder = store.get_channel_folder(project["channel_id"], include_disabled=True)
+        return dict(store.read_channel_settings(folder, {}).get("transitions") or {})
+    except (store.StudioError, OSError):
+        return {}
+
+
 def transitions(ctx: Context, spec: dict) -> None:
     """About `share` of all seams between touching frames get a designed transition; the rest are cuts. Into a full-frame
     text frame always a cut; the same transition other than a crossfade never twice in a row; a video going out needs
     source frames for the transition's length. Existing transitions stay unless "replace" is true."""
-    share = float(spec.get("share", .7))
-    pool = list(spec.get("pool") or DEFAULT_POOL)
-    unknown = [t for t in pool if t not in joins.TYPES or t == "cut"]
+    chosen = channel_transitions(ctx.project)
+    share = float(spec["share"] if spec.get("share") is not None else chosen.get("share", .7))
+    pool = list(spec.get("pool") or (chosen["allowed"] if "allowed" in chosen else DEFAULT_POOL))
+    if not pool:
+        share, pool = 0.0, ["crossfade"]   # the channel allowed no transition: every seam stays a cut
+    unknown = [t for t in pool if t not in joins.CHOICES]
     if unknown:
         raise OpError("Невідомі переходи: " + ", ".join(sorted(set(unknown))))
     rnd = random.Random(spec.get("seed", 23))
@@ -957,7 +971,7 @@ def transitions(ctx: Context, spec: dict) -> None:
         kind = rnd.choice(pool)
         if kind == previous and kind != "crossfade":
             kind = "crossfade"
-        duration = float(spec.get("duration", .5 if kind in joins.GRAPHIC_PRESETS else .35))
+        duration = float(spec.get("duration", joins.CAPCUT[kind]["default_duration"] if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35))
         duration = min(duration, a["end"] - a["start"], b["end"] - b["start"])
         if not _video_tail(ctx, a, duration):
             kind = None

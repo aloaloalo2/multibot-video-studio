@@ -355,6 +355,22 @@ def project_lock(razgon: Path):
         yield
 
 
+def studio_timeline(args):
+    """The Studio project's timeline lock for commands that change it (tools/timeline_lock.py)."""
+    if args.command not in {"slots", "plan", "push", "sound"} or not getattr(args, "razgon", None):
+        return contextlib.nullcontext()
+    link = Path(args.razgon).resolve() / "story" / "studio_frames.json"
+    try:
+        project = json.loads(link.read_text(encoding="utf-8")).get("project_id")
+    except (OSError, ValueError):
+        project = None
+    if not project:
+        return contextlib.nullcontext()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from timeline_lock import timeline_lock
+    return timeline_lock(project)
+
+
 def frame_clip(razgon: Path, number: int) -> Path:
     return razgon / "build" / "studio" / f"frame_{number:03d}.mp4"
 
@@ -703,8 +719,6 @@ def push(args) -> None:
     studio = Studio(args.studio_url or link["studio_url"])
     pid = link["project_id"]
     plan = studio.plan(pid)
-    if plan["script_sha256"] != link["script_sha256"] or plan.get("timing", {}).get("audio", {}).get("sha256") != link.get("audio_sha256"):
-        raise BridgeError("План у студії змінився після prepare. Запустіть prepare ще раз і перевірте шоти")
     if args.frames and args.shots:
         raise BridgeError("Передайте --frames або --shots")
     if args.shots:
@@ -926,8 +940,6 @@ def sound(args) -> None:
     studio = Studio(args.studio_url or link["studio_url"])
     pid, fps, duration = link["project_id"], int(link["fps"]), float(link["duration"])
     plan = studio.plan(pid)
-    if plan["script_sha256"] != link["script_sha256"] or plan.get("timing", {}).get("audio", {}).get("sha256") != link.get("audio_sha256"):
-        raise BridgeError("План у студії змінився після prepare. Запустіть prepare ще раз і перевірте шоти")
     wait_for_renders()
     sys.path.insert(0, str(STUDIO_BACKEND))
     import sfx_library
@@ -1275,7 +1287,8 @@ def main() -> None:
         sys.exit("Кадри рендерить тільки «Експорт MP4» студії, коли автор його натисне. "
                  "Поклади кадри на таймлайн блоками-кодом: python3 'VideoKey Studio/tools/razgon_bridge.py' slots --razgon <проєкт> --frames <номери>")
     try:
-        with project_lock(Path(args.razgon).resolve()) if args.command in {"push", "final", "export", "frames", "sound"} else contextlib.nullcontext():
+        with project_lock(Path(args.razgon).resolve()) if args.command in {"push", "final", "export", "frames", "sound"} else contextlib.nullcontext(), \
+                studio_timeline(args):
             args.run(args)
     except BridgeError as error:
         if args.command in {"export", "frames"}:

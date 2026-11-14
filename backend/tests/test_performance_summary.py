@@ -42,9 +42,19 @@ class PerformanceSummaryTest(unittest.TestCase):
                 self.run_row('analysis', 2000)]
         result = summary.project(rows, self.root)
         self.assertEqual([(r['workflow'], r['active_ms']) for r in result['processes']],
-                         [('production', 25000), ('script', 12000), ('language_voice', 10000), ('analysis', 2000)])
+                         [('script', 12000), ('analysis', 2000), ('production', 25000), ('language_voice', 10000)])
+        self.assertEqual(result['total_ms'], 49000)
         self.assertTrue(result['running'])
         self.assertFalse(summary.project([self.run_row('thumbnail', 20000, status='running')], self.root)['running'])
+
+    def test_failed_and_interrupted_attempts_are_kept_apart_from_useful_time(self):
+        rows = [self.run_row('script', 900000, status='interrupted'), self.run_row('script', 675000),
+                self.run_row('production', 33000, status='failed')]
+        result = summary.project(rows, self.root)
+        script, production = result['processes']
+        self.assertEqual((script['active_ms'], script['lost_ms'], script['lost_runs']), (675000, 900000, 1))
+        self.assertEqual((production['active_ms'], production['lost_ms']), (0, 33000))
+        self.assertEqual((result['total_ms'], result['lost_ms']), (675000, 933000))
 
     def test_stopping_and_resuming_never_adds_the_wall_clock_gap(self):
         rows = [self.run_row('production', 5000, status='stopped', started_at=100, finished_at=105),

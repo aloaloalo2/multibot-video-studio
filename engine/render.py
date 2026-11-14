@@ -32,6 +32,8 @@ from font_catalog import font_path as catalog_font_path
 import raster_effects as raster_graphics
 import gradient_background
 import transition_graphics
+import capcut_fx
+CAPCUT_DRY = False  # render(validate_only=True) plans CapCut clips without drawing them
 import visual_effects
 
 
@@ -969,6 +971,7 @@ def frame_index(seconds: float, fps: int) -> int:
 
 def timeline_plan(project: dict, project_file: Path, width: int, height: int, fps: int) -> tuple[list[dict], list[dict], float]:
     """Normalize the independent universal tracks into visual and audio clips."""
+    capcut_fx.expand(project, project_file, width, height, fps, sys.modules[__name__])
     layers = project.get("timeline_layers")
     if not isinstance(layers, list) or not layers:
         raise ValueError("timeline_layers must contain at least one layer")
@@ -1350,7 +1353,7 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
             layer.update({"text": clip.get("text", ""), "color": clip.get("color", "white"),
                           "font_size": clip.get("font_size", 54)})
         else:
-            layer["source"] = str(transition_graphics.video(clip['graphic_style'],clip['duration'],clip.get('fps',30),width,height,work)) if graphic else str(gradient_background.video(clip['gradient'],clip['duration'],clip.get('fps',30),work)) if gradient else clip.get("source") or str(make_shape(clip, work))
+            layer["source"] = str(clip.get('prepared_source') or transition_graphics.video(clip['graphic_style'],clip['duration'],clip.get('fps',30),width,height,work)) if graphic else str(gradient_background.video(clip['gradient'],clip['duration'],clip.get('fps',30),work)) if gradient else clip.get("source") or str(make_shape(clip, work))
             if kind == "video":
                 layer["trim_start"] = clip["trim_start"] + elapsed
         if kind == "text" and clip.get("text_words"):
@@ -1491,6 +1494,8 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
     project = json.loads(project_file.read_text(encoding="utf-8"))
     global EXPORT_BITRATE
     EXPORT_BITRATE = video_bitrate(project)
+    global CAPCUT_DRY
+    CAPCUT_DRY = validate_only
     prepare_cloud_sources(offline_sources(project,project_file),validate_only=validate_only)
     universal = "timeline_layers" in project
     if universal:

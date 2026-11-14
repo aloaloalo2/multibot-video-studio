@@ -102,7 +102,7 @@ def fingerprints(proj: Path, root: Path, frames: list[dict]) -> dict[int, str]:
             if file_hash(p)[1] in DRAWING_MODULES:
                 usage[str(p)] = dict(names=[], patterns=[], dynamic=False)
     media = [p for directory in ('assets','input') for p in (proj / directory).rglob('*')
-             if p.is_file() and p.suffix.lower() not in {'.wav','.mp3','.m4a','.mp4'}]
+             if p.is_file() and p.suffix.lower() not in {'.wav','.mp3','.m4a','.mp4','.flac','.ogg','.opus','.aac','.aif','.aiff'}]
     shared_paths = dependencies(shared)
     global_files += shared_paths
     global_files += [p for p in media if p.suffix.lower() in {'.woff','.woff2','.ttf','.otf'}]

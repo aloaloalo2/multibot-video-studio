@@ -15,7 +15,7 @@ those frames has its scene written and stands on the timeline as a code block. I
 """
 from __future__ import annotations
 
-import json, subprocess, threading, time
+import json, re, subprocess, threading, time
 from pathlib import Path
 
 import director
@@ -127,7 +127,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
    Не переглядай бібліотеку по колу й не генеруй уже вибраний предмет заново.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
-   python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png>, потім tools/split_sheet.py --clean 40.
+   python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait <аркуш> і tools/split_sheet.py --clean 40.
+   Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
 3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
    Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots, потім переглянь аркуші партії й познач результат через mark.
 {motion_direction.EXECUTION}
@@ -149,32 +150,23 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 
 
 # How people look in a channel's pictures: «Люди в кадрах» (`people_style` in saved channel settings). Stick figures are the
-# default (user, 31 October 2026); the health channels for older viewers show real people (user, 5 November 2026: «його
-# проект має бути для дорослих людей… не дудл, а живих справжніх людей. Старших… як будто сфоткані на телефон»).
+# default of animated channels (user, 31 October 2026); universal projects show real people. Age, appearance, setting,
+# photo style and orientation are the channel's own wishes for generated pictures, never the studio's (user, 14 November
+# 2026: «Канали бувають про різне… це побажання саме має бути в настройках каналу»).
 PEOPLE = ("Люди в кожному кадрі, крім кадрів ведучого, лише стикмени: і на картинках, і в кожному промпті для картинки "
           "чи відео прямо пиши, що всі люди намальовані стикменами. Стокове фото чи відео з живими людьми не бери.")
-PEOPLE_REAL = ("Люди на картинках живі й справжні, у звичайному одязі й звичайній обстановці, вік і вигляд за правилами каналу: "
-               "природна фотографія, ніби знята на телефон, не завжди ідеальної якості, денне чи кімнатне світло, без студійного глянцю, "
-               "ретуші й мультяшності. Приблизно половина фото вертикальні (3:4), половина горизонтальні (4:3): вертикальні додають "
-               "ролику правдивості. "
-               "Ніяких стикменів, дудлів і намальованих людей. У кожному промпті прямо пиши, що це реалістична аматорська фотографія "
-               "на телефон зі справжніми людьми. Перевіряй анатомію: руки, пальці, обличчя.")
-# The photo style that the author liked in GORBUNOV-23 («Алексей Горбунов/23 Овощи и печень/Фото кадров/photos.py»):
-# real amateur smartphone photos, about half of them vertical, older Eastern Slavic people, no text.
-PHOTO_STYLE_OLDER = ("Style: a real amateur photo taken on an ordinary smartphone, not professional. Natural available light, everyday home or "
-                     "city setting in an ordinary post-Soviet apartment or Russian town, casual unposed moment, ordinary framing, natural skin "
-                     "texture. No studio lighting, no advertising look, no glossy retouching, no model poses, no shallow-depth studio bokeh. "
-                     "Every main person is at least 60 years old with visible age features, fair skin, Eastern Slavic appearance and ordinary "
-                     "everyday clothes. Anatomy correct, hands natural. No text, no letters, no numbers, no captions, no logos, no watermarks, "
-                     "no pills or medicine packages anywhere.")
-PEOPLE_REAL_OLDER = ("Створені картинки — живі природні фотографії справжніх людей старшого віку (60+), ніби зняті на звичайний телефон, "
-                     "не завжди ідеальної якості; ніяких стикменів, дудлів, мультяшності й намальованих людей. Приблизно половина фото "
-                     "вертикальні (3:4), половина горизонтальні (4:3); вертикальне фото стоїть у кадрі як є, зі своїми полями. Опиши в промпті "
-                     "конкретну людину з віком («a man about 67 years old»), дію й обстановку за словами кадру, і в кожен промпт англійською "
-                     "дослівно додай цей рядок стилю: «" + PHOTO_STYLE_OLDER + "» Фото з однаковою орієнтацією малюй по чотири на аркуші "
-                     "2×2 з білими проміжками й ріж аркуш скриптом, як у «Алексей Горбунов/23 Овощи и печень/Фото кадров» (photos.py, run.py). "
-                     "Перевіряй кожне фото: анатомію, руки, обличчя, вік, відповідність словам.")
-PEOPLE_STYLES = {"stickman", "real", "real_older"}
+PEOPLE_REAL = ("Люди на картинках живі й справжні, без стикменів, дудлів і мультяшності. Вік, зовнішність, обстановку, стиль "
+               "фото й орієнтацію бери з побажань каналу до створених зображень; чого там немає, вибирай за змістом кадру. "
+               "Перевіряй анатомію: руки, пальці, обличчя.")
+# Every generated picture comes four to a sheet: one 16:9 image cut 2 × 2 (user, 14 November 2026: «для оптимізації
+# коштів і швидкості… 4 картинки в одній… по дефолту ми робимо просто одну картинку 16х9, і вона порізана на 4 частини»).
+SHEET_RULE = ("Створені картинки (фото, інфографіка, схема, ілюстрація чи інший елемент) малюй по чотири на одному аркуші 16:9 "
+              "сіткою 2×2: один промпт описує чотири окремі картинки з рівними однотонними проміжками між ними (білими, а для "
+              "світлих картинок темними). Пропорції й орієнтація кожної картинки за побажаннями каналу; якщо там нічого не "
+              "сказано, кожна четвертинка 16:9. Ріж аркуш: python3 \"{tools}/sheet_2x2.py\" АРКУШ.png --out-dir \"{folder}\" "
+              "--names кадр_NNN,кадр_NNN,кадр_NNN,кадр_NNN (\"-\" пропускає клітинку). Одиночну картинку малюй тільки тоді, "
+              "коли до четвірки не вистачає кадрів. Перевір кожну картинку: зміст, текст, краї без смуг сусідньої клітинки.")
+PEOPLE_STYLES = {"stickman", "real", "real_older"}  # real_older: an older name of real
 
 
 def people_style(project: dict) -> str:
@@ -185,16 +177,14 @@ def people_style(project: dict) -> str:
         settings = {}
     import animation_preferences
     if not animation_preferences.stickmen_allowed(project, settings):
-        return 'real_older' if settings.get('people_style') == 'real_older' else 'real'
-    return settings.get("people_style") if settings.get("people_style") in PEOPLE_STYLES else "stickman"
+        return 'real'
+    style = settings.get("people_style")
+    return "real" if style == "real_older" else style if style in PEOPLE_STYLES else "stickman"
 
 
 def people_rules(project: dict) -> dict:
     """The three places of the photo brief that depend on how people look: the picture rule, stock choice, the check."""
     style = people_style(project)
-    if style == "real_older":
-        return {"rule": PEOPLE_REAL_OLDER, "stock": "можна з живими людьми старшого віку, якщо вони пасують до слів",
-                "check": "люди живі, старшого віку й природні, без стикменів і дудлів"}
     if style == "real":
         return {"rule": PEOPLE_REAL, "stock": "можна з живими людьми, якщо вони пасують до слів",
                 "check": "люди живі й природні, без стикменів і дудлів"}
@@ -287,9 +277,10 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Нічого не підходить: інші слова, ще один аркуш.
 3. Створені зображення (generated_photo, generated_video як картинка з рухом): малює Codex.
    Це може бути фото, інфографіка, схема, рентген, ілюстрація чи будь-який інший доречний стиль. Вибирай стиль за змістом кадру. Через термінал:
-   промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out "{rel}/кадри/кадр_NNN.png".
-   Фото малюй по чотири на одному аркуші 2×2 (кадри однієї орієнтації разом, білі проміжки між ними) і ріж аркуш скриптом на
-   чотири файли без білих ліній по краях. Переглянь краї кожного фото на спільному аркуші готових кадрів; одиночне фото малюй тільки для останніх кадрів, коли до четвірки не вистачає.
+   промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out <аркуш у службовій папці студії> --background.
+   Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
+   {SHEET_RULE.format(tools=tools, folder=f'{rel}/кадри')}
+   Якщо codex_image.py пише про ліміт Codex, одразу заверши роботу: студія вже на паузі. Не замінюй створені картинки стоком чи кодом.
    {people['rule']}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
@@ -421,13 +412,16 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
             text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')),
                 batch=bool(numbers) and not scoped.get('repair_frames'))+production_quality.INSTRUCTIONS
+            if index >= 1000:
+                text += '\nЗавдання цього запуску: '+summary+'\nСтворення кадрів уже завершене. Виконай лише описаний огляд готового матеріалу.'
             if numbers:
                 text += '\nЦей короткий запуск охоплює ЛИШЕ кадри '+','.join(map(str,numbers))+'. Працюй партіями по 5 всередині цієї області. Після перевірки всіх цих кадрів заверши відповідь стислим підсумком. Наступну область студія передасть окремій новій сесії. Не використовуй all-text або інші команди, які змінюють кадри поза цією областю.'
             session_log=log.with_name(log.stem+f'-session-{index:02d}.log') if index else log
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             remaining = deadline - time.monotonic()
             if remaining <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
-            return director.claude(cli,text,session_log,director.activity_path(pid,'production'),max(1,int(remaining)),resume=None,effort=effort,model=model)
+            return director.claude(cli,text,session_log,director.activity_path(pid,'production'),max(1,int(remaining)),resume=None,effort=effort,model=model,
+                                  env={'VIDEOKEY_PROJECT_ID':pid,'VIDEOKEY_STUDIO_URL':'http://127.0.0.1:8770'})
         previous=request.get('session_checkpoint') or {}
         if previous.get('signature') != signature or request.get('continuation_mode') != 'handoff':
             previous = {}
@@ -469,9 +463,24 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 pass
             final_request = {**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))}
             review = production_quality.check(store.load_project(pid), final_request)
+            if review.get('pending_review'):
+                # A later batch may invalidate an earlier dependency. Finish that
+                # review here, while the same worker still owns the production job.
+                review_code, review_answer = production_sessions.finish_review(
+                    review['pending_review'], launch, verify, cancelled, director.limit_stop)
+                answer = production_sessions.merge_answers(answer, review_answer)
+                fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
+                              session_id=answer.get('session_id'), **director.spent(answer,started))
+                review = production_quality.check(store.load_project(pid), final_request)
+                if review_code or review_answer.get('is_error'):
+                    review = {**review,'passed':False,'errors':review.get('errors') or [review_answer.get('result') or 'Не завершено огляд кадрів']}
+                    if director.limit_stop(review_answer):
+                        fields.update(limit=True)
             fields.update(quality=review, status='done' if review['passed'] else 'failed')
             if not review['passed']:
-                fields['error'] = ' '.join(review['errors'])[:1600]
+                # A provider pause is the actionable cause; keep the local review
+                # details in quality without replacing the quota reset message.
+                fields['error'] = director.limit_stop(answer) or ' '.join(review['errors'])[:1600]
     except subprocess.TimeoutExpired:
         fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
     except (OSError, store.StudioError, KeyError) as error:
@@ -539,6 +548,11 @@ def resume(pid: str) -> dict:
     if request.get('status') == 'failed' and saved_review.get('frames'):
         current_review = production_quality.check(project, {**request, 'review_frames': saved_review['frames']})
         review_pending = bool(current_review.get('pending_review'))
+        if current_review.get('passed') and drawn(pid,int(request.get('frames') or 0),request.get('repair_frames')):
+            final_review=production_quality.check(project,{**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))})
+            if final_review.get('passed'):
+                set_request(pid,status='done',error=None,paused=False,limit=False,quality=final_review,finished_at=time.time())
+                return store.load_project(pid)
     # A completed batch with stale visual receipts can resume from its saved files.
     if request.get("status") != "failed" or not (review_pending or request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
         raise store.StudioError("Агент не стоїть на паузі")
@@ -549,7 +563,15 @@ def resume(pid: str) -> dict:
     return fix(pid, notes, handoff=True)
 
 
-def pause(pid: str) -> dict:
+def codex_limit_note(reset: str | None) -> str:
+    """The pause note when Codex ran out of its limit mid-production (user, 14 November 2026: «нехай просто… на паузу
+    ставиться обробка кадрів… не хочу, щоб створювались кадри… без PNG»)."""
+    reset = re.sub(r"[^0-9A-Za-zА-Яа-яІіЇїЄєҐґ:.,\s-]", "", str(reset or ""))[:60].strip()
+    return ("Закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") +
+            ". Готові кадри збережені; натисніть «Продовжити», коли ліміт оновиться.")
+
+
+def pause(pid: str, note: str | None = None) -> dict:
     """Keep the project and the saved CLI session; stop only its active frame job."""
     project=store.load_project(pid)
     request=project.get('production_request') or {}
@@ -571,8 +593,10 @@ def pause(pid: str) -> dict:
                 except ValueError:
                     continue
     director.stop(pid,'production')
+    import razgon_sound   # the music and effects of this film stop too; they are laid again after the frames
+    razgon_sound.stop(pid)
     set_request(pid,status='failed',paused=True,limit=False,finished_at=time.time(),session_id=session,
-                error='Призупинено на ваше прохання. Готові кадри збережені.')
+                error=note or 'Призупинено на ваше прохання. Готові кадри збережені.')
     # Usually SIGTERM finishes immediately. Never let a quick Play silently lose
     # the request while the old worker still owns the project's active slot.
     until=time.monotonic()+2

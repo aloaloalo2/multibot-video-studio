@@ -12,7 +12,7 @@ lives in sound.json beside the project and the bridge's output in sound.log; stu
 """
 from __future__ import annotations
 
-import os, subprocess, sys, threading, time
+import os, signal, subprocess, sys, threading, time
 from pathlib import Path
 
 import store
@@ -23,6 +23,25 @@ TIMEOUT = 3600
 ACTIVE: set[str] = set()
 AGAIN: set[str] = set()   # asked again while a run worked: one more run follows with the newest shots
 LOCK = threading.Lock()
+PROCESSES: dict = {}     # the bridge's running process of a project
+STOPPED: set[str] = set() # a pause asked this run to stop
+
+
+def stop(pid: str) -> bool:
+    """The author paused the project (user, 14 November 2026: «я зупинив… а воно далі… крутиться ще хвилину»): the music
+    and effects stop with the frames. They are laid again when the frame agent finishes."""
+    with LOCK:
+        process = PROCESSES.get(pid)
+        if pid not in ACTIVE:
+            return False
+        STOPPED.add(pid)
+        AGAIN.discard(pid)
+    if process and process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return True
 
 
 def state_path(pid: str) -> Path:
@@ -91,6 +110,24 @@ def run(pid: str, reason: str) -> None:
         raise
 
 
+def _bridge(cmd: list[str], *, env: dict, pid: str) -> subprocess.CompletedProcess:
+    """The bridge in its own process group, so a pause can stop it with everything it started."""
+    process = subprocess.Popen(cmd, cwd=store.APP_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               start_new_session=True, env=env)
+    with LOCK:
+        PROCESSES[pid] = process
+    try:
+        stdout, stderr = process.communicate(timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.communicate()
+        raise
+    finally:
+        with LOCK:
+            PROCESSES.pop(pid, None)
+    return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+
+
 def command(link: dict) -> list[str]:
     # at a lower priority: the author keeps working while the mix runs
     return ["nice", "-n", "10", sys.executable, str(BRIDGE), "sound", "--razgon", str(link["project"])]
@@ -104,9 +141,17 @@ def _run(pid: str, reason: str) -> None:
         if not link:
             data.update(status="skipped", summary="Це не анімаційний ролик Razgon")
             return
-        result = subprocess.run(command(link), cwd=store.APP_ROOT, capture_output=True, text=True, timeout=TIMEOUT,
-                                env={**os.environ, "MULTIBOT_RENDER_ON_EXPORT": "1"})
+        with LOCK:
+            if pid in STOPPED:
+                data.update(status="cancelled", summary="Зупинено разом зі створенням кадрів")
+                return
+        result = _bridge(command(link), env={**os.environ, "MULTIBOT_RENDER_ON_EXPORT": "1"}, pid=pid)
         (store.project_dir(pid) / "sound.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+        with LOCK:
+            stopped = pid in STOPPED
+        if stopped:
+            data.update(status="cancelled", summary="Зупинено разом зі створенням кадрів")
+            return
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         if result.returncode:
             problem = [line for line in result.stderr.splitlines() if line.strip()]
@@ -120,6 +165,8 @@ def _run(pid: str, reason: str) -> None:
     except (OSError, store.StudioError) as error:
         data.update(status="failed", error=str(error))
     finally:
+        with LOCK:
+            STOPPED.discard(pid)
         data["finished_at"] = time.time()
         try:
             store.atomic_json(state_path(pid), data)

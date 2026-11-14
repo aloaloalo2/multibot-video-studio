@@ -24,6 +24,9 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
         audio_level.leveled(voice_path, wait=True)
     voice = {} if visual_only else audio_level.voice_gains(project)
     visual_count = 0
+    # the channel plate stays sharp over a CapCut effect: an effect that changes the picture draws what lies under it
+    # without the plate (engine/capcut_fx.py)
+    overlay_ids = {cid for group in project.get("scene_groups", []) if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
     for z, layer in enumerate(project.get("tracks", [])):
         rendered_clips = []
         for clip in layer.get("clips", []):
@@ -48,6 +51,9 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
             if kind != "audio":
                 visual_count += 1
             rendered_clips.append({"id": clip["id"], "type": kind, "source": str(source) if source else None, "text": clip.get("text", ""), "content_type": clip.get("content_type"), "color": clip.get("color", "#101114"), "start": float(clip["start"]), "duration": float(clip["duration"]), "trim_start": float(clip.get("trim_start", 0)), "volume": 0.0 if layer.get("muted") else float(clip.get("volume", 1)) * (voice.get(clip.get("asset_id"), 1.0) if kind == "audio" else 1.0), "transition": copy.deepcopy(clip.get("transition", {"type": "cut", "duration": 0})), "x": clip.get("x", .5), "y": clip.get("y", .5), "width": clip.get("width", 1), "height": clip.get("height", 1), "scale": clip.get("scale", 1), "opacity": clip.get("opacity", 1), "preset": clip.get("preset"), "preset_duration": clip.get("preset_duration", 0), "keyframes": copy.deepcopy(clip.get("keyframes", [])), "audio_role": clip.get("audio_role"), "easing": clip.get("easing", "linear")})
+            if clip.get("content_type") == "capcut_effect":
+                rendered_clips[-1]["capcut_effect"] = clip.get("capcut_effect")
+                rendered_clips[-1]["capcut_exclude"] = sorted(overlay_ids)
             for field in ("font_size", "text_words", "mask", "corner_radius", "shadow", "font_family", "font_weight", "text_align", "line_height", "word_entrance", "gradient", "blur", "motion_blur", "visual_effect"):
                 if field in clip:
                     rendered_clips[-1][field] = copy.deepcopy(clip[field])

@@ -8,10 +8,10 @@ import production_sessions as sessions
 
 
 class ProductionSessionsTest(unittest.TestCase):
-    def run_job(self,launch=None,verify=None,checkpoint=None,cancelled=None,previous=None):
+    def run_job(self,launch=None,verify=None,checkpoint=None,cancelled=None,previous=None,parallel=1):
         self.launch=launch or Mock(side_effect=lambda frames,summary,index:(0,{'result':f'Batch {index}','session_id':str(index),'total_cost_usd':.1,'usage':{'input_tokens':10}}))
         self.receipt=checkpoint or Mock()
-        return sessions.run(range(1,46),self.launch,verify or (lambda _:True),self.receipt,cancelled or (lambda:False),lambda answer:answer.get('limit'),previous=previous)
+        return sessions.run(range(1,46),self.launch,verify or (lambda _:True),self.receipt,cancelled or (lambda:False),lambda answer:answer.get('limit'),previous=previous,parallel=parallel)
 
     def test_long_work_is_scoped_and_costs_include_all_fresh_sessions(self):
         code,answer=self.run_job();self.assertEqual(code,0)
@@ -70,9 +70,50 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertEqual(answer['usage']['input_tokens'],40)
         self.assertEqual(save.call_args.args[0]['completed_frames'],list(range(21,31)))
 
+    def test_final_review_covers_earlier_frames_in_bounded_fresh_sessions(self):
+        launch=Mock(return_value=(0,{'result':'reviewed','total_cost_usd':.1,'usage':{'input_tokens':20}}))
+        code,answer=sessions.finish_review([*range(1,31),39,40],launch,lambda ns:True,lambda:False,lambda _:False)
+        self.assertEqual(code,0)
+        self.assertEqual([call.args[0] for call in launch.call_args_list],[list(range(1,11)),list(range(11,21)),list(range(21,31)),[39,40]])
+        self.assertTrue(all(call.args[2]>=2000 for call in launch.call_args_list))
+        self.assertIn('лише актуальний візуальний огляд',launch.call_args.args[1])
+        combined=sessions.merge_answers({'total_cost_usd':1,'usage':{'input_tokens':100}},answer)
+        self.assertAlmostEqual(combined['total_cost_usd'],1.4)
+        self.assertEqual(combined['usage']['input_tokens'],180)
+
     def test_visual_review_continuation_is_bounded_and_never_expands_its_scope(self):
         for pending,count in (([5],2),([15],1)):
             launch=Mock(return_value=(0,{'result':'returned'}))
             code,_=sessions.run(range(1,11),launch,lambda _:False,Mock(),lambda:False,lambda _:False,pending_review=lambda:pending)
             self.assertNotEqual(code,0)
             self.assertEqual(launch.call_count,count)
+
+    def test_two_sessions_run_side_by_side_and_cover_every_frame_once(self):
+        # Two sessions of ten at once (user, 14 November 2026): the same frames and costs, about half the time.
+        import threading, time
+        live, peak, seen, lock = [], [0], [], threading.Lock()
+        def launch(frames, summary, index):
+            with lock:
+                live.append(index); peak[0] = max(peak[0], len(live)); seen.extend(frames)
+            time.sleep(.05)
+            with lock:
+                live.remove(index)
+            return 0, {'result': f'Batch {index}', 'total_cost_usd': .1}
+        code, answer = sessions.run(range(1, 46), launch, lambda _: True, Mock(), lambda: False, lambda _: False, parallel=2)
+        self.assertEqual(code, 0)
+        self.assertEqual(peak[0], 2)
+        self.assertEqual(sorted(seen), list(range(1, 46)))
+        self.assertAlmostEqual(answer['total_cost_usd'], .5)
+
+    def test_a_failed_side_session_starts_no_new_session(self):
+        calls = []
+        def launch(frames, summary, index):
+            calls.append(index)
+            return (0, {'is_error': True}) if index == 1 else (0, {'result': 'ok'})
+        code, _ = sessions.run(range(1, 46), launch, lambda _: True, Mock(), lambda: False, lambda _: False, parallel=2)
+        self.assertNotEqual(code, 0)
+        self.assertLessEqual(len(calls), 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

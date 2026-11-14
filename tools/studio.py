@@ -42,8 +42,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+import contextlib
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from timeline_lock import timeline_lock  # noqa: E402
 
 STUDIO = "http://127.0.0.1:8770"
+# Commands that change the timeline: one at a time per project, so two frame sessions of one episode never collide.
+TIMELINE_COMMANDS = {"accent", "clear-accents", "replace", "undo", "redo", "remove", "place", "stock-pick", "transitions",
+                     "frames", "numbers", "ops"}
+LOCK_HELD = contextlib.ExitStack()
 
 
 class Failure(Exception):
@@ -158,6 +166,14 @@ def small_copy(path: str) -> str:
 
 
 def main(argv=None) -> int:
+    """Runs one command; the timeline lock it took is let go when it ends, even when main runs twice in one process."""
+    try:
+        return _main(argv)
+    finally:
+        LOCK_HELD.close()
+
+
+def _main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="що зараз виконується")
@@ -259,7 +275,7 @@ def main(argv=None) -> int:
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
     transitions.add_argument("--frames", help="лише стики на вході у вибрані кадри")
-    transitions.add_argument("--share", type=float, default=.7)
+    transitions.add_argument("--share", type=float, default=None, help="частка стиків; без неї з налаштувань каналу (70%%)")
     transitions.add_argument("--seed", type=int, default=23)
     transitions.add_argument("--replace", action="store_true", help="розставити заново, не зберігаючи наявні")
     transitions.add_argument("--dry-run", action="store_true")
@@ -296,6 +312,10 @@ def main(argv=None) -> int:
             return 0
         project = find_project(args.project)
         pid = project["id"]
+        if args.command in TIMELINE_COMMANDS:
+            # held until this command exits; the project is read again inside, so its revision is the current one
+            LOCK_HELD.enter_context(timeline_lock(pid))
+            project = find_project(pid)
         if args.command == "summary":
             query = urllib.parse.urlencode({key: value for key, value in (("frames", args.frames), ("issues", "1" if args.issues else None),
                                                                            ("format", None if args.json else "text")) if value})

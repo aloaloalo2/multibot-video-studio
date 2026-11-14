@@ -211,9 +211,11 @@ function acknowledgeChannelNotice(id){
   renderChannelNotices();
 }
 function renderChannelNotices(){
+  let acknowledged=false;
   for(const button of document.querySelectorAll('.channel-select[data-channel-id]')){
     const badge=button.querySelector('.channel-busy');if(!badge)continue;
     const id=button.dataset.channelId,notice=channelNoticeData[id];
+    if(notice&&state.view==='editor'&&state.channel?.id===id&&notice.seen!==notice.id){notice.seen=notice.id;acknowledged=true;}
     const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen;
     const stopped=notice?.status==='stopped';
     badge.hidden=!busy&&!unread;
@@ -222,6 +224,7 @@ function renderChannelNotices(){
     const label=busy?'У каналі триває робота':stopped?'Роботу зупинено':'Роботу завершено';
     badge.setAttribute('aria-label',label);badge.title=label;
   }
+  if(acknowledged)saveChannelNotices();
 }
 let channelActivityPending=false;
 function renderProjectActivities(){
@@ -1140,11 +1143,11 @@ function openChannelSettings(channel) {
     <section class="settings-section settings-script-wishes"><h3>Побажання сценаристу</h3><textarea id="settings-script-wishes" rows="6" maxlength="30000" placeholder="Подача, мова, звернення до глядача, початок і завершення сценарію">${esc(original.script_wishes || '')}</textarea></section>
     <section class="settings-section settings-thumbnail-wishes"><h3>Побажання до прев’ю</h3><textarea id="settings-thumbnail-wishes" rows="3" maxlength="4000" placeholder="Стиль, композиція, текст та інші побажання для прев’ю каналу">${esc(original.thumbnail_wishes || '')}</textarea></section><section class="settings-section regular-only settings-accents"><h3>Акценти на кадрах</h3><label class="check"><input id="settings-accents" type="checkbox" ${original.accents?'checked':''}>Творчі акценти від режисера</label><p>Режисер обирає підписи, плашки, виділення, стрілки й ефекти за змістом кадру та стилем каналу. Частота й подача залежать від його творчого задуму.</p></section>
     ${channelSoundMarkup()}<section class="settings-section" id="channel-voices"><h3>Голоси для перекладу</h3><p>Завантажуємо…</p></section>
-    <section class="settings-section settings-agent-memory"><h3>Правила Агентів</h3><p>Спільна пам’ять побажань каналу для сценаріїв, режисури, створення кадрів, монтажу й прев’ю.</p><textarea id="channel-agent-memory" aria-label="Правила Агентів" rows="5" maxlength="30000" placeholder="Усі побажання каналу: подача, стиль кадрів, персонажі, рух, підписи та прев’ю" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
+    <section class="settings-section settings-agent-memory"><h3>Побажання до монтажу й оформлення</h3><p>Спільна пам’ять побажань каналу для сценаріїв, режисури, створення кадрів, монтажу й прев’ю.</p><textarea id="channel-agent-memory" aria-label="Побажання до монтажу й оформлення" rows="5" maxlength="30000" placeholder="Усі побажання каналу: подача, стиль кадрів, персонажі, рух, підписи та прев’ю" disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('settings-text-font').value,accent_font_family:$('settings-accent-font').value},sound:channelSoundValues(),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('settings-text-font').value,accent_font_family:$('settings-accent-font').value},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
       const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});

@@ -4,7 +4,13 @@ import json
 from pathlib import Path
 
 GRAPHIC_PRESETS=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'graphic-transitions.json').read_text())
-TYPES={'cut','crossfade','slide_left','slide_right','slide_up','slide_down','zoom_in','zoom_out'}|set(GRAPHIC_PRESETS)
+# transitions taken out of the library (engine/retired-graphic-transitions.json) stay valid on a seam that has one
+OFFERED=set(GRAPHIC_PRESETS)
+GRAPHIC_PRESETS={**json.loads((Path(__file__).resolve().parents[1]/'engine'/'retired-graphic-transitions.json').read_text()),**GRAPHIC_PRESETS}
+CAPCUT=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'capcut-catalog.json').read_text())['transitions']
+TYPES={'cut','crossfade','slide_left','slide_right','slide_up','slide_down','zoom_in','zoom_out'}|set(GRAPHIC_PRESETS)|set(CAPCUT)
+# what the library, the channel's «Переходи» and the montage may pick
+CHOICES=(TYPES-set(GRAPHIC_PRESETS)-{'cut'})|OFFERED
 def members(project,ref):
     clips={c['id']:c for t in project.get('tracks',[]) for c in t.get('clips',[])}
     if isinstance(ref,str) and ref.startswith('group:'):
@@ -49,14 +55,18 @@ def transport(project,layers):
     for join in project.get('join_transitions',[]):
         _,_,outgoing,incoming=boundary(project,join['from_ref'],join['to_ref'])
         effect={key:join[key] for key in ('type','duration','seam')}
+        capcut=join['type'] in CAPCUT
         for source in incoming:
-            if source['id'] not in rendered:continue
+            if source['id'] not in rendered or capcut:continue
             if source.get('kind')=='text' and source.get('text_role')=='full_frame':
                 protected_text_ids.add(source['id'])
             else:rendered[source['id']]['join_in']=effect
         for source in outgoing:
             if source['id'] not in rendered or abs(source['start']+source['duration']-join['seam'])>.05:continue
-            clip=rendered[source['id']];clip['join_out']=effect;old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
+            clip=rendered[source['id']]
+            # a CapCut transition draws both sides itself (engine/capcut_fx.py): the outgoing clip only goes on under it
+            if not capcut:clip['join_out']=effect
+            old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
             points=clip.get('keyframes',[])
             if points:
                 # a clip still moving at its end keeps the speed of its last keyframe segment through the transition
@@ -71,6 +81,10 @@ def transport(project,layers):
                     value=float(last[prop])+((float(last[prop])-float(previous[prop]))/span if moving else 0)*(clip['duration']-float(last['time']))
                     extra[prop]=max(0,min(1,value)) if prop=='opacity' else value
                 clip['keyframes']=[*points,extra]
+        if capcut:
+            members={c['id'] for c in outgoing+incoming}
+            top=max((float(layer.get('z',0)) for layer in layers if any(c['id'] in members and c.get('content_type')!='capcut_effect' for c in layer['clips'])),default=brand_index-1)
+            layers.append(dict(id='capcut-'+join['id'],z=min(top+.5,brand_index-.5),clips=[dict(id='capcut-'+join['id'],type='animation',content_type='capcut_transition',capcut_type=join['type'],start=join['seam'],duration=join['duration'],trim_start=0,x=.5,y=.5,width=1.,height=1.,opacity=1,volume=0,easing='linear',capcut_a_drop=[c['id'] for c in incoming],capcut_b_drop=[c['id'] for c in outgoing],capcut_exclude=sorted(overlay_ids))]))
         if join['type'] in GRAPHIC_PRESETS:
             layers.append(dict(id='graphic-'+join['id'],z=brand_index-.5,clips=[dict(id='graphic-'+join['id'],type='animation',content_type='graphic_transition',graphic_style=join['type'],start=join['seam'],duration=join['duration'],trim_start=0,x=.5,y=.5,width=1.,height=1.,opacity=1,volume=0,easing='linear')]))
     for layer in list(layers):

@@ -23,6 +23,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import joins
 import store
 import job_timing
 import script_drafts
@@ -66,6 +67,7 @@ import waveforms
 import export_names
 import completion_notices
 import project_narration
+import narration_revision
 import channel_voice_lab
 import agent_view
 import channel_activity
@@ -808,7 +810,7 @@ def project_jobs(pid: str) -> dict:
             return (read() or {}).get("status")
         except (store.StudioError, OSError, ValueError, KeyError):
             return None
-    jobs = {"озвучення сценарію": status(lambda: project_narration.snapshot(pid).get("job")),
+    jobs = {"озвучення сценарію": status(lambda: project_narration.work_job(pid)),
             "розпізнавання озвучки": status(lambda: analysis_jobs.latest(pid, load_job, compact=True, include_report=False).get("job")),
             "режисура": status(lambda: director.state(pid)),
             "створення кадрів": request.get("status") if isinstance(request, dict) else None,
@@ -952,6 +954,43 @@ def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = Fals
         for old in stills[40:]:
             old.unlink(missing_ok=True)
     return {**info, "cached": False, "notes": notes}
+
+
+CAPCUT_SCRIPT = APP_ROOT / "engine" / "capcut_fx.py"
+CAPCUT_LOCK = threading.Lock()
+
+
+def capcut_run(arguments: list[str], timeout: int = 900) -> Path:
+    """engine/capcut_fx.py in its own process (the CapCut drawing loads numpy, scipy and the packages)."""
+    result = subprocess.run(["nice", "-n", "10", sys.executable, str(CAPCUT_SCRIPT), *arguments],
+                            capture_output=True, text=True, timeout=timeout)
+    try:
+        info = json.loads(result.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        info = {"error": (result.stdout + result.stderr)[-1500:]}
+    if result.returncode or info.get("error"):
+        raise store.StudioError("CapCut: " + str(info.get("error") or "")[-600:], 500)
+    return Path(info["output"])
+
+
+def capcut_transition_preview(project: dict, join_id: str) -> dict:
+    """The CapCut transition of one seam drawn small by the export's own code, for the editor's preview."""
+    join = next((j for j in project.get("join_transitions", []) if j.get("id") == join_id), None)
+    if not join or join.get("type") not in joins.CAPCUT:
+        raise store.StudioError("Перехід CapCut на цьому стику не знайдено", 404)
+    manifest = normalize_for_engine(project)
+    width = 640
+    height = max(2, round(width * int(manifest.get("height", 1080)) / int(manifest.get("width", 1920)) / 2) * 2)
+    folder = store.cache_dir(project) / "capcut"
+    folder.mkdir(parents=True, exist_ok=True)
+    manifest_path = folder / f"preview-{join_id}.json"
+    with CAPCUT_LOCK:
+        store.atomic_json(manifest_path, manifest)
+        try:
+            output = capcut_run(["--manifest", str(manifest_path), "--clip", "capcut-" + join_id, "--width", str(width), "--height", str(height)])
+        finally:
+            manifest_path.unlink(missing_ok=True)
+    return {"url": f"/api/capcut/media/{output.name}", "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
 
 
 _DERIVED = {}
@@ -1231,6 +1270,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_media(project_narration.tempo_preview(dry_narration.group(1), speed) if speed is not None else project_narration.original_audio(dry_narration.group(1)))
         if path == '/api/space':
             return self.json_response(space.all_usage(cleanup_blocked))
+        revision=re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/revision',path)
+        if revision:
+            return self.json_response(narration_revision.snapshot(revision.group(1)))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
         if narration:
             store.load_project(narration.group(1))
@@ -1334,6 +1376,19 @@ class Handler(BaseHTTPRequestHandler):
                 lines += ["Проблеми: " + ("немає" if not summary["issues"] else str(len(summary["issues"])))] + ["  " + issue for issue in summary["issues"] if not issue.startswith("кадр ")]
                 return self.text_response("\n".join(lines) + "\n")
             return self.json_response(summary)
+        match = re.fullmatch(r"/api/capcut/effects/(capcut_e\d{2})/preview\.webm", path)
+        if match:
+            if match.group(1) not in store.capcut_effects():
+                raise store.StudioError("Ефект не знайдено", 404)
+            with CAPCUT_LOCK:
+                target = capcut_run(["--effect", match.group(1)], timeout=300)
+            return self.serve_media(target)
+        match = re.fullmatch(r"/api/capcut/media/(transition-direct-capcut-[0-9a-f]{24}\.mp4)", path)
+        if match:
+            target = store.DATA_ROOT / "capcut-cache" / match.group(1)
+            if not target.is_file():
+                raise store.StudioError("Прев'ю переходу не знайдено", 404)
+            return self.serve_media(target)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/stills/(still-[0-9a-f]{20}(?:-\d{2})?\.png)", path)
         if match:
             target = store.cache_dir(store.listed_project(store.project_dir(match.group(1)) / "project.json")) / "stills" / match.group(2)
@@ -1543,6 +1598,14 @@ class Handler(BaseHTTPRequestHandler):
             return channel_api.mutate(self, method, path, body, ensure_idle=channel_transfer_idle, choose_folder=choose_local_folder)
         if path == '/api/space' and method == 'POST':
             return self.json_response(space.free_all(cleanup_blocked))
+        revision=re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/revision',path)
+        if revision and method=='POST':
+            pid=revision.group(1)
+            current=narration_revision.snapshot(pid).get('job') or {}
+            if current.get('id')!=body.get('client_id'):
+                reason=cleanup_blocked(pid)
+                if reason:raise store.StudioError(reason,409)
+            return self.json_response(narration_revision.start(pid,body),202)
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/(quote|start|source|cancel|speed)', path)
         if narration and method == 'POST':
             pid, mode = narration.groups(); project = store.load_project(pid)
@@ -1679,7 +1742,9 @@ class Handler(BaseHTTPRequestHandler):
                 production_edits.enqueue(match.group(1),body.get('notes'),body.get('frame_numbers'),body.get('client_id')),202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
         if match and method == "POST":
-            return self.json_response({"project": production.pause(match.group(1))})
+            limit = body.get("codex_limit") if isinstance(body, dict) else None
+            note = production.codex_limit_note(limit.get("reset")) if isinstance(limit, dict) else None
+            return self.json_response({"project": production.pause(match.group(1), note)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
             return self.json_response({"project": production.resume(match.group(1))})
@@ -1749,6 +1814,9 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             import native_review
             return self.json_response(native_review.batch(store.load_project(match.group(1)), body.get("frames"), body.get("ticket")))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/capcut-preview", path)
+        if match and method == "POST":
+            return self.json_response(capcut_transition_preview(store.load_project(match.group(1)), str(body.get("join_id", ""))))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/still", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))

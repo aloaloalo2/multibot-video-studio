@@ -290,8 +290,8 @@ async function buildThumbView(section,project){
     <header class="thumb-studio-head"><h1>Галерея прев’ю</h1><button type="button" class="icon-button thumb-view-create" title="Створити нове прев’ю" aria-label="Створити нове прев’ю"><span class="thumb-create-mark">${thumbnailIcon}<b>+</b></span><span>Нове прев’ю</span></button></header>
     <div class="thumb-workspace" hidden><div class="thumb-hero"><div class="thumb-view-frame" data-project-id="${esc(id)}"></div>
       <div class="thumb-preview-meta"><span class="thumb-preview-language"></span><button type="button" class="secondary thumb-set-cover" hidden>Зробити обкладинкою</button></div></div>
-    <form class="thumb-compose"><header><h2>Внести правки</h2><button type="button" class="icon-button thumb-edit-close" aria-label="Закрити перегляд">×</button></header>
-      <textarea class="thumb-edit-input" aria-label="Правки до вибраного прев’ю" rows="5" maxlength="1500"></textarea>
+    <form class="thumb-compose"><header><h2>Змінити це прев’ю</h2><button type="button" class="icon-button thumb-edit-close" aria-label="Закрити перегляд">×</button></header><div class="thumb-compose-target"><img alt=""><small></small></div>
+      <textarea class="thumb-edit-input" aria-label="Правки до вибраного прев’ю" rows="5" maxlength="1500" placeholder="Що змінити в цьому прев’ю? Наприклад: зроби фон світлішим, прибери стрілку."></textarea>
       <div class="thumb-view-actions"><button type="submit" class="secondary thumb-edit-send">Внести правки</button><p class="thumb-edit-state thumb-state" role="status" aria-live="polite"></p></div></form></div>
     <section class="thumb-collection"><div class="thumb-filters" role="group" aria-label="Мова прев’ю"></div><div class="thumb-gallery-grid"><p class="thumb-gallery-empty">Завантаження…</p></div></section></div>`;
   section.querySelector('.thumb-view-create').addEventListener('click',()=>openThumbnail(project));
@@ -329,6 +329,7 @@ function buildThumbnailGallery(section,project,data){
     selected=key;thumbnailSelection.set(id,key);workspace.hidden=false;editor.dataset.code=item.code;
     frame.innerHTML=`<img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}"><div class="thumb-preview-tools"><a class="thumb-preview-download" title="Завантажити прев’ю" aria-label="Завантажити прев’ю" href="${item.url}&delivery=clean-png-v1&download=${encodeURIComponent(`Прев’ю ${item.label}.png`)}" download="Прев’ю ${esc(item.label)}.png"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg></a></div>`;
     section.querySelector('.thumb-preview-language').textContent=`${item.flag} ${item.label} · ${item.detail}`;
+    const target=editor.querySelector('.thumb-compose-target');target.querySelector('img').src=item.url;target.querySelector('small').textContent=`${item.flag} ${item.label} · ${item.detail}`;
     input.value=thumbnailDrafts.get(`${id}:${key}`)||'';
     compare(item,items,data);
     choose.hidden=!item.name||item.current;draw();showThumbnailState(id);markThumbnailCard(id);

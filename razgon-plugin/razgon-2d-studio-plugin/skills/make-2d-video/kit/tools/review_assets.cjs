@@ -98,12 +98,59 @@ const modules = input.files.map(file => {
   try { return {...file, ast:babel.babelParse(file.source, file.path, true)}; }
   catch { return {...file, ast:null}; }
 });
+// Procedural tables computed inside a closed initializer belong to their consumers.
+// Keep unknown calls and writes outside that initializer globally conservative.
+function localInitializer(init) {
+  if (!init.isCallExpression() || init.node.arguments.length) return false;
+  const fn=init.get('callee');
+  if (!(fn.isArrowFunctionExpression() || fn.isFunctionExpression()) || fn.node.async || fn.node.generator) return false;
+  const within=b=>b && (b.path===fn || !!b.path.findParent(p=>p===fn));
+  const localBinding=p=>p.isIdentifier() && within(p.scope.getBinding(p.node.name));
+  const localArray=p=>{
+    if(!localBinding(p))return false;
+    const b=p.scope.getBinding(p.node.name);
+    return b.path.isVariableDeclarator() && b.path.get('init').isArrayExpression();
+  };
+  let trustedCore=false;
+  try {trustedCore=require('crypto').createHash('sha256').update(fs.readFileSync(path.join(input.root,'engine/core.js'))).digest('hex')==='b72e1565d5803a476942a31344007537dd0acc0e31a0e2674126cbd8f13b08e7';}catch{}
+  function coreCall(p) {
+    if(!trustedCore || !p.isIdentifier())return false;
+    const b=p.scope.getBinding(p.node.name);
+    return b?.path.isImportSpecifier() && b.path.parent.source.value==='/engine/core.js' && ['rng','lerp','clamp','ease'].includes(b.path.node.imported.name);
+  }
+  let safe=true;
+  fn.traverse({
+    AssignmentExpression(p){if(!localBinding(p.get('left')))safe=false;},
+    UpdateExpression(p){if(!localBinding(p.get('argument')))safe=false;},
+    NewExpression(){safe=false;},AwaitExpression(){safe=false;},YieldExpression(){safe=false;},
+    CallExpression(p){
+      const callee=p.get('callee');
+      if(coreCall(callee))return;
+      if(callee.isMemberExpression()){
+        const obj=callee.get('object'),name=callee.node.property.name;
+        if(!callee.node.computed && obj.isIdentifier({name:'Math'}) && !obj.scope.getBinding('Math') && ['max','min','round','floor','ceil','abs','sin','cos','sqrt','pow','imul'].includes(name))return;
+        if(!callee.node.computed && name==='push' && localArray(obj))return;
+      }
+      if(localBinding(callee)){
+        const b=callee.scope.getBinding(callee.node.name),decl=b.path;
+        if(decl.isFunctionDeclaration())return;
+        if(decl.isVariableDeclarator()){
+          const value=decl.get('init');
+          if(value.isArrowFunctionExpression() || value.isFunctionExpression())return;
+          if(value.isCallExpression() && coreCall(value.get('callee')))return;
+        }
+      }
+      safe=false;
+    },
+  });
+  return safe;
+}
 function pureTopLevel(p) {
   if (p.isImportDeclaration() || p.isExportAllDeclaration() || p.isFunctionDeclaration() || p.isEmptyStatement()) return true;
   if (p.isExportNamedDeclaration() || p.isExportDefaultDeclaration()) return !p.node.declaration || pureTopLevel(p.get('declaration'));
   if (p.isVariableDeclaration()) return p.get('declarations').every(d => {
     const init = d.get('init');
-    return !init.node || init.isPure() || init.evaluate().confident ||
+    return !init.node || init.isPure() || init.evaluate().confident || localInitializer(init) ||
       (init.isNewExpression() && ['Map','Set'].includes(init.node.callee.name) && !init.scope.getBinding(init.node.callee.name) && !init.node.arguments.length);
   });
   return p.isExpressionStatement() && p.get('expression').isPure();

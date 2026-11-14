@@ -54,6 +54,12 @@ class ReviewTest(unittest.TestCase):
         (self.proj/'assets/src/prompt.txt').write_text('New generation instructions')
         self.assertEqual(before,self.hashes())
 
+    def test_replacing_lossless_narration_never_invalidates_visual_reviews(self):
+        (self.proj/'scenes/s3.js').write_text("take('s3',{draw(g){pic(g,chooseAsset())}});")
+        voice=self.proj/'input/voiceover.flac';voice.write_bytes(b'old voice')
+        before=self.hashes();voice.write_bytes(b'edited sentence')
+        self.assertEqual(before,self.hashes())
+
     def test_only_consumers_and_adjacent_cuts_depend_on_a_referenced_asset(self):
         (self.proj/'assets/tree.png').write_bytes(b'old tree')
         (self.proj/'scenes/s3.js').write_text("take('s3', {draw(g){pic(g,'tree',0,0,100)}});")
@@ -105,6 +111,25 @@ class ReviewTest(unittest.TestCase):
         (self.proj/'scenes/s5.js').write_text("import {nextScene} from './next-part.js'; take('s5', {draw:nextScene});")
         after=self.hashes()
         self.assertEqual([n for n in before if before[n]!=after[n]],[4,5])
+
+    def test_closed_procedural_helper_only_invalidates_its_consumers(self):
+        before=self.hashes()
+        helper=self.proj/'scenes/table.js'
+        helper.write_text("const dots=(()=>{const out=[];let seed=9;const rnd=()=>((seed=seed*7%31)/31);for(let i=0;i<3;i++)out.push([Math.max(1,i),rnd()]);return out;})(); export function draw(){return dots}")
+        self.assertEqual(before,self.hashes())
+        (self.proj/'scenes/s5.js').write_text("import {draw} from './table.js'; take('s5',{draw});")
+        before=self.hashes()
+        helper.write_text(helper.read_text().replace('seed=9','seed=8'))
+        after=self.hashes()
+        self.assertEqual([n for n in before if before[n]!=after[n]],[4,5])
+
+    def test_initializer_with_external_effects_stays_global(self):
+        for source in ("const x=(()=>{E.palette='red';return []})();", "const x=(()=>{setPalette();return []})();", "const x=(()=>{const alias=E;alias.color='red';return []})();"):
+            before=self.hashes()
+            (self.proj/'scenes/unsafe.js').write_text(source)
+            after=self.hashes()
+            self.assertTrue(all(before[n]!=after[n] for n in before))
+            (self.proj/'scenes/unsafe.js').unlink()
 
     def test_imported_global_side_effects_still_invalidate_the_whole_film(self):
         before=self.hashes()

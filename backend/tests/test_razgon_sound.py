@@ -54,7 +54,7 @@ class RazgonSoundTest(unittest.TestCase):
 
     def test_the_bridge_runs_its_sound_command_at_a_low_priority_and_reports(self):
         done = subprocess.CompletedProcess([], 0, stdout="Музика й ефекти на таймлайні: «Razgon · музика й ефекти», 53.7 хв\n", stderr="")
-        with patch.object(razgon_sound.subprocess, "run", return_value=done) as run:
+        with patch.object(razgon_sound, "_bridge", return_value=done) as run:
             razgon_sound.ACTIVE.add(self.project["id"])
             razgon_sound.run(self.project["id"], "production")
         command, kwargs = run.call_args.args[0], run.call_args.kwargs
@@ -66,7 +66,7 @@ class RazgonSoundTest(unittest.TestCase):
         self.assertIn("53.7 хв", state["summary"])
         self.assertNotIn(self.project["id"], razgon_sound.ACTIVE)
         failed = subprocess.CompletedProcess([], 1, stdout="", stderr="Traceback\nПлан у студії змінився після prepare\n")
-        with patch.object(razgon_sound.subprocess, "run", return_value=failed):
+        with patch.object(razgon_sound, "_bridge", return_value=failed):
             razgon_sound.ACTIVE.add(self.project["id"])
             razgon_sound.run(self.project["id"], "director")
         state = razgon_sound.state(self.project["id"])
@@ -80,7 +80,7 @@ class RazgonSoundTest(unittest.TestCase):
             if len(calls) == 1:
                 self.assertTrue(razgon_sound.start(self.project["id"], "production"))   # arrives while the first works
             return subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
-        with patch.object(razgon_sound.subprocess, "run", side_effect=bridge), patch.object(razgon_sound.threading, "Thread") as thread:
+        with patch.object(razgon_sound, "_bridge", side_effect=bridge), patch.object(razgon_sound.threading, "Thread") as thread:
             self.assertTrue(razgon_sound.start(self.project["id"], "director"))
             target = thread.call_args.kwargs
             target["target"](*target["args"])
@@ -88,6 +88,21 @@ class RazgonSoundTest(unittest.TestCase):
         self.assertEqual(thread.call_count, 1)
         self.assertEqual(razgon_sound.state(self.project["id"])["reason"], "again")
         self.assertNotIn(self.project["id"], razgon_sound.ACTIVE)
+
+    def test_a_pause_stops_the_running_bridge_and_queues_nothing_more(self):
+        pid = self.project["id"]
+        def bridge(*args, **kwargs):
+            self.assertTrue(razgon_sound.start(pid, "production"))   # a second request while it works
+            self.assertTrue(razgon_sound.stop(pid))                  # the author pauses
+            return subprocess.CompletedProcess([], -15, stdout="", stderr="")
+        with patch.object(razgon_sound, "_bridge", side_effect=bridge) as run, patch.object(razgon_sound.threading, "Thread") as thread:
+            self.assertTrue(razgon_sound.start(pid, "director"))
+            target = thread.call_args.kwargs
+            target["target"](*target["args"])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(razgon_sound.state(pid)["status"], "cancelled")
+        self.assertNotIn(pid, razgon_sound.ACTIVE)
+        self.assertFalse(razgon_sound.stop(pid))
 
     def test_a_run_left_by_a_restart_reads_as_failed(self):
         store.atomic_json(razgon_sound.state_path(self.project["id"]), {"status": "running"})

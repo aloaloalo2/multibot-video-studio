@@ -209,9 +209,8 @@ class RazgonExportTest(unittest.TestCase):
             # the Studio engine exports the timeline (a mixed episode, test_mixed_episode_export)
             self.assertEqual(razgon_export.export_job(project), {"mixed": True, "razgon": str(film), "blocks": {"f1": 1, "f3": 3}})
             with patch.object(store, "load_project_plan", return_value={**plan, "script_sha256": "changed"}):
-                with self.assertRaises(store.StudioError) as caught:   # the Razgon project no longer matches the plan
-                    razgon_export.export_job(project)
-            self.assertEqual(caught.exception.status, 409)
+                # A text-only edit leaves the existing animation slots usable.
+                self.assertTrue(razgon_export.export_job(project)['mixed'])
             rendered = json.loads(json.dumps(project))
             for layer in (1, 3):
                 rendered["tracks"][layer]["clips"][0].update(kind="video", asset_id=project["tracks"][2]["clips"][0]["asset_id"], content_type=None, opacity=1)

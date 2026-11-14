@@ -24,6 +24,8 @@ class TrendingUseIdeaTests(unittest.TestCase):
     def tearDownClass(cls):fixtures.BackendTest.tearDownClass()
     request=fixtures.BackendTest.request
     def setUp(self):
+        for target in ('thumbnail_gen.start','thumbnail_gen.state','thumbnail_gen.preview'):   # the cover now starts with the idea: tests draw nothing
+            mock=patch(target,return_value=None);mock.start();self.addCleanup(mock.stop)
         ideas.ACTIVE.clear()
         shutil.rmtree(store.DATA_ROOT/'trending-idea-requests',ignore_errors=True)
         self.body={'channel_id':self.cid,'video_id':VIDEO,'title':'Edited idea title','target_words':1200,'use_thumbnail':False,'request_id':self.id().split('.')[-1]}

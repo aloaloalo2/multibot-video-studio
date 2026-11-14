@@ -1,0 +1,444 @@
+{
+ "source": "CapCut, розділ «У тренді» (переходи) і шуми/тренди (ефекти); пакети в backend/data/capcut",
+ "transitions": {
+  "capcut_t01": {
+   "name": "Оплеск і притягання",
+   "capcut_title": "Хлопок и притяжение",
+   "effect_id": "7537227214035619088",
+   "package": "00_7537227214035619088",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t01.jpg"
+  },
+  "capcut_t02": {
+   "name": "Горизонтальне розмиття",
+   "capcut_title": "Горизонтальное размытие",
+   "effect_id": "7451535587812594193",
+   "package": "01_7451535587812594193",
+   "default_duration": 0.5,
+   "thumb": "capcut-thumbs/capcut_t02.jpg"
+  },
+  "capcut_t03": {
+   "name": "Засвітка камери",
+   "capcut_title": "Засветка камеры",
+   "effect_id": "7480386884728917254",
+   "package": "02_7480386884728917254",
+   "default_duration": 1.03,
+   "thumb": "capcut-thumbs/capcut_t03.jpg"
+  },
+  "capcut_t04": {
+   "name": "Швидке засліплення",
+   "capcut_title": "Быстрое ослепление",
+   "effect_id": "7564624735657659665",
+   "package": "03_7564624735657659665",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t04.jpg"
+  },
+  "capcut_t05": {
+   "name": "Блимаючий зум",
+   "capcut_title": "Мигающий зум",
+   "effect_id": "7452646287326843393",
+   "package": "04_7452646287326843393",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t05.jpg"
+  },
+  "capcut_t06": {
+   "name": "Спалений портал",
+   "capcut_title": "Сожженный портал",
+   "effect_id": "7542315478119648529",
+   "package": "05_7542315478119648529",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t06.jpg"
+  },
+  "capcut_t07": {
+   "name": "Спалах жару",
+   "capcut_title": "Вспышка жара",
+   "effect_id": "7564617241841437953",
+   "package": "06_7564617241841437953",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t07.jpg"
+  },
+  "capcut_t08": {
+   "name": "Кадри з монтажу",
+   "capcut_title": "Кадры с монтажа",
+   "effect_id": "7481553072678784311",
+   "package": "07_7481553072678784311",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t08.jpg"
+  },
+  "capcut_t09": {
+   "name": "Збільшення центру",
+   "capcut_title": "Увеличение центра",
+   "effect_id": "7480764752713534726",
+   "package": "08_7480764752713534726",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t09.jpg"
+  },
+  "capcut_t10": {
+   "name": "Мерехтливе перетворення",
+   "capcut_title": "Мерцающее преобразование",
+   "effect_id": "7452646287318454785",
+   "package": "09_7452646287318454785",
+   "default_duration": 1.17,
+   "thumb": "capcut-thumbs/capcut_t10.jpg"
+  },
+  "capcut_t11": {
+   "name": "Глибоке тремтіння",
+   "capcut_title": "Глубокая дрожь",
+   "effect_id": "7539761251644214529",
+   "package": "10_7539761251644214529",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t11.jpg"
+  },
+  "capcut_t12": {
+   "name": "Розсіювання вгору",
+   "capcut_title": "Рассеивание вверх",
+   "effect_id": "7451535589498688016",
+   "package": "11_7451535589498688016",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t12.jpg"
+  },
+  "capcut_t13": {
+   "name": "Спотворення прискорення",
+   "capcut_title": "Искажение ускорения",
+   "effect_id": "7542694733513002241",
+   "package": "12_7542694733513002241",
+   "default_duration": 1.04,
+   "thumb": "capcut-thumbs/capcut_t13.jpg"
+  },
+  "capcut_t14": {
+   "name": "Стрибок і відскок",
+   "capcut_title": "Прыжок и отскок",
+   "effect_id": "7558885183924260113",
+   "package": "13_7558885183924260113",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t14.jpg"
+  },
+  "capcut_t15": {
+   "name": "Мутація вулика",
+   "capcut_title": "Мутация улья",
+   "effect_id": "7537534819744369936",
+   "package": "14_7537534819744369936",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t15.jpg"
+  },
+  "capcut_t16": {
+   "name": "Знімки",
+   "capcut_title": "Снимки",
+   "effect_id": "7588077234133470481",
+   "package": "15_7588077234133470481",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t16.jpg"
+  },
+  "capcut_t17": {
+   "name": "Кошмарне спотворення",
+   "capcut_title": "Кошмарное искажение",
+   "effect_id": "7562059590049795329",
+   "package": "16_7562059590049795329",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t17.jpg"
+  },
+  "capcut_t18": {
+   "name": "Глибокий поворот",
+   "capcut_title": "Глубокий поворот",
+   "effect_id": "7539807939863907601",
+   "package": "17_7539807939863907601",
+   "default_duration": 1.4,
+   "thumb": "capcut-thumbs/capcut_t18.jpg"
+  },
+  "capcut_t19": {
+   "name": "Космічний корабель",
+   "capcut_title": "Космический корабль",
+   "effect_id": "7564623716496297217",
+   "package": "18_7564623716496297217",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t19.jpg"
+  },
+  "capcut_t20": {
+   "name": "Закритий горизонт",
+   "capcut_title": "Закрытый горизонт",
+   "effect_id": "7543255667063229697",
+   "package": "19_7543255667063229697",
+   "default_duration": 1.67,
+   "thumb": "capcut-thumbs/capcut_t20.jpg"
+  },
+  "capcut_t21": {
+   "name": "Танець кубиків",
+   "capcut_title": "Танец кубиков",
+   "effect_id": "7542694404969008401",
+   "package": "20_7542694404969008401",
+   "default_duration": 1.03,
+   "thumb": "capcut-thumbs/capcut_t21.jpg"
+  },
+  "capcut_t22": {
+   "name": "Ранкові відблиски",
+   "capcut_title": "Утренние блики",
+   "effect_id": "7564617547207724304",
+   "package": "21_7564617547207724304",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t22.jpg"
+  },
+  "capcut_t23": {
+   "name": "Пиловий вихор",
+   "capcut_title": "Пылевой вихрь",
+   "effect_id": "7550394141641805057",
+   "package": "22_7550394141641805057",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t23.jpg"
+  },
+  "capcut_t24": {
+   "name": "Міський глітч",
+   "capcut_title": "Городской глитч",
+   "effect_id": "7480387121325395255",
+   "package": "23_7480387121325395255",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t24.jpg"
+  },
+  "capcut_t25": {
+   "name": "Неонові подряпини",
+   "capcut_title": "Неоновые царапины",
+   "effect_id": "7553125600546901265",
+   "package": "24_7553125600546901265",
+   "default_duration": 1.32,
+   "thumb": "capcut-thumbs/capcut_t25.jpg"
+  },
+  "capcut_t26": {
+   "name": "Хвилясті спогади",
+   "capcut_title": "Волнистые воспоминания",
+   "effect_id": "7639655148100357383",
+   "package": "25_7639655148100357383",
+   "default_duration": 1.53,
+   "thumb": "capcut-thumbs/capcut_t26.jpg"
+  },
+  "capcut_t27": {
+   "name": "Чорно-білий спалах",
+   "capcut_title": "Черно-белая вспышка",
+   "effect_id": "7481552579042774278",
+   "package": "26_7481552579042774278",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t27.jpg"
+  },
+  "capcut_t28": {
+   "name": "Складаний куб",
+   "capcut_title": "Складывающийся куб",
+   "effect_id": "7615103826751720721",
+   "package": "27_7615103826751720721",
+   "default_duration": 1.6,
+   "thumb": "capcut-thumbs/capcut_t28.jpg"
+  },
+  "capcut_t29": {
+   "name": "RGB-глітч",
+   "capcut_title": "RGB-глитч",
+   "effect_id": "7480389949041200390",
+   "package": "28_7480389949041200390",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t29.jpg"
+  },
+  "capcut_t30": {
+   "name": "Розрізання й панорама",
+   "capcut_title": "Разрезание и панорамирование",
+   "effect_id": "7553125055539055889",
+   "package": "29_7553125055539055889",
+   "default_duration": 1.0,
+   "thumb": "capcut-thumbs/capcut_t30.jpg"
+  },
+  "capcut_t31": {
+   "name": "Райдужне спотворення",
+   "capcut_title": "Радужное искажение",
+   "effect_id": "7480764852131155206",
+   "package": "30_7480764852131155206",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t31.jpg"
+  },
+  "capcut_t32": {
+   "name": "Клубні прожектори",
+   "capcut_title": "Клубные прожектора",
+   "effect_id": "7587712104417791249",
+   "package": "31_7587712104417791249",
+   "default_duration": 1.2,
+   "thumb": "capcut-thumbs/capcut_t32.jpg"
+  },
+  "capcut_t33": {
+   "name": "Розмиття й тремтіння",
+   "capcut_title": "Размытие и трепет",
+   "effect_id": "7553125686685207809",
+   "package": "32_7553125686685207809",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t33.jpg"
+  },
+  "capcut_t34": {
+   "name": "Райдужний фільтр",
+   "capcut_title": "Радужный фильтр",
+   "effect_id": "7480387198152379653",
+   "package": "33_7480387198152379653",
+   "default_duration": 1,
+   "thumb": "capcut-thumbs/capcut_t34.jpg"
+  },
+  "capcut_t35": {
+   "name": "Вертикальний виріз 2",
+   "capcut_title": "Вертикальный вырез 2",
+   "effect_id": "7548727555608694032",
+   "package": "34_7548727555608694032",
+   "default_duration": 2.0,
+   "thumb": "capcut-thumbs/capcut_t35.jpg"
+  },
+  "capcut_t36": {
+   "name": "Мила заміна",
+   "capcut_title": "Милая замена",
+   "effect_id": "7548725382652955921",
+   "package": "35_7548725382652955921",
+   "default_duration": 1.07,
+   "thumb": "capcut-thumbs/capcut_t36.jpg"
+  },
+  "capcut_t37": {
+   "name": "Вкладена коробка",
+   "capcut_title": "Вложенная коробка",
+   "effect_id": "7606268403522882833",
+   "package": "36_7606268403522882833",
+   "default_duration": 1.6,
+   "thumb": "capcut-thumbs/capcut_t37.jpg"
+  },
+  "capcut_t38": {
+   "name": "Яскраве стирання",
+   "capcut_title": "Яркое стирание",
+   "effect_id": "7564623701220527377",
+   "package": "37_7564623701220527377",
+   "default_duration": 1.5,
+   "thumb": "capcut-thumbs/capcut_t38.jpg"
+  },
+  "capcut_t39": {
+   "name": "Двері-портал",
+   "capcut_title": "Дверь-портал",
+   "effect_id": "7648105801768340753",
+   "package": "38_7648105801768340753",
+   "default_duration": 1.6,
+   "thumb": "capcut-thumbs/capcut_t39.jpg"
+  },
+  "capcut_t40": {
+   "name": "Прожектор",
+   "capcut_title": "Прожектор",
+   "effect_id": "7563090510819151120",
+   "package": "39_7563090510819151120",
+   "default_duration": 1.17,
+   "thumb": "capcut-thumbs/capcut_t40.jpg"
+  }
+ },
+ "effects": {
+  "capcut_e13": {
+   "name": "Шум 2",
+   "capcut_title": "Шум 2",
+   "effect_id": "7399469641170554117",
+   "package": "12_7399469641170554117",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e13.jpg"
+  },
+  "capcut_e01": {
+   "name": "Шум 1",
+   "capcut_title": "Шум 1",
+   "effect_id": "7399470295117073670",
+   "package": "00_7399470295117073670",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e01.jpg"
+  },
+  "capcut_e02": {
+   "name": "Шум і пил",
+   "capcut_title": "Шум и пыль",
+   "effect_id": "7620537416213974280",
+   "package": "01_7620537416213974280",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e02.jpg"
+  },
+  "capcut_e03": {
+   "name": "Чорний шум",
+   "capcut_title": "Черный шум",
+   "effect_id": "7399470796290166022",
+   "package": "02_7399470796290166022",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e03.jpg"
+  },
+  "capcut_e04": {
+   "name": "Зернистість",
+   "capcut_title": "Зернистость",
+   "effect_id": "7399467202413481222",
+   "package": "03_7399467202413481222",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e04.jpg"
+  },
+  "capcut_e05": {
+   "name": "Білий шум",
+   "capcut_title": "Белый шум",
+   "effect_id": "7619399885351030023",
+   "package": "04_7619399885351030023",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e05.jpg"
+  },
+  "capcut_e06": {
+   "name": "VHS-шум",
+   "capcut_title": "VHS-шум",
+   "effect_id": "7613059760237137170",
+   "package": "05_7613059760237137170",
+   "group": "noise",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e06.jpg"
+  },
+  "capcut_e07": {
+   "name": "Ковзне тремтіння",
+   "capcut_title": "Скользящий трепет",
+   "effect_id": "7664166612555025681",
+   "package": "06_7664166612555025681",
+   "group": "trend",
+   "mode": "content",
+   "thumb": "capcut-thumbs/capcut_e07.jpg"
+  },
+  "capcut_e08": {
+   "name": "Скляний браслет",
+   "capcut_title": "Стеклянный браслет",
+   "effect_id": "7672646171382320405",
+   "package": "07_7672646171382320405",
+   "group": "trend",
+   "mode": "content",
+   "thumb": "capcut-thumbs/capcut_e08.jpg"
+  },
+  "capcut_e09": {
+   "name": "Зоряний круїз",
+   "capcut_title": "Звёздный круиз",
+   "effect_id": "7666754888898022677",
+   "package": "08_7666754888898022677",
+   "group": "trend",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e09.jpg"
+  },
+  "capcut_e10": {
+   "name": "Плеєр 3",
+   "capcut_title": "Игрок 3",
+   "effect_id": "7414192016289991942",
+   "package": "09_7414192016289991942",
+   "group": "trend",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e10.jpg"
+  },
+  "capcut_e11": {
+   "name": "Рожевий всесвіт",
+   "capcut_title": "Розовая вселенная",
+   "effect_id": "7670058065483369736",
+   "package": "10_7670058065483369736",
+   "group": "trend",
+   "mode": "overlay",
+   "thumb": "capcut-thumbs/capcut_e11.jpg"
+  },
+  "capcut_e12": {
+   "name": "Зелений CRT",
+   "capcut_title": "Зеленый CRT",
+   "effect_id": "7663365749813021959",
+   "package": "11_7663365749813021959",
+   "group": "trend",
+   "mode": "content",
+   "thumb": "capcut-thumbs/capcut_e12.jpg"
+  }
+ }
+}

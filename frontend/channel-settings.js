@@ -127,31 +127,38 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
-  move('.settings-agent-memory','projects',{fold:true,icon:'memory',title:'Правила Агентів'});
+  move('.settings-agent-memory','projects',{fold:true,icon:'memory',title:'Побажання до монтажу й оформлення'});
   move('.settings-script-wishes','script',{icon:'script'});
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Плашка'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
   const automation=document.createElement('div');automation.className='settings-voice-automation';
-  automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label>`;
+  automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label><label><input type="checkbox" id="settings-auto-opening" ${channel.settings?.auto_opening?'checked':''}><span><strong>Автовибір зачину</strong><small>DeepSeek обирає найкращий</small></span></label>`;
   const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);quick.after(automation);automation.after(directorGroup);
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});
-  for(const [key,label,icon] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Герой і прев’ю','thumbnails']]){
-    const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=key;
+  // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
+  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
+    const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?'hero':key;
     group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;
-    for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head'))inner.append(child);
-    panels.projects.append(group);tabs[key].remove();
+    for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head')&&(!only||child.matches(only)))inner.append(child);
+    if(key==='thumbnails')for(const section of inner.querySelectorAll(':scope>.settings-section')){const heading=section.querySelector('h3');if(heading)heading.hidden=true;}   // the block's own title says it
+    panels.projects.append(group);if(!only)tabs[key].remove();
   }
   const fontSection=document.createElement('section');fontSection.className='settings-section settings-montage-fonts';
   fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
   fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';
   fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
   const rules=body.querySelector('.settings-agent-memory').closest('.channel-settings-group');
-  panels.projects.append(fontSection,rules);
+  if(typeof channelTransitionSection==='function')panels.projects.append(channelTransitionSection(channel));
+  // «Шрифти монтажу» folds like every other block (user, 14 November 2026)
+  const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group';
+  fontGroup.innerHTML=`<summary>${channelSettingsIcon('script')}<span><strong>Шрифти монтажу</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
+  fontSection.querySelector('h3').hidden=true;fontGroup.lastElementChild.append(fontSection);
+  panels.projects.append(fontGroup,rules);
 
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');
@@ -186,7 +193,7 @@ function organizeChannelSettings(channel){
     const source=voice?.querySelector('.voice-lab-reference-player');
     const idField={heygen:'heygen_voice_id',fishaudio:'fish_voice_id',elevenlabs:'eleven_voice_id'}[provider?.value];
     const hasVoice=!!(idField&&voice?.querySelector(`[name=${idField}]`)?.value)||!!source?.querySelector('audio');
-    for(const field of automation.querySelectorAll('input')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
+    for(const field of automation.querySelectorAll('input:not(#settings-auto-opening)')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
     text('[data-quick=voice] .settings-quick-value',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     const style=body.querySelector('.style-thumb[aria-checked=true] span')?.textContent;
     text('[data-quick=look] .settings-quick-value',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');

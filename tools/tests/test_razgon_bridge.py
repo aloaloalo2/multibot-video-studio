@@ -355,7 +355,7 @@ class SoundTest(unittest.TestCase):
         self.assertEqual(len(self.beds()), 1)
         self.assertEqual(len([t for t in self.studio.data["tracks"] if t["name"] == razgon_bridge.BED_TITLE]), 1)
 
-    def test_a_mixed_episode_and_a_changed_plan_are_refused(self):
+    def test_mixed_episode_is_refused_but_text_only_change_keeps_sound_working(self):
         self.link["frames"][1]["format"] = "stock_photo"
         (self.razgon / "story" / "studio_frames.json").write_text(json.dumps(self.link))
         with self.assertRaisesRegex(razgon_bridge.BridgeError, "змішаного"):
@@ -363,9 +363,8 @@ class SoundTest(unittest.TestCase):
         self.link["frames"][1]["format"] = "razgon_2d"
         (self.razgon / "story" / "studio_frames.json").write_text(json.dumps(self.link))
         self.studio.plan_data = {"script_sha256": "s2", "timing": {"audio": {"sha256": "v1"}}}
-        with self.assertRaisesRegex(razgon_bridge.BridgeError, "prepare"):
-            self.run_sound()
-        self.assertEqual(self.beds(), [])
+        self.run_sound()
+        self.assertEqual(len(self.beds()), 1)
 
     def test_the_agents_may_lay_the_sound(self):
         run = subprocess.run([sys.executable, str(BRIDGE), "sound", "--razgon", self.tmp.name], capture_output=True, text=True,

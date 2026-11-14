@@ -5,9 +5,9 @@ function thumbnailComparison(item,items,data){
     const before=items.find(other=>other.code===item.code&&other.base===comparison.base&&other.key!==item.key);
     return before?{url:before.url,before:'До правок',after:'Після правок'}:null;
   }
-  if(comparison?.kind==='clone'&&comparison.url)return {url:comparison.url,before:'Референс',after:'Результат'};
+  if(comparison?.kind==='clone'&&comparison.url)return {url:comparison.url,before:'Референс',after:'Ваше прев’ю'};
   if(item.code==='original'&&data.job?.file===item.base&&!data.job.base&&data.clone_reference?.id&&data.job.reference_id===data.clone_reference.id&&data.clone_reference.thumbnail_url)
-    return {url:data.clone_reference.thumbnail_url,before:'Референс',after:'Результат'};
+    return {url:data.clone_reference.thumbnail_url,before:'Референс',after:'Ваше прев’ю'};
   return null;
 }
 function bindThumbnailComparison(section,project){

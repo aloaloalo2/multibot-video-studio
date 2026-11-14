@@ -47,6 +47,7 @@ async function initServiceKeys(){
         catch(error){button.disabled=false;notice(error.message,true);}
       });
       row.append(label,button);
+      if(provider.id==='youtube'){const details=document.createElement('div');details.className='service-license';const type=document.createElement('span');type.textContent='Для «У тренді»: швидке оновлення конкурентів. Ключ лише читає публічні дані; створіть його на окремому акаунті Google і ввімкніть YouTube Data API v3';const link=document.createElement('a');link.href='https://console.cloud.google.com/apis/library/youtube.googleapis.com';link.target='_blank';link.rel='noopener noreferrer';link.textContent='Google Cloud';details.append(type,link);row.append(details);}
       if(licenses[provider.id]){const details=document.createElement('div');details.className='service-license';const type=document.createElement('span');type.textContent=licenses[provider.id].label;const link=document.createElement('a');link.href=licenses[provider.id].url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ліцензія';details.append(type,link);row.append(details);}
       list.append(row);
     }

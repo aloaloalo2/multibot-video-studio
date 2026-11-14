@@ -1862,10 +1862,6 @@ select option{background:#232327;color:#f1f1f2}
 
 .channel-name{flex:1}
 .channel-busy{min-width:13px;margin-left:2px;margin-right:1px}
-.sidebar-heading #add-channel{display:grid;place-items:center;flex:none;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;font-size:14px;line-height:1;box-shadow:none;transition:background .15s}
-.sidebar-heading #add-channel:hover{background:#292a30;color:inherit}
-.sidebar-heading #add-channel:active{background:#34353c;color:inherit}
-.sidebar-heading #add-channel:focus-visible{outline:2px solid #747986;outline-offset:2px}
 .export-status-line{display:flex;align-items:center;gap:9px}
 #modal-actions button:has(>.export-spinner){display:inline-flex;align-items:center;justify-content:center;gap:8px}
 @media(min-width:561px){#channel-sidebar .channel-list{max-height:none;min-height:0;flex:0 1 auto}#channel-sidebar .sidebar-heading,#channel-sidebar .brand,#channel-sidebar .sidebar-bottom{flex-shrink:0}}
@@ -2517,15 +2513,35 @@ select option{background:#232327;color:#f1f1f2}
 
 /* Local workflow timings. Keep the shared modal and button geometry. */
 .performance-panel{display:grid;gap:14px;min-width:0}
-.performance-table{display:grid;grid-template-columns:minmax(0,1fr) max-content max-content;column-gap:24px;align-items:baseline;font-size:13px}
+.performance-panel{gap:0;min-width:min(440px,78vw)}
+.performance-table{display:grid;grid-template-columns:minmax(0,1fr) 96px 96px;align-items:center;font-size:14px}
 .performance-columns,.performance-row{display:contents}
-.performance-columns>span{padding:0 0 9px;color:var(--muted);font-size:11px}
-.performance-row>*{padding:13px 0;border-top:1px solid var(--ui-field-border);min-width:0}
-.performance-row>strong{font-weight:550;overflow-wrap:anywhere}
+.performance-columns>span{padding:0 0 10px;color:var(--muted);font-size:11px}
+.performance-row>*{padding:14px 0;border-top:1px solid #ffffff10;min-width:0;align-self:stretch;display:flex;align-items:center;justify-content:flex-end}
+.performance-row>.performance-name{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px}
+.performance-label{display:flex;flex-direction:column;gap:3px;min-width:0}
+.performance-icon{width:18px;height:18px;flex:none;color:#aab0bc}
+.performance-name strong{font-weight:500;overflow-wrap:anywhere}
+.performance-name em{font-style:normal;font-weight:400;font-size:11px;color:var(--ui-accent);margin-left:6px}
+.performance-lost{color:var(--muted);font-size:11px}
+.performance-meter{display:none}
 .performance-duration,.performance-cost,.performance-columns>span:not(:first-child){text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-.performance-cost{color:var(--ui-control-text);font-size:12px}
-.performance-note{margin:0;font-size:11px}
-@media(max-width:480px){.performance-table{column-gap:12px;font-size:12px}.performance-cost{font-size:11px}}
+.performance-duration{font-weight:600;color:#f1f2f5}
+.performance-cost{color:var(--muted);font-size:13px}
+.performance-small{border-top:1px solid #ffffff10}
+.performance-small>summary{display:grid;grid-template-columns:minmax(0,1fr) 96px 96px;padding:14px 0;cursor:pointer;list-style:none;color:var(--muted);font-size:13px}
+.performance-small>summary::-webkit-details-marker{display:none}
+.performance-small>summary>span:first-child::before{content:'';display:inline-block;width:5px;height:5px;margin:0 10px 2px 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+.performance-small[open]>summary>span:first-child::before{transform:rotate(45deg)}
+.performance-small .performance-duration{font-weight:400;color:var(--muted)}
+.performance-small .performance-row .performance-duration{color:#f1f2f5;font-weight:500}
+.performance-small .performance-table{font-size:13px}
+.performance-small .performance-row>*{padding:10px 0}
+.performance-total{display:grid;grid-template-columns:minmax(0,1fr) 96px 96px;align-items:baseline;padding:18px 0 4px;border-top:1px solid #ffffff2e;font-size:15px}
+.performance-total strong{font-weight:500;color:var(--muted)}
+.performance-total .performance-duration,.performance-total .performance-cost{font-size:19px;font-weight:650;color:#fff}
+.performance-note{margin:14px 0 0;font-size:11px;line-height:1.55}
+@media(max-width:480px){.performance-table,.performance-small>summary,.performance-total{grid-template-columns:minmax(0,1fr) 76px 80px;font-size:13px}.performance-total .performance-duration,.performance-total .performance-cost{font-size:16px}}
 
 .performance-bar{grid-column:1/-1;height:4px;background:var(--ui-field-border);border-radius:999px;overflow:hidden}
 .performance-bar i{display:block;height:100%;background:var(--ui-accent);border-radius:inherit}
@@ -2574,8 +2590,6 @@ select option{background:#232327;color:#f1f1f2}
 .script-openings-icon{width:21px;height:21px;flex:none;color:#dfc08a}
 
 /* Competitor ideas use the ordinary overview grid and project-card surfaces. */
-#trending-videos{display:flex;align-items:center;gap:10px;width:100%;margin-bottom:8px}
-#trending-videos svg{width:17px;height:17px;flex-shrink:0}
 .trend-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
 .trend-toolbar select{width:280px;max-width:100%}
 .trend-toolbar>.muted,.trend-feedback,.trend-method{font-size:12px;color:#92949d;line-height:1.6}
@@ -2706,7 +2720,101 @@ select option{background:#232327;color:#f1f1f2}
 #episode-ideas>.trend-idea-check{display:flex;flex-direction:row;align-items:center;gap:9px;margin:12px 0;font-size:13px;color:var(--ui-control-text)}
 
 .channel-busy.is-complete,.channel-busy.is-stopped{width:16px;height:16px;min-width:16px;border:0;border-radius:0;animation:none;display:inline-flex;align-items:center;justify-content:center}
-.channel-busy.is-complete{color:#65eab1}
-.channel-busy.is-stopped{color:#f2bc47}
+.channel-busy.is-complete,.channel-busy.is-stopped{color:var(--muted,#9a9ca4)}
+.channel-busy.is-stopped rect{fill:currentColor;stroke:none}
 .channel-busy.is-complete svg,.channel-busy.is-stopped svg{width:16px;height:16px}
 .channel-busy[hidden]{display:none}
+
+.episode-fold>summary:has(.narration-revision-edit){position:relative;padding-right:56px}
+.narration-revision-edit{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:30px;height:30px;padding:6px;border-radius:50%;background:transparent;color:#a4a7af;border:1px solid transparent}
+.narration-revision-edit:hover{background:var(--ui-secondary);border-color:var(--ui-outline-border);color:var(--ui-control-text)}
+.narration-revision-edit svg{width:17px;height:17px}
+.narration-revision-form textarea{width:100%;min-height:240px;max-height:55vh;resize:vertical;line-height:1.65}
+.narration-revision-note,.narration-revision-status{font-size:13px;color:#9a9ca4;line-height:1.5;margin:12px 0 0}
+.narration-revision-status:empty{display:none}
+
+.narration-revision-status.is-working{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--ui-outline-border);border-radius:12px;background:var(--ui-surface);color:#c7cad2}
+.narration-revision-status .export-spinner{width:16px;height:16px}
+.animation-production .episode-voice>button{position:static;transform:none}
+.animation-production .episode-voice>button:not(.episode-voice-toggle):not(.episode-restart){grid-column:3;grid-row:2;justify-self:end}
+.animation-production .episode-voice>.episode-restart{grid-column:4;grid-row:1;justify-self:end}
+
+.episode-voice-toggle{width:30px;height:30px;padding:7px;justify-content:center}
+
+/* Sidebar bottom: three round icon buttons in a row (add channel, trending, settings). */
+.sidebar-bottom{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding-left:11px}
+#channel-sidebar .sidebar-bottom button.sidebar-round{width:36px;height:36px;min-height:36px;padding:0;border:1px solid var(--ui-outline-border);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;margin:0}
+#channel-sidebar .sidebar-bottom button.sidebar-round svg{width:17px;height:17px;flex:none}
+#channel-sidebar .sidebar-bottom button.sidebar-round.active{background:#242428;color:#e8eaf0}
+@media(max-width:560px){.sidebar-bottom{display:inline-flex;gap:8px}#channel-sidebar .sidebar-bottom button.sidebar-round{width:32px;height:32px;min-height:32px;padding:0}}
+.episode-hook-option.auto-picked{border-color:var(--ui-accent,#6bf2ae)}
+.episode-hook-option .hook-score{color:#9aa0aa;font-size:11px;margin-top:6px}
+
+/* CapCut transitions and effects (frontend/capcut.js) */
+.capcut-transition-overlay{position:absolute;inset:0;pointer-events:none}
+.capcut-transition-overlay video{width:100%;height:100%;object-fit:fill;display:block}
+.capcut-effect{width:100%;height:100%;pointer-events:none}
+.capcut-effect video{width:100%;height:100%;object-fit:fill;display:block}
+.capcut-effect.capcut-crt{background:repeating-linear-gradient(0deg,#0000 0 2px,#0003 2px 4px);box-shadow:inset 0 0 12vw 3vw #000c;border-radius:4%}
+.transition-chip img.capcut-thumb{width:100%;aspect-ratio:240/68;object-fit:cover;border-radius:6px;display:block}
+.capcut-effects{display:grid;gap:6px;margin-top:10px}
+.capcut-group-title{margin:8px 0 2px}
+.capcut-effect-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}
+.capcut-effect-chip{display:flex;align-items:center;gap:8px;text-align:left}
+.capcut-effect-chip img{width:64px;height:36px;object-fit:cover;border-radius:5px;flex:none}
+.capcut-film{font-size:11px;padding:5px 8px;border-radius:999px;background:#ffffff10;color:#c9d2dc;border:1px solid #ffffff1c;cursor:pointer;white-space:nowrap}
+.capcut-film:hover{background:#ffffff20}
+.settings-transitions-body{display:grid;gap:14px}
+.settings-transitions-share{display:grid;gap:6px;margin:0}
+.settings-transitions-range{display:flex;gap:12px;align-items:center}
+.settings-transitions-range input{flex:1;margin:0}
+.settings-transitions-range output{min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:#d8dae1}
+.settings-transitions-note{margin:0;font-size:12px;line-height:1.45;color:#9599a4}
+.settings-transition-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.settings-transition-head>span:first-child{flex:1;min-width:0}
+.settings-transition-head strong{display:block;font-size:13px;font-weight:500;color:#d8dae1}
+.settings-transition-head small{display:block;font-size:11px;color:#9599a4}
+.settings-transition-count{font-size:11px;color:#9599a4;font-variant-numeric:tabular-nums}
+.settings-transition-head button{font-size:11px;padding:4px 10px;border-radius:999px;background:#ffffff0d;color:#c9ccd4;border:1px solid #ffffff1a;cursor:pointer}
+.settings-transition-head button:hover{background:#ffffff1a}
+.settings-transition-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+.settings-transitions .settings-transition-card{position:relative;display:grid;gap:5px;margin:0;cursor:pointer;min-width:0}
+.settings-transition-card input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.transition-card-preview{position:relative;display:block;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#18191d;border:1.5px solid #3b3c43;opacity:.55;transition:opacity .15s,border-color .15s}
+.transition-card-preview video,.transition-card-preview canvas{width:100%;height:100%;object-fit:cover;display:block}
+.settings-transition-card:hover .transition-card-preview{opacity:.85}
+.settings-transition-card input:checked~.transition-card-preview{opacity:1;border-color:#e0b64c}
+.settings-transition-card input:focus-visible~.transition-card-preview{outline:1px solid #a3a7b2;outline-offset:2px}
+.transition-card-mark{position:absolute;top:5px;right:5px;width:18px;height:18px;border-radius:50%;background:#e0b64c;display:grid;place-items:center;opacity:0;transition:opacity .15s}
+.transition-card-mark svg{width:11px;height:11px;fill:none;stroke:#1b1b1f;stroke-width:2.6}
+.settings-transition-card input:checked~.transition-card-preview .transition-card-mark{opacity:1}
+.transition-card-name{font-size:11.5px;line-height:1.25;color:#9599a4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-transition-card input:checked~.transition-card-name{color:#d8dae1}
+.transition-chip video.capcut-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;display:block}
+
+/* the sidebar's bottom row: «Додати канал» at the left edge, «У тренді» in the middle, the studio's settings at the right
+   (user, 14 November 2026) */
+@media(min-width:561px){#channel-sidebar .sidebar-bottom{justify-content:center;gap:18px;padding-left:0;padding-right:0}}
+#channel-sidebar .sidebar-bottom #global-settings{order:-1}
+.trend-idea-form .trend-idea-check[hidden]{display:none}
+#episode-ideas>.trend-idea-check[hidden],.trend-idea-check[hidden]{display:none}
+
+/* A ready voice: only its compact line and «Створити відео» (frontend/plan.js appendReadyNarration, 14 November 2026) */
+#editor-production:has(.has-ready-narration) > .narration-script,
+#editor-production:has(.has-ready-narration) > .narration-choices,
+#editor-production:has(.has-ready-narration) > .project-plan-heading,
+.has-ready-narration > .narration-voice-card{display:none}
+.narration-ready{display:grid;gap:12px;padding:0;border:0;background:none}
+.narration-ready .narration-ready-heading{display:flex;align-items:center;gap:12px;margin:0}
+.narration-ready .narration-ready-title{flex:1;min-width:0}
+.narration-ready .narration-ready-title strong{font-weight:400}
+.narration-ready .narration-ready-tools{display:flex;align-items:center;gap:8px;flex:none}
+.narration-ready .episode-voice-toggle{width:34px;height:34px;padding:0;justify-content:center;border-radius:50%}
+.narration-ready .episode-voice-body .voice-player{margin:8px 0 6px}
+.narration-ready-extra{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding-top:8px;color:#9599a4;font-size:12px}
+.narration-ready[aria-busy="true"] .episode-voice-icon{animation:director-pulse 1.2s ease-in-out infinite}
+.narration-ready .narration-ready-actions{display:grid;gap:8px;justify-content:stretch}
+.narration-ready .narration-ready-actions .narration-plan-action{width:100%;justify-content:center}
+/* «Створити відео» stays under a ready voice even when the header carries the same step (user, 14 November 2026) */
+.workflow-guided .narration-ready .narration-ready-actions:has(.workflow-action-target){display:grid}
+.workflow-guided .narration-ready .narration-ready-actions .narration-plan-action.workflow-action-target{display:inline-flex!important}

@@ -136,7 +136,7 @@ function renderNarrationAnalysis(panel,pid){
   const ready=panel.querySelector('.narration-ready');if(!ready)return false;
   if(job?.project_id!==pid||!['queued','running'].includes(job.status)){
     if(ready.getAttribute('aria-busy')==='true'){
-      ready.removeAttribute('aria-busy');ready.querySelector('.narration-ready-heading strong').textContent='✓ Озвучка готова';
+      ready.removeAttribute('aria-busy');ready.querySelector('.narration-ready-heading strong').textContent='Озвучка готова';const line=ready.querySelector('.episode-voice');if(line?.dataset)line.dataset.state='done';
       ready.querySelectorAll('.narration-settings,.narration-plan-action').forEach(control=>control.disabled=false);
       const plan=ready.querySelector('.narration-plan-action');
       plan.disabled=false;
@@ -159,7 +159,7 @@ function renderNarrationAnalysis(panel,pid){
   }
   const stage=speechStageNames[job.stage]||'Розпізнаємо озвучку',percent=Number.isFinite(job.progress)?` · ${Math.round(job.progress)}%`:'';
   ready.setAttribute('aria-busy','true');
-  ready.querySelector('.narration-ready-heading strong').innerHTML=`${exportSpinner} Whisper · ${esc(stage)}${percent}`;
+  ready.querySelector('.narration-ready-heading strong').innerHTML=`Whisper · ${esc(stage)}${percent}`;const line=ready.querySelector('.episode-voice');if(line?.dataset)line.dataset.state='working';
   ready.querySelectorAll('.narration-settings,.narration-plan-action').forEach(control=>control.disabled=true);
   const note=panel.querySelector('.narration-status-row p');if(note)note.textContent='';
   const text=panel.querySelector('textarea') || panel.parentElement?.querySelector('.narration-script textarea');if(text)text.readOnly=true;
@@ -209,10 +209,19 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   const ready=document.createElement('section');ready.className='narration-ready';
   ready.voicedScript=job.script||'';ready.dataset.asset=job.asset_id||'';
   const cost=job.estimated_usd===0?'Безкоштовно':job.estimated_usd!=null?`≈ $${job.estimated_usd.toFixed(3)}`:'';
-  ready.innerHTML=`<header class="narration-ready-heading"><div class="narration-ready-title"><strong><span aria-hidden="true">✓</span> Озвучка готова</strong><small class="episode-voice-word-count">${scriptWordCountLabel(job.script)}</small></div><div class="narration-ready-tools"><small>${esc(cost)}</small><button type="button" class="narration-settings" title="Налаштування озвучки" aria-label="Налаштування озвучки">${$('overview-channel-settings').innerHTML}</button></div></header>`;
+  // The ready voice is one compact line like the plan's (user, 14 November 2026): the microphone, «Озвучка», its words,
+  // length and state, the arrow that opens the player and settings, the bin; below it only «Створити відео». The script
+  // and the ways to make a voice hide while it stands (style.css, .has-ready-narration).
+  ready.innerHTML=`<div class="episode-voice-block narration-ready-block"><header class="episode-voice narration-ready-heading" data-state="done"><span class="episode-voice-icon">${voiceIcon}</span><span class="episode-voice-text narration-ready-title"><span class="episode-voice-title"><b>Озвучка</b><small class="episode-voice-word-count">${scriptWordCountLabel(job.script)}</small></span>${job.duration?`<span>${clock(Number(job.duration))}</span>`:''}<strong class="episode-voice-state">Озвучка готова</strong></span><span class="narration-ready-tools"></span></header><div class="episode-voice-body" hidden><div class="narration-ready-extra"><small>${esc(cost)}</small><button type="button" class="narration-settings" title="Налаштування озвучки" aria-label="Налаштування озвучки">${$('overview-channel-settings').innerHTML}</button></div></div></div>`;
   const headline=ready.querySelector('strong');
   const note=message=>{info.textContent=message;headline.textContent=message;};
-  ready.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{duration:job.duration,playLabel:'Прослухати готову озвучку'}));
+  const block=ready.querySelector('.narration-ready-block'),body=block.querySelector('.episode-voice-body'),tools=block.querySelector('.narration-ready-tools');
+  body.append(voicePlayer(null,`/api/projects/${pid}/assets/${job.asset_id}/file`,{duration:job.duration,playLabel:'Прослухати готову озвучку'}));
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='episode-voice-toggle';toggle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+  const setOpen=open=>{body.hidden=!open;block.classList.toggle('open',open);toggle.setAttribute('aria-expanded',String(open));toggle.title=toggle.ariaLabel=open?'Згорнути':'Прослухати й налаштувати';if(!open)body.querySelector('audio')?.pause();};
+  toggle.onclick=event=>{event.stopPropagation();setOpen(body.hidden);};setOpen(false);
+  block.querySelector('.episode-voice').addEventListener('click',event=>{if(!event.target.closest('button'))setOpen(body.hidden);});
+  tools.append(toggle);if(typeof restartButton==='function')tools.append(restartButton(pid));
   const copy=videoCreationCopy(),plan=document.createElement('button');plan.type='button';plan.className='secondary narration-plan-action';plan.innerHTML=createVideoIcon+`<span>${copy.label}</span>`;
   plan.onclick=async()=>{plan.disabled=true;try{await startVideoCreation(pid,{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){note(error.message);plan.disabled=false;}};
   ready.querySelector('.narration-settings').onclick=()=>openNarrationSpeed(pid,job,ready,refresh);

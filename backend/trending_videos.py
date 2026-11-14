@@ -30,14 +30,19 @@ def sources():
 
 
 def rank(videos, now):
-    """Compare per-day views with other recent uploads of similar duration."""
+    """Compare per-day views with the channel's other recent films. Shorts never enter the selection (user,
+    14 November 2026: «шорти мені прикріпляти до у тренді не потрібно взагалі»): a video up to 180 s counts only when it
+    is about as long as the channel's regular films (a 2:59 film among four-minute ones), never a 20-second clip."""
     usable = [v for v in videos if 0 <= now - v['published_ts'] <= 90 * 86400 and v['duration'] > 0]
+    longer = [v['duration'] for v in usable if v['duration'] > 180]
+    floor = statistics.median(longer) / 2 if longer else None
+    films = [v for v in usable if v['duration'] > 180 or (floor is not None and v['duration'] >= floor)]
     result = []
-    for video in usable:
+    for video in films:
         age = (now - video['published_ts']) / 86400
         if age > 14 or video['views'] < MIN_VIEWS:
             continue
-        peers = [p for p in usable if p['id'] != video['id'] and (p['duration'] <= 180) == (video['duration'] <= 180)]
+        peers = [p for p in films if p['id'] != video['id']]
         if len(peers) < 4:
             continue
         baseline = statistics.median(p['views'] / max(1, (now - p['published_ts']) / 86400) for p in peers)
@@ -46,8 +51,21 @@ def rank(videos, now):
             result.append({**video, 'score': round(score, 2), 'baseline_daily': round(baseline), 'sample_size': len(peers), 'early': age < 1})
     return sorted(result, key=lambda v: (v['score'], v['views']), reverse=True)
 
+API_NOTE = []   # why the last refresh read the public pages although a key is saved (one line, without the key)
+
 
 def collect(identity, previous=None):
+    """With the author's YouTube Data API key the official API answers in a few requests; without one, or when the key
+    fails, the public pages are read as before."""
+    import youtube_api
+    secret = youtube_api.key()
+    if secret and not API_NOTE:
+        try:
+            return youtube_api.collect(identity, secret, previous)
+        except youtube_api.ApiError as error:
+            API_NOTE.append('YouTube Data API: ' + str(error) + '. Дані читаю з публічних сторінок, це повільніше')
+        except (ValueError, KeyError):
+            pass   # this one channel: the public page may still answer
     return youtube_public.collect(identity, previous)
 
 
@@ -105,18 +123,37 @@ def refresh():
         if RUNNING or time.time() - LAST_START < 60: return view_unlocked_busy()
         if not linked: return {'running': False}
         RUNNING, LAST_START, ERRORS = True, time.time(), []
+        API_NOTE.clear()
     def work():
         global RUNNING, ERRORS
         try:
             cache = store.read_json(cache_path(), {})
-            for identity, source in linked.items():
-                previous=cache.get(identity)
-                if previous and time.time()-previous['updated_at'] < TTL and not (previous.get('failed_videos') or previous.get('pagination_incomplete')): continue
+            import concurrent.futures
+            import youtube_api
+            has_key = bool(youtube_api.key())
+            # with a key, what was read from the public pages (often with gaps) is read again through the API at once
+            stale = [(identity, source) for identity, source in linked.items()
+                     if not ((previous := cache.get(identity)) and time.time()-previous['updated_at'] < TTL
+                             and not (previous.get('failed_videos') or previous.get('pagination_incomplete'))
+                             and not (has_key and previous.get('source') != 'youtube-api'))]
+            def one(pair):
+                identity, source = pair
                 try:
-                    cache[identity] = collect(identity, previous)
-                    store.atomic_json(cache_path(), cache)
+                    return identity, collect(identity, cache.get(identity)), None
                 except Exception:
-                    with LOCK: ERRORS.append(source['name'] + ': YouTube тимчасово не надав дані. Спробуйте пізніше')
+                    return identity, None, source['name'] + ': YouTube тимчасово не надав дані. Спробуйте пізніше'
+            # The official API answers several channels at once without trouble; the public pages are read one channel
+            # at a time, YouTube stops answering an address that asks too fast.
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=6) if has_key else None
+            try:
+                for identity, entry, error in (pool.map(one, stale) if pool else map(one, stale)):
+                    if entry is not None:
+                        cache[identity] = entry
+                        store.atomic_json(cache_path(), cache)
+                    else:
+                        with LOCK: ERRORS.append(error)
+            finally:
+                if pool: pool.shutdown()
             try:
                 used = used_video_ids()
                 visible = [video for identity, entry in cache.items() if identity in linked for video in rank(entry['videos'], time.time()) if video['id'] not in used]
@@ -125,6 +162,8 @@ def refresh():
                 with LOCK: ERRORS.append('Не вдалося перекласти заголовки. Натисніть ↻, щоб повторити')
             finally:
                 store.atomic_json(cache_path(), trending_titles.decorate(cache))
+            if API_NOTE:
+                with LOCK: ERRORS.append(API_NOTE[0])
         finally:
             with LOCK: RUNNING = False
     threading.Thread(target=work, name='youtube-trends', daemon=True).start()

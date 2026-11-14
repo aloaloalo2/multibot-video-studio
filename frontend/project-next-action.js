@@ -7,7 +7,8 @@ function projectNextAction(model){
   if(model.analyzing)return action('wait','Розпізнаємо озвучку',{disabled:true});
   if(model.planning)return action('wait','Режисер планує кадри',{disabled:true});
   if(model.producing)return action('wait','Створюємо кадри',{disabled:true});
-  if(model.metadataPending)return action('metadata','Доповнити метадані',{reason:model.draftError||''});
+  // Missing titles, description and tags never stand in the way of the voice (user, 14 November 2026): the script block
+  // keeps its own «Спробувати ще раз», the main button goes on to the next real step.
   if(model.hooksPending)return model.hasHooks?action('hook','Обрати зачин'):action('openings','Створити зачини',{reason:model.draftError||''});
   if(model.draftReadError)return action('save','Завантажити сценарій',{reason:model.draftReadError});
   if(model.draftLoading)return action('wait','Завантажуємо чернетку',{disabled:true});

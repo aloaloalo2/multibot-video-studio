@@ -19,7 +19,7 @@ class PeopleStyleTest(unittest.TestCase):
     def test_universal_projects_exclude_stickmen_even_with_a_legacy_stickman_choice(self):
         for settings in ({},{'people_style':'stickman'},{'people_style':'real'}):
             self.assertIs(self.rules(settings,'regular')['rule'],production.PEOPLE_REAL)
-        self.assertIs(self.rules({'people_style':'real_older'},'regular')['rule'],production.PEOPLE_REAL_OLDER)
+        self.assertIs(self.rules({'people_style':'real_older'},'regular')['rule'],production.PEOPLE_REAL)
 
     def test_stick_figures_stay_the_default(self):
         for settings in ({}, {"people_style": "doodle"}):
@@ -36,13 +36,18 @@ class PeopleStyleTest(unittest.TestCase):
     def test_real_people_for_a_channel_that_asks(self):
         rules = self.rules({"people_style": "real"})
         self.assertIs(rules["rule"], production.PEOPLE_REAL)
-        self.assertIn("телефон", rules["rule"])
-        self.assertNotIn("60+", rules["rule"])
+        self.assertIn("побажань каналу", rules["rule"])
         self.assertNotIn("лише стикмени", rules["check"])
-        older = self.rules({"people_style": "real_older"})
-        self.assertIn("60+", older["rule"])
-        self.assertIn("телефон", older["rule"])
-        self.assertIn("старшого віку", older["stock"])
+        # Age and look are the channel's wishes, not the studio's (user, 14 November 2026).
+        self.assertIs(self.rules({"people_style": "real_older"})["rule"], production.PEOPLE_REAL)
+        for word in ("60+", "старш", "Slavic", "вертикальн"):
+            self.assertNotIn(word, production.PEOPLE_REAL)
+
+    def test_pictures_come_four_to_a_16_9_sheet(self):
+        rule = production.SHEET_RULE
+        self.assertIn("16:9", rule)
+        self.assertIn("2×2", rule)
+        self.assertIn("sheet_2x2.py", rule)
 
     def test_settings_refuse_an_unknown_style(self):
         store.validate_settings({"weights": {"text": 100}, "people_style": "real"})

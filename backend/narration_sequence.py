@@ -116,6 +116,16 @@ def verify(project, asset, script):
         locale = number_text.detect_locale(script)
         if number_text.comparison_tokens(script, locale) != number_text.comparison_tokens(job.get('script', ''), locale):
             return None
+        revision=job.get('revision_id')
+        if revision:
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',str(revision)):return None
+            revised=store.read_json(root/'revisions'/revision/'proof.json',{}) or {}
+            if (revised.get('source')=='revised_takes' and revised.get('revision_id')==revision
+                    and revised.get('audio_sha256')==store.audio_fingerprint(Path(asset['path']))
+                    and revised.get('script_sha256')==hashlib.sha256(job['script'].encode()).hexdigest()
+                    and len(revised.get('sentence_timings') or [])==len(planner.split_sentences(job['script']))):
+                return revised
+            return None
         rows = store.read_json(root / 'phrases.json', [])
         sentences = planner.split_sentences(job['script'])
         supplied = planner.split_sentences(script)
