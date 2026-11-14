@@ -103,6 +103,15 @@ def replay(before: list, after: list) -> tuple[float, float] | None:
     return best
 
 
+def chromium_slot(root: Path):
+    """The Razgon kit's stills gate (kit/tools/chromium_gate.py), shared with frame_review.py."""
+    kit = Path(__file__).resolve().parents[1] / "razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools"
+    if str(kit) not in sys.path:
+        sys.path.insert(0, str(kit))
+    from chromium_gate import slot
+    return slot(root)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--razgon", required=True)
@@ -140,8 +149,9 @@ def main() -> None:
         f.unlink()
     for i in range(0, len(need), 120):   # render.mjs empties build/stills on every run: keep each batch aside
         chunk = ",".join(f"{f / fps:.2f}" for f in need[i:i + 120])
-        subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk, "--scale", str(a.scale)],
-                       cwd=root, check=True, capture_output=True)
+        with chromium_slot(root):   # many frame sessions, at most a few Chromiums on the Mac
+            subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk, "--scale", str(a.scale)],
+                           cwd=root, check=True, capture_output=True)
         for f in stills.glob("*.png"):
             if not f.name.startswith("sheet"):
                 f.replace(keep / f.name)

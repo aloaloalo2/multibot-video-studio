@@ -197,6 +197,23 @@ class ReviewTest(unittest.TestCase):
         (self.proj/'assets/unused.png').write_bytes(b'not used by procedural canvas')
         self.assertEqual(before,self.hashes())
 
+    def test_a_helper_with_a_scratch_canvas_belongs_to_its_own_frames(self):
+        # kit_t21.js of a Космос episode: helpers of frames 21–30 with a blank canvas made at load and a prop chosen by
+        # name; it made every frame depend on every PNG, so each new prop of another session staled all reviews.
+        (self.proj/'scenes/kit.js').write_text("""const FLOW = document.createElement('canvas');
+          const SPARE = new OffscreenCanvas(64, 64);
+          export function flow(g, o) { pic(g, o.names[o.i]); g.drawImage(FLOW, 0, 0); }""")
+        (self.proj/'scenes/s4.js').write_text("import {flow} from './kit.js'; take('s4',{draw(g){flow(g,{names:['a'],i:0})}});")
+        before=self.hashes()
+        (self.proj/'assets/other.png').write_bytes(b'a prop of another session')
+        after=self.hashes()
+        self.assertEqual([n for n in before if before[n]!=after[n]],[3,4,5])   # the helper's consumer and its cuts
+
+    def test_a_canvas_made_by_something_else_stays_global(self):
+        before=self.hashes()
+        (self.proj/'scenes/unsafe.js').write_text("const c = document.createElement(kind);")
+        self.assertTrue(all(before[n]!=self.hashes()[n] for n in before))
+
     def test_malformed_parser_output_falls_back_to_all_media(self):
         answer=SimpleNamespace(returncode=0,stdout=json.dumps({str(p):{} for p in (self.proj/'scenes').glob('*.js')}))
         with patch.object(deps,'run_parser',return_value=answer):

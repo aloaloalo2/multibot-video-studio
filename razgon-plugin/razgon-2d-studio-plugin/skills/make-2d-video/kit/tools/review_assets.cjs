@@ -145,12 +145,25 @@ function localInitializer(init) {
   });
   return safe;
 }
+// A blank scratch canvas made at load reads nothing and draws nothing until a function uses it (14 November 2026: one
+// `const FLOW = document.createElement('canvas')` in kit_t21.js of a Космос episode made that helper of frames 21–30 a
+// dependency of every frame, and each new PNG of another session staled all of them).
+function scratchCanvas(init) {
+  const unbound = p => p.isIdentifier() && !p.scope.getBinding(p.node.name);
+  if (init.isCallExpression() && init.node.arguments.length === 1 && init.get('arguments.0').isStringLiteral({value: 'canvas'})) {
+    const callee = init.get('callee');
+    return callee.isMemberExpression() && !callee.node.computed && unbound(callee.get('object'))
+      && callee.node.object.name === 'document' && callee.node.property.name === 'createElement';
+  }
+  return init.isNewExpression() && unbound(init.get('callee')) && init.node.callee.name === 'OffscreenCanvas'
+    && init.get('arguments').every(a => a.evaluate().confident);
+}
 function pureTopLevel(p) {
   if (p.isImportDeclaration() || p.isExportAllDeclaration() || p.isFunctionDeclaration() || p.isEmptyStatement()) return true;
   if (p.isExportNamedDeclaration() || p.isExportDefaultDeclaration()) return !p.node.declaration || pureTopLevel(p.get('declaration'));
   if (p.isVariableDeclaration()) return p.get('declarations').every(d => {
     const init = d.get('init');
-    return !init.node || init.isPure() || init.evaluate().confident || localInitializer(init) ||
+    return !init.node || init.isPure() || init.evaluate().confident || localInitializer(init) || scratchCanvas(init) ||
       (init.isNewExpression() && ['Map','Set'].includes(init.node.callee.name) && !init.scope.getBinding(init.node.callee.name) && !init.node.arguments.length);
   });
   return p.isExpressionStatement() && p.get('expression').isPure();

@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import unittest
+import unittest.mock
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -104,6 +105,33 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertEqual(peak[0], 2)
         self.assertEqual(sorted(seen), list(range(1, 46)))
         self.assertAlmostEqual(answer['total_cost_usd'], .5)
+
+    def peak_of(self, total, **kwargs):
+        import threading, time
+        lock, live, peak, seen = threading.Lock(), [], [0], []
+        def launch(frames, summary, index):
+            with lock:
+                live.append(index); peak[0] = max(peak[0], len(live)); seen.extend(frames)
+            time.sleep(.05)
+            with lock:
+                live.remove(index)
+            return 0, {'result': f'Batch {index}'}
+        with unittest.mock.patch.object(sessions, 'STAGGER', 0):
+            code, _ = sessions.run(range(1, total + 1), launch, lambda _: True, Mock(), lambda: False, lambda _: False, **kwargs)
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(seen), list(range(1, total + 1)))
+        return peak[0]
+
+    def test_every_chunk_gets_its_own_session_and_the_last_one_waits_for_a_free_one(self):
+        # 65 frames: seven chunks of ten (the last of five), all at once by default (user, 14 November 2026)
+        self.assertEqual(self.peak_of(65), 7)
+        with unittest.mock.patch.object(sessions, 'PARALLEL', 6):
+            self.assertEqual(self.peak_of(65), 6)   # the seventh chunk goes to the first session that is free
+
+    def test_all_episodes_together_stay_under_the_studio_limit(self):
+        import threading
+        with unittest.mock.patch.object(sessions, 'STUDIO_SESSIONS', threading.BoundedSemaphore(3)):
+            self.assertEqual(self.peak_of(65), 3)
 
     def test_a_failed_side_session_starts_no_new_session(self):
         calls = []

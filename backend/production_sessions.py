@@ -1,5 +1,6 @@
 """Bound the context of long frame runs; never retry a failed or uncertain session."""
 import copy
+import threading
 
 SESSION_FRAMES = 10  # Two batches of five; discard images/tool history before it dominates the next batch.
 
@@ -12,14 +13,19 @@ def add_usage(total, value):
 
 REVIEW_NOTE = ('\nПотрібен лише актуальний візуальний огляд цих кадрів. Збережи готові сцени, зображення й таймлайн. '
                'Зроби аркуші змінених кадрів, переглянь і зафіксуй результат. Виправляй композицію лише за виявленим дефектом.')
-# Two sessions of ten frames run side by side (user, 14 November 2026: «чому не запустити ще одну сесію, яка буде також
-# працювати над 10 кадрами?»). Each session starts from an empty context anyway, so the limits spent stay the same and
-# the episode is ready about twice as fast; the timeline and Razgon's shared files are locked per change.
-PARALLEL = 2
+# Every chunk of ten frames gets its own session at once, and a session that is done takes the next chunk left (user,
+# 14 November 2026: «65 кадрів… створити 6 сесій… як тільки звільниться одна сесія, наступна може брати… щоб швидко
+# було»). Each session starts from an empty context anyway, so the limits spent stay the same and only come faster;
+# the timeline and Razgon's shared files are locked per change, and the Chromiums of their stills wait for one of a
+# few slots (kit tools/chromium_gate.py). PARALLEL caps one episode at 8, STUDIO_SESSIONS all episodes together at 30
+# (user, 14 November 2026: «на ролик 8 сесій… для студії… 40», then «нехай 30»; a Claude CLI
+# session took about 130 MB, at most 440 MB, that day).
+PARALLEL = 8
+STUDIO_SESSIONS = threading.BoundedSemaphore(30)
+STAGGER = .5   # seconds between the starts of an episode's sessions
 
 
 def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, pending_review=None, parallel=None):
-    import threading
     from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
     targets = sorted(set(targets))
     previous = previous or {}
@@ -60,7 +66,8 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
             summary = totals['summary']
         if not frames:
             return None
-        code, raw = launch(frames, summary, index if numbered else 0)
+        with STUDIO_SESSIONS:
+            code, raw = launch(frames, summary, index if numbered else 0)
         result = account(raw)
         if cancelled():raise InterruptedError('Створення кадрів зупинено')
         if code or raw.get('is_error') or stop(raw):return code or 1, result
@@ -68,7 +75,8 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
         pending = sorted(set(pending_review() or [])) if not valid and pending_review else []
         if pending and set(pending) <= set(frames):
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
-            code, raw = launch(pending, summary + REVIEW_NOTE, 1000 + index)
+            with STUDIO_SESSIONS:
+                code, raw = launch(pending, summary + REVIEW_NOTE, 1000 + index)
             result = account(raw)
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             if code or raw.get('is_error') or stop(raw):return code or 1, result
@@ -88,7 +96,7 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
                         'summary': totals['summary'], 'session': index, 'session_id': raw.get('session_id')})
         return None
 
-    width = max(1, int(parallel or PARALLEL))
+    width = min(max(1, int(parallel or PARALLEL)), len(chunks) or 1)
     if width == 1 or len(chunks) == 1:
         for index, frames in chunks:
             stopped = session(index, frames)
@@ -104,7 +112,7 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
                 running.add(pool.submit(session, index, frames))
                 if len(running) < width and queue:
                     import time
-                    time.sleep(.5)   # the two sessions do not start in the same instant
+                    time.sleep(STAGGER)   # the sessions do not start in the same instant
             if not running:break
             done, running = wait(running, return_when=FIRST_COMPLETED)
             for future in done:

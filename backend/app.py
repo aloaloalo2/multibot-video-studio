@@ -1270,6 +1270,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_media(project_narration.tempo_preview(dry_narration.group(1), speed) if speed is not None else project_narration.original_audio(dry_narration.group(1)))
         if path == '/api/space':
             return self.json_response(space.all_usage(cleanup_blocked))
+        if path == '/api/limits':
+            import ai_limits   # Claude Code's and Codex's 5-hour limits, from their own local logs
+            return self.json_response(ai_limits.cached(store.DATA_ROOT))
         revision=re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/revision',path)
         if revision:
             return self.json_response(narration_revision.snapshot(revision.group(1)))

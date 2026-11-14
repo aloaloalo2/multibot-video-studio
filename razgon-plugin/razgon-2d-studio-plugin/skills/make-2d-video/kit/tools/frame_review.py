@@ -144,9 +144,11 @@ def sheets(proj: Path, root: Path, a) -> None:
     errors = []   # a scene that throws draws an ERROR line into its frame: the film is not reviewed until there are none
     for i in range(0, len(times), 90):
         chunk = ",".join(f"{t:.2f}" for t in times[i:i + 90])
-        r = subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk,
-                            "--scale", str(a.scale), "--dir", str(stills)],
-                           cwd=root, capture_output=True, text=True)
+        from chromium_gate import slot
+        with slot(root):   # many frame sessions, at most a few Chromiums on the Mac
+            r = subprocess.run(["node", "render.mjs", "--project", str(proj.relative_to(root)), "--stills", chunk,
+                                "--scale", str(a.scale), "--dir", str(stills)],
+                               cwd=root, capture_output=True, text=True)
         if r.returncode:
             sys.exit(r.stdout[-1500:] + r.stderr[-1500:])
         for line in (r.stdout + r.stderr).splitlines():
