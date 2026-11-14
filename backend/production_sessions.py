@@ -31,6 +31,7 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
     failure = []
     chunks = [(index, targets[start:start + SESSION_FRAMES]) for index, start in enumerate(range(0, len(targets), SESSION_FRAMES), 1)]
     numbered = len(targets) > SESSION_FRAMES
+    side_by_side = max(1, int(parallel or PARALLEL)) > 1 and len(chunks) > 1
 
     def account(raw):
         nonlocal answer
@@ -72,6 +73,11 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             if code or raw.get('is_error') or stop(raw):return code or 1, result
             valid = verify(frames)
+        if not valid and side_by_side and pending_review and set(pending_review() or []) & set(frames):
+            # Drawn and reviewed, but the session next door changed a shared scene file or added PNGs meanwhile, so the
+            # verdicts look stale (user, 14 November 2026: both Космос episodes stopped this way). The frames count as
+            # made; the one final review after all sessions looks at them again instead of stopping the episode.
+            valid = True
         if not valid:
             result.update(is_error=True, result='Поточний пакет кадрів не завершений або не пройшов перевірку. Готові результати збережено.')
             return 1, result

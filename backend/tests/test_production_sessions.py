@@ -114,6 +114,19 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertLessEqual(len(calls), 2)
 
+    def test_verdicts_made_stale_by_the_session_next_door_do_not_stop_the_episode(self):
+        # Both Космос episodes stopped this way on 14 November 2026: their frames were drawn and approved, but the
+        # other session's new PNGs made the verdicts look stale. The final review looks at them instead.
+        launch = Mock(return_value=(0, {'result': 'ok'}))
+        verify = lambda frames: frames[0] > 10            # the first part keeps failing the strict check
+        pending = lambda: list(range(1, 11))              # ...because its verdicts are stale
+        code, _ = sessions.run(range(1, 31), launch, verify, Mock(), lambda: False, lambda _: False,
+                               pending_review=pending, parallel=2)
+        self.assertEqual(code, 0)
+        code, _ = sessions.run(range(1, 31), Mock(return_value=(0, {'result': 'ok'})), verify, Mock(), lambda: False,
+                               lambda _: False, pending_review=pending, parallel=1)
+        self.assertNotEqual(code, 0)                      # one session at a time keeps the strict rule
+
 
 if __name__ == '__main__':
     unittest.main()

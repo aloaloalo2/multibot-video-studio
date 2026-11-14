@@ -386,11 +386,13 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         def cancelled():
             current = store.load_project(pid).get('production_request') or {}
             return director.cancelled(pid,'production') or current.get('paused') or current.get('id') != request['id']
+        reviews = threading.local()   # two sessions verify side by side: each reads back its own review
         def verify(numbers):
             nonlocal last_review
+            reviews.last = {}
             if not drawn(pid,request['frames'],numbers):
                 return False
-            last_review = production_quality.check(store.load_project(pid),{**request,'review_frames':numbers})
+            last_review = reviews.last = production_quality.check(store.load_project(pid),{**request,'review_frames':numbers})
             return last_review['passed']
         def checkpoint(receipt):
             with store.LOCK:
@@ -441,7 +443,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 recovered.update({f['number'] for f in candidates} - set(native_review.missing(current,candidates)))
             if recovered:
                 previous = {**previous,'completed_frames':sorted(recovered | set(previous.get('completed_frames') or []))}
-        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous, pending_review=lambda:last_review.get('pending_review',[]))
+        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous, pending_review=lambda:getattr(reviews,'last',{}).get('pending_review',[]))
         if last_review and not last_review['passed']:
             fields['quality'] = last_review
             answer['result'] = ' '.join(last_review.get('errors') or [answer.get('result','')])[:1600]
