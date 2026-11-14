@@ -1,0 +1,21 @@
+{
+    "ae_tool": "AEExporter:1.5.5",
+    "bALG_BACH_CONFIG": true,
+    "effect": {
+        "Link": [
+            {
+                "path": "AmazingFeature/",
+                "type": "AmazingFeature",
+                "zorder": 8029
+            }
+        ],
+        "model_names": {
+            "alg_model": [
+                "tt_matting"
+            ]
+        }
+    },
+    "name": "AE2Effect_20260804113334164",
+    "version": "14.8.0",
+    "item_source": "user_post_pc_le"
+}

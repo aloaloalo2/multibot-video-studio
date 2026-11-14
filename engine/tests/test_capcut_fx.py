@@ -12,7 +12,7 @@ sys.path.insert(0, str(ENGINE))
 import capcut_fx
 
 
-@unittest.skipUnless((capcut_fx.data_root() / "capcut" / "transitions").is_dir(), "the CapCut packages are not installed")
+@unittest.skipUnless((capcut_fx.ASSETS / "transitions").is_dir(), "the CapCut packages are not installed")
 class CapcutRenderTest(unittest.TestCase):
     def test_transition_overlay_and_content_effect_render(self):
         from PIL import Image

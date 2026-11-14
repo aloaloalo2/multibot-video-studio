@@ -1,0 +1,65 @@
+{
+    "setting": {
+        "effect_adjust_params": [
+            {
+                "effect_key": "effects_adjust_speed",
+                "default": 0.5,
+                "min": 0.0,
+                "max": 1.0
+            }
+        ],
+        "lumiai_material_properties": [
+            {
+                "effect_key": "progress",
+                "effect_key_cn": "效果进度",
+                "type": "float",
+                "default": 0,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "distortionStrength",
+                "effect_key_cn": "扭曲强度",
+                "type": "float",
+                "default": 0.15,
+                "min": 0,
+                "max": 0.5
+            },
+            {
+                "effect_key": "glowIntensity",
+                "effect_key_cn": "发光强度",
+                "type": "float",
+                "default": 0.8,
+                "min": 0,
+                "max": 2
+            },
+            {
+                "effect_key": "tintColor",
+                "effect_key_cn": "色调 颜色",
+                "type": "color",
+                "default": [
+                    0.1,
+                    0.9,
+                    0.3,
+                    1
+                ]
+            },
+            {
+                "effect_key": "scanlineDensity",
+                "effect_key_cn": "扫描线密度",
+                "type": "float",
+                "default": 120,
+                "min": 50,
+                "max": 300
+            },
+            {
+                "effect_key": "interferenceStrength",
+                "effect_key_cn": "干扰强度",
+                "type": "float",
+                "default": 0.05,
+                "min": 0,
+                "max": 0.2
+            }
+        ]
+    }
+}

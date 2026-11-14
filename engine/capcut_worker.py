@@ -2,7 +2,7 @@
 """Draws one CapCut transition or effect into a ProRes 4444 movie (python3 capcut_worker.py job.json).
 
 Runs in its own process: the drawing code (engine/capcut_lib) reads its working size from CAPCUT_W/CAPCUT_H at import.
-Job fields: mode (transition | overlay | content), index (catalog position), package (folder in backend/data/capcut),
+Job fields: mode (transition | overlay | content), index (catalog position), package (folder in engine/capcut_assets),
 fps, frames, out, out_width, out_height; transition: a_raw, b_raw, comp (seconds of the CapCut composition);
 overlay: seconds_offset, intro; content: base_raw, offset.
 """

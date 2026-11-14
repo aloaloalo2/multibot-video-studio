@@ -1,0 +1,60 @@
+{
+    "setting": {
+        "effect_adjust_params": [
+            {
+                "effect_key": "effects_adjust_speed",
+                "default": 0.33333333333333,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_luminance",
+                "default": 0.4,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_size",
+                "default": 0.21875,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_vertical_chromatic",
+                "default": 0.85,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_rotate",
+                "default": 0.5,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_texture",
+                "default": 1,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_horizontal_shift",
+                "default": 0.66666666666667,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_vertical_shift",
+                "default": 0.66666666666667,
+                "min": 0,
+                "max": 1
+            },
+            {
+                "effect_key": "effects_adjust_horizontal_chromatic",
+                "default": 1,
+                "min": 0,
+                "max": 1
+            }
+        ]
+    }
+}

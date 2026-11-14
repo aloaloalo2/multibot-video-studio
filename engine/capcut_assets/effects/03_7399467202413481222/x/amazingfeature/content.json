@@ -1,0 +1,16 @@
+{
+    "requirement" :
+    {
+        "3dFaceMeshPerspective" : false,
+        "FaceAttributes" : false,
+        "faceDetect" : false,
+        "faceVerify" : false,
+        "hairColor" : false,
+        "handDetect" : false,
+        "matting" : false
+    },
+    "content": {
+    },
+    "tag" : "zaodianps",
+    "version" : "1.0"
+}

@@ -1,6 +1,6 @@
 """CapCut transitions and effects in the export (user, 14 November 2026: «Усе додати»).
 
-The packages were taken from CapCut's cache and rebuilt with numpy (engine/capcut_lib, data in backend/data/capcut).
+The packages were taken from CapCut's cache and rebuilt with numpy (engine/capcut_lib, data in engine/capcut_assets).
 The backend (backend/joins.py, backend/capcut.py) puts their clips into the render manifest as animation clips with
 `content_type` `capcut_transition` or `capcut_effect`; `expand` turns each into ready movies before the timeline is
 planned, so the CPU and GPU renderers only see ordinary graphic clips with a `prepared_source` (ProRes 4444):
@@ -43,8 +43,13 @@ def data_root() -> Path:
     return Path(os.environ.get("MULTIBOT_STUDIO_DATA", str(APP / "backend" / "data"))).expanduser().resolve()
 
 
+ASSETS = ENGINE / "capcut_assets"   # the CapCut packages travel with the studio's git, so every Mac has them
+
+
 def package(kind: str, entry: dict) -> Path:
-    return data_root() / "capcut" / ("transitions" if kind == "capcut_transition" else "effects") / entry["package"]
+    group = "transitions" if kind == "capcut_transition" else "effects"
+    shipped = ASSETS / group / entry["package"]
+    return shipped if shipped.is_dir() else data_root() / "capcut" / group / entry["package"]
 
 
 def cache_dir() -> Path:

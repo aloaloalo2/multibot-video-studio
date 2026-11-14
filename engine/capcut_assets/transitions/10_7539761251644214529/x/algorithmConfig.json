@@ -1,0 +1,114 @@
+{
+    "version": "1.0",
+    "mode": 2,
+    "name": "2022_11_25_14_40_20_084be78c6c8c11edad963e22fb85a0b8",
+    "model_names": {
+        "alg_model": [
+            "tt_matting"
+        ]
+    },
+    "nodes": [
+        {
+            "name": "blit_0",
+            "type": "blit",
+            "config": {
+                "size": {
+                    "width": 128,
+                    "height": 224
+                },
+                "keyMaps": {
+                    "intParam": {
+                        
+                    },
+                    "floatParam": {
+                        
+                    },
+                    "stringParam": {
+                        
+                    },
+                    "pathParam": {
+                        
+                    }
+                }
+            }
+        },
+        {
+            "name": "depth_0",
+            "type": "depth",
+            "config": {
+                "keyMaps": {
+                    "intParam": {
+                        
+                    },
+                    "floatParam": {
+                        "depth_optical_flow_weight": 0.8
+                    },
+                    "stringParam": {
+                        
+                    },
+                    "pathParam": {
+                        "depth_model_key": "tt_depth_estimation"
+                    }
+                }
+            }
+        },
+        {
+            "name": "blit_1",
+            "type": "blit",
+            "config": {
+                "size": {
+                    "width": 128,
+                    "height": 224
+                },
+                "keyMaps": {
+                    "intParam": {
+                        "input_channel": 1
+                    },
+                    "floatParam": {
+                        
+                    },
+                    "stringParam": {
+                        
+                    },
+                    "pathParam": {
+                        
+                    }
+                }
+            }
+        },
+        {
+            "name": "depth_1",
+            "type": "depth",
+            "config": {
+                "keyMaps": {
+                    "intParam": {
+                        
+                    },
+                    "floatParam": {
+                        "depth_optical_flow_weight": 0.8
+                    },
+                    "stringParam": {
+                        
+                    },
+                    "pathParam": {
+                        "depth_model_key": "tt_depth_estimation"
+                    }
+                }
+            }
+        }
+    ],
+    "links": [
+        {
+            "fromNode": "blit_0",
+            "fromIndex": 0,
+            "toNode": "depth_0",
+            "toIndex": 0
+        },
+        {
+            "fromNode": "blit_1",
+            "fromIndex": 0,
+            "toNode": "depth_1",
+            "toIndex": 0
+        }
+    ]
+}

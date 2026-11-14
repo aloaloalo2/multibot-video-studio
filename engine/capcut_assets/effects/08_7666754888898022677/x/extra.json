@@ -1,0 +1,12 @@
+{
+    "setting": {
+        "effect_adjust_params": [
+            {
+                "effect_key": "effects_adjust_speed",
+                "default": 0.33333333333333,
+                "min": 0,
+                "max": 1
+            }
+        ]
+    }
+}
