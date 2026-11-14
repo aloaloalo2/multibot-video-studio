@@ -5,7 +5,7 @@ const spaceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h16v5
 function spaceSize(bytes){return bytes===0?'0 МБ':bytes>=1e9?`${(bytes/1e9).toFixed(1).replace('.',',')} ГБ`:bytes<5e5?'менше 1 МБ':`${Math.round(bytes/1e6)} МБ`;}
 
 function studioSpaceMarkup(){
-  return `<section class="settings-section studio-space" id="studio-space"><div class="studio-space-row"><div><h3>${spaceIcon}Звільнення місця</h3><p class="space-note" id="studio-space-total" aria-live="polite">Рахуємо кеш усіх проєктів…</p></div><button class="secondary" id="studio-space-open" type="button" disabled>Звільнити місце</button></div><div id="studio-space-review" hidden><p class="space-note">Видалиться кеш рендерів, стоп-кадрів і старих версій кадрів. Відповідні кроки скасування також зникнуть. Сценарії, матеріали, озвучка, кадри на таймлайні й готові відео залишаться. Наступний експорт триватиме довше.</p><div class="studio-space-actions"><button class="secondary" id="studio-space-cancel" type="button">Скасувати</button><button class="danger" id="studio-space-free" type="button">Звільнити місце</button></div></div></section>`;
+  return `<section class="settings-section studio-space" id="studio-space"><div class="studio-space-row"><div><h3>${spaceIcon}Звільнення місця</h3><p class="space-note" id="studio-space-total" aria-live="polite">Рахуємо кеш усіх проєктів…</p></div><button class="secondary" id="studio-space-open" type="button" disabled>Звільнити місце</button></div><div id="studio-space-review" hidden><p class="space-note">Видалиться кеш рендерів, стоп-кадрів і старих версій кадрів, а також старі версії озвучки й міксів у мовах, проміжні WAV склеювання і довгі журнали. Відповідні кроки скасування також зникнуть. Оплачені фрази озвучки лишаються. Сценарії, матеріали, озвучка, кадри на таймлайні й готові відео залишаться. Наступний експорт триватиме довше.</p><div class="studio-space-actions"><button class="secondary" id="studio-space-cancel" type="button">Скасувати</button><button class="danger" id="studio-space-free" type="button">Звільнити місце</button></div></div></section>`;
 }
 
 function studioSpaceText(data){
@@ -51,6 +51,7 @@ async function openSpace(project){
   if(!data.total){modal('Звільнити місце','<p class="space-note">У цього випуску немає кешу, який можна звільнити.</p>',[]);return;}
   const rows=[data.build?`<li><b>${spaceSize(data.build)}</b><span>Робочі файли рендеру Razgon: кожен кадр окремим відео, звук без стиснення, ролик без звуку, смуги перевірки стиків.</span></li>`:'',
     data.cache?`<li><b>${spaceSize(data.cache)}</b><span>Кеш студії: рендери експорту, стоп-кадри й аркуші стоку. Студія зробить їх знову, коли знадобляться.</span></li>`:'',
+    data.history?`<li><b>${spaceSize(data.history)}</b><span>Старі версії озвучки й міксів у мовах, проміжні WAV склеювання та довгі журнали. Оплачені фрази озвучки лишаються.</span></li>`:'',
     data.old_renders?`<li><b>${spaceSize(data.old_renders)}</b><span>Старі версії кадрів (${data.old_count}), які лишались тільки для кнопки «Скасувати». Ці кроки скасування зникнуть разом із ними.</span></li>`:''].join('');
   const blocked=data.busy || (data.exporting?'Зараз іде експорт':'');
   modal(`Звільнити ${spaceSize(data.total)}?`,`<ul class="space-list">${rows}</ul>

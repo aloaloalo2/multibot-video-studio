@@ -19,6 +19,7 @@ from pathlib import Path
 import director
 import frame_progress
 import production
+import storage_tidy
 import store
 
 # the live view writes its log here while it runs; it is a few bytes
@@ -54,6 +55,21 @@ def old_renders(pid: str, project: dict) -> list[dict]:
 # The studio's cache of an episode (store.cache_dir): export chunks, the engine's render cache, stills and stock sheets.
 # All of it is made again when needed (user, 1 November 2026: «Звільнити місце… хай видаляє такий кеш з проєкту»).
 CACHE = ("renders", "render-cache", "stills", "stock")
+
+
+def language_busy(pid: str) -> bool:
+    import languages   # late: languages is heavy and imports much of the studio
+    return languages.busy(pid)
+
+
+def history_bytes(pid: str) -> int:
+    """What the episode's languages and logs pile up and nothing reads again (storage_tidy): the WAVs a voicing glued,
+    earlier full voicings, mixes and refit backups, the long part of production logs. Paid takes stay."""
+    if language_busy(pid):
+        return 0
+    tidy = storage_tidy.Tidy(store.DATA_ROOT, apply=False)
+    tidy.project(store.project_dir(pid))
+    return tidy.freed
 
 
 def cache_items(pid: str) -> list[Path]:
@@ -121,6 +137,10 @@ def free_all(blocked=lambda pid: None) -> dict:
                 result["projects"] += bool(data["freed"])
             except (OSError, ValueError, KeyError, TypeError, store.StudioError):
                 result["unavailable"] += 1
+        # leveled voice copies that no project plays any more belong to no project
+        tidy = storage_tidy.Tidy(store.DATA_ROOT)
+        tidy.leveled(sorted(store.PROJECTS_ROOT.glob("*/")))
+        result["freed"] += tidy.freed
         return result
     finally:
         _SWEEP_LOCK.release()
@@ -141,6 +161,8 @@ def freeable(pid: str, now: float | None = None) -> bool:
                 break
         if total < FREEABLE_MIN:
             total += sum(Path(asset["path"]).stat().st_size for asset in old_renders(pid, project))
+        if total < FREEABLE_MIN:
+            total += history_bytes(pid)
         answer = total >= FREEABLE_MIN
     except (OSError, ValueError, KeyError, TypeError, store.StudioError):
         answer = False
@@ -162,7 +184,9 @@ def usage(pid: str, project: dict | None = None) -> dict:
     old = old_renders(pid, project)
     renders = sum(Path(asset["path"]).stat().st_size for asset in old)
     cache = sum(size(item) for item in cache_items(pid))
-    return {"build": build, "old_renders": renders, "old_count": len(old), "cache": cache, "total": build + renders + cache, "busy": busy(pid)}
+    history = history_bytes(pid)
+    return {"build": build, "old_renders": renders, "old_count": len(old), "cache": cache, "history": history,
+            "total": build + renders + cache + history, "busy": busy(pid)}
 
 
 def free(pid: str) -> dict:
@@ -180,6 +204,10 @@ def free(pid: str) -> dict:
     for item in cache_items(pid):
         freed += size(item)
         shutil.rmtree(item, ignore_errors=True)
+    if not language_busy(pid):
+        tidy = storage_tidy.Tidy(store.DATA_ROOT)
+        tidy.project(store.project_dir(pid))
+        freed += tidy.freed
     _FREEABLE.pop(pid, None)
     # replaced frame renders follow the studio's one rule for them, with the undo steps that still show them
     freed += store.prune_razgon_renders(pid)["bytes"]

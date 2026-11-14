@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,7 +56,7 @@ class SpaceTest(unittest.TestCase):
         with patch.object(space, "FREEABLE_MIN", 1000):
             space._FREEABLE.clear()
             self.assertTrue(space.freeable(PID))                 # the card offers «Звільнити місце»
-        self.assertEqual(space.usage(PID), {"build": 1500, "old_renders": 100, "old_count": 1, "cache": 0, "total": 1600, "busy": None})
+        self.assertEqual(space.usage(PID), {"build": 1500, "old_renders": 100, "old_count": 1, "cache": 0, "history": 0, "total": 1600, "busy": None})
         self.assertEqual(space.free(PID), {"freed": 1600})
         with patch.object(space, "FREEABLE_MIN", 1000):
             self.assertFalse(space.freeable(PID))                # and stops offering it once nothing is left
@@ -73,6 +75,30 @@ class SpaceTest(unittest.TestCase):
         space.free(PID)
         self.assertFalse(stills.exists())
         self.assertTrue((self.folder / "media" / "frame_001.mp4").exists())   # the frame on the timeline stays
+
+    def test_the_languages_dead_weight_goes_too_and_paid_takes_stay(self):
+        work = self.folder / "languages" / "uk"
+        (work / "parts").mkdir(parents=True)
+        (work / "voice.mp3").write_bytes(b"v" * 10)
+        (work / "parts" / "00000.mp3").write_bytes(b"p" * 10)
+        (work / "parts" / "00000-line.wav").write_bytes(b"w" * 400)
+        old = time.time() - 86400
+        for item in [work / "voice.mp3", work / "parts", *(work / "parts").iterdir()]:
+            os.utime(item, (old, old))
+        with patch.object(space, "language_busy", return_value=False):
+            self.assertEqual(space.usage(PID)["history"], 400)
+            space.free(PID)
+        self.assertFalse((work / "parts" / "00000-line.wav").exists())
+        self.assertTrue((work / "parts" / "00000.mp3").is_file())
+
+    def test_a_voicing_language_keeps_its_files(self):
+        work = self.folder / "languages" / "uk" / "parts"
+        work.mkdir(parents=True)
+        (work / "00000-line.wav").write_bytes(b"w" * 400)
+        with patch.object(space, "language_busy", return_value=True):
+            self.assertEqual(space.usage(PID)["history"], 0)
+            space.free(PID)
+        self.assertTrue((work / "00000-line.wav").is_file())
 
     def test_nothing_goes_while_an_agent_works_on_the_episode(self):
         director.ACTIVE.add(PID)

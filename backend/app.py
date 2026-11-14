@@ -1968,6 +1968,28 @@ def tidy_project(pid: str) -> None:
         print(f"Cleanup of {pid} failed: {error}", flush=True)
 
 
+TIDY_FIRST = 10 * 60      # the first tidy waits for the start-up work to settle
+TIDY_EVERY = 6 * 3600     # then every six hours
+
+
+def tidy_loop():
+    """Clear what the studio piles up and never reads again (storage_tidy; user, 14 November 2026: «проблема з вагою
+    видео кей студио… прибери»). A project with work running, an export among them, is left for the next round."""
+    import storage_tidy
+    time.sleep(TIDY_FIRST)
+    while True:
+        try:
+            with JOBS_LOCK:
+                skip = {entry['job']['project_id'] for entry in ACTIVE_EXPORTS.values()}
+            skip |= busy_candidates()
+            result = storage_tidy.tidy(store.DATA_ROOT, skip)
+            if result["freed"]:
+                print(f"Tidy freed {storage_tidy.gigabytes(result['freed'])} ({result['files']} items)", flush=True)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(TIDY_EVERY)
+
+
 def production_edits_loop():
     import production_edits
     while True:
@@ -2001,6 +2023,7 @@ def main():
     threading.Thread(target=style_lab.warm, daemon=True).start()
     threading.Thread(target=production.reset_interrupted, daemon=True).start()
     threading.Thread(target=production_edits_loop,daemon=True).start()
+    threading.Thread(target=tidy_loop, daemon=True).start()
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
     # projects an earlier version hid when their episode folder was gone come back to the list
     threading.Thread(target=store.restore_hidden_projects, daemon=True).start()
