@@ -5,6 +5,7 @@ import json
 import re
 import threading
 from threading import Thread
+import subprocess
 import time
 import uuid
 import urllib.error
@@ -457,7 +458,11 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
         baseline=session.get('api_cost_usd')
         if baseline is None and not resume:baseline=0
         options['previous_session_cost']=baseline
-    code, answer = writing_jobs.run(cmd, prompt, root, identity, **options)
+    try:
+        code, answer = writing_jobs.run(cmd, prompt, root, identity, **options)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'Opus писав довше за {writing_jobs.TIMEOUT // 60} хвилин, і студія зупинила цю спробу. '
+                           'Готові результати збережені. Спробуйте ще раз або знизьте усилля в налаштуваннях каналу.') from None
     if session and project_costs.number(answer.get('total_cost_usd')):
         session['api_cost_usd']=answer['total_cost_usd']
     if code or answer.get('is_error'):

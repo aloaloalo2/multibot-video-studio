@@ -100,7 +100,11 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
       root.querySelector('#episode-draft-show-script').onclick=()=>{state.episodeDraft=null;dispose();delete panel.dataset.planKey;renderProject();};return;
     }
     const hooks=data.openings?.length?data.openings:data.previous_openings;
-    const autoError=data.auto_opening?.status==='failed'?`<p class="episode-error" role="alert">Автовибір не спрацював: ${esc(data.auto_opening.error||'')}</p>`:'';
+    // after an automatic choice the script may still fail (a timeout, a limit): say that the choice was made, so the
+    // openings showing again do not read as «автозачин не вибрав» (user, 15 November 2026)
+    const autoChosen=data.auto_opening?.status==='chosen'&&Number.isInteger(data.auto_opening.index)&&error;
+    const autoError=data.auto_opening?.status==='failed'?`<p class="episode-error" role="alert">Автовибір не спрацював: ${esc(data.auto_opening.error||'')}</p>`
+      :autoChosen?`<p class="episode-auto-note" role="status">DeepSeek обрав варіант ${data.auto_opening.index+1} і запустив сценарій, але сценарій не дописався. Натисніть варіант ${data.auto_opening.index+1} ще раз, щоб повторити.</p>`:'';
     root.innerHTML=`<div class="episode-openings-head"><h3>Оберіть зачин</h3></div>${error}${autoError}`;
     if(hooks?.length){
       const list=document.createElement('div');list.className='episode-hook-options';

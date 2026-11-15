@@ -53,8 +53,13 @@ def cancel(job):
             _kill(process)
 
 
+# A full script at a high effort took over 15 minutes on another Mac and was cut off (user, 15 November 2026: «timed out
+# after 900 seconds»); here scripts take 8-11 minutes and a self-review up to 17, so the limit leaves room for a slow day.
+TIMEOUT = 2700
+
+
 @job_timing.measure('service')
-def run(command, prompt, root, identity, timeout=900, *, session_cwd=None, category='script', previous_session_cost=0):
+def run(command, prompt, root, identity, timeout=TIMEOUT, *, session_cwd=None, category='script', previous_session_cost=0):
     check()
     job = getattr(LOCAL, 'job', None)
     receipt = root / (identity + '-receipt.json')
