@@ -139,10 +139,10 @@ function organizeChannelSettings(channel){
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});
-  move('.thumbnail-logo-section','thumbnails',{icon:'thumbnails'});   // the logo on thumbnails sits with the thumbnail wishes (user, 15 November 2026)
+  move('.thumbnail-logo-section','thumbnails',{icon:'thumbnails'});   // a block of its own in «Основне» (user, 15 November 2026)
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
-  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
-    const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?'hero':key;
+  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Логотип на прев’ю','thumbnails','.thumbnail-logo-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
+    const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?(only==='.hero-reference-section'?'hero':'thumbnail-logo'):key;
     group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;
     for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head')&&(!only||child.matches(only)))inner.append(child);
