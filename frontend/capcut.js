@@ -125,7 +125,7 @@ function transitionPreviewCard(type){
 }
 function channelTransitionSection(channel){
   const saved=channel.settings?.transitions||{},allowed=new Set(Array.isArray(saved.allowed)?saved.allowed:CAPCUT_DEFAULT_POOL),share=Math.round(100*(saved.share??.7));
-  const section=document.createElement('details');section.className='channel-settings-group settings-transitions';
+  const section=document.createElement('details');section.className='channel-settings-group settings-transitions regular-only';
   section.innerHTML=`<summary>${typeof channelSettingsIcon==='function'?channelSettingsIcon('look'):''}<span><strong>Переходи</strong><small class="settings-choice-summary"></small></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary>
   <div class="channel-settings-group-body"><div class="settings-section settings-transitions-body">
     <label class="settings-transitions-share"><span>Як часто ставити перехід</span><span class="settings-transitions-range"><input id="settings-transition-share" type="range" min="0" max="100" step="5" value="${share}" aria-label="Частка стиків з переходом, відсотків"><output></output></span></label>
