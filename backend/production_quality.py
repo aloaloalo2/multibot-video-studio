@@ -28,6 +28,21 @@ def approved_razgon(project, numbers):
 
 
 
+def bugs(project, numbers) -> dict:
+    """{frame: note} of the frames the review marked as a bug."""
+    linked = frame_progress.razgon_project(project)
+    if not numbers or not linked or not (linked / 'build/review/review.json').is_file():
+        return {}
+    root = store.YOUTUBE_ROOT / store.razgon_rel()
+    try:
+        result = subprocess.run([sys.executable, str(root / 'tools/frame_review.py'), '--project', str(linked), 'status',
+                                 '--frames', ','.join(map(str, sorted(numbers))), '--json'], cwd=root, capture_output=True,
+                                text=True, timeout=30)
+        return {int(n): str(note) for n, note in (json.loads(result.stdout).get('bugs') or {}).items()}
+    except (subprocess.TimeoutExpired, OSError, TypeError, ValueError, KeyError):
+        return {}
+
+
 def refresh_stills(project: dict, numbers) -> None:
     """New stills for frames whose sources changed, without Claude: frame_review.py `sheets` keeps a frame's verdict when
     its picture is the same and asks for a look only where it really changed (user, 14 November 2026: «Кадри 6–68 не

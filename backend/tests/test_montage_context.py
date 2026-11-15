@@ -58,9 +58,11 @@ class MontageContextTest(unittest.TestCase):
              patch.object(store,'load_project_plan',return_value={'frames':[{'number':4},{'number':7}]}):
             result=context.commands({'id':'fixture'},[4,7])
         commands=[s for s in result.splitlines() if s.startswith('python3 ')]
-        self.assertEqual(len(commands),3)
-        for command in commands:
-            self.assertIn('4,7',command)
+        checks=[s for s in result.splitlines() if s.startswith('nice -n 10 node ')]
+        # the pictures are looked at once at the end of the film: a batch places its frames and runs the free checks
+        self.assertEqual(len(commands),1);self.assertEqual(len(checks),2)
+        self.assertIn('4,7',commands[0])
+        for command in commands+checks:
             self.assertNotIn('&&',command)
             self.assertNotIn(';',command)
             self.assertNotIn('bypass',command)
@@ -76,7 +78,7 @@ class MontageContextTest(unittest.TestCase):
             repair=context.commands({'id':'fixture'},[3],repair=True)
         self.assertNotIn('transitions fixture',repair)
         self.assertIn('review fixture --frames 3',repair)
-        self.assertIn('--frames 2 --scale',result)
+        self.assertIn('--logic-check',result);self.assertNotIn('frame_review.py',result)
         self.assertIn('transitions fixture --frames 1,2,3',result)
         self.assertNotIn('sheets --frames 1,2,3',result)
         self.assertIn('review fixture --frames 1,3',native)

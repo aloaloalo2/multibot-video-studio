@@ -82,9 +82,10 @@ QUALITY = """5. Здача після перевірки композиції й
    - початок, основний стан, фінал і крайні положення руху складають цілісну сцену. Спокійна читабельна фаза
      дозволена; випадкові частинки, сяйво, хитання й рух заради активності не додавай;
    - для сцени обмежуй час локальним інтервалом, обрамляй малювання g.save()/g.restore(); ефекти не течуть у сусідній кадр.
-   Використай кешований frame_review.py sheets --frames <змінені кадри> --scale 0.3 і подивись один аркуш
-   старт/основний стан/фінал. Лише для ризикового руху додай стоп-кадр його максимуму. Познач перевірені кадри через mark.
-   Перевір сусідні стики змінених кадрів. Якщо є дефект, виправ його й повтори лише відповідну перевірку.
+   Картинок кадрів не переглядай і mark не став: увесь фільм одним проходом подивиться окрема сесія огляду в кінці.
+   Перед завершенням запусти безкоштовні перевірки лише свого інтервалу (вони без токенів, близько 20 с):
+   node render.mjs --project <проєкт> --logic-check --from <початок> --to <кінець> і так само --text-check.
+   Виправ усе, що вони знайшли, і повтори лише ту перевірку, що знайшла ваду.
    Не повторюй огляд незміненого ролика та не запускай нового агента. Повний MP4 робить студія після «Експорт MP4».
    Для швидкодії уникай фільтра на кожному предметі, повторних завантажень і зайвих шарів; одну групу розмивай одним проходом.
    Не здавай видимі дефекти як готові кадри."""
@@ -130,8 +131,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait <аркуш> і tools/split_sheet.py --clean 40.
    Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.{channel_hero.production_rule(project)}
-3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
-   Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots, потім переглянь аркуші партії й познач результат через mark.
+3. Перевірка: у папці {store.razgon_rel()} лише безкоштовні node render.mjs --logic-check і --text-check з --from/--to свого інтервалу.
+   Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots. Аркушів кадрів не роби й mark не став: огляд у кінці.
 {motion_direction.EXECUTION}
 {motion_direction.ACCENTS}
 {QUALITY.replace("<студія>", store.app_rel())}
@@ -333,6 +334,41 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
             ACTIVE.discard(pid)
 
 
+REVIEW_EFFORT = 'low'
+
+
+def light_review_brief(project: dict, numbers: list[int]) -> str:
+    """The one look at the finished frames: marks only, no edits (user, 15 November 2026)."""
+    linked = frame_progress.razgon_project(project)
+    chunks = [numbers[i:i + 10] for i in range(0, len(numbers), 10)]
+    sheets = '\n'.join(f'   python3 tools/frame_review.py --project "{linked}" sheets --frames {",".join(map(str, c))} --scale 0.3'
+                        for c in chunks)
+    return f"""Ти переглядаєш готові кадри анімаційного фільму «{project['name']}» у VideoKey Studio і ставиш кожному вердикт.
+Нічого не виправляй, не редагуй і не створюй жодних файлів сцен. Твоя робота лише подивитись і позначити.
+Робоча папка: {store.YOUTUBE_ROOT / store.razgon_rel()}. Кадри: {', '.join(map(str, numbers))}.
+
+1. По черзі для кожної десятки кадрів зроби аркуш і відкрий картинку, шлях до якої друкує команда:
+{sheets}
+   На аркуші три моменти кожного кадру: старт, основний стан і фінал.
+2. Для кожного кадру одразу постав вердикт:
+   python3 tools/frame_review.py --project "{linked}" mark <номер> ok
+   python3 tools/frame_review.py --project "{linked}" mark <номер> bug "<що саме не так і де>"
+3. Помилка — це лише вада, яку помітить глядач: предмет не той або невпізнаваний, криві чи зламані руки й ноги, текст обрізаний,
+   нечитабельний або перекритий, стрілка не туди, предмет висить у повітрі чи проходить крізь інший, порожній або чорний кадр,
+   помилка рендера на картинці. Смак, дрібні стилістичні розбіжності й «можна було б краще» не позначай.
+   У примітці до bug пиши коротко й конкретно, щоб інша сесія могла виправити без повторного огляду.
+4. Наприкінці коротко відповідай українською: скільки кадрів ok і які кадри bug.
+Усі команди запускай на передньому плані. Помічників і інших сесій не запускай. Поле description кожної команди пиши коротко українською."""
+
+
+def light_review(pid: str, numbers, cli: Path, log: Path, timeout: int, model: str):
+    """One low-effort Claude session that looks at the frames and marks them."""
+    project = store.load_project(pid)
+    return director.claude(cli, light_review_brief(project, sorted(numbers)), log, director.activity_path(pid, 'production'),
+                           timeout, resume=None, effort=REVIEW_EFFORT, model=model,
+                           env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+
+
 def film_repair_brief(project: dict, request: dict, notes: str) -> str:
     """The author's request about the whole film, from the Claude button by «Увесь ролик» (user, 15 November 2026)."""
     accents = motion_direction.ACCENTS if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
@@ -445,7 +481,9 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
             text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')) or film,
                 batch=bool(numbers) and not scoped.get('repair_frames'))+production_quality.INSTRUCTIONS
-            if index >= 1000:
+            if index >= 3000:
+                text += '\nЗавдання цього запуску: '+summary+'\nСтворення кадрів уже завершене. Виправ лише ці вади в цих кадрах і збережи сцени; огляд після тебе зробить студія.'
+            elif index >= 1000:
                 text += '\nЗавдання цього запуску: '+summary+'\nСтворення кадрів уже завершене. Виконай лише описаний огляд готового матеріалу.'
             if numbers:
                 text += '\nЦей короткий запуск охоплює ЛИШЕ кадри '+','.join(map(str,numbers))+'. Працюй партіями по 5 всередині цієї області. Після перевірки всіх цих кадрів заверши відповідь стислим підсумком. Наступну область студія передасть окремій новій сесії. Не використовуй all-text або інші команди, які змінюють кадри поза цією областю.'
@@ -545,37 +583,51 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 # fresh stills first, free: an unchanged picture keeps its verdict and needs no Claude session
                 production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
                 review = production_quality.check(store.load_project(pid), final_request)
-            if review.get('pending_review'):
+            review_code, review_answer = 0, {}
+            formats = {f['number']: f.get('format') for f in (store.load_project_plan(pid) or {}).get('frames', [])}
+            razgon_pending = [n for n in review.get('pending_review') or [] if formats.get(n) == 'razgon_2d']
+            if razgon_pending:
+                # One look at the whole film at the end, at a low effort: it only marks ok or bug. The frames it marks
+                # as a bug are fixed in fresh sessions at the channel's effort, then looked at once more (user,
+                # 15 November 2026: «це робити окремою сесією в кінці ролика. на еформ лоу»).
+                def look(numbers, index):
+                    nonlocal answer
+                    code, raw = light_review(pid, numbers, cli, log.with_name(log.stem + f'-session-{index}.log'),
+                                             max(1, int(deadline - time.monotonic())), model)
+                    answer = production_sessions.merge_answers(answer, raw)
+                    return code, raw
+                review_code, review_answer = look(razgon_pending, 2500)
+                found = production_quality.bugs(store.load_project(pid), razgon_pending)
+                if found and not (review_code or review_answer.get('is_error') or director.limit_stop(review_answer)):
+                    notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(found.items()))
+                    fix_code, fix_answer = production_sessions.run(
+                        sorted(found), lambda ns, _, index: launch(ns, 'Огляд знайшов вади, виправ лише їх: ' + notes, 3000 + index),
+                        verify, lambda receipt: None, cancelled, director.limit_stop)
+                    answer = production_sessions.merge_answers(answer, fix_answer)
+                    if not (fix_code or fix_answer.get('is_error') or director.limit_stop(fix_answer)):
+                        production_quality.refresh_stills(store.load_project(pid), sorted(found))
+                        review_code, review_answer = look(sorted(found), 2600)
+                    else:
+                        review_code, review_answer = fix_code, fix_answer
+                fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
+                              session_id=answer.get('session_id'), **director.spent(answer,started))
+                review = production_quality.check(store.load_project(pid), final_request)
+                left = production_quality.bugs(store.load_project(pid), final_request['review_frames'])
+                if left and not review['passed'] and all(e.startswith('Перевірка кадрів Razgon не підтверджена:') for e in review['errors']):
+                    # what the second look still dislikes goes to the author to look at, it never stops the film
+                    review = {**review, 'pending_review': sorted(set(review.get('pending_review') or []) | set(left))}
+                if director.limit_stop(review_answer):
+                    fields.update(limit=True)
+            native_pending = [n for n in review.get('pending_review') or [] if formats.get(n) != 'razgon_2d']
+            if native_pending and not fields.get('limit'):
                 # A later batch may invalidate an earlier dependency. Finish that
                 # review here, while the same worker still owns the production job.
-                review_frames_before = list(review['pending_review'])
                 review_code, review_answer = production_sessions.finish_review(
-                    review['pending_review'], launch, verify, cancelled, director.limit_stop)
+                    native_pending, launch, verify, cancelled, director.limit_stop)
                 answer = production_sessions.merge_answers(answer, review_answer)
                 fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
                               session_id=answer.get('session_id'), **director.spent(answer,started))
                 review = production_quality.check(store.load_project(pid), final_request)
-                if review.get('pending_review') and not (review_code or review_answer.get('is_error')):
-                    # the review sessions themselves may add props: their untouched neighbours get fresh stills too
-                    production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
-                    review = production_quality.check(store.load_project(pid), final_request)
-                reviewed = set(review_answer.get('reviewed_frames') or []) | set(review_frames_before)
-                left = set(review.get('pending_review') or [])
-                if left and not left & reviewed and not (review_code or review_answer.get('is_error')) \
-                        and not director.limit_stop(review_answer):
-                    # A fix in the final review changed a shared scene and made a frame next to it stale (user,
-                    # 15 November 2026: «Багатший за банк» stopped at 48 of 49 for frame 30 beside the fixed frame 31).
-                    # One more look covers only those frames; it never repeats the frames just reviewed.
-                    extra_code, extra_answer = production_sessions.finish_review(
-                        sorted(left), launch, verify, cancelled, director.limit_stop)
-                    answer = production_sessions.merge_answers(answer, extra_answer)
-                    fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
-                                  session_id=answer.get('session_id'), **director.spent(answer,started))
-                    review = production_quality.check(store.load_project(pid), final_request)
-                    if review.get('pending_review') and not (extra_code or extra_answer.get('is_error')):
-                        production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
-                        review = production_quality.check(store.load_project(pid), final_request)
-                    review_code, review_answer = extra_code or review_code, extra_answer
                 if review_code or review_answer.get('is_error'):
                     review_failed = True
                     review = {**review,'passed':False,'errors':review.get('errors') or [review_answer.get('result') or 'Не завершено огляд кадрів']}

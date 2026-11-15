@@ -17,6 +17,7 @@ UPSTREAM = re.compile(
     r'^(?:короткий технічний маршрут режисера|план ролика тільки після озвучки|карта ролика только после озвучки|'
     r'(?:попередня )?карта ролика (?:в|у) videokey studio|готовий перевірений сценарій до студії|'
     r'тільки opus|только opus|четыре автора для всех каналов|захватывающий полезный рассказ|'
+    r'перевірка кожного кадру|'   # the look at the pictures is one review at the end (15 November 2026), not in each session
     r'не раскрывать главный ответ|уникальность выпусков|повторы между каналами|'
     r'[1-9][0-9]*\. (?:написать полный сценарий|проверить и показать сценарий|подготовить превью|'
     r'получить финальную озвучку|подготовить выпуск к публикации))', re.I)
@@ -117,7 +118,11 @@ def commands(project, numbers, *, repair=False):
             guide.extend([f'python3 {shlex.quote(str(tools/"studio.py"))} review {project["id"]} --frames {",".join(map(str,native))}',
                           'Відкрий повернений аркуш. Схвали готові номери надрукованою командою. Для дефекту виключи його номер зі схвалення й виправ лише цей кадр.'])
         if razgon and linked:
-            guide.extend([f'{base} sheets --frames {scope} --scale 0.3',
-                          'Переглянь тільки надруковані аркуші й познач готові кадри. Якщо змін немає, переходь далі.',
-                          f'{base} mark {scope} ok'])
+            # the pictures are looked at once, at the end of the film (production.light_review); here only the free checks
+            times = [(f.get('start'), f.get('end')) for f in plan.get('frames', []) if f['number'] in razgon]
+            span = (f' --from {min(t[0] for t in times):.2f} --to {max(t[1] for t in times):.2f}'
+                    if times and all(isinstance(t[0], (int, float)) and isinstance(t[1], (int, float)) for t in times) else '')
+            render = f'nice -n 10 node {shlex.quote(str(store.YOUTUBE_ROOT / store.razgon_rel() / "render.mjs"))} --project {shlex.quote(str(linked))}'
+            guide.extend([f'{render} --logic-check{span}', f'{render} --text-check{span}',
+                          'Виправ лише те, що вони знайшли. Картинок кадрів не переглядай і mark не став.'])
     return '\n'.join(guide) + '\n'

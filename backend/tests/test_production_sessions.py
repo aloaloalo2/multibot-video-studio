@@ -2,7 +2,7 @@ from pathlib import Path
 import sys
 import unittest
 import unittest.mock
-from unittest.mock import Mock
+from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import production_sessions as sessions
@@ -71,6 +71,7 @@ class ProductionSessionsTest(unittest.TestCase):
         with self.assertRaises(OSError):self.run_job(checkpoint=save)
         self.assertEqual(self.launch.call_count,1)
 
+    @patch.object(sessions,'DEFERRED_REVIEW',False)   # the look inside a session, before the look moved to the end
     def test_stale_visual_review_continues_only_pending_frames_and_records_both_costs(self):
         launch=Mock(side_effect=lambda ns,summary,index:(0,{'result':'reviewed','total_cost_usd':.1,'usage':{'input_tokens':20}}))
         verify=Mock(side_effect=[False,True]);save=Mock()
@@ -81,6 +82,12 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertAlmostEqual(answer['total_cost_usd'],.2)
         self.assertEqual(answer['usage']['input_tokens'],40)
         self.assertEqual(save.call_args.args[0]['completed_frames'],list(range(21,31)))
+
+    def test_a_drawn_chunk_waiting_only_for_a_look_is_done_without_a_review_session(self):
+        launch=Mock(return_value=(0,{'result':'drawn','total_cost_usd':.1}))
+        code,_=sessions.run(range(1,11),launch,lambda ns:False,Mock(),lambda:False,lambda _:False,pending_review=lambda:list(range(1,11)))
+        self.assertEqual(code,0)
+        self.assertEqual(launch.call_count,1)   # no review session per chunk: one look at the end of the film
 
     def test_final_review_covers_earlier_frames_in_bounded_fresh_sessions(self):
         launch=Mock(return_value=(0,{'result':'reviewed','total_cost_usd':.1,'usage':{'input_tokens':20}}))
@@ -93,6 +100,7 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertAlmostEqual(combined['total_cost_usd'],1.4)
         self.assertEqual(combined['usage']['input_tokens'],180)
 
+    @patch.object(sessions,'DEFERRED_REVIEW',False)   # the look inside a session, before the look moved to the end
     def test_visual_review_continuation_is_bounded_and_never_expands_its_scope(self):
         for pending,count in (([5],2),([15],1)):
             launch=Mock(return_value=(0,{'result':'returned'}))
@@ -153,6 +161,7 @@ class ProductionSessionsTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertLessEqual(len(calls), 2)
 
+    @patch.object(sessions,'DEFERRED_REVIEW',False)   # the look inside a session, before the look moved to the end
     def test_verdicts_made_stale_by_the_session_next_door_do_not_stop_the_episode(self):
         # Both Космос episodes stopped this way on 14 November 2026: their frames were drawn and approved, but the
         # other session's new PNGs made the verdicts look stale. The final review looks at them instead.

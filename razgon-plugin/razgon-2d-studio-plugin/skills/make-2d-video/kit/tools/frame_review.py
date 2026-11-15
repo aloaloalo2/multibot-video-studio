@@ -281,7 +281,8 @@ def status(proj: Path, selected: str = "", *, as_json=False) -> int:
     if as_json:
         approved = [n for n in sorted(wanted) if frames[str(n)].get('verdict') == 'ok'
                     and not frames[str(n)].get('errors') and n not in stale and n not in missing]
-        print(json.dumps({'approved':approved}))
+        # the bugs with their notes too: the studio sends only those frames to a fix (VideoKey Studio, 15 November 2026)
+        print(json.dumps({'approved':approved,'bugs':{n:note for n,note in bugs if int(n) in wanted}}))
         return 0 if len(approved) == total and total else 1
     ok = total - len(bugs) - len(unseen)
     print(f"Frames reviewed ok: {ok}/{total}")

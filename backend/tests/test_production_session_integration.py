@@ -91,3 +91,36 @@ class KitStageTest(ScopedProductionTest):
         request = self.project['production_request']
         self.assertEqual(request['status'], 'done'); self.assertAlmostEqual(request['cost_usd'], .07)
         self.assertEqual(stages, ['kit']); self.assertIsNone(request.get('stage'))
+
+
+class FinalLookTest(ScopedProductionTest):
+    """The pictures are looked at once at the end, at low effort; only the frames it marks are fixed (15 November 2026)."""
+
+    def test_one_low_look_at_the_end_then_only_bug_frames_are_fixed(self):
+        looks, fixes, checks = [], [], []
+        def author(cli, prompt, log, *args, **kwargs):
+            if prompt.startswith('Ти переглядаєш готові кадри'):
+                looks.append((kwargs['effort'], re.search(r'Кадри: ([\d, ]+)', prompt).group(1)))
+                return 0, {'result': 'ok', 'total_cost_usd': .001}
+            packet = json.loads(Path(re.search(r'Єдина карта роботи: (.+?\.txt)', prompt).group(1)).with_suffix('.json').read_text())
+            if 'Огляд знайшов вади' in prompt:
+                fixes.append(packet['pending_frames'])
+            with self.lock:self.made.update(packet['pending_frames'])
+            self.project['tracks'] = [{'clips': [{'kind': 'animation', 'title': f'Razgon · кадр {n:03d}'} for n in self.made]}]
+            return 0, {'result': 'drawn', 'total_cost_usd': .01}
+        def check(project, request):
+            frames = request.get('review_frames') or []
+            checks.append(len(frames))
+            waiting = frames if not looks else []
+            return {'passed': not waiting, 'errors': ['Перевірка кадрів Razgon не підтверджена: not reviewed'] if waiting else [],
+                    'pending_review': waiting, 'frames': frames}
+        bugs = iter([{7: 'рука крізь стіл'}, {}])
+        with patch.object(production.director, 'claude', side_effect=author), \
+             patch.object(production.production_quality, 'check', side_effect=check), \
+             patch.object(production.production_quality, 'bugs', side_effect=lambda *a: next(bugs, {})), \
+             patch.object(production.production_quality, 'refresh_stills'):
+            production.run(self.project['id'], Path('mock-cli'))
+        self.assertEqual([effort for effort, _ in looks], ['low', 'low'])
+        self.assertEqual(looks[1][1].strip(), '7')            # the second look sees only the fixed frame
+        self.assertEqual(fixes, [[7]])
+        self.assertEqual(self.project['production_request']['status'], 'done')

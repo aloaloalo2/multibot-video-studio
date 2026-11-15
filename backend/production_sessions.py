@@ -82,6 +82,12 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
         if code or raw.get('is_error') or stop(raw):return code or 1, result
         valid = verify(frames)
         pending = sorted(set(pending_review() or [])) if not valid and pending_review else []
+        if pending and set(pending) <= set(frames) and DEFERRED_REVIEW:
+            # Drawn frames that only wait for a look count as made: one low-effort review looks at the whole film at
+            # the end instead of a look inside every session (user, 15 November 2026: «роби все що здешевить перевірки
+            # … і головне пришвидшить»)
+            valid = True
+            pending = []
         if pending and set(pending) <= set(frames):
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             with STUDIO_SESSIONS:
@@ -146,6 +152,10 @@ def merge_answers(previous, current):
         add_usage(value,current.get(key))
         result[key]=value
     return result
+
+
+# Sessions draw and run the free automatic checks; the look at the pictures is one review session at the end.
+DEFERRED_REVIEW = True
 
 
 def finish_review(numbers, launch, verify, cancelled, stop):
