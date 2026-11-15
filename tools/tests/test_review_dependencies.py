@@ -209,6 +209,52 @@ class ReviewTest(unittest.TestCase):
         after=self.hashes()
         self.assertEqual([n for n in before if before[n]!=after[n]],[3,4,5])   # the helper's consumer and its cuts
 
+    def test_a_kit_preloading_its_own_props_belongs_to_its_own_frames(self):
+        # kit_g61.js of «Галактики» (14 November 2026): each session preloads its props from a literal list; that made
+        # every frame depend on every PNG, and the props a review session added at the end staled 39 untouched frames.
+        (self.proj/'scenes/kit.js').write_text("""const NAMES = ['tele', 'earth'];
+          const IMG = {};
+          await Promise.all(NAMES.map((name) => new Promise((done) => {
+            const im = new Image(); im.onload = () => { IMG[name] = im; done(); }; im.onerror = () => done();
+            im.src = `/project/assets/${name}.png`;
+          })));
+          export function scope(g) { g.drawImage(IMG.tele, 0, 0); }""")
+        (self.proj/'scenes/s4.js').write_text("import {scope} from './kit.js'; take('s4',{draw:scope});")
+        (self.proj/'assets/tele.png').write_bytes(b'telescope')
+        before=self.hashes()
+        (self.proj/'assets/other.png').write_bytes(b'a prop of another session')
+        self.assertEqual(before,self.hashes())
+        (self.proj/'assets/tele.png').write_bytes(b'telescope, redrawn')
+        after=self.hashes()
+        self.assertEqual([n for n in before if before[n]!=after[n]],[3,4,5])
+
+    def test_a_kit_loading_through_its_own_function_knows_the_names(self):
+        (self.proj/'scenes/kit.js').write_text("""const CACHE = {};
+          async function load(name) {
+            const im = new Image();
+            await new Promise((done) => { im.onload = done; im.src = `/project/assets/${name}.png`; });
+            const c = document.createElement('canvas'); const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+            const d = x.getImageData(0, 0, 1, 1), p = d.data; p[0] = Math.min(255, p[0] * 1.3);
+            return c;
+          }
+          CACHE.red = await load('redgal');
+          export function grey(g) { g.drawImage(CACHE.red, 0, 0); }""")
+        (self.proj/'scenes/s2.js').write_text("import {grey} from './kit.js'; take('s2',{draw:grey});")
+        before=self.hashes()
+        (self.proj/'assets/other.png').write_bytes(b'unrelated')
+        self.assertEqual(before,self.hashes())
+        (self.proj/'assets/redgal.png').write_bytes(b'the red galaxy')
+        after=self.hashes()
+        self.assertEqual([n for n in before if before[n]!=after[n]],[1,2,3])
+
+    def test_a_preload_that_touches_shared_state_stays_global(self):
+        for source in ("const A = E; await Promise.all(['x'].map(async n => { A.palette = n; }));",
+                       "await Promise.all(['x'].map(async n => { setPalette(n); }));"):
+            before=self.hashes()
+            (self.proj/'scenes/unsafe.js').write_text(source)
+            self.assertTrue(all(before[n]!=self.hashes()[n] for n in before), source)
+            (self.proj/'scenes/unsafe.js').unlink()
+
     def test_a_canvas_made_by_something_else_stays_global(self):
         before=self.hashes()
         (self.proj/'scenes/unsafe.js').write_text("const c = document.createElement(kind);")

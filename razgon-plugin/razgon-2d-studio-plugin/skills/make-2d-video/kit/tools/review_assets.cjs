@@ -36,7 +36,18 @@ function values(p, seen = new Set()) {
     const b = values(p.get(p.isConditionalExpression() ? 'alternate' : 'right'), seen);
     return a && b ? [...a, ...b] : null;
   }
-  if (p.isTemplateLiteral()) return [p.node.quasis.map(q => q.value.cooked).join('*')];
+  if (p.isTemplateLiteral()) {
+    // `/project/assets/${n}.png` with n from a literal list gives those names, not a mask over every PNG (14 November
+    // 2026: a kit preloading its own props made every frame depend on every PNG)
+    const quasis = p.node.quasis.map(q => q.value.cooked);
+    let out = [quasis[0]];
+    for (const [i, expression] of p.get('expressions').entries()) {
+      const found = values(expression, seen);
+      if (!found || out.length * found.length > 400) return [quasis.join('*')];
+      out = out.flatMap(head => found.map(value => head + value + quasis[i + 1]));
+    }
+    return out;
+  }
   if (p.isBinaryExpression({operator:'+'})) {
     const a = values(p.get('left'), seen), b = values(p.get('right'), seen);
     return a?.length || b?.length ? (a || ['*']).flatMap(x => (b || ['*']).map(y => x + y)) : null;
@@ -47,7 +58,7 @@ function values(p, seen = new Set()) {
   if (!binding?.constant) return null;
   if (binding.kind === 'param') {
     const fn = binding.path.findParent(x => x.isFunction()), call = fn?.parentPath;
-    if (!call?.isCallExpression() || !['forEach','map'].includes(call.node.callee.property?.name)) return null;
+    if (!call?.isCallExpression() || !['forEach','map'].includes(call.node.callee.property?.name)) return calledWith(fn, p.node.name, seen);
     const pattern = fn.node.params[0];
     const column = pattern.type === 'ArrayPattern' ? pattern.elements.findIndex(n => n?.name === p.node.name) : null;
     if (column === -1 || (column == null && pattern.name !== p.node.name)) return null;
@@ -63,6 +74,23 @@ function values(p, seen = new Set()) {
   }
   return values(declaration.get('init'), seen);
 }
+// A parameter of this module's own function that every call fills with known names: `load('g3_redgal')`.
+function calledWith(fn, name, seen) {
+  const at = fn?.node.params.findIndex(x => x.type === 'Identifier' && x.name === name);
+  const id = fn?.isFunctionDeclaration() ? fn.get('id') : fn?.parentPath.isVariableDeclarator() ? fn.parentPath.get('id') : null;
+  if (at == null || at < 0 || !id?.isIdentifier()) return null;
+  const b = id.scope.getBinding(id.node.name);
+  if (!b?.constant || !b.referencePaths.length) return null;
+  const out = [];
+  for (const ref of b.referencePaths) {
+    const call = ref.parentPath;
+    if (!call.isCallExpression() || call.node.callee !== ref.node) return null;   // passed on, exported or stored
+    const found = values(call.get(`arguments.${at}`), seen);
+    if (!found) return null;
+    out.push(...found);
+  }
+  return out;
+}
 function canvas(p, seen = new Set()) {
   if (!p?.node) return false;
   if (seen.has(p.node)) return true; // A closed cache cycle cannot introduce an external image.
@@ -74,6 +102,23 @@ function canvas(p, seen = new Set()) {
   }
   if (p.isConditionalExpression()) return canvas(p.get('consequent'), seen) && canvas(p.get('alternate'), seen);
   if (p.isNewExpression() && p.node.callee.name === 'OffscreenCanvas' && !p.scope.getBinding('OffscreenCanvas')) return true;
+  // An image this module makes itself: its `src` assignments record (or, unknown, make dynamic) the names it loads.
+  if (p.isNewExpression() && p.node.callee.name === 'Image' && !p.scope.getBinding('Image')) return true;
+  if (p.isNullLiteral()) return true;
+  if (p.isAwaitExpression()) return canvas(p.get('argument'), seen);
+  // An entry of this module's own table (`IMG[name] = im`, `CACHE.x = await load('x')`) when every write puts such a
+  // picture in it and the table goes nowhere else (14 November 2026, the kits of «Галактики»).
+  if (p.isMemberExpression() && p.get('object').isIdentifier()) {
+    const b = p.scope.getBinding(p.node.object.name), init = b?.path.isVariableDeclarator() ? b.path.get('init') : null;
+    if (!b?.constant || !init?.isObjectExpression() || init.node.properties.length) return false;
+    return b.referencePaths.every(ref => {
+      const member = ref.parentPath;
+      if (!member.isMemberExpression() || member.node.object !== ref.node) return false;
+      const write = member.parentPath;
+      if (write.isAssignmentExpression() && write.node.left === member.node) return canvas(write.get('right'), seen);
+      return !(write.isUpdateExpression() || write.isUnaryExpression({operator: 'delete'}) || write.isCallExpression() && write.node.callee === member.node);
+    });
+  }
   if (!p.isCallExpression()) return false;
   const c = p.node.callee;
   if (c.type === 'MemberExpression' && c.object.name === 'document' && c.property.name === 'createElement' && !p.scope.getBinding('document')) return p.node.arguments[0]?.value === 'canvas';
@@ -158,15 +203,67 @@ function scratchCanvas(init) {
   return init.isNewExpression() && unbound(init.get('callee')) && init.node.callee.name === 'OffscreenCanvas'
     && init.get('arguments').every(a => a.evaluate().confident);
 }
+// A top-level preload such as `await Promise.all(NAMES.map(n => new Promise(done => { const im = new Image(); …
+// IMG[n] = im; … })))` or `CACHE.x = await load('x')` only fills this module's own tables: it changes no other frame's
+// picture. Every write must land on a binding declared in this module (not an import, not a parameter), and every call
+// must be a built-in constructor, a method, a callback parameter or a function of this module whose body obeys the same.
+const SAFE_GLOBALS = new Set(['Promise', 'Image', 'Math', 'Object', 'Array', 'Number', 'String']);
+function localEffects(p, seen = new Set()) {
+  if (seen.has(p.node)) return true;
+  seen.add(p.node);
+  // a binding of this module that holds its own fresh value: an alias of an import or a global is not its own
+  // a value derived from one of them (`c.getContext('2d')`, `d.data`) is its own too
+  const fresh = (init, depth) => !init?.node || init.isLiteral() || init.isObjectExpression() || init.isArrayExpression()
+    || init.isNewExpression() || init.isFunction() || init.isTemplateLiteral() || init.isBinaryExpression() || scratchCanvas(init)
+    || ((init.isMemberExpression() || init.isCallExpression() && init.get('callee').isMemberExpression())
+        && (b => b.isIdentifier() && own(b, depth + 1))(root(init.isCallExpression() ? init.get('callee') : init)));
+  const own = (id, depth = 0) => {
+    const b = id && id.scope.getBinding(id.node.name);
+    if (!b || b.kind === 'module' || b.kind === 'param' || depth > 8) return false;
+    return !b.path.isVariableDeclarator() || fresh(b.path.get('init'), depth);
+  };
+  const root = node => { let x = node; while (x.isMemberExpression()) x = x.get('object'); return x; };
+  let safe = true;
+  const check = path => {
+    if (!safe) return;
+    if (path.isAssignmentExpression() || path.isUpdateExpression()) {
+      const target = root(path.get(path.isAssignmentExpression() ? 'left' : 'argument'));
+      if (!target.isIdentifier() || !own(target)) safe = false;
+    } else if (path.isCallExpression() || path.isNewExpression()) {
+      const callee = path.get('callee');
+      if (callee.isIdentifier()) {
+        const b = callee.scope.getBinding(callee.node.name);
+        if (!b) { if (!SAFE_GLOBALS.has(callee.node.name)) safe = false; }
+        else if (b.kind === 'module') safe = false;
+        else if (b.kind !== 'param') {
+          const body = b.path.isFunctionDeclaration() ? b.path : b.path.isVariableDeclarator() ? b.path.get('init') : null;
+          if (!body?.isFunction() || !localEffects(body, seen)) safe = false;
+        }
+      } else if (callee.isMemberExpression()) {
+        const base = root(callee);
+        if (base.isIdentifier()) {
+          const b = base.scope.getBinding(base.node.name);
+          if (b ? b.kind === 'module' : !(SAFE_GLOBALS.has(base.node.name) || scratchCanvas(path))) safe = false;
+        }
+      } else if (!callee.isFunction()) safe = false;
+    } else if (path.isIdentifier() && path.isReferencedIdentifier() && !path.scope.getBinding(path.node.name)
+               && !SAFE_GLOBALS.has(path.node.name) && !['document', 'undefined', 'NaN', 'Infinity'].includes(path.node.name)) {
+      safe = false;   // an unknown global (E, window, setPalette…) may be shared by every frame
+    }
+  };
+  check(p);
+  p.traverse({enter(path) { check(path); if (!safe) path.stop(); }});
+  return safe;
+}
 function pureTopLevel(p) {
   if (p.isImportDeclaration() || p.isExportAllDeclaration() || p.isFunctionDeclaration() || p.isEmptyStatement()) return true;
   if (p.isExportNamedDeclaration() || p.isExportDefaultDeclaration()) return !p.node.declaration || pureTopLevel(p.get('declaration'));
   if (p.isVariableDeclaration()) return p.get('declarations').every(d => {
     const init = d.get('init');
-    return !init.node || init.isPure() || init.evaluate().confident || localInitializer(init) || scratchCanvas(init) ||
+    return !init.node || init.isPure() || init.evaluate().confident || localInitializer(init) || scratchCanvas(init) || localEffects(init) ||
       (init.isNewExpression() && ['Map','Set'].includes(init.node.callee.name) && !init.scope.getBinding(init.node.callee.name) && !init.node.arguments.length);
   });
-  return p.isExpressionStatement() && p.get('expression').isPure();
+  return p.isExpressionStatement() && (p.get('expression').isPure() || localEffects(p.get('expression')));
 }
 const apis = new Map([['pic', new Set([1])], ['picTint', new Set([1])], ['fetch',new Set([0])]]);
 const fetchers = new Set(['fetch']);

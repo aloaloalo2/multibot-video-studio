@@ -102,12 +102,29 @@ class ProductionTest(unittest.TestCase):
         with patch.object(store,'made_frames',return_value=[1,2,3]), \
              patch.object(production,'drawn',return_value=True), \
              patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
-             patch.object(production.production_quality,'check',side_effect=[{'passed':False,'errors':['Stale review'],'pending_review':[1,2]}, {'passed':True,'errors':[]}]), \
+             patch.object(production.production_quality,'refresh_stills') as refresh, \
+             patch.object(production.production_quality,'check',side_effect=[{'passed':False,'errors':['Stale review'],'pending_review':[1,2]},
+                                                                            {'passed':False,'errors':['Stale review'],'pending_review':[1,2]}, {'passed':True,'errors':[]}]), \
              patch.object(production.production_sessions,'finish_review',return_value=(0,{'result':'checked','total_cost_usd':.2,'usage':{'input_tokens':10}})) as finish:
             production.run(self.project['id'],Path('claude'))
+        self.assertEqual(refresh.call_args_list[0].args[1],[1,2])   # free stills first; the pictures really changed
         self.assertEqual(finish.call_args.args[0],[1,2])
         self.assertEqual(self.project['production_request']['status'],'done')
         self.assertAlmostEqual(self.project['production_request']['cost_usd'],.2)
+
+    def test_unchanged_pictures_keep_their_verdicts_without_a_claude_session(self):
+        # «Галактики», 14 November 2026: a review session's new PNGs staled 39 untouched frames; fresh stills of the
+        # same pictures keep their verdicts, so no paid review is needed
+        with patch.object(store,'made_frames',return_value=[1,2,3]), \
+             patch.object(production,'drawn',return_value=True), \
+             patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+             patch.object(production.production_quality,'refresh_stills') as refresh, \
+             patch.object(production.production_quality,'check',side_effect=[{'passed':False,'errors':['Stale review'],'pending_review':[1,2]}, {'passed':True,'errors':[]}]), \
+             patch.object(production.production_sessions,'finish_review') as finish:
+            production.run(self.project['id'],Path('claude'))
+        refresh.assert_called_once()
+        finish.assert_not_called()
+        self.assertEqual(self.project['production_request']['status'],'done')
 
     def test_final_review_quota_keeps_provider_reset_message(self):
         quota={'is_error':True,'api_error':'usage_limit_reached','result':"You've hit your 5-hour limit · resets 4:40pm (Europe/Kiev)"}

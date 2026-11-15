@@ -27,6 +27,22 @@ def approved_razgon(project, numbers):
         return set()
 
 
+
+def refresh_stills(project: dict, numbers) -> None:
+    """New stills for frames whose sources changed, without Claude: frame_review.py `sheets` keeps a frame's verdict when
+    its picture is the same and asks for a look only where it really changed (user, 14 November 2026: «Кадри 6–68 не
+    вдалися… так не має бути»: a session fixing frame 61 added PNGs at the end and 39 untouched frames read stale)."""
+    linked = frame_progress.razgon_project(project)
+    if not numbers or linked is None:
+        return
+    root = store.YOUTUBE_ROOT / store.razgon_rel()
+    try:
+        subprocess.run([sys.executable, str(root / 'tools/frame_review.py'), '--project', str(linked), 'sheets',
+                        '--frames', ','.join(map(str, sorted(numbers)))], cwd=root, capture_output=True, text=True,
+                       timeout=1800)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
 def check(project, request):
     try:
         return _check(project, request)

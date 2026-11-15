@@ -466,6 +466,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             final_request = {**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))}
             review = production_quality.check(store.load_project(pid), final_request)
             if review.get('pending_review'):
+                # fresh stills first, free: an unchanged picture keeps its verdict and needs no Claude session
+                production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
+                review = production_quality.check(store.load_project(pid), final_request)
+            if review.get('pending_review'):
                 # A later batch may invalidate an earlier dependency. Finish that
                 # review here, while the same worker still owns the production job.
                 review_code, review_answer = production_sessions.finish_review(
@@ -474,6 +478,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
                               session_id=answer.get('session_id'), **director.spent(answer,started))
                 review = production_quality.check(store.load_project(pid), final_request)
+                if review.get('pending_review') and not (review_code or review_answer.get('is_error')):
+                    # the review sessions themselves may add props: their untouched neighbours get fresh stills too
+                    production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
+                    review = production_quality.check(store.load_project(pid), final_request)
                 if review_code or review_answer.get('is_error'):
                     review = {**review,'passed':False,'errors':review.get('errors') or [review_answer.get('result') or 'Не завершено огляд кадрів']}
                     if director.limit_stop(review_answer):

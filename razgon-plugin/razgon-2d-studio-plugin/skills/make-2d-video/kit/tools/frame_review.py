@@ -65,6 +65,9 @@ def frames_of(proj: Path) -> list[dict]:
     return [{"n": n, "start": a, "end": b, "line": line, "takes": takes(a, b)} for n, a, b, line in items]
 
 
+DEFAULT_SCALE = 0.34
+
+
 def thumb(path: Path):
     if not path.is_file():
         return None
@@ -116,6 +119,12 @@ def sheets(proj: Path, root: Path, a) -> None:
     want = pick(a.frames, len(frames)) if a.frames else {f["n"] for f in frames}
     state_path = proj / "build" / "review" / "review.json"
     state = load_state(state_path)
+    if a.scale is None:
+        # The stills are compared with the last ones to keep a verdict whose picture did not change; another scale
+        # draws other antialiasing and reads as a change everywhere (15 November 2026: a refresh at 0.34 over stills of
+        # 0.3 reset all 68 verdicts of «Галактики»). Without --scale, render at the scale the frames had.
+        used = [e.get("scale") for e in state["frames"].values() if isinstance(e.get("scale"), (int, float))]
+        a.scale = max(set(used), key=used.count) if used else DEFAULT_SCALE
     sources = fingerprints(proj, root, [f for f in frames if f["n"] in want])
     keep = state_path.parent / "frames"
     times_by_frame = {}
@@ -168,6 +177,9 @@ def sheets(proj: Path, root: Path, a) -> None:
         old = state["frames"].get(str(f["n"]), {})
         same = all(same_picture(before[t], thumb(keep / f"{t:.2f}.png")) for t in f["times"])
         if old.get("pixels") != digest and old.get("verdict") and not same:
+            if not reset:   # a verdict is a paid look: keep a copy of the state before the first one goes
+                backup = state_path.with_name(f"review.before-reset-{int(time.time())}.json")
+                backup.write_text(json.dumps(load_state(state_path), ensure_ascii=False, indent=1))
             reset += 1
             old = {}
         state["frames"][str(f["n"])] = {**old, "pixels": digest, "times": f["times"], "takes": f["takes"],
@@ -289,7 +301,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", required=True)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("sheets"); s.add_argument("--frames", default=""); s.add_argument("--scale", type=float, default=0.34)
+    s = sub.add_parser("sheets"); s.add_argument("--frames", default=""); s.add_argument("--scale", type=float, default=None,
+                   help=f"still scale; by default the one the frames were reviewed at, else {DEFAULT_SCALE}")
     s.add_argument("--all", action="store_true", help="force new stills even when source content is unchanged")
     m = sub.add_parser("mark"); m.add_argument("frames"); m.add_argument("verdict", choices=["ok", "bug"]); m.add_argument("note", nargs="?", default="")
     st = sub.add_parser("status")
