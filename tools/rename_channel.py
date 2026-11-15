@@ -23,9 +23,9 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP / "backend"))
+import path_rewrite  # noqa: E402
 import store  # noqa: E402
 
-TEXT = {".json", ".txt", ".md", ".jsonl", ".csv"}
 ROOTS = (store.DATA_ROOT, APP / "razgon-2d-studio" / "projects")
 
 
@@ -34,36 +34,6 @@ def find_folder(name: str) -> Path:
         if folder.is_dir() and unicodedata.normalize("NFC", folder.name) == unicodedata.normalize("NFC", name):
             return folder
     raise SystemExit(f"Папку «{name}» не знайдено в {store.YOUTUBE_ROOT}")
-
-
-def forms(path: str) -> list[bytes]:
-    """The ways a path is written in the studio's files: as on disk, NFC, NFD, and each as a JSON \\u escape."""
-    seen = []
-    for text in {path, unicodedata.normalize("NFC", path), unicodedata.normalize("NFD", path)}:
-        for raw in (text.encode(), json.dumps(text)[1:-1].encode()):
-            if raw not in seen:
-                seen.append(raw)
-    return seen
-
-
-def replacements(old: Path, new: Path, old_id: str, new_id: str) -> list[tuple[bytes, bytes]]:
-    pairs = []
-    target = str(new)
-    for raw in forms(str(old)):
-        escaped = b"\\u" in raw
-        pairs.append((raw, json.dumps(target)[1:-1].encode() if escaped else target.encode()))
-    # A path followed by «/» or «"»: a longer folder name that starts the same way is not this channel.
-    pairs = [(a + end, b + end) for a, b in pairs for end in (b"/", b'"', b"\\/")]
-    return pairs + [(old_id.encode(), new_id.encode())]
-
-
-def files():
-    for root in ROOTS:
-        if root.is_dir():
-            for path in root.rglob("*"):
-                if (path.suffix in TEXT and path.is_file() and not path.is_symlink()
-                        and "rename-backups" not in path.relative_to(root).parts):
-                    yield path
 
 
 def busy() -> bool:
@@ -89,18 +59,8 @@ def main() -> None:
         raise SystemExit(f"«{old.name}» не є папкою каналу студії")
     old_id = store.channel_id(old)
     new_id = __import__("hashlib").sha256(str(new).encode()).hexdigest()[:16]
-    pairs = replacements(old, new, old_id, new_id)
-    changed = {}
-    for path in files():
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
-        result = data
-        for a, b in pairs:
-            result = result.replace(a, b)
-        if result != data:
-            changed[path] = result
+    replace = path_rewrite.pairs(old, new) + [(old_id.encode(), new_id.encode())]
+    changed = path_rewrite.changes(path_rewrite.text_files(ROOTS, skip=("rename-backups",)), replace)
     channel_data = store.DATA_ROOT / "channels"
     print(f"{old.name} → {new.name}: канал {old_id} → {new_id}, файлів до оновлення {len(changed)}"
           f"{', дані каналу переїдуть' if (channel_data / old_id).is_dir() else ''}")
@@ -124,11 +84,8 @@ def main() -> None:
     os.rename(old, new)
     if (channel_data / old_id).is_dir():
         os.rename(channel_data / old_id, channel_data / new_id)
-    for path, result in changed.items():
-        path = Path(str(path).replace(f"/channels/{old_id}/", f"/channels/{new_id}/"))
-        staged = path.with_name(f".rename-{path.name}")
-        staged.write_bytes(result)
-        os.replace(staged, path)
+    path_rewrite.write({Path(str(path).replace(f"/channels/{old_id}/", f"/channels/{new_id}/")): data
+                        for path, data in changed.items()})
     if store.channel_id(new) != new_id:
         raise SystemExit(f"Увага: номер нової папки {store.channel_id(new)} не збігся з {new_id}")
     print("Готово. Перезапустіть студію: python3 tools/studio_restart.py")

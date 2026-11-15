@@ -1806,8 +1806,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"director": director.start(match.group(1), "manual")})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match and method == "PATCH":
-            project = store.apply_action(match.group(1), "rename_project", {"name": body.get("name")}, body.get("expected_revision"))
-            return self.json_response({"project": project})
+            pid = match.group(1)
+            # the episode folder takes the new name too (episode_folder.py), so nothing may be working in it
+            import episode_folder
+            current = store.load_project(pid)
+            moving = (episode_folder.folder_name(body.get("name")) != episode_folder.folder_name(current.get("name"))
+                      and Path(current.get("episode_path") or "/nonexistent").is_dir())
+            running = moving and (space.busy(pid) or ("Зараз іде експорт" if active_export(pid) else None)
+                                  or next((f"Зараз триває {what}" for what, status in project_jobs(pid).items() if status in agent_view.BUSY), None))
+            if running:
+                raise store.StudioError(f"{running}. Перейменувати випуск разом із папкою можна, коли вона закінчиться", 409)
+            store.apply_action(pid, "rename_project", {"name": body.get("name")}, body.get("expected_revision"))
+            folder = episode_folder.follow(pid) if moving else {"moved": False, "note": ""}
+            return self.json_response({"project": store.load_project(pid), "folder": folder})
         if match and method == "DELETE":
             pid = match.group(1)
             running = (space.busy(pid) or ("Зараз іде експорт" if active_export(pid) else None)

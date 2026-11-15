@@ -384,7 +384,7 @@ function renameProject(project){
       const name=$('rename-project-name').value.trim();if(!name)throw new Error('Введіть назву випуску.');
       const result=await api(`/api/projects/${encodeURIComponent(project.id)}`,'PATCH',{name,expected_revision:project.revision});
       if(state.project?.id===project.id){state.project=result.project;renderProject();}
-      await refreshProjects();if(button.isConnected)closeModal();status(`Випуск перейменовано на «${result.project.name}».`);
+      await refreshProjects();if(button.isConnected)closeModal();status(result.folder?.note||`Випуск перейменовано на «${result.project.name}»${result.folder?.moved?', папку теж':''}.`);
     }catch(error){button.disabled=false;status(error.message,true);}
   }}]);
 }
