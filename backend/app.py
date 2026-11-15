@@ -1592,6 +1592,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(title_translation.translate(body))
         if path == "/api/trending-videos/use" and method == "POST":
             return self.json_response(trending_videos.use_idea(body), 202)
+        if path == "/api/trending-videos/dismiss" and method == "POST":
+            return self.json_response(trending_videos.dismiss(body))
         if path == "/api/trending-videos/refresh" and method == "POST":
             return self.json_response(trending_videos.refresh())
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)

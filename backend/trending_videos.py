@@ -90,10 +90,36 @@ def used_video_ids():
     return used
 
 
+def dismissed_path():
+    return store.DATA_ROOT / 'trending-dismissed.json'
+
+
+def dismissed_ids():
+    """Videos the author threw away from the suggestions (user, 15 November 2026: «це відео мені не пропонувати»)."""
+    data = store.read_json(dismissed_path(), {}) or {}
+    return {identity for identity in data.get('videos', {}) if isinstance(identity, str)}
+
+
+def dismiss(body):
+    import idea_reference
+    identity = body.get('video_id')
+    if not isinstance(identity, str) or not idea_reference.VIDEO_ID.fullmatch(identity):
+        raise store.StudioError('Оберіть відео з добірки', 400)
+    with LOCK:
+        data = store.read_json(dismissed_path(), {}) or {}
+        data.setdefault('videos', {})[identity] = {'at': time.time(), 'title': str(body.get('title') or '')[:200]}
+        store.atomic_json(dismissed_path(), data)
+    return {'dismissed': identity}
+
+
+def hidden_ids():
+    return used_video_ids() | dismissed_ids()
+
+
 def view():
     linked = sources()
     cache = trending_titles.decorate(store.read_json(cache_path(), {}))
-    used = used_video_ids()
+    used = hidden_ids()
     cards, warnings = [], []
     for identity, source in linked.items():
         entry = cache.get(identity)
@@ -155,7 +181,7 @@ def refresh():
             finally:
                 if pool: pool.shutdown()
             try:
-                used = used_video_ids()
+                used = hidden_ids()
                 visible = [video for identity, entry in cache.items() if identity in linked for video in rank(entry['videos'], time.time()) if video['id'] not in used]
                 trending_titles.update(visible)
             except Exception:

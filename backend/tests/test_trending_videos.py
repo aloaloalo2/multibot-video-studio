@@ -135,3 +135,18 @@ class TrendHTTPTests(unittest.TestCase):
             code,data=self.request('/api/studio/status')
             self.assertEqual(code,200)
             self.assertIn('оновлення добірки конкурентів',data['busy'])
+
+
+class DismissTest(unittest.TestCase):
+    """A video thrown away with the trash button never comes back to the suggestions (user, 15 November 2026)."""
+    def test_dismissed_video_is_hidden_and_remembered(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import store
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'DATA_ROOT', Path(tmp)):
+            self.assertEqual(trends.dismissed_ids(), set())
+            trends.dismiss({'video_id': 'abcdefghijk', 'title': 'Old idea'})
+            self.assertIn('abcdefghijk', trends.hidden_ids())
+            with self.assertRaises(store.StudioError):
+                trends.dismiss({'video_id': 'bad id'})
