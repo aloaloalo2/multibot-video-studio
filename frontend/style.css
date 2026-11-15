@@ -2865,3 +2865,10 @@ select option{background:#232327;color:#f1f1f2}
 .claude-ask-button{width:26px;height:26px;min-width:26px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:1px solid #4a4a52;background:#26262b;color:#d97757;cursor:pointer;align-self:center;margin-left:4px}
 .claude-ask-button:hover{border-color:#d97757;background:#2f2724;box-shadow:0 0 8px #d9775755}
 .claude-ask-button svg,.claude-ask-button svg.claude-mark,.claude-ask-button svg path{width:15px;height:15px;fill:#d97757;stroke:none}
+/* the layer's volume: a small percent by the sound button and a slider over it (user, 15 November 2026) */
+.layer-volume{flex:none;min-width:34px;height:20px;padding:0 4px;border:1px solid #3a3a40;border-radius:6px;background:transparent;color:#9a9ca4;font-size:10px;line-height:18px;font-variant-numeric:tabular-nums;cursor:pointer}
+.layer-volume:hover{color:#e6e7ea;border-color:#5a5a62}
+.layer-volume-pop{position:fixed;z-index:1000;width:200px;padding:10px 12px;border:1px solid #3a3a40;border-radius:10px;background:#1d1d21;box-shadow:0 8px 24px #0008;color:#d6d7dc;font-size:12px}
+.layer-volume-pop label{display:flex;justify-content:space-between;margin-bottom:6px}
+.layer-volume-pop output{font-variant-numeric:tabular-nums;color:#ffcf59}
+.layer-volume-pop input{width:100%}

@@ -33,6 +33,34 @@ function addLayerSoundControl(heading,target,name){
   const muted=targets.every(layer=>layer.muted===true),label=name||targets[0].name;
   const button=document.createElement('button');button.type='button';button.className='layer-sound'+(muted?' is-muted':'');button.draggable=false;button.setAttribute('aria-label',(muted?'Увімкнути':'Вимкнути')+' звук доріжки '+label);button.setAttribute('aria-pressed',String(muted));button.title=muted?'Доріжку вимкнено':'Звук доріжки ввімкнено';button.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 4 6 8H3v8h3l5 4z"/>'+(muted?'<path d="m16 9 5 6m0-6-5 6"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>')+'</svg>';
   button.addEventListener('click',event=>{event.stopPropagation();const edits=targets.map(layer=>({type:'set_layer_mute',payload:{layer_id:layer.id,muted:!muted}})),message=muted?'Звук доріжки ввімкнено.':'Звук доріжки вимкнено.';(edits.length===1?action(edits[0].type,edits[0].payload,message):action('batch',{actions:edits},message)).catch(()=>{});});heading.append(button);heading.closest('.track-row')?.classList.toggle('sound-muted',muted);
+  addLayerVolumeControl(heading,targets,label);
+}
+// the loudness of a whole layer, or of the joined music row, in one slider (user, 15 November 2026: «дай можливість
+// змінити гучність слою»): every audio clip of the layer gets the same volume, one undo step
+function addLayerVolumeControl(heading,targets,label){
+  const clips=targets.flatMap(layer=>layer.clips.filter(c=>c.kind==='audio'));
+  if(!clips.length)return;
+  const level=Math.round(Math.max(...clips.map(c=>Number(c.volume??1)))*100);
+  const button=document.createElement('button');button.type='button';button.className='layer-volume';button.draggable=false;
+  button.textContent=level+'%';button.title='Гучність доріжки';button.setAttribute('aria-label',`Гучність доріжки ${label}: ${level}%`);
+  button.addEventListener('click',event=>{
+    event.stopPropagation();
+    document.querySelector('.layer-volume-pop')?.remove();
+    const pop=document.createElement('div');pop.className='layer-volume-pop';pop.setAttribute('role','dialog');pop.setAttribute('aria-label','Гучність доріжки '+label);
+    pop.innerHTML=`<label><span>Гучність</span><output>${level}%</output></label><input type="range" min="0" max="200" step="1" value="${level}" aria-label="Гучність доріжки ${esc(label)}">`;
+    const range=pop.querySelector('input'),out=pop.querySelector('output');
+    range.addEventListener('input',()=>{out.textContent=range.value+'%';});
+    range.addEventListener('change',()=>{
+      const volume=Number(range.value)/100,edits=clips.map(c=>({type:'set_clip_volume',payload:{clip_id:c.id,volume}}));
+      (edits.length===1?action(edits[0].type,edits[0].payload,'Гучність змінено.'):action('batch',{actions:edits},'Гучність доріжки змінено.')).catch(()=>{});
+    });
+    document.body.append(pop);
+    const rect=button.getBoundingClientRect();pop.style.left=Math.min(innerWidth-pop.offsetWidth-8,rect.left)+'px';pop.style.top=Math.max(8,rect.top-pop.offsetHeight-6)+'px';
+    range.focus();
+    const close=e=>{if(e.type==='keydown'&&e.key!=='Escape')return;if(e.type==='pointerdown'&&pop.contains(e.target))return;pop.remove();document.removeEventListener('pointerdown',close,true);document.removeEventListener('keydown',close,true);};
+    setTimeout(()=>{document.addEventListener('pointerdown',close,true);document.addEventListener('keydown',close,true);});
+  });
+  heading.append(button);
 }
 function layerTime(event,lane){const rect=lane.getBoundingClientRect();return timelineOrigin()+Math.max(0,Math.round(((event.clientX-rect.left)/rect.width)*timelineSpan()*10)/10);}
 

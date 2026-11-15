@@ -14,7 +14,7 @@ import store
 # The music sits this far under the voice, whose standard is audio_level.TARGET_LUFS (−16): measured, not a fixed share.
 # A fixed 35% left a synthesized bed only 13 dB under Gorbunov's voice and loud in every pause (user, 15 November 2026:
 # «чому музика так голосно? чому немає якоїсь нормалізації»).
-MUSIC_UNDER_VOICE_DB = 22.0
+MUSIC_UNDER_VOICE_DB = 30.0   # 22 dB was still loud (user, 15 November 2026: «всеодно голосно»); Antropov's liked bed sits ~32 dB under
 MUSIC_FALLBACK_VOLUME = 0.12
 
 
