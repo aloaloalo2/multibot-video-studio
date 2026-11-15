@@ -139,6 +139,7 @@ function organizeChannelSettings(channel){
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});
+  move('.thumbnail-logo-section','thumbnails',{icon:'thumbnails'});   // the logo on thumbnails sits with the thumbnail wishes (user, 15 November 2026)
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
   for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
     const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?'hero':key;

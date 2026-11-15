@@ -32,6 +32,8 @@ def validate(settings: dict) -> None:
         style_lab.validate(settings.get("animation"))
     except style_lab.StyleLabError as error:
         raise BrandingError(str(error)) from None
+    import thumbnail_logo
+    thumbnail_logo.validate(settings.get("thumbnail_logo"))
     logo = settings.get("logo")
     if logo is None:
         return

@@ -328,6 +328,67 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual([path.name for path in stills], ["Кадр ролику 1.png", "Кадр ролику 2.png", "Кадр ролику 3.png"])
         self.assertEqual([Image.open(path).getpixel((0, 0))[0] for path in stills], [20, 60, 100])   # first, middle, last
 
+    def logo_run(self, setting, base=None, wishes=''):
+        """One run with the channel logo set as `setting`; Codex draws a 320×180 blue picture."""
+        import channel_branding
+        logo = Path(self.tmp.name) / 'logo.png'
+        Image.new('RGBA', (40, 20), (255, 255, 0, 255)).save(logo)
+        self.project['channel_id'] = 'c' * 16
+        work = thumbnail_gen.keep_dir(self.project['id']); work.mkdir(exist_ok=True)
+        calls = []
+        def draw(command, **kwargs):
+            calls.append((command, kwargs['input']))
+            if command[0] == 'claude':
+                return subprocess.CompletedProcess(command, 0, json.dumps({'result': 'A neon close-up of the hero. ' * 8}), '')
+            number = 1 + len(list(work.glob('Превью v*.png')))
+            Image.new('RGB', (320, 180), (0, 0, 255)).save(Path(kwargs['cwd']) / f'Превью v{number}.png')
+            return subprocess.CompletedProcess(command, 0, '', '')
+        with patch.object(subprocess, 'run', side_effect=draw), patch.object(channel_branding, 'logo_path', return_value=logo), \
+             patch.object(thumbnail_gen.director, 'channel_settings', return_value={'thumbnail_logo': setting}):
+            thumbnail_gen.run(self.project['id'], 'T', 'S', wishes, base=base)
+        self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
+        return work, calls
+
+    def test_a_corner_logo_is_laid_by_the_studio_and_an_edit_starts_from_the_picture_without_it(self):
+        # user, 15 November 2026: «прикріпляти до прев'ю логотип… в якому углі я хочу»
+        work, calls = self.logo_run({'enabled': True, 'position': 'top-right', 'size': 10})
+        command, sent = calls[-1]
+        self.assertIn('keep the top right corner', sent)
+        self.assertNotIn('Логотип каналу.png', ' '.join(command))
+        made = Image.open(work / 'Превью v1.png')
+        self.assertEqual(made.getpixel((300, 15)), (255, 255, 0))     # the logo, 32 px wide, 10 px from the right
+        self.assertEqual(made.getpixel((20, 160)), (0, 0, 255))
+        self.assertEqual(Image.open(work / 'Без логотипа' / 'Превью v1.png').getpixel((300, 15)), (0, 0, 255))
+        self.assertEqual(Image.open(self.episode / 'Превью.png').getpixel((300, 15)), (255, 255, 0))
+        self.assertEqual([item['number'] for item in thumbnail_gen.versions(self.project['id'])], [1])
+        work, calls = self.logo_run({'enabled': True, 'position': 'top-right', 'size': 10}, base='Превью v1.png', wishes='Bigger')
+        command, _ = calls[-1]
+        self.assertEqual(command[command.index('-i') + 1], str(work / 'Без логотипа' / 'Превью v1.png'))
+        self.assertEqual(Image.open(work / 'Превью v2.png').getpixel((300, 15)), (255, 255, 0))
+
+    def test_an_auto_logo_goes_to_codex_with_the_prompt_and_is_not_laid_again(self):
+        work, calls = self.logo_run({'enabled': True, 'position': 'auto', 'size': 14})
+        command, sent = calls[-1]
+        self.assertIn(str(work / 'Логотип каналу.png'), command)
+        self.assertIn('where the composition has room', sent)
+        self.assertEqual(Image.open(work / 'Превью v1.png').getpixel((300, 15)), (0, 0, 255))
+        self.assertFalse((work / 'Без логотипа').exists())
+
+    def test_without_the_box_or_without_a_logo_file_nothing_changes(self):
+        work, calls = self.logo_run({'enabled': False, 'position': 'top-right'})
+        self.assertNotIn('LOGO', calls[-1][1])
+        self.assertEqual(Image.open(work / 'Превью v1.png').getpixel((300, 15)), (0, 0, 255))
+        import thumbnail_logo, channel_branding
+        with patch.object(channel_branding, 'logo_path', return_value=Path(self.tmp.name) / 'none.png'):
+            self.assertIsNone(thumbnail_logo.spec({'channel_id': 'c' * 16}, {'thumbnail_logo': {'enabled': True}}))
+
+    def test_the_setting_is_checked_when_the_channel_is_saved(self):
+        import channel_branding
+        channel_branding.validate({'thumbnail_logo': {'enabled': True, 'position': 'bottom-left', 'size': 12}})
+        for bad in ({'enabled': 'yes'}, {'position': 'middle'}, {'size': 80}, 'on'):
+            with self.subTest(bad=bad), self.assertRaises(channel_branding.BrandingError):
+                channel_branding.validate({'thumbnail_logo': bad})
+
     def test_start_needs_a_title_and_two_made_frames(self):
         self.project['project_kind'] = 'animated'
         with self.assertRaises(store.StudioError):

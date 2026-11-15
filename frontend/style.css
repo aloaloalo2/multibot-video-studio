@@ -2872,3 +2872,7 @@ select option{background:#232327;color:#f1f1f2}
 .layer-volume-pop label{display:flex;justify-content:space-between;margin-bottom:6px}
 .layer-volume-pop output{font-variant-numeric:tabular-nums;color:#ffcf59}
 .layer-volume-pop input{width:100%}
+.thumbnail-logo-section p{font-size:12px;margin:4px 0 10px;color:#999da6}
+.thumbnail-logo-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px}
+.thumbnail-logo-controls[hidden]{display:none}
+.thumbnail-logo-controls>label:first-child{display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c6ce}

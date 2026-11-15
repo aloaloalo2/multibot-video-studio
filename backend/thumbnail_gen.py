@@ -26,6 +26,7 @@ import channel_hero
 import agent_storage
 import image_delivery
 import thumbnail_compare
+import thumbnail_logo
 
 CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 PREVIEW = "Превью.png"
@@ -310,7 +311,7 @@ def write_prompt_codex(text: str, work: Path, refs: list[Path], name: str) -> tu
 
 
 @job_timing.measure('service')
-def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None):
+def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None, logo: Path | None = None):
     """An isolated fresh session receives text and optional host identity, with no competitor pixels/files/history."""
     with tempfile.TemporaryDirectory(prefix='videokey-new-thumbnail-') as temp:
         clean = Path(temp)
@@ -319,6 +320,10 @@ def draw_clone_from_text(prompt: str, name: str, work: Path, hero: Path | None):
             portrait = clean / 'Головний герой.png'
             shutil.copyfile(hero, portrait)
             command += ['-i', str(portrait)]
+        if logo:
+            mark = clean / logo.name
+            shutil.copyfile(logo, mark)
+            command += ['-i', str(mark)]
         instructions = drawing(prompt, name) + """
 Create the image from scratch from the written description above. This is a new image-generation session.
 The competitor thumbnail is not an input to this session. Do not open, retrieve, trace or edit it.
@@ -415,7 +420,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         if clone and not base and use_hero is None:
             # The attached hero is conditional here: extras stay extras, object-only references stay people-free.
             hero_rules = '\nГоловний герой.png is our host identity reference ONLY when replacing a source presenter. Do not add this host to neutral story-subject or object-only concepts.\n' if hero else ''
-        channel_wishes = str(director.channel_settings(project).get("thumbnail_wishes") or "").strip()
+        settings = director.channel_settings(project)
+        channel_wishes = str(settings.get("thumbnail_wishes") or "").strip()
+        logo = thumbnail_logo.spec(project, settings)
+        logo_ref, logo_rules = thumbnail_logo.prepare(logo, work)
         try:
             agent_rules = agent_storage.get_memory(project['channel_id']).strip()
         except (store.StudioError, KeyError):
@@ -425,7 +433,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                       + agent_rules + "\n\nSpecific wishes for this thumbnail:\n" + wishes)
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
-            refs, answer = [version_file(pid, base)], {}
+            refs, answer = [thumbnail_logo.clean(work, base) or version_file(pid, base)], {}
             written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
             if channel_wishes and not clone:
@@ -469,13 +477,17 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         if not clone or base or use_hero is not None:
             written += hero_rules
             note += hero_rules
+        written += logo_rules
+        note += logo_rules
+        if logo_ref:
+            refs = [*refs, logo_ref]
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")
         data.update(stage="drawing", prompt_cost_usd=answer.get("total_cost_usd"))
         store.atomic_json(job_path(pid), data)
         # Clone drawings run in a fresh, clean workspace with text and optional host identity only.
         with job_timing.span('service'):
             if clone and not base:
-                result = draw_clone_from_text(written, name, work, hero)
+                result = draw_clone_from_text(written, name, work, hero, logo_ref)
             else:
                 command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
                 for ref in refs: command += ["-i", str(ref)]
@@ -489,6 +501,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         except (OSError, UnidentifiedImageError):
             raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
         with job_timing.span('saving'):
+            thumbnail_logo.stamp(made, logo, work)
             try:thumbnail_compare.record(pid, name, base=base, reference=clone, image=clone_image)
             except (OSError, ValueError):pass  # Optional comparison cannot discard a completed image.
             kept = work / PREVIEW

@@ -2845,7 +2845,8 @@ style while adapting the text and the chosen visual details. A textless image st
         edit="""Change nothing else: the composition, the characters, the faces, the style, the colours and the background stay exactly
 as they are. If there is no text on the picture, return it unchanged."""
     return f"""Edit the attached YouTube thumbnail: translate every word written on it into {ENGLISH[code]}.
-Keep the translation as short and punchy as the original, in the same font style, size, colours, outline and position.{hint}
+Keep the translation as short and punchy as the original, in the same font style, size, colours, outline and position.
+The channel's logo, if the picture has one, is a brand mark: keep it exactly as it is, untranslated and in its place.{hint}
 {edit}
 Use the built-in image generation tool and make exactly one image. Save it in the current working directory as "{name}"
 and reply only with the saved path."""
