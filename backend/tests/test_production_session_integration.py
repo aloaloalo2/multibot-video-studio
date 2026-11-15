@@ -69,10 +69,11 @@ class KitStageTest(ScopedProductionTest):
         import os, stat, tempfile
         film = Path(tempfile.mkdtemp()) / 'film'; (film / 'scenes').mkdir(parents=True); (film / 'story').mkdir()
         (film / 'scenes' / 'cast.js').write_text('// cast\n')
-        prompts, locked_seen = [], []
+        prompts, locked_seen, stages = [], [], []
         def author(cli, prompt, log, *args, **kwargs):
             prompts.append(prompt)
             if prompt.startswith('Ти готуєш спільний набір'):
+                stages.append(self.project['production_request'].get('stage'))   # the card reads «Підготовка» now
                 (film / 'story' / 'kit.json').write_text(json.dumps({'ready': True}))
                 return 0, {'result': 'Kit ready.', 'total_cost_usd': .02}
             locked_seen.append(not os.stat(film / 'scenes' / 'cast.js').st_mode & stat.S_IWUSR)
@@ -89,3 +90,4 @@ class KitStageTest(ScopedProductionTest):
         self.assertTrue(os.stat(film / 'scenes' / 'cast.js').st_mode & stat.S_IWUSR)
         request = self.project['production_request']
         self.assertEqual(request['status'], 'done'); self.assertAlmostEqual(request['cost_usd'], .07)
+        self.assertEqual(stages, ['kit']); self.assertIsNone(request.get('stage'))

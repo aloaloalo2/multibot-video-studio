@@ -488,10 +488,18 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                         + engine_index.brief() + engine_index.project_index(current) + montage_context.COMMANDS)
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             if deadline - time.monotonic() <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
-            with production_sessions.STUDIO_SESSIONS:
-                kit_code, kit_answer = director.claude(cli, kit_text, log.with_name(log.stem + f'-session-{production_kit.KIT_INDEX}.log'),
-                    director.activity_path(pid, 'production'), max(1, int(deadline - time.monotonic())), resume=None,
-                    effort=effort, model=model, env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+            # the card and the plan read «Підготовка» while the kit is made (user, 15 November 2026)
+            set_request(pid, stage='kit')
+            try:
+                with production_sessions.STUDIO_SESSIONS:
+                    kit_code, kit_answer = director.claude(cli, kit_text, log.with_name(log.stem + f'-session-{production_kit.KIT_INDEX}.log'),
+                        director.activity_path(pid, 'production'), max(1, int(deadline - time.monotonic())), resume=None,
+                        effort=effort, model=model, env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+            finally:
+                try:
+                    set_request(pid, stage=None)
+                except (OSError, store.StudioError):
+                    pass
             production_kit.record_cost(store.load_project(pid), kit_answer)
             if director.limit_stop(kit_answer):
                 fields.update(status="failed", limit=True, error=director.limit_stop(kit_answer),
