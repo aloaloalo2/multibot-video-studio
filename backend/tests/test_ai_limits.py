@@ -69,6 +69,13 @@ class AiLimitsTest(unittest.TestCase):
         logs={'known':True,'left':100,'resets_at':now+3*86400,'seen_at':now-30,'source':'logs','window':'seven_day','stale':False}
         self.assertEqual(ai_limits._merge(account,logs,now)['left'],100)
 
+    def test_a_fresh_account_reading_beats_old_receipts_of_another_window(self):
+        now=time.time()
+        account={'known':True,'left':94,'resets_at':now+3*86400,'seen_at':now-20,'source':'account','window':'seven_day'}
+        logs={'known':True,'left':25,'resets_at':now+9000,'seen_at':now-5,'source':'logs','window':'five_hour','stale':False}
+        merged=ai_limits._merge(account,logs,now)
+        self.assertEqual((merged['left'],merged['window'],merged['source']),(94,'seven_day','account'))
+
     def test_an_idle_codex_is_not_stale(self):
         self.log(self.home / ".codex/sessions/2026/rollout.jsonl", codex_event(25.0, int(time.time()) + 3600), age=22 * 60)
         result = self.read()["codex"]

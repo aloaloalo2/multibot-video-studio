@@ -180,8 +180,14 @@ def _merge(account, logs, now: float) -> dict:
     if logs.get('known') and (logs.get('seen_at') or 0) > (account.get('seen_at') or 0):
         same = (logs.get('window', 'five_hour') == account.get('window', 'five_hour')
                 and abs((logs.get('resets_at') or 0) - account['resets_at']) < 300)
-        # the same window: use only grows, the lower remainder wins; another window: the plan changed, the newer wins
-        return {**logs, 'left': min(logs['left'], account['left'])} if same else logs
+        fresh = now - (account.get('seen_at') or 0) <= ACCOUNT_EVERY + 60
+        # the same window: use only grows, the lower remainder wins. Another window: a fresh account reading wins, since
+        # a run log's time is the file's and can move without a new receipt (user, 15 November 2026: the panel showed
+        # «на 5 годин лишилось 25%» from the morning's receipts while the account had only its weekly window, 94% left)
+        if same:
+            return {**logs, 'left': min(logs['left'], account['left'])}
+        if not fresh:
+            return logs
     return {**account, 'stale': now - (account.get('seen_at') or 0) > ACCOUNT_EVERY + 60}
 
 
