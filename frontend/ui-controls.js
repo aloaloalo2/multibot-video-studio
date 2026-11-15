@@ -20,13 +20,47 @@ const StudioUI=(()=>{
     return button;
   }
   function choice(root,{id,label,items,value,onChange}){
-    const box=document.createElement('label');box.className='ui-choice';
-    const picture=document.createElement('span');picture.setAttribute('aria-hidden','true');
+    const box=document.createElement('div');box.className='ui-choice';
     const select=document.createElement('select');select.id=id;select.setAttribute('aria-label',label);
     for(const item of items){const option=document.createElement('option');option.value=item.value;option.textContent=item.label;select.append(option);}
     select.value=items.some(item=>item.value===value)?value:items[0]?.value||'';
-    const paint=()=>{picture.innerHTML=icon(select.value);};paint();
-    select.addEventListener('change',()=>{paint();onChange?.(select.value);});box.append(picture,select);root.append(box);return select;
+    select.addEventListener('change',()=>onChange?.(select.value));box.append(select);root.append(box);
+    return picker(select,{picture:icon});   // the writer's mark sits inside the dropdown, not beside it
+  }
+  // A dropdown whose button and items carry a picture (a channel's logo, the prompt writer's mark). The native select
+  // stays underneath, hidden, so code that reads its value or listens for change keeps working (user, 15 November 2026:
+  // «логотип… щоб по логотипу орієнтуватись», «щоб цей логотип не був окремо, а був в цьому розкриваючому списку»).
+  function picker(select,{picture}={}){
+    if(!select||select.dataset.picker)return select;select.dataset.picker='1';
+    const box=document.createElement('div');box.className='ui-picker';
+    const button=document.createElement('button');button.type='button';button.className='ui-picker-button';
+    button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');
+    const list=document.createElement('div');list.className='ui-picker-list';list.setAttribute('role','listbox');list.hidden=true;
+    const chevron='<svg class="ui-picker-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const mark=value=>`<span class="ui-picker-mark">${picture?picture(value):''}</span>`;
+    const text=value=>[...select.options].find(o=>o.value===value)?.textContent||'';
+    const paint=()=>{
+      button.innerHTML=mark(select.value)+`<span class="ui-picker-label"></span>`+chevron;button.querySelector('.ui-picker-label').textContent=text(select.value);
+      button.disabled=select.disabled;button.setAttribute('aria-label',(select.getAttribute('aria-label')||'')+': '+text(select.value));
+      list.innerHTML='';
+      for(const option of select.options){
+        const item=document.createElement('button');item.type='button';item.className='ui-picker-item';item.setAttribute('role','option');
+        item.setAttribute('aria-selected',String(option.value===select.value));item.innerHTML=mark(option.value)+'<span></span>';
+        item.lastChild.textContent=option.textContent;
+        item.onclick=()=>{close();if(select.value!==option.value){select.value=option.value;select.dispatchEvent(new Event('change',{bubbles:true}));}paint();button.focus();};
+        list.append(item);
+      }
+    };
+    const outside=event=>{if(!box.contains(event.target))close();};
+    const key=event=>{if(event.key==='Escape'){event.stopPropagation();close();button.focus();}};
+    function close(){list.hidden=true;button.setAttribute('aria-expanded','false');document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',key,true);}
+    button.onclick=()=>{if(!list.hidden){close();return;}paint();list.hidden=false;button.setAttribute('aria-expanded','true');
+      const room=button.getBoundingClientRect();list.classList.toggle('drop-up',window.innerHeight-room.bottom<list.offsetHeight+12&&room.top>list.offsetHeight+12);
+      document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);list.querySelector('[aria-selected="true"]')?.focus();};
+    select.addEventListener('change',paint);
+    new MutationObserver(paint).observe(select,{attributes:true,attributeFilter:['disabled'],childList:true});
+    select.hidden=true;select.after(box);box.append(select,button,list);paint();
+    return select;
   }
   const groups=new WeakSet();
   function enhance(root){
@@ -42,5 +76,5 @@ const StudioUI=(()=>{
       });
     }
   }
-  return Object.freeze({icon,preference,remember,action,choice,enhance});
+  return Object.freeze({icon,preference,remember,action,choice,picker,enhance});
 })();

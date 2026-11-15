@@ -102,7 +102,9 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
       finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);submit.disabled=!valid();titleTranslator.refresh();syncHero();}}
     }
   }]);
-  generation=state.modalGeneration;root=$('modal-body').querySelector('.trend-idea-form');submit=$('modal-actions').querySelector('button');submit.disabled=true;
+  generation=state.modalGeneration;root=$('modal-body').querySelector('.trend-idea-form');
+  StudioUI.picker(root.querySelector('[name="channel"]'),{picture:id=>channelIdentityIcon(channels.find(c=>c.id===id))});   // channel logos in the list
+  submit=$('modal-actions').querySelector('button');submit.disabled=true;
   root.querySelector('[name="title"]').oninput=()=>{submit.disabled=!valid();};
   titleTranslator=bindTitleTranslation(root.querySelector('[name="title"]'),{channelId:()=>root.querySelector('[name="channel"]').value,live,enabled:()=>!sending,onBusy:value=>{translating=value;if(live())submit.disabled=!valid();}});
   $('modal-body').channelSettingsCleanup=()=>titleTranslator.dispose();
