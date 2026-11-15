@@ -278,6 +278,17 @@ def start_project(pid, body):
         if data.get('completed') or (project.get('voice_script') or {}).get('text'):
             raise store.StudioError('Сценарій уже збережено. Відкрийте випуск для його редагування.', 409)
         if action == 'openings':
+            if data.get('openings') and not body.get('refresh') and data.get('status') == 'cancelled':
+                # a stopped script left its openings: «Створити зачини» brings them back to choose from instead of
+                # answering with the stopped draft, which looked like a dead button (user, 15 November 2026: «кнопка
+                # створити зачини не ворк»); «Нові зачини» still writes fresh ones
+                count = body.get('target_words')
+                if type(count) is int and 200 <= count <= 15000:
+                    data['target_words'] = count
+                data.update(stage='openings', status='done', cancelled=False, error=None, request_id=body.get('request_id'))
+                data.pop('opening', None)
+                save_draft(cid, data, make_current=False)
+                return public(data)
             if data.get('openings') and not body.get('refresh') and data.get('status') != 'failed': return public(data)
             if body.get('refresh'):
                 store.atomic_json(store.project_dir(pid) / 'draft-history' / (uuid.uuid4().hex + '.json'), data)
@@ -340,7 +351,29 @@ def unpack(text):
     if not isinstance(text, str) or not text.strip():
         raise ValueError('Модель не повернула готовий текст. Попередні результати збережено; повторити запит можна вручну.')
     text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip())
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as error:
+        if 'Extra data' not in str(error):
+            raise
+    # Opus sometimes sends a draft object and then its corrected final one (15 November 2026: «Extra data: line 5
+    # column 1», the first had a Russian hook in a French channel): the last complete object is the answer.
+    decoder, found, at = json.JSONDecoder(), [], 0
+    while at < len(text):
+        start = text.find('{', at)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            at = start + 1
+            continue
+        if isinstance(value, dict):
+            found.append(value)
+        at = end
+    if not found:
+        raise ValueError('Модель повернула відповідь, яку студія не змогла прочитати. Повторний запит автоматично не запускається.')
+    return found[-1]
 
 
 @job_timing.measure('service')

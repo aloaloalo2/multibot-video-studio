@@ -59,3 +59,13 @@ class AutoOpeningTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UnpackTest(unittest.TestCase):
+    def test_a_draft_then_a_corrected_answer_reads_as_the_last_one(self):
+        import episode_ideas
+        text = '{"openings":[{"text":"draft"}]}\n\n\n\n{"openings":[{"text":"final"}]}'
+        self.assertEqual(episode_ideas.unpack(text)['openings'][0]['text'], 'final')
+        self.assertEqual(episode_ideas.unpack('```json\n{"a":1}\n```'), {'a': 1})
+        with self.assertRaises(ValueError):
+            episode_ideas.unpack('not json at all')

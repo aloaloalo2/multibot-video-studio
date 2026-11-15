@@ -50,6 +50,18 @@ class ManualProjectOpeningsTest(unittest.TestCase):
                     code, result = self.request(self.endpoint, 'POST', {'action': 'openings'})
                 self.assertEqual(code, 409, result); thread.assert_not_called()
 
+    def test_openings_of_a_stopped_script_come_back_to_choose_without_a_new_run(self):
+        draft = {'id': 'd1', 'project_id': self.project['id'], 'channel_id': self.cid, 'stage': 'script', 'status': 'cancelled',
+                 'cancelled': True, 'target_words': 2000, 'selected': {'title': self.project['name']}, 'opening': 'Old pick.',
+                 'openings': [{'text': f'Hook {n}.', 'uk': ''} for n in range(4)]}
+        ideas.save_draft(self.cid, draft, make_current=False)
+        with patch.object(ideas, 'Thread') as thread:
+            code, result = self.request(self.endpoint, 'POST', {'action': 'openings', 'target_words': 2500, 'request_id': 'again'})
+        self.assertEqual(code, 202, result); thread.assert_not_called()
+        self.assertEqual((result['stage'], result['status']), ('openings', 'done'))
+        saved = ideas.read_project(self.project['id'])
+        self.assertEqual(len(saved['openings']), 4); self.assertEqual(saved['target_words'], 2500); self.assertNotIn('opening', saved)
+
     def test_bad_target_does_not_launch_or_create_draft(self):
         with patch.object(ideas, 'context', return_value={'target_words': 2000}), patch.object(ideas, 'Thread') as thread:
             for count in [0, True, 15001]:
