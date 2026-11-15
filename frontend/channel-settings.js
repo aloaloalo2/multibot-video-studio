@@ -191,10 +191,16 @@ function organizeChannelSettings(channel){
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
     text(summaries.get('.settings-sentences'),`До ${value('settings-max-sentences')} речень на кадр`);
-    text(summaries.get('.settings-script-wishes'),value('settings-script-wishes').trim()?'Власні побажання':'Не додано');
-    text(summaries.get('.settings-thumbnail-wishes'),value('settings-thumbnail-wishes').trim()?'Власні побажання':'Не додано');
-    text(summaries.get('.settings-image-wishes'),value('settings-generated-image-style').trim()?'Власні побажання':'Не додано');
-    text(summaries.get('.settings-agent-memory'),$('channel-agent-memory').disabled?'Завантажуємо…':value('channel-agent-memory').trim()?'Власні правила':'Не додано');
+    // a filled wish shows a grey check by its title (user, 15 November 2026: «якщо є побажання то галочка нада сіра»)
+    for(const [selector,id] of [['.settings-script-wishes','settings-script-wishes'],['.settings-thumbnail-wishes','settings-thumbnail-wishes'],
+      ['.settings-image-wishes','settings-generated-image-style'],['.settings-agent-memory','channel-agent-memory']]){
+      const note=summaries.get(selector);if(!note)continue;
+      const loading=$(id)?.disabled&&id==='channel-agent-memory',filled=!loading&&!!value(id).trim();
+      text(note,loading?'Завантажуємо…':filled?'':'Не додано');note.hidden=filled;
+      const title=note.previousElementSibling;let mark=title?.querySelector('.wish-filled');
+      if(filled&&!mark&&title){mark=document.createElement('span');mark.className='wish-filled';mark.title='Побажання додано';mark.innerHTML=StudioUI.icon('check');title.append(mark);}
+      if(!filled&&mark)mark.remove();
+    }
     text(summaries.get('.logo-section'),$('logo-tile-image').hidden?'Не додано':!$('logo-enabled').checked?'Вимкнено':`${body.querySelector('.logo-position[aria-pressed=true]')?.title||''} · ${value('logo-size')}%`);
     text(summaries.get('.settings-accents'),$('settings-accents').checked?'Режисер додає за змістом':'Вимкнено');
     const voice=body.querySelector('.channel-voice-lab'),provider=voice?.querySelector('[name=provider]');
