@@ -81,3 +81,15 @@ class MontageContextTest(unittest.TestCase):
         self.assertNotIn('sheets --frames 1,2,3',result)
         self.assertIn('review fixture --frames 1,3',native)
         self.assertNotIn('frame_review.py',native)
+
+
+class FrameBriefFilterTest(unittest.TestCase):
+    """The frame agent gets only the standing rules of frames and of its own channel (user, 15 November 2026)."""
+    def test_other_stages_other_channels_and_photo_rules_are_left_out(self):
+        import montage_context as mc
+        self.assertFalse(mc.for_frames('## Перезапуск студії тільки через studio_restart.py', 'What If', True))
+        self.assertFalse(mc.for_frames('## Шесть PNG на одном листе для Алексея и Валентина', 'What If', True))
+        self.assertTrue(mc.for_frames('## Шесть PNG на одном листе для Алексея и Валентина', 'Алексей Горбунов', False))
+        self.assertFalse(mc.for_frames('## Непрерывный зум каждой фотографии на 20%', 'КОСМОС', True))
+        self.assertTrue(mc.for_frames('## Непрерывный зум каждой фотографии на 20%', 'Karl Brenners Werkstatt', False))
+        self.assertTrue(mc.for_frames('## Центральный текст в такт голосу', 'КОСМОС', True))

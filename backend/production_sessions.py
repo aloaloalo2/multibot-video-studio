@@ -58,13 +58,22 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
         with lock:
             saved = [n for n in frames if n in completed]
         if saved and not verify(saved):
-            # A changed neighbour must not replay the other approved frames in this scope.
+            # A changed neighbour must not replay the other approved frames in this scope. A frame that is drawn and
+            # only waits for a fresh look stays made: the one final review after all sessions looks at it.
+            stale = set(pending_review() or []) if pending_review else set()
             with lock:
-                completed.difference_update(n for n in saved if not verify([n]))
+                completed.difference_update(n for n in saved if n not in stale and not verify([n]))
         with lock:
             frames = [n for n in frames if n not in completed]
             summary = totals['summary']
         if not frames:
+            return None
+        if previous and pending_review and not verify(frames) and set(frames) <= set(pending_review() or []):
+            # A continuation after a pause or a limit found this chunk already drawn; its frames only need a fresh look.
+            # Opening a working session for that cost 5-15 turns per chunk (user, 15 November 2026: «ліміти витрачаються
+            # швидко»); the final review looks at all such frames together instead.
+            with lock:
+                completed.update(frames)
             return None
         with STUDIO_SESSIONS:
             code, raw = launch(frames, summary, index if numbered else 0)

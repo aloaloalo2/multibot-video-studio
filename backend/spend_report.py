@@ -365,10 +365,26 @@ def folder(pid: str) -> Path:
     return store.project_dir(pid) / "spend"
 
 
+TRIMMED = "… початок журналу обрізано".encode()
+
+
+def trimmed(log: Path) -> bool:
+    """storage_tidy keeps only the tail of an old production log; its turns no longer add up to the run's cost."""
+    try:
+        with open(log, "rb") as source:
+            return source.read(len(TRIMMED)) == TRIMMED
+    except OSError:
+        return False
+
+
 def record(log: Path) -> dict | None:
     """Analyse a finished run's log and keep its report beside the project. Never raises: a report is only a report."""
     try:
         if not log.is_file() or log.stat().st_size == 0:
+            return None
+        if trimmed(log):
+            # The report made from the whole log is kept; a tail must never replace it (user, 15 November 2026:
+            # «ціна… пише не правильно» — a trimmed log had turned $91 of frame work into $4).
             return None
         report = analyse(log)
         if not report["turns"]:
@@ -395,11 +411,31 @@ def record_later(log: Path) -> None:
         pass
 
 
+def restore_trimmed(log: Path) -> None:
+    """A trimmed log keeps the cost of the fullest report made while it was whole (each run's turns only grow)."""
+    best = None
+    for path in folder(log.parent.name).glob(f"{log.stem}-*.json"):
+        report = store.read_json(path, None)
+        if isinstance(report, dict) and report.get("log") == log.name and report.get("turns"):
+            if best is None or (report["turns"], report.get("log_modified", 0)) > (best["turns"], best.get("log_modified", 0)):
+                best = report
+    if not best or not isinstance(best.get("cost_usd"), (int, float)):
+        return
+    import project_costs
+    saved = (store.read_json(log.parent / "project-costs.json", {}) or {}).get("events", {}).get("claude_code:" + log.name, {})
+    if saved.get("amount") != best["cost_usd"]:
+        project_costs.record_at(log.parent, "claude_code", best["cost_usd"], identity=log.name,
+                                category="production", estimated=not best.get("cost_measured"))
+
+
 def backfill(pid: str) -> list[dict]:
     """Reports for the logs a project already has (each log once, by its time)."""
     made = []
     for log in sorted(store.project_dir(pid).glob("*.log")):
         if not (log.name.startswith("director") or log.name.startswith("production")):
+            continue
+        if trimmed(log):
+            restore_trimmed(log)
             continue
         stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(log.stat().st_mtime))
         saved = folder(pid) / f"{log.stem}-{stamp}.json"

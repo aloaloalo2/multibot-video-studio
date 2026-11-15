@@ -100,6 +100,13 @@ class Tidy:
             if size <= LOG_LIMIT or _recent(log, self.now):
                 continue
             if self.apply:
+                # Keep the cost of the whole run before only its tail remains.
+                try:
+                    import spend_report
+                    if not spend_report.trimmed(log):
+                        spend_report.record(log)
+                except Exception:
+                    pass
                 with open(log, "rb") as source:
                     source.seek(size - LOG_KEEP)
                     tail = source.read()

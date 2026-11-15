@@ -22,6 +22,32 @@ UPSTREAM = re.compile(
     r'получить финальную озвучку|подготовить выпуск к публикации))', re.I)
 
 
+# Frame production gets an accepted script, voice and plan; these standing rules govern other stages, the Studio itself
+# or the author's chat, and only made every step of every frame session reread them (user, 15 November 2026: «ліміти
+# витрачаються швидко… почисти»).
+NOT_FRAMES = re.compile(
+    r'перезапуск студії|whisper|числа цифрами|прямий запуск інструментів|усилие claude|запрет слов|заборонені слова|'
+    r'слово «душа»|кликбейт|собственный браузер|google flow|цель при создании|без слышимого звука|'
+    r'объединение коротких фраз|смысловое объединение|восьмисекундное вступление|сверка каждой расшифровки|'
+    r'ориентиры индивидуального стиля|план кадрів тільки після|кроки випуску й одна команда|место на диске|'
+    r'ещё не определено|медичні стилі', re.I)
+# Rules written for named channels go only to those channels.
+NAMED = {'алексе': 'горбунов', 'горбунов': 'горбунов', 'валентин': 'чичвар', 'чичвар': 'чичвар',
+         'карл': 'karl', 'karl': 'karl', 'антропов': 'антропов', 'ветров': 'ветров'}
+PHOTO_ONLY = re.compile(r'фото|красивый текст по озвучке|кадрирован|изображения из интернета|последовательная дорожка|инфографик|картинок на одном', re.I)
+
+
+def for_frames(heading, channel, animated):
+    """Whether a standing rule section belongs in the brief of the frame agent of this channel."""
+    if NOT_FRAMES.search(heading):
+        return False
+    low, name = heading.lower(), channel.lower()
+    named = {target for key, target in NAMED.items() if key in low}
+    if named and not any(target in name for target in named):
+        return False
+    return not (animated and PHOTO_ONLY.search(heading))
+
+
 def sections(text, *, production=False):
     """Keep whole relevant sections, including unknown/general rules and their preamble."""
     kept = []
@@ -39,8 +65,13 @@ def rules(project, *, production=False):
     channel = Path(project['episode_path']).parent
     sources = [store.YOUTUBE_ROOT / 'AGENTS.md', store.channel_rules_source(channel)]
     seen, blocks = set(), []
+    animated = store.project_animated(project)
     for path in sources:
-        for paragraph in re.split(r'\n\s*\n', sections(author_rules._read(path), production=production)):
+        text = sections(author_rules._read(path), production=production)
+        if production:
+            text = '\n\n'.join(part.strip() for part in re.split(r'(?m)^(?=#{1,3} )', text)
+                                 if part.strip() and for_frames(part.splitlines()[0], channel.name, animated))
+        for paragraph in re.split(r'\n\s*\n', text):
             key = paragraph.strip()
             if key and key not in seen:
                 seen.add(key)

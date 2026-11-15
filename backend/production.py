@@ -410,6 +410,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             if numbers and scoped.get('repair_frames'):scoped['repair_frames']=numbers
             text = repair_brief(current,scoped,notes) if scoped.get('repair_frames') else brief(current, scoped, notes) if store.project_animated(current) else photo_brief(current, scoped, notes)
             text += montage_context.rules(current, production=True) + montage_context.commands(current, numbers, repair=bool(scoped.get('repair_frames')))
+            if any(f.get('format') == 'razgon_2d' and (not numbers or f['number'] in numbers)
+                   for f in (store.load_project_plan(pid) or {}).get('frames', [])):
+                import engine_index
+                text += engine_index.brief() + engine_index.project_index(current)
             text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames'))) + director.animation_style(current) + director.channel_memory(current)
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
             text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')),
@@ -463,6 +467,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 logo_layer.place(pid)   # the channel logo from the settings goes over the new frames
             except (OSError, store.StudioError):
                 pass
+            review_failed = False
             final_request = {**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))}
             review = production_quality.check(store.load_project(pid), final_request)
             if review.get('pending_review'):
@@ -472,6 +477,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             if review.get('pending_review'):
                 # A later batch may invalidate an earlier dependency. Finish that
                 # review here, while the same worker still owns the production job.
+                review_frames_before = list(review['pending_review'])
                 review_code, review_answer = production_sessions.finish_review(
                     review['pending_review'], launch, verify, cancelled, director.limit_stop)
                 answer = production_sessions.merge_answers(answer, review_answer)
@@ -482,10 +488,34 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                     # the review sessions themselves may add props: their untouched neighbours get fresh stills too
                     production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
                     review = production_quality.check(store.load_project(pid), final_request)
+                reviewed = set(review_answer.get('reviewed_frames') or []) | set(review_frames_before)
+                left = set(review.get('pending_review') or [])
+                if left and not left & reviewed and not (review_code or review_answer.get('is_error')) \
+                        and not director.limit_stop(review_answer):
+                    # A fix in the final review changed a shared scene and made a frame next to it stale (user,
+                    # 15 November 2026: «Багатший за банк» stopped at 48 of 49 for frame 30 beside the fixed frame 31).
+                    # One more look covers only those frames; it never repeats the frames just reviewed.
+                    extra_code, extra_answer = production_sessions.finish_review(
+                        sorted(left), launch, verify, cancelled, director.limit_stop)
+                    answer = production_sessions.merge_answers(answer, extra_answer)
+                    fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
+                                  session_id=answer.get('session_id'), **director.spent(answer,started))
+                    review = production_quality.check(store.load_project(pid), final_request)
+                    if review.get('pending_review') and not (extra_code or extra_answer.get('is_error')):
+                        production_quality.refresh_stills(store.load_project(pid), review['pending_review'])
+                        review = production_quality.check(store.load_project(pid), final_request)
+                    review_code, review_answer = extra_code or review_code, extra_answer
                 if review_code or review_answer.get('is_error'):
+                    review_failed = True
                     review = {**review,'passed':False,'errors':review.get('errors') or [review_answer.get('result') or 'Не завершено огляд кадрів']}
                     if director.limit_stop(review_answer):
                         fields.update(limit=True)
+            # Frames that are all drawn and only wait for a fresh look never stop the film (user, 15 November 2026:
+            # «щоб зупинено ніколи не було»): the run is done and the frames are named for the author to look at.
+            look_only = not review['passed'] and not review_failed and not fields.get('limit') and not director.limit_stop(answer) \
+                and bool(review.get('pending_review')) and drawn(pid, request["frames"], request.get('repair_frames'))
+            if look_only:
+                review = {**review, 'passed': True, 'look_later': review['pending_review']}
             fields.update(quality=review, status='done' if review['passed'] else 'failed')
             if not review['passed']:
                 # A provider pause is the actionable cause; keep the local review

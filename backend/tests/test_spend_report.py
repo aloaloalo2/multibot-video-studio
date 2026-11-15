@@ -139,3 +139,25 @@ class SpendReportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrimmedLogCostTest(unittest.TestCase):
+    """A log cut to its tail by storage_tidy never lowers the cost already measured from the whole log."""
+    def test_trimmed_log_keeps_the_fullest_report(self):
+        import tempfile, json
+        from pathlib import Path
+        from unittest.mock import patch
+        import store, spend_report
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'projects' / ('b' * 24); (root / 'spend').mkdir(parents=True)
+            log = root / 'production-x-session-02.log'
+            log.write_text('… початок журналу обрізано, щоб звільнити місце …\n{}\n')
+            for stamp, turns, cost in (('20261112-100000', 218, 31.21), ('20261114-190745', 5, 1.17)):
+                (root / 'spend' / f'production-x-session-02-{stamp}.json').write_text(json.dumps(
+                    {'log': log.name, 'turns': turns, 'cost_usd': cost, 'cost_measured': True, 'log_modified': 1}))
+            (root / 'project-costs.json').write_text(json.dumps({'events': {'claude_code:' + log.name: {'provider': 'claude_code', 'amount': 1.17}}}))
+            with patch.object(store, 'project_dir', lambda pid: root):
+                self.assertIsNone(spend_report.record(log))
+                spend_report.restore_trimmed(log)
+            saved = json.loads((root / 'project-costs.json').read_text())['events']['claude_code:' + log.name]
+            self.assertEqual(saved['amount'], 31.21)

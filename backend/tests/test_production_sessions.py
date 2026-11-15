@@ -47,6 +47,17 @@ class ProductionSessionsTest(unittest.TestCase):
                             lambda:False,lambda _:False,previous={'completed_frames':sorted(saved)})
         self.assertEqual(code,0)
 
+    def test_continuation_never_opens_a_session_for_drawn_frames_that_only_need_a_look(self):
+        # frames 1-20 are drawn but their verdicts are stale; 21-30 are not drawn yet
+        launch=Mock(return_value=(0,{'result':'ready'}))
+        drawn=set(range(1,21))
+        verify=lambda ns:False if set(ns)&drawn else True
+        pending=lambda:sorted(drawn)
+        code,_=sessions.run(list(range(1,31)),launch,verify,Mock(),lambda:False,lambda _:False,
+                            previous={'completed_frames':list(range(1,11)),'summary':'s'},pending_review=pending,parallel=1)
+        self.assertEqual(code,0)
+        self.assertEqual([call.args[0] for call in launch.call_args_list],[list(range(21,31))])
+
     def test_failure_quota_or_incomplete_frames_never_launch_another_session(self):
         for answer,valid in (({'is_error':True},True),({'limit':True},True),({'result':'not complete'},False)):
             launch=Mock(return_value=(0,answer));code,_=self.run_job(launch=launch,verify=lambda _:valid)

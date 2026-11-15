@@ -96,6 +96,10 @@ def _stem(channel: str) -> list[str]:
 
 
 PREFIXES = ("antropov", "gorbunov", "valentin", "karl", "what-if", "vetrov")
+# Notes about previews, the voice, translations, renders, planning or how I work in chat, and replaced notes, do not
+# help the director or the frame agent (user, 15 November 2026: frame sessions reread them at every step).
+NOT_MONTAGE = re.compile(r"thumbnail|banner|whisper|voice-level|language-mix|render-on-gpu|push-frames|plan-after-voice|"
+                         r"future-animation|review-before-export|review-before-redo|director-memory-is-the-source")
 TEXT_WORDS = ("сценар", "зачин", "тайтл", "заголов", "заборонен", "слова", "речен", "мова", "мовою", "озвуч", "фраз", "текст")
 
 
@@ -121,6 +125,8 @@ def claude_memory(channel: str, limit: int = 30000, scripts_only: bool = False, 
         if not (mine or any(g in low for g in GENERAL)):
             continue
         if scripts_only and not any(w in low for w in TEXT_WORDS):
+            continue
+        if montage_only and (NOT_MONTAGE.search(file.stem) or body.startswith("**ЗАМІНЕНО")):
             continue
         if montage_only:
             import montage_context

@@ -96,13 +96,17 @@ def saved_costs(root):
         stamp = report.get('log_modified', 0)
         if not project_costs.number(stamp):
             continue
-        if key not in latest or stamp > latest[key].get('log_modified', 0):
+        # A log only grows while its run (and a resumed run) writes it, so the report with the most turns is the whole
+        # run. A later, smaller one comes from a log storage_tidy cut down to its tail and must not replace it.
+        rank = (report.get('turns') or 0, stamp)
+        if key not in latest or rank > (latest[key].get('turns') or 0, latest[key].get('log_modified', 0)):
             latest[key] = report
     tokens = {}
     for key, report in latest.items():
         event = events.get(key, {})
         modified = event.get('modified', 0)
-        if report.get('log_modified', 0) >= (modified if project_costs.number(modified) else 0):
+        if report.get('log_modified', 0) >= (modified if project_costs.number(modified) else 0) or \
+                project_costs.number(report.get('cost_usd')) and report['cost_usd'] > (event.get('amount') or 0):
             event = {**event, 'provider': 'claude_code', 'amount': report.get('cost_usd'),
                      'estimated': not report.get('cost_measured'), 'modified': report.get('log_modified', 0)}
         kind = {'director': 'planning', 'production': 'production'}.get(report.get('kind'))
