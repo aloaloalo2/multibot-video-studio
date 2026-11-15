@@ -2621,10 +2621,7 @@ select option{background:#232327;color:#f1f1f2}
 .trend-date{color:#b6b8c1;font-size:11px;font-weight:400}
 .trend-toolbar select{appearance:none;background:var(--ui-field);color:var(--ui-control-text);border:1px solid var(--ui-field-border);border-radius:var(--ui-radius-field);padding:10px 34px 10px 12px;font-size:13px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b6b8c1' stroke-width='1.5'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
 .trend-card .project-title-rename{text-decoration:none}
-.trend-refresh{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:7px 13px!important}
-.trend-refresh svg{width:17px;height:17px}
 
-.trend-refresh{width:36px;height:36px;justify-content:center;padding:0!important;border-radius:50%}
 .trend-details{gap:7px}
 .trend-source-row{display:flex;justify-content:space-between;gap:8px;color:#777b85;font-size:11px}
 .trend-source-row span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
