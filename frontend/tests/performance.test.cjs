@@ -113,3 +113,13 @@ test('languages voiced side by side count their clock time once',()=>{
   ]});
   assert.equal(Math.round(rows[0].active_ms/1000),18*60+8+3*60+2);
 });
+test('translations run beside the pipeline and stay out of the total time',()=>{
+  const f=fixture(),min=60000;
+  const html=f.context.performanceMarkup({runs:[
+    {workflow:'narration',status:'complete',started_at:1000,elapsed_ms:10*min},
+    {workflow:'translation',status:'complete',started_at:2000,elapsed_ms:4*min},
+    {workflow:'language_voice',status:'complete',started_at:3000,elapsed_ms:20*min},
+  ]});
+  assert.match(html,/performance-total"><strong>Разом<\/strong><span class="performance-duration">10 хв</);
+  assert.equal((html.match(/паралельно, не входить у «Разом»/g)||[]).length,2);
+});

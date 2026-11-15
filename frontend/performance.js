@@ -14,6 +14,9 @@ const performanceLost=new Set(['failed','cancelled','interrupted','unknown']);
 // A frame run keeps every frame it drew even when it stops or fails its final check (user, 15 November 2026: «пише
 // створення кадрів не правильно час»: 17.8 min of «Галактики» read as a failed attempt), so all of its time is work.
 const performanceKeepsWork=new Set(['production']);
+// Translations and their voices run beside the episode's own pipeline, so their time is listed but not added to
+// «Разом» (user, 15 November 2026: «переклад… паралельно… не варто сумувати до разом»); their cost still counts.
+const performanceParallel=new Set(['translation','language_voice']);
 // Languages are voiced and translated side by side: two languages from 20:10 to 20:28 are 18 minutes of work, not 36
 // (user, 15 November 2026: «озвучка перекладів реально правильно рахується?… все швидше було»). Runs that overlap count
 // once; a run without a start time adds its own length.
@@ -81,11 +84,11 @@ function performanceMarkup(data){
   if(!rows.length)return '<p class="muted">Ще немає основних процесів тривалістю понад секунду.</p>';
   const money=value=>`$${value.toFixed(value>0&&value<.01?4:2)}`;
   const attempts=row=>row.lost_runs?`<small class="performance-lost">${row.active_ms>1000?'ще ':''}${esc(performanceTime(row.lost_ms))} у ${row.lost_runs===1?'невдалій спробі':row.lost_runs+' невдалих спробах'}</small>`:'';
-  const line=row=>{const cost=performanceCost(row.cost);return `<div class="performance-row" role="row" data-id="${esc(row.id)}"><span class="performance-name" role="cell">${performanceIcon(row.workflow)}<span class="performance-label"><strong>${esc(row.label||performanceWorkflows[row.workflow])}${row.running?' <em>триває</em>':''}</strong>${attempts(row)}</span></span><span class="performance-duration" role="cell">${row.active_ms>1000?esc(performanceTime(row.active_ms)):'—'}</span><span class="performance-cost" role="cell" title="${esc(cost.title)}">${esc(cost.label)}</span></div>`;};
+  const line=row=>{const cost=performanceCost(row.cost);return `<div class="performance-row" role="row" data-id="${esc(row.id)}"><span class="performance-name" role="cell">${performanceIcon(row.workflow)}<span class="performance-label"><strong>${esc(row.label||performanceWorkflows[row.workflow])}${row.running?' <em>триває</em>':''}</strong>${performanceParallel.has(row.workflow)?'<small class="performance-parallel">паралельно, не входить у «Разом»</small>':''}${attempts(row)}</span></span><span class="performance-duration" role="cell">${row.active_ms>1000?esc(performanceTime(row.active_ms)):'—'}</span><span class="performance-cost" role="cell" title="${esc(cost.title)}">${esc(cost.label)}</span></div>`;};
   const main=rows.filter(row=>row.active_ms>=60000),small=rows.filter(row=>row.active_ms<60000);
   let total=0,approximate=false,unknown=false;
   for(const row of rows){const cost=performanceCost(row.cost);if(row.cost?.recorded){total+=cost.amount||0;approximate||=!!cost.approximate;unknown||=!!cost.unknown;}}
-  const time=rows.reduce((sum,row)=>sum+row.active_ms,0),lost=rows.reduce((sum,row)=>sum+row.lost_ms,0),smallTime=small.reduce((sum,row)=>sum+row.active_ms,0);
+  const time=rows.filter(row=>!performanceParallel.has(row.workflow)).reduce((sum,row)=>sum+row.active_ms,0),lost=rows.reduce((sum,row)=>sum+row.lost_ms,0),smallTime=small.reduce((sum,row)=>sum+row.active_ms,0);
   const head='<div class="performance-columns" role="row"><span role="columnheader">Процес</span><span role="columnheader" title="Час вдалих запусків без черг і пауз. Паралельні процеси можуть виконуватись одночасно.">Час</span><span role="columnheader">Витрати</span></div>';
   return `<div class="performance-table" role="table" aria-label="Час і витрати за процесами">${head}${main.map(line).join('')}</div>`
     +(small.length?`<details class="performance-small"><summary><span>Менше хвилини · ${small.length}</span><span class="performance-duration">${esc(performanceTime(smallTime))}</span></summary><div class="performance-table" role="table" aria-label="Короткі процеси">${small.map(line).join('')}</div></details>`:'')
