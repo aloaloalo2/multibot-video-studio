@@ -61,6 +61,8 @@ function organizeChannelSettings(channel){
   workspace.append(nav,content);body.append(workspace);
   const definitions=[
     ['projects','Основне','Для нових проєктів','Основне'],
+    // every wish of the channel in one place, under «Основне» (user, 15 November 2026)
+    ['wishes','Побажання','Сценарій, прев’ю, монтаж'],
     ['script','Сценарій','Зачини та повний текст'],
     ['look','Оформлення','Стиль і плашка'],
     ['voice','Озвучка','Голос і зразок'],
@@ -127,8 +129,11 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   move('.settings-opening','advanced',{fold:true,icon:'opening'});
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
-  move('.settings-agent-memory','projects',{fold:true,icon:'memory',title:'Побажання до монтажу й оформлення'});
-  move('.settings-script-wishes','script',{icon:'script'});
+  move('.settings-script-wishes','wishes',{fold:true,icon:'script',title:'Сценаристу'});
+  move('.settings-thumbnail-wishes','wishes',{fold:true,icon:'thumbnails',title:'До прев’ю'});
+  move('.settings-agent-memory','wishes',{fold:true,icon:'memory',title:'До монтажу й оформлення'});
+  const imageWishes=body.querySelector('.generated-image-preferences');
+  if(imageWishes){const section=document.createElement('section');section.className='settings-section settings-image-wishes';section.innerHTML='<h3>Створені зображення</h3>';section.append(imageWishes);body.append(section);move('.settings-image-wishes','wishes',{fold:true,icon:'formats',title:'До створених зображень'});}
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Плашка'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
@@ -138,7 +143,6 @@ function organizeChannelSettings(channel){
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
-  move('.settings-thumbnail-wishes','thumbnails',{icon:'wishes'});
   move('.thumbnail-logo-section','thumbnails',{icon:'thumbnails'});   // a block of its own in «Основне» (user, 15 November 2026)
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
   for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Логотип на прев’ю','thumbnails','.thumbnail-logo-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
@@ -146,6 +150,7 @@ function organizeChannelSettings(channel){
     group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;
     for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head')&&(!only||child.matches(only)))inner.append(child);
+    if(!inner.children.length){if(!only)tabs[key].remove();continue;}   // its wishes went to «Побажання»
     if(key==='thumbnails')for(const section of inner.querySelectorAll(':scope>.settings-section')){const heading=section.querySelector('h3');if(heading)heading.hidden=true;}   // the block's own title says it
     panels.projects.append(group);if(!only)tabs[key].remove();
   }
@@ -153,13 +158,12 @@ function organizeChannelSettings(channel){
   fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
   fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';
   fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
-  const rules=body.querySelector('.settings-agent-memory').closest('.channel-settings-group');
   if(typeof channelTransitionSection==='function')panels.projects.append(channelTransitionSection(channel));
   // «Шрифти монтажу» folds like every other block (user, 14 November 2026)
   const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group';
   fontGroup.innerHTML=`<summary>${channelSettingsIcon('script')}<span><strong>Шрифти монтажу</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
   fontSection.querySelector('h3').hidden=true;fontGroup.lastElementChild.append(fontSection);
-  panels.projects.append(fontGroup,rules);
+  panels.projects.append(fontGroup);
 
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');
@@ -182,11 +186,14 @@ function organizeChannelSettings(channel){
     const weights=[...body.querySelectorAll('[data-weight]')].map(input=>({label:input.getAttribute('aria-label').replace(', відсотків',''),amount:Number(input.value)}));
     text(summaries.get('.settings-visual-formats'),channelSettingsSummary(weights)||'Оберіть формати');
     strip.replaceChildren(...[...$('settings-bar').children].map(el=>{const part=el.cloneNode(false);part.title=el.title;return part;}));
-    const wishes=body.querySelector('.generated-image-preferences');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0);
+    const wishes=body.querySelector('.generated-image-preferences')?.closest('.channel-settings-group');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0);
     text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
     text(summaries.get('.settings-sentences'),`До ${value('settings-max-sentences')} речень на кадр`);
+    text(summaries.get('.settings-script-wishes'),value('settings-script-wishes').trim()?'Власні побажання':'Не додано');
+    text(summaries.get('.settings-thumbnail-wishes'),value('settings-thumbnail-wishes').trim()?'Власні побажання':'Не додано');
+    text(summaries.get('.settings-image-wishes'),value('settings-generated-image-style').trim()?'Власні побажання':'Не додано');
     text(summaries.get('.settings-agent-memory'),$('channel-agent-memory').disabled?'Завантажуємо…':value('channel-agent-memory').trim()?'Власні правила':'Не додано');
     text(summaries.get('.logo-section'),$('logo-tile-image').hidden?'Не додано':!$('logo-enabled').checked?'Вимкнено':`${body.querySelector('.logo-position[aria-pressed=true]')?.title||''} · ${value('logo-size')}%`);
     text(summaries.get('.settings-accents'),$('settings-accents').checked?'Режисер додає за змістом':'Вимкнено');
