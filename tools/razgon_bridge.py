@@ -881,12 +881,22 @@ def renders_running() -> int:
     return alive
 
 
+MIX_BYTES = 3 * 1024 ** 3   # what mixing a whole film's music and effects takes for a minute or two
+
+
+def mix_fits() -> bool:
+    use = memory()
+    return use is None or use[0] + MIX_BYTES <= RAM_LIMIT * use[1]
+
+
 def wait_for_renders(limit: float = RENDER_WAIT) -> None:
     """A whole film's music and effects take a few GB of RAM for a minute or two. While Razgon renders (each Chromium about
     2 GB, the export fills the RAM up to RAM_LIMIT) the mix waits, so the two do not drive the Mac into swap together;
     after `limit` seconds it goes on anyway."""
     until, told = time.monotonic() + limit, False
-    while renders_running() and time.monotonic() < until:
+    # only while the memory is really short: with room for the mix there is nothing to wait for (user, 15 November
+    # 2026: «а для чого чекати? це ж просто музика»)
+    while renders_running() and not mix_fits() and time.monotonic() < until:
         if not told:
             print("Чекаю, поки закінчиться рендер Razgon, щоб не забрати в нього пам'ять", flush=True)
             told = True

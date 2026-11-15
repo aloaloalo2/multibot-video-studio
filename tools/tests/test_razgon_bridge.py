@@ -371,12 +371,18 @@ class SoundTest(unittest.TestCase):
                              env={**os.environ, "MULTIBOT_RENDER_ON_EXPORT": "1"}, timeout=60)
         self.assertNotIn("«Експорт MP4»", run.stderr)                                 # not refused like push and final
 
-    def test_the_mix_waits_while_razgon_renders(self):
+    def test_the_mix_waits_while_razgon_renders_fill_the_memory(self):
         running = iter([2, 1, 0])
         with patch.object(razgon_bridge, "renders_running", lambda: next(running)), patch.object(razgon_bridge.time, "sleep") as sleep, \
-                contextlib.redirect_stdout(io.StringIO()):
+                patch.object(razgon_bridge, "memory", lambda: (15 * 2 ** 30, 16 * 2 ** 30)), contextlib.redirect_stdout(io.StringIO()):
             razgon_bridge.wait_for_renders()
         self.assertEqual(sleep.call_count, 2)
+
+    def test_the_mix_goes_at_once_when_the_memory_has_room(self):
+        with patch.object(razgon_bridge, "renders_running", lambda: 2), patch.object(razgon_bridge.time, "sleep") as sleep, \
+                patch.object(razgon_bridge, "memory", lambda: (6 * 2 ** 30, 16 * 2 ** 30)), contextlib.redirect_stdout(io.StringIO()):
+            razgon_bridge.wait_for_renders()
+        sleep.assert_not_called()
 
 
 class KitBedTest(unittest.TestCase):

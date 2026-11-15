@@ -660,6 +660,8 @@ def resume(pid: str) -> dict:
             final_review=production_quality.check(project,{**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))})
             if final_review.get('passed'):
                 set_request(pid,status='done',error=None,paused=False,limit=False,quality=final_review,finished_at=time.time())
+                if not request.get('repair_frames'):
+                    razgon_sound.start(pid, "production")   # the bed a pause stopped is laid now
                 return store.load_project(pid)
     # A completed batch with stale visual receipts can resume from its saved files.
     if request.get("status") != "failed" or not (review_pending or request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
@@ -785,13 +787,35 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
         review = production_quality.check(project, request)
         fields.update(quality=review, status='done' if review['passed'] else 'failed',
                       error=None if review['passed'] else ' '.join(review['errors'])[:1600])
-    return set_request(pid, finished_at=time.time(), **fields)
+    saved = set_request(pid, finished_at=time.time(), **fields)
+    if fields.get('status') == 'done':
+        razgon_sound.start(pid, "production")
+    return saved
+
+
+SOUND_BED = 'Razgon · музика й ефекти'
+
+
+def missing_bed(pid: str) -> bool:
+    """A finished animated film whose music and effects were stopped or broken and never laid again (user, 15 November
+    2026: «для корбина где музика? чому не сталось» — a pause stopped the bed, the frames finished another way)."""
+    project = store.load_project(pid)
+    request = project.get('production_request') or {}
+    if request.get('status') != 'done' or request.get('repair_frames') or not razgon_sound.due(project):
+        return False
+    if any(t.get('name') == SOUND_BED for t in project.get('tracks', [])):
+        return False
+    return (razgon_sound.state(pid) or {}).get('status') in {None, 'cancelled', 'failed'}
 
 
 def reset_interrupted() -> None:
-    """At start-up: a request left in work by a restart is settled (done if its frames are made, else stopped)."""
+    """At start-up: a request left in work by a restart is settled (done if its frames are made, else stopped), and a
+    finished film that lost its music bed gets it again (two at a time at most: each mix takes a few GB)."""
+    beds = 0
     for item in store.list_projects():
         try:
             settle(item["id"])
-        except store.StudioError:
+            if beds < 2 and item["id"] not in razgon_sound.ACTIVE and missing_bed(item["id"]):
+                beds += razgon_sound.start(item["id"], "production")
+        except (store.StudioError, OSError):
             continue
