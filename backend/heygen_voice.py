@@ -52,6 +52,25 @@ class Gateway(Exception):
 class RateLimited(Exception):
     def __init__(self,seconds):self.seconds=seconds
 
+# A narration's stop button is heard while a phrase waits here too: the worker sets STOP.check, which raises when the
+# author pressed «Зупинити» (user, 15 November 2026: «Зупиняємо… не можу зупинити» while HeyGen made it wait minutes).
+STOP=threading.local()
+
+
+def stop_point():
+    check=getattr(STOP,'check',None)
+    if check:check()
+
+
+def pause(seconds):
+    """Sleep in steps of up to a second, listening for a stop (counted steps, so a frozen test clock cannot loop)."""
+    left=max(0.0,float(seconds))
+    while True:
+        stop_point()
+        if left<=0:return
+        step=min(left,1.0);time.sleep(step);left-=step
+
+
 def speech_turn(now=time.monotonic,sleep=time.sleep):
     """Wait until one more speech request fits into the shared minute, then count it."""
     while True:
@@ -61,7 +80,8 @@ def speech_turn(now=time.monotonic,sleep=time.sleep):
             if len(SPEECH_SENT)<SPEECH_PER_MINUTE:
                 SPEECH_SENT.append(moment);return
             pause=60-(moment-SPEECH_SENT[0])+.05
-        sleep(min(max(pause,.05),5))
+        stop_point()
+        sleep(min(max(pause,.05),1))
 
 @job_timing.measure('service')
 def call(path,body=None,*,idempotency_key=None):
@@ -79,12 +99,12 @@ def call(path,body=None,*,idempotency_key=None):
             waits+=1
             if waits>RATE_LIMIT_WAITS:
                 raise store.StudioError('Ліміт запитів HeyGen не відпускає кілька хвилин поспіль. Зроблені фрази збережено, продовжіть пізніше') from None
-            time.sleep(min(max(limited.seconds,5),RATE_LIMIT_MAX_WAIT))
+            pause(min(max(limited.seconds,5),RATE_LIMIT_MAX_WAIT))
         except Gateway as error:
             if gateway_retried:
                 raise store.StudioError(f'HeyGen: помилка {error.code}, і повтор через {RETRY_AFTER} с теж не вдався. Зроблені фрази збережено, продовжіть пізніше') from None
             gateway_retried=True
-            time.sleep(RETRY_AFTER)
+            pause(RETRY_AFTER)
 
 def _call(path,body=None,*,idempotency_key=None):
     data=json.dumps(body).encode() if body is not None else None
@@ -92,7 +112,8 @@ def _call(path,body=None,*,idempotency_key=None):
     if idempotency_key:headers['Idempotency-Key']=idempotency_key
     request=urllib.request.Request(API+path,data=data,headers=headers)
     try:
-        with urllib.request.urlopen(request,timeout=240) as response:return json.load(response)
+        # a shorter wait for one answer: a stop is heard at the latest after it (was 240 s)
+        with urllib.request.urlopen(request,timeout=90) as response:return json.load(response)
     except urllib.error.HTTPError as error:
         if error.code in GATEWAY:raise Gateway(error.code) from None
         if error.code==429:

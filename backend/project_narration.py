@@ -277,6 +277,10 @@ def run(project,text,settings,ref,entries,job):
                 if not lab.selected_voice_id(settings):ref={**ref,'prepared_path':str(lab.prepared_source(cid,settings,ref))}
                 if fish:secret=languages.key('fishaudio');voice=lab.fish_reference(cid,settings,ref)
                 else:secret,voice=lab.clone(cid,settings,ref)
+        import heygen_voice
+        def stop_check():
+            if (folder/'cancel').exists():raise Cancelled()
+        heygen_voice.STOP.check=stop_check
         for i,entry in enumerate(entries):
             if (folder/'cancel').exists():raise Cancelled()
             target=folder/(entry['key']+'.mp3')
@@ -295,7 +299,9 @@ def run(project,text,settings,ref,entries,job):
             store.atomic_json(folder/'phrases.json',entries)
             job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=narration_ending.SECONDS,finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())
-    except Exception as error:job.update(status='failed',error=str(error))
+    except Exception as error:
+        if (folder is not None and (folder/'cancel').exists()):job.update(status='cancelled',finished_at=time.time())
+        else:job.update(status='failed',error=str(error))
     finally:
         # Cancel and completion must publish under the same lock. Otherwise a
         # late cancel write can replace the worker's terminal status forever.
@@ -304,6 +310,11 @@ def run(project,text,settings,ref,entries,job):
                 import episode_automation
                 episode_automation.after_voice(pid, job)
         finally:
+            try:
+                import heygen_voice
+                heygen_voice.STOP.check=None
+            except ImportError:
+                pass
             with LOCK,lab.LOCK:
                 try:
                     if folder is not None:store.atomic_json(folder/'job.json',job)

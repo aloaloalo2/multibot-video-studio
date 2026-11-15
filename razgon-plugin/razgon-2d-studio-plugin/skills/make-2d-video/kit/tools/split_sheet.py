@@ -73,6 +73,42 @@ def main() -> None:
         log.append({"name": name, "box": [X0, Y0, X1, Y1], "size": [X1 - X0, Y1 - Y0], "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         print(f"{name:14s} {X1 - X0}x{Y1 - Y0} from {X0},{Y0}")
     (sheet.parent / (sheet.stem + ".crops.json")).write_text(json.dumps({"sheet": sheet.name, "props": log}, indent=1))
+    # The cut props are checked here and shown on ONE preview, so an agent opens one picture per sheet instead of each
+    # PNG (VideoKey Studio, 15 November 2026: 16-26 PNG views cost a third of a film's kit session).
+    warnings, tiles = [], []
+    for item, (x0, y0, x1, y1, lab) in zip(log, ordered):
+        prop = Image.open(out_dir / f"{item['name']}.png").convert("RGBA")
+        alpha = np.array(prop)[:, :, 3]
+        cover = float((alpha > 0).mean()) if alpha.size else 0.0
+        if min(prop.size) < 48:
+            warnings.append(f"{item['name']}: too small ({prop.size[0]}x{prop.size[1]})")
+        if cover < 0.04:
+            warnings.append(f"{item['name']}: almost empty ({cover:.0%} of its box)")
+        if x0 <= 1 or y0 <= 1 or x1 >= im.width - 1 or y1 >= im.height - 1:
+            warnings.append(f"{item['name']}: touches the sheet edge, may be cut off")
+        tiles.append((item['name'], prop))
+    cell = 220
+    cols = min(3, max(1, len(tiles)))
+    rows_n = (len(tiles) + cols - 1) // cols
+    preview = Image.new("RGB", (cols * cell, rows_n * (cell + 24)), (92, 92, 98))
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(preview)
+    for i, (name, prop) in enumerate(tiles):
+        x, y = (i % cols) * cell, (i // cols) * (cell + 24)
+        for cy in range(0, cell, 20):   # a light checker shows what is transparent
+            for cx in range(0, cell, 20):
+                if (cx // 20 + cy // 20) % 2:
+                    draw.rectangle([x + cx, y + cy, x + cx + 19, y + cy + 19], fill=(112, 112, 118))
+        fit = prop.copy(); fit.thumbnail((cell - 16, cell - 16))
+        preview.paste(fit, (x + (cell - fit.width) // 2, y + (cell - fit.height) // 2), fit)
+        draw.text((x + 6, y + cell + 4), name, fill=(240, 240, 240))
+    preview_path = sheet.parent / (sheet.stem + ".preview.png")
+    preview.save(preview_path)
+    print(f"Preview of all {len(tiles)} props: {preview_path}")
+    for warning in warnings:
+        print(f"WARNING {warning}")
+    if not warnings:
+        print("Checks: every prop has real transparency, a usable size and is not cut by the sheet edge.")
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from project_lock import project_files
     with project_files(project):
