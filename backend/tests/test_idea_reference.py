@@ -120,6 +120,20 @@ class CloneEpisodeTest(unittest.TestCase):
                 start.assert_not_called()   # one automatic cover an idea
             ideas.ACTIVE.clear()
 
+    def test_channel_wishes_choice_reaches_the_cloned_cover(self):
+        for enabled in (True,False):
+            body={'reference_id':VIDEO,'title':'Wishes choice '+str(enabled),'target_words':1200,
+                  'request_id':'wishes-choice-'+str(enabled),'use_channel_wishes':enabled}
+            with patch.object(ideas,'context',return_value={'channel':'Test','sample_count':0}), \
+                 patch.object(ideas,'Thread'), \
+                 patch('thumbnail_gen.state',return_value={}),patch('thumbnail_gen.preview',return_value=None),patch('thumbnail_gen.start') as early:
+                draft=reference.start_openings(self.cid,body)
+                self.assertEqual(early.call_args.kwargs.get('channel_wishes',False),enabled)
+                self.assertEqual(draft.get('clone_channel_wishes',False),enabled)
+            ideas.ACTIVE.clear()
+        with self.assertRaises(store.StudioError):
+            reference.start_openings(self.cid,{**body,'request_id':'wishes-bad','use_channel_wishes':'yes'})
+
     def test_auto_thumbnail_starts_with_the_idea_once_before_any_hook_is_chosen(self):
         body = {'action': 'clone_openings', 'reference_id': VIDEO, 'title': 'Clone cover',
                 'target_words': 1200, 'request_id': 'early-cover'}

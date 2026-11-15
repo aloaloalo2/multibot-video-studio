@@ -395,7 +395,7 @@ and reply only with the saved path."""
 
 
 @job_timing.track('thumbnail', project='pid', job=lambda values: state(values['pid']))
-def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> None:
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes_on: bool = False) -> None:
     data = {}
     try:
         data = state(pid) or {}
@@ -430,6 +430,12 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         else:
             if channel_wishes and not clone:
                 wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
+            elif channel_wishes and clone and channel_wishes_on:
+                # The author asked to apply the channel's own thumbnail wishes to this clone (user, 15 November 2026):
+                # they shape style and execution; the source idea and its exact wording stay.
+                wishes = ("Apply the channel's standing thumbnail wishes to this new version's style and execution. Keep the "
+                          "source idea and its exact thumbnail wording:\n" + channel_wishes
+                          + ("\n\nSpecific wishes for this thumbnail, priority:\n" + wishes if wishes.strip() else ""))
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
             if clone:
                 snapshot = work / 'idea-reference.jpg'
@@ -515,7 +521,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None) -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False) -> dict:
     if use_hero is not None and not isinstance(use_hero, bool):
         raise store.StudioError('Оберіть, чи використовувати головного героя', 400)
     if writer not in PROMPT_WRITERS:
@@ -557,7 +563,8 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 base = f"Превью до v{number}.png"
                 shutil.copy2(source, keep_dir(pid) / base)
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" and not clone else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
-                "writer": writer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {})}
+                "writer": writer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
+                **({"channel_wishes": True} if channel_wishes is True else {})}
         ACTIVE.add(pid)
         try:
             store.atomic_json(job_path(pid), data)
@@ -565,7 +572,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
             ACTIVE.discard(pid)
             raise
     try:
-        threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id), daemon=True).start()
+        threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id, channel_wishes is True), daemon=True).start()
     except Exception:
         data.update(status='failed', error='Не вдалося запустити створення прев’ю', finished_at=time.time())
         try:

@@ -119,6 +119,9 @@ def start_openings(cid, body, *, source=None, receipt_path=None):
     use_hero=body.get('use_hero')
     if use_hero is not None and type(use_hero) is not bool:
         raise store.StudioError('Оберіть, чи використовувати ведучого каналу')
+    use_wishes = body.get('use_channel_wishes', False)
+    if type(use_wishes) is not bool:
+        raise store.StudioError('Оберіть, чи застосовувати побажання каналу до прев’ю')
     use_thumbnail = body.get('use_thumbnail', True)
     if type(use_thumbnail) is not bool:
         raise store.StudioError('Оберіть, чи використовувати прев’ю конкурента')
@@ -153,6 +156,7 @@ def start_openings(cid, body, *, source=None, receipt_path=None):
                 'selected': {'title': title}, 'selected_index': -1, 'idea_source': reference,
                 'sample_count': ctx['sample_count']}
         if use_hero is not None:data['clone_use_hero']=use_hero
+        if use_wishes:data['clone_channel_wishes']=True
         if use_thumbnail: data['clone_reference'] = reference
         ideas.save_draft(cid, data)
         store.atomic_json(receipt, {'project_id': pid, 'channel_id': cid, 'reference_id': reference['id'], 'title': title, 'target_words': count, 'use_thumbnail': use_thumbnail, 'use_hero':use_hero})
@@ -227,7 +231,8 @@ def start_thumbnail(data):
         if (thumbnail_gen.state(project['id']) or {}).get('status') or thumbnail_gen.preview(project):
             return
         thumbnail_gen.start(project['id'], project['name'], data.get('opening') or project['name'], writer='trending',
-                            **({'use_hero':data['clone_use_hero']} if 'clone_use_hero' in data else {}))
+                            **({'use_hero':data['clone_use_hero']} if 'clone_use_hero' in data else {}),
+                            **({'channel_wishes': True} if data.get('clone_channel_wishes') is True else {}))
     except Exception as error:
         data['clone_thumbnail_error'] = str(error)[:300]
         ideas.save_draft(data['channel_id'], data, make_current=False)
