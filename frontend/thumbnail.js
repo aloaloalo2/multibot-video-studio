@@ -29,11 +29,13 @@ async function openThumbnail(project){
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
     ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Використати ведучого каналу на прев’ю</label>':''}
+    ${data.channel_wishes?'<label class="thumb-hero-choice" id="thumb-wishes-choice" hidden><input id="thumb-use-wishes" type="checkbox">Застосувати побажання каналу до прев’ю</label>':''}
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     [{label:'Створити',primary:true,enabled:()=>!thumbnailBusy(project.id)&&!thumbnailCreatePending.has(project.id)&&create.dataset.gated!=='1'&&create.dataset.referenceMissing!=='1',run:()=>generateThumbnail(project,writer,$('thumb-create-wishes').value)}]);
   const actions=$('modal-actions'),create=actions.querySelector('button');create.id='thumb-create-submit';create.innerHTML=thumbnailIcon+'<span>Створити</span>';create.classList.add('glow-action');
   const controls=document.createElement('div');controls.className='thumb-create-controls';actions.append(controls);
   StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
+  if(data.channel_wishes)$('modal-actions').prepend($('thumb-wishes-choice'));
   if(data.hero_reference)$('modal-actions').prepend($('thumb-use-hero').closest('label'));
   $('modal-title').innerHTML=`${thumbnailIcon}<span>Нове прев’ю</span>`;
   $('modal-backdrop').dataset.thumbnailProject=project.id;
@@ -103,6 +105,7 @@ function setupThumbnailModes(project,data){
     backdrop.dataset.thumbnailMode=mode;
     for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.thumbMode===mode));
     $('thumb-reference-field').hidden=mode!=='clone';
+    if($('thumb-wishes-choice'))$('thumb-wishes-choice').hidden=mode!=='clone';   // a new thumbnail always follows the channel's wishes
     $('thumb-create-wishes').placeholder=mode==='clone'?'Вкажіть побажання або правки до клонованого прев’ю…':'Вкажіть побажання для нового прев’ю…';
     note('');
     updateReferenceView();
@@ -173,6 +176,7 @@ async function generateThumbnail(project,writer='claude',wishes=$('thumb-wishes'
   thumbnailCreatePending.add(project.id);showThumbnailState(project.id);
   const source=thumbnailSources.get(project.id) || {},body={title:source.title || project.name,script:source.script || '',wishes,writer};
   if($('thumb-use-hero'))body.use_hero=$('thumb-use-hero').checked;
+  if($('thumb-use-wishes')&&$('modal-backdrop')?.dataset.thumbnailMode==='clone')body.channel_wishes=$('thumb-use-wishes').checked;
   try{
     const backdrop=$('modal-backdrop');
     if(source.reference_selection&&backdrop?.dataset.thumbnailProject===project.id){

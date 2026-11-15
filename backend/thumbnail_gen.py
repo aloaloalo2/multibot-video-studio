@@ -158,7 +158,9 @@ def defaults(pid: str) -> dict:
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else creation_min_frames(project),
             "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
             "versions": versions(pid), "writers": list(PROMPT_WRITERS), "image_editing": True,
-            "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None}
+            "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None,
+            # the clone window offers the channel's own thumbnail wishes only when the channel has some (user, 15 November 2026)
+            "channel_wishes": bool(str((store.read_channel_settings(store.get_channel_folder(project['channel_id'], include_disabled=True), {}) or {}).get('thumbnail_wishes') or '').strip()) if project.get('channel_id') else False}
 
 
 def job_path(pid: str) -> Path:
@@ -293,7 +295,12 @@ def clone_brief(title: str, wishes: str, name: str, refs: list[Path]) -> str:
             "Inspect the attached images (use Read for these local image files if available):\n" + images + "\n\n"
             + idea_reference.thumbnail_rules(title, name)
             + "\nAUTHOR'S EXPLICIT CHANGES FOR THIS CLONE ONLY:\n" + (wishes.strip() or 'None. Keep its idea and wording; create original visuals.')
-            + "\nReturn only the image prompt. Quote the exact lettering read from the source image, in its original language. "
+            # the lettering speaks the new video's language: a French channel cloning a Russian thumbnail kept «МЛРД СОЛНЦ»
+            # (user, 15 November 2026: «створював для французького каналу і превью на ру вийшло»)
+            + "\nReturn only the image prompt. Read the exact lettering of the source image. The new thumbnail's lettering must be in "
+            "the language of this new video title: " + json.dumps(title, ensure_ascii=False) + ". If the source lettering is in another "
+            "language, translate it into the title's language with the same meaning, the same numbers and proper names, and about "
+            "the same length, then quote that translated lettering exactly. If it is already in the title's language, quote it unchanged. "
             "The separate image generator cannot see the source: fully describe the new image, with no source filenames or reference-relative instructions. "
             "Your role at this step is to write the prompt; the Studio runs image generation afterward.")
 
