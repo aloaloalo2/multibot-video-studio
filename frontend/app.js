@@ -334,8 +334,15 @@ async function selectChannel(id,{updateUrl=true,loadProjects=true}={}) {
   stopPlayback();
   const channel=state.channels.find(item=>item.id===id) || null;
   if (!channel) return false;
-  const data=loadProjects?await api(`/api/projects?channel=${encodeURIComponent(id)}`):{projects:[]};
+  // the list of a busy studio can take a second or two: the clicked channel lights up at once, so the click is seen
+  // (user, 15 November 2026: «інколи нажимаю на канал, а воно мені не відкриває»)
+  for(const row of document.querySelectorAll('#channel-list .channel-item'))row.classList.toggle('active',row.dataset.channelId===id);
+  $('channel-list').classList.toggle('channel-opening',loadProjects);
+  let data;
+  try{data=loadProjects?await api(`/api/projects?channel=${encodeURIComponent(id)}`):{projects:[]};}
+  catch(error){if(navigation===state.navigation){$('channel-list').classList.remove('channel-opening');renderChannels();}throw error;}
   if(navigation!==state.navigation)return false;
+  $('channel-list').classList.remove('channel-opening');
   state.channel=channel;state.view='editor';
   state.project=null; state.selected=null;state.selectedTransition=null; state.assets=[]; state.pixabay=[];state.projects=data.projects || [];
   renderChannels();
