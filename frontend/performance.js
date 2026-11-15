@@ -11,19 +11,23 @@ function performanceTime(ms){
   return minutes<60?`${minutes} хв`:`${Math.floor(minutes/60)} год${minutes%60?` ${minutes%60} хв`:''}`;
 }
 const performanceLost=new Set(['failed','cancelled','interrupted','unknown']);
+// A frame run keeps every frame it drew even when it stops or fails its final check (user, 15 November 2026: «пише
+// створення кадрів не правильно час»: 17.8 min of «Галактики» read as a failed attempt), so all of its time is work.
+const performanceKeepsWork=new Set(['production']);
 function performanceRows(data){
   // Time comes from the saved runs, so a busy older backend shows the same honest split: finished, running and paused
   // runs are useful time, failed and interrupted attempts are listed apart.
-  const order=Object.keys(performanceWorkflows),groups=new Map(),costs=new Map((data.processes||[]).map(row=>[row.workflow,row.cost]));
+  const groups=new Map(),costs=new Map((data.processes||[]).map(row=>[row.workflow,row.cost]));
   for(const run of data.runs||[]){
     const workflow=performanceWorkflow(run.workflow);if(!workflow)continue;
     const row=groups.get(workflow)||{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,cost:costs.get(workflow)||{recorded:['analysis','export'].includes(workflow)}};
     const excluded=['queue','pause'].reduce((sum,key)=>sum+Math.max(0,Number(run.stages?.[key]?.ms)||0),0);
     const spent=Math.max(0,(Number(run.elapsed_ms)||0)-excluded);
-    if(performanceLost.has(run.status)){row.lost_ms+=spent;row.lost_runs++;}else row.active_ms+=spent;
+    if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost_ms+=spent;row.lost_runs++;}else row.active_ms+=spent;
     row.running||=run.status==='running';groups.set(workflow,row);
   }
-  return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000).sort((a,b)=>order.indexOf(a.workflow)-order.indexOf(b.workflow));
+  // the longest process on top (user, 15 November 2026)
+  return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
 }
 function performanceCost(cost){
   if(!cost?.recorded)return {label:'Немає даних',title:'Збережених витрат для цього процесу ще немає.'};

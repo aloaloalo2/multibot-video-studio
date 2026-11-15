@@ -92,3 +92,13 @@ test('an unchanged live report preserves the displayed rows',async()=>{
   Object.defineProperty(panel,'innerHTML',{get:()=>markup,set:value=>{writes++;markup=value;}});
   const pending=[...f.timers][0]();f.waiting[1].resolve(data);await pending;assert.equal(writes,0);
 });
+test('a failed frame run keeps its time as work and the longest process leads',()=>{
+  // «Галактики», 15 November 2026: 17.8 min of drawn frames read as a failed attempt
+  const f=fixture(),rows=f.context.performanceRows({runs:[
+    {workflow:'script',elapsed_ms:120000,status:'complete'},
+    {workflow:'production',elapsed_ms:1068000,status:'failed'},
+    {workflow:'translation',elapsed_ms:60000,status:'failed'},
+  ]});
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>[row.workflow,row.active_ms,row.lost_ms]))),
+    [['production',1068000,0],['script',120000,0],['translation',0,60000]]);
+});
