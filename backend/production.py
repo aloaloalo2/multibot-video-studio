@@ -413,7 +413,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             if any(f.get('format') == 'razgon_2d' and (not numbers or f['number'] in numbers)
                    for f in (store.load_project_plan(pid) or {}).get('frames', [])):
                 import engine_index
+                import production_kit
                 text += engine_index.brief() + engine_index.project_index(current)
+                if numbers and not scoped.get('repair_frames') and index < 1000:
+                    text += production_kit.chunk_note(current)
             text += mixed_assets_step(current) + director.sound_brief(current, scoped=bool(scoped.get('repair_frames'))) + director.animation_style(current) + director.channel_memory(current)
             _, handoff = production_context.write(current, scoped, repair=bool(notes.strip()))
             text += production_context.instructions(handoff,scoped=bool(scoped.get('repair_frames')),
@@ -447,7 +450,38 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 recovered.update({f['number'] for f in candidates} - set(native_review.missing(current,candidates)))
             if recovered:
                 previous = {**previous,'completed_frames':sorted(recovered | set(previous.get('completed_frames') or []))}
-        code, answer = production_sessions.run(request.get('repair_frames') or request.get('review_frames') or [],launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous, pending_review=lambda:getattr(reviews,'last',{}).get('pending_review',[]))
+        targets = request.get('repair_frames') or request.get('review_frames') or []
+        kit_answer = None
+        import production_kit
+        if not request.get('repair_frames') and production_kit.needed(store.load_project(pid), targets):
+            # The film's shared kit is made once before the parallel sessions (production_kit.py).
+            current = store.load_project(pid)
+            production_kit.seed(current)
+            import engine_index
+            kit_text = (production_kit.brief(current, list(range(1, int(request['frames']) + 1)))
+                        + montage_context.rules(current, production=True) + mixed_assets_step(current)
+                        + director.animation_style(current) + director.channel_memory(current)
+                        + engine_index.brief() + engine_index.project_index(current) + montage_context.COMMANDS)
+            if cancelled():raise InterruptedError('Створення кадрів зупинено')
+            if deadline - time.monotonic() <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
+            with production_sessions.STUDIO_SESSIONS:
+                kit_code, kit_answer = director.claude(cli, kit_text, log.with_name(log.stem + f'-session-{production_kit.KIT_INDEX}.log'),
+                    director.activity_path(pid, 'production'), max(1, int(deadline - time.monotonic())), resume=None,
+                    effort=effort, model=model, env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+            production_kit.record_cost(store.load_project(pid), kit_answer)
+            if director.limit_stop(kit_answer):
+                fields.update(status="failed", limit=True, error=director.limit_stop(kit_answer),
+                              cost_usd=float(request.get("cost_usd") or 0) + float(kit_answer.get("total_cost_usd") or 0))
+                return
+            # A kit that did not finish never stops the film: the sessions then work as before, without a shared kit.
+        locked = production_kit.lock(store.load_project(pid)) if production_kit.ready(store.load_project(pid)) and len(targets) > production_sessions.SESSION_FRAMES else []
+        try:
+            code, answer = production_sessions.run(targets,launch,verify,checkpoint,cancelled,director.limit_stop,previous=previous, pending_review=lambda:getattr(reviews,'last',{}).get('pending_review',[]))
+        finally:
+            if locked:
+                production_kit.unlock(store.load_project(pid))
+        if kit_answer:
+            answer = production_sessions.merge_answers(kit_answer, answer)
         if last_review and not last_review['passed']:
             fields['quality'] = last_review
             answer['result'] = ' '.join(last_review.get('errors') or [answer.get('result','')])[:1600]
@@ -537,6 +571,11 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             except (OSError, store.StudioError):
                 pass
             if fields.get("status") == "done" and not request.get('repair_frames'):
+                try:
+                    import production_kit
+                    production_kit.harvest(store.load_project(pid))   # the channel library takes what this film added
+                except (OSError, store.StudioError):
+                    pass
                 # the scenes may have brought new sound cues: the film's music and effects are laid again, without a
                 # render (razgon_sound.py; only an animated film is due)
                 razgon_sound.start(pid, "production")

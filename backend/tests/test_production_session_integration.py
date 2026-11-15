@@ -61,3 +61,31 @@ class ScopedProductionTest(unittest.TestCase):
                 production.run(self.project['id'],Path('mock-cli'))
         model.assert_not_called();self.assertEqual(self.project['production_request']['status'],'failed')
         self.assertIn('6 годин',self.project['production_request']['error'])
+
+
+class KitStageTest(ScopedProductionTest):
+    """One kit session before the parallel sessions; the shared scene files stay read-only while they run."""
+    def test_kit_runs_once_first_and_shared_files_are_locked_during_the_sessions(self):
+        import os, stat, tempfile
+        film = Path(tempfile.mkdtemp()) / 'film'; (film / 'scenes').mkdir(parents=True); (film / 'story').mkdir()
+        (film / 'scenes' / 'cast.js').write_text('// cast\n')
+        prompts, locked_seen = [], []
+        def author(cli, prompt, log, *args, **kwargs):
+            prompts.append(prompt)
+            if prompt.startswith('Ти готуєш спільний набір'):
+                (film / 'story' / 'kit.json').write_text(json.dumps({'ready': True}))
+                return 0, {'result': 'Kit ready.', 'total_cost_usd': .02}
+            locked_seen.append(not os.stat(film / 'scenes' / 'cast.js').st_mode & stat.S_IWUSR)
+            packet = json.loads(Path(re.search(r'Єдина карта роботи: (.+?\.txt)', prompt).group(1)).with_suffix('.json').read_text())
+            with self.lock:self.made.update(packet['pending_frames'])
+            self.project['tracks'] = [{'clips': [{'kind': 'animation', 'title': f'Razgon · кадр {n:03d}'} for n in self.made]}]
+            return 0, {'result': 'Scoped work saved.', 'total_cost_usd': .01}
+        with patch('production_kit.razgon', lambda project: film), \
+             patch.object(production.director, 'claude', side_effect=author):
+            production.run(self.project['id'], Path('mock-cli'))
+        self.assertTrue(prompts[0].startswith('Ти готуєш спільний набір'))
+        self.assertEqual(sum(p.startswith('Ти готуєш спільний набір') for p in prompts), 1)
+        self.assertTrue(locked_seen and all(locked_seen))
+        self.assertTrue(os.stat(film / 'scenes' / 'cast.js').st_mode & stat.S_IWUSR)
+        request = self.project['production_request']
+        self.assertEqual(request['status'], 'done'); self.assertAlmostEqual(request['cost_usd'], .07)
