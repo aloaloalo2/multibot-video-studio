@@ -131,9 +131,24 @@ function organizeChannelSettings(channel){
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
   move('.settings-script-wishes','wishes',{fold:true,icon:'script',title:'Сценаристу'});
   move('.settings-thumbnail-wishes','wishes',{fold:true,icon:'thumbnails',title:'До прев’ю'});
-  move('.settings-agent-memory','wishes',{fold:true,icon:'memory',title:'До монтажу й оформлення'});
+  move('.settings-agent-memory','wishes',{fold:true,icon:'memory',title:'До плану кадрів і монтажу'});
+  // ready sections to fill in, so it is clear what can be set here (user, 15 November 2026: «шоб вже було розписано що там
+  // можна настроїти»); only the missing headings are added at the end, the author's text stays as it is
+  {const field=body.querySelector('#channel-agent-memory'),add=document.createElement('button');
+    add.type='button';add.className='secondary settings-memory-sections';add.textContent='Додати розділи';
+    add.title='Додати в кінець заголовки розділів, яких ще немає: план кадрів, стиль кадрів, люди, рух, текст і підписи';
+    add.addEventListener('click',()=>{
+      const names=['План кадрів','Стиль кадрів','Люди й персонажі','Рух','Текст і підписи'];
+      const have=new Set([...field.value.matchAll(/^#{1,3}\s*(.+?)\s*$/gm)].map(m=>m[1].toLowerCase()));
+      const missing=names.filter(name=>!have.has(name.toLowerCase()));
+      if(!missing.length){add.textContent='Усі розділи вже є';setTimeout(()=>add.textContent='Додати розділи',1600);return;}
+      const text=field.value.replace(/\s+$/,'');
+      field.value=(text?text+'\n\n':'')+missing.map(name=>'# '+name+'\n').join('\n');
+      field.dispatchEvent(new Event('input',{bubbles:true}));field.focus();field.setSelectionRange(field.value.length,field.value.length);
+    });
+    field?.after(add);}
   const imageWishes=body.querySelector('.generated-image-preferences');
-  if(imageWishes){const section=document.createElement('section');section.className='settings-section settings-image-wishes';section.innerHTML='<h3>Створені зображення</h3>';section.append(imageWishes);body.append(section);move('.settings-image-wishes','wishes',{fold:true,icon:'formats',title:'До створених зображень'});}
+  if(imageWishes){const section=document.createElement('section');section.className='settings-section regular-only settings-image-wishes';section.innerHTML='<h3>Створені зображення</h3>';section.append(imageWishes);body.append(section);move('.settings-image-wishes','wishes',{fold:true,icon:'formats',title:'До створених зображень'});}
   move('.channel-look','look',{icon:'look'});
   move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Плашка'});
   move('.settings-accents','look',{fold:true,icon:'accents'});
@@ -160,7 +175,7 @@ function organizeChannelSettings(channel){
   fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
   if(typeof channelTransitionSection==='function')panels.projects.append(channelTransitionSection(channel));
   // «Шрифти монтажу» folds like every other block (user, 14 November 2026)
-  const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group';
+  const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group regular-only';   // Razgon draws an animated film's text itself (user, 15 November 2026)
   fontGroup.innerHTML=`<summary>${channelSettingsIcon('script')}<span><strong>Шрифти монтажу</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
   fontSection.querySelector('h3').hidden=true;fontGroup.lastElementChild.append(fontSection);
   panels.projects.append(fontGroup);
