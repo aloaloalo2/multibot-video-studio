@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Give a channel's folder in YOUTUBE the name the studio shows (user, 15 November 2026: «папки каналов переименуй так
+как у меня в студии»).
+
+A channel's id is a hash of its folder's path (store.channel_id) and that path sits in every project of the channel
+(episode_path, asset paths, plans, language files), so renaming the folder alone would orphan the channel. This tool
+renames the folder and, in one pass, writes the new path and the new id wherever the studio keeps the old ones:
+backend/data (projects, jobs, channel settings, renders) and the Razgon projects. Logs keep their history as it was.
+The channel's own data folder moves to its new id. Run it only while the studio is idle, then restart the studio.
+
+    python3 tools/rename_channel.py "What If" CORBIN            # what would change
+    python3 tools/rename_channel.py "What If" CORBIN --apply
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+
+APP = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(APP / "backend"))
+import store  # noqa: E402
+
+TEXT = {".json", ".txt", ".md", ".jsonl", ".csv"}
+ROOTS = (store.DATA_ROOT, APP / "razgon-2d-studio" / "projects")
+
+
+def find_folder(name: str) -> Path:
+    for folder in store.YOUTUBE_ROOT.iterdir():
+        if folder.is_dir() and unicodedata.normalize("NFC", folder.name) == unicodedata.normalize("NFC", name):
+            return folder
+    raise SystemExit(f"Папку «{name}» не знайдено в {store.YOUTUBE_ROOT}")
+
+
+def forms(path: str) -> list[bytes]:
+    """The ways a path is written in the studio's files: as on disk, NFC, NFD, and each as a JSON \\u escape."""
+    seen = []
+    for text in {path, unicodedata.normalize("NFC", path), unicodedata.normalize("NFD", path)}:
+        for raw in (text.encode(), json.dumps(text)[1:-1].encode()):
+            if raw not in seen:
+                seen.append(raw)
+    return seen
+
+
+def replacements(old: Path, new: Path, old_id: str, new_id: str) -> list[tuple[bytes, bytes]]:
+    pairs = []
+    target = str(new)
+    for raw in forms(str(old)):
+        escaped = b"\\u" in raw
+        pairs.append((raw, json.dumps(target)[1:-1].encode() if escaped else target.encode()))
+    # A path followed by «/» or «"»: a longer folder name that starts the same way is not this channel.
+    pairs = [(a + end, b + end) for a, b in pairs for end in (b"/", b'"', b"\\/")]
+    return pairs + [(old_id.encode(), new_id.encode())]
+
+
+def files():
+    for root in ROOTS:
+        if root.is_dir():
+            for path in root.rglob("*"):
+                if (path.suffix in TEXT and path.is_file() and not path.is_symlink()
+                        and "rename-backups" not in path.relative_to(root).parts):
+                    yield path
+
+
+def busy() -> bool:
+    check = subprocess.run([sys.executable, str(APP / "tools" / "studio_restart.py"), "--check"], capture_output=True, text=True)
+    if check.returncode:
+        print(check.stdout.strip())
+    return bool(check.returncode)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("old")
+    parser.add_argument("new")
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    old = find_folder(args.old)
+    new = old.with_name(unicodedata.normalize("NFC", args.new.strip()))
+    if not args.new.strip() or "/" in args.new or new.name.startswith("."):
+        raise SystemExit("Невірна нова назва папки")
+    if new.exists():
+        raise SystemExit(f"Папка «{new.name}» вже існує")
+    if not store.has_channel_settings(old):
+        raise SystemExit(f"«{old.name}» не є папкою каналу студії")
+    old_id = store.channel_id(old)
+    new_id = __import__("hashlib").sha256(str(new).encode()).hexdigest()[:16]
+    pairs = replacements(old, new, old_id, new_id)
+    changed = {}
+    for path in files():
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        result = data
+        for a, b in pairs:
+            result = result.replace(a, b)
+        if result != data:
+            changed[path] = result
+    channel_data = store.DATA_ROOT / "channels"
+    print(f"{old.name} → {new.name}: канал {old_id} → {new_id}, файлів до оновлення {len(changed)}"
+          f"{', дані каналу переїдуть' if (channel_data / old_id).is_dir() else ''}")
+    if not args.apply:
+        return
+    if busy():
+        raise SystemExit("Студія зараз працює: дочекайтеся кінця й запустіть ще раз.")
+    if (channel_data / new_id).exists():
+        raise SystemExit(f"Дані каналу {new_id} вже існують")
+    # the original of every file it rewrites, to undo by hand if anything looks wrong
+    import time
+    backup = store.DATA_ROOT / "rename-backups" / f"{time.strftime('%Y%m%d-%H%M%S')}-{old_id}"
+    for path in changed:
+        for root in ROOTS:
+            if root in path.parents:
+                kept = backup / root.name / path.relative_to(root)
+                kept.parent.mkdir(parents=True, exist_ok=True)
+                kept.write_bytes(path.read_bytes())
+    (backup / "rename.json").write_text(json.dumps({"old": str(old), "new": str(new), "old_id": old_id, "new_id": new_id},
+                                                   ensure_ascii=False, indent=2), encoding="utf-8")
+    os.rename(old, new)
+    if (channel_data / old_id).is_dir():
+        os.rename(channel_data / old_id, channel_data / new_id)
+    for path, result in changed.items():
+        path = Path(str(path).replace(f"/channels/{old_id}/", f"/channels/{new_id}/"))
+        staged = path.with_name(f".rename-{path.name}")
+        staged.write_bytes(result)
+        os.replace(staged, path)
+    if store.channel_id(new) != new_id:
+        raise SystemExit(f"Увага: номер нової папки {store.channel_id(new)} не збігся з {new_id}")
+    print("Готово. Перезапустіть студію: python3 tools/studio_restart.py")
+
+
+if __name__ == "__main__":
+    main()

@@ -120,7 +120,7 @@ otherwise stopped (a fresh request gets 30 s to start).
 `high`) reads the plan and makes each frame by its format: the author's own pictures from the episode folder first,
 stock through `studio.py stock` (a numbered contact sheet of Pixabay previews, `backend/stock_sheet.py`, looked at
 instead of lists of tags) and `studio.py stock-pick` (downloads the chosen one into the project and places it), pictures drawn by Codex through
-`What If/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
+`VideoKey Studio/razgon-2d-studio/tools/codex_image.py`, text frames itself and `razgon_2d` frames as code through
 `razgon_bridge.py`, and puts each frame at its time with `python3 tools/studio.py place P N FILE|--text` (the montage op
 `place`: the plan frame's start and length, a slow zoom on a photo, the group «Кадр N»). How people look follows the channel's «Люди в кадрах» (`people_style` in `video-plan.json`, `production.people_rules`):
 `stickman` (default) keeps every person a stick figure apart from the host and stock without people; `real` (Karl Brenners
@@ -1152,3 +1152,9 @@ The user: «зроби це все, щоб зекономити нам токе�
 Пряме побажання користувача: у налаштуваннях каналу є галочка «Логотип на прев’ю» (блок «Побажання до прев’ю», поле `thumbnail_logo` з `enabled`, `position`, `size`). Логотип береться з плашки каналу. Якщо обрано кут, Codex лишає його вільним, а студія сама накладає файл на готову картинку (`backend/thumbnail_logo.py`). Версія без логотипа зберігається в `preview/Без логотипа`, і правка цієї версії починається з неї, тому другого логотипа не з’являється. Якщо обрано «Де краще за композицією», файл логотипа йде до Codex разом із промптом, і Codex розміщує його сам. Переклад прев’ю лишає логотип без змін. Готові прев’ю автоматично не переробляються.
 
 Того ж дня користувач додав: «правий нижній кут не нада там нічого розміщати… там ютуб показує довжину відео». На прев’ю всіх каналів правий нижній кут (приблизно 18% ширини й 15% висоти) лишається порожнім: без логотипа, тексту й значків. `thumbnail_gen.DURATION_CORNER` дописується в кожне малювання (нове, правка, клон, трендове), переклад прев’ю має такий самий рядок. Логотип на прев’ю цей кут вибрати не дає. Плашки в роликах заборона не стосується.
+
+## Папки каналів названі як у студії, 15 листопада 2026 року
+
+Користувач: «папки каналов переименуй так как у меня в студии». Папки в YOUTUBE тепер мають назви каналів зі студії: «What If» стала «CORBIN», «КОСМОС» стала «Космос PRO», «немецкий здоровье» стала «Le Ciel Inconnu». Номер каналу студія рахує з шляху до папки, тому папку перейменовує тільки `python3 tools/rename_channel.py "<стара>" "<нова>" [--apply]`. Інструмент працює лише тоді, коли студія нічого не виконує. Він переписує старий шлях і номер каналу в `backend/data` і проєктах Razgon, а оригінали змінених файлів кладе в `backend/data/rename-backups`. Після нього студію треба перезапустити. Вручну папку каналу не перейменовувати.
+
+Того ж дня: технічні папки в YOUTUBE не потрібні. «SFX для монтажу YouTube» переїхала в `backend/data/sfx-library` (студія бере звуки з `mixkit-20261112` поруч). Порожня `projects` з'являлася, коли агент запускав інструмент Razgon з відносним `--project projects/<slug>` із папки YOUTUBE. Тепер `kit/tools/project_lock.py` у такому разі відмовляє й нічого не створює.
