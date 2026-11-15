@@ -122,7 +122,7 @@ function organizeChannelSettings(channel){
     button.innerHTML=`<span class="settings-quick-visual">${channelSettingsIcon(icon)}</span><span class="settings-quick-copy"><strong>${title}</strong><span class="settings-quick-value">Завантажуємо…</span></span><span class="settings-quick-arrow" aria-hidden="true">›</span>`;
     button.addEventListener('click',()=>select(key,true));quick.append(button);
   }
-  panels.projects.append(quick);
+  quick.hidden=true;panels.projects.append(quick);   // «Озвучка» and «Оформлення» showed twice (user, 15 November 2026): their blocks below carry the summary now
   move('.settings-visual-formats','projects',{fold:true,icon:'formats',title:'Формати кадрів'});
   const strip=document.createElement('div');strip.className='settings-format-preview';strip.setAttribute('aria-hidden','true');
   summaries.get('.settings-visual-formats')?.after(strip);
@@ -147,7 +147,7 @@ function organizeChannelSettings(channel){
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
   for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Логотип на прев’ю','thumbnails','.thumbnail-logo-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
     const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?(only==='.hero-reference-section'?'hero':'thumbnail-logo'):key;
-    group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
+    group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong>${only?'':`<small class="settings-choice-summary" data-main-summary="${key}"></small>`}</span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;
     for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head')&&(!only||child.matches(only)))inner.append(child);
     if(!inner.children.length){if(!only)tabs[key].remove();continue;}   // its wishes went to «Побажання»
@@ -208,8 +208,10 @@ function organizeChannelSettings(channel){
     const idField={heygen:'heygen_voice_id',fishaudio:'fish_voice_id',elevenlabs:'eleven_voice_id'}[provider?.value];
     const hasVoice=!!(idField&&voice?.querySelector(`[name=${idField}]`)?.value)||!!source?.querySelector('audio');
     for(const field of automation.querySelectorAll('input:not(#settings-auto-opening)')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
+    text('[data-main-summary=voice]',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     text('[data-quick=voice] .settings-quick-value',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     const style=body.querySelector('.style-thumb[aria-checked=true] span')?.textContent;
+    text('[data-main-summary=look]',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');
     text('[data-quick=look] .settings-quick-value',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');
     const visual=body.querySelector('[data-quick=look] .settings-quick-visual');
     if(visual.style.backgroundImage!==$('logo-preview').style.backgroundImage)visual.style.backgroundImage=$('logo-preview').style.backgroundImage;
