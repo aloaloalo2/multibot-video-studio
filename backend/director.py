@@ -88,6 +88,10 @@ def brief(project: dict) -> str:
     settings = channel_settings(project)
     if settings.get("generated_image_style"):
         text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
+    import channel_hero
+    if channel_hero.production_rule(project):
+        text += ("\nУ каналу є фото головного героя: кадри з ним студія малює через Codex у нових позах і ракурсах."
+                 " Де доречно, став героя в задум кадру й опиши його дію та емоцію.\n")
     if settings.get("accents") or is_animated:
         text += ("\nАкценти на кадрах увімкнені. " if settings.get("accents") else "\nУ постановці анімованої сцени: ")
         text += motion_direction.ACCENTS + "\nУ задумі відповідного кадру запиши ціль, вигляд і момент появи, щоб монтажер міг відтворити рішення.\n"

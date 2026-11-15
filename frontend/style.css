@@ -1890,7 +1890,7 @@ select option{background:#232327;color:#f1f1f2}
 .hero-reference-section p{font-size:12px;margin:0;color:#999da6}
 .hero-reference-section small{display:block;font-size:12px;color:#c4c6ce}
 .hero-reference-pick label{display:grid;place-items:center;width:auto;min-width:64px;max-width:160px;height:96px;margin:0;border:1px dashed #4a4c54;border-radius:9px;overflow:hidden;background:#222328;cursor:pointer}
-.hero-reference-pick img{width:auto;max-width:160px;height:100%;object-fit:contain}   /* any shape, never cropped (user, 15 November 2026) */
+.hero-reference-pick img{display:block;width:auto;max-width:160px;height:96px;object-fit:contain}   /* any shape, never cropped (user, 15 November 2026) */
 .hero-reference-pick span{color:#999da6;font-size:24px}
 .hero-reference-pick label:hover{border-color:#858995}
 .thumb-hero-choice{display:flex;flex-direction:row!important;align-items:center!important;gap:8px;font-size:13px;color:#c2c5ce;margin:12px 0!important;cursor:pointer}

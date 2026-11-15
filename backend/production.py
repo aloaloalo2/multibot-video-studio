@@ -22,6 +22,7 @@ import director
 import motion_direction
 import frame_progress
 import channel_branding
+import channel_hero
 import logo_layer
 import production_context
 import production_sessions
@@ -128,7 +129,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Не переглядай бібліотеку по колу й не генеруй уже вибраний предмет заново.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait <аркуш> і tools/split_sheet.py --clean 40.
-   Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
+   Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.{channel_hero.production_rule(project)}
 3. Перевірка: tools/frame_review.py --project <проєкт> sheets --frames <нові або змінені кадри> у папці {store.razgon_rel()}.
    Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots, потім переглянь аркуші партії й познач результат через mark.
 {motion_direction.EXECUTION}
@@ -281,7 +282,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
    {SHEET_RULE.format(tools=tools, folder=f'{rel}/кадри')}
    Якщо codex_image.py пише про ліміт Codex, одразу заверши роботу: студія вже на паузі. Не замінюй створені картинки стоком чи кодом.
-   {people['rule']}
+   {people['rule']}{channel_hero.production_rule(project)}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
    читабельні підписи й осмислену анімацію за постановкою режисера. Читабельна спокійна фаза дозволена.
