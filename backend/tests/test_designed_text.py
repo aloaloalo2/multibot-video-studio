@@ -33,6 +33,18 @@ class DesignedTextTest(unittest.TestCase):
         self.assertIn(payload["word_entrance"]["type"], montage_ops.ENTRANCES)
         self.assertEqual(set(ctx.groups.values()), {"Кадр 5"})
 
+    def test_text_with_no_picture_yet_holds_the_frame_from_its_start(self):
+        ctx = self.ctx([], [])
+        planned = {"number": 5, "sentences": ["Врачи признают такое неудобство."],
+                   "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": 10.6, "end": 12.0}]}
+        payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
+        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None)
+        field = ctx.actions[0]["payload"]                         # a plain dark field from the frame's boundary
+        self.assertEqual((field["kind"], field["start"], field["duration"]), ("animation", 10.0, 4.0))
+        self.assertEqual(set(ctx.groups.values()), {"Кадр 5"})
+        self.assertLessEqual(payload["text_words"][0]["start"], .15)              # the text itself still starts with its word
+        self.assertGreaterEqual(payload["start"], 10.5)
+
     def test_looks_turn_from_frame_to_frame(self):
         looks = {montage_ops.TEXT_LOOKS[n % len(montage_ops.TEXT_LOOKS)]["veil"] for n in range(5)}
         self.assertGreaterEqual(len(looks), 4)

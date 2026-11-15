@@ -855,6 +855,7 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
     look = (DIM_TEXT_LOOKS if dim else TEXT_LOOKS)[number % len(DIM_TEXT_LOOKS if dim else TEXT_LOOKS)]
     duration = end - start
     tokens = _timed_tokens(ctx, planned)
+    background = _text_background(ctx, number)
     if tokens and len(tokens) == len(payload["text"].split()):
         family = ctx.project.get("font_family") or "Golos"
         fps = int(ctx.project.get("fps") or 25)
@@ -869,10 +870,18 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
                        text_words=stub["text_words"], word_entrance={"type": look["entrance"], "duration": .26, "distance": 16},
                        color=look["color"], shadow={"color": look["glow"], "opacity": .55, "blur": 22, "x": 0, "y": 0} if dim else
                        None)
-    background = _text_background(ctx, number)
-    if background is None:
-        return
     group = {"group_id": have["group"]["id"]} if have else {}
+    if background is None:
+        # Text frames are placed before the pictures are made, so the episode may have none yet. The words wait for the
+        # voice, so without a background the frame was empty from its boundary to the first word, a hole on the ruler
+        # and in the export (user, 15 November 2026: «чому інколи виникають пусті місця»). A plain dark field holds it.
+        title_bg = f"K{number:03d} фон"
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration,
+                                                             "title": title_bg, "kind": "animation", "content_type": "shape",
+                                                             "color": "#0b0b0e", "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+        if not have:
+            ctx.groups[title_bg] = f"Кадр {number}"
+        return
     title_bg, title_veil = f"K{number:03d} фон", f"K{number:03d} тінь"
     zoom = look["zoom"]
     try:   # the picture is contained in the frame: a vertical one needs a bigger scale to cover it

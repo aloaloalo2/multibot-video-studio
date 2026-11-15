@@ -101,7 +101,7 @@ class ContextTest(unittest.TestCase):
     def test_invalid_repair_scope_never_starts_paid_work(self):
         self.project['production_request']={**self.request,'status':'done'}
         with patch.object(store,'load_project',return_value=self.project),patch.object(production,'start') as start:
-            for selected in [[],[0],[4],[True],[2.0],'2']:
+            for selected in [[0],[4],[True],[2.0],'2']:   # [] is the whole film (the Claude button by «Увесь ролик»)
                 with self.subTest(selected=selected),self.assertRaises(store.StudioError):
                     production.fix('test','Fix',frame_numbers=selected)
             start.assert_not_called()
