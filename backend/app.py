@@ -872,6 +872,15 @@ def studio_work_status(exports):
         result['busy'].append('створення кадрів: '+pid)
         result.setdefault('activities',[]).append({'project_id':pid,'kind':'створення кадрів','status':'running'})
 
+    # what a language lane does now, so the project card can say «Перекладаємо · DE» (user, 15 November 2026)
+    for item in result.get('activities', []):
+        if item.get('kind') == 'мови':
+            try:
+                state = languages.load_state(item['project_id'])
+                jobs = [job for job in (state.get('jobs') or {}).values() if isinstance(job, dict) and job.get('status') == 'running']
+                item['jobs'] = [{'kind': job.get('kind'), 'code': job.get('code')} for job in jobs]
+            except (OSError, ValueError, store.StudioError):
+                item['jobs'] = []
     if trending_videos.busy():
         result['busy'].append('оновлення добірки конкурентів')
     if title_translation.busy():

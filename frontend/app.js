@@ -231,7 +231,7 @@ function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
-    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура'].includes(kind);
+    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови'].includes(kind);
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
@@ -241,7 +241,7 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):'Режисер складає план'}</span></span>`;
     if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
       const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title='Зупинити роботу Opus';stop.setAttribute('aria-label','Зупинити роботу Opus');
       stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
@@ -251,6 +251,25 @@ function renderProjectActivities(){
   }
 }
 
+// «Перекладаємо · DE, FR», «Озвучуємо переклад · PL»: the card says which language work runs (user, 15 November 2026)
+function languageActivityLabel(jobs){
+  const list=Array.isArray(jobs)?jobs:[],codes=kinds=>[...new Set(list.filter(job=>kinds.includes(job.kind)).map(job=>String(job.code||'').toUpperCase()).filter(Boolean))].join(', ');
+  for(const [kinds,label] of [[['translate'],'Перекладаємо'],[['voice','sample','save-audio','refit'],'Озвучуємо переклад'],[['thumbnail'],'Прев’ю перекладу']]){
+    const found=codes(kinds);if(found||list.some(job=>kinds.includes(job.kind)))return label+(found?' · '+found:'');
+  }
+  return 'Працюємо з мовами';
+}
+function paintLanguageTabBusy(){
+  const tab=document.getElementById('view-langs');if(!tab)return;
+  const task=state.project?projectActivities.get(state.project.id):null;
+  const open=!!state.project&&document.getElementById('project-langs')?.dataset.project===state.project.id;
+  const busy=(open&&typeof langBusy==='function'&&langBusy())||(typeof task==='object'&&task?.kind==='мови');
+  tab.classList.toggle('tab-busy',!!busy);
+  let spinner=tab.querySelector('.tab-spinner');
+  if(busy&&!spinner){spinner=document.createElement('span');spinner.className='export-spinner tab-spinner';spinner.setAttribute('aria-hidden','true');tab.append(spinner);}
+  if(!busy&&spinner)spinner.remove();
+  tab.title=busy?'Іде робота з мовами':'';
+}
 function updateProjectDeleteButton(card,kind){
   const button=card.querySelector('.project-action.delete');if(!button)return;
   const task=typeof projectActivities!=='undefined'?projectActivities.get(card.dataset.projectId):null;
@@ -266,12 +285,12 @@ async function pollChannelActivity(){
     const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
     const activity=await api('/api/studio/status');channelActivity.clear();channelExporting.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
-    for(const task of activity.activities||[])if(task.project_id)projectActivities.set(task.project_id,task.kind);
+    for(const task of activity.activities||[])if(task.project_id){if(task.kind==='мови'){if(!projectActivities.has(task.project_id))projectActivities.set(task.project_id,{kind:'мови',jobs:task.jobs||[]});}else projectActivities.set(task.project_id,task.kind);}
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
     await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position});}else projectActivities.delete(id);}catch{}}));
-    renderProjectActivities();
+    renderProjectActivities();paintLanguageTabBusy();
     const newProduction=(activity.activities||[]).some(task=>task.kind==='створення кадрів'&&(state.projects||[]).some(project=>project.id===task.project_id&&!['requested','in_progress'].includes(project.production_request?.status)));
     if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
     for(const id of activity.active_channels||[])channelActivity.add(id);

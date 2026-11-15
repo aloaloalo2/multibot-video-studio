@@ -722,6 +722,7 @@ function langPaintVoiceSetups(){
 }
 
 function showLangJob(){
+  if(typeof paintLanguageTabBusy==='function')paintLanguageTabBusy();
   langPaintScriptJobs();
   langPaintVoiceSetups();
   langPaintVoiceTiles();

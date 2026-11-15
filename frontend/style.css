@@ -2853,3 +2853,5 @@ select option{background:#232327;color:#f1f1f2}
 .trend-card h2:hover .trend-youtube{color:#ff3b30}
 .trend-title-link{color:inherit;text-decoration:none;transition:color .15s}
 .trend-title-link:hover,.trend-title-link:focus-visible{color:#fff;text-decoration:underline;text-underline-offset:3px;outline:none}
+/* a project tab with work running shows a small spinner after its name (user, 15 November 2026) */
+#project-views button .tab-spinner{width:11px;height:11px;min-width:11px;border-width:1.5px;opacity:.75}
