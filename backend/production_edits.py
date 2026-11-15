@@ -32,7 +32,10 @@ def enqueue(pid,notes,frame_numbers,client_id):
     with LOCK:
         jobs=read(pid)
         project=store.load_project(pid)
-        selected=production.validate_repair_frames(pid,project.get('production_request') or {},frame_numbers)
+        if not (project.get('production_request') or {}).get('id'):
+            raise store.StudioError('Правки через Claude доступні після створення кадрів',409)
+        # an empty list is the whole film: the Claude button by «Увесь ролик» (user, 15 November 2026)
+        selected=[] if frame_numbers==[] else production.validate_repair_frames(pid,project.get('production_request') or {},frame_numbers)
         previous=next((j for j in jobs if j.get('client_id')==client_id),None)
         if previous:
             if previous['notes']!=notes.strip() or previous['frame_numbers']!=selected:
@@ -71,7 +74,7 @@ def tick(blocked=()):
             for job in jobs:
                 if job['status'] not in {'starting','running'}:continue
                 same=(request.get('id')==job.get('request_id') and request.get('fixes')==job.get('fixes')
-                      and request.get('notes')==job['notes'] and request.get('repair_frames')==job['frame_numbers'])
+                      and request.get('notes')==job['notes'] and (request.get('repair_frames') or [])==job['frame_numbers'])
                 if same and request.get('status') in {'requested','in_progress'}:break
                 job.update(status='done' if same and request.get('status')=='done' else 'failed',finished_at=time.time())
                 if job['status']=='failed':job['error']=request.get('error') if same else 'Початок правок не підтверджено. Автоматичного платного повтору немає.'

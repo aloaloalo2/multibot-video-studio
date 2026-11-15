@@ -11,6 +11,22 @@ import sound_settings
 import sfx_library
 import store
 
+# The music sits this far under the voice, whose standard is audio_level.TARGET_LUFS (−16): measured, not a fixed share.
+# A fixed 35% left a synthesized bed only 13 dB under Gorbunov's voice and loud in every pause (user, 15 November 2026:
+# «чому музика так голосно? чому немає якоїсь нормалізації»).
+MUSIC_UNDER_VOICE_DB = 22.0
+MUSIC_FALLBACK_VOLUME = 0.12
+
+
+def music_volume(path) -> float:
+    import audio_level
+    level = audio_level.measure(Path(path))
+    if not level or not math.isfinite(level.get('lufs', float('nan'))):
+        return MUSIC_FALLBACK_VOLUME
+    db = audio_level.TARGET_LUFS - MUSIC_UNDER_VOICE_DB - level['lufs']
+    return round(max(0.02, min(0.5, 10 ** (db / 20))), 3)
+
+
 PREFIX = 'Звук ролика · '
 TRANSITION_PREFIX = 'Звук переходу · '
 
@@ -63,6 +79,9 @@ def place(ctx, spec, *, transition=False):
         if title in existing:
             old = next((c for layer in ctx.project['tracks'] for c in layer['clips'] if c.get('title') == title), None)
             if not transition or old is None or (abs(float(old['start']) - start) < .001 and abs(float(old['duration']) - duration) < .001):
+                # music laid before the measured level gets the measured one on the next pass
+                if old is not None and title.startswith(PREFIX + 'музика') and abs(float(old.get('volume', 1)) - volume) > .005:
+                    ctx.actions.append({'type': 'set_clip_volume', 'payload': {'clip_id': old['id'], 'volume': volume}})
                 return
             ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': old['id']}})
         if path not in assets:
@@ -84,9 +103,10 @@ def place(ctx, spec, *, transition=False):
             if not path.exists():
                 samples = module.render_score([{'start': 0, 'end': length, 'mood': mood, 'intensity': .3}], length, seed=7)
                 module.write_wav(str(path), samples[:module.secs(length)])
+        volume = music_volume(path)
         for index in range(count):
             at = index * length
-            add(path, PREFIX + f'музика {index + 1}', at, min(length, total - at), .35)
+            add(path, PREFIX + f'музика {index + 1}', at, min(length, total - at), volume)
     module = sound_settings.audio_module('sfx') if any(c['name'] not in library for c in events) else None
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]

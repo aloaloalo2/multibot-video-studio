@@ -48,6 +48,31 @@ class EditQueueTest(unittest.TestCase):
             self.assertEqual(start.call_args.kwargs['frame_numbers'],[3])
             self.assertEqual([j['status'] for j in edits.read(self.pid)],['done','running'])
 
+    def test_a_whole_film_edit_runs_with_no_frames_and_finishes(self):
+        edits.enqueue(self.pid,'Make the music quieter',[],'client-id-film')
+        def start(pid,notes,frame_numbers):
+            self.project['production_request'].update(status='in_progress',notes=notes,repair_frames=None,repair_film=True,
+                fixes=self.project['production_request']['fixes']+1)
+            production.ACTIVE.add(pid)
+        with patch.object(production,'fix',side_effect=start) as fix:
+            edits.tick();self.assertEqual(fix.call_args.kwargs['frame_numbers'],[])
+            production.ACTIVE.clear();self.project['production_request']['status']='done'
+            edits.tick()
+        self.assertEqual(edits.read(self.pid)[0]['status'],'done')
+
+    def test_fix_with_no_frames_marks_a_whole_film_repair(self):
+        saved={}
+        with patch.object(production,'set_request',side_effect=lambda pid,**fields:saved.update(fields)),patch.object(production,'start'):
+            production.fix(self.pid,'Quieter music',frame_numbers=[])
+        self.assertTrue(saved['repair_film']);self.assertIsNone(saved['repair_frames'])
+        with patch.object(production,'set_request',side_effect=lambda pid,**fields:saved.update(fields)),patch.object(production,'start'):
+            production.fix(self.pid,'Frame two',frame_numbers=[2])
+        self.assertFalse(saved['repair_film']);self.assertEqual(saved['repair_frames'],[2])
+
+    def test_a_project_without_frames_takes_no_claude_edits(self):
+        self.project['production_request']={}
+        with self.assertRaises(store.StudioError):edits.enqueue(self.pid,'Anything',[],'client-id-none')
+
     def test_duplicate_submission_is_idempotent(self):
         self.enqueue(2);self.enqueue(2)
         self.assertEqual(len(edits.read(self.pid)),1)

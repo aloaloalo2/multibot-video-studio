@@ -234,6 +234,8 @@ function renderCompositionTabs(){
   let bar=$('composition-tabs');if(!bar){bar=document.createElement('div');bar.id='composition-tabs';bar.className='composition-tabs';bar.setAttribute('role','tablist');bar.setAttribute('aria-label','Композиції таймлайна');document.querySelector('.timeline-toolbar h2').after(bar);}
   bar.replaceChildren();
   const main=document.createElement('button');main.type='button';main.className='composition-tab'+(!state.expandedGroup?' active':'');main.textContent='Увесь ролик';main.setAttribute('role','tab');main.setAttribute('aria-selected',String(!state.expandedGroup));main.addEventListener('click',()=>{stopPlayback();state.expandedGroup=null;state.selected=null;state.selectedGroup=null;state.zoom=state.groupPreviousZoom || 1;renderTimeline();renderInspector();renderPreview();});const mainWrap=document.createElement('div');mainWrap.className='composition-tab-wrap composition-main-tab';mainWrap.append(main);bar.append(mainWrap);
+  // the author writes any change to the film and Claude makes it (user, 15 November 2026)
+  if(state.project?.production_request?.id&&!state.expandedGroup){const ask=document.createElement('button');ask.type='button';ask.className='claude-ask-button';ask.title='Попросити Claude змінити ролик';ask.setAttribute('aria-label','Попросити Claude змінити ролик');ask.innerHTML=typeof projectCostIcons==='object'?projectCostIcons.claude_code:'✦';ask.addEventListener('click',()=>{const numbers=selectedRepairFrames();openFrameRepair(numbers,{film:!numbers.length});});bar.append(ask);}
   state.compositionTabs=(state.compositionTabs || []).filter(id=>sceneGroups().some(g=>g.id===id));
   for(const id of state.compositionTabs){const group=sceneGroups().find(g=>g.id===id);const wrapper=document.createElement('div');wrapper.className='composition-tab-wrap';const button=document.createElement('button');button.type='button';button.className='composition-tab'+(state.expandedGroup===id?' active':'');button.textContent=group.title;button.setAttribute('role','tab');button.setAttribute('aria-selected',String(state.expandedGroup===id));button.addEventListener('click',()=>expandFrameGroup(group));const close=document.createElement('button');close.type='button';close.className='composition-close';close.textContent='×';close.setAttribute('aria-label','Закрити вкладку '+group.title);close.addEventListener('click',()=>{state.compositionTabs=state.compositionTabs.filter(x=>x!==id);if(state.expandedGroup===id){stopPlayback();state.expandedGroup=null;state.selected=null;state.selectedGroup=null;state.zoom=state.groupPreviousZoom || 1;}renderTimeline();renderInspector();renderPreview();});wrapper.append(button,close);bar.append(wrapper);}
 }
@@ -275,11 +277,11 @@ function selectedRepairFrames(){
   return [...new Set(numbers)].sort((a,b)=>a-b);
 }
 
-function openFrameRepair(numbers=selectedRepairFrames()){
-  if(!numbers.length)return;
+function openFrameRepair(numbers=selectedRepairFrames(),{film=false}={}){
+  if(!numbers.length&&!film)return;
   const pid=state.project.id,clientId=crypto.randomUUID();
-  modal(numbers.length===1?`Правки до кадру ${numbers[0]}`:'Правки до вибраних кадрів',
-    `<div class="frame-repair-dialog"><div class="frame-repair-numbers">${numbers.map(n=>`<span>Кадр ${n}</span>`).join('')}</div><label for="frame-repair-notes">Що змінити?</label><textarea id="frame-repair-notes" rows="5" maxlength="4000" placeholder="Опишіть, що виправити у вибраних кадрах…"></textarea><p>Режисер отримає вибрані кадри та готові матеріали проєкту.</p><p class="frame-repair-error" role="status"></p></div>`,
+  modal(film?'Що змінити в ролику?':numbers.length===1?`Правки до кадру ${numbers[0]}`:'Правки до вибраних кадрів',
+    `<div class="frame-repair-dialog"><div class="frame-repair-numbers">${film?'<span>Увесь ролик</span>':numbers.map(n=>`<span>Кадр ${n}</span>`).join('')}</div><label for="frame-repair-notes">Що змінити?</label><textarea id="frame-repair-notes" rows="5" maxlength="4000" placeholder="${film?'Напишіть, що змінити чи виправити: кадри, текст, переходи, звук, монтаж…':'Опишіть, що виправити у вибраних кадрах…'}"></textarea><p>${film?'Claude сам знайде, чого стосується правка, і змінить лише це.':'Режисер отримає вибрані кадри та готові матеріали проєкту.'}</p><p class="frame-repair-error" role="status"></p></div>`,
     [{label:'Додати в чергу',primary:true,run:async()=>{
       const field=$('frame-repair-notes'),error=document.querySelector('.frame-repair-error');
       if(state.project?.id!==pid)return;
@@ -305,9 +307,9 @@ function refreshFrameEdits(make,pid){
       if(['starting','running'].includes(job.status)){const spinner=document.createElement('span');spinner.className='export-spinner frame-edit-queue-spinner';spinner.setAttribute('aria-hidden','true');row.append(spinner);}
       const label=document.createElement('span');label.className='frame-edit-queue-label';
       const paused=job.status==='failed'&&/призупинено|на ваше прохання/i.test(job.error || '');
-      const frames=job.frame_numbers.length>3?`${job.frame_numbers.length} кадрів`:`${job.frame_numbers.length===1?'кадр':'кадри'} ${job.frame_numbers.join(', ')}`;
+      const frames=!job.frame_numbers.length?'увесь ролик':job.frame_numbers.length>3?`${job.frame_numbers.length} кадрів`:`${job.frame_numbers.length===1?'кадр':'кадри'} ${job.frame_numbers.join(', ')}`;
       label.textContent=`${job.status==='queued'?'У черзі':paused?'Призупинено':job.status==='failed'?'Не виконано':'В роботі'} · ${frames}`;
-      label.title=`Кадри: ${job.frame_numbers.join(', ')}`;
+      label.title=job.frame_numbers.length?`Кадри: ${job.frame_numbers.join(', ')}`:'Увесь ролик';
       const note=document.createElement('span');note.className='frame-edit-queue-note';note.textContent=job.error || job.notes;note.title=note.textContent;
       row.append(label,note);
       if(job.status==='queued'){
