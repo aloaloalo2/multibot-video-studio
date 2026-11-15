@@ -5,7 +5,11 @@
   const names={claude:'Claude Code',codex:'Codex'};
   let data=null,panel=null,timer=0,pending=false;
   // «через 40 хв», «через 2 год 5 хв»: how long until the window renews, counted from now
-  const until=t=>{const m=Math.max(1,Math.ceil((t-Date.now()/1000)/60)),h=Math.floor(m/60);return h?`через ${h} год${m%60?` ${m%60} хв`:''}`:`через ${m} хв`;};
+  // «через 40 хв», «через 2 год 5 хв», «через 3 дн 4 год» (a weekly window)
+  const until=t=>{const m=Math.max(1,Math.ceil((t-Date.now()/1000)/60)),h=Math.floor(m/60),d=Math.floor(h/24);
+    return d?`через ${d} дн${h%24?` ${h%24} год`:''}`:h?`через ${h} год${m%60?` ${m%60} хв`:''}`:`через ${m} хв`;};
+  // Claude may have only a weekly window now (user, 15 November 2026); Codex has its 5-hour one
+  const span=item=>item&&item.window==='seven_day'?'на тиждень':'на 5 годин';
   const tone=left=>left<=10?'low':left<=30?'mid':'ok';
 
   function ring(kind,item){
@@ -19,17 +23,17 @@
     const age=Math.max(0,Math.floor((Date.now()/1000-(item.seen_at||0))/60));
     const fresh=item.stale?`Останні дані: ${age} хв тому · `:'';
     const when=fresh+(item.reset?'Очікуємо актуальні дані':`Оновиться ${until(item.resets_at)}`);
-    return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><b class="ai-limit-left" data-tone="${tone(item.left)}"><small>лишилось</small> ${item.left}%</b>
+    return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]} <small>${span(item)}</small></span><b class="ai-limit-left" data-tone="${tone(item.left)}"><small>лишилось</small> ${item.left}%</b>
       <div class="ai-limit-bar"><i class="${kind}" style="width:${item.left}%"></i></div>
       <span class="ai-limit-note">${when}</span></div>`;
   }
   function draw(){
     if(!data)return;
     ring('claude',data.claude);ring('codex',data.codex);
-    const text=k=>data[k]&&data[k].known?`${names[k]} ${data[k].left}%`:`${names[k]} немає даних`;
-    const label=`Залишок 5-годинного ліміту: ${text('claude')}, ${text('codex')}`;
+    const text=k=>data[k]&&data[k].known?`${names[k]} ${data[k].left}% ${span(data[k])}`:`${names[k]} немає даних`;
+    const label=`Залишок лімітів: ${text('claude')}, ${text('codex')}`;
     button.title=label;button.setAttribute('aria-label',label);
-    if(panel)panel.innerHTML=`<h4>Залишок на 5 годин</h4>${line('claude',data.claude)}${line('codex',data.codex)}`;
+    if(panel)panel.innerHTML=`<h4>Залишок лімітів</h4>${line('claude',data.claude)}${line('codex',data.codex)}`;
   }
   async function load(){
     if(pending)return;pending=true;
@@ -48,7 +52,7 @@
     if(panel){close();return;}
     panel=document.createElement('div');panel.className='ai-limits-panel';panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Ліміти Claude і Codex');
     document.body.appendChild(panel);button.classList.add('active');draw();place();
-    if(!data)panel.innerHTML='<h4>Залишок на 5 годин</h4><p class="ai-limit-note">Рахуємо…</p>';
+    if(!data)panel.innerHTML='<h4>Залишок лімітів</h4><p class="ai-limit-note">Рахуємо…</p>';
     document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',escape);
     load();
   });

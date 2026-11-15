@@ -51,6 +51,24 @@ class AiLimitsTest(unittest.TestCase):
         self.assertEqual((result["claude"]["left"], result["claude"]["resets_at"]), (88, resets))
         self.assertEqual((result["codex"]["left"], result["codex"]["resets_at"]), (79, resets))
 
+    def test_a_plan_with_only_a_weekly_window_shows_it_and_its_newest_receipt(self):
+        # 15 November 2026: the 5-hour window went away and the weekly one restarted at 0 with the same reset time
+        week = int(time.time()) + 3 * 86400
+        old = claude_event(0.75, int(time.time()) + 3600).replace('"seven_day":{"utilization":0.5', '"seven_day":{"utilization":0.98')
+        old = old.replace('"resetsAt":%d,"status":"allowed"}}}}' % (int(time.time()) + 3600 + 9e5), '"resetsAt":%d,"status":"allowed"}}}}' % week)
+        new = ('{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":%d,"rateLimitType":"seven_day",'
+               '"unifiedWindows":{"seven_day":{"utilization":0.04,"resetsAt":%d,"status":"allowed"}}}}\n' % (week, week))
+        self.log(self.data / "projects/p/production-a.log", old, age=600)
+        self.log(self.data / "projects/p/production-b.log", new, age=60)
+        result = self.read()["claude"]
+        self.assertEqual((result["window"], result["left"], result["resets_at"]), ("seven_day", 96, week))
+
+    def test_a_newer_receipt_of_another_window_beats_an_old_account_reading(self):
+        now=time.time()
+        account={'known':True,'left':25,'resets_at':now+3600,'seen_at':now-600,'source':'account','window':'five_hour'}
+        logs={'known':True,'left':100,'resets_at':now+3*86400,'seen_at':now-30,'source':'logs','window':'seven_day','stale':False}
+        self.assertEqual(ai_limits._merge(account,logs,now)['left'],100)
+
     def test_an_idle_codex_is_not_stale(self):
         self.log(self.home / ".codex/sessions/2026/rollout.jsonl", codex_event(25.0, int(time.time()) + 3600), age=22 * 60)
         result = self.read()["codex"]

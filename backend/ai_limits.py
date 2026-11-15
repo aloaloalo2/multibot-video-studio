@@ -31,21 +31,24 @@ ACCOUNT_BACKOFF = 600
 ACCOUNT_RETRY = 60
 _ACCOUNT: dict = {}
 
-CLAUDE = re.compile(rb'"five_hour":\{"utilization":([0-9.]+),"resetsAt":([0-9]+)')
-CLAUDE_PLAIN = re.compile(rb'"resetsAt":([0-9]+),"rateLimitType":"five_hour"[^}]*?"utilization":([0-9.]+)')
+# Claude's plan may have a 5-hour window and a weekly one, or the weekly one alone (user, 15 November 2026: «у мене тижн
+# ліміт тепер лише в клода»): the window shown is the 5-hour one when the newest receipt has it, else the weekly one.
+CLAUDE_WINDOW = re.compile(rb'"(five_hour|seven_day)":\{"utilization":([0-9.]+),"resetsAt":([0-9]+)')
+CLAUDE_LOGS = 30          # the newest studio logs are enough to find the newest receipts
+WEEK = 7 * 86400
 CODEX = re.compile(rb'\{"used_percent":([0-9.]+),"window_minutes":300,"resets_at":([0-9]+)\}')
 
 _LOCK = threading.Lock()
 _CACHE: dict = {}
 
 
-def _recent(paths, now: float):
+def _recent(paths, now: float, within: float = WINDOW):
     for path in paths:
         try:
             stat = path.stat()
         except OSError:
             continue
-        if now - stat.st_mtime <= WINDOW:
+        if now - stat.st_mtime <= within:
             yield path, stat
 
 
@@ -80,11 +83,17 @@ def codex_logs(home: Path):
 def read(data_root: Path, home: Path | None = None, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     home = Path(home or os.path.expanduser("~"))
-    claude, codex = [], []
-    for path, stat in _recent(claude_logs(data_root), now):
-        text = _tail(path, stat.st_size)
-        claude += [(float(u), int(r), stat.st_mtime) for u, r in CLAUDE.findall(text)]
-        claude += [(float(u), int(r), stat.st_mtime) for r, u in CLAUDE_PLAIN.findall(text)]
+    claude, codex = {"five_hour": [], "seven_day": []}, []
+    newest, kinds = 0.0, set()
+    logs = sorted(((stat.st_mtime, path, stat) for path, stat in _recent(claude_logs(data_root), now, WEEK)), reverse=True)
+    for mtime, path, stat in logs[:CLAUDE_LOGS]:
+        events = [line for line in _tail(path, stat.st_size).split(b"\n") if b'"rate_limit_event"' in line]
+        for order, event in enumerate(events):
+            for kind, used, resets in CLAUDE_WINDOW.findall(event):
+                claude[kind.decode()].append((float(used), int(resets), mtime, order))
+        if events and mtime > newest:
+            newest, kinds = mtime, {kind.decode() for kind, _, _ in CLAUDE_WINDOW.findall(events[-1])}
+    window = "five_hour" if "five_hour" in kinds or not kinds and claude["five_hour"] else "seven_day"
     for path, stat in _recent(codex_logs(home), now):
         text = _tail(path, stat.st_size)
         codex += [(float(u) / 100, int(r), stat.st_mtime) for u, r in CODEX.findall(text)]
@@ -93,7 +102,14 @@ def read(data_root: Path, home: Path | None = None, now: float | None = None) ->
     codex_view = _view(_best(codex), now)
     if codex_view.get("known"):
         codex_view["stale"] = False
-    return {"claude": _view(_best(claude), now), "codex": codex_view, "checked_at": now}
+    # the newest receipt wins: a plan change renews a window in place (15 November 2026: the weekly window went from
+    # 98% used to 0 with the same reset time when the 5-hour one went away)
+    found = [item for item in claude[window] if window == "seven_day" or now - item[2] <= WINDOW]
+    latest = max(found, key=lambda item: (item[2], item[3]), default=None)
+    claude_view = _view(latest[:3] if latest else None, now)
+    if claude_view.get("known"):
+        claude_view["window"] = window
+    return {"claude": claude_view, "codex": codex_view, "checked_at": now}
 
 
 def _view(best, now: float) -> dict:
@@ -132,12 +148,13 @@ def claude_usage(home=None, now=None):
                 except (TypeError,ValueError):wait=ACCOUNT_BACKOFF
                 return {'retry_after':max(ACCOUNT_EVERY,min(wait,3600))}
             return None
-        window=data.get('five_hour') or {}
+        kind='five_hour' if isinstance(data.get('five_hour'),dict) else 'seven_day'
+        window=data.get(kind) or {}
         utilization=window.get('utilization')
         if type(utilization) not in (int,float) or not 0<=utilization<=100:return None
         resets=datetime.fromisoformat(window['resets_at'].replace('Z','+00:00')).timestamp()
         if resets<=now:return None
-        return {**_view((utilization/100,resets,now),now),'source':'account','stale':False}
+        return {**_view((utilization/100,resets,now),now),'source':'account','stale':False,'window':kind}
     except (OSError,ValueError,TypeError,KeyError,AttributeError,subprocess.SubprocessError):
         return None
 
@@ -160,9 +177,11 @@ def _merge(account, logs, now: float) -> dict:
     """The account reading, unless a studio run reported the same window later: use only grows within a window."""
     if not account:
         return logs
-    same = logs.get('known') and abs((logs.get('resets_at') or 0) - account['resets_at']) < 300
-    if same and (logs.get('seen_at') or 0) > (account.get('seen_at') or 0):
-        return {**logs, 'left': min(logs['left'], account['left'])}
+    if logs.get('known') and (logs.get('seen_at') or 0) > (account.get('seen_at') or 0):
+        same = (logs.get('window', 'five_hour') == account.get('window', 'five_hour')
+                and abs((logs.get('resets_at') or 0) - account['resets_at']) < 300)
+        # the same window: use only grows, the lower remainder wins; another window: the plan changed, the newer wins
+        return {**logs, 'left': min(logs['left'], account['left'])} if same else logs
     return {**account, 'stale': now - (account.get('seen_at') or 0) > ACCOUNT_EVERY + 60}
 
 
