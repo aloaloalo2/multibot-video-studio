@@ -7,6 +7,7 @@ const StudioUI=(()=>{
     trending:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16"/>',
     claude:'<path d="m12 2 1 7 5-5-3 6 7-1-6 3 5 4-7-2 2 7-4-6-3 7 1-8-7 4 5-6-7-1 8-1-5-5 6 3z"/>',
     square:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+    pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
     check:'<path d="m5 12 4 4L19 6"/>',
     refresh:'<path d="M3 10a9 9 0 1 1 1 7M3 4v6h6"/>',
   };

@@ -842,6 +842,11 @@ def channel_task_outcome(task):
         import episode_ideas
         data = episode_ideas.read_project(pid) if pid else episode_ideas.read(cid)
         return 'cancelled' if data.get('cancelled') else data.get('status')
+    if kind == 'створення кадрів':
+        request = store.load_project(pid).get('production_request') or {}
+        if request.get('paused') and (request.get('paused_by') == 'user' or
+                                      request.get('paused_by') is None and str(request.get('error') or '').startswith('Призупинено на ваше прохання')):
+            return 'paused_by_user'
     return project_jobs(pid).get(kind)
 
 
@@ -895,6 +900,24 @@ def studio_work_status(exports):
         result['busy'].append(kind + ': ' + (data.get('project_id') or cid))
         result['active_channels'] = sorted(set(result['active_channels']) | {cid})
         result['activities'].append({'project_id': data.get('project_id'), 'channel_id': cid, 'kind': kind if data.get('project_id') else 'ідеї', 'status': 'running'})
+    # how many episodes of each channel are at work now, a grey number by the channel's spinner (user, 15 November 2026)
+    working = {}
+    for item in result['activities']:
+        if item.get('project_id'):
+            working.setdefault(item['project_id'], item.get('channel_id'))
+    for job in exports:
+        if job.get('status') in agent_view.BUSY and job.get('project_id'):
+            working.setdefault(job['project_id'], None)
+    counts = {}
+    for pid, cid in working.items():
+        if not cid:
+            try:
+                cid = store.listed_project(store.project_dir(pid) / 'project.json').get('channel_id')
+            except (OSError, ValueError, store.StudioError):
+                continue
+        if cid:
+            counts[cid] = counts.get(cid, 0) + 1
+    result['channel_projects'] = counts
     return result
 
 

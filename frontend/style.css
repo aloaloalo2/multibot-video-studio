@@ -2855,3 +2855,7 @@ select option{background:#232327;color:#f1f1f2}
 .trend-title-link:hover,.trend-title-link:focus-visible{color:#fff;text-decoration:underline;text-underline-offset:3px;outline:none}
 /* a project tab with work running shows a small spinner after its name (user, 15 November 2026) */
 #project-views button .tab-spinner{width:11px;height:11px;min-width:11px;border-width:1.5px;opacity:.75}
+/* how many episodes of the channel are at work, grey, left of the spinner (user, 15 November 2026) */
+.channel-select .channel-count{margin-left:auto;font-size:11px;line-height:1;color:#8a8e99;font-variant-numeric:tabular-nums}
+.channel-select .channel-count[hidden]{display:none}
+.channel-select .channel-count:not([hidden])+.channel-busy{margin-left:6px}

@@ -674,7 +674,7 @@ def pause(pid: str, note: str | None = None) -> dict:
     director.stop(pid,'production')
     import razgon_sound   # the music and effects of this film stop too; they are laid again after the frames
     razgon_sound.stop(pid)
-    set_request(pid,status='failed',paused=True,limit=False,finished_at=time.time(),session_id=session,
+    set_request(pid,status='failed',paused=True,paused_by='user' if note is None else 'limit',limit=False,finished_at=time.time(),session_id=session,
                 error=note or 'Призупинено на ваше прохання. Готові кадри збережені.')
     # Usually SIGTERM finishes immediately. Never let a quick Play silently lose
     # the request while the old worker still owns the project's active slot.

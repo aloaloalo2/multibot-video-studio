@@ -18,11 +18,18 @@ class ChannelActivityTest(unittest.TestCase):
         self.assertEqual(notices.update([], [], lambda task: self.fail()), result)
 
     def test_failure_or_unreadable_receipt_is_never_success(self):
-        for status in ['failed', 'cancelled', 'running', None]:
+        for status in ['failed', 'interrupted', 'running', None]:
             notices = Notices()
             notices.update(['channel'], [self.task(), self.task('two')], lambda task: None)
             result = notices.update([], [], lambda task: status if task['project_id'] == 'two' else 'done')
             self.assertEqual(result['channel']['status'], 'stopped')
+
+    def test_the_authors_own_stop_or_pause_is_quiet(self):
+        for status in ['cancelled', 'paused_by_user']:
+            notices = Notices()
+            notices.update(['channel'], [self.task(), self.task('two')], lambda task: None)
+            result = notices.update([], [], lambda task: status if task['project_id'] == 'two' else 'done')
+            self.assertEqual(result['channel']['status'], 'paused')
 
     def test_successful_new_cycle_replaces_failure_with_new_identity(self):
         notices = Notices()

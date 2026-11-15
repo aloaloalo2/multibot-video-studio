@@ -216,17 +216,20 @@ function renderChannelNotices(){
     const badge=button.querySelector('.channel-busy');if(!badge)continue;
     const id=button.dataset.channelId,notice=channelNoticeData[id];
     if(notice&&state.view==='editor'&&state.channel?.id===id&&notice.seen!==notice.id){notice.seen=notice.id;acknowledged=true;}
-    const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen;
+    // the author's own pause or stop needs no mark; work that stopped by itself shows a pause sign (user, 15 November 2026)
+    const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen&&notice.status!=='paused';
     const stopped=notice?.status==='stopped';
     badge.hidden=!busy&&!unread;
     badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':'');
-    badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'square':'check'):'';
-    const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy?'У каналі триває робота':stopped?'Роботу зупинено':'Роботу завершено';
+    badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'pause':'check'):'';
+    const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy?'У каналі триває робота':stopped?'Робота зупинилась сама':'Роботу завершено';
     badge.setAttribute('aria-label',label);badge.title=label;
+    const count=button.querySelector('.channel-count'),projects=busy?Number(channelProjectCounts[id])||0:0;
+    if(count){count.hidden=!projects;count.textContent=projects?String(projects):'';count.title=projects?`Випусків у роботі: ${projects}`:'';}
   }
   if(acknowledged)saveChannelNotices();
 }
-let channelActivityPending=false;
+let channelActivityPending=false,channelProjectCounts={};
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
@@ -242,9 +245,13 @@ function renderProjectActivities(){
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):'Режисер складає план'}</span></span>`;
-    if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
-      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title='Зупинити роботу Opus';stop.setAttribute('aria-label','Зупинити роботу Opus');
-      stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
+    // the card stops a narration too, the same as the stop inside the project (user, 15 November 2026)
+    const narrating=kind==='озвучення сценарію';
+    if(narrating||['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
+      const label=narrating?'Зупинити озвучку':'Зупинити роботу Opus';
+      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title=label;stop.setAttribute('aria-label',label);
+      if(narrating&&activity?.cancelling)stop.disabled=true;
+      stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(narrating?`/api/projects/${card.dataset.projectId}/narration/cancel`:`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',narrating?{}:{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
       (card.querySelector('.project-actions')||card).append(stop);
     }
     open.insertBefore(box,open.querySelector('.project-meta'));
@@ -289,10 +296,11 @@ async function pollChannelActivity(){
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match)projectActivities.set(match[2],match[1]);}
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...projectActivities].filter(([,kind])=>kind==='озвучення сценарію').map(([id])=>id);
-    await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position});}else projectActivities.delete(id);}catch{}}));
+    await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position,cancelling:data.job.status==='cancelling'});}else projectActivities.delete(id);}catch{}}));
     renderProjectActivities();paintLanguageTabBusy();
     const newProduction=(activity.activities||[]).some(task=>task.kind==='створення кадрів'&&(state.projects||[]).some(project=>project.id===task.project_id&&!['requested','in_progress'].includes(project.production_request?.status)));
     if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
+    channelProjectCounts=activity.channel_projects||{};
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const id of activity.exporting_channels||[]){channelActivity.add(id);channelExporting.add(id);}
     for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
@@ -311,7 +319,7 @@ function renderChannels() {
   const list=$('channel-list'); list.replaceChildren();
   for (const channel of state.channels) {
     const row=document.createElement('div'); row.className='channel-item'+(state.channel?.id===channel.id?' active':''); row.setAttribute('role','listitem');
-    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIdentityIcon(channel)}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
+    const choose=document.createElement('button'); choose.className='channel-select'; choose.type='button';choose.innerHTML=`${channelIdentityIcon(channel)}<span class="channel-name">${esc(channel.name)}</span>`; choose.title=channel.name;choose.dataset.channelId=channel.id;const count=document.createElement('span');count.className='channel-count';count.hidden=true;choose.append(count);const spinner=document.createElement('span');spinner.className='channel-busy';spinner.hidden=!channelActivity.has(channel.id);spinner.setAttribute('role','status');spinner.setAttribute('aria-label','У каналі триває робота');choose.append(spinner);
     choose.addEventListener('click',()=>{acknowledgeChannelNotice(channel.id);selectChannel(channel.id).catch(error=>status(error.message,true));});
     row.dataset.channelId=channel.id;row.append(choose); list.append(row);
   }
