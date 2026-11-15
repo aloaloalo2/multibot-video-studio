@@ -8,7 +8,7 @@ const razgonDefaultStyle='dusk';   // tools/razgon_bridge.py prepare: the style 
 const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opacity:100};
 // backend/thumbnail_logo.py: the channel's logo on its thumbnails, in a corner laid by the studio or placed by Codex
 const thumbnailLogoDefaults={enabled:false,position:'auto',size:14};
-const thumbnailLogoPlaces=[['auto','Де краще за композицією (малює Codex)'],['top-left','Угорі ліворуч'],['top-right','Угорі праворуч'],['bottom-left','Унизу ліворуч'],['bottom-right','Унизу праворуч']];
+const thumbnailLogoPlaces=[['auto','Де краще за композицією (малює Codex)'],['top-left','Угорі ліворуч'],['top-right','Угорі праворуч'],['bottom-left','Унизу ліворуч']];   // never bottom right: YouTube shows the video's length there
 const titleFonts=["Montserrat", "Nunito", "Roboto", "Open Sans", "Noto Sans", "Noto Serif", "Oswald", "Roboto Condensed", "Ubuntu", "Rubik", "Manrope", "Exo 2", "Comfortaa", "PT Sans", "PT Serif", "Russo One", "Unbounded"];
 // Ukrainian names for the template Razgon styles; a style the Studio does not know keeps its own name and description.
 const styleNames={neon:['Неоновий нуар','Глибокий чорний, рожево-бірюзовий контур, світні вивіски, сильне сяйво.'],
@@ -28,7 +28,7 @@ const styleNames={neon:['Неоновий нуар','Глибокий чорни
   care:['Турбота','Дружня аптечна пастель: м’ятні й білі кімнати, коралові акценти, м’які паперові тіні.']};
 
 function brandingSections(channel,projectDefaults=''){
-  const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {},thumbLogo={...thumbnailLogoDefaults,...(settings.thumbnail_logo || {})};
+  const settings=channel.settings || {},kind=settings.channel_kind==='animated'?'animated':'regular',logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {},thumbLogo={...thumbnailLogoDefaults,...(settings.thumbnail_logo || {})};if(thumbLogo.position==='bottom-right')thumbLogo.position='bottom-left';
   const kindCard=(value,title,text)=>`<label class="channel-kind-card"><input type="radio" name="channel-kind" aria-label="${title}" value="${value}" ${kind===value?'checked':''}><span><span class="settings-kind-art" aria-hidden="true">${value==='regular'?'<svg viewBox="0 0 120 50"><rect x="4" y="7" width="48" height="36" rx="5"/><path d="m8 37 14-16 12 11 7-7 7 12"/><circle cx="39" cy="17" r="4"/><rect x="60" y="7" width="56" height="36" rx="5"/><path d="m83 17 13 8-13 8Z"/></svg>':'<svg viewBox="0 0 120 50"><circle cx="29" cy="25" r="15"/><path d="M50 25h22m-6-6 6 6-6 6"/><rect x="81" y="10" width="29" height="30" rx="6"/></svg>'}</span><strong>${title}</strong><small>${text}</small></span></label>`;
   const cells=brandingPositions.map(item=>`<button type="button" class="logo-position" data-position="${item[0]}" aria-label="${item[1]}" title="${item[1]}" aria-pressed="${logo.position===item[0]}"></button>`).join('');
   const slider=(id,label,min,max,value,unit)=>`<label class="logo-slider">${label}<span><input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}"><output for="${id}">${value}${unit}</output></span></label>`;

@@ -41,6 +41,11 @@ PROMPT_EFFORT = "high"
 PROMPT_WRITERS = ("claude", "trending")
 MIN_FRAMES = 2
 STILLS = 3
+# YouTube puts the video's length in the bottom-right corner, so every thumbnail keeps it empty (user, 15 November 2026:
+# «правий нижній кут не нада там нічого розміщати запомни не лого ні текст… там ютуб показує довжину відео»).
+DURATION_CORNER = ("\nYOUTUBE DURATION CORNER: keep the bottom-right corner (about 18% of the width and 15% of the height) "
+                   "free of any lettering, logo, badge, face or key object; only calm background may continue there, "
+                   "because YouTube shows the video's length in that spot.\n")
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 
@@ -477,8 +482,8 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         if not clone or base or use_hero is not None:
             written += hero_rules
             note += hero_rules
-        written += logo_rules
-        note += logo_rules
+        written += logo_rules + DURATION_CORNER
+        note += logo_rules + DURATION_CORNER
         if logo_ref:
             refs = [*refs, logo_ref]
         (work / f"Промпт прев'ю v{number}.txt").write_text(note + "\n", encoding="utf-8")

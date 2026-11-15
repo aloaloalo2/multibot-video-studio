@@ -19,8 +19,12 @@ from PIL import Image, UnidentifiedImageError
 
 import channel_branding
 
-CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+# YouTube shows the video's length in the bottom-right corner: nothing goes there, neither a logo nor text (user,
+# 15 November 2026: «правий нижній кут не нада там нічого розміщати… там ютуб показує довжину відео»). A setting saved
+# with it before that day still loads, and the logo goes to the bottom left instead.
+CORNERS = ("top-left", "top-right", "bottom-left")
 POSITIONS = ("auto", *CORNERS)
+LEGACY = {"bottom-right": "bottom-left"}
 DEFAULTS = {"enabled": False, "position": "auto", "size": 14}
 SIZE = (5, 30)          # percent of the thumbnail's width
 MARGIN = 3              # percent of the width, as for the films' logo
@@ -35,7 +39,7 @@ def validate(value) -> None:
         raise channel_branding.BrandingError("Невірні налаштування логотипа на прев’ю")
     if "enabled" in value and not isinstance(value["enabled"], bool):
         raise channel_branding.BrandingError("Невірний перемикач логотипа на прев’ю")
-    if value.get("position", DEFAULTS["position"]) not in POSITIONS:
+    if value.get("position", DEFAULTS["position"]) not in (*POSITIONS, *LEGACY):
         raise channel_branding.BrandingError("Невідоме місце логотипа на прев’ю")
     size = value.get("size", DEFAULTS["size"])
     if type(size) not in (int, float) or not math.isfinite(size) or not SIZE[0] <= size <= SIZE[1]:
@@ -45,6 +49,7 @@ def validate(value) -> None:
 def spec(project: dict, settings: dict) -> dict | None:
     """The setting with its logo file, or None when the box is off or the channel has no logo."""
     value = {**DEFAULTS, **(settings.get("thumbnail_logo") or {})}
+    value["position"] = LEGACY.get(value["position"], value["position"])
     cid = project.get("channel_id")
     if not value["enabled"] or not cid:
         return None
@@ -65,7 +70,8 @@ def prepare(logo: dict | None, work: Path) -> tuple[Path | None, str]:
     shutil.copyfile(logo["path"], target)
     return target, (f'\nCHANNEL LOGO: the attached image "{REFERENCE}" is the channel\'s logo. Put it on this thumbnail '
                     f"once, about {round(logo['size'])}% of the image width, where the composition has room: near an "
-                    "edge or a corner, never over a face, the main subject or the headline. Reproduce the logo exactly as "
+                    "edge or a corner, never over a face, the main subject or the headline, and never in the bottom-right "
+                    "corner, where YouTube shows the video's length. Reproduce the logo exactly as "
                     "attached: the same shapes, colours, letters and proportions, not redrawn, restyled or translated, "
                     "fully readable. It is not a reference for the scene's style.\n")
 

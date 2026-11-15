@@ -382,6 +382,24 @@ class ThumbnailTest(unittest.TestCase):
         with patch.object(channel_branding, 'logo_path', return_value=Path(self.tmp.name) / 'none.png'):
             self.assertIsNone(thumbnail_logo.spec({'channel_id': 'c' * 16}, {'thumbnail_logo': {'enabled': True}}))
 
+    def test_every_drawing_keeps_the_youtube_duration_corner_empty(self):
+        # user, 15 November 2026: «правий нижній кут не нада там нічого розміщати… там ютуб показує довжину відео»
+        work, calls = self.logo_run({'enabled': True, 'position': 'auto'})
+        self.assertIn('YOUTUBE DURATION CORNER', calls[-1][1])
+        self.assertIn('never in the bottom-right', calls[-1][1])
+        work, calls = self.logo_run({'enabled': False}, base='Превью v1.png', wishes='Brighter')
+        self.assertIn('YOUTUBE DURATION CORNER', calls[-1][1])
+        import languages
+        self.assertIn('bottom-right corner free', languages.thumbnail_brief('pl', 'T'))
+
+    def test_a_logo_never_goes_to_the_bottom_right_corner(self):
+        import thumbnail_logo, channel_branding
+        self.assertNotIn('bottom-right', thumbnail_logo.POSITIONS)
+        work, calls = self.logo_run({'enabled': True, 'position': 'bottom-right', 'size': 10})   # saved before the rule
+        made = Image.open(work / 'Превью v1.png')
+        self.assertEqual(made.getpixel((300, 165)), (0, 0, 255))
+        self.assertEqual(made.getpixel((15, 165)), (255, 255, 0))
+
     def test_the_setting_is_checked_when_the_channel_is_saved(self):
         import channel_branding
         channel_branding.validate({'thumbnail_logo': {'enabled': True, 'position': 'bottom-left', 'size': 12}})
