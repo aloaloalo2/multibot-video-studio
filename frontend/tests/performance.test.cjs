@@ -102,3 +102,14 @@ test('a failed frame run keeps its time as work and the longest process leads',(
   assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>[row.workflow,row.active_ms,row.lost_ms]))),
     [['production',1068000,0],['script',120000,0],['translation',0,60000]]);
 });
+test('languages voiced side by side count their clock time once',()=>{
+  // CORBIN, 15 November 2026: pl and ru from 20:10 to 20:28 and uk and es from 07:46 to 07:49 read as 42 min
+  const f=fixture(),min=60000,at=s=>s;
+  const rows=f.context.performanceRows({runs:[
+    {workflow:'language_voice',language:'pl',status:'complete',started_at:at(1000),elapsed_ms:18*min},
+    {workflow:'language_voice',language:'ru',status:'complete',started_at:at(1008),elapsed_ms:18*min},
+    {workflow:'language_voice',language:'uk',status:'complete',started_at:at(50000),elapsed_ms:3*min},
+    {workflow:'language_voice',language:'es',status:'complete',started_at:at(50002),elapsed_ms:3*min,stages:{queue:{ms:2000}}},
+  ]});
+  assert.equal(Math.round(rows[0].active_ms/1000),18*60+8+3*60+2);
+});

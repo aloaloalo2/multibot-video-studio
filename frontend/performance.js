@@ -14,18 +14,32 @@ const performanceLost=new Set(['failed','cancelled','interrupted','unknown']);
 // A frame run keeps every frame it drew even when it stops or fails its final check (user, 15 November 2026: «пише
 // створення кадрів не правильно час»: 17.8 min of «Галактики» read as a failed attempt), so all of its time is work.
 const performanceKeepsWork=new Set(['production']);
+// Languages are voiced and translated side by side: two languages from 20:10 to 20:28 are 18 minutes of work, not 36
+// (user, 15 November 2026: «озвучка перекладів реально правильно рахується?… все швидше було»). Runs that overlap count
+// once; a run without a start time adds its own length.
+function performanceSpan(spans){
+  let total=0,end=-Infinity;
+  for(const [from,to] of spans.filter(([from,to])=>Number.isFinite(from)&&to>from).sort((a,b)=>a[0]-b[0])){
+    if(from>=end){total+=to-from;end=to;}else if(to>end){total+=to-end;end=to;}
+  }
+  return total+spans.filter(([from])=>!Number.isFinite(from)).reduce((sum,[,to])=>sum+to,0);
+}
 function performanceRows(data){
   // Time comes from the saved runs, so a busy older backend shows the same honest split: finished, running and paused
   // runs are useful time, failed and interrupted attempts are listed apart.
   const groups=new Map(),costs=new Map((data.processes||[]).map(row=>[row.workflow,row.cost]));
   for(const run of data.runs||[]){
     const workflow=performanceWorkflow(run.workflow);if(!workflow)continue;
-    const row=groups.get(workflow)||{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,cost:costs.get(workflow)||{recorded:['analysis','export'].includes(workflow)}};
+    const row=groups.get(workflow)||{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,active:[],lost:[],cost:costs.get(workflow)||{recorded:['analysis','export'].includes(workflow)}};
     const excluded=['queue','pause'].reduce((sum,key)=>sum+Math.max(0,Number(run.stages?.[key]?.ms)||0),0);
     const spent=Math.max(0,(Number(run.elapsed_ms)||0)-excluded);
-    if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost_ms+=spent;row.lost_runs++;}else row.active_ms+=spent;
+    // the waiting in a queue comes first: the work starts after it
+    const queue=Math.max(0,Number(run.stages?.queue?.ms)||0),start=Number(run.started_at)*1000+queue;
+    const span=Number.isFinite(start)?[start,start+spent]:[NaN,spent];
+    if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost.push(span);row.lost_runs++;}else row.active.push(span);
     row.running||=run.status==='running';groups.set(workflow,row);
   }
+  for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);delete row.active;delete row.lost;}
   // the longest process on top (user, 15 November 2026)
   return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
 }
