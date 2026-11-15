@@ -159,17 +159,52 @@ def claude_usage(home=None, now=None):
         return None
 
 
-def _account(now: float):
+def codex_usage(home=None, now=None):
+    """Codex's own account usage, the route its CLI reads for /status, with the existing local login and no refresh.
+    The session logs only know the last request Codex made, so after an idle while, a reset or another login they showed
+    an old remainder (user, 15 November 2026: «кодекс ліміт теж не правильно показує не актуально»)."""
+    home=Path(home or Path.home());now=time.time() if now is None else now
+    try:
+        saved=json.loads((home/'.codex'/'auth.json').read_text())
+        tokens=saved.get('tokens') or {}
+        token=tokens.get('access_token')
+        if not isinstance(token,str) or not token:return None
+        headers={'Authorization':'Bearer '+token,'User-Agent':'VideoKey-Studio/1.0'}
+        if isinstance(tokens.get('account_id'),str) and tokens['account_id']:headers['ChatGPT-Account-Id']=tokens['account_id']
+        request=urllib.request.Request('https://chatgpt.com/backend-api/wham/usage',headers=headers)
+        try:
+            with urllib.request.urlopen(request,timeout=5) as response:data=json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code==429:
+                try:wait=float(error.headers.get('Retry-After') or ACCOUNT_BACKOFF)
+                except (TypeError,ValueError):wait=ACCOUNT_BACKOFF
+                return {'retry_after':max(ACCOUNT_EVERY,min(wait,3600))}
+            return None
+        window=(data.get('rate_limit') or {}).get('primary_window') or {}
+        used=window.get('used_percent')
+        resets=window.get('reset_at')
+        if type(used) not in (int,float) or not 0<=used<=100 or type(resets) not in (int,float) or resets<=now:return None
+        return {**_view((used/100,float(resets),now),now),'source':'account','stale':False}
+    except (OSError,ValueError,TypeError,KeyError,AttributeError):
+        return None
+
+
+_CODEX_ACCOUNT: dict = {}
+
+
+def _account(now: float, state: dict | None = None, fetch=None):
     """The latest account reading, asked again only when its time has come."""
-    if now >= _ACCOUNT.get('next', 0):
-        got = claude_usage()
+    state = _ACCOUNT if state is None else state
+    fetch = fetch or claude_usage
+    if now >= state.get('next', 0):
+        got = fetch()
         if got and 'retry_after' in got:
-            _ACCOUNT['next'] = now + got['retry_after']
+            state['next'] = now + got['retry_after']
         elif got:
-            _ACCOUNT.update(value=got, next=now + ACCOUNT_EVERY)
+            state.update(value=got, next=now + ACCOUNT_EVERY)
         else:
-            _ACCOUNT['next'] = now + ACCOUNT_RETRY
-    account = _ACCOUNT.get('value')
+            state['next'] = now + ACCOUNT_RETRY
+    account = state.get('value')
     return account if account and (account.get('resets_at') or 0) > now else None
 
 
@@ -198,5 +233,6 @@ def cached(data_root: Path) -> dict:
             return _CACHE["value"]
         value = read(data_root)
         value['claude'] = _merge(_account(now), value['claude'], now)
+        value['codex'] = _merge(_account(now, _CODEX_ACCOUNT, codex_usage), value['codex'], now)
         _CACHE.update(root=str(data_root), at=time.time(), value=value)
         return value

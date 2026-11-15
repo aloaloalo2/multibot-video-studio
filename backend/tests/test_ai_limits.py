@@ -124,8 +124,22 @@ class AiLimitsTest(unittest.TestCase):
         self.assertEqual(result['left'],5);self.assertTrue(result['stale']);self.assertEqual(result['source'],'logs')
 
     def fresh_state(self):
-        ai_limits._CACHE.clear(); ai_limits._ACCOUNT.clear()
-        self.addCleanup(ai_limits._CACHE.clear); self.addCleanup(ai_limits._ACCOUNT.clear)
+        ai_limits._CACHE.clear(); ai_limits._ACCOUNT.clear(); ai_limits._CODEX_ACCOUNT.clear()
+        self.addCleanup(ai_limits._CACHE.clear); self.addCleanup(ai_limits._ACCOUNT.clear); self.addCleanup(ai_limits._CODEX_ACCOUNT.clear)
+        codex=patch.object(ai_limits,'codex_usage',return_value=None);codex.start();self.addCleanup(codex.stop)
+
+    def test_codex_reads_its_own_account_and_beats_an_older_receipt_of_another_login(self):
+        folder=self.home/'.codex';folder.mkdir(exist_ok=True)
+        (folder/'auth.json').write_text(json.dumps({'tokens':{'access_token':'test-only-token','account_id':'acc'}}))
+        reset=int(time.time())+18000
+        body=json.dumps({'rate_limit':{'primary_window':{'used_percent':0,'reset_at':reset}}}).encode()
+        with patch.object(ai_limits.urllib.request,'urlopen',return_value=io.BytesIO(body)) as http:
+            account=ai_limits.codex_usage(self.home)
+        self.assertEqual(account['left'],100);self.assertEqual(account['source'],'account')
+        self.assertTrue(http.call_args.args[0].full_url.startswith('https://chatgpt.com/backend-api/wham/usage'))
+        self.assertNotIn('test-only-token',json.dumps(account))
+        old={'known':True,'left':10,'resets_at':reset-3400,'seen_at':time.time()-300,'source':'logs','stale':False}
+        self.assertEqual(ai_limits._merge(account,old,time.time())['left'],100)
 
     def test_the_account_is_asked_at_most_every_three_minutes(self):
         self.fresh_state()
