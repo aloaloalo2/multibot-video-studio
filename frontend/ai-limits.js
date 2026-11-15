@@ -1,11 +1,9 @@
-// ai-limits.js — the round button beside «Налаштування»: two rings show how much of the 5-hour limit Claude Code
-// (outer) and Codex (inner) have left; a click opens the numbers and the reset times (backend/ai_limits.py, read from
-// the tools' own local logs, so a look costs no limit).
+// Five-hour account usage, with dated local receipts when the account is unavailable.
 (function(){
   const button=document.getElementById('ai-limits');
   if(!button)return;
   const names={claude:'Claude Code',codex:'Codex'};
-  let data=null,panel=null,timer=0;
+  let data=null,panel=null,timer=0,pending=false;
   // «через 40 хв», «через 2 год 5 хв»: how long until the window renews, counted from now
   const until=t=>{const m=Math.max(1,Math.ceil((t-Date.now()/1000)/60)),h=Math.floor(m/60);return h?`через ${h} год${m%60?` ${m%60} хв`:''}`:`через ${m} хв`;};
   const tone=left=>left<=10?'low':left<=30?'mid':'ok';
@@ -17,8 +15,10 @@
     el.dataset.tone=item&&item.known?tone(left):'none';
   }
   function line(kind,item){
-    if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">Немає даних. Вони з'являться після першої роботи ${kind==='claude'?'Claude Code у студії':'Codex'}.</span></div>`;
-    const when=item.reset?'Ліміт уже оновився':`Оновиться ${until(item.resets_at)}`;
+    if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;
+    const age=Math.max(0,Math.floor((Date.now()/1000-(item.seen_at||0))/60));
+    const fresh=item.stale?`Останні дані: ${age} хв тому · `:'';
+    const when=fresh+(item.reset?'Очікуємо актуальні дані':`Оновиться ${until(item.resets_at)}`);
     return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><b class="ai-limit-left" data-tone="${tone(item.left)}"><small>лишилось</small> ${item.left}%</b>
       <div class="ai-limit-bar"><i class="${kind}" style="width:${item.left}%"></i></div>
       <span class="ai-limit-note">${when}</span></div>`;
@@ -32,8 +32,9 @@
     if(panel)panel.innerHTML=`<h4>Залишок на 5 годин</h4>${line('claude',data.claude)}${line('codex',data.codex)}`;
   }
   async function load(){
-    try{data=await api('/api/limits');draw();}catch{}
-    clearTimeout(timer);timer=setTimeout(load,document.hidden?300000:60000);
+    if(pending)return;pending=true;
+    try{data=await api('/api/limits');draw();}catch{if(data)for(const item of Object.values(data))if(item&&typeof item==='object')item.stale=true;draw();}finally{pending=false;}
+    clearTimeout(timer);timer=setTimeout(load,document.hidden?60000:15000);
   }
   function place(){
     const box=button.getBoundingClientRect();
@@ -51,6 +52,7 @@
     document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',escape);
     load();
   });
+  window.addEventListener('focus',()=>load());
   window.addEventListener('resize',()=>{if(panel)place();});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
   load();
