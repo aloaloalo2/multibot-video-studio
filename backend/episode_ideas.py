@@ -477,7 +477,11 @@ def judge_openings(data, root, identity):
     return {'status': 'chosen', 'index': best['index'], 'scores': ordered, 'by': 'DeepSeek', 'chosen_at': time.time()}
 
 
-def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script'):
+def refused(answer):
+    return 'safeguards flagged' in str(answer.get('result') or '') or answer.get('stop_reason') == 'refusal'
+
+
+def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script', _retried=False):
     # Pure writing: no tools, no old conversation, no access to paid production commands.
     effort = session['effort'] if session else store.channel_effort({'channel_id': cid})
     if getattr(writing_jobs.LOCAL, 'job', None) is not None:
@@ -498,7 +502,20 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
                            'Готові результати збережені. Спробуйте ще раз або знизьте усилля в налаштуваннях каналу.') from None
     if session and project_costs.number(answer.get('total_cost_usd')):
         session['api_cost_usd']=answer['total_cost_usd']
+    if (code or answer.get('is_error')) and refused(answer) and not _retried and not resume:
+        # Opus's safety filter sometimes stops a normal text; its own message says a new session passes. One new
+        # session, once, so the author never meets it (user, 15 November 2026: «щоб більше такого не повторювалося»)
+        writing_jobs.check()
+        if session:
+            session.update(session_id=str(uuid.uuid4()), api_cost_usd=0)
+        return opus(prompt, root, identity + '-again', cid, session=session, session_cwd=session_cwd,
+                    cost_category=cost_category, _retried=True)
     if code or answer.get('is_error'):
+        if refused(answer):
+            # Opus's own safety filter stopped a normal script (15 November 2026, a French space episode,
+            # «[reasoning_extraction]»); the message says so itself and a new session usually passes
+            raise RuntimeError('Фільтр безпеки Opus помилково зупинив цю відповідь. Так інколи буває зі звичайними текстами. '
+                               'Готові результати збережені. Натисніть зачин ще раз: нова сесія зазвичай проходить.')
         raise RuntimeError(director.limit_stop(answer) or 'Opus не завершив відповідь. Готові результати збережені.')
     if session and answer.get('session_id')!=session['session_id']:
         raise RuntimeError('Opus не підтвердив ту саму сесію автора. Чернетка не видається як готова.')

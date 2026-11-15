@@ -73,3 +73,15 @@ class LanguageQualityTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RussianSentenceWithoutOwnLettersTest(unittest.TestCase):
+    def test_a_plain_russian_sentence_is_judged_with_its_whole_phrase(self):
+        import language_quality as q
+        q._check.cache_clear()
+        phrase = ('Почти половину времени люди думали о чём-то другом, а не о том, чем занимались. В вашем автобусе водитель '
+                  'пересматривает драку, случившуюся прошлой ночью. Студент заново переживает спор трёхлетней давности и наконец выигрывает его.')
+        self.assertEqual(q.check('ru', [phrase])['state'], 'ok')
+        mixed = ('Почти половину времени люди думали о чём-то другом, а не о том, чем занимались. Водій у вашому автобусі знову '
+                 'переживає сварку минулої ночі, і це його дратує. Студент выигрывает спор.')
+        self.assertEqual(q.check('ru', [mixed])['state'], 'blocked')

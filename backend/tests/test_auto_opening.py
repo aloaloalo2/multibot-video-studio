@@ -69,3 +69,31 @@ class UnpackTest(unittest.TestCase):
         self.assertEqual(episode_ideas.unpack('```json\n{"a":1}\n```'), {'a': 1})
         with self.assertRaises(ValueError):
             episode_ideas.unpack('not json at all')
+
+
+class SafetyRetryTest(unittest.TestCase):
+    def test_a_safety_refusal_is_retried_once_in_a_new_session(self):
+        import episode_ideas, writing_jobs, director
+        from unittest import mock
+        refused = {'is_error': True, 'stop_reason': 'refusal', 'result': "API Error: Opus 5.5's safeguards flagged this message"}
+        calls = []
+        def run(cmd, prompt, root, identity, **options):
+            calls.append(cmd[cmd.index('--session-id') + 1])
+            if len(calls) == 1:
+                return 1, refused
+            return 0, {'result': '{"script":"ok"}', 'session_id': calls[-1], 'modelUsage': {}}
+        session = {'session_id': 'first', 'model': director.MODEL, 'effort': 'high', 'api_cost_usd': 0}
+        with mock.patch.object(writing_jobs, 'run', side_effect=run), mock.patch.object(writing_jobs, 'check'):
+            self.assertEqual(episode_ideas.opus('p', None, 'script-x', 'c', session=session), {'script': 'ok'})
+        self.assertEqual(len(calls), 2); self.assertNotEqual(calls[0], calls[1]); self.assertEqual(session['session_id'], calls[1])
+        calls.clear()
+        with mock.patch.object(writing_jobs, 'run', return_value=(1, refused)), mock.patch.object(writing_jobs, 'check'):
+            with self.assertRaises(RuntimeError) as error:
+                episode_ideas.opus('p', None, 'script-y', 'c', session=dict(session))
+        self.assertIn('Фільтр безпеки', str(error.exception))
+
+    def test_the_writer_gets_no_model_routing_sections(self):
+        import writer_context
+        text = '## Живая речь\nПиши живо.\n\n## Сценарии только Claude Opus 5.5 Medium\nУсилие medium.\n\n## Теги\nТри тега.'
+        out = writer_context.writer_rules(text)
+        self.assertIn('Пиши живо', out); self.assertIn('Три тега', out); self.assertNotIn('Opus', out)

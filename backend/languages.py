@@ -1021,7 +1021,8 @@ def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str]
         # lines enter the existing bounded retry; valid translations are retained.
         if got:
             indexes = sorted(got)
-            report = language_quality.check(code, [got[k] for k in indexes])
+            report, spent = linguist_language_check(code, [got[k] for k in indexes])
+            cost += spent
             if report['state'] == 'unavailable':
                 raise store.StudioError(language_quality.message(report), 409)
             if attempt == 1 and report['issues']:
@@ -1047,8 +1048,44 @@ def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str]
         got[k] = text
     fixed, spent = speakable(code, [got[k] for k in range(len(items))])
     cost += spent
+    _, spent = linguist_language_check(code, fixed)
+    cost += spent
     language_quality.require(code, fixed)
     return fixed, cost
+
+
+def linguist_language_check(code, texts):
+    """The detector's doubts go to the linguist, who has the last word: a line he confirms is in the target language
+    passes for good, the rest stay flagged (user, 15 November 2026). Returns (report, cost)."""
+    report = language_quality.check(code, texts)
+    if report['state'] != 'blocked' or not report['issues']:
+        return report, 0.0
+    previous = getattr(TRANSLATION_CONTEXT, 'value', None)
+    if previous is not None:
+        TRANSLATION_CONTEXT.value = {**previous, 'model': TRANSLATION_REPAIR_MODEL}
+    try:
+        doubts = [item for item in report['issues'] if item.get('reason') == 'language']   # a wrong alphabet needs no linguist
+        if not doubts:
+            return report, 0.0
+        lines = {str(n + 1): item['text'] for n, item in enumerate(doubts)}
+        system = (f"You are a professional linguist. The target language is {lang_name(code)}. For every numbered line decide "
+                  "whether it is written entirely in that language. Proper names, numbers, units and well-known loanwords are "
+                  "allowed. A line with a sentence or clause in another language is not. Answer with a JSON object only: "
+                  "each line's number as the key and true or false as the value.")
+        answer, cost = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(lines, ensure_ascii=False)}], 2000)
+    except (store.StudioError, RuntimeError, OSError, ValueError):
+        return report, 0.0
+    finally:
+        if previous is not None:
+            TRANSLATION_CONTEXT.value = previous
+    try:
+        verdict = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', answer.strip()))
+    except ValueError:
+        return report, cost
+    ok = [lines[n] for n in lines if verdict.get(n) is True]
+    if ok:
+        language_quality.confirm(code, ok)
+    return language_quality.check(code, texts), cost
 
 
 def translate(pid: str, code: str, job: dict) -> None:

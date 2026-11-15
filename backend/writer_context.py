@@ -11,9 +11,26 @@ def encode(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
+# Sections of the studio's rules about WHICH model writes and how the studio routes the work (Opus, ChatGPT, Codex,
+# effort, excluded authors, transcripts, files) are for the coordinator, not for the writer. Sent to Opus they made a
+# 34 000-character brief about AI models and their «reasoning effort», and Opus 5.5's safety filter stopped a normal
+# French script as «reasoning_extraction» (user, 15 November 2026: «мені потрібно, щоб більше такого не повторювалося»).
+ROUTING = re.compile(r'opus|sonnet|chatgpt|codex|minimax|deepseek|inkling|gemma|автор|в чаті|в чате|расшифровк|розшифровк|'
+                     r'\btxt\b|объединение предложений|объём сценария сначала|обсяг сценарію спершу|зачин\w* .*предложени', re.I)
+
+
+def writer_rules(text):
+    """The writing rules without the sections about model routing and studio workflow."""
+    parts = re.split(r'(?m)^(?=## )', text)
+    return ''.join(part for part in parts if not (part.startswith('## ') and ROUTING.search(part.splitlines()[0])))
+
+
 def compact(context):
     result = copy.deepcopy(context)
     before = len(json.dumps(context, ensure_ascii=False))
+    for name in ('youtube_script_rules', 'claude_memory_notes'):
+        if isinstance(result.get(name), str):
+            result[name] = writer_rules(result[name])
     seen = set()
     duplicates = 0
     for name in RULE_SOURCES:

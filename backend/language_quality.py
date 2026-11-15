@@ -11,7 +11,7 @@ import threading
 import unicodedata
 from functools import lru_cache
 
-VERSION = 4
+VERSION = 5
 _lock = threading.RLock()
 _identifier = None
 LATIN = set('en de es fr pt it pl tr nl id cs ro'.split())
@@ -74,7 +74,7 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
     issues = {}
     unavailable = False
 
-    def inspect(text, indexes, structural=False):
+    def inspect(text, indexes, structural=False, context=None):
         nonlocal unavailable
         letters = sum(c.isalpha() for c in text)
         if not structural and (letters < 35 or len(text.split()) < 6):
@@ -84,7 +84,11 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
         except (ImportError, OSError, ValueError):
             unavailable = True
             detected, score = None, 0.0
-        if structural or (reliable_mismatch(code,detected,text) and score >= .99999):
+        # Russian and Ukrainian are told apart by their own letters over the whole phrase: one Russian sentence without
+        # «ы э ё ъ» read as Ukrainian and stopped a correct translation (user, 15 November 2026: «чого воно зупиняється»)
+        own_letters = {'ru': set('ыэёъ'), 'uk': set('іїєґ')}.get(detected, set())
+        evidence = context if context and {code, detected} == {'ru', 'uk'} and not own_letters & set(text.lower()) else text
+        if structural or (reliable_mismatch(code,detected,evidence) and score >= .99999):
             for index in indexes:
                 issues.setdefault(index, {'index': index, 'detected': detected,
                     'reason': 'script' if structural else 'language', 'text': lines[index]})
@@ -94,7 +98,7 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
         # otherwise correct paragraph is not hidden by majority voting.
         units = re.split(r'(?<=[.!?。！？])\s+', line)
         for unit in units:
-            inspect(unit, [index], script_problem(code, unit))
+            inspect(unit, [index], script_problem(code, unit), context=line)
     # A short foreign sentence surrounded by a detected foreign block belongs
     # to that block too, e.g. the three-word Russian sentence in the incident.
     strong = set(issues)
@@ -135,10 +139,41 @@ def _check(code: str, lines: tuple[str, ...]) -> dict:
             'checked_lines': len(lines), 'method': 'unicode-script+langid'}
 
 
+# Lines the linguist confirmed to be in the target language although the detector doubted them (user, 15 November
+# 2026: «лінгвіст має право підтверджувати… доводити переклад до кінця»). Kept by the text's hash, so a changed line is
+# checked again; every later check (the voice too) honours the confirmation.
+def _confirmed_path():
+    import store
+    return store.DATA_ROOT / 'language-confirmations.json'
+
+
+def _key(code, text):
+    import hashlib
+    return code + ':' + hashlib.sha256(' '.join(str(text).split()).encode()).hexdigest()[:32]
+
+
+def confirmed(code, text) -> bool:
+    import store
+    return _key(code, text) in (store.read_json(_confirmed_path(), {}) or {})
+
+
+def confirm(code, texts, by='linguist') -> None:
+    import store, time
+    with _lock:
+        data = store.read_json(_confirmed_path(), {}) or {}
+        for text in texts:
+            data[_key(code, text)] = {'by': by, 'at': time.time()}
+        store.atomic_json(_confirmed_path(), data)
+
+
 def check(code: str, texts, segments=None) -> dict:
     if isinstance(texts, str):
         texts = [line.strip() for line in texts.splitlines() if line.strip()]
     report = _check(code, tuple(texts))
+    if report['issues']:
+        kept = [item for item in report['issues'] if not confirmed(code, item['text'])]
+        if len(kept) != len(report['issues']):
+            report = {**report, 'issues': kept, 'state': 'blocked' if kept else 'ok'}
     return {**report, 'issues': [{**item, **({'start': segments[item['index']].get('start'),
         'end': segments[item['index']].get('end')} if segments and item['index'] < len(segments) else {})}
         for item in report['issues']]}
