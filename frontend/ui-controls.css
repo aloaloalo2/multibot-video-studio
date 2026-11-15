@@ -42,8 +42,7 @@ button.ui-action:is(.secondary,.outline):hover:not(:disabled){background:var(--u
 .ui-picker-mark:empty{display:none}
 .ui-picker-mark img,.ui-picker-mark .channel-icon{width:20px;height:20px;border-radius:50%;object-fit:cover}
 .ui-picker-mark .ui-icon{width:var(--ui-icon-size);height:var(--ui-icon-size)}
-.ui-picker-list{position:absolute;z-index:60;left:0;top:calc(100% + 4px);min-width:100%;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--ui-outline-border);border-radius:12px;background:#1c1d21;box-shadow:0 10px 30px #0008}
-.ui-picker-list.drop-up{top:auto;bottom:calc(100% + 4px)}
+.ui-picker-list{position:fixed;z-index:1000;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--ui-outline-border);border-radius:12px;background:#1c1d21;box-shadow:0 10px 30px #0008}
 .ui-picker-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:var(--ui-control-text);font:500 var(--ui-control-font)/1.3 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:left;white-space:nowrap;box-shadow:none;cursor:pointer}
 .ui-picker-item:hover,.ui-picker-item:focus-visible{background:#2a2b31;outline:none}
 .ui-picker-item[aria-selected="true"]{background:#2f3036;color:#fff}

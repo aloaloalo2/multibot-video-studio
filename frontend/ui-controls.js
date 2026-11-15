@@ -53,9 +53,20 @@ const StudioUI=(()=>{
     };
     const outside=event=>{if(!box.contains(event.target))close();};
     const key=event=>{if(event.key==='Escape'){event.stopPropagation();close();button.focus();}};
-    function close(){list.hidden=true;button.setAttribute('aria-expanded','false');document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',key,true);}
+    // The list floats over the page (position: fixed), so opening it never stretches a dialog or a scrolling panel;
+    // near the bottom of the screen it opens upwards.
+    function place(){
+      const room=button.getBoundingClientRect(),height=list.offsetHeight,gap=4;
+      const up=window.innerHeight-room.bottom<height+12&&room.top>height+12;
+      list.style.minWidth=room.width+'px';
+      list.style.left=Math.max(8,Math.min(room.left,window.innerWidth-list.offsetWidth-8))+'px';
+      list.style.top=(up?room.top-height-gap:room.bottom+gap)+'px';
+    }
+    const onScroll=event=>{if(!list.contains(event.target))close();};
+    function close(){list.hidden=true;button.setAttribute('aria-expanded','false');document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',key,true);
+      window.removeEventListener('resize',close);document.removeEventListener('scroll',onScroll,true);}
     button.onclick=()=>{if(!list.hidden){close();return;}paint();list.hidden=false;button.setAttribute('aria-expanded','true');
-      const room=button.getBoundingClientRect();list.classList.toggle('drop-up',window.innerHeight-room.bottom<list.offsetHeight+12&&room.top>list.offsetHeight+12);
+      place();window.addEventListener('resize',close);document.addEventListener('scroll',onScroll,true);
       document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);list.querySelector('[aria-selected="true"]')?.focus();};
     select.addEventListener('change',paint);
     new MutationObserver(paint).observe(select,{attributes:true,attributeFilter:['disabled'],childList:true});
