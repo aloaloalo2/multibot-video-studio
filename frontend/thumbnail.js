@@ -67,7 +67,7 @@ function setupThumbnailModes(project,data){
     $('modal-actions').hidden=awaiting;
     $('thumb-state').hidden=awaiting;
     $('thumb-brief-layout').classList.toggle('has-reference',cloning&&ready);
-    for(const button of backdrop.querySelectorAll('#modal-actions button')){
+    for(const button of backdrop.querySelectorAll('#modal-actions button:not(.ui-picker-button):not(.ui-picker-item)')){
       button.dataset.referenceMissing=cloning&&!ready?'1':'';
       button.querySelector('span').textContent=cloning?'Клонувати':'Створити';
     }
@@ -108,7 +108,7 @@ function setupThumbnailModes(project,data){
     updateReferenceView();
     if(mode!=='clone'){clearTimeout(timer);version++;loadingUrl='';}
     const gated=mode==='new'&&Number(data.pictures||0)<Number(data.creation_min_frames??thumbnailFrames);
-    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.dataset.gated=gated?'1':'';
+    for(const button of backdrop.querySelectorAll('#modal-actions button:not(.ui-picker-button):not(.ui-picker-item)'))button.dataset.gated=gated?'1':'';
     $('thumb-state').textContent=gated?`Для нового прев’ю потрібні хоча б ${data.creation_min_frames??thumbnailFrames} готові кадри. Клонування доступне за посиланням.`:'';
     showThumbnailState(project.id);
   };
@@ -127,7 +127,7 @@ function showThumbnailState(id){
   const run=thumbnailRuns.get(id),backdrop=$('modal-backdrop');
   if(backdrop?.classList.contains('thumb-modal-open')&&backdrop.dataset.thumbnailProject===id){
     const box=backdrop.querySelector('.thumb-state');
-    for(const button of backdrop.querySelectorAll('#modal-actions button'))button.disabled=thumbnailBusy(id)||thumbnailCreatePending.has(id)||button.dataset.gated==='1'||button.dataset.referenceMissing==='1';
+    for(const button of backdrop.querySelectorAll('#modal-actions button:not(.ui-picker-button):not(.ui-picker-item)'))button.disabled=thumbnailBusy(id)||thumbnailCreatePending.has(id)||button.dataset.gated==='1'||button.dataset.referenceMissing==='1';
     if(box&&(run?.status==='running'||run?.status==='failed'))box.textContent=run.status==='running'?'Створюємо прев’ю…':`Не вдалося: ${run.error}`;
   }
   const section=$('project-thumb');
