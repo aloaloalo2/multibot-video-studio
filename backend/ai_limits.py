@@ -88,7 +88,12 @@ def read(data_root: Path, home: Path | None = None, now: float | None = None) ->
     for path, stat in _recent(codex_logs(home), now):
         text = _tail(path, stat.st_size)
         codex += [(float(u) / 100, int(r), stat.st_mtime) for u, r in CODEX.findall(text)]
-    return {"claude": _view(_best(claude), now), "codex": _view(_best(codex), now), "checked_at": now}
+    # Codex writes a receipt with every request it makes, so its newest one is current however old it is: no work, no
+    # use (15 November 2026: «Останні дані: 22 хв тому» over a Codex that had simply been idle).
+    codex_view = _view(_best(codex), now)
+    if codex_view.get("known"):
+        codex_view["stale"] = False
+    return {"claude": _view(_best(claude), now), "codex": codex_view, "checked_at": now}
 
 
 def _view(best, now: float) -> dict:

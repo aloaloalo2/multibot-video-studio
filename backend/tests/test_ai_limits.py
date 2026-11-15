@@ -51,6 +51,11 @@ class AiLimitsTest(unittest.TestCase):
         self.assertEqual((result["claude"]["left"], result["claude"]["resets_at"]), (88, resets))
         self.assertEqual((result["codex"]["left"], result["codex"]["resets_at"]), (79, resets))
 
+    def test_an_idle_codex_is_not_stale(self):
+        self.log(self.home / ".codex/sessions/2026/rollout.jsonl", codex_event(25.0, int(time.time()) + 3600), age=22 * 60)
+        result = self.read()["codex"]
+        self.assertEqual((result["left"], result["stale"]), (75, False))
+
     def test_the_newest_window_counts_even_when_an_older_one_was_fuller(self):
         old, new = int(time.time()) - 60, int(time.time()) + 3600
         self.log(self.data / "projects/p/director.log", claude_event(0.95, old) + claude_event(0.05, new))
