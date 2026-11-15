@@ -866,9 +866,19 @@ def plate_layer(project: dict, track: dict) -> bool:
 
 
 def renders_running() -> int:
-    """Razgon renders (render.mjs) running on this Mac now: an export, a push or a check sheet."""
+    """Razgon renders (render.mjs) running on this Mac now: an export, a push or a check sheet. A render whose parent is
+    gone (adopted by launchd, ppid 1) is the leftover of a cancelled or crashed export and works for nobody: one such
+    render hung for 17 hours and held every film's music back for half an hour (user, 15 November 2026: «а чого для
+    космоса нема музики? постійно з цим баги є»)."""
     found = subprocess.run(["pgrep", "-f", "render.mjs"], capture_output=True, text=True).stdout.split()
-    return sum(1 for item in found if item.isdigit() and int(item) != os.getpid())
+    alive = 0
+    for item in found:
+        if not item.isdigit() or int(item) == os.getpid():
+            continue
+        parent = subprocess.run(["ps", "-o", "ppid=", "-p", item], capture_output=True, text=True).stdout.strip()
+        if parent and parent != "1":
+            alive += 1
+    return alive
 
 
 def wait_for_renders(limit: float = RENDER_WAIT) -> None:
