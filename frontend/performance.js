@@ -1,5 +1,5 @@
 // Saved local work and billing only. Opening this panel never starts a job or a paid request.
-const performanceWorkflows={openings:'Зачини',script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів'};
+const performanceWorkflows={openings:'Зачини',script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',kit:'Підготовка',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів'};
 const performanceAliases={language_sample:'language_voice',language_save:'language_voice',language_refit:'language_voice'};
 function performanceWorkflow(value){const key=performanceAliases[value]||value;return Object.hasOwn(performanceWorkflows,key)?key:null;}
 function performanceTime(ms){
@@ -43,8 +43,10 @@ function performanceRows(data){
     row.running||=run.status==='running';groups.set(workflow,row);
   }
   for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);row.spans=row.active;delete row.active;delete row.lost;}
+  // a process known only by its cost (a kit made before «Підготовка» had its own timing) still gets its row
+  for(const process of data.processes||[]){const workflow=performanceWorkflow(process.workflow);if(workflow&&!groups.has(workflow)&&!process.active_ms&&process.cost?.recorded)groups.set(workflow,{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,spans:[],cost:process.cost,cost_only:true});}
   // the longest process on top (user, 15 November 2026)
-  return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
+  return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000||row.cost_only).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
 }
 function performanceCost(cost){
   if(!cost?.recorded)return {label:'Немає даних',title:'Збережених витрат для цього процесу ще немає.'};
@@ -73,6 +75,7 @@ const performanceIcons={
   narration:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>',
   analysis:'<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   planning:'<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/>',
+  kit:'<path d="M4 7h16v13H4z"/><path d="M9 7V4h6v3M4 12h16"/>',
   production:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3 15 5-4 4 3 3-2 6 5"/><circle cx="15.5" cy="9.5" r="1.4"/>',
   export:'<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>',
   translation:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
@@ -85,7 +88,7 @@ function performanceMarkup(data){
   const money=value=>`$${value.toFixed(value>0&&value<.01?4:2)}`;
   const attempts=row=>row.lost_runs?`<small class="performance-lost">${row.active_ms>1000?'ще ':''}${esc(performanceTime(row.lost_ms))} у ${row.lost_runs===1?'невдалій спробі':row.lost_runs+' невдалих спробах'}</small>`:'';
   const line=row=>{const cost=performanceCost(row.cost);return `<div class="performance-row" role="row" data-id="${esc(row.id)}"><span class="performance-name" role="cell">${performanceIcon(row.workflow)}<span class="performance-label"><strong>${esc(row.label||performanceWorkflows[row.workflow])}${row.running?' <em>триває</em>':''}</strong>${performanceParallel.has(row.workflow)?'<small class="performance-parallel">паралельно, не входить у «Разом»</small>':''}${attempts(row)}</span></span><span class="performance-duration" role="cell">${row.active_ms>1000?esc(performanceTime(row.active_ms)):'—'}</span><span class="performance-cost" role="cell" title="${esc(cost.title)}">${esc(cost.label)}</span></div>`;};
-  const main=rows.filter(row=>row.active_ms>=60000),small=rows.filter(row=>row.active_ms<60000);
+  const main=rows.filter(row=>row.active_ms>=60000||row.cost_only),small=rows.filter(row=>row.active_ms<60000&&!row.cost_only);
   let total=0,approximate=false,unknown=false;
   for(const row of rows){const cost=performanceCost(row.cost);if(row.cost?.recorded){total+=cost.amount||0;approximate||=!!cost.approximate;unknown||=!!cost.unknown;}}
   // «Разом» is the time from start to end: the narration and the plan made side by side count once

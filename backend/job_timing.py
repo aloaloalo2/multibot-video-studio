@@ -20,7 +20,7 @@ STAGES = {
 WORKFLOWS = {
     'openings': 'Зачини', 'script': 'Сценарій', 'metadata': 'Метадані',
     'narration': 'Озвучка', 'analysis': 'Аналіз озвучки', 'planning': 'План кадрів',
-    'production': 'Створення кадрів', 'thumbnail': 'Прев’ю', 'export': 'Експорт',
+    'production': 'Створення кадрів', 'kit': 'Підготовка', 'thumbnail': 'Прев’ю', 'export': 'Експорт',
     'translation': 'Переклад', 'language_voice': 'Озвучка перекладу',
     'language_sample': 'Зразок перекладу', 'language_save': 'Збереження перекладу',
     'language_refit': 'Вирівнювання перекладу', 'language_thumbnail': 'Прев’ю перекладу',
@@ -139,6 +139,31 @@ def span(stage):
         yield
     finally:
         trace.switch(previous, count=False)
+
+
+@contextmanager
+def separate(workflow, pid):
+    """A part of a run measured as a process of its own: the film's kit made inside the director's or the frames' run
+    (user, 16 November 2026: «Підготовка» gets its own row). The run around it counts that time as a pause, so it is
+    never counted twice. The caller sets box['status'] to 'complete' on success."""
+    parent = CURRENT.get()
+    previous = parent.switch('pause') if parent is not None else None
+    trace = Measurement(pid, workflow)
+    token = CURRENT.set(trace)
+    box = {'status': 'failed'}
+    try:
+        yield box
+    except BaseException as error:
+        if type(error).__name__ in {'Stop', 'Cancelled', 'KeyboardInterrupt', 'InterruptedError'}:
+            box['status'] = 'cancelled'
+        raise
+    finally:
+        try:
+            trace.finish(box['status'])
+        finally:
+            CURRENT.reset(token)
+            if parent is not None:
+                parent.switch(previous, count=False)
 
 
 def advance(stage):

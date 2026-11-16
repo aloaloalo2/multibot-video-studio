@@ -7,7 +7,7 @@ import store
 LABELS = {
     'openings': 'Зачини', 'script': 'Сценарій', 'metadata': 'Метадані',
     'narration': 'Озвучка', 'analysis': 'Розпізнавання озвучки',
-    'planning': 'План кадрів', 'production': 'Створення кадрів', 'export': 'Експорт',
+    'planning': 'План кадрів', 'kit': 'Підготовка', 'production': 'Створення кадрів', 'export': 'Експорт',
     'translation': 'Переклад', 'language_voice': 'Озвучка перекладів',
 }
 ALIASES = {'language_sample': 'language_voice', 'language_save': 'language_voice', 'language_refit': 'language_voice'}
@@ -38,6 +38,8 @@ def event_workflow(identity, event):
     if category in {'thumbnail', 'legacy_thumbnail', 'language_thumbnail'}:
         return None
     name = Path(identity.split(':', 1)[-1]).name
+    if name.startswith('director-kit') or '-session-900' in name:
+        return 'kit'   # the film's kit: early after the director, or first in the frames' run (production_kit.KIT_INDEX)
     if name.startswith(('openings-', 'hooks-')):
         return 'openings'
     if name.startswith('metadata-'):
@@ -110,6 +112,9 @@ def saved_costs(root):
             event = {**event, 'provider': 'claude_code', 'amount': report.get('cost_usd'),
                      'estimated': not report.get('cost_measured'), 'modified': report.get('log_modified', 0)}
         kind = {'director': 'planning', 'production': 'production'}.get(report.get('kind'))
+        log_name = Path(str(report.get('log') or key).split(':', 1)[-1]).name
+        if log_name.startswith('director-kit') or '-session-900' in log_name:
+            kind = 'kit'
         if kind:
             event = {**event, 'workflow': kind}
         events[key] = event
@@ -172,6 +177,12 @@ def project(runs, root):
             continue
         group['cost'] = costs.get(group['workflow'], {'recorded': False})
         rows.append(group)
+    # a kit made before it had its own timing: its cost still shows on its own row, with no time
+    kit = costs.get('kit') or {}
+    if 'kit' not in {row['workflow'] for row in rows} and any(
+            project_costs.number((value or {}).get('amount')) and value['amount'] > 0 for value in (kit.get('providers') or {}).values()):
+        rows.append({'id': 'kit', 'workflow': 'kit', 'label': LABELS['kit'], 'active_ms': 0., 'running': False,
+                     'lost_ms': 0., 'lost_runs': 0, 'cost': kit})
     rows.sort(key=lambda row: ORDER[row['workflow']])
     return {'processes': rows, 'running': running,
             'total_ms': round(sum(row['active_ms'] for row in rows), 2),

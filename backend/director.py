@@ -559,12 +559,15 @@ def early_kit(pid: str, cli: Path, data: dict) -> None:
         production_kit.seed(project)
         data["stage"] = "kit"
         save(pid, data)
-        with production_sessions.STUDIO_SESSIONS:
-            _, answer = claude(cli, production.kit_brief(project, len(frames)), store.project_dir(pid) / "director-kit.log",
-                               activity_path(pid, "director"), TIMEOUT, effort=data["effort"], model=data["model"],
-                               env={"VIDEOKEY_PROJECT_ID": pid, "VIDEOKEY_STUDIO_URL": "http://127.0.0.1:8770"})
-        production_kit.record_cost(store.load_project(pid), answer)
-        data.update(kit="ready" if production_kit.ready(store.load_project(pid)) else "failed", kit_cost_usd=answer.get("total_cost_usd"))
+        with job_timing.separate("kit", pid) as timing:   # «Підготовка» has its own row in «Час роботи»
+            with production_sessions.STUDIO_SESSIONS:
+                _, answer = claude(cli, production.kit_brief(project, len(frames)), store.project_dir(pid) / "director-kit.log",
+                                   activity_path(pid, "director"), TIMEOUT, effort=data["effort"], model=data["model"],
+                                   env={"VIDEOKEY_PROJECT_ID": pid, "VIDEOKEY_STUDIO_URL": "http://127.0.0.1:8770"})
+            production_kit.record_cost(store.load_project(pid), answer)
+            data.update(kit="ready" if production_kit.ready(store.load_project(pid)) else "failed", kit_cost_usd=answer.get("total_cost_usd"))
+            if data["kit"] == "ready":
+                timing["status"] = "complete"
     except Exception as error:   # the direction stays done; production makes the kit itself
         data.update(kit="failed", kit_error=str(error)[:400])
     finally:

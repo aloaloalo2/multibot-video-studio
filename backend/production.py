@@ -529,10 +529,13 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             # the card and the plan read «Підготовка» while the kit is made (user, 15 November 2026)
             set_request(pid, stage='kit')
             try:
-                with production_sessions.STUDIO_SESSIONS:
-                    kit_code, kit_answer = director.claude(cli, kit_text, log.with_name(log.stem + f'-session-{production_kit.KIT_INDEX}.log'),
-                        director.activity_path(pid, 'production'), max(1, int(deadline - time.monotonic())), resume=None,
-                        effort=effort, model=model, env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+                with job_timing.separate('kit', pid) as kit_timing:   # «Підготовка» has its own row in «Час роботи»
+                    with production_sessions.STUDIO_SESSIONS:
+                        kit_code, kit_answer = director.claude(cli, kit_text, log.with_name(log.stem + f'-session-{production_kit.KIT_INDEX}.log'),
+                            director.activity_path(pid, 'production'), max(1, int(deadline - time.monotonic())), resume=None,
+                            effort=effort, model=model, env={'VIDEOKEY_PROJECT_ID': pid, 'VIDEOKEY_STUDIO_URL': 'http://127.0.0.1:8770'})
+                    if production_kit.ready(store.load_project(pid)):
+                        kit_timing['status'] = 'complete'
             finally:
                 try:
                     set_request(pid, stage=None)
