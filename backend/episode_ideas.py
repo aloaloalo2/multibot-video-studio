@@ -442,6 +442,22 @@ def auto_opening_enabled(cid):
         return False
 
 
+# What makes the openings of a popular science-explainer channel hold (20 most viewed videos of @albertt, read by their
+# first 90 seconds; user, 16 November 2026: «як гарний приклад зачину для наших роликів»). Ways in, not a template.
+OPENING_CRAFT = (
+    '\nПрийоми сильного зачину (з розбору 20 найпопулярніших роликів науково-популярного каналу). Це приклади, а не шаблон: '
+    'кожен із 4 зачинів будуй на іншому прийомі, на тому, що найкраще пасує саме цій темі, і не повторюй той самий хід з ролика в ролик.\n'
+    '1. Реальна людина в першому реченні («Це …») і два-три конкретні факти її історії, далі поворот, якого глядач не чекав. '
+    'Лише справжні відомі історії: людей, дати й цифри не вигадуй.\n'
+    '2. Від буденного до несподіваного: питання про звичну річ, коротка відповідь і різкий перехід до теми.\n'
+    '3. Тема стосується самого глядача: «ви, найімовірніше, вже з цим стикалися», «ви робите це щодня, і робите неправильно», '
+    'а наступним реченням знято образу чи страх.\n'
+    '4. Одне вражаюче число окремим коротким реченням, далі пояснення, чому воно таке.\n'
+    '5. Незручне логічне питання, яке випливає з відомого факту, і глядач хоче почути відповідь.\n'
+    '6. Коротка сцена або власна історія ведучого, тільки якщо правила каналу дозволяють особисті історії.\n'
+    'Після гачка одним реченням скажи, чому це важливо глядачеві, а далі, якщо вміщується, пообіцяй 2–3 конкретні питання, '
+    'на які відповість ролик. Не починай з «у цьому відео ми поговоримо». Правила й побажання каналу важливіші за ці прийоми.\n')
+
 OPENING_CRITERIA = ('interest', 'clarity', 'originality', 'low_slop', 'beauty')
 
 
@@ -849,7 +865,7 @@ def _work(cid, data):
                 data.pop('auto_opening', None)
                 if data.get('previous_openings'):
                     brief += '\nWrite new hooks with different angles from these previous variants: ' + json.dumps(data['previous_openings'], ensure_ascii=False)
-                result = opus(brief + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 6 complete sentences. This six-sentence limit overrides older hook-length rules in the reference material. '
+                result = opus(brief + OPENING_CRAFT + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 6 complete sentences. This six-sentence limit overrides older hook-length rules in the reference material. '
                     'Do not write the full script yet. Add uk translation only for hooks in languages other than Ukrainian/Russian. Never translate Russian or Ukrainian hooks; return uk="" for them. '
                     'Return JSON only {"openings":[{"text":"...","uk":"..."}]}.', root, identity, cid)
                 rows = result.get('openings')
