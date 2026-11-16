@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -153,6 +154,8 @@ def apply(studio, pid, file, *, dry_run=False):
     if fresh['signature'] != packet['signature']:
         raise ValueError('Джерело змінилося під час перевірки. План не змінено.')
     commit_files(files)
+    # the shot table itself, so `retime` can move it onto the real voice later
+    store.atomic_json(store.project_dir(pid) / 'director-draft.json', draft)
     # Existing bridge owns frame import, sentence coverage, plan identity and code slots.
     bridge.plan_from_direction(SimpleNamespace(razgon=str(path), studio_url=studio.url, dry_run=False))
     accepted = studio.plan(pid)
@@ -160,6 +163,56 @@ def apply(studio, pid, file, *, dry_run=False):
                                      'plan_sha256': contract.digest(accepted['frames']), 'report': report})
     print(f'Режисура збережена: {len(compiled["shots"]["shots"])} шотів, '
           f'{len(compiled["shots"]["sfx"])} подій звуку. Рендер і генерації не запускалися.')
+
+
+def retime(studio, pid):
+    """Move a direction made on times estimated from the script onto the real voice (no paid calls).
+
+    The Studio has already rebuilt the plan on Whisper's times and kept the director's groups of sentences
+    (planner.keep_director_frames). Here the Razgon workspace gets the real voice and words (bridge prepare), the saved
+    shot table is recompiled on them with its cues and music moved along (direction_contract.retimed), checked like
+    any direction, and the frames go back into the Studio and onto the timeline (bridge plan)."""
+    project, plan = studio.project(pid), studio.plan(pid)
+    if plan.get('timing', {}).get('status') != 'audio_synced':
+        raise ValueError('Спершу потрібні таймінги справжньої озвучки.')
+    if plan.get('frame_source') != 'razgon-direction' or plan.get('director_stale'):
+        raise ValueError('Режисура не відповідає озвучці. Потрібна нова режисура.')
+    path = workspace(project)
+    link = bridge.read_json(path / 'story/studio_frames.json')
+    if not link.get('estimated'):
+        print('Режисура вже на часі справжньої озвучки.')
+        return False
+    old = store.read_json(store.project_dir(pid) / 'director-context.json', {}) or {}
+    draft = store.read_json(store.project_dir(pid) / 'director-draft.json', None)
+    if not old.get('sentences') or not isinstance(draft, dict):
+        raise ValueError('Немає збереженої таблиці режисера для перенесення.')
+    with contextlib.redirect_stdout(io.StringIO()):
+        bridge.prepare(SimpleNamespace(project_id=pid, studio_url=studio.url,
+            studio_dir=str(store.YOUTUBE_ROOT / store.razgon_rel()), slug=None, style=None))
+    project = studio.project(pid)
+    packet, words = packet_for(project, plan, path)
+    draft = contract.retimed(draft, old, packet)
+    compiled = contract.compile_direction(draft, packet, words)
+    compiled['shots']['title'] = project['name']
+    files = {path / 'story/shots.json': json.dumps(compiled['shots'], ensure_ascii=False, indent=2) + '\n',
+             path / 'story/beats.json': json.dumps(compiled['beats'], ensure_ascii=False, indent=2) + '\n',
+             path / 'story/bible.md': compiled['bible']}
+    report = staged_check(path, compiled)
+    commit_files(files)
+    target = store.project_dir(pid) / 'director-context'
+    store.atomic_json(target.with_suffix('.json'), packet)
+    store.atomic_text(target.with_suffix('.txt'), contract.context_text(packet))
+    store.atomic_json(store.project_dir(pid) / 'director-draft.json', draft)
+    if (path / 'story/direction.json').is_file():
+        store.atomic_text(path / 'story/direction.json', json.dumps(draft, ensure_ascii=False, indent=2) + '\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        bridge.plan_from_direction(SimpleNamespace(razgon=str(path), studio_url=studio.url, dry_run=False))
+    accepted = studio.plan(pid)
+    store.atomic_json(store.project_dir(pid) / 'director-apply.json',
+                      {'source_signature': packet['signature'], 'draft_sha256': contract.digest(draft),
+                       'plan_sha256': contract.digest(accepted['frames']), 'report': report, 'retimed_at': time.time()})
+    print(f'Режисуру перенесено на озвучку: {len(compiled["shots"]["shots"])} шотів, {len(compiled["shots"]["sfx"])} подій звуку.')
+    return True
 
 
 def main():
@@ -171,6 +224,7 @@ def main():
     check.add_argument('project')
     check.add_argument('file', type=Path)
     check.add_argument('--dry-run', action='store_true')
+    sub.add_parser('retime').add_argument('project')
     words = sub.add_parser('words')
     words.add_argument('project')
     words.add_argument('--sentence', type=int, required=True)
@@ -179,6 +233,8 @@ def main():
     try:
         if args.action == 'prepare':
             prepare(studio, args.project)
+        elif args.action == 'retime':
+            retime(studio, args.project)
         elif args.action == 'words':
             words_for(studio, args.project, args.sentence)
         else:

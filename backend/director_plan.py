@@ -29,7 +29,7 @@ HINTS = {"stock_video": "реальне відео зі стоків: люди, 
 
 def synced_plan(pid: str) -> dict:
     plan = store.load_project_plan(pid)
-    if not plan or plan.get("timing", {}).get("status") != "audio_synced":
+    if not plan or plan.get("timing", {}).get("status") not in {"audio_synced", "script_estimate"}:
         raise store.StudioError("Спершу додайте озвучку: план кадрів робиться за нею")
     return plan
 
@@ -85,6 +85,8 @@ def sentences(pid: str) -> dict:
     return {"sentences": [{"number": number, "text": text, "start": timing["start"], "end": timing["end"]}
                           for number, (text, timing) in enumerate(zip(texts, timings), 1)],
             "duration": float(plan["timing"]["audio"]["duration"]), "shares": targets,
+            # times estimated from the script while the voice is made; Whisper's times replace them, frames stay
+            "estimated": plan["timing"].get("status") == "script_estimate",
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "generated_image_style": settings.get("generated_image_style", ""),
             "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,

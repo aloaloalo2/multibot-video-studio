@@ -74,8 +74,9 @@ class SlotTest(unittest.TestCase):
     def test_a_phrase_waiting_for_the_slot_hears_a_stop(self):
         class Stopped(Exception):
             pass
-        hg._SYNTHESIS_SLOT.acquire()
-        self.addCleanup(hg._SYNTHESIS_SLOT.release)
+        for _ in range(hg.SLOTS):   # every slot is held by another phrase
+            hg._SYNTHESIS_SLOT.acquire()
+            self.addCleanup(hg._SYNTHESIS_SLOT.release)
         calls = []
         def check():
             calls.append(1)
@@ -83,6 +84,11 @@ class SlotTest(unittest.TestCase):
                 raise Stopped()
         hg.STOP.check = check
         self.addCleanup(setattr, hg.STOP, 'check', None)
-        with self.assertRaises(Stopped):   # the slot is held by another phrase; the stop is heard within a second
+        with self.assertRaises(Stopped):   # the stop is heard within a second
             with hg.synthesis_slot():
                 pass
+
+    def test_two_phrases_go_at_once(self):
+        with hg.synthesis_slot():
+            self.assertTrue(hg._SYNTHESIS_SLOT.acquire(blocking=False))
+            hg._SYNTHESIS_SLOT.release()

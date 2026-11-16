@@ -119,7 +119,10 @@ def creation_status(project, load_job):
 def start(project, asset_id, save_job, load_job, script=None, create_video=False, reuse_report_id=None):
     """Recognise a voice. The text comes from the author's script when there is one, else from the voice itself."""
     import director, production
-    if project["id"] in director.ACTIVE or project["id"] in production.ACTIVE:
+    # a director working on the script while the voice was made (backend/script_timing.py) does not stop the
+    # recognition: its times wait for his plan (director.wait_idle) before they rebuild it
+    on_script = (director.state(project["id"]) or {}).get("reason") == "script"
+    if project["id"] in director.ACTIVE and not on_script or project["id"] in production.ACTIVE:
         # a new voice rebuilds the plan: not under the director or the frame agent at work
         raise store.StudioError("Над випуском зараз працює режисер або агент кадрів. Дочекайтеся, поки він закінчить", 409)
     source_data = store.load_project_source(project["id"]) if store.project_plan_mode(project) == "direct" else None
@@ -274,6 +277,8 @@ def worker(job, script, save_job):
                     if hashlib.sha256(author_script.encode()).hexdigest()!=job['author_script_sha256'] and author_script!=script:
                         report['status']='script_changed'
                 if report["status"] == "matched":
+                    progress(99, "waiting_director")
+                    director.wait_idle(project["id"])
                     timings = {**report["timings"], "audio_sha256": audio_hash, "asset_id": audio["id"]}
                     project = store.load_project(project["id"])
                     generated = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],

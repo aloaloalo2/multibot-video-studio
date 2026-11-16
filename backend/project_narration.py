@@ -231,6 +231,9 @@ def start(project,text,resume=False):
         ACTIVE.add(pid);lab.NARRATIONS[pid]=cid
     try:
         script_record=store.save_voice_script(pid,text,source='narration')
+        # with a script the director starts now, on its times estimated from the text (backend/script_timing.py)
+        import script_timing
+        threading.Thread(target=script_timing.start,args=(pid,),daemon=True).start()
         threading.Thread(target=run,args=(project,text,settings.copy(),ref.copy(),entries,job),daemon=True).start()
     except Exception as error:
         release_heygen(pid)
@@ -281,11 +284,31 @@ def run(project,text,settings,ref,entries,job):
         def stop_check():
             if (folder/'cancel').exists():raise Cancelled()
         heygen_voice.STOP.check=stop_check
-        for i,entry in enumerate(entries):
-            if (folder/'cancel').exists():raise Cancelled()
-            target=folder/(entry['key']+'.mp3')
-            phrase_audio(project,settings,ref,entry,secret,voice)
-            job['completed']=i+1;store.atomic_json(folder/'job.json',job)
+        if settings['provider']=='heygen' and len(entries)>1:
+            # HeyGen takes heygen_voice.SLOTS phrases at once; the same cache, order and receipts as one by one
+            from concurrent.futures import ThreadPoolExecutor
+            done=threading.Lock();count=[0]
+            def one(entry):
+                heygen_voice.STOP.check=stop_check
+                try:
+                    if (folder/'cancel').exists():raise Cancelled()
+                    phrase_audio(project,settings,ref,entry,secret,voice)
+                    with done:
+                        count[0]+=1;job['completed']=count[0];store.atomic_json(folder/'job.json',job)
+                finally:
+                    heygen_voice.STOP.check=None
+            pool=ThreadPoolExecutor(max_workers=heygen_voice.SLOTS)
+            try:
+                for future in [pool.submit(one,entry) for entry in entries]:
+                    future.result()
+            finally:   # a stop or an error: the phrases not started yet are not sent
+                pool.shutdown(wait=True,cancel_futures=True)
+        else:
+            for i,entry in enumerate(entries):
+                if (folder/'cancel').exists():raise Cancelled()
+                target=folder/(entry['key']+'.mp3')
+                phrase_audio(project,settings,ref,entry,secret,voice)
+                job['completed']=i+1;store.atomic_json(folder/'job.json',job)
         if (folder/'cancel').exists():raise Cancelled()
         with job_timing.span('saving'):
             listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))

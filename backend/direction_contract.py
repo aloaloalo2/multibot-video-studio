@@ -25,7 +25,7 @@ def digest(value):
 
 def source(plan, config, words, *, project_id=None):
     timing = plan.get('timing') or {}
-    if timing.get('status') != 'audio_synced':
+    if timing.get('status') not in {'audio_synced', 'script_estimate'}:
         raise ValueError('Спочатку потрібні озвучка та її перевірені таймінги.')
     sentences = timing.get('sentences') or [s for f in plan['frames'] for s in f['sentence_timings']]
     rows = [{'number': i, 'start': float(s['start']), 'end': float(s['end']), 'text': s['text']}
@@ -181,11 +181,55 @@ def compile_direction(draft, packet, words):
             'beats': {'beats': beats}, 'bible': bible.strip() + '\n'}
 
 
+def retimed(draft, old, packet):
+    """The same direction on new times: the director's shot table written on a packet timed from the script
+    (backend/script_timing.py) moves onto the real voice. Shots and word cues follow their sentences by themselves;
+    an offset cue keeps its place within its sentence, and music parts move with the sentences around them."""
+    import number_text
+    before, after = old['sentences'], packet['sentences']
+    same = lambda a, b: token(number_text.to_digits(a)) == token(number_text.to_digits(b))
+    if len(before) != len(after) or not all(same(a['text'], b['text']) for a, b in zip(before, after)):
+        raise ValueError('Речення озвучки відрізняються від сценарію, за яким працював режисер.')
+    points = [(0.0, 0.0)]
+    for a, b in zip(before, after):
+        points += [(float(a['start']), float(b['start'])), (float(a['end']), float(b['end']))]
+    points.append((float(old['duration']), float(packet['duration'])))
+
+    def move(t):
+        t = float(t)
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):
+            if x0 <= t <= x1:
+                return y0 if x1 - x0 < 1e-9 else y0 + (t - x0) * (y1 - y0) / (x1 - x0)
+        return float(packet['duration']) if t > points[-1][0] else 0.0
+
+    draft = copy.deepcopy(draft)
+    draft['source_signature'] = packet['signature']
+    for row in draft.get('shots') or []:
+        for cue in row.get('cues') or []:
+            number = cue.get('sentence')
+            if 'offset' in cue and type(number) is int and 1 <= number <= len(after):
+                a, b = before[number - 1], after[number - 1]
+                scale = (b['end'] - b['start']) / max(a['end'] - a['start'], 1e-6)
+                cue['offset'] = round(min(float(cue['offset']) * scale, b['end'] - b['start']), 3)
+    music = draft.get('music') or []
+    for i, part in enumerate(music):
+        part['start'] = 0.0 if i == 0 and float(part['start']) <= .001 else round(move(part['start']), 3)
+        part['end'] = round(move(part['end']), 3)
+        if i:
+            part['start'] = music[i - 1]['end']
+    if music and abs(float(music[-1]['end']) - float(packet['duration'])) < .5:
+        music[-1]['end'] = float(packet['duration'])
+    return draft
+
+
 def context_text(packet):
     """One complete voice table and a small technical reference; no old episode code."""
     return '\n'.join([
         'РЕЖИСЕРСЬКИЙ ПАКЕТ. Джерело: ' + packet['signature'],
         f'Тривалість {packet["duration"]:.3f} с. Речень {len(packet["sentences"])}. Номери речень починаються з 1.',
+        *(['Час речень і слів поки приблизний: озвучка ще готується. Групуй за змістом як завжди; після озвучки Studio '
+           'сама перенесе шоти, події звуку й музику на точний час, нової режисури не буде.']
+          if (packet.get('audio') or {}).get('estimated') else []),
         'Напиши один direction.json. Схема:',
         '{"source_signature":"' + packet['signature'] + '","bible":"персонажі, епізоди, декорації, камера, мотиви, ризики",'
         '"shots":[{"id":"s001","first_sentence":1,"last_sentence":4,"episode":"E01","set":"orbit",'

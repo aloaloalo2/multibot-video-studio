@@ -14,7 +14,7 @@ project (director.json), its full answer in director.log, and the plan page show
 """
 from __future__ import annotations
 
-import json, os, re, shutil, signal, subprocess, threading, time
+import json, os, re, shutil, signal, subprocess, sys, threading, time
 from pathlib import Path
 
 import razgon_sound
@@ -85,6 +85,12 @@ def animated(project: dict) -> bool:
 def brief(project: dict) -> str:
     is_animated = animated(project)
     text = razgon_brief(project) if is_animated else frames_brief(project)
+    import script_timing
+    if script_timing.estimated(store.load_project_plan(project["id"])):
+        # the director works while the voice is made (user, 16 November 2026: «якщо є сценарій, то… вже можемо починати»)
+        text += ("\nОзвучка ще готується: час речень і слів у плані приблизний, порахований за сценарієм у темпі каналу. "
+                 "Групуй речення в кадри за змістом як завжди. Після озвучки студія сама підставить точний час "
+                 "і збереже твої кадри, повторної режисури не буде.\n")
     settings = channel_settings(project)
     if settings.get("generated_image_style"):
         text += "\nПріоритет автора для створених зображень Codex: " + settings["generated_image_style"] + "\nВрахуй ці побажання у форматі та ідеї відповідних кадрів.\n"
@@ -515,9 +521,11 @@ def _run(pid: str, cli: Path) -> None:
                     save(pid, data)
                 except OSError:
                     pass
-            if data.get("status") == "done":
+            import script_timing
+            if data.get("status") == "done" and not script_timing.estimated(store.load_project_plan(pid)):
                 # the shots and their sound cues are written: the film's music and effects go on the timeline at once
-                # (razgon_sound.py; a photo channel's film is not due and is left alone)
+                # (razgon_sound.py; a photo channel's film is not due and is left alone). A direction on times from the
+                # script waits for the voice: retime() lays them then.
                 razgon_sound.start(pid, "director")
 
 
@@ -545,7 +553,8 @@ def start(pid: str, reason: str = "voice") -> dict:
             raise store.StudioError(str(error), 503) from None
         previous = state(pid) or {}
         data = {"status": "queued", "reason": reason, "queued_at": time.time(), "model": store.channel_director_model(project), "effort": store.channel_effort(project),
-                "create_video": reason == 'create_video' or previous.get('status') == 'failed' and bool(previous.get('create_video'))}
+                # a pass on the script's estimated times makes no frames: they wait for the voice
+                "create_video": reason == 'create_video' or reason != 'script' and previous.get('status') == 'failed' and bool(previous.get('create_video'))}
         ACTIVE.add(pid)
         try:
             save(pid, data)
@@ -575,6 +584,9 @@ def after_voice(pid: str, create_video=False) -> None:
             return
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
+        if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale") and animated(store.load_project(pid)):
+            if not retime(pid):
+                plan = store.load_project_plan(pid) or {}
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
             if create_video:
                 import production
@@ -594,6 +606,42 @@ def after_voice(pid: str, create_video=False) -> None:
             data['creation_error'] = str(error)
             save(pid, data)
             raise
+
+
+RETIME_TIMEOUT = 600
+
+
+def retime(pid: str) -> bool:
+    """An animated direction made on times from the script moves onto the voice Whisper has just timed
+    (tools/direction.py retime, no paid calls). Returns False when that failed: the plan is then marked director_stale
+    and the director makes a fresh pass, as for a changed text."""
+    try:
+        link = store.read_json(store.project_dir(pid) / "razgon-link.json", {}) or {}
+        frames = Path(link.get("project") or "") / "story" / "studio_frames.json"
+        if not link.get("project") or not (store.read_json(frames, {}) or {}).get("estimated"):
+            return True
+        result = subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "direction.py"), "retime", pid],
+                                capture_output=True, text=True, timeout=RETIME_TIMEOUT, cwd=str(store.APP_ROOT))
+        if result.returncode == 0:
+            razgon_sound.start(pid, "director")
+            return True
+        error = (result.stderr or result.stdout).strip()[-600:]
+    except (OSError, subprocess.SubprocessError) as exc:
+        error = str(exc)
+    plan = store.load_project_plan(pid) or {}
+    store.attach_plan(pid, dict(plan, director_stale=True))
+    data = state(pid) or {}
+    data["retime_error"] = error
+    save(pid, data)
+    return False
+
+
+def wait_idle(pid: str, limit: float = 3 * 3600, step: float = 3.0) -> None:
+    """Whisper has timed the voice while the director still works on the script: its times wait for his plan."""
+    waited = 0.0
+    while pid in ACTIVE and waited < limit:
+        time.sleep(step)
+        waited += step
 
 
 def montage_started(project: dict) -> bool:

@@ -203,7 +203,10 @@ def prepare(args) -> None:
     project = studio.project(args.project_id)
     plan = studio.plan(args.project_id)
     timing = plan.get("timing", {})
-    if timing.get("status") != "audio_synced":
+    # a plan timed from the script (backend/script_timing.py): the director works on it while the voice is made, with
+    # no voice file yet and the estimated words; `direction.py retime` runs prepare again on the real voice
+    estimated = timing.get("status") == "script_estimate"
+    if timing.get("status") != "audio_synced" and not estimated:
         raise BridgeError("План ще чернетка. Спершу додайте озвучку в студії, щоб з'явився статус «За озвучкою»")
     audio = timing.get("audio") or {}
     duration = float(audio["duration"])
@@ -212,14 +215,18 @@ def prepare(args) -> None:
         print("У плані є кадри інших форматів (" + ", ".join(other) + "): Razgon малює лише кадри «2D-анімація Razgon», "
               "шоти проєкту все одно покривають усю озвучку.")
 
-    analysis = studio.call("GET", f"/api/projects/{args.project_id}/analysis").get("report") or {}
-    voice_record = voice_asset(project, audio, analysis)
-    voice = Path(voice_record["path"])
-    # Script words with the recogniser's time; raw ASR words only for older reports without them.
-    words = analysis.get("aligned_words") or analysis.get("words") or []
-    word_source = "script" if analysis.get("aligned_words") else "asr"
-    if analysis.get("audio", {}).get("sha256") not in {None, audio.get("sha256")} and audio.get("sha256"):
-        words = []
+    if estimated:
+        voice_record, voice = {"id": None}, None
+        words, word_source = timing.get("words") or [], "script_estimate"
+    else:
+        analysis = studio.call("GET", f"/api/projects/{args.project_id}/analysis").get("report") or {}
+        voice_record = voice_asset(project, audio, analysis)
+        voice = Path(voice_record["path"])
+        # Script words with the recogniser's time; raw ASR words only for older reports without them.
+        words = analysis.get("aligned_words") or analysis.get("words") or []
+        word_source = "script" if analysis.get("aligned_words") else "asr"
+        if analysis.get("audio", {}).get("sha256") not in {None, audio.get("sha256")} and audio.get("sha256"):
+            words = []
 
     root = Path(args.studio_dir).resolve()
     if not (root / "render.mjs").is_file():
@@ -227,8 +234,9 @@ def prepare(args) -> None:
     target = episode_target(studio, project, root, args.slug)
     for name in ("input", "timeline", "story", "scenes/sets", "scenes/shots", "build", "out"):
         (target / name).mkdir(parents=True, exist_ok=True)
-    voice_dst = target / "input" / ("voiceover" + voice.suffix.lower())
-    shutil.copy2(voice, voice_dst)
+    voice_dst = target / "input" / ("voiceover" + voice.suffix.lower()) if voice else None
+    if voice:
+        shutil.copy2(voice, voice_dst)
     (target / "input" / "script.txt").write_text(plan.get("spoken_script") or plan["script"], encoding="utf-8")
 
     fps = int(project.get("fps") or 30)
@@ -251,7 +259,11 @@ def prepare(args) -> None:
     styles = studio.call('GET', f"/api/channels/{channel['id']}/custom-styles").get('styles', []) if channel and str(selected).startswith(('custom-', 'studio-')) else []
     config = channel_style(config, animation, args.style, styles)
     config.update({"aspect": "9:16" if height > width else "16:9", "resolution": RESOLUTIONS.get(min(width, height), "1080p"),
-                   "fps": fps, "voiceover": "input/" + voice_dst.name, "script": "input/script.txt", "duration": round(duration, 3)})
+                   "fps": fps, "script": "input/script.txt", "duration": round(duration, 3)})
+    if voice_dst:
+        config["voiceover"] = "input/" + voice_dst.name
+    else:
+        config.pop("voiceover", None)
     # Reused workspaces can still contain the former copied channel plate.
     # It must not become part of animation drawing or be imported onto the timeline.
     config.pop("overlay", None)
@@ -265,7 +277,8 @@ def prepare(args) -> None:
         (target / "timeline" / "transcript.txt").write_text("\n".join(f"[{s['start']:.2f} -> {s['end']:.2f}] {s['text']}" for s in sentences), encoding="utf-8")
     frames = [{"number": f["number"], "start": f["start"], "end": f["end"], "sentences": f["sentences"], "format": f["format"]} for f in plan["frames"]]
     link = {"studio_url": studio.url, "project_id": project["id"], "episode_path": project["episode_path"], "voice_asset_id": voice_record["id"],
-            "script_sha256": plan["script_sha256"], "audio_sha256": audio.get("sha256"), "duration": duration, "fps": fps, "frames": frames}
+            "script_sha256": plan["script_sha256"], "audio_sha256": audio.get("sha256"), "duration": duration, "fps": fps, "frames": frames,
+            "estimated": estimated}
     write_json(target / "story" / "studio_frames.json", link)
     # tells the Studio where the Razgon project of this episode lives (for its live preview tab)
     studio.call("POST", f"/api/projects/{project['id']}/razgon-link", {"razgon_root": str(root), "project": str(target)})
@@ -278,7 +291,8 @@ def prepare(args) -> None:
         write_json(shots_path, {"title": project["name"], "duration": duration, "shots": shots, "music": [], "sfx": []})
     print(f"Проєкт Razgon: {target}")
     print(f"Кадрів плану: {len(frames)}, озвучка {duration:.2f} с, {fps} fps, {config['resolution']} {config['aspect']}")
-    print("Таймінги слів: " + ("зі студії, Whisper повторно не потрібен" if words else "немає. Запустіть tools/transcribe.py у Razgon"))
+    print("Таймінги слів: " + ("приблизні за сценарієм, точні підставить озвучка" if estimated else
+                               "зі студії, Whisper повторно не потрібен" if words else "немає. Запустіть tools/transcribe.py у Razgon"))
 
 
 # ---------------------------------------------------------------- check
@@ -1005,7 +1019,8 @@ def plan_from_direction(args) -> None:
     studio = Studio(args.studio_url or link["studio_url"])
     pid = link["project_id"]
     plan = studio.plan(pid)
-    if plan.get("timing", {}).get("status") != "audio_synced":
+    estimated = plan.get("timing", {}).get("status") == "script_estimate"
+    if plan.get("timing", {}).get("status") != "audio_synced" and not estimated:
         raise BridgeError("План у студії ще чернетка")
     if plan["script_sha256"] != link["script_sha256"]:
         raise BridgeError("Сценарій у студії змінився після prepare. Запустіть prepare ще раз")
@@ -1070,6 +1085,12 @@ def plan_from_direction(args) -> None:
             print(f"  {f['number']:3d} {f['start']:7.2f}-{f['end']:7.2f} {f.get('episode') or '':4} {' '.join(f['sentences'])[:70]}")
         return
     studio.call("POST", f"/api/projects/{pid}/plan", {"plan": new_plan})
+    if estimated:
+        # no voice yet: the frames wait for it (direction.py retime), nothing goes on the timeline
+        link["frames"] = [{k: f[k] for k in ("number", "start", "end", "sentences", "format")} for f in frames]
+        write_json(razgon / "story" / "studio_frames.json", link)
+        print("План записано в студію з приблизним часом за сценарієм. Після озвучки студія підставить точний час.")
+        return
     check = studio.call("GET", f"/api/projects/{pid}")
     production = check.get("production") or check.get("project", {}).get("production") or {}
     if not production.get("plan_ready"):

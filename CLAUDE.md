@@ -72,7 +72,8 @@ one project (`"Горбунов 23"`).
   (`backend/spend_report.py`, written after every run; findings in docs/LIMITS_SPEND.md).
 - `python3 tools/studio.py sentences P` and `frames P FILE.json [--dry-run]` — the director's frame plan of a photo channel:
   the numbered sentences of the voice with the channel's format shares, then the frames checked and saved
-  (`backend/director_plan.py`). Every plan comes after the voice and from the director.
+  (`backend/director_plan.py`). Every plan comes from the director: with a script it starts with the narration on times
+  estimated from the text (`backend/script_timing.py`, status `script_estimate`), and Whisper's times replace them.
 
 ## Working through the API
 

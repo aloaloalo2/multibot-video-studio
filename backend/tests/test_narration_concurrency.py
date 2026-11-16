@@ -68,6 +68,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
 
     def worker(self, **kwargs):
         worker = Thread(**kwargs)
+        worker.job = kwargs.get('target')
         self.workers.append(worker)
         return worker
 
@@ -199,7 +200,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
                 narration.start(first, 'Repeated click sentence.')
             narration.cancel(first['id'])
             first_release.set()
-            self.workers[0].join(5)
+            next(w for w in self.workers if w.job is narration.run).join(5)   # the voice, not the early director
             self.assertEqual(narration.snapshot(first['id'])['job']['status'], 'cancelled')
             self.assertEqual(set(lab.NARRATIONS), {second['id']})
             self.assertTrue(lab.in_use(self.cid))

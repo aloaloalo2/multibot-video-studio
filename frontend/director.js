@@ -204,6 +204,8 @@ function fillVoiceLine(box){
   else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=state.project.voice_script?.source==='narration-revision'?'озвучку оновлено, таймінги збережено':percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
   else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}
   else if(job?.status==='failed'){state_='warn';text=job.error || 'не вдалося розпізнати';}
+  // the director planned the frames from the script while the voice is made (backend/script_timing.py)
+  else if(state.plan?.timing?.status==='script_estimate'){state_='empty';text='кадри за сценарієм, час уточнить озвучка';}
   else{state_='empty';text='озвучку ще не додано';}
   box.dataset.state=state_;
   const script=state.project.voice_script?.text ?? state.plan?.script ?? frames.map(frame=>(frame.sentences||[]).join(' ')).join('\n\n');

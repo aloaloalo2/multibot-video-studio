@@ -221,7 +221,8 @@ def aligned_times(groups, timings, duration, opening_seconds=None):
 
 def validate_synced_plan(plan, duration):
     timing = plan.get("timing", {})
-    if timing.get("status") != "audio_synced":
+    # a plan timed from the script (backend/script_timing.py) is checked the same way; only the director works on it
+    if timing.get("status") not in {"audio_synced", "script_estimate"}:
         raise ValueError("Це чернетка плану. Додайте готову озвучку та таймінги фраз")
     if not plan.get("frames"):
         raise ValueError("План не містить кадрів")
