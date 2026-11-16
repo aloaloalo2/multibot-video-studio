@@ -26,6 +26,7 @@ CORNERS = ("top-left", "top-right", "bottom-left")
 POSITIONS = ("auto", *CORNERS)
 LEGACY = {"bottom-right": "bottom-left"}
 DEFAULTS = {"enabled": False, "position": "auto", "size": 14}
+ENABLED = False
 SIZE = (5, 30)          # percent of the thumbnail's width
 MARGIN = 3              # percent of the width, as for the films' logo
 RAW = "Без логотипа"
@@ -47,7 +48,11 @@ def validate(value) -> None:
 
 
 def spec(project: dict, settings: dict) -> dict | None:
-    """The setting with its logo file, or None when the box is off or the channel has no logo."""
+    """The setting with its logo file, or None when the box is off or the channel has no logo.
+    Switched off for good (user, 16 November 2026: «логотип не розміщаю автоматично, я передумав… цю функцію варто
+    прибрати»): no logo goes on a thumbnail and no corner is kept for it. Older pictures made with one still edit cleanly."""
+    if not ENABLED:
+        return None
     value = {**DEFAULTS, **(settings.get("thumbnail_logo") or {})}
     value["position"] = LEGACY.get(value["position"], value["position"])
     cid = project.get("channel_id")

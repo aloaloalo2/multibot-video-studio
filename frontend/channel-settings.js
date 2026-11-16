@@ -67,7 +67,7 @@ function organizeChannelSettings(channel){
     ['look','Оформлення','Стиль і плашка'],
     ['voice','Озвучка','Голос і зразок'],
     ['thumbnails','Прев’ю','Герой і побажання'],
-    ['sound','Звук','Музика й ефекти','Додаткове'],
+    ['sound','Звукові ефекти','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
     ['advanced','Розширене','Формат відео й правила','Розширене'],
     ['competitors','Конкуренти','Канали для майбутніх ідей']
@@ -158,9 +158,11 @@ function organizeChannelSettings(channel){
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
-  move('.thumbnail-logo-section','thumbnails',{icon:'thumbnails'});   // a block of its own in «Основне» (user, 15 November 2026)
+  // «Логотип на прев’ю» is switched off (user, 16 November 2026: «цю функцію варто прибрати»): its fields stay hidden
+  // in the page so the saved value goes back unchanged, but nothing shows it
+  {const logoSection=body.querySelector('.thumbnail-logo-section');if(logoSection){const keep=document.createElement('div');keep.hidden=true;keep.append(logoSection);body.append(keep);}}
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
-  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Логотип на прев’ю','thumbnails','.thumbnail-logo-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
+  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
     const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?(only==='.hero-reference-section'?'hero':'thumbnail-logo'):key;
     group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong>${only?'':`<small class="settings-choice-summary" data-main-summary="${key}"></small>`}</span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;

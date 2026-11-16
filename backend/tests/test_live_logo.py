@@ -99,16 +99,15 @@ class LiveLogoTest(unittest.TestCase):
         resolved = store.load_project(self.pid)
         self.assertIn('portrait', [c['id'] for t in resolved['tracks'] for c in t['clips']])
 
-    def test_both_frame_briefs_reserve_logo_space_and_assign_branding_to_studio(self):
+    def test_both_frame_briefs_assign_branding_to_studio_and_keep_no_logo_corner(self):
         import production
         project = {**self.project, 'name':'Branding test'}
         request = {'frames':3,'total_frames':10,'start':0,'end':30}
-        with patch.object(production.channel_branding,'reserved_zone',return_value='reserved corner'), \
-             patch.object(production.director,'channel_settings',return_value={}):
+        with patch.object(production.director,'channel_settings',return_value={}):
             for brief in (production.brief, production.photo_brief):
                 text = brief(project, request)
                 self.assertIn('Логотип і плашку каналу додає сама студія.', text)
                 self.assertIn('не імпортуй копій', text)
-                self.assertIn('reserved corner', text)
+                self.assertNotIn('Зона логотипа', text)   # no corner is kept free for the logo (16 November 2026)
 
 if __name__=='__main__':unittest.main()

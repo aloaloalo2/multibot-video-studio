@@ -3101,6 +3101,12 @@ def worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> N
 
 
 def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> None:
+    # A stop is heard while HeyGen makes a phrase wait (its minute budget, a 429, a slow answer), not only between
+    # phrases: a French voicing stayed on «Скасовуємо…» for 16 minutes (user, 16 November 2026: «чому так»)
+    def stop_check():
+        if job.get('key') in CANCEL:
+            raise Stop()
+    heygen_voice.STOP.check = stop_check
     try:
         if kind in ("sample", "voice"):
             job["cost_unit"] = "credits" if provider == "elevenlabs" else "usd"
@@ -3126,6 +3132,9 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
     except Stop:
         job.update(status="cancelled", stage="Скасовано", finished_at=time.time())
     except (subprocess.TimeoutExpired, OSError, RuntimeError, ValueError, store.StudioError) as error:
+        if job.get('key') in CANCEL:   # an error on the way out of a stopped run is still a stop
+            job.update(status="cancelled", stage="Скасовано", finished_at=time.time())
+            return
         message='Не встигло за відведений час' if isinstance(error,subprocess.TimeoutExpired) else str(error)
         if job.get('voice_ready') and job.get('phase')=='save-audio':
             message='Озвучка готова, але файл із музикою й ефектами не збережено. '+message+' Повторіть збереження файлу, це не витрачає кредити.'
@@ -3135,6 +3144,7 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
         traceback.print_exc()
         job.update(status='failed', error='Обробку мови зупинено через помилку студії. Готові результати збережено.', finished_at=time.time())
     finally:
+        heygen_voice.STOP.check = None
         if provider=='elevenlabs' and kind in ('sample','voice'):
             eleven_api.invalidate_balance()
         try:

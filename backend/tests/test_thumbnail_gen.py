@@ -55,7 +55,8 @@ class ThumbnailTest(unittest.TestCase):
     def test_claude_gets_the_title_wishes_script_and_the_channels_approved_prompts(self):
         refs = thumbnail_gen.references(self.episode)
         text = thumbnail_gen.brief("What If?", "The script.", "big word DRY", self.episode, refs)
-        for part in ('"What If?"', "big word DRY", "The script.", "правий верхній кут порожній", 'thumbnail for "DAY 365"', "Референс кадру 1.png", "тільки самим промптом"):
+        self.assertNotIn("під логотип", text)   # no corner is kept for a logo any more (16 November 2026)
+        for part in ('"What If?"', "big word DRY", "The script.", "правий нижній кут вільний", 'thumbnail for "DAY 365"', "Референс кадру 1.png", "тільки самим промптом"):
             self.assertIn(part, text)
         self.assertNotIn("Побажання автора", thumbnail_gen.brief("T", "S", "  ", self.episode, refs))
         drawing = thumbnail_gen.drawing("A neon close-up.", "Превью v2.png")
@@ -349,6 +350,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual(thumbnail_gen.state(self.project['id'])['status'], 'done')
         return work, calls
 
+    @patch('thumbnail_logo.ENABLED', True)   # the switched-off logo code, kept for older pictures
     def test_a_corner_logo_is_laid_by_the_studio_and_an_edit_starts_from_the_picture_without_it(self):
         # user, 15 November 2026: «прикріпляти до прев'ю логотип… в якому углі я хочу»
         work, calls = self.logo_run({'enabled': True, 'position': 'top-right', 'size': 10})
@@ -366,6 +368,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual(command[command.index('-i') + 1], str(work / 'Без логотипа' / 'Превью v1.png'))
         self.assertEqual(Image.open(work / 'Превью v2.png').getpixel((300, 15)), (255, 255, 0))
 
+    @patch('thumbnail_logo.ENABLED', True)   # the switched-off logo code, kept for older pictures
     def test_an_auto_logo_goes_to_codex_with_the_prompt_and_is_not_laid_again(self):
         work, calls = self.logo_run({'enabled': True, 'position': 'auto', 'size': 14})
         command, sent = calls[-1]
@@ -374,6 +377,7 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual(Image.open(work / 'Превью v1.png').getpixel((300, 15)), (0, 0, 255))
         self.assertFalse((work / 'Без логотипа').exists())
 
+    @patch('thumbnail_logo.ENABLED', True)   # the switched-off logo code, kept for older pictures
     def test_without_the_box_or_without_a_logo_file_nothing_changes(self):
         work, calls = self.logo_run({'enabled': False, 'position': 'top-right'})
         self.assertNotIn('LOGO', calls[-1][1])
@@ -382,6 +386,11 @@ class ThumbnailTest(unittest.TestCase):
         with patch.object(channel_branding, 'logo_path', return_value=Path(self.tmp.name) / 'none.png'):
             self.assertIsNone(thumbnail_logo.spec({'channel_id': 'c' * 16}, {'thumbnail_logo': {'enabled': True}}))
 
+    def test_the_thumbnail_logo_is_switched_off_for_every_channel(self):
+        import thumbnail_logo
+        self.assertIsNone(thumbnail_logo.spec({'channel_id': 'c' * 16}, {'thumbnail_logo': {'enabled': True, 'position': 'top-right'}}))
+
+    @patch('thumbnail_logo.ENABLED', True)   # the switched-off logo code, kept for older pictures
     def test_every_drawing_keeps_the_youtube_duration_corner_empty(self):
         # user, 15 November 2026: «правий нижній кут не нада там нічого розміщати… там ютуб показує довжину відео»
         work, calls = self.logo_run({'enabled': True, 'position': 'auto'})
@@ -392,6 +401,7 @@ class ThumbnailTest(unittest.TestCase):
         import languages
         self.assertIn('bottom-right corner free', languages.thumbnail_brief('pl', 'T'))
 
+    @patch('thumbnail_logo.ENABLED', True)   # the switched-off logo code, kept for older pictures
     def test_a_logo_never_goes_to_the_bottom_right_corner(self):
         import thumbnail_logo, channel_branding
         self.assertNotIn('bottom-right', thumbnail_logo.POSITIONS)

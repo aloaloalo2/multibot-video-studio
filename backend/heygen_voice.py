@@ -13,6 +13,24 @@ import job_timing
 API='https://api.heygen.com'
 DEFAULT_MODEL='heygen-voice-1-turbo-free'
 _SYNTHESIS_SLOT=threading.Lock()
+SLOT_WAIT=600   # longest wait in the queue for HeyGen before a phrase gives up with a clear note
+
+
+class synthesis_slot:
+    """One phrase at a time goes to HeyGen. The queue listens for «Зупинити» and never waits forever: four voicings
+    froze for 20 minutes behind one stuck phrase and could not be cancelled (user, 16 November 2026: «ру також завис»)."""
+    def __enter__(self):
+        waited=0.0
+        while not _SYNTHESIS_SLOT.acquire(timeout=1):
+            stop_point()
+            waited+=1
+            if waited>=SLOT_WAIT:
+                raise store.StudioError('HeyGen довго зайнятий іншою фразою. Зроблені фрази збережено, продовжіть пізніше')
+        return self
+
+    def __exit__(self,*exc):
+        _SYNTHESIS_SLOT.release()
+        return False
 VOICE_READY_TIMEOUT=120
 MODELS={'heygen-voice-1':'HeyGen Voice 1','heygen-voice-1-turbo':'HeyGen Voice Turbo','heygen-voice-1-turbo-free':'HeyGen Voice Turbo Free','starfish':'Starfish'}
 RATES={'heygen-voice-1':30/1000000,'heygen-voice-1-turbo':15/1000000,'heygen-voice-1-turbo-free':0}
@@ -192,7 +210,7 @@ def synthesize(settings):
         'text':settings['text'],'language':settings['language'],
         'output_format':{'encoding':'mp3','sample_rate_hertz':44100,'bitrate_bps':128000}}
     if voice.get('mode')!='professional':payload['expressiveness_boost']=settings.get('heygen_expressiveness',.5)
-    with _SYNTHESIS_SLOT:
+    with synthesis_slot():
         result=call('/v3/models/audio/tts',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')
@@ -216,7 +234,7 @@ def synthesize_starfish(settings):
              'speed':settings.get('heygen_starfish_speed',1.),'language':settings['language'],
              'input_type':'ssml' if settings.get('heygen_starfish_ssml') else 'text'}
     if settings.get('heygen_starfish_locale'):payload['locale']=settings['heygen_starfish_locale']
-    with _SYNTHESIS_SLOT:
+    with synthesis_slot():
         result=call('/v3/voices/speech',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')
