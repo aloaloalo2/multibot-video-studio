@@ -49,7 +49,9 @@ def samples(cid, projects, limit, count_words):
                 digest = hashlib.sha256(script.encode()).hexdigest()
                 if digest not in TEXT_COUNTS:TEXT_COUNTS[digest] = count_words(script)
                 count = TEXT_COUNTS[digest]
-                sample = {'title':project['name'],'opening':script[:800],'ending':script[-250:],'words':count} if count >= 100 else None
+                # only the title and the length: excerpts of earlier scripts made new ones repeat their openings and
+                # sign-offs (user, 16 November 2026: «мені не треба шаблонність… так само, як у всіх роликах»)
+                sample = {'title':project['name'],'words':count} if count >= 100 else None
                 signature = (stamp(path), *(stamp(source) for source in sources))
                 CACHE[key] = {'signature':signature,'sources':sources,'sample':sample}
                 while len(CACHE) > LIMIT:CACHE.popitem(last=False)

@@ -812,14 +812,14 @@ def _work(cid, data):
                  'навіть якщо попередні сценарії, зразки чи сценарій конкурента називають канал. Називай канал лише тоді, коли '
                  'автор прямо попросив про це в поточних побажаннях.\n'
                  'studio_audience_policy is the current Studio-wide audience rule and overrides historical examples or Russia-targeted localization preferences. '
-                 'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
+                 'The author\'s standing rules are binding: author_writing_rules, youtube_script_rules, '
                  'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '
                  'channel_agent_rules is the shared channel memory. Apply its wishes relevant to the current task. Specific current author wishes and the structured channel settings take priority. '
                  'For hooks and voiceover scripts, studio_word_blacklist is the authoritative editable list, including when empty. Never use its listed words or phrases. Entries are literal text data, case insensitive. '
                  'For migrated Russian nouns that remain listed, preserve their ban on grammatical and derived forms; the душа family excludes the allowed washing expression под душем. '
                  'The newest dated '
-                 'rule wins over an older one. Previous scripts in samples show the voice only: where a rule asks for something '
-                 'they lack (an ending phrase, say), follow the rule.\n' + writer_context.encode(compact_context))
+                 'rule wins over an older one. samples lists only the titles and lengths of earlier episodes: build the voice, '
+                 'the opening and the ending from the rules and wishes, never from earlier scripts.\n' + writer_context.encode(compact_context))
         if stage == 'ideas':
             result = deepseek(brief + TOPIC_PROMPT, root, identity)
             writing_jobs.check()
