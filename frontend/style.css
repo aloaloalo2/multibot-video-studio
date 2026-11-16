@@ -2858,7 +2858,7 @@ select option{background:#232327;color:#f1f1f2}
 /* how many episodes of the channel are at work, grey, left of the spinner (user, 15 November 2026) */
 .channel-select .channel-count{margin-left:auto;font-size:11px;line-height:1;color:#8a8e99;font-variant-numeric:tabular-nums}
 .channel-select .channel-count[hidden]{display:none}
-.channel-select .channel-count:not([hidden])+.channel-busy{margin-left:6px}
+.channel-select .channel-count:not([hidden])+.channel-busy{margin-left:-4px}   /* the number sits close to its spinner (user, 16 November 2026) */
 /* a channel whose episodes are still loading after a click (user, 15 November 2026) */
 #channel-list.channel-opening .channel-item.active .channel-select{cursor:progress;opacity:.75}
 /* the Claude button by «Увесь ролик»: the author asks for any change to the film (user, 15 November 2026) */
