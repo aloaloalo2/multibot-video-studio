@@ -2940,3 +2940,5 @@ select option{background:#232327;color:#f1f1f2}
 .episode-director-note{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .episode-director-check.small{width:13px;height:13px;color:#6bf2ae}
 .episode-director-dot{opacity:.6}
+/* «План готовий» and its grey note on one line (user, 16 November 2026) */
+.episode-director.done .episode-director-line{flex-direction:row;align-items:center;gap:12px;margin:0}
