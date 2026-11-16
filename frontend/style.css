@@ -1023,6 +1023,9 @@ button.subtle,.sidebar-add,.project-item,
 .production-control{width:30px;height:30px;display:inline-grid;place-items:center;padding:6px;flex-shrink:0;border:1px solid #4b4f50;border-radius:50%;color:#a9e4c7;background:#272d2a;cursor:pointer;transition:background .15s,box-shadow .15s}
 .production-control svg{width:16px;height:16px}.production-control:hover{background:#385849;box-shadow:0 0 0 3px #72e0aa25}.production-control:disabled{opacity:.45;cursor:wait}
 .project-production-control{position:absolute;right:82px;bottom:11px;z-index:3}.project-card:has(.project-production-control) .project-making{right:122px}
+/* the narration and the director pause with the same round button (user, 16 November 2026) */
+.project-stage-control{position:absolute;right:82px;bottom:11px;z-index:3}.project-card:has(.project-stage-control) .project-making{right:122px}
+.project-card.exporting .project-stage-control{display:none}
 .overview-projects .project-making{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .project-making .project-export-progress>span{background:linear-gradient(90deg,#3fbf86,#9dffd0);box-shadow:0 0 10px #6bf2ae99}
 .project-card.producing{border-color:#6bf2ae66}
@@ -2893,3 +2896,8 @@ select option{background:#232327;color:#f1f1f2}
 #channel-settings-panel-avatar .avatar-hero-card{display:flex;align-items:center;justify-content:flex-start;gap:16px;padding:14px 16px;margin-bottom:10px;border:1px solid #33343a;border-radius:12px;background:#1f2024}
 #channel-settings-panel-avatar .avatar-hero-card .hero-reference-pick{order:-1}
 #channel-settings-panel-avatar .avatar-hero-card h3{font-size:14px;margin:0 0 4px}
+/* a channel's name is one line: what does not fit fades out under its count and spinner (user, 16 November 2026) */
+.channel-select .channel-name{white-space:nowrap;overflow:hidden;text-overflow:clip;overflow-wrap:normal;
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 44px),transparent)}
+/* the one-line name must not widen the item past the list: its rounded highlight was cut on the right */
+#channel-list .channel-item{min-width:0;max-width:100%;box-sizing:border-box}

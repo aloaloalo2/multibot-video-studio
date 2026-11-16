@@ -241,17 +241,21 @@ function renderProjectActivities(){
     const key=JSON.stringify(activity??null);
     if(card._activityKey===key)continue;
     card._activityKey=key;
-    for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop'))previous.remove();
+    for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop,.project-stage-control'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):'Режисер складає план'}</span></span>`;
-    // the card stops a narration too, the same as the stop inside the project (user, 15 November 2026)
+    // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
-    if(narrating||['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
-      const label=narrating?'Зупинити озвучку':'Зупинити роботу Opus';
+    if(narrating||kind==='режисура'){
+      const control=productionControl(card.dataset.projectId,true);control.classList.add('project-stage-control');
+      if(narrating&&activity?.cancelling)control.disabled=true;
+      card.append(control);
+    }else if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
+      const label='Зупинити роботу Opus';
       const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title=label;stop.setAttribute('aria-label',label);
       if(narrating&&activity?.cancelling)stop.disabled=true;
-      stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(narrating?`/api/projects/${card.dataset.projectId}/narration/cancel`:`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',narrating?{}:{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
+      stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
       (card.querySelector('.project-actions')||card).append(stop);
     }
     open.insertBefore(box,open.querySelector('.project-meta'));
@@ -556,7 +560,8 @@ function renderOverview() {
 
 function productionControl(id,working){
   const button=document.createElement('button');button.type='button';button.className='production-control';
-  const label=working?'Призупинити створення кадрів':'Продовжити створення кадрів';button.title=label;button.setAttribute('aria-label',label);
+  // one round play-pause for the whole episode: narration, director, «Підготовка» and frames (backend/episode_pause.py)
+  const label=working?'Призупинити роботу над випуском':'Продовжити роботу над випуском';button.title=label;button.setAttribute('aria-label',label);
   button.innerHTML=working?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="4"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
   button.addEventListener('click',async event=>{
     event.stopPropagation();button.disabled=true;button.setAttribute('aria-busy','true');
@@ -567,6 +572,7 @@ function productionControl(id,working){
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
       else if(!state.project)await refreshProjects();
+      if(typeof pollChannelActivity==='function')pollChannelActivity();
     }catch(error){status(error.message,true);button.disabled=false;button.removeAttribute('aria-busy');}
   });
   return button;
@@ -1185,7 +1191,7 @@ function openChannelSettings(channel) {
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('settings-text-font').value,accent_font_family:$('settings-accent-font').value},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('settings-text-font').value,accent_font_family:$('settings-accent-font').value},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),max_sentences_per_scene:Number($('settings-max-sentences').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
       const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});

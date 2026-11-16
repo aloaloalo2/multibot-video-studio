@@ -59,6 +59,9 @@ function updateProjectCard(card,project){
     const label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
     const progress=box.querySelector('[role="progressbar"]');
     if(progress){progress.setAttribute('aria-valuemax',total);progress.setAttribute('aria-valuenow',done);progress.firstElementChild.style.width=`${total?Math.round(done/total*100):0}%`;}
+  }else if(project.episode_paused){
+    // stopped before the frames (narration, director): the card still says it waits for «Продовжити»
+    if(!box||!box.classList.contains('episode-paused')){box?.remove();box=document.createElement('div');box.className='project-making project-production-state stopped episode-paused';box.innerHTML='<span class="project-export-label"><span class="project-production-label">На паузі</span></span>';open.insertBefore(box,meta);}
   }else box?.remove();
   const actionsKey=JSON.stringify([!!project.episode_path,!!project.freeable]);
   if(card._actionsKey!==actionsKey){
@@ -67,7 +70,8 @@ function updateProjectCard(card,project){
     card._actionsKey=actionsKey;delete card._activityKey;
   }
   for(const button of card.querySelectorAll('.project-action'))button.setAttribute('aria-label',`${button.title} «${project.name}»`);
-  const controlKey=working?'working':stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))?'paused':'';
+  // a paused episode keeps its round play button whatever was stopped (backend/episode_pause.py)
+  const controlKey=working?'working':project.episode_paused||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))?'paused':'';
   if(card._controlKey!==controlKey){
     card.querySelector('.project-production-control')?.remove();
     if(controlKey){const control=productionControl(project.id,working);control.classList.add('project-production-control');card.append(control);}

@@ -277,8 +277,9 @@ def worker(job, script, save_job):
                     if hashlib.sha256(author_script.encode()).hexdigest()!=job['author_script_sha256'] and author_script!=script:
                         report['status']='script_changed'
                 if report["status"] == "matched":
-                    progress(99, "waiting_director")
-                    director.wait_idle(project["id"])
+                    if project["id"] in director.ACTIVE:
+                        progress(99, "waiting_director")
+                        director.wait_idle(project["id"])
                     timings = {**report["timings"], "audio_sha256": audio_hash, "asset_id": audio["id"]}
                     project = store.load_project(project["id"])
                     generated = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],

@@ -2,6 +2,7 @@
 import math
 import shutil
 import planner
+import script_timing
 import threading
 import time
 import uuid
@@ -232,8 +233,7 @@ def start(project,text,resume=False):
     try:
         script_record=store.save_voice_script(pid,text,source='narration')
         # with a script the director starts now, on its times estimated from the text (backend/script_timing.py)
-        import script_timing
-        threading.Thread(target=script_timing.start,args=(pid,),daemon=True).start()
+        script_timing.start_soon(pid)
         threading.Thread(target=run,args=(project,text,settings.copy(),ref.copy(),entries,job),daemon=True).start()
     except Exception as error:
         release_heygen(pid)

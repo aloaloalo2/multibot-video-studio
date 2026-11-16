@@ -29,6 +29,7 @@ ESTIMATE = "script_estimate"
 GAP = 0.06            # share of a sentence's span left as a pause before the next one
 HISTORY = 8           # the channel's latest voiced episodes that set its pace
 LOCK = threading.Lock()
+_THREAD = threading.Thread   # its own reference: the director's start stays apart from the narration's worker
 
 
 def letters(text: str) -> int:
@@ -132,11 +133,18 @@ def wanted(project: dict) -> str | None:
     return script
 
 
+def start_soon(pid: str) -> None:
+    _THREAD(target=start, args=(pid,), daemon=True).start()
+
+
 def start(pid: str) -> bool:
     """Called when a narration starts: attach the estimated plan and start the director on it. Never raises."""
     try:
         import director
+        import episode_pause
         import production
+        if episode_pause.paused(pid):
+            return False
         with LOCK:
             project = store.load_project(pid)
             script = wanted(project)

@@ -249,7 +249,8 @@ function confirmRestart(id){
 // The director shows only while it works, or when it needs the author: a stop, a pause on the limit, a changed text.
 function fillDirectorLine(box){
   clearTimeout(directorTimer);
-  const id=state.project.id,run=directorRuns[id],synced=!!state.project.production?.plan_ready;
+  // a director on the script while the voice is made shows here too (backend/script_timing.py)
+  const id=state.project.id,run=directorRuns[id],synced=!!state.project.production?.plan_ready||state.plan?.timing?.status==='script_estimate'||run?.reason==='script';
   box.replaceChildren();box.hidden=true;box.classList.remove('working');
   if(!synced||!run)return;
   const line=(text,note)=>{const head=document.createElement('p');head.className='episode-director-line';head.innerHTML=`<strong>${esc(text)}</strong>${note?`<span>${esc(note)}</span>`:''}`;box.append(head);box.hidden=false;};
@@ -258,11 +259,15 @@ function fillDirectorLine(box){
     // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
-    line('Режисер складає план',took.trim());
+    line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',(run.reason==='script'?'Поки йде озвучка. ':'')+took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
     // Keep the current stage compact; the work log stays out of the main plan.
 
     directorTimer=setTimeout(()=>pollDirector(id),8000);
+  }else if(run.status==='paused'){
+    // the episode's pause stopped the director; the same round button goes on (backend/episode_pause.py)
+    line('Режисер на паузі','Кругла кнопка продовжить роботу: режисер складе план заново.');
+    box.append(productionControl(id,false));
   }else if(run.creation_error&&!state.project.production_request){
     line('Не вдалося продовжити створення відео',run.creation_error);
     box.append(stepButton('Продовжити створення',async()=>{try{await startVideoCreation(id,{asset_id:voiceAssetId(state.plan,state.project)});await selectProject(id,{view:'editor'});}catch(error){status(error.message,true);}}));

@@ -82,3 +82,38 @@ class RetimeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EarlyKitTest(unittest.TestCase):
+    def run_kit(self, estimated, needed=True):
+        from unittest.mock import patch
+        import director
+        import production
+        import production_kit
+        plan = {"timing": {"status": script_timing.ESTIMATE if estimated else "audio_synced"},
+                "frames": [{"number": n} for n in range(1, 13)]}
+        data = {"effort": "high", "model": "claude-opus-5-5"}
+        with patch.object(director.store, "load_project", return_value={"id": "p"}), \
+             patch.object(director.store, "load_project_plan", return_value=plan), \
+             patch.object(director.store, "project_dir", return_value=__import__("pathlib").Path("/tmp")), \
+             patch.object(director, "animated", return_value=True), \
+             patch.object(director, "save"), \
+             patch.object(production_kit, "needed", return_value=needed), \
+             patch.object(production_kit, "seed"), patch.object(production_kit, "record_cost"), \
+             patch.object(production_kit, "ready", return_value=True), \
+             patch.object(production, "kit_brief", return_value="kit"), \
+             patch.object(director, "claude", return_value=(0, {"total_cost_usd": 1.5})) as claude:
+            director.early_kit("p", "cli", data)
+        return claude, data
+
+    def test_the_kit_follows_a_direction_on_the_script(self):
+        claude, data = self.run_kit(True)
+        claude.assert_called_once()
+        self.assertEqual(data["kit"], "ready")
+        self.assertNotIn("stage", data)
+
+    def test_a_direction_on_the_voice_leaves_the_kit_to_production(self):
+        claude, data = self.run_kit(False)
+        claude.assert_not_called()
+        claude, data = self.run_kit(True, needed=False)
+        claude.assert_not_called()

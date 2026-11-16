@@ -206,6 +206,16 @@ def accents_step(project: dict, tools: str) -> str:
    Перевір результат на фінальному аркуші партії разом із рештою шарів."""
 
 
+def kit_brief(project: dict, frames: int) -> str:
+    """The kit session's whole brief: the film's recurring material with the channel's rules (production_kit.py)."""
+    import engine_index
+    import production_kit
+    return (production_kit.brief(project, list(range(1, frames + 1)))
+            + montage_context.rules(project, production=True) + mixed_assets_step(project)
+            + director.animation_style(project) + director.channel_memory(project)
+            + engine_index.brief() + engine_index.project_index(project) + montage_context.COMMANDS)
+
+
 def mixed_assets_step(project: dict) -> str:
     import animation_preferences
     return animation_preferences.instructions(project)
@@ -513,11 +523,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             # The film's shared kit is made once before the parallel sessions (production_kit.py).
             current = store.load_project(pid)
             production_kit.seed(current)
-            import engine_index
-            kit_text = (production_kit.brief(current, list(range(1, int(request['frames']) + 1)))
-                        + montage_context.rules(current, production=True) + mixed_assets_step(current)
-                        + director.animation_style(current) + director.channel_memory(current)
-                        + engine_index.brief() + engine_index.project_index(current) + montage_context.COMMANDS)
+            kit_text = kit_brief(current, int(request['frames']))
             if cancelled():raise InterruptedError('Створення кадрів зупинено')
             if deadline - time.monotonic() <= 0:raise subprocess.TimeoutExpired(str(cli), TIMEOUT)
             # the card and the plan read «Підготовка» while the kit is made (user, 15 November 2026)
@@ -772,6 +778,9 @@ def pause(pid: str, note: str | None = None) -> dict:
 
 def start_from_plan(pid: str) -> dict:
     """Continue the author's one-step creation once direction is complete, without replaying frame jobs."""
+    import episode_pause
+    if episode_pause.note(pid, "production"):
+        return store.load_project(pid)   # the episode is paused: «Продовжити» starts the frames
     with store.LOCK:
         project = store.load_project(pid)
         plan = store.load_project_plan(pid) or {}

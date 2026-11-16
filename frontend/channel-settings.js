@@ -159,6 +159,10 @@ function organizeChannelSettings(channel){
   const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);quick.after(automation);automation.after(directorGroup);
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
+  // the voiced script goes on to the translations and their voices by itself (user, 16 November 2026)
+  const translationAuto=document.createElement('div');translationAuto.className='settings-voice-automation settings-translation-automation';
+  translationAuto.innerHTML=`<label><input type="checkbox" id="settings-auto-translation" ${channel.settings?.auto_translation?'checked':''}><span><strong>Автопереклад</strong><small>Після готової озвучки сценарію</small></span></label><label><input type="checkbox" id="settings-auto-translation-voice" ${channel.settings?.auto_translation_voice?'checked':''}><span><strong>Автоозвучка перекладу</strong><small>Після перевіреного перекладу</small></span></label>`;
+  {const head=panels.languages.querySelector(':scope>.channel-settings-panel-head');if(head)head.after(translationAuto);else panels.languages.prepend(translationAuto);}
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   // «Логотип на прев’ю» is switched off (user, 16 November 2026: «цю функцію варто прибрати»): its fields stay hidden
   // in the page so the saved value goes back unchanged, but nothing shows it

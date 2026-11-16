@@ -3153,6 +3153,13 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
             with LOCK:
                 ACTIVE.discard(job["key"])
                 CANCEL.discard(job["key"])
+            if kind == 'translate' and job.get('status') == 'done':
+                try:   # the channel's auto voice of a translation (episode_automation.after_translation)
+                    import episode_automation
+                    episode_automation.after_translation(pid, code, job)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
 
 
 def cancel(pid: str, slot: str | None = None) -> dict:

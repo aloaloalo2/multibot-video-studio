@@ -502,6 +502,8 @@ def _run(pid: str, cli: Path) -> None:
         else:
             data.update(status="done", summary=(answer.get("result") or "").strip()[-2000:], frames=len(plan.get("frames") or []))
         data.update(cost_usd=answer.get("total_cost_usd"), session_id=answer.get("session_id"), turns=answer.get("num_turns"), **spent(answer, data["started_at"]))
+        if data.get("status") == "done" and not cancelled_now(pid):
+            early_kit(pid, cli, data)
     except subprocess.TimeoutExpired:
         data.update(status="failed", error="Режисура не вклалася в 3 години")
     except (OSError, store.StudioError) as error:
@@ -527,6 +529,42 @@ def _run(pid: str, cli: Path) -> None:
                 # (razgon_sound.py; a photo channel's film is not due and is left alone). A direction on times from the
                 # script waits for the voice: retime() lays them then.
                 razgon_sound.start(pid, "director")
+
+
+def cancelled_now(pid: str) -> bool:
+    return str(activity_path(pid, "director")) in CANCELLED
+
+
+def early_kit(pid: str, cli: Path, data: dict) -> None:
+    """An animated direction made on the script while the voice is made: the film's kit («Підготовка») follows it at once
+    (user, 16 November 2026: «інколи озвучка йде 30 хвилин»). The kit session is the one production would start first
+    (production_kit.py); once story/kit.json is ready, production skips that stage. Whisper's times wait for this run
+    (wait_idle), which costs nothing: the frames could not start before the kit anyway. A kit that fails is made by
+    production as before."""
+    import script_timing
+    project = store.load_project(pid)
+    if not animated(project) or not script_timing.estimated(store.load_project_plan(pid)):
+        return
+    try:
+        import production
+        import production_kit
+        import production_sessions
+        frames = [f["number"] for f in (store.load_project_plan(pid) or {}).get("frames", [])]
+        if not frames or not production_kit.needed(project, frames):
+            return
+        production_kit.seed(project)
+        data["stage"] = "kit"
+        save(pid, data)
+        with production_sessions.STUDIO_SESSIONS:
+            _, answer = claude(cli, production.kit_brief(project, len(frames)), store.project_dir(pid) / "director-kit.log",
+                               activity_path(pid, "director"), TIMEOUT, effort=data["effort"], model=data["model"],
+                               env={"VIDEOKEY_PROJECT_ID": pid, "VIDEOKEY_STUDIO_URL": "http://127.0.0.1:8770"})
+        production_kit.record_cost(store.load_project(pid), answer)
+        data.update(kit="ready" if production_kit.ready(store.load_project(pid)) else "failed", kit_cost_usd=answer.get("total_cost_usd"))
+    except Exception as error:   # the direction stays done; production makes the kit itself
+        data.update(kit="failed", kit_error=str(error)[:400])
+    finally:
+        data.pop("stage", None)
 
 
 def start(pid: str, reason: str = "voice") -> dict:
@@ -576,6 +614,9 @@ def start(pid: str, reason: str = "voice") -> dict:
 
 def after_voice(pid: str, create_video=False) -> None:
     """Called when a voice analysis has been applied to the plan: the episode goes on to direction by itself."""
+    import episode_pause
+    if episode_pause.note(pid, "after_voice", create_video=bool(create_video)):
+        return   # the episode is paused: «Продовжити» takes this step
     try:
         if store.project_plan_mode(store.load_project(pid)) == "direct":
             return
