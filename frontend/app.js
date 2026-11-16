@@ -266,7 +266,11 @@ function renderProjectActivities(){
 
 // «Перекладаємо · DE, FR», «Озвучуємо переклад · PL»: the card says which language work runs (user, 15 November 2026)
 function languageActivityLabel(jobs){
-  const list=Array.isArray(jobs)?jobs:[],codes=kinds=>[...new Set(list.filter(job=>kinds.includes(job.kind)).map(job=>String(job.code||'').toUpperCase()).filter(Boolean))].join(', ');
+  let list=Array.isArray(jobs)?jobs:[];
+  // a HeyGen voicing waiting its turn (user, 16 November 2026: «хай пише озвучка в черзі… в перекладах теж»)
+  if(list.length&&list.every(job=>job.queued)){const first=list[0];return 'HeyGen · у черзі'+(first.code?' · '+String(first.code).toUpperCase():'')+(first.queue_position?' · '+first.queue_position:'');}
+  list=list.filter(job=>!job.queued);
+  const codes=kinds=>[...new Set(list.filter(job=>kinds.includes(job.kind)).map(job=>String(job.code||'').toUpperCase()).filter(Boolean))].join(', ');
   for(const [kinds,label] of [[['translate'],'Перекладаємо'],[['voice','sample','save-audio','refit'],'Озвучуємо переклад'],[['thumbnail'],'Прев’ю перекладу']]){
     const found=codes(kinds);if(found||list.some(job=>kinds.includes(job.kind)))return label+(found?' · '+found:'');
   }

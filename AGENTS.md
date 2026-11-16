@@ -1164,3 +1164,7 @@ The user: «зроби це все, щоб зекономити нам токе�
 ## Головний герой каналу всюди, 15 листопада 2026 року
 
 Користувач: «можна прикріпити не тільки квадратне фото… студія має мати доступ до головного героя не тільки для превью а і для картинок або анімацій… для превью… не точ в точ такий самий герой якбудто його вирізали вставили… ракурс емоція і т д унікальні». Фото героя може мати будь-яку форму: сервер не обрізає його, і налаштування показують його цілим. Агент кадрів і режисер отримують `channel_hero.production_rule`: шлях до фото і `codex_image.py --ref`, коли кадр показує ведучого чи головного героя. На прев’ю, картинках і PNG анімації героя щоразу малюють заново, у новій позі, ракурсі, з новою емоцією, жестом, одягом і світлом. Копія чи вирізка з фото заборонена. В анімаційному каналі героя малюють у стилі анімації, впізнаваним за рисами обличчя, зачіскою й віком.
+
+## HeyGen narrations wait in one queue (16 November 2026)
+
+The user: «хай встають в чергу просто хай пише озвучка в черзі… в перекладах теж». Whole HeyGen narrations, the original's (`project_narration.wait_heygen`) and each translation's (`languages._worker`, kind `voice`, not `cache_only`), take HeyGen one at a time, first come first served (`heygen_voice.queue_wait`/`queue_leave`, `JOB_QUEUE`). A waiting narration shows «HeyGen · у черзі · N» (N narrations ahead) on its card and in the language card, and its stop button leaves the queue. Samples do not queue; they share only the phrase slot. Tests: `backend/tests/test_heygen_queue.py`, `test_narration_concurrency.py`.

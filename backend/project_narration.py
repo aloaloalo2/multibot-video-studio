@@ -16,20 +16,35 @@ import channel_voice_lab as lab
 
 LOCK = threading.Lock()
 ACTIVE = set()
-HEYGEN_QUEUE = []
-HEYGEN_TURN = threading.Condition()
+import heygen_voice as _heygen
+HEYGEN_QUEUE = _heygen.JOB_QUEUE   # the shared queue, kept under its old names
+HEYGEN_TURN = _heygen.JOB_TURN
+
+
+def heygen_owner(pid):
+    return 'narration:'+pid
 
 
 def release_heygen(pid):
-    with HEYGEN_TURN:
-        if pid in HEYGEN_QUEUE:HEYGEN_QUEUE.remove(pid)
-        HEYGEN_TURN.notify_all()
+    import heygen_voice
+    heygen_voice.queue_leave(heygen_owner(pid))
 
 
 def wait_heygen(pid, job):
-    """HeyGen narrations no longer wait for each other: they share heygen_voice's per-minute budget instead (user,
-    14 November 2026: the one-project queue left a whole narration idle while the limit had room)."""
+    """A HeyGen narration waits its turn behind the others (original and translations alike, heygen_voice.queue_wait),
+    showing «HeyGen · у черзі · N» meanwhile; a stop leaves the queue."""
+    import heygen_voice
     if (root(pid)/'cancel').exists():raise Cancelled()
+    def stop_check():
+        if (root(pid)/'cancel').exists():raise Cancelled()
+    def waiting(ahead):
+        job.update(status='queued', queue_position=ahead)
+        store.atomic_json(root(pid)/'job.json', job)
+    heygen_voice.STOP.check=stop_check
+    try:
+        heygen_voice.queue_wait(heygen_owner(pid), waiting)
+    finally:
+        heygen_voice.STOP.check=None
     job.update(status='running', queue_position=None)
 
 
@@ -171,8 +186,9 @@ def snapshot(pid):
     if job.get('status') in {'queued','running','cancelling'} and pid not in ACTIVE:
         job={**job,'status':'failed','error':'Роботу перервано. Готові фрази залишилися в кеші.'}
     if job.get('status')=='queued':
-        with HEYGEN_TURN:
-            if pid in HEYGEN_QUEUE:job['queue_position']=max(1,HEYGEN_QUEUE.index(pid))
+        import heygen_voice
+        ahead=heygen_voice.queue_ahead(heygen_owner(pid))
+        if ahead:job['queue_position']=ahead
     if pid in ACTIVE and (root(pid)/'cancel').exists():job={**job,'status':'cancelling'}
     revision=store.read_json(root(pid)/'revision-job.json',{}) or {}
     if pid in ACTIVE and revision.get('status') in {'queued','running','cancelling'}:

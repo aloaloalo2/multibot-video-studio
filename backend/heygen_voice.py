@@ -34,6 +34,44 @@ class synthesis_slot:
     def __exit__(self,*exc):
         _SYNTHESIS_SLOT.release()
         return False
+# Whole narrations, the original's and every translation's, take HeyGen in turn, first come first served (user,
+# 16 November 2026: «хай встають в чергу просто хай пише озвучка в черзі… в перекладах теж»). Ten narrations at once
+# used to fight for the one phrase slot in random order, and a phrase that waited over SLOT_WAIT stopped its narration.
+# Samples do not queue: they are short and share only the phrase slot.
+JOB_QUEUE=[]
+JOB_TURN=threading.Condition()
+
+
+def queue_wait(owner,waiting=None):
+    """Wait until `owner` is first in the narration queue. `waiting(ahead)` hears how many narrations are ahead whenever
+    that changes; a stop (STOP.check) leaves the queue at once."""
+    with JOB_TURN:
+        if owner not in JOB_QUEUE:JOB_QUEUE.append(owner)
+    told=None
+    try:
+        while True:
+            with JOB_TURN:ahead=JOB_QUEUE.index(owner)
+            if ahead==0:return
+            if waiting and ahead!=told:waiting(ahead)
+            told=ahead
+            stop_point()
+            with JOB_TURN:JOB_TURN.wait(1)
+    except BaseException:
+        queue_leave(owner);raise
+
+
+def queue_leave(owner):
+    with JOB_TURN:
+        if owner in JOB_QUEUE:JOB_QUEUE.remove(owner)
+        JOB_TURN.notify_all()
+
+
+def queue_ahead(owner):
+    """How many narrations wait before `owner`, or None when it is not queued."""
+    with JOB_TURN:
+        return JOB_QUEUE.index(owner) if owner in JOB_QUEUE else None
+
+
 VOICE_READY_TIMEOUT=120
 MODELS={'heygen-voice-1':'HeyGen Voice 1','heygen-voice-1-turbo':'HeyGen Voice Turbo','heygen-voice-1-turbo-free':'HeyGen Voice Turbo Free','starfish':'Starfish'}
 RATES={'heygen-voice-1':30/1000000,'heygen-voice-1-turbo':15/1000000,'heygen-voice-1-turbo-free':0}

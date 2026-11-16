@@ -88,8 +88,8 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
         return [store.read_json(narration.root(pid) / 'job.json') for pid in self.projects]
 
-    def test_heygen_projects_run_together_with_isolated_settings(self):
-        # No project waits for another (user, 14 November 2026); heygen_voice keeps them under the per-minute limit.
+    def test_heygen_projects_wait_their_turn_with_isolated_settings(self):
+        # One HeyGen narration at a time, first come first served, the next one «у черзі» (user, 16 November 2026)
         entered=threading.Event();order=[]
         def synthesize(settings):
             order.append(settings['text']);entered.set()
@@ -101,15 +101,16 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertTrue(entered.wait(5))
             self.settings['heygen_expressiveness']=.8
             narration.start(second,'Second project sentence.')
-            self.assertEqual(narration.snapshot(second['id'])['job']['status'],'running')
             for _ in range(500):
-                if paid.call_count==2:break
+                if narration.snapshot(second['id'])['job']['status']=='queued':break
                 time.sleep(.01)
-            self.assertEqual(paid.call_count,2)   # the second began while the first was still being voiced
+            job=narration.snapshot(second['id'])['job']
+            self.assertEqual((job['status'],job['queue_position']),('queued',1))
+            self.assertEqual(paid.call_count,1)   # the second waits while the first is voiced
             self.release.set();jobs=self.finished()
         self.assertEqual([j['status'] for j in jobs],['done','done'])
         self.assertEqual([j['render_settings']['heygen_expressiveness'] for j in jobs],[.5,.8])
-        self.assertEqual(sorted(order),['First project sentence.','Second project sentence.'])
+        self.assertEqual(order,['First project sentence.','Second project sentence.'])
         self.assertEqual(narration.HEYGEN_QUEUE,[])
 
     def test_queued_heygen_project_can_be_cancelled_without_paid_work(self):

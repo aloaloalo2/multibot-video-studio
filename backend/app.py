@@ -891,7 +891,8 @@ def studio_work_status(exports):
             try:
                 state = languages.load_state(item['project_id'])
                 jobs = [job for job in (state.get('jobs') or {}).values() if isinstance(job, dict) and job.get('status') == 'running']
-                item['jobs'] = [{'kind': job.get('kind'), 'code': job.get('code')} for job in jobs]
+                item['jobs'] = [{'kind': job.get('kind'), 'code': job.get('code'),
+                                 **({'queued': True, 'queue_position': job.get('queue_position')} if job.get('queued') else {})} for job in jobs]
             except (OSError, ValueError, store.StudioError):
                 item['jobs'] = []
         elif item.get('kind') == 'режисура':

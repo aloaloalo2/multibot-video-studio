@@ -3113,7 +3113,19 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
         if job.get('key') in CANCEL:
             raise Stop()
     heygen_voice.STOP.check = stop_check
+    queued = None
     try:
+        if kind == "voice" and provider == "heygen" and not job.get("cache_only"):
+            # a whole HeyGen voicing waits its turn behind the other narrations, original ones too
+            # (heygen_voice.queue_wait; user, 16 November 2026: «в перекладах теж»)
+            queued = f"language:{pid}:{code}"
+            def waiting(ahead):
+                job.update(queued=True, queue_position=ahead, stage=f"HeyGen · у черзі · {ahead}")
+                put_job(pid, job)
+            heygen_voice.queue_wait(queued, waiting)
+            if job.get("queued"):
+                job.update(queued=False, queue_position=None, stage="Починаємо")
+                put_job(pid, job)
         if kind in ("sample", "voice"):
             job["cost_unit"] = "credits" if provider == "elevenlabs" else "usd"
             WORK[kind](pid, code, provider, job)
@@ -3151,6 +3163,8 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
         job.update(status='failed', error='Обробку мови зупинено через помилку студії. Готові результати збережено.', finished_at=time.time())
     finally:
         heygen_voice.STOP.check = None
+        if queued:
+            heygen_voice.queue_leave(queued)
         if provider=='elevenlabs' and kind in ('sample','voice'):
             eleven_api.invalidate_balance()
         try:
