@@ -86,6 +86,29 @@ def label(pid: str) -> str | None:
     return None   # the frames: the card shows their own stopped line
 
 
+def started_by_hand(pid: str, part: str, kind: str | None = None, code: str | None = None) -> None:
+    """The author started paused work again by hand (a language's «Озвучити» on a paused episode, 16 November 2026: the
+    card kept «Озвучка перекладу · PL» with play while PL was voiced). That work leaves the pause; an empty pause ends."""
+    with LOCK:
+        data = paused(pid)
+        if data is None:
+            return
+        stopped = data.get("stopped") or {}
+        if part == "languages":
+            left = [item for item in stopped.get("languages", []) if not (item.get("kind") == kind and item.get("code") == code)]
+            if left:
+                stopped["languages"] = left
+            else:
+                stopped.pop("languages", None)
+        else:
+            stopped.pop(part, None)
+        data["stopped"] = stopped
+        if not stopped and not data.get("pending"):
+            path(pid).unlink(missing_ok=True)
+        else:
+            store.atomic_json(path(pid), data)
+
+
 def note(pid: str, step: str, **details) -> bool:
     """A step that would start now on a paused episode waits for resume(). True when the episode is paused."""
     with LOCK:

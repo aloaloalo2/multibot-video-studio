@@ -21,7 +21,8 @@ function renderLangView(){
   if(typeof updateLanguageCostBadge==='function')updateLanguageCostBadge(project?.id);
   section.hidden=!open;
   if(!open){langCloseOriginal();langVoiceDialog?.dialog.close();langResultDialog?.dialog.close();langThumbnailDialog?.dialog.close();if(section.childElementCount){section.querySelectorAll('.lang-alignment').forEach(block=>block.dispose?.());section.querySelectorAll('audio').forEach(audio=>audio.pause());section.replaceChildren();}delete section.dataset.project;return;}
-  if(section.dataset.project!==project.id){section.dataset.project=project.id;section.innerHTML=`<div class="lang-view"><div class="lang-head"><h1>${langTranslateIcon}Мови</h1><p class="lang-lead">Завантаження…</p></div></div>`;loadLangs(project.id);}
+  // another episode: the previous one's jobs must not spin this one's «Мови» tab until its own state arrives
+  if(section.dataset.project!==project.id){langData=null;section.dataset.project=project.id;section.innerHTML=`<div class="lang-view"><div class="lang-head"><h1>${langTranslateIcon}Мови</h1><p class="lang-lead">Завантаження…</p></div></div>`;loadLangs(project.id);}
 }
 
 async function loadLangs(id){

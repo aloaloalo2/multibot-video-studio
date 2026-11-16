@@ -72,8 +72,11 @@ async function api(path, method='GET', body) {
   if(method==='GET'&&typeof sharedStudioRead==='function')return sharedStudioRead(path,()=>apiTransport(path,method,body));
   if(method!=='GET'&&typeof invalidateStudioReads==='function')invalidateStudioReads(path);
   try{return await apiTransport(path,method,body);}
-  finally{if(method!=='GET'&&typeof invalidateStudioReads==='function')invalidateStudioReads(path);}
+  finally{if(method!=='GET'){if(typeof invalidateStudioReads==='function')invalidateStudioReads(path);soonChannelActivity();}}
 }
+// a started or stopped job shows on the channel and the card at once, not at the next 5-second read
+let soonActivityTimer=null;
+function soonChannelActivity(){clearTimeout(soonActivityTimer);soonActivityTimer=setTimeout(()=>{if(channelActivityPending)soonChannelActivity();else pollChannelActivity();},400);}
 async function apiTransport(path, method='GET', body) {
   const options = {method, headers: {'Accept':'application/json'}};
   if (body !== undefined) {options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body);}
@@ -235,7 +238,7 @@ function renderProjectActivities(){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
     // a paused episode reads «На паузі» at once, while the phrase being made still finishes in the background
-    const working=!!open&&!card._project?.episode_paused&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови'].includes(kind);
+    const working=!!open&&!card._project?.episode_paused&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови','музика й ефекти','агент студії'].includes(kind);   // every kind that spins the channel spins its card too
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
@@ -245,7 +248,7 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop,.project-stage-control'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='музика й ефекти'?'Музика й ефекти':kind==='агент студії'?'Агент працює':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':'Режисер складає план'}</span></span>`;
     // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
     const pausableLanguage=kind==='мови'&&(activity?.jobs||[]).some(job=>['translate','voice'].includes(job.kind));
@@ -255,7 +258,8 @@ function renderProjectActivities(){
       card.append(control);
     }else if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
       const label='Зупинити роботу Opus';
-      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.textContent='■';stop.title=label;stop.setAttribute('aria-label',label);
+      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>';   // a line icon like the card's other buttons, not the glyph ■
+      stop.title=label;stop.setAttribute('aria-label',label);
       if(narrating&&activity?.cancelling)stop.disabled=true;
       stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
       (card.querySelector('.project-actions')||card).append(stop);

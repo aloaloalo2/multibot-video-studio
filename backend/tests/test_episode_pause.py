@@ -13,6 +13,15 @@ class EpisodePauseTest(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    def test_work_started_by_hand_leaves_the_pause(self):
+        store = episode_pause.store
+        store.atomic_json(episode_pause.path("p"), {"stopped": {"languages": [{"kind": "voice", "code": "pl"}, {"kind": "voice", "code": "es"}]}, "pending": {}})
+        episode_pause.started_by_hand("p", "languages", kind="voice", code="pl")
+        self.assertEqual(episode_pause.paused("p")["stopped"]["languages"], [{"kind": "voice", "code": "es"}])
+        episode_pause.started_by_hand("p", "languages", kind="voice", code="es")
+        self.assertIsNone(episode_pause.paused("p"))   # nothing left: the episode is no longer paused
+        episode_pause.started_by_hand("p", "languages", kind="voice", code="es")   # no pause: nothing happens
+
     def test_a_step_on_a_paused_episode_waits_and_runs_on_resume(self):
         self.assertFalse(episode_pause.note("p", "production"))   # not paused: the step goes on
         episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {}, "pending": {}})

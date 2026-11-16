@@ -1667,7 +1667,9 @@ class Handler(BaseHTTPRequestHandler):
             if mode == 'cancel':return self.json_response(project_narration.cancel(pid))
             if mode == 'source':return self.json_response(project_narration.select_source(pid, body.get('source')))
             if mode == 'quote':return self.json_response(project_narration.spec(project, body.get('text'))[3])
-            return self.json_response(project_narration.start(project, body.get('text'), body.get('resume') is True), 202)
+            result = project_narration.start(project, body.get('text'), body.get('resume') is True)
+            episode_pause.started_by_hand(project['id'], "narration")
+            return self.json_response(result, 202)
 
         match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
         if match and method == 'POST':
@@ -1784,7 +1786,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(languages.remove_own_voice(pid, code))
             if action == "text":
                 return self.json_response(languages.save_text(pid, code, body.get("text"), body.get("title")))
-            return self.json_response({"job": languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False),cache_only=body.get('cache_only',False),use_hero=body.get('use_hero'),base=body.get('base'),expected_provider=body.get('expected_provider'))}, 202)
+            job = languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False),cache_only=body.get('cache_only',False),use_hero=body.get('use_hero'),base=body.get('base'),expected_provider=body.get('expected_provider'))
+            episode_pause.started_by_hand(pid, "languages", kind=action, code=code)   # no more «paused» on the card
+            return self.json_response({"job": job}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))
