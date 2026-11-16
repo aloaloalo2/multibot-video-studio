@@ -284,7 +284,12 @@ def prepare(args) -> None:
     studio.call("POST", f"/api/projects/{project['id']}/razgon-link", {"razgon_root": str(root), "project": str(target)})
 
     shots_path = target / "story" / "shots.json"
-    if not shots_path.is_file():
+    # the default shots (one per studio frame, nothing drawn yet) follow the frames again: after the real voice they
+    # must not keep times estimated from the script; a shot table anyone wrote stays as it is
+    existing = read_json(shots_path) if shots_path.is_file() else None
+    default = isinstance(existing, dict) and existing.get("shots") and all(
+        str(s.get("notes", "")).startswith("studio frame ") and not s.get("scene") for s in existing["shots"])
+    if not shots_path.is_file() or default:
         shots = [{"id": f"f{f['number']:03d}s01", "start": f["start"], "end": f["end"], "line": " ".join(f["sentences"]),
                   "scene": "", "set": "", "bars": None, "in": {"type": "cut"}, "sfx": [], "amb": None, "notes": "studio frame %d" % f["number"]}
                  for f in frames]

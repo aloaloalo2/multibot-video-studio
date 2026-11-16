@@ -2531,7 +2531,7 @@ def request_production(pid: str, frames) -> dict:
         animated = project_animated(project)
         if animated and plan.get("frame_source") != planner.DIRECTOR_FRAME_SOURCE:
             raise StudioError("Кадри ще не розбиті режисером. Дочекайтеся режисури")
-        if animated:
+        if True:   # an animated film or a photo channel's Razgon frames
             import director
             if pid in director.RETIMING or director.workspace_estimated(pid):
                 # frames drawn on shots still timed from the script would miss the voice

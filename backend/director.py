@@ -552,13 +552,21 @@ def early_kit(pid: str, cli: Path, data: dict) -> None:
     production as before."""
     import script_timing
     project = store.load_project(pid)
-    if not animated(project) or not script_timing.estimated(store.load_project_plan(pid)):
+    plan = store.load_project_plan(pid) or {}
+    if not script_timing.estimated(plan):
         return
     try:
         import production
         import production_kit
         import production_sessions
-        frames = [f["number"] for f in (store.load_project_plan(pid) or {}).get("frames", [])]
+        frames = [f["number"] for f in plan.get("frames", [])]
+        razgon_frames = sum(1 for f in plan.get("frames", []) if f.get("format") == "razgon_2d")
+        if not animated(project) and razgon_frames >= production_kit.MIN_FRAMES and production_kit.razgon(project) is None:
+            # a photo channel's film with Razgon frames (user, 16 November 2026: «а тут не було підготовки?… зроби»):
+            # its Razgon workspace is made now, on the times from the script; the real voice refreshes it later
+            subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "razgon_bridge.py"), "prepare", "--project-id", pid],
+                           capture_output=True, text=True, timeout=300, cwd=str(store.APP_ROOT))
+            project = store.load_project(pid)
         if not frames or not production_kit.needed(project, frames):
             return
         production_kit.seed(project)
@@ -637,7 +645,7 @@ def after_voice(pid: str, create_video=False) -> None:
             return
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
-        if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale") and animated(store.load_project(pid)):
+        if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
             if retime_soon(pid, create_video):
                 return   # the thread moves the shots onto the voice, then the music and the frames
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
@@ -697,7 +705,12 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
             plan = store.load_project_plan(pid) or {}
             if (plan.get("timing") or {}).get("status") != "audio_synced":
                 return   # the voice is not timed yet: the recognition calls again
-            if retime(pid):
+            if not animated(store.load_project(pid)):
+                # a photo channel's Razgon workspace: the real voice, words and frames; no direction to move
+                if refresh_workspace(pid) and create_video:
+                    import production
+                    production.start_from_plan(pid)
+            elif retime(pid):
                 if create_video:
                     import production
                     production.start_from_plan(pid)
@@ -711,6 +724,23 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
                 RETIMING.discard(pid)
     threading.Thread(target=work, daemon=True).start()
     return True
+
+
+def refresh_workspace(pid: str) -> bool:
+    """A photo channel's Razgon workspace made on the script (the early kit) takes the real voice (razgon_bridge prepare).
+    Its default shots follow the frames again; the kit stays. True when done."""
+    try:
+        result = subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "razgon_bridge.py"), "prepare", "--project-id", pid],
+                                capture_output=True, text=True, timeout=RETIME_TIMEOUT, cwd=str(store.APP_ROOT))
+    except (OSError, subprocess.SubprocessError) as exc:
+        error = str(exc)
+    else:
+        if result.returncode == 0 and not workspace_estimated(pid):
+            return True
+        error = (result.stderr or result.stdout).strip()[-600:]
+    store.atomic_json(store.project_dir(pid) / "director-retime-error.json", {"error": error, "at": time.time()})
+    print(f"[director] workspace refresh {pid} failed: {error}", file=sys.stderr, flush=True)
+    return False
 
 
 def retime(pid: str) -> bool:

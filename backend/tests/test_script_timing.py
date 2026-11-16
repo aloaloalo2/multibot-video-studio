@@ -152,6 +152,8 @@ class RetimeSoonTest(unittest.TestCase):
                 return True
         with patch.object(director, "workspace_estimated", return_value=True), \
              patch.object(director.store, "load_project_plan", return_value={"timing": {"status": "audio_synced"}}), \
+             patch.object(director.store, "load_project", return_value={"id": "p"}), \
+             patch.object(director, "animated", return_value=True), \
              patch.object(director, "retime", side_effect=retime), \
              patch.object(production, "start_from_plan", side_effect=lambda pid: done.set()) as frames:
             with director.store.LOCK:   # a caller holding the lock returns at once instead of waiting for the move
@@ -166,3 +168,23 @@ class RetimeSoonTest(unittest.TestCase):
         import director
         with patch.object(director, "workspace_estimated", return_value=False):
             self.assertFalse(director.retime_soon("p"))
+
+
+class PhotoChannelWorkspaceTest(unittest.TestCase):
+    def test_a_photo_channels_workspace_takes_the_real_voice_then_the_frames(self):
+        import threading
+        from unittest.mock import patch
+        import director
+        import production
+        done = threading.Event()
+        with patch.object(director, "workspace_estimated", return_value=True), \
+             patch.object(director.store, "load_project_plan", return_value={"timing": {"status": "audio_synced"}}), \
+             patch.object(director.store, "load_project", return_value={"id": "p"}), \
+             patch.object(director, "animated", return_value=False), \
+             patch.object(director, "retime") as retime, \
+             patch.object(director, "refresh_workspace", return_value=True) as refresh, \
+             patch.object(production, "start_from_plan", side_effect=lambda pid: done.set()):
+            self.assertTrue(director.retime_soon("p", create_video=True))
+            self.assertTrue(done.wait(5))
+        refresh.assert_called_once_with("p")
+        retime.assert_not_called()   # a photo channel has no direction to move
