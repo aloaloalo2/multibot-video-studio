@@ -442,6 +442,12 @@ class Context:
                 channel = {}
         self.text_look = project.get("settings", {}).get("text_look") or channel.get("text_look", "varied")
         self.animation_style = channel.get("animation") or project.get("settings", {}).get("animation") or {}
+        # the channel's montage fonts (settings «Шрифти монтажу»): text frames take the main one, captions and accents the
+        # accent one (user, 16 November 2026: «перевір, чи воно дійсно його використовує»). A font set on the project
+        # itself still wins, as before.
+        fonts = channel.get("typography") or {}
+        self.text_font = project.get("font_family") or fonts.get("font_family") or "Golos"
+        self.accent_font = project.get("font_family") or fonts.get("accent_font_family") or fonts.get("font_family") or "Montserrat"
 
     @cached_property
     def accent_color(self):
@@ -628,7 +634,7 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
     if style not in STYLES:
         raise OpError("Стиль підпису: plain, card, tag, yellow або white")
     color, card, shadow = STYLES[style]
-    family, weight = spec.get("font_family") or ctx.project.get("font_family") or "Montserrat", int(spec.get("font_weight", 700))
+    family, weight = spec.get("font_family") or getattr(ctx, "accent_font", None) or ctx.project.get("font_family") or "Montserrat", int(spec.get("font_weight", 700))
     centre = _point(ctx, picture, spec, "at", mid)
     width, height, size = float(spec.get("width", 520)), float(spec.get("height", 320)), int(spec.get("font_size", 44))
     box, stub = _text_layout(ctx, words, width, height, size, family, weight, start)
@@ -857,7 +863,7 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
     tokens = _timed_tokens(ctx, planned)
     background = _text_background(ctx, number)
     if tokens and len(tokens) == len(payload["text"].split()):
-        family = ctx.project.get("font_family") or "Golos"
+        family = getattr(ctx, "text_font", None) or ctx.project.get("font_family") or "Golos"
         fps = int(ctx.project.get("fps") or 25)
         # Keep the background on the plan boundary. Anchor the text layer to the video
         # frame containing its first word, with word timings relative to that layer.

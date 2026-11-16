@@ -2906,3 +2906,25 @@ select option{background:#232327;color:#f1f1f2}
 .project-card.episode-paused-card .project-created-group{display:none}
 /* the bottom shade of a card ~10% darker, so the line under the cover reads (user, 16 November 2026) */
 .overview-projects .project-card.has-cover:after{background:linear-gradient(180deg,rgba(8,8,11,0) 48%,rgba(8,8,11,.65) 74%,rgba(8,8,11,.98) 100%)}
+
+/* a sample of each montage font, drawn in it (user, 16 November 2026) */
+.settings-font-preview{display:block;margin-top:8px;padding:10px 12px;border:1px solid #ffffff0f;border-radius:var(--ui-radius-field,10px);background:#ffffff06;color:#f1f1f2;font-size:20px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the round play-pause inside the project: on the voice line and the director's line (user, 16 November 2026) */
+.episode-voice .production-control{flex:none}
+.episode-director:has(.episode-director-control){position:relative;padding-right:64px}.episode-director-control{position:absolute;top:50%;right:16px;transform:translateY(-50%)}
+/* the round pause sits in the voice row, just before the open/close arrow */
+.animation-production .episode-voice:has(>.production-control){grid-template-columns:30px minmax(0,1fr) auto minmax(32px,auto) auto}
+.animation-production .episode-voice:has(>.production-control) .episode-voice-toggle{grid-column:4}
+.animation-production .episode-voice:has(>.production-control)>button:not(.episode-voice-toggle):not(.production-control){grid-column:5}
+.animation-production .episode-voice>button.production-control.production-control{grid-column:3;grid-row:1;align-self:start;justify-self:end}
+/* cancel an export with the same round button (card and project header) */
+.project-export-stop{position:absolute;right:82px;bottom:11px;z-index:3}
+.project-card.exporting .project-export-stop{display:inline-grid}
+.export-stop-control{color:#f5c04a;background:#2d2a22;border-color:#5a4d2c}.export-stop-control:hover{background:#4a3f22;box-shadow:0 0 0 3px #f5c04a25}
+#export-stop{margin-right:8px}
+.overview-projects .project-card:has(.project-export-stop) .project-export-state{right:122px}
+/* the progress line always runs to the card's right edge, also when a round button moves the label left
+   (user, 16 November 2026: «лінія… не до кінця») */
+.overview-projects .project-card:has(.project-production-control) .project-making .project-export-progress,
+.overview-projects .project-card:has(.project-stage-control) .project-making .project-export-progress,
+.overview-projects .project-card:has(.project-export-stop) .project-export-state .project-export-progress{right:-122px}

@@ -188,6 +188,13 @@ function organizeChannelSettings(channel){
   fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
   fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';
   fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
+  // a sample under each choice, drawn in the chosen font (user, 16 November 2026: «щоб я бачив шрифт, як він виглядає»)
+  for(const [id,sample,weight] of [['settings-text-font','Головна думка кадру · 2026',700],['settings-accent-font','Підпис до кадру · 37%',600]]){
+    const select=fontSection.querySelector('#'+id),preview=document.createElement('span');
+    preview.className='settings-font-preview';preview.textContent=sample;preview.style.fontWeight=weight;
+    const paint=()=>{preview.style.fontFamily=`${JSON.stringify(select.value)}, sans-serif`;preview.title=select.value;};
+    select.addEventListener('change',paint);select.after(preview);paint();
+  }
   if(typeof channelTransitionSection==='function')panels.projects.append(channelTransitionSection(channel));
   // «Шрифти монтажу» folds like every other block (user, 14 November 2026)
   const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group regular-only';   // Razgon draws an animated film's text itself (user, 15 November 2026)

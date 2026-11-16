@@ -37,6 +37,9 @@ def stopped_narration(pid: str) -> dict | None:
     if pid in project_narration.ACTIVE:
         return None
     job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+    # a record left «running» by a crash of the studio is a stopped narration too (no worker runs it any more)
+    if job.get("status") in {"queued", "running", "cancelling"}:
+        job = {**job, "status": "failed"}
     # stopped by the author, or by HeyGen's limit: either way play goes on from the phrases already made
     if job.get("status") not in {"cancelled", "failed"} or not job.get("script") or int(job.get("completed") or 0) >= int(job.get("total") or 0):
         return None

@@ -233,6 +233,8 @@ function fillVoiceLine(box){
       box.querySelector('.episode-voice-icon').innerHTML=exportSpinner;
       box.querySelector('.episode-voice-state').textContent=job.status==='queued'?'Озвучка в черзі HeyGen':job.status==='cancelling'?'Зупиняємо озвучку…':'Озвучка'+percent;
       for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
+      // the same round pause as on the card (user, 16 November 2026: «на проекті також нема плей, паузи»)
+      if(job.status!=='cancelling'&&!box.querySelector('.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,true));
       clearTimeout(box._narrationTimer);box._narrationTimer=setTimeout(()=>{if(box.isConnected&&box.dataset.narrationToken===token)fillVoiceLine(box);},5000);
     }).catch(()=>{});
   }
@@ -285,6 +287,7 @@ function fillDirectorLine(box){
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
     line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
+    {const pause=productionControl(id,true);pause.classList.add('episode-director-control');box.append(pause);}
 
     // Keep the current stage compact; the work log stays out of the main plan.
 
@@ -292,7 +295,7 @@ function fillDirectorLine(box){
   }else if(run.status==='paused'){
     // the episode's pause stopped the director; the same round button goes on (backend/episode_pause.py)
     line('Режисер на паузі','Кругла кнопка продовжить роботу: режисер складе план заново.');
-    box.append(productionControl(id,false));
+    {const play=productionControl(id,false);play.classList.add('episode-director-control');box.append(play);}
   }else if(run.creation_error&&!state.project.production_request){
     line('Не вдалося продовжити створення відео',run.creation_error);
     box.append(stepButton('Продовжити створення',async()=>{try{await startVideoCreation(id,{asset_id:voiceAssetId(state.plan,state.project)});await selectProject(id,{view:'editor'});}catch(error){status(error.message,true);}}));

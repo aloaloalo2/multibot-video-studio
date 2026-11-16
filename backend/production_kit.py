@@ -50,7 +50,14 @@ def ready(project: dict) -> bool:
 def needed(project: dict, frames: list[int]) -> bool:
     """A kit pays off when several sessions draw Razgon frames of this film side by side."""
     plan = store.load_project_plan(project['id']) or {}
-    razgon_frames = [f['number'] for f in plan.get('frames', []) if f.get('format') == 'razgon_2d' and f['number'] in set(frames)]
+    # only frames still to draw count: a run that goes on after a pause or a crash hands over the whole film, while most
+    # of it is made (16 November 2026: «Підготовка» again for 5 missing frames of 96)
+    try:
+        made = set(store.made_frames(project, plan))
+    except (store.StudioError, OSError, ValueError, KeyError, TypeError):
+        made = set()
+    razgon_frames = [f['number'] for f in plan.get('frames', []) if f.get('format') == 'razgon_2d'
+                     and f['number'] in set(frames) and f['number'] not in made]
     return len(razgon_frames) >= MIN_FRAMES and razgon(project) is not None and not ready(project)
 
 

@@ -587,6 +587,21 @@ function productionControl(id,working){
   return button;
 }
 
+// the same round button as the pause, with a square: an export can only be cancelled (user, 16 November 2026: «експорт
+// йде, відсоток є, але кнопки немає»)
+function exportStopControl(jobId,onDone){
+  const button=document.createElement('button');button.type='button';button.className='production-control export-stop-control';
+  button.title='Скасувати експорт';button.setAttribute('aria-label','Скасувати експорт');
+  button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>';
+  button.addEventListener('click',async event=>{
+    event.stopPropagation();event.preventDefault();
+    if(!confirm('Скасувати експорт? Зроблене до цього моменту не збережеться.'))return;
+    button.disabled=true;
+    try{const result=await api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`,'POST',{});onDone?.(result.job);}
+    catch(error){status(error.message,true);button.disabled=false;}
+  });
+  return button;
+}
 function exportQueueLabel(job){return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
@@ -597,6 +612,9 @@ function updateOverviewExports(){
     for(const button of card.querySelectorAll('.project-action, .project-title-rename'))button.disabled=active&&!button.classList.contains('thumbnail');
     if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
     const box=card.querySelector('.project-export-state');box.hidden=!active;
+    let stop=card.querySelector('.project-export-stop');
+    if(!active||job.status==='cancelling'){stop?.remove();}
+    else if(!stop||stop.dataset.job!==job.id){stop?.remove();stop=exportStopControl(job.id,updated=>{if(updated)state.projectExports.set(updated.project_id,updated);updateOverviewExports();pollOverviewExports(true);});stop.classList.add('project-export-stop');stop.dataset.job=job.id;card.append(stop);}
     if(!active){if(box._exportMarkup){box.replaceChildren();delete box._exportMarkup;}continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
     const label=job.status==='cancelling'?'Зупиняємо експорт':job.status==='queued'?exportQueueLabel(job):'Експорт';
@@ -1360,6 +1378,9 @@ function updateExportLock(){
   const exportPercent=Math.max(0,Math.min(100,Math.round(state.job?.progress || 0)));
   $('export-open').innerHTML=locked?`${exportSpinner}<span>${state.job.status==='queued'?exportQueueLabel(state.job):`Експорт триває · ${exportPercent}%`}</span>`:exportButtonLabel;
   $('export-open').classList.toggle('export-busy',locked);$('export-open').setAttribute('aria-busy',String(locked));
+  {let stop=document.getElementById('export-stop');const live=locked&&state.job&&state.job.status!=='cancelling';
+   if(!live)stop?.remove();
+   else if(!stop||stop.dataset.job!==state.job.id){stop?.remove();stop=exportStopControl(state.job.id,async updated=>{if(updated)state.job=updated;updateExportLock();await pollJob();});stop.id='export-stop';stop.dataset.job=state.job.id;$('export-open').before(stop);}}
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
   if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
   else if(state.project)$('save-state').textContent='';

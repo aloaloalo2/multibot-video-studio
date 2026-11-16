@@ -848,8 +848,11 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
         made = not request.get('repair_frames') and drawn(pid, int(request.get("frames") or 0))
     except (store.StudioError, OSError, ValueError, KeyError):
         made = False
+    # a run cut by a restart or a crash goes on from its frames with the round play, like a pause (16 November 2026:
+    # «Кадри 1–96 не вдалися» while 91 of 96 were made)
     fields = {"status": "done", "error": None} if made else {
-        "status": "failed", "error": "Агент зупинився, не закінчивши кадри. Виберіть кадри й почніть ще раз."}
+        "status": "failed", "paused": True, "paused_by": "restart",
+        "error": "Студію перезапущено посеред роботи. Готові кадри збережені, натисніть «Продовжити»."}
     if made and request.get('quality_version') == 1:
         review = production_quality.check(project, request)
         fields.update(quality=review, status='done' if review['passed'] else 'failed',
