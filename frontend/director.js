@@ -318,8 +318,8 @@ function fillDirectorLine(box){
     // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
     // режисер галочка, він закінчив свою роботу, і що він очікує»)
     const frames=(state.plan?.frames||[]).length;
-    const kit=run.kit==='ready'?' «Підготовка» готова.':'';
-    line('Режисер склав план за сценарієм',`${frames?`${frames} ${planFrameWord(frames)}.`:''}${kit}`.trim());
+    const note=[frames?`${frames} ${planFrameWord(frames)}`:'',run.kit==='ready'?'«Підготовка» завершена':''].filter(Boolean).join(' · ');
+    line('План готовий',note);
     box.classList.add('done');
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin','<svg class="episode-director-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
   }else if(state.plan?.director_stale){
