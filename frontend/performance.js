@@ -42,7 +42,7 @@ function performanceRows(data){
     if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost.push(span);row.lost_runs++;}else row.active.push(span);
     row.running||=run.status==='running';groups.set(workflow,row);
   }
-  for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);delete row.active;delete row.lost;}
+  for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);row.spans=row.active;delete row.active;delete row.lost;}
   // the longest process on top (user, 15 November 2026)
   return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
 }
@@ -88,7 +88,9 @@ function performanceMarkup(data){
   const main=rows.filter(row=>row.active_ms>=60000),small=rows.filter(row=>row.active_ms<60000);
   let total=0,approximate=false,unknown=false;
   for(const row of rows){const cost=performanceCost(row.cost);if(row.cost?.recorded){total+=cost.amount||0;approximate||=!!cost.approximate;unknown||=!!cost.unknown;}}
-  const time=rows.filter(row=>!performanceParallel.has(row.workflow)).reduce((sum,row)=>sum+row.active_ms,0),lost=rows.reduce((sum,row)=>sum+row.lost_ms,0),smallTime=small.reduce((sum,row)=>sum+row.active_ms,0);
+  // «Разом» is the time from start to end: the narration and the plan made side by side count once
+  // (user, 16 November 2026: «в разом записано якбудто воно працювало окремо»)
+  const time=performanceSpan(rows.filter(row=>!performanceParallel.has(row.workflow)).flatMap(row=>row.spans||[])),lost=rows.reduce((sum,row)=>sum+row.lost_ms,0),smallTime=small.reduce((sum,row)=>sum+row.active_ms,0);
   const head='<div class="performance-columns" role="row"><span role="columnheader">Процес</span><span role="columnheader" title="Час вдалих запусків без черг і пауз. Паралельні процеси можуть виконуватись одночасно.">Час</span><span role="columnheader">Витрати</span></div>';
   return `<div class="performance-table" role="table" aria-label="Час і витрати за процесами">${head}${main.map(line).join('')}</div>`
     +(small.length?`<details class="performance-small"><summary><span>Менше хвилини · ${small.length}</span><span class="performance-duration">${esc(performanceTime(smallTime))}</span></summary><div class="performance-table" role="table" aria-label="Короткі процеси">${small.map(line).join('')}</div></details>`:'')
