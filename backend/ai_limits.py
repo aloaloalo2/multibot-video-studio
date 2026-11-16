@@ -184,7 +184,14 @@ def codex_usage(home=None, now=None):
         used=window.get('used_percent')
         resets=window.get('reset_at')
         if type(used) not in (int,float) or not 0<=used<=100 or type(resets) not in (int,float) or resets<=now:return None
-        return {**_view((used/100,float(resets),now),now),'source':'account','stale':False}
+        result={**_view((used/100,float(resets),now),now),'source':'account','stale':False}
+        # the weekly window too: the grey track of the indicator shows what is left of the week (user, 16 November 2026:
+        # «недільний ліміт теж враховував для кодексу»)
+        week=(data.get('rate_limit') or {}).get('secondary_window') or {}
+        week_used,week_resets=week.get('used_percent'),week.get('reset_at')
+        if type(week_used) in (int,float) and 0<=week_used<=100 and type(week_resets) in (int,float) and week_resets>now:
+            result.update(week_left=max(0,min(100,round(100-week_used))),week_resets_at=float(week_resets))
+        return result
     except (OSError,ValueError,TypeError,KeyError,AttributeError):
         return None
 
@@ -219,10 +226,11 @@ def _merge(account, logs, now: float) -> dict:
         # the same window: use only grows, the lower remainder wins. Another window: a fresh account reading wins, since
         # a run log's time is the file's and can move without a new receipt (user, 15 November 2026: the panel showed
         # «на 5 годин лишилось 25%» from the morning's receipts while the account had only its weekly window, 94% left)
+        week = {key: account[key] for key in ('week_left', 'week_resets_at') if key in account}
         if same:
-            return {**logs, 'left': min(logs['left'], account['left'])}
+            return {**logs, 'left': min(logs['left'], account['left']), **week}
         if not fresh:
-            return logs
+            return {**logs, **week}
     return {**account, 'stale': now - (account.get('seen_at') or 0) > ACCOUNT_EVERY + 60}
 
 

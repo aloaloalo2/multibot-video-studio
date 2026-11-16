@@ -2928,3 +2928,9 @@ select option{background:#232327;color:#f1f1f2}
 .overview-projects .project-card:has(.project-production-control) .project-making .project-export-progress,
 .overview-projects .project-card:has(.project-stage-control) .project-making .project-export-progress,
 .overview-projects .project-card:has(.project-export-stop) .project-export-state .project-export-progress{right:-122px}
+/* the week under the 5 hours: grey track = weekly remainder, colour = 5-hour remainder; a weekly limit has no grey */
+.ai-limit-bar{position:relative}
+.ai-limit-bar:has(u){background:none}
+.ai-limit-bar u{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#3a3b42;text-decoration:none}
+.ai-limit-bar i{position:relative}
+.ai-limit-bar.bare{background:none}

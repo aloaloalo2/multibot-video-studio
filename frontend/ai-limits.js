@@ -12,11 +12,18 @@
   const span=item=>item&&item.window==='seven_day'?'на тиждень':'на 5 годин';
   const tone=left=>left<=10?'low':left<=30?'mid':'ok';
 
+  // the grey track is the week (user, 16 November 2026: «недільний ліміт… сірий фон… скільки відсотків залишилось»):
+  // Codex's colour is its 5 hours and the grey under it what is left of its week; a limit that is itself weekly
+  // (Claude) has no grey track at all
+  const weekly=item=>item&&item.window==='seven_day';
+  const week=item=>item&&item.known&&!weekly(item)&&Number.isFinite(item.week_left)?item.week_left:null;
   function ring(kind,item){
-    const el=button.querySelector(`.ring-${kind}`);
+    const el=button.querySelector(`.ring-${kind}`),bg=button.querySelector(`.ring-bg-${kind}`);
     const left=item&&item.known?item.left:0;
     el.style.strokeDasharray=`${left} 100`;
     el.dataset.tone=item&&item.known?tone(left):'none';
+    const rest=week(item);
+    bg.style.strokeDasharray=weekly(item)?'0 100':rest===null?'100 0':`${rest} 100`;
   }
   function line(kind,item){
     if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;
@@ -24,8 +31,8 @@
     const fresh=item.stale?`Останні дані: ${age} хв тому · `:'';
     const when=fresh+(item.reset?'Очікуємо актуальні дані':`Оновиться ${until(item.resets_at)}`);
     return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]} <small>${span(item)}</small></span><b class="ai-limit-left" data-tone="${tone(item.left)}"><small>лишилось</small> ${item.left}%</b>
-      <div class="ai-limit-bar"><i class="${kind}" style="width:${item.left}%"></i></div>
-      <span class="ai-limit-note">${when}</span></div>`;
+      <div class="ai-limit-bar${weekly(item)?' bare':''}">${week(item)!==null?`<u style="width:${week(item)}%"></u>`:''}<i class="${kind}" style="width:${item.left}%"></i></div>
+      <span class="ai-limit-note">${when}${week(item)!==null?` · на тиждень лишилось ${week(item)}%, оновиться ${until(item.week_resets_at)}`:''}</span></div>`;
   }
   function draw(){
     if(!data)return;
