@@ -212,6 +212,20 @@ function fillVoiceLine(box){
   const words=scriptWordCount(script)?`<small class="episode-voice-word-count">${scriptWordCountLabel(script)}</small>`:'';
   box.innerHTML=`<span class="episode-voice-icon">${working?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
   if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
+  // a narration being made shows here with its spinner and percent, and nothing offers another voice meanwhile
+  // (user, 16 November 2026: «тут порядок наведи»); one answer per paint, so two paints never add two lines
+  if(!synced&&!working){
+    const token=String(Date.now()+Math.random());box.dataset.narrationToken=token;
+    api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{
+      if(box.dataset.narrationToken!==token||!box.isConnected||state.project?.id!==id||!['queued','running','cancelling'].includes(job?.status))return;
+      const total=Number(job.total)||0,percent=total?` · ${Math.min(99,Math.floor(100*(Number(job.completed)||0)/total))}%`:'';
+      box.dataset.state='working';
+      box.querySelector('.episode-voice-icon').innerHTML=exportSpinner;
+      box.querySelector('.episode-voice-state').textContent=job.status==='queued'?'Озвучка в черзі HeyGen':job.status==='cancelling'?'Зупиняємо озвучку…':'Озвучка'+percent;
+      for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
+      clearTimeout(box._narrationTimer);box._narrationTimer=setTimeout(()=>{if(box.isConnected&&box.dataset.narrationToken===token)fillVoiceLine(box);},5000);
+    }).catch(()=>{});
+  }
   const stage=box.closest('.episode-voice-block');
   if(stage){
     box.append(voiceToggle(stage,id));
@@ -259,8 +273,9 @@ function fillDirectorLine(box){
     // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
-    line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',(run.reason==='script'?'Поки йде озвучка. ':'')+took.trim());
+    line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
+
     // Keep the current stage compact; the work log stays out of the main plan.
 
     directorTimer=setTimeout(()=>pollDirector(id),8000);
