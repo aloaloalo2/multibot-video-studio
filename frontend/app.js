@@ -507,10 +507,13 @@ function completionMark(project){
   const framesReady=request.status==='done'&&request.frames>0&&request.quality?.passed!==false;
   const stage=exported?'export':framesReady?'frames':project.ready_stage||(project.voice_duration>0?'voice':'draft');
   const label={openings:'Зачини',script:'Сценарій',voice:'Озвучка',plan:'План кадрів',frames:'Кадри',export:'Експорт'}[stage];
-  if(!label)return '<span class="project-created">Новий випуск</span>';
+  // the second, bright check: the episode is on YouTube (its folder got Finder's blue tag; the studio keeps the mark
+  // even when the folder is gone) (user, 16 November 2026)
+  const published=project.published?.at?`<svg class="published-check" viewBox="0 0 20 20" role="img" aria-label="Опубліковано на YouTube"><title>Опубліковано на YouTube</title><path d="m4 10 4 4 8-8"/></svg>`:'';
+  if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
   const age=when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
-  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg></span>`;
+  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}</span>`;
 }
 async function markProjectSeen(id){
   const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;

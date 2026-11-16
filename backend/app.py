@@ -61,6 +61,7 @@ import analysis_jobs
 import razgon_live
 import razgon_export
 import razgon_sound
+import published
 import topics
 import audio_level
 import waveforms
@@ -1361,6 +1362,7 @@ class Handler(BaseHTTPRequestHandler):
                 project = store.listed_project(store.project_dir(item['id']) / 'project.json')
                 item['completion_notice'] = completion_notices.notice(project, receipts)
                 item['ready_stage'] = completion_notices.ready_stage(project, receipts, item)
+                item['published'] = published.check(item)   # the blue Finder tag, kept even without the folder
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:

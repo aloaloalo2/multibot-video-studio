@@ -2886,3 +2886,6 @@ select option{background:#232327;color:#f1f1f2}
 .logo-switch{position:relative}
 .logo-switch input[type=checkbox],.logo-switch input[type=checkbox]:disabled{position:absolute!important;left:0;top:0;opacity:0!important;width:1px!important;height:1px!important;min-width:0!important;margin:0!important;padding:0!important;border:0!important;pointer-events:none}
 .episode-auto-note{margin:6px 0;font-size:12px;color:#b4b7c0}
+/* the second check of a published episode: bright, right next to the first (user, 16 November 2026) */
+.project-completion .published-check{margin-left:-6px;color:#3b9bff;filter:drop-shadow(0 0 4px #3b9bff88)}
+.project-completion .published-check path{stroke:#3b9bff;stroke-width:2.6}
