@@ -42,6 +42,11 @@ CRITERIA = [
     'Outline-like lists with repetitive inline headings',
     'Excessive long dashes',
     'Russia-specific references, examples or audience framing that conflict with the current Studio audience policy',
+    # the author, 16 November 2026: «щоб було видно, що це написав не штучний інтелект»
+    'Narrator scaffolding: announcements of what will be explained or learned, signpost sentences («тут нужна одна поправка», «разберём по порядку»), points numbered aloud',
+    'Chains of transitions through a question the narrator answers at once (at most two in the whole script)',
+    'Theatrical boldness: announcing that a claim is daring or disputed, or that viewers are «not told» something',
+    'Pronouns and short sentences whose subject or object the listener has to guess',
 ]
 EDITOR_MODE = 'author_self_review_v1'
 EDITOR_POLICY = 'slop_check_v3'
