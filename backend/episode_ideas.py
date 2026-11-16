@@ -446,7 +446,8 @@ def auto_opening_enabled(cid):
 # first 90 seconds; user, 16 November 2026: «як гарний приклад зачину для наших роликів»). Ways in, not a template.
 OPENING_CRAFT = (
     '\nПрийоми сильного зачину (з розбору 20 найпопулярніших роликів науково-популярного каналу). Це приклади, а не шаблон: '
-    'кожен із 4 зачинів будуй на іншому прийомі, на тому, що найкраще пасує саме цій темі, і не повторюй той самий хід з ролика в ролик.\n'
+    'кожен із 4 зачинів будуй на іншому прийомі, на тому, що найкраще пасує саме цій темі. Шість прийомів нижче лише стартовий '
+    'набір, а щонайменше 2 з 4 зачинів будуй на власному ході, якого в цьому списку немає.\n'
     '1. Реальна людина в першому реченні («Це …») і два-три конкретні факти її історії, далі поворот, якого глядач не чекав. '
     'Лише справжні відомі історії: людей, дати й цифри не вигадуй.\n'
     '2. Від буденного до несподіваного: питання про звичну річ, коротка відповідь і різкий перехід до теми.\n'
@@ -456,7 +457,52 @@ OPENING_CRAFT = (
     '5. Незручне логічне питання, яке випливає з відомого факту, і глядач хоче почути відповідь.\n'
     '6. Коротка сцена або власна історія ведучого, тільки якщо правила каналу дозволяють особисті історії.\n'
     'Після гачка одним реченням скажи, чому це важливо глядачеві, а далі, якщо вміщується, пообіцяй 2–3 конкретні питання, '
-    'на які відповість ролик. Не починай з «у цьому відео ми поговоримо». Правила й побажання каналу важливіші за ці прийоми.\n')
+    'на які відповість ролик. Не починай з «у цьому відео ми поговоримо». Правила й побажання каналу важливіші за ці прийоми.\n'
+    # the author, 16 November 2026: «чи органічно буде це… Горбунова… Андропова»
+    'Прийом бери лише тоді, коли він звучить природно в голосі й ніші саме цього каналу, і переклади його на тон каналу. '
+    'Для спокійних каналів про здоров\'я старшої аудиторії: без шоку, кримінальних історій і зверхніх звинувачень глядача; '
+    '«тема стосується вас» там звучить як турботливе впізнавання знайомої побутової ситуації, а число чи факт подано '
+    'спокійно. Прийом, який не пасує до каналу, пропусти й придумай свій.\n')
+
+MOVES_KEPT = 12
+
+
+def moves_path(cid):
+    return store.DATA_ROOT / 'channels' / cid / 'opening-moves.json'
+
+
+def remember_move(cid, channel, move, title):
+    """The way in of the opening an episode went on with, so later openings of every channel take other ways
+    (user, 16 November 2026: «максимальна варіативність… різні ніші, і щоб там не було одне те саме»)."""
+    if not isinstance(move, str) or not move.strip():
+        return
+    rows = store.read_json(moves_path(cid), []) or []
+    rows.append({'move': move.strip()[:80], 'title': str(title or '')[:120], 'channel': channel, 'at': time.time()})
+    store.atomic_json(moves_path(cid), rows[-MOVES_KEPT:])
+
+
+def recent_moves(cid):
+    """This channel's last openings and the other channels' latest ones, for the openings brief."""
+    own, others = [], []
+    for path in sorted((store.DATA_ROOT / 'channels').glob('*/opening-moves.json')):
+        rows = store.read_json(path, []) or []
+        if path.parent.name == cid:
+            own = [r['move'] for r in rows[-6:]]
+        else:
+            others += [f"{r['move']} ({r.get('channel') or ''})" for r in rows[-3:]]
+    return own, others
+
+
+def variety_note(cid):
+    own, others = recent_moves(cid)
+    lines = ['Максимальна варіативність: зачини цього каналу не повторюють один одного, а канали студії різних ніш не '
+             'звучать однаково. Кожному зачину дай поле move, 3–6 слів про те, яким ходом він зроблений.']
+    if own:
+        lines.append('Останні зачини цього каналу вже зроблені так, ці ходи не повторюй: ' + '; '.join(own) + '.')
+    if others:
+        lines.append('Нещодавні зачини інших каналів студії, їх теж обходь: ' + '; '.join(others[-12:]) + '.')
+    return '\n'.join(lines) + '\n'
+
 
 OPENING_CRITERIA = ('interest', 'clarity', 'originality', 'low_slop', 'beauty')
 
@@ -865,9 +911,9 @@ def _work(cid, data):
                 data.pop('auto_opening', None)
                 if data.get('previous_openings'):
                     brief += '\nWrite new hooks with different angles from these previous variants: ' + json.dumps(data['previous_openings'], ensure_ascii=False)
-                result = opus(brief + OPENING_CRAFT + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 6 complete sentences. This six-sentence limit overrides older hook-length rules in the reference material. '
+                result = opus(brief + OPENING_CRAFT + variety_note(cid) + '\nWrite exactly 4 meaningfully different opening hooks for this specific topic, each exactly 6 complete sentences. This six-sentence limit overrides older hook-length rules in the reference material. '
                     'Do not write the full script yet. Add uk translation only for hooks in languages other than Ukrainian/Russian. Never translate Russian or Ukrainian hooks; return uk="" for them. '
-                    'Return JSON only {"openings":[{"text":"...","uk":"..."}]}.', root, identity, cid)
+                    'Return JSON only {"openings":[{"text":"...","uk":"...","move":"..."}]}.', root, identity, cid)
                 rows = result.get('openings')
                 writing_jobs.check()
                 if not isinstance(rows, list) or len(rows) != 4 or any(not isinstance(r, dict) or not isinstance(r.get('text'), str) or not r['text'].strip() or not isinstance(r.get('uk', ''), str) for r in rows):
@@ -888,6 +934,13 @@ def _work(cid, data):
                 blocked=word_blacklist.message(data['opening'],ctx.get('studio_word_blacklist',[]))
                 if blocked:raise ValueError('У вибраному зачині є заборонені слова. '+blocked+' Створіть нові зачини.')
                 brief += '\nAUTHOR-SELECTED OPENING (keep verbatim):\n' + data['opening']
+                if not data.get('move_recorded'):
+                    chosen = next((r for r in data.get('openings') or [] if r.get('text') == data['opening']), {})
+                    try:
+                        remember_move(cid, (data.get('context') or {}).get('channel'), chosen.get('move'), (data.get('selected') or {}).get('title'))
+                        data['move_recorded'] = True
+                    except OSError:
+                        pass
                 session={'session_id':str(uuid.uuid4()),'model':director.MODEL,'effort':store.channel_effort({'channel_id':cid}),'api_cost_usd':0}
                 data['author_session']=session
                 save_draft(cid,data,make_current=False)
