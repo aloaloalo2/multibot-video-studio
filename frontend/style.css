@@ -2934,3 +2934,6 @@ select option{background:#232327;color:#f1f1f2}
 .ai-limit-bar u{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#3a3b42;text-decoration:none}
 .ai-limit-bar i{position:relative}
 .ai-limit-bar.bare{background:none}
+/* the director has finished on the script and waits for the voice: a green check */
+.episode-director.done .episode-director-line strong{display:inline-flex;align-items:center;gap:8px}
+.episode-director-check{width:18px;height:18px;flex:none;color:#6bf2ae}

@@ -314,6 +314,14 @@ function fillDirectorLine(box){
     // the subscription limit only pauses the director: once it resets, the same button goes on
     line(run.limit?'Режисер на паузі: закінчився ліміт підписки':'Режисура не вдалася',run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
     box.append(stepButton(run.limit?'Продовжити режисуру':'Спробувати ще раз',()=>startDirector(id),true));
+  }else if(run.status==='done'&&state.plan?.timing?.status==='script_estimate'){
+    // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
+    // режисер галочка, він закінчив свою роботу, і що він очікує»)
+    const frames=(state.plan?.frames||[]).length;
+    const kit=run.kit==='ready'?' «Підготовка» готова.':'';
+    line('Режисер склав план за сценарієм',`${frames?`${frames} ${planFrameWord(frames)}.`:''}${kit} Чекає на озвучку: після неї студія сама підставить точний час.`);
+    box.classList.add('done');
+    box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin','<svg class="episode-director-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
   }else if(state.plan?.director_stale){
     line('Сценарій змінився після режисури','Режисер має заново розбити озвучку на кадри.');
     box.append(stepButton('Запустити режисуру',()=>startDirector(id),true));
@@ -439,6 +447,10 @@ function filmStrip(frames){
 function fillMake(make){
   if(!make)return;
   clearTimeout(productionTimer);
+  // while the voice is made the director's line says all there is to say: no «Створення ролика» block yet
+  // (user, 16 November 2026: «це удали»)
+  const waitingVoice=state.plan?.timing?.status==='script_estimate';
+  make.hidden=waitingVoice;if(waitingVoice)return;
   const id=state.project.id,frames=state.plan?.frames || [],request=state.project.production_request;
   const strip=make.querySelector('.frame-strip'),cells=[...make.querySelectorAll('.frame-strip-cell')],handle=make.querySelector('.frame-strip-handle');
   const max=make.querySelector('.frame-strip-max'),start=make.querySelector('.episode-make-start'),hint=make.querySelector('.episode-make-hint');
@@ -461,7 +473,7 @@ function fillMake(make){
   // a run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up
   const paused=request?.status==='failed'&&(request.paused||request.limit||/hit your \w+ limit/i.test(request.error || ''));
   // Why the button can not start yet, in the author's words; empty when it can.
-  const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):'Спершу додайте озвучку: кадри підлаштуються під неї.')
+  const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):state.plan?.timing?.status==='script_estimate'?'Кадри почнуться, щойно озвучку буде готово й розпізнано.':'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
     :directorAwaited()?'Кадри з’являться, коли режисер розкладе озвучку.'
     :'';

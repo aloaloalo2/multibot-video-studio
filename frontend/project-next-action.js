@@ -69,14 +69,17 @@ function projectNextContext(){
 }
 function updateProjectNextAction(){
   const box=$('project-next-step');if(!box)return;
-  const context=projectNextContext(),visible=!!context&&state.view==='editor';box.hidden=!visible;
+  // while the voice is made on a plan from the script, the director's line says what waits; the header stays empty
+  // (user, 16 November 2026: «удали це» about «Це чернетка. Додайте таймінги…» and a grey «Створити відео»)
+  const waitingVoice=state.plan?.timing?.status==='script_estimate';
+  const context=projectNextContext(),visible=!!context&&state.view==='editor'&&!waitingVoice;box.hidden=!visible;
   if(!visible){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   $('export-open').hidden=true;
   const decision=projectNextAction(context.model),button=$('project-next-action'),reason=$('project-next-reason'),settings=$('project-next-settings');
   const key=['hook','openings'].includes(decision.kind)?'hook':['narrate','file'].includes(decision.kind)?'narrate':['create','frames','upload'].includes(decision.kind)?'create':decision.kind==='export'?'export':'script';
   const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>`;
   if(button.innerHTML!==markup)button.innerHTML=markup;
-  button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=!decision.settings;
+  button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=true;   // the sliders live on the channel's settings button now (user, 16 November 2026)
   settings.dataset.section=decision.settings||'';
   // Keep voice actions beside the file or provider quote as well as in the header.
   const target=['upload','narrate'].includes(decision.kind)?null:context.targets[decision.kind]||null;
