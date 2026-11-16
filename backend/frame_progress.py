@@ -52,6 +52,12 @@ def razgon_project(project: dict) -> Path | None:
     return path if path and path.is_dir() else None
 
 
+def library_project(project: dict) -> str:
+    """The Razgon project to name in «library.py search --project»: its channel's own prop library."""
+    linked = razgon_project(project)
+    return f'"{linked}"' if linked else "<проєкт Razgon>"
+
+
 def drawn(pid: str) -> list[int]:
     razgon = razgon_project(store.load_project(pid))
     if not razgon:

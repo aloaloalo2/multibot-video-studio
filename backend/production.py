@@ -121,7 +121,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
 кладе сама після твоєї роботи, без рендеру.
 1. Сцени шотів, через які проходять кадри {scope} (story/shots.json проєкту Razgon), у scenes/ проєкту. Стиль бери зі збережених налаштувань каналу; герої й декорації зберігають послідовність випусків.
 2. Предмети: якщо в config.json проєкту "assets": false, усе малюєш кодом. Інакше перевір assets/library-picks.json і вже прикріплені предмети.
-   Далі один точний пошук: python3 "{store.razgon_rel()}/tools/library.py" search <слова> --limit 6 --sheet <аркуш.png> і use.
+   Далі один точний пошук у бібліотеці каналу: python3 "{store.razgon_rel()}/tools/library.py" search --project {frame_progress.library_project(project)} <слова> --limit 6 --sheet <аркуш.png> і use.
    Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
    Не переглядай бібліотеку по колу й не генеруй уже вибраний предмет заново.
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім

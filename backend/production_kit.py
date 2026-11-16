@@ -146,6 +146,7 @@ def chunk_note(project: dict) -> str:
 
 def brief(project: dict, frames: list[int]) -> str:
     """The kit session: the whole film's recurring material, no shots."""
+    import frame_progress
     tools = store.razgon_rel()
     app = store.app_rel()
     library = library_dir(project)
@@ -161,7 +162,7 @@ def brief(project: dict, frames: list[int]) -> str:
 2. Випиши, що повторюється: герої, предмети, фони й типові елементи (цінники, підписи, графіки, лічильники, рух камери).
 3. scenes/cast.js: усі постійні герої фільму з їхніми прикметами, однакові в кожному кадрі.
 4. Предмети: збери PNG для всіх кадрів фільму зараз, а не по кадру.
-   Спершу бібліотека, і це обов'язково для КОЖНОГО предмета: python3 "{tools}/tools/library.py" search <слова> --limit 6 --sheet <аркуш.png>,
+   Спершу бібліотека каналу, і це обов'язково для КОЖНОГО предмета: python3 "{tools}/tools/library.py" search --project {frame_progress.library_project(project)} <слова> --limit 6 --sheet <аркуш.png>,
    один погляд на аркуш, і use, якщо там є такий самий або досить схожий предмет. Схожий предмет з бібліотеки краще, ніж новий:
    малюй новий лише тоді, коли в бібліотеці нічого придатного немає. Чого немає, малюй аркушами по 6 через
    python3 "{tools}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait і split_sheet.py --clean 40.

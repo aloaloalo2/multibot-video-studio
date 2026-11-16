@@ -17,13 +17,20 @@
   // (Claude) has no grey track at all
   const weekly=item=>item&&item.window==='seven_day';
   const week=item=>item&&item.known&&!weekly(item)&&Number.isFinite(item.week_left)?item.week_left:null;
+  // every arc hangs centred on the bottom of its ring and shrinks towards it (user, 16 November 2026: «дуга, щоб була
+  // знизу… все по центру донизу»); the ring starts at the top, so the bottom is half way along it
+  function arc(circle,share){
+    const part=Math.max(0,Math.min(100,share));
+    circle.style.strokeDasharray=`${part} ${100-part}`;
+    circle.style.strokeDashoffset=`${part/2-50}`;
+  }
   function ring(kind,item){
     const el=button.querySelector(`.ring-${kind}`),bg=button.querySelector(`.ring-bg-${kind}`);
     const left=item&&item.known?item.left:0;
-    el.style.strokeDasharray=`${left} 100`;
+    arc(el,left);
     el.dataset.tone=item&&item.known?tone(left):'none';
     const rest=week(item);
-    bg.style.strokeDasharray=weekly(item)?'0 100':rest===null?'100 0':`${rest} 100`;
+    arc(bg,weekly(item)?0:rest===null?100:rest);
   }
   function line(kind,item){
     if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;

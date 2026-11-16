@@ -807,6 +807,10 @@ def _work(cid, data):
                  'Автентичний означає: цей текст міг сказати лише цей ведучий і лише про цю тему. Перевір так: якщо в тексті замінити '
                  'тему на іншу, а сенс майже не зміниться, то текст шаблонний. Глядач має чути живу людину, яка думає вголос, сумнівається, '
                  'має улюблені думки й звертається до нього, а не диктора, що читає довідку.\n'
+                 # the author, 16 November 2026: channels get renamed, so a script never names its channel by itself
+                 'Назву каналу в тексті не пиши: заклик підписатися чи поставити лайк звучить без назви («подпишитесь на канал»), '
+                 'навіть якщо попередні сценарії, зразки чи сценарій конкурента називають канал. Називай канал лише тоді, коли '
+                 'автор прямо попросив про це в поточних побажаннях.\n'
                  'studio_audience_policy is the current Studio-wide audience rule and overrides historical examples or Russia-targeted localization preferences. '
                  'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
                  'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '

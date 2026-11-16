@@ -252,6 +252,13 @@ def prepare(args) -> None:
         "title": project["name"], "style": args.style or animation.get("style") or "dusk", "captions": False, "bars": "none",
         "fadeIn": 0.5, "fadeOut": 0.8, "music": {"enabled": True, "gainDb": -17},
         "sfx": {"enabled": True, "gainDb": -6}, "loudness": -14}
+    if fresh and channel.get("id"):
+        # a new project takes props from and gives props to its own channel's library (tools/library.py); projects made
+        # before keep the shared one (user, 16 November 2026: «розкладати не треба… в дальнішому… треба розподіляти»)
+        config["channel"] = channel["id"]
+        own = root / "library" / "channels" / channel["id"]
+        own.mkdir(parents=True, exist_ok=True)
+        (own / "channel.txt").write_text(f"{channel.get('name') or channel['id']}\n", encoding="utf-8")
     sys.path.insert(0, str(STUDIO_BACKEND))
     import sound_settings
     config = sound_settings.apply_config(config, (channel.get("settings") or {}).get("sound"), animated=project.get("project_kind", (channel.get("settings") or {}).get("channel_kind")) == "animated")

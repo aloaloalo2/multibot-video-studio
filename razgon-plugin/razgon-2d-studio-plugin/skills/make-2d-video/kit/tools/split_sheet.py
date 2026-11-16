@@ -114,7 +114,7 @@ def main() -> None:
     with project_files(project):
         index = sorted(p.stem for p in out_dir.glob("*.png"))
         (out_dir / "index.json").write_text(json.dumps(index))
-        # Every new prop also goes to the shared library (tools/library.py) so later videos can reuse it.
+        # Every new prop also goes to the library (tools/library.py) of the project's channel, so its later videos can reuse it.
         import library
         library.add_project(project)
 
