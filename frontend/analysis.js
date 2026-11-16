@@ -1,4 +1,4 @@
-const speechStageNames={queued:'У черзі',preparing:'Підготовка звуку',loading_model:'Завантаження локальної моделі',recognizing:'Розпізнавання мовлення',comparing:'Зіставлення зі сценарієм',waiting_director:'Режисер дописує план за сценарієм',complete:'Обробку завершено',failed:'Обробку зупинено'};
+const speechStageNames={queued:'У черзі',preparing:'Підготовка звуку',loading_model:'Завантаження локальної моделі',recognizing:'Розпізнавання мовлення',comparing:'Зіставлення зі сценарієм',waiting_director:'Режисер дописує план за сценарієм',waiting_kit:'Чекаємо підготовку',complete:'Обробку завершено',failed:'Обробку зупинено'};
 const speechIssueNames={text_difference:'Розбіжність тексту',missing_speech:'Не підтверджено частину мовлення',estimated_words:'Уточнені межі слів',low_phrase_match:'Збіг речення нижче 80%',number_difference:'Розбіжність у числах',missing_boundary:'Не знайдено межу фрази',uncertain_boundary:'Сумнівний час фрази',low_recognition_confidence:'Низька впевненість розпізнавання',out_of_order:'Прозвучала не на своєму місці',repeated_speech:'Прозвучала кілька разів'};
 
 function appendSpeechReport(target,report,{transcript:withTranscript=true}={}){

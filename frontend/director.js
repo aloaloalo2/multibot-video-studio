@@ -199,7 +199,7 @@ function fillVoiceLine(box){
   const working=!!job&&['queued','running'].includes(job.status);
   const percent=report?`${Number(report.word_match_percent).toFixed(1).replace('.',',')}%`:'';
   let state_,text;
-  if(working){state_='working';text=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
+  if(working){state_='working';text=String(job.stage||'').startsWith('waiting_')?(speechStageNames[job.stage]||'Чекаємо режисера'):`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
   // recognised by the studio, or timed from a file the author brought (then there is no recognition to speak of)
   else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=state.project.voice_script?.source==='narration-revision'?'озвучку оновлено, таймінги збережено':percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
   else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}

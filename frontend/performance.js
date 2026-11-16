@@ -93,9 +93,9 @@ function performanceMarkup(data){
   const time=performanceSpan(rows.filter(row=>!performanceParallel.has(row.workflow)).flatMap(row=>row.spans||[])),lost=rows.reduce((sum,row)=>sum+row.lost_ms,0),smallTime=small.reduce((sum,row)=>sum+row.active_ms,0);
   const head='<div class="performance-columns" role="row"><span role="columnheader">Процес</span><span role="columnheader" title="Час вдалих запусків без черг і пауз. Паралельні процеси можуть виконуватись одночасно.">Час</span><span role="columnheader">Витрати</span></div>';
   return `<div class="performance-table" role="table" aria-label="Час і витрати за процесами">${head}${main.map(line).join('')}</div>`
-    +(small.length?`<details class="performance-small"><summary><span>Менше хвилини · ${small.length}</span><span class="performance-duration">${esc(performanceTime(smallTime))}</span></summary><div class="performance-table" role="table" aria-label="Короткі процеси">${small.map(line).join('')}</div></details>`:'')
+    +(small.length?`<details class="performance-small"><summary><span>Інше</span><span class="performance-duration">${esc(performanceTime(smallTime))}</span></summary><div class="performance-table" role="table" aria-label="Короткі процеси">${small.map(line).join('')}</div></details>`:'')
     +`<div class="performance-total"><strong>Разом</strong><span class="performance-duration">${esc(performanceTime(time))}</span><span class="performance-cost">${approximate?'≈ ':''}${money(total)}${unknown?'+':''}</span></div>`
-    +`<p class="performance-note muted">${lost>1000?`Невдалі спроби: ще ${esc(performanceTime(lost))}, у підсумок не входять. `:''}Без прев’ю.</p>`;
+    +(lost>1000?`<p class="performance-note muted">Невдалі спроби: ще ${esc(performanceTime(lost))}, у підсумок не входять.</p>`:'');
 }
 function updatePerformanceButton(){const button=$('project-performance');if(button)button.hidden=!state.project;}
 function openPerformance(){

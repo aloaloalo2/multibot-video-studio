@@ -180,7 +180,9 @@ def start(project, asset_id, save_job, load_job, script=None, create_video=False
 @job_timing.track('analysis', project='job', job='job')
 def worker(job, script, save_job):
     def progress(value, stage="recognizing"):
-        job_timing.advance({'loading_model':'recognition', 'recognizing':'recognition', 'comparing':'verification'}.get(stage, 'preparation'))
+        # waiting for the director is not recognition time: it counts as a queue in «Час роботи»
+        job_timing.advance({'loading_model':'recognition', 'recognizing':'recognition', 'comparing':'verification',
+                            'waiting_director':'queue', 'waiting_kit':'queue'}.get(stage, 'preparation'))
         job.update(status="running", progress=value, stage=stage)
         save_job(job)
     try:
@@ -265,9 +267,15 @@ def worker(job, script, save_job):
                 report["status"] = "source_changed"
             if report["status"] == "matched" and project["id"] in director.ACTIVE:
                 # the director on the script writes his plan under store.LOCK: wait for him before taking it, never
-                # inside it (16 November 2026: waiting inside froze the director, the recognition and every narration)
-                progress(99, "waiting_director")
-                director.wait_idle(project["id"])
+                # inside it (16 November 2026: waiting inside froze the director, the recognition and every narration).
+                # The line says what is awaited: his plan, or the film's kit after it (user: «підпиши»)
+                shown = None
+                while project["id"] in director.ACTIVE:
+                    stage = "waiting_kit" if (director.state(project["id"]) or {}).get("stage") == "kit" else "waiting_director"
+                    if stage != shown:
+                        progress(99, stage)
+                        shown = stage
+                    time.sleep(3)
             with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
                 snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current
