@@ -13,22 +13,25 @@ function thumbnailComparison(item,items,data){
 function bindThumbnailComparison(section,project){
   const hero=section.querySelector('.thumb-hero'),frame=section.querySelector('.thumb-view-frame'),meta=section.querySelector('.thumb-preview-meta');
   const box=document.createElement('div');box.className='thumb-comparison';box.hidden=true;
-  box.innerHTML='<figure><figcaption></figcaption><img alt="Джерело порівняння"></figure><figure><figcaption></figcaption></figure>';
-  hero.insertBefore(box,meta);
+  // only the reference is added; your picture never moves (user, 16 November 2026: «нажимаю порівняти, верстка пливе»)
+  box.innerHTML='<figure><figcaption></figcaption><img alt="Джерело порівняння"></figure>';
   const button=document.createElement('button');button.type='button';button.hidden=true;button.className='outline thumb-compare-toggle';
-  StudioUI.action(button,{label:'Порівняти',icon:'compare'});button.setAttribute('aria-pressed','false');meta.append(button);
+  // the button lives on the picture and shows on hover, like «Завантажити»; comparing is off until asked
+  // (user, 16 November 2026: «кнопка порівняти має бути на прев'юшці самій при наведенні… по дефолту не включена»)
+  StudioUI.action(button,{label:'Порівняти',icon:'compare'});button.setAttribute('aria-pressed','false');button.title='Порівняти з референсом';
   const captions=box.querySelectorAll('figcaption'),image=box.querySelector('img');let comparison=null;
-  let enabled=StudioUI.preference('thumbnail-compare:'+project.id,['on','off'],'on')==='on';
+  let enabled=StudioUI.preference('thumbnail-compare-v2:'+project.id,['on','off'],'off')==='on';
   const paint=()=>{
+    const tools=frame.querySelector('.thumb-preview-tools');if(tools&&button.parentNode!==tools)tools.prepend(button);
+    if(box.parentNode!==frame)frame.append(box);   // the reference sits in a corner of the picture: nothing else moves
     const visible=!!comparison&&enabled;box.hidden=!visible;hero.classList.toggle('is-comparing',visible);button.hidden=!comparison;button.setAttribute('aria-pressed',String(visible));
-    if(visible){box.lastElementChild.append(frame);if(image.getAttribute('src')!==comparison.url){image.hidden=false;image.src=comparison.url;}}
-    else hero.insertBefore(frame,box);
+    if(visible&&image.getAttribute('src')!==comparison.url){image.hidden=false;image.src=comparison.url;}
   };
   image.addEventListener('error',()=>{image.hidden=true;captions[0].textContent='Джерело недоступне';});
-  button.addEventListener('click',()=>{enabled=!enabled;StudioUI.remember('thumbnail-compare:'+project.id,enabled?'on':'off');paint();});
+  button.addEventListener('click',()=>{enabled=!enabled;StudioUI.remember('thumbnail-compare-v2:'+project.id,enabled?'on':'off');paint();});
   return (item,items,data)=>{
     comparison=thumbnailComparison(item,items,data);
-    if(comparison){captions[0].textContent=comparison.before;captions[1].textContent=comparison.after;image.alt=comparison.before;}
+    if(comparison){captions[0].textContent=comparison.before;image.alt=comparison.before;}
     paint();
   };
 }

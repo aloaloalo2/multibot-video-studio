@@ -9,22 +9,20 @@ button.ui-action:is(.secondary,.outline):hover:not(:disabled){background:var(--u
 .ui-choice>span{display:flex;pointer-events:none}
 .ui-choice select{width:auto;min-width:112px;padding:8px 24px 8px 10px;border:1px solid var(--ui-outline-border);border-radius:var(--ui-radius-control);background-color:var(--ui-secondary);font-size:var(--ui-control-font);color:inherit}
 .thumb-create-controls{display:flex;align-items:center;gap:12px;margin-left:auto;min-width:0}
-.thumb-comparison{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
 .thumb-comparison figure{margin:0;min-width:0}
-.thumb-comparison figcaption{margin:0 0 7px;color:#a5a9b4;font-size:12px}
+/* Comparing changes no layout: the reference sits small in the top-left corner of your picture
+   (user, 16 November 2026: «нажимаю порівняти, верстка пливе»). */
+.thumb-view-frame>.thumb-comparison{position:absolute;left:12px;top:12px;width:32%;z-index:2;padding:6px;border:1px solid #5a5d67;border-radius:11px;background:#16171be6;backdrop-filter:blur(8px);box-shadow:0 8px 24px #0008}
+.thumb-view-frame>.thumb-comparison[hidden]{display:none}
+.thumb-comparison figcaption{margin:0 0 5px;color:#c9ccd5;font-size:11.5px}
 .thumb-comparison img{width:100%;aspect-ratio:16/9;object-fit:contain;background:#111114;border-radius:var(--ui-radius-panel)}
-.thumb-compare-toggle{margin-left:auto}
-.thumb-hero.is-comparing .thumb-comparison{margin-bottom:10px}
-.thumb-workspace:has(.is-comparing){grid-template-columns:minmax(0,3fr) minmax(220px,.75fr)}
-.thumb-comparison{grid-column:1;grid-row:1}
-@media(max-width:900px){.thumb-workspace:has(.is-comparing){grid-template-columns:1fr}.thumb-workspace:has(.is-comparing) .thumb-compose{grid-column:1;grid-row:3}}
+.thumb-preview-tools>.thumb-compare-toggle{height:34px;min-height:34px;padding:0 11px;border:1px solid #5a5d67;border-radius:9px;color:#e0e2e9;background:#23252be8;backdrop-filter:blur(10px);font-size:12.5px}
+.thumb-preview-tools>.thumb-compare-toggle:hover{background:#42454e}
+.thumb-preview-tools>.thumb-compare-toggle[aria-pressed=true]{background:#e4e6ec;color:#16171b;border-color:#e4e6ec}
 @media(max-width:600px){.thumb-create-controls{gap:8px;flex-wrap:wrap;justify-content:flex-end}.thumb-create-controls .ui-choice select{min-width:100px}.thumb-comparison{gap:8px}.thumb-comparison figcaption{font-size:11px}}
 
 /* The picture the edits go to is the big, outlined one; the reference stays small and dim (user, 14 November 2026). */
-.thumb-comparison{grid-template-columns:minmax(0,.34fr) minmax(0,1fr)}
-.thumb-comparison figure:first-child{opacity:.72}
-.thumb-comparison figure:first-child img{border-radius:10px}
-.thumb-comparison figure:last-child figcaption{color:#e4e6ec;font-weight:600}
+.thumb-comparison img{border-radius:10px}
 .thumb-workspace .thumb-view-frame{border-color:#c9ccd5;box-shadow:0 0 0 1px #c9ccd5}
 .thumb-workspace .thumb-compose{border-color:#c9ccd5}
 .thumb-compose-target{display:flex;align-items:center;gap:10px;min-width:0}
