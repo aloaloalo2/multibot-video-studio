@@ -20,7 +20,11 @@ def options():
     codes=set()
     for channel in store.list_channels():
         settings=channel.get('settings') or {}
-        code=settings.get('script_language')
+        # the language of the channel's avatar voice comes first (user, 16 November 2026: «студія має визначати мову
+        # в першу чергу якщо доданий голос аватара»); the letters of its scripts are only a guess
+        code=(store.read_json(store.DATA_ROOT/'channels'/channel['id']/'voice-lab'/'settings.json',{}) or {}).get('language')
+        if code not in languages.LANGUAGES:
+            code=settings.get('script_language')
         if code not in languages.LANGUAGES:
             samples=episode_ideas.recent_scripts(channel['id'])
             code=languages.guess_language(' '.join(row.get('opening','') for row in samples))

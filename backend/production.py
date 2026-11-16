@@ -865,7 +865,14 @@ def missing_bed(pid: str) -> bool:
     2026: «для корбина где музика? чому не сталось» — a pause stopped the bed, the frames finished another way)."""
     project = store.load_project(pid)
     request = project.get('production_request') or {}
-    if request.get('status') != 'done' or request.get('repair_frames') or not razgon_sound.due(project):
+    if request.get('repair_frames') or not razgon_sound.due(project):
+        return False
+    # with music switched on a film always has it (user, 16 November 2026: «Якщо галочка стоїть, значить має бути
+    # музика все»): once the director's plan follows the voice, not only after the frames
+    plan = store.load_project_plan(pid) or {}
+    directed = ((plan.get('timing') or {}).get('status') == 'audio_synced' and plan.get('frame_source') == 'razgon-direction'
+                and not plan.get('director_stale'))
+    if request.get('status') != 'done' and not directed:
         return False
     if any(t.get('name') == SOUND_BED for t in project.get('tracks', [])):
         return False

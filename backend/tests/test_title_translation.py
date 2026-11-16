@@ -23,15 +23,16 @@ class TitleTranslationTest(unittest.TestCase):
 
     def test_options_follow_own_channels_and_ignore_translation_voice_languages(self):
         channels=[{'id':'english','name':'Corbin'},{'id':'russian','name':'Doctor'},
-                  {'id':'new-german','name':'немецкий здоровье'}]
-        store.atomic_json(self.root/'channels/english/voice-lab/settings.json',{'language':'ru'})
+                  {'id':'new-german','name':'немецкий здоровье'},{'id':'french','name':'Le Ciel'}]
+        # the avatar voice's language comes first: a French voice wins over scripts that read as plain Latin letters
+        store.atomic_json(self.root/'channels/french/voice-lab/settings.json',{'language':'fr'})
         store.atomic_json(self.root/'language-defaults/english/current.json',{'languages':['pl','tr','zh']})
         with patch.object(store,'list_channels',return_value=channels),patch.object(episode_ideas,'recent_scripts',
             side_effect=lambda cid:[{'opening':{'english':'What if the whole world changed overnight?',
-                'russian':'Сегодня разбираемся, почему это происходит.'}[cid]}] if cid!='new-german' else []),patch.object(episode_ideas,'deepseek') as author:
+                'russian':'Сегодня разбираемся, почему это происходит.','french':'What if'}[cid]}] if cid!='new-german' else []),patch.object(episode_ideas,'deepseek') as author:
             options=translation.options()
         author.assert_not_called()
-        self.assertEqual({row['code'] for row in options['languages']},{'en','ru','de'})
+        self.assertEqual({row['code'] for row in options['languages']},{'en','ru','de','fr'})
         with patch.object(store,'list_channels',return_value=[]):
             self.assertEqual(translation.options()['languages'],[])
 

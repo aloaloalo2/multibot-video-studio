@@ -3019,6 +3019,9 @@ def guess_language(text: str) -> str | None:
         return "de"
     if re.search("[ñ¿¡]", sample):
         return "es"
+    # French letters: a French channel was taken for English and lost its titles' language (16 November 2026)
+    if re.search("[éèêàçœùûâîëïô]", sample):
+        return "fr"
     if re.search("[a-z]", sample):
         return "en"
     return None
