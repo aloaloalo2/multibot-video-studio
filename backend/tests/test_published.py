@@ -40,3 +40,10 @@ class PublishedTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FinderInfoColourTest(PublishedTest):
+    def test_the_old_finder_colour_counts_too(self):
+        info = bytearray(32); info[9] = 4 << 1   # Finder's colour 4 (blue) in the FinderInfo flags
+        subprocess.run(['xattr', '-wx', 'com.apple.FinderInfo', info.hex(), str(self.folder)], check=True)
+        self.assertTrue(published.check({'id': 'p', 'episode_path': str(self.folder)})['at'])

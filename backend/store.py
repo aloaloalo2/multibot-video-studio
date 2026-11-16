@@ -1546,6 +1546,17 @@ def media_duration(path: Path) -> float | None:
 # Studio-managed imports and generated assets stay in the application's project data.
 # Old episode-local stores remain readable until explicitly relocated.
 EPISODE_STORE = "VideoKey"
+# A channel folder holds its episode folders; everything else of the channel lives in «Інше» (user, 16 November 2026:
+# «в папці каналів має бути лише папки випусків, а все остальне засунути в якусь папку інше»).
+CHANNEL_OTHER = "Інше"
+
+
+def channel_extra(channel_folder: Path, name: str) -> Path:
+    """A channel's own folder or file by name: in «Інше», or where it lay before the tidy-up; new ones go to «Інше»."""
+    tidy = Path(channel_folder) / CHANNEL_OTHER / name
+    if tidy.exists() or not (Path(channel_folder) / name).exists():
+        return tidy
+    return Path(channel_folder) / name
 
 
 def media_dir(project: dict) -> Path:
@@ -1638,7 +1649,7 @@ def discover_assets(project: dict, limit=500) -> list[dict]:
             if rel_depth >= 3:
                 dirs[:] = []
             else:
-                dirs[:] = [item for item in dirs if not item.startswith(".") and item not in {"node_modules", "ТЕХНИЧЕСКИЕ ФАЙЛЫ", "Архив", EPISODE_STORE}]
+                dirs[:] = [item for item in dirs if not item.startswith(".") and item not in {"node_modules", "ТЕХНИЧЕСКИЕ ФАЙЛЫ", "Архив", EPISODE_STORE, CHANNEL_OTHER}]
             for name in files:
                 if len(existing) >= limit:
                     break

@@ -1619,7 +1619,7 @@ def passage(text: str) -> str:
 
 
 def channel_voice_dir(cid: str) -> Path:
-    return store.get_channel_folder(cid) / CHANNEL_VOICES
+    return store.channel_extra(store.get_channel_folder(cid), CHANNEL_VOICES)
 
 
 def read_example(folder: Path, stem: str, source: str) -> dict | None:

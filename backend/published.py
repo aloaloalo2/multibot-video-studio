@@ -39,6 +39,15 @@ def blue(folder: Path) -> bool:
             found = any(str(tag).rsplit('\n', 1)[-1] == str(BLUE) for tag in tags if '\n' in str(tag))
     except (OSError, subprocess.SubprocessError, ValueError, plistlib.InvalidFileException):
         found = False
+    if not found:
+        # Finder also keeps a folder's colour in its FinderInfo flags (bits 1-3 of byte 9): the blue dot the user saw
+        # was written that way, with no tag at all (16 November 2026)
+        try:
+            info = subprocess.run(['xattr', '-px', 'com.apple.FinderInfo', str(folder)], capture_output=True, text=True, timeout=5)
+            raw = bytes.fromhex(''.join(info.stdout.split())) if info.returncode == 0 else b''
+            found = len(raw) > 9 and (raw[9] >> 1) & 7 == BLUE
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
     _SEEN[str(folder)] = (stamp, found)
     return found
 

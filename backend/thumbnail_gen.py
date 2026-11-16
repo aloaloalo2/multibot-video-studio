@@ -176,7 +176,7 @@ def state(pid: str) -> dict | None:
 
 def examples(folder: Path) -> tuple[list[Path], list[Path]]:
     """The channel's approved thumbnail prompts and pictures in «Еталон стилю», the bar a new prompt is written to."""
-    style = folder.parent / "Еталон стилю"
+    style = store.channel_extra(folder.parent, "Еталон стилю")
     if not style.is_dir():
         return [], []
     return sorted(style.glob("Еталон промпт прев'ю*.txt"))[:3], sorted(style.glob("Еталон прев'ю*.png"))[:3]
@@ -251,7 +251,7 @@ def episode_link(folder: Path) -> dict | None:
 
 def references(folder: Path) -> list[Path]:
     """The channel's style frames («Еталон стилю/Референс кадру*.png»), so the thumbnail is drawn in the video's look."""
-    style = folder.parent / "Еталон стилю"
+    style = store.channel_extra(folder.parent, "Еталон стилю")
     # the numbered frames show the channel's current look; named ones («(сон)») belong to one older episode
     return sorted(style.glob("Референс кадру*.png"), key=lambda path: ("(" in path.name, path.name))[:2] if style.is_dir() else []
 

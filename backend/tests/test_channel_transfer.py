@@ -142,7 +142,7 @@ class ChannelTransferTests(unittest.TestCase):
         self.assertEqual((target_root / 'voice-lab/reference.mp3').stat().st_mtime_ns, self.stamp)
         self.assertEqual(store.read_json(target_root / 'voice-lab/reference.json')['clone_owner'], self.cid)
         self.assertEqual(store.channel_rules_source(self.target).read_text(), 'Source channel rules')
-        self.assertEqual((self.target / 'Еталон стилю/Еталон прев\'ю.png').read_bytes(), b'style picture')
+        self.assertEqual((self.target / 'Інше/Еталон стилю/Еталон прев\'ю.png').read_bytes(), b'style picture')
         self.assertEqual(author_rules.for_channel(self.target, self.youtube)['author_writing_rules'], 'Writing wishes')
         self.assertIn('portable-rules.json', director.channel_memory({'channel_id': self.tid}))
         backups = transfer.list_backups(self.tid)

@@ -426,7 +426,7 @@ class LanguagesTest(unittest.TestCase):
         with patch("speech.transcribe", return_value=(words, {})):
             data = languages.save_channel_voice("c" * 16, "de", io.BytesIO(recording), len(recording), "")
         self.assertEqual([item["code"] for item in data["voices"]], ["de"])
-        self.assertTrue((self.channel / languages.CHANNEL_VOICES / "Deutsch.mp3").is_file())
+        self.assertTrue((self.channel / store.CHANNEL_OTHER / languages.CHANNEL_VOICES / "Deutsch.mp3").is_file())   # new channel folders go to «Інше»
         languages.add(self.pid, "de")
         item = languages.overview(self.pid)["items"][0]
         self.assertIsNotNone(item["channel_voice"])

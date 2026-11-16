@@ -152,7 +152,7 @@ def export_bundle(cid, *, include_voice_files=False):
         for file in sorted((base / version).glob('*/*')):
             name = 'languages/' + file.relative_to(base).as_posix()
             if include_voice_files and _allowed(name): add(name, file)
-    legacy = folder / 'Голоси для перекладу'
+    legacy = store.channel_extra(folder, 'Голоси для перекладу')
     for file in sorted(legacy.glob('*')):
         name = 'legacy-voices/' + file.name
         if include_voice_files and _allowed(name): add(name, file)
@@ -249,7 +249,7 @@ def _targets(cid):
             'director-memory.json': store.DATA_ROOT / 'agent-channel-memory' / (cid + '.json'),
             'translation-options.json': store.DATA_ROOT / 'language-thumbnail-options' / (cid + '.json'),
             'voice': root / 'voice-lab', 'languages': store.DATA_ROOT / 'language-defaults' / cid,
-            'legacy-voices': folder / 'Голоси для перекладу', 'style-reference': folder / 'Еталон стилю'}
+            'legacy-voices': store.channel_extra(folder, 'Голоси для перекладу'), 'style-reference': store.channel_extra(folder, 'Еталон стилю')}
 
 
 def import_bundle(cid, raw, check_idle):
