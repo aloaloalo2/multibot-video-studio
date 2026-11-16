@@ -4,6 +4,7 @@ const c=vm.createContext({});vm.runInContext(source,c);
 const decide=changes=>c.projectNextAction({script:'Full script.',hasScriptField:true,hasVoice:true,narrationEnabled:true,...changes});
 test('the main path advances from hook through narration, video and export',()=>{
   assert.equal(decide({hooksPending:true,hasHooks:true}).kind,'hook');
+  assert.equal(decide({hooksPending:true,hasHooks:true}).hidden,true);   // the openings are picked on the page itself
   assert.equal(decide({}).kind,'narrate');
   assert.equal(decide({readyVoice:true,createEnabled:true}).kind,'create');
   assert.equal(decide({hasFrames:true,framesEnabled:true}).kind,'frames');

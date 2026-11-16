@@ -9,7 +9,7 @@ function projectNextAction(model){
   if(model.producing)return action('wait','Створюємо кадри',{disabled:true});
   // Missing titles, description and tags never stand in the way of the voice (user, 14 November 2026): the script block
   // keeps its own «Спробувати ще раз», the main button goes on to the next real step.
-  if(model.hooksPending)return model.hasHooks?action('hook','Обрати зачин'):action('openings','Створити зачини',{reason:model.draftError||''});
+  if(model.hooksPending)return model.hasHooks?action('hook','Обрати зачин',{hidden:true}):action('openings','Створити зачини',{reason:model.draftError||''});
   if(model.draftReadError)return action('save','Завантажити сценарій',{reason:model.draftReadError});
   if(model.draftLoading)return action('wait','Завантажуємо чернетку',{disabled:true});
   if(model.canExport&&!model.pendingScript)return action('export','Експорт MP4');
@@ -76,6 +76,8 @@ function updateProjectNextAction(){
   if(!visible){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   $('export-open').hidden=true;
   const decision=projectNextAction(context.model),button=$('project-next-action'),reason=$('project-next-reason'),settings=$('project-next-settings');
+  // the openings are on the page to be picked: no button saying so (user, 16 November 2026: «и так ясно що обрати зачин нада»)
+  if(decision.hidden){box.hidden=true;delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   const key=['hook','openings'].includes(decision.kind)?'hook':['narrate','file'].includes(decision.kind)?'narrate':['create','frames','upload'].includes(decision.kind)?'create':decision.kind==='export'?'export':'script';
   const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>`;
   if(button.innerHTML!==markup)button.innerHTML=markup;
