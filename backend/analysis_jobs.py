@@ -263,6 +263,11 @@ def worker(job, script, save_job):
                           script_from=job.get("script_from", "plan"))
             if store.audio_fingerprint(original) != original_hash or store.audio_fingerprint(path) != audio_hash:
                 report["status"] = "source_changed"
+            if report["status"] == "matched" and project["id"] in director.ACTIVE:
+                # the director on the script writes his plan under store.LOCK: wait for him before taking it, never
+                # inside it (16 November 2026: waiting inside froze the director, the recognition and every narration)
+                progress(99, "waiting_director")
+                director.wait_idle(project["id"])
             with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
                 snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current
@@ -277,9 +282,6 @@ def worker(job, script, save_job):
                     if hashlib.sha256(author_script.encode()).hexdigest()!=job['author_script_sha256'] and author_script!=script:
                         report['status']='script_changed'
                 if report["status"] == "matched":
-                    if project["id"] in director.ACTIVE:
-                        progress(99, "waiting_director")
-                        director.wait_idle(project["id"])
                     timings = {**report["timings"], "audio_sha256": audio_hash, "asset_id": audio["id"]}
                     project = store.load_project(project["id"])
                     generated = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],

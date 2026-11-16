@@ -990,6 +990,15 @@ def attach_plan(pid: str, plan: dict) -> dict:
     with LOCK:
         project = load_project(pid)
         path = project_dir(pid) / "imported-plan.json"
+        current = read_json(path, None) if path.is_file() else None
+        if ((plan.get("timing") or {}).get("status") == "script_estimate" and isinstance(current, dict)
+                and (current.get("timing") or {}).get("status") == "audio_synced"):
+            # A director on the script finished after Whisper had timed the voice (16 November 2026): his frames go
+            # onto the real times instead of putting the estimate back over them
+            try:
+                plan = planner.keep_director_frames(dict(current, frame_source=None), plan)
+            except (ValueError, TypeError, KeyError):
+                plan = dict(current, director_stale=True)
         if path.is_file():
             versions = project_dir(pid) / "plan-history"
             versions.mkdir(exist_ok=True)

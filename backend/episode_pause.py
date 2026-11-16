@@ -63,7 +63,8 @@ def label(pid: str) -> str | None:
     if "narration" in stopped:
         job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
         total = int(job.get("total") or 0)
-        return f"Озвучка · {round(100 * int(job.get('completed') or 0) / total)}%" if total else "Озвучка"
+        done = max(int(job.get("completed") or 0), int(job.get("cached") or 0))   # made phrases count from the start
+        return f"Озвучка · {round(100 * done / total)}%" if total else "Озвучка"
     if "director" in stopped:
         return "Режисура"
     if "languages" in stopped:
@@ -194,6 +195,15 @@ def resume(pid: str) -> dict:
     if narration and narration.get("script"):
         step(lambda: project_narration.start(store.load_project(pid), narration["script"], resume=True))
     run = stopped.get("director")
+    if run and not run.get("directed"):
+        # his plan may have been written after the pause (its last request was on the way): read the plan itself
+        import planner
+        plan = store.load_project_plan(pid) or {}
+        if plan.get("frame_source") == planner.DIRECTOR_FRAME_SOURCE and not plan.get("director_stale"):
+            run = {**run, "directed": True}
+            state = director.state(pid) or {}
+            if state.get("status") in {"paused", "running", "queued"}:
+                director.save(pid, {**state, "status": "done"})
     if run and run.get("directed"):
         if run.get("create_video"):
             step(lambda: director.after_voice(pid, create_video=True))

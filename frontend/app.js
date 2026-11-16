@@ -245,7 +245,7 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop,.project-stage-control'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':'Режисер складає план'}</span></span>`;
     // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
     if(narrating||kind==='режисура'||kind==='мови'){
@@ -298,12 +298,14 @@ async function pollChannelActivity(){
     const activity=await api('/api/studio/status');channelActivity.clear();channelExporting.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
     // every kind of work per episode: the narration and the director can run side by side (backend/script_timing.py)
-    const kinds=new Map(),seen=(id,kind)=>{if(!kinds.has(id))kinds.set(id,new Set());kinds.get(id).add(kind);};
+    const kinds=new Map(),seen=(id,kind)=>{if(!kinds.has(id))kinds.set(id,new Set());kinds.get(id).add(kind);},kitting=new Set();
+    for(const task of activity.activities||[])if(task.kind==='режисура'&&task.stage==='kit')kitting.add(task.project_id);
     for(const task of activity.activities||[])if(task.project_id){seen(task.project_id,task.kind);if(task.kind==='мови'){if(!projectActivities.has(task.project_id))projectActivities.set(task.project_id,{kind:'мови',jobs:task.jobs||[]});}else projectActivities.set(task.project_id,task.kind);}
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match){seen(match[2],match[1]);projectActivities.set(match[2],match[1]);}}
+    for(const id of kitting)if(projectActivities.get(id)==='режисура')projectActivities.set(id,{kind:'режисура',stage:'kit'});
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...kinds].filter(([,set])=>set.has('озвучення сценарію')).map(([id])=>id);
-    await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position,cancelling:data.job.status==='cancelling',with_plan:!!kinds.get(id)?.has('режисура')});}else if(projectActivities.get(id)==='озвучення сценарію')projectActivities.delete(id);}catch{}}));
+    await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position,cancelling:data.job.status==='cancelling',with_plan:!!kinds.get(id)?.has('режисура'),with_kit:kitting.has(id)});}else if(projectActivities.get(id)==='озвучення сценарію')projectActivities.delete(id);}catch{}}));
     renderProjectActivities();paintLanguageTabBusy();
     const newProduction=(activity.activities||[]).some(task=>task.kind==='створення кадрів'&&(state.projects||[]).some(project=>project.id===task.project_id&&!['requested','in_progress'].includes(project.production_request?.status)));
     if(!state.project&&(previousStages.some(id=>!projectActivities.has(id))||newProduction))await refreshProjects();
@@ -574,9 +576,12 @@ function productionControl(id,working){
         if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
-      else if(!state.project)await refreshProjects();
-      if(state.project)await refreshProjects().catch(()=>{});
-      if(typeof pollChannelActivity==='function')pollChannelActivity();
+      // a poll already on its way carries the state from before the click: wait for it, then ask again
+      // (user, 16 November 2026: «треба оновити сторінку чомусь щоб побачити»)
+      for(const request of [...overviewProjectRequests.values()])await request.catch(()=>{});
+      await refreshProjects().catch(()=>{});
+      for(let i=0;i<40&&channelActivityPending;i++)await new Promise(resolve=>setTimeout(resolve,100));
+      if(typeof pollChannelActivity==='function')await pollChannelActivity();
     }catch(error){status(error.message,true);button.disabled=false;button.removeAttribute('aria-busy');}
   });
   return button;

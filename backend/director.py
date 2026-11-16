@@ -473,6 +473,10 @@ def run(pid: str, cli: Path) -> None:
             with LOCK:
                 ACTIVE.discard(pid)
             data = state(pid) or {}
+            plan = store.load_project_plan(pid) or {}
+            if data.get('status') == 'done' and (plan.get('timing') or {}).get('status') == 'audio_synced' and animated(store.load_project(pid)):
+                # the voice was timed while he worked on the script: his shots move onto it now (no paid calls)
+                retime(pid)
             if data.get('status') == 'done' and data.get('create_video'):
                 try:
                     import production

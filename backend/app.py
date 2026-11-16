@@ -888,6 +888,9 @@ def studio_work_status(exports):
                 item['jobs'] = [{'kind': job.get('kind'), 'code': job.get('code')} for job in jobs]
             except (OSError, ValueError, store.StudioError):
                 item['jobs'] = []
+        elif item.get('kind') == 'режисура':
+            # the director's run makes the film's kit after the plan: the card reads «Підготовка» then
+            item['stage'] = (director.state(item['project_id']) or {}).get('stage')
     if trending_videos.busy():
         result['busy'].append('оновлення добірки конкурентів')
     if title_translation.busy():

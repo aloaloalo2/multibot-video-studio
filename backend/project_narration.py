@@ -284,15 +284,18 @@ def run(project,text,settings,ref,entries,job):
         def stop_check():
             if (folder/'cancel').exists():raise Cancelled()
         heygen_voice.STOP.check=stop_check
+        # phrases already made count from the start: a narration that goes on after a stop reads 68%, not 0%
+        made=sum(1 for x in entries if x['cached']);job['completed']=made;store.atomic_json(folder/'job.json',job)
         if settings['provider']=='heygen' and len(entries)>1:
             # HeyGen takes heygen_voice.SLOTS phrases at once; the same cache, order and receipts as one by one
             from concurrent.futures import ThreadPoolExecutor
-            done=threading.Lock();count=[0]
+            done=threading.Lock();count=[made]
             def one(entry):
                 heygen_voice.STOP.check=stop_check
                 try:
                     if (folder/'cancel').exists():raise Cancelled()
                     phrase_audio(project,settings,ref,entry,secret,voice)
+                    if entry['cached']:return
                     with done:
                         count[0]+=1;job['completed']=count[0];store.atomic_json(folder/'job.json',job)
                 finally:
@@ -304,11 +307,11 @@ def run(project,text,settings,ref,entries,job):
             finally:   # a stop or an error: the phrases not started yet are not sent
                 pool.shutdown(wait=True,cancel_futures=True)
         else:
-            for i,entry in enumerate(entries):
+            for entry in entries:
                 if (folder/'cancel').exists():raise Cancelled()
-                target=folder/(entry['key']+'.mp3')
                 phrase_audio(project,settings,ref,entry,secret,voice)
-                job['completed']=i+1;store.atomic_json(folder/'job.json',job)
+                if entry['cached']:continue
+                made+=1;job['completed']=made;store.atomic_json(folder/'job.json',job)
         if (folder/'cancel').exists():raise Cancelled()
         with job_timing.span('saving'):
             listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
