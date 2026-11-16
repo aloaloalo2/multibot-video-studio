@@ -46,6 +46,13 @@ STILLS = 3
 DURATION_CORNER = ("\nYOUTUBE DURATION CORNER: keep the bottom-right corner (about 18% of the width and 15% of the height) "
                    "free of any lettering, logo, badge, face or key object; only calm background may continue there, "
                    "because YouTube shows the video's length in that spot.\n")
+# The image tool refuses prompts that name or describe a real public figure (16 November 2026: «Kim Jong Un» in a North
+# Korea clone came back «moderation_blocked… public-figure», no picture). Every prompt writer gets this rule.
+PUBLIC_FIGURES = ("\nREAL PEOPLE: the image generator rejects any prompt that names or describes a real, recognizable public "
+                  "figure (politicians, leaders, celebrities, athletes, influencers, the source's presenter). Never name a real "
+                  "person and never ask for a likeness or a lookalike. Show the role through an unnamed fictional character "
+                  "instead, for example «a stern official in a dark state uniform», with an original face. The channel's own "
+                  "host from an attached identity photo is allowed.\n")
 ACTIVE: set[str] = set()
 LOCK = threading.Lock()
 
@@ -309,6 +316,7 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) 
 Сценарій ролику:
 {script.strip()[:12000]}
 
+{PUBLIC_FIGURES}
 Відповідай тільки самим промптом англійською, без вступу, пояснень і лапок навколо. Не пиши, куди зберегти файл: це додасть студія."""
 
 
@@ -322,6 +330,7 @@ def clone_brief(title: str, wishes: str, name: str, refs: list[Path]) -> str:
             + "\nAUTHOR'S EXPLICIT CHANGES FOR THIS CLONE ONLY:\n" + (wishes.strip() or 'None. Keep its idea and wording; create original visuals.')
             # the lettering speaks the new video's language: a French channel cloning a Russian thumbnail kept «МЛРД СОЛНЦ»
             # (user, 15 November 2026: «створював для французького каналу і превью на ру вийшло»)
+            + PUBLIC_FIGURES
             + "\nReturn only the image prompt. Read the exact lettering of the source image. The new thumbnail's lettering must be in "
             "the language of this new video title: " + json.dumps(title, ensure_ascii=False) + ". If the source lettering is in another "
             "language, translate it into the title's language with the same meaning, the same numbers and proper names, and about "
@@ -398,6 +407,7 @@ VIDEO NARRATION:
 
 Save the finished image in the current working directory as "{name}".
 This creates a new thumbnail version. Use the attached frames for style and character reference.
+{PUBLIC_FIGURES}
 """
 
 

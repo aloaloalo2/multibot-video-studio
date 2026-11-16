@@ -29,5 +29,12 @@ class OwnThumbnailsTest(unittest.TestCase):
         self.assertIn("Наше прев'ю 1.png", text)
 
 
+class PublicFiguresTest(unittest.TestCase):
+    def test_every_prompt_writer_hears_that_real_people_are_refused(self):
+        self.assertIn("REAL PEOPLE", thumbnail_gen.trending("T", "s", "", "x.png"))
+        with patch("idea_reference.thumbnail_rules", return_value="R"):
+            self.assertIn("REAL PEOPLE", thumbnail_gen.clone_brief("T", "", "x.png", []))
+
+
 if __name__ == "__main__":
     unittest.main()
