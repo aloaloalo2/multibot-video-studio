@@ -59,7 +59,7 @@ def token(value):
     return re.sub(r'[^\w]', '', unicodedata.normalize('NFC', value).casefold()).replace('ё', 'е')
 
 
-def cue_time(cue, packet, words):
+def cue_time(cue, packet, words, lenient=False):
     number = cue.get('sentence')
     if type(number) is not int or not 1 <= number <= len(packet['sentences']):
         raise ValueError('Подія SFX: невідоме речення.')
@@ -80,6 +80,9 @@ def cue_time(cue, packet, words):
                        if [token(w['text']) for w in values[i:i + len(target)]] == target]
             if len(matches) >= occurrence:
                 return float(matches[occurrence - 1])
+        if lenient:
+            # the voice put the word a little past the sentence's edge: the cue keeps its sentence, at its middle
+            return sentence['start'] + (sentence['end'] - sentence['start']) / 2
         raise ValueError(f'SFX речення {number}: слово «{cue["word"]}» відсутнє в таймінгах. Уточніть лише цю подію.')
     if 'offset' not in cue:
         raise ValueError(f'SFX речення {number}: вкажіть word або явний offset.')
@@ -88,6 +91,7 @@ def cue_time(cue, packet, words):
 
 
 def compile_direction(draft, packet, words):
+    lenient = bool(isinstance(draft, dict) and draft.get('_lenient_cues'))
     if not isinstance(draft, dict) or draft.get('source_signature') != packet['signature']:
         raise ValueError('Змінилися джерело, таймінги або налаштування. Оновіть пакет перед збереженням.')
     rows = draft.get('shots')
@@ -140,7 +144,9 @@ def compile_direction(draft, packet, words):
                 allowed = packet['sound']['sfx']
                 if not allowed.get('enabled', True) or name not in allowed.get('allowed_names', []):
                     raise ValueError('SFX не дозволений у поточних налаштуваннях каналу')
-                at = cue_time(cue, packet, words)
+                at = cue_time(cue, packet, words, lenient)
+                if lenient and first <= cue['sentence'] <= last:
+                    at = min(max(at, start), max(start, end - .01))
                 if not first <= cue['sentence'] <= last or not start <= at < end:
                     raise ValueError('SFX належить іншому шоту або виходить за його межі')
                 item = {'name': name, 't': at, 'gain': finite(cue.get('gain', -14), 'gain', -60, 0),
@@ -219,6 +225,23 @@ def retimed(draft, old, packet):
             part['start'] = music[i - 1]['end']
     if music and abs(float(music[-1]['end']) - float(packet['duration'])) < .5:
         music[-1]['end'] = float(packet['duration'])
+    # a part squeezed to nothing by the new times goes into the one before it, so one bad part never drops the move
+    kept = []
+    for part in music:
+        if kept and float(part['end']) - float(part['start']) < .05:
+            kept[-1]['end'] = max(float(kept[-1]['end']), float(part['end']))
+            continue
+        if kept:
+            part['start'] = kept[-1]['end']
+        kept.append(part)
+    if kept and float(kept[0]['end']) - float(kept[0]['start']) < .05 and len(kept) > 1:
+        kept[1]['start'] = kept[0]['start']
+        kept.pop(0)
+    if kept:
+        kept[-1]['end'] = max(float(kept[-1]['end']), min(float(packet['duration']), float(kept[-1]['end']) + .5))
+    if music:
+        draft['music'] = kept
+    draft['_lenient_cues'] = True
     return draft
 
 

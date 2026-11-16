@@ -73,6 +73,25 @@ class RetimeTest(unittest.TestCase):
         self.assertEqual(moved["music"][1]["end"], 20)
         self.assertEqual(draft["music"][0]["end"], 5)   # the saved draft is left alone
 
+    def test_a_music_part_squeezed_to_nothing_joins_the_one_before(self):
+        old = self.packet([{"text": "Один.", "start": 0, "end": 4}, {"text": "Два.", "start": 5, "end": 9}], 10)
+        new = self.packet([{"text": "Один.", "start": 0, "end": 9}, {"text": "Два.", "start": 10, "end": 19}], 20)
+        draft = {"source_signature": "old", "shots": [],
+                 "music": [{"start": 0, "end": 9.5, "mood": "calm"}, {"start": 9.5, "end": 10, "mood": "epic"},
+                           {"start": 10, "end": 10, "mood": "sad"}]}
+        music = contract.retimed(draft, old, new)["music"]
+        self.assertTrue(all(b["start"] == a["end"] for a, b in zip(music, music[1:])))
+        self.assertTrue(all(m["end"] - m["start"] >= .05 for m in music))
+        self.assertEqual(music[-1]["end"], 20)
+
+    def test_a_moved_word_cue_past_its_sentence_keeps_the_sentence(self):
+        packet = self.packet([{"text": "Один два три.", "start": 1, "end": 3}], 20)
+        cue = {"sentence": 1, "word": "три"}
+        words = [{"word": "Один", "start": 1.0}, {"word": "два", "start": 1.5}, {"word": "три", "start": 3.05}]
+        with self.assertRaises(ValueError):
+            contract.cue_time(cue, packet, words)
+        self.assertEqual(contract.cue_time(cue, packet, words, lenient=True), 2.0)
+
     def test_other_sentences_need_a_new_direction(self):
         old = self.packet([{"text": "Один.", "start": 0, "end": 1}], 10)
         new = self.packet([{"text": "Другой.", "start": 0, "end": 1}], 20)

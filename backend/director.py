@@ -678,6 +678,9 @@ def retime(pid: str) -> bool:
     data = state(pid) or {}
     data["retime_error"] = error
     save(pid, data)
+    # kept apart too: the fresh direction that follows rewrites the director's state (16 November 2026, «Нептун»)
+    store.atomic_json(store.project_dir(pid) / "director-retime-error.json", {"error": error, "at": time.time()})
+    print(f"[director] retime {pid} failed, a fresh direction follows: {error}", file=sys.stderr, flush=True)
     return False
 
 
