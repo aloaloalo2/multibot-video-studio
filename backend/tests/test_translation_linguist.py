@@ -23,6 +23,17 @@ class LinguistTest(unittest.TestCase):
             self.calls.append((model,messages,tokens));return json.dumps(answers.pop(0))
         return linguist.resolve(**self.options,request=request)
 
+    def test_a_word_before_the_answer_is_read_and_an_old_refused_answer_is_read_again_for_free(self):
+        # DeepSeek wrote «JSON\n{…}» and the reading stopped a Polish translation (16 November 2026)
+        def request(model,messages,tokens):
+            self.calls.append(model);return 'JSON\n'+json.dumps({'id':3,'action':'keep','reason':'Fine.'})
+        self.assertEqual(linguist.resolve(**self.options,request=request),self.options['current'])
+        self.ledger['3']={'fingerprint':self.ledger['3']['fingerprint'],'status':'blocked',
+                          'error':'Лінгвіст повернув неповне рішення. Збережені фрази не змінено.',
+                          'answer':'JSON\n'+json.dumps({'id':3,'action':'keep','reason':'Fine.'})}
+        self.assertEqual(linguist.resolve(**self.options,request=request),self.options['current'])
+        self.assertEqual(len(self.calls),1)
+
     def test_correct_phrase_is_kept_and_saved_decision_is_reused_without_another_request(self):
         choice={'id':3,'action':'keep','reason':'Faithful native wording.'}
         self.assertEqual(self.run_decisions([choice]),self.options['current'])

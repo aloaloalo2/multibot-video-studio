@@ -68,6 +68,9 @@ def decision(answer, index):
         text = answer.strip()
         if text.startswith('```') and text.endswith('```'):
             text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+        # a word before the object (DeepSeek wrote «JSON\n{…}» on 16 November 2026 and stopped a Polish translation)
+        if not text.startswith('{') and '{' in text and text.endswith('}'):
+            text = text[text.index('{'):]
         result = json.loads(text, object_pairs_hook=recovery._unique_object)
         if (not isinstance(result, dict) or type(result.get('id')) is not int or result['id'] != index
                 or result.get('action') not in ('keep', 'replace', 'retranslate', 'block')
@@ -119,6 +122,7 @@ def resolve(*, index, language, language_name, source, current, issue, context, 
         answer = request(linguist_model, [{'role': 'system', 'content': prompt},
             {'role': 'user', 'content': json.dumps({'id': index, 'source': source, 'translation': current,
                 'checker_issue': issue, 'source_context': context}, ensure_ascii=False)}], 1200)
+        record['answer'] = answer   # kept, so a reading fixed later can take it again without paying twice
         try:
             record['decision'] = decision(answer, index)
             record['status'] = 'decided'
@@ -127,6 +131,14 @@ def resolve(*, index, language, language_name, source, current, issue, context, 
             save()
             raise
         save()
+    elif record.get('status') == 'blocked' and record.get('answer') and 'неповне рішення' in str(record.get('error')):
+        try:   # an answer the earlier reading refused: read it again, no new request
+            record['decision'] = decision(record['answer'], index)
+            record['status'] = 'decided'
+            record.pop('error', None)
+            save()
+        except Unresolved:
+            pass
     if record['status'] == 'requested':
         raise Unresolved('Відповідь лінгвіста на попередній запит не збережена. Автоматичного повторного списання немає.')
     guard_error = GUARD_ERROR
