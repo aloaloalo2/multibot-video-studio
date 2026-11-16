@@ -9,6 +9,10 @@ import production_sessions as sessions
 
 
 class ProductionSessionsTest(unittest.TestCase):
+    def setUp(self):
+        # the chunking is tested with chunks of 10; the studio's own size is a setting (SESSION_FRAMES)
+        from unittest.mock import patch as _patch
+        patcher=_patch.object(sessions,'SESSION_FRAMES',10);patcher.start();self.addCleanup(patcher.stop)
     def run_job(self,launch=None,verify=None,checkpoint=None,cancelled=None,previous=None,parallel=1):
         self.launch=launch or Mock(side_effect=lambda frames,summary,index:(0,{'result':f'Batch {index}','session_id':str(index),'total_cost_usd':.1,'usage':{'input_tokens':10}}))
         self.receipt=checkpoint or Mock()

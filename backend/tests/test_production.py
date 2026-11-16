@@ -16,6 +16,9 @@ REQUEST = {"id": "r1", "frames": 3, "total_frames": 73, "start": 0.0, "end": 120
 
 class ProductionTest(unittest.TestCase):
     def setUp(self):
+        import production_sessions as _sessions
+        from unittest.mock import patch as _patch
+        _p=_patch.object(_sessions,'SESSION_FRAMES',10);_p.start();self.addCleanup(_p.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)

@@ -2,7 +2,7 @@
 import copy
 import threading
 
-SESSION_FRAMES = 10  # Two batches of five; discard images/tool history before it dominates the next batch.
+SESSION_FRAMES = 15  # fewer sessions re-reading the same brief: about a third cheaper (user, 16 November 2026: «15 кадрів зроби краще в 1 сесії»)
 
 
 def add_usage(total, value):
