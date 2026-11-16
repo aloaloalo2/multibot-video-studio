@@ -16,9 +16,9 @@ button.ui-action:is(.secondary,.outline):hover:not(:disabled){background:var(--u
 .thumb-view-frame>.thumb-comparison[hidden]{display:none}
 .thumb-comparison figcaption{margin:0 0 5px;color:#c9ccd5;font-size:11.5px}
 .thumb-comparison img{width:100%;aspect-ratio:16/9;object-fit:contain;background:#111114;border-radius:var(--ui-radius-panel)}
-.thumb-preview-tools>.thumb-compare-toggle{height:34px;min-height:34px;padding:0 11px;border:1px solid #5a5d67;border-radius:9px;color:#e0e2e9;background:#23252be8;backdrop-filter:blur(10px);font-size:12.5px}
-.thumb-preview-tools>.thumb-compare-toggle:hover{background:#42454e}
-.thumb-preview-tools>.thumb-compare-toggle[aria-pressed=true]{background:#e4e6ec;color:#16171b;border-color:#e4e6ec}
+.thumb-view-frame .thumb-preview-tools>button.thumb-compare-toggle{height:34px;min-height:34px;padding:0 11px;border:1px solid #5a5d67;border-radius:9px;color:#e0e2e9;background:#23252bf2;font-size:12.5px;transition:none}
+.thumb-view-frame .thumb-preview-tools>button.thumb-compare-toggle:hover{background:#42454e}
+.thumb-view-frame .thumb-preview-tools>button.thumb-compare-toggle[aria-pressed=true]{background:#e4e6ec;color:#16171b;border-color:#e4e6ec}
 @media(max-width:600px){.thumb-create-controls{gap:8px;flex-wrap:wrap;justify-content:flex-end}.thumb-create-controls .ui-choice select{min-width:100px}.thumb-comparison{gap:8px}.thumb-comparison figcaption{font-size:11px}}
 
 /* The picture the edits go to is the big, outlined one; the reference stays small and dim (user, 14 November 2026). */
@@ -45,3 +45,7 @@ button.ui-action:is(.secondary,.outline):hover:not(:disabled){background:var(--u
 .ui-picker-item:hover,.ui-picker-item:focus-visible{background:#2a2b31;outline:none}
 .ui-picker-item[aria-selected="true"]{background:#2f3036;color:#fff}
 .trend-idea-form .ui-picker,.trend-idea-form .ui-picker-button{width:100%}
+
+/* A blur behind a button that fades in only appears once the fade ends, so the hover tools looked see-through and then
+   changed at once (user, 16 November 2026): a solid backing that fades with them instead. */
+.thumb-preview-tools>a{backdrop-filter:none;background:#23252bf2}
