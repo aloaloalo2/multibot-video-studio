@@ -3019,8 +3019,11 @@ def guess_language(text: str) -> str | None:
         return "de"
     if re.search("[ñ¿¡]", sample):
         return "es"
-    # French letters: a French channel was taken for English and lost its titles' language (16 November 2026)
-    if re.search("[éèêàçœùûâîëïô]", sample):
+    # French by its own words, not by one accent («café» in English, «è» in Italian): a French channel was taken for
+    # English and lost its titles' language (16 November 2026)
+    french = len(re.findall(r"\b(le|la|les|des|est|une|et|pour|dans|qui|que|pas|sur|avec|du|au|ce)\b", sample))
+    english = len(re.findall(r"\b(the|and|of|is|to|in|that|it|with|for|you|was)\b", sample))
+    if re.search("[éèêàçœùûâîëô]", sample) and french >= 3 and french > english:
         return "fr"
     if re.search("[a-z]", sample):
         return "en"

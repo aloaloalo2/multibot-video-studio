@@ -22,7 +22,10 @@ def options():
         settings=channel.get('settings') or {}
         # the language of the channel's avatar voice comes first (user, 16 November 2026: «студія має визначати мову
         # в першу чергу якщо доданий голос аватара»); the letters of its scripts are only a guess
-        code=(store.read_json(store.DATA_ROOT/'channels'/channel['id']/'voice-lab'/'settings.json',{}) or {}).get('language')
+        lab=store.DATA_ROOT/'channels'/channel['id']/'voice-lab'
+        voice=store.read_json(lab/'settings.json',{}) or {}
+        added=(lab/'reference.mp3').is_file() or any(voice.get(key) for key in ('heygen_voice_id','eleven_voice_id','fish_voice_id'))
+        code=voice.get('language') if added else None
         if code not in languages.LANGUAGES:
             code=settings.get('script_language')
         if code not in languages.LANGUAGES:

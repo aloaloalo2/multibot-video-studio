@@ -156,7 +156,7 @@ def export_bundle(cid, *, include_voice_files=False):
     for file in sorted(legacy.glob('*')):
         name = 'legacy-voices/' + file.name
         if include_voice_files and _allowed(name): add(name, file)
-    for file in sorted((folder / 'Еталон стилю').glob('*')):
+    for file in sorted(store.channel_extra(folder, 'Еталон стилю').glob('*')):
         name = 'style-reference/' + file.name
         if _allowed(name): add(name, file)
     # ElevenLabs caches are account-scoped. Keep only this channel's existing identities.

@@ -92,7 +92,7 @@ async function openMediaTimingImport(){
         if(current() && result.report)appendSpeechReport(root,result.report);return;
       }
       busy=true;controls(true);
-      const stage=document.createElement('p');stage.textContent=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;
+      const stage=document.createElement('p');stage.textContent=String(job.stage||'').startsWith('waiting_')?(speechStageNames[job.stage]||'Чекаємо режисера'):`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;
       const progress=document.createElement('progress');progress.max=100;progress.value=job.progress;root.append(stage,progress);schedule();
     }catch(error){if(current()){feedback.textContent=`Стан обробки тимчасово недоступний. ${error.message}`;schedule();}}
     finally{readPending=false;}

@@ -2531,6 +2531,11 @@ def request_production(pid: str, frames) -> dict:
         animated = project_animated(project)
         if animated and plan.get("frame_source") != planner.DIRECTOR_FRAME_SOURCE:
             raise StudioError("Кадри ще не розбиті режисером. Дочекайтеся режисури")
+        if animated:
+            import director
+            if pid in director.RETIMING or director.workspace_estimated(pid):
+                # frames drawn on shots still timed from the script would miss the voice
+                raise StudioError("Режисуру ще переносимо на справжній час озвучки. Зачекайте хвилину", 409)
         if plan.get("director_stale"):
             raise StudioError("Сценарій розходиться з озвучкою. Режисер має заново розбити кадри")
         if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:

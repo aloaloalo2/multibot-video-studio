@@ -49,6 +49,14 @@ def stopped_narration(pid: str) -> dict | None:
         return None
     if (project.get("voice_script") or {}).get("text") != job["script"]:
         return None   # the script changed since: a new narration is the author's choice
+    if project.get("narration_source") == "file" or float(project.get("restarted_at") or 0) > float(job.get("started_at") or 0):
+        return None   # the author brought the voice another way, or started the episode over
+    try:
+        plan = store.load_project_plan(pid) or {}
+    except (store.StudioError, OSError, ValueError):
+        plan = {}
+    if (plan.get("timing") or {}).get("status") == "audio_synced":
+        return None   # the film already follows a finished voice: that narration is history
     return job
 
 
@@ -127,12 +135,15 @@ def pause(pid: str) -> dict:
     import production
     import project_narration
     with LOCK:
-        if paused(pid):
-            return paused(pid)
         work = running(pid)
+        current = paused(pid)
         if not work:
+            if current:
+                return current
             raise store.StudioError("Над випуском зараз нічого не працює", 409)
-        data = {"paused_at": time.time(), "stopped": work, "pending": {}}
+        # a pause taken while one is on (work started by hand meanwhile) adds what runs now to it
+        data = current or {"paused_at": time.time(), "stopped": {}, "pending": {}}
+        data["stopped"] = {**data.get("stopped", {}), **work}
         store.atomic_json(path(pid), data)   # first: whatever ends while it stops finds the pause
     # the stops are sent at once and the answer goes back at once, like «Стоп» (user, 16 November 2026: «пауза не така
     # швидка, як стоп»); the phrase or part being made finishes in the background and is kept
@@ -145,7 +156,7 @@ def pause(pid: str) -> dict:
     if "director" in work:
         director.stop(pid, "director")
     if "production" in work:
-        threading.Thread(target=production.pause, args=(pid,), daemon=True).start()
+        production.pause(pid)   # at most a couple of seconds; a play right after finds the request paused
     if "director" in work:
         threading.Thread(target=_settle_director, args=(pid, data), daemon=True).start()
     return data
@@ -163,12 +174,12 @@ def _settle_director(pid: str, data: dict) -> None:
                 and file is not None and file.stat().st_mtime >= float(state.get("started_at") or 0))
     with LOCK:
         current = paused(pid)
-        if current is None:
-            return   # already resumed: nothing to mark
+        if current is None or pid in director.ACTIVE:
+            return   # already resumed, or a new run started: nothing to mark
         current["stopped"]["director"]["directed"] = directed
         store.atomic_json(path(pid), current)
-    state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
-    director.save(pid, state)
+        state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
+        director.save(pid, state)
 
 
 def resume(pid: str) -> dict:
@@ -183,11 +194,12 @@ def resume(pid: str) -> dict:
                 raise store.StudioError("Випуск не на паузі", 409)
             data = {"stopped": {"narration": {"script": job["script"]}}, "pending": {}}
         import languages
-        if pid in project_narration.ACTIVE or pid in director.ACTIVE or any(
+        if pid in project_narration.ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE or any(
                 languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
             raise store.StudioError("Ще зупиняємо попередню роботу. Спробуйте за кілька секунд", 409)
         path(pid).unlink(missing_ok=True)
     stopped, pending, errors = data.get("stopped") or {}, data.get("pending") or {}, []
+    later = []   # steps that may run a long subprocess (a retime): after the answer, in the background
 
     def step(action):
         try:
@@ -197,7 +209,12 @@ def resume(pid: str) -> dict:
 
     narration = stopped.get("narration")
     if narration and narration.get("script"):
-        step(lambda: project_narration.start(store.load_project(pid), narration["script"], resume=True))
+        project = store.load_project(pid)
+        job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+        if (project.get("voice_script") or {}).get("text") != narration["script"]:
+            errors.append("Сценарій змінився під час паузи: запустіть озвучку нового тексту окремо")
+        elif job.get("status") != "done" or job.get("script") != narration["script"]:
+            step(lambda: project_narration.start(project, narration["script"], resume=True))
     run = stopped.get("director")
     if run and not run.get("directed"):
         # his plan may have been written after the pause (its last request was on the way): read the plan itself
@@ -210,11 +227,11 @@ def resume(pid: str) -> dict:
                 director.save(pid, {**state, "status": "done"})
     if run and run.get("directed"):
         if run.get("create_video"):
-            step(lambda: director.after_voice(pid, create_video=True))
+            later.append(lambda: director.after_voice(pid, create_video=True))
     elif run:
         step(lambda: director.start(pid, "create_video" if run.get("create_video") else run.get("reason") or "voice"))
     if "after_voice" in pending:
-        step(lambda: director.after_voice(pid, create_video=bool(pending["after_voice"].get("create_video"))))
+        later.append(lambda: director.after_voice(pid, create_video=bool(pending["after_voice"].get("create_video"))))
     if "production" in stopped:
         request = store.load_project(pid).get("production_request") or {}
         if request.get("paused"):
@@ -224,7 +241,24 @@ def resume(pid: str) -> dict:
     for item in stopped.get("languages", []):
         # a translation goes on from its saved draft, a voice from its paid phrases
         step(lambda item=item: languages.start(pid, item["kind"], item["code"]))
+    import episode_automation
+    if "voice" in pending:
+        step(lambda: episode_automation.after_script(pid, pending["voice"].get("draft") or {}))
+    for key in pending:
+        if key.startswith("translation_voice:"):
+            code = key.split(":", 1)[1]
+            step(lambda code=code: episode_automation.after_translation(pid, code, {"kind": "translate", "status": "done"}))
+    if "translations" in pending:
+        step(lambda: episode_automation.translate_all(pid))
     if "montage" in pending:
-        import episode_automation
-        step(lambda: episode_automation.after_voice(pid, pending["montage"].get("job") or {}))
+        later.append(lambda: episode_automation.after_voice(pid, pending["montage"].get("job") or {}))
+    if later:
+        def run_later():
+            for action in later:
+                try:
+                    action()
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+        threading.Thread(target=run_later, daemon=True).start()
     return {"resumed": sorted(set(stopped) | set(pending)), "errors": errors}

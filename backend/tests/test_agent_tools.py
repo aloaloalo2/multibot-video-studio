@@ -275,7 +275,7 @@ class AgentToolsTest(unittest.TestCase):
             with self.assertRaises(store.StudioError):
                 store.request_production(project["id"], 3)   # one request at a time
             listed = next(p for p in store.list_projects() if p["id"] == project["id"])
-            self.assertEqual(listed["production_request"], {"status": "requested", "frames": 3, "first": 2, "limit": False, "paused": False, "made": 1})   # the agent starts at frame 2; the card counts frame 1, made before, of all 3
+            self.assertEqual(listed["production_request"], {"status": "requested", "frames": 3, "first": 2, "limit": False, "paused": False, "finished_at": None, "made": 1})   # the agent starts at frame 2; the card counts frame 1, made before, of all 3
             stale = {**plan, "director_stale": True}
         with patch.object(store, "load_project_plan", return_value=stale):
             other = self.project(frames=1)

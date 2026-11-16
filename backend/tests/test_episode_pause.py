@@ -31,12 +31,25 @@ class EpisodePauseTest(unittest.TestCase):
             "narration": {"script": "Текст."}, "director": {"reason": "script", "create_video": False}}, "pending": {}})
         import director
         import project_narration
+        project = {"id": "p", "voice_script": {"text": "Текст."}}
         with patch.object(director, "start") as start, patch.object(project_narration, "start") as voice, \
-             patch.object(episode_pause.store, "load_project", return_value={"id": "p"}), \
+             patch.object(episode_pause.store, "load_project", return_value=project), \
+             patch.object(episode_pause.store, "load_project_plan", return_value={}), \
              patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
             episode_pause.resume("p")
-        voice.assert_called_once_with({"id": "p"}, "Текст.", resume=True)
+        voice.assert_called_once_with(project, "Текст.", resume=True)
         start.assert_called_once_with("p", "script")
+
+    def test_a_script_edited_during_the_pause_is_not_narrated_in_its_old_form(self):
+        episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {"narration": {"script": "Старий."}}, "pending": {}})
+        import director
+        import project_narration
+        with patch.object(project_narration, "start") as voice, \
+             patch.object(episode_pause.store, "load_project", return_value={"id": "p", "voice_script": {"text": "Новий."}}), \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            result = episode_pause.resume("p")
+        voice.assert_not_called()
+        self.assertTrue(result["errors"])
 
     def test_a_director_stopped_in_the_early_kit_is_not_run_again(self):
         episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {
@@ -75,6 +88,17 @@ class LanguagePauseTest(unittest.TestCase):
 
 
 class StoppedNarrationTest(unittest.TestCase):
+    def test_an_old_narration_never_takes_over_once_the_film_follows_a_voice(self):
+        import project_narration
+        folder = Path(tempfile.mkdtemp())
+        episode_pause.store.atomic_json(folder / "job.json", {"status": "cancelled", "script": "Текст.", "completed": 3, "total": 100})
+        with patch.object(episode_pause.store, "project_dir", return_value=folder), \
+             patch.object(project_narration, "root", return_value=folder), \
+             patch.object(episode_pause.store, "load_project", return_value={"id": "p", "voice_script": {"text": "Текст."}}), \
+             patch.object(episode_pause.store, "load_project_plan", return_value={"timing": {"status": "audio_synced"}}), \
+             patch.object(project_narration, "ACTIVE", set()):
+            self.assertFalse(episode_pause.resumable("p"))
+
     def test_a_narration_stopped_half_way_can_go_on(self):
         import project_narration
         folder = Path(tempfile.mkdtemp())
@@ -83,6 +107,7 @@ class StoppedNarrationTest(unittest.TestCase):
         with patch.object(episode_pause.store, "project_dir", return_value=folder), \
              patch.object(project_narration, "root", return_value=folder), \
              patch.object(episode_pause.store, "load_project", return_value=project), \
+             patch.object(episode_pause.store, "load_project_plan", return_value={}), \
              patch.object(project_narration, "ACTIVE", set()), patch.object(project_narration, "start") as start:
             self.assertTrue(episode_pause.resumable("p"))
             episode_pause.resume("p")

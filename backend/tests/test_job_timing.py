@@ -31,6 +31,11 @@ class JobTimingTest(unittest.TestCase):
         self.clock_patch = patch.object(job_timing, 'time', clock)
         self.clock_patch.start()
         self.addCleanup(self.clock_patch.stop)
+        import time as _time
+        for _ in range(300):   # a worker another test left running in the background finishes first
+            if not job_timing.ACTIVE:
+                break
+            _time.sleep(.1)
         self.assertFalse(job_timing.ACTIVE)
 
     def step(self, seconds):

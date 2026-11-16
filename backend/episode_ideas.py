@@ -829,7 +829,7 @@ def _work(cid, data):
                 try:
                     import idea_reference
                     seen = idea_reference.describe(cid, reference['id'])
-                except store.StudioError:
+                except Exception:   # a description is a help, never a reason for the writing to fail
                     seen = None
                 if seen:
                     source['source_thumbnail'] = seen

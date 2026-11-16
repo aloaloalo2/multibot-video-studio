@@ -19,6 +19,7 @@ import narration_sequence
 import status_views
 
 RUN_LOCK = threading.Lock()
+WAIT_DIRECTOR = 6 * 3600   # the director on the script and his kit: at most this long before the times are applied
 ACTIVE_JOBS = set()
 ACTIVE_PROJECTS: dict[str, str] = {}   # job id → project id of the recognitions this server runs
 
@@ -268,14 +269,20 @@ def worker(job, script, save_job):
             if report["status"] == "matched" and project["id"] in director.ACTIVE:
                 # the director on the script writes his plan under store.LOCK: wait for him before taking it, never
                 # inside it (16 November 2026: waiting inside froze the director, the recognition and every narration).
-                # The line says what is awaited: his plan, or the film's kit after it (user: «підпиши»)
-                shown = None
-                while project["id"] in director.ACTIVE:
-                    stage = "waiting_kit" if (director.state(project["id"]) or {}).get("stage") == "kit" else "waiting_director"
-                    if stage != shown:
-                        progress(99, stage)
-                        shown = stage
-                    time.sleep(3)
+                # The line says what is awaited: his plan, or the film's kit after it (user: «підпиши»). The queue of
+                # recognitions is free meanwhile, and the wait has an end.
+                shown, waited = None, 0.0
+                RUN_LOCK.release()
+                try:
+                    while project["id"] in director.ACTIVE and waited < WAIT_DIRECTOR:
+                        stage = "waiting_kit" if (director.state(project["id"]) or {}).get("stage") == "kit" else "waiting_director"
+                        if stage != shown:
+                            progress(99, stage)
+                            shown = stage
+                        time.sleep(3)
+                        waited += 3
+                finally:
+                    RUN_LOCK.acquire()
             with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
                 snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current
@@ -314,6 +321,13 @@ def worker(job, script, save_job):
                         director.after_voice(project['id'], create_video=True)
                     else:
                         director.after_voice(project["id"])
+                try:   # the plan now follows the voice: the channel's automatic translations may start
+                    import episode_automation
+                    episode_automation.translate_all(project["id"])
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+                with store.LOCK:
                     job.pop('handoff_error', None)
                     save_job(job)
             except Exception as error:   # keep applied recognition and expose a recoverable handoff failure

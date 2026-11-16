@@ -14,6 +14,7 @@ function montageStarted(){
   const overlay=new Set((state.project?.scene_groups || []).filter(group=>group.role==='overlay').flatMap(group=>group.clip_ids || []));
   return (state.project?.tracks || []).some(track=>(track.clips || []).some(clip=>['image','video','text','animation'].includes(clip.kind)&&!overlay.has(clip.id)));
 }
+const narrationSeen={};   // the last narration state read for each episode (fillVoiceLine)
 async function loadDirector(id){
   try{directorRuns[id]=(await api(`/api/projects/${encodeURIComponent(id)}/director`)).director || {status:'none'};}
   // a lost answer keeps what was known: «none» would offer to start a second director while one still works
@@ -216,26 +217,35 @@ function fillVoiceLine(box){
   // (user, 16 November 2026: «тут порядок наведи»); one answer per paint, so two paints never add two lines
   if(!synced&&!working){
     const token=String(Date.now()+Math.random());box.dataset.narrationToken=token;
-    api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{
-      if(box.dataset.narrationToken!==token||!box.isConnected||state.project?.id!==id)return;
+    // the last known narration is drawn at once and the answer only refreshes it: the line never flashes back to
+    // «озвучку ще не додано» between two reads
+    const apply=job=>{
+      if(!job||box.dataset.narrationToken!==token||!box.isConnected||state.project?.id!==id)return;
       // a narration stopped half way (by the author or by HeyGen's limit) says so and goes on with the round play
-      if(['cancelled','failed'].includes(job?.status)&&Number(job.total)>0&&Number(job.completed)<Number(job.total)&&state.project.episode_paused){
+      if(['cancelled','failed'].includes(job.status)&&Number(job.total)>0&&Number(job.completed)<Number(job.total)&&state.project.episode_paused){
         box.dataset.state='warn';
         box.querySelector('.episode-voice-state').textContent=`Озвучка зупинилась · ${Math.floor(100*(Number(job.completed)||0)/Number(job.total))}%`;
         box.querySelector('.episode-voice-state').title=job.error||'';
         for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
-        if(!box.querySelector('.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,false));
+        box.querySelector('.episode-voice>.production-control')?.remove();
+        box.querySelector('.episode-voice-text')?.after(productionControl(id,false));
         return;
       }
-      if(!['queued','running','cancelling'].includes(job?.status))return;
+      if(!['queued','running','cancelling'].includes(job.status))return;
       const total=Number(job.total)||0,percent=total?` · ${Math.min(99,Math.floor(100*(Number(job.completed)||0)/total))}%`:'';
       box.dataset.state='working';
       box.querySelector('.episode-voice-icon').innerHTML=exportSpinner;
       box.querySelector('.episode-voice-state').textContent=job.status==='queued'?'Озвучка в черзі HeyGen':job.status==='cancelling'?'Зупиняємо озвучку…':'Озвучка'+percent;
       for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
       // the same round pause as on the card (user, 16 November 2026: «на проекті також нема плей, паузи»)
-      if(job.status!=='cancelling'&&!box.querySelector('.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,true));
-      clearTimeout(box._narrationTimer);box._narrationTimer=setTimeout(()=>{if(box.isConnected&&box.dataset.narrationToken===token)fillVoiceLine(box);},5000);
+      if(job.status!=='cancelling'&&!box.querySelector('.episode-voice>.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,true));
+    };
+    queueMicrotask(()=>apply(narrationSeen[id]));
+    api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{
+      narrationSeen[id]=job;apply(job);
+      if(['queued','running','cancelling'].includes(job?.status)&&box.dataset.narrationToken===token){
+        clearTimeout(box._narrationTimer);box._narrationTimer=setTimeout(()=>{if(box.isConnected&&box.dataset.narrationToken===token)fillVoiceLine(box);},5000);
+      }
     }).catch(()=>{});
   }
   const stage=box.closest('.episode-voice-block');
@@ -296,6 +306,7 @@ function fillDirectorLine(box){
     // the episode's pause stopped the director; the same round button goes on (backend/episode_pause.py)
     line('Режисер на паузі','Кругла кнопка продовжить роботу: режисер складе план заново.');
     {const play=productionControl(id,false);play.classList.add('episode-director-control');box.append(play);}
+    directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.creation_error&&!state.project.production_request){
     line('Не вдалося продовжити створення відео',run.creation_error);
     box.append(stepButton('Продовжити створення',async()=>{try{await startVideoCreation(id,{asset_id:voiceAssetId(state.plan,state.project)});await selectProject(id,{view:'editor'});}catch(error){status(error.message,true);}}));

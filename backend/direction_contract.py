@@ -237,8 +237,10 @@ def retimed(draft, old, packet):
     if kept and float(kept[0]['end']) - float(kept[0]['start']) < .05 and len(kept) > 1:
         kept[1]['start'] = kept[0]['start']
         kept.pop(0)
-    if kept:
-        kept[-1]['end'] = max(float(kept[-1]['end']), min(float(packet['duration']), float(kept[-1]['end']) + .5))
+    if len(kept) == 1 and float(kept[0]['end']) - float(kept[0]['start']) < .05:
+        kept[0]['start'], kept[0]['end'] = 0.0, float(packet['duration'])   # one part squeezed to nothing: the whole film
+    if kept and float(packet['duration']) - float(kept[-1]['end']) < .5:
+        kept[-1]['end'] = float(packet['duration'])   # only a hair short of the end: to the end; an early end stays
     if music:
         draft['music'] = kept
     draft['_lenient_cues'] = True

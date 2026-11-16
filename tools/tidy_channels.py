@@ -99,7 +99,8 @@ def main() -> None:
     print(f"Файлів студії з цими шляхами: {len(changed)}")
     if not args.apply or not moves:
         return
-    if not args.now and busy():
+    # --now moves only what the studio does not point at; rewriting its files under a running job could be undone by it
+    if busy() and (not args.now or changed):
         raise SystemExit("Студія зараз працює: дочекайтеся кінця й запустіть ще раз.")
     taken = [new for _, new in moves if new.exists()]
     if taken:

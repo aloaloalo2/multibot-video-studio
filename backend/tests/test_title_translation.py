@@ -25,7 +25,9 @@ class TitleTranslationTest(unittest.TestCase):
         channels=[{'id':'english','name':'Corbin'},{'id':'russian','name':'Doctor'},
                   {'id':'new-german','name':'немецкий здоровье'},{'id':'french','name':'Le Ciel'}]
         # the avatar voice's language comes first: a French voice wins over scripts that read as plain Latin letters
-        store.atomic_json(self.root/'channels/french/voice-lab/settings.json',{'language':'fr'})
+        store.atomic_json(self.root/'channels/french/voice-lab/settings.json',{'language':'fr','heygen_voice_id':'v1'})
+        # a voice-lab language with no voice added is only a default and never counts
+        store.atomic_json(self.root/'channels/english/voice-lab/settings.json',{'language':'ru'})
         store.atomic_json(self.root/'language-defaults/english/current.json',{'languages':['pl','tr','zh']})
         with patch.object(store,'list_channels',return_value=channels),patch.object(episode_ideas,'recent_scripts',
             side_effect=lambda cid:[{'opening':{'english':'What if the whole world changed overnight?',

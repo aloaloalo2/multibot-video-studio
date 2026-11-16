@@ -55,7 +55,11 @@ def state_path(pid: str) -> Path:
 def state(pid: str) -> dict | None:
     data = store.read_json(state_path(pid), None)
     if isinstance(data, dict) and data.get("status") in {"queued", "running"} and pid not in ACTIVE:
-        data.update(status="failed", error="Студію перезапустили під час режисури. Запустіть її ще раз.")
+        if data.get("stage") == "kit":
+            # cut during the early «Підготовка»: the plan is made; production makes the kit itself
+            data.update(status="done", stage=None, kit="failed")
+        else:
+            data.update(status="failed", error="Студію перезапустили під час режисури. Запустіть її ще раз.")
     return data
 
 
@@ -474,10 +478,11 @@ def run(pid: str, cli: Path) -> None:
                 ACTIVE.discard(pid)
             data = state(pid) or {}
             plan = store.load_project_plan(pid) or {}
-            if data.get('status') == 'done' and (plan.get('timing') or {}).get('status') == 'audio_synced' and animated(store.load_project(pid)):
-                # the voice was timed while he worked on the script: his shots move onto it now (no paid calls)
-                retime(pid)
-            if data.get('status') == 'done' and data.get('create_video'):
+            # the voice was timed while he worked on the script: his shots move onto it in their own thread (no lock
+            # held, no paid calls), which starts the frames itself when asked
+            moving = (data.get('status') == 'done' and (plan.get('timing') or {}).get('status') == 'audio_synced'
+                      and animated(store.load_project(pid)) and retime_soon(pid, bool(data.get('create_video'))))
+            if data.get('status') == 'done' and data.get('create_video') and not moving:
                 try:
                     import production
                     production.start_from_plan(pid)
@@ -528,7 +533,7 @@ def _run(pid: str, cli: Path) -> None:
                 except OSError:
                     pass
             import script_timing
-            if data.get("status") == "done" and not script_timing.estimated(store.load_project_plan(pid)):
+            if data.get("status") == "done" and not script_timing.estimated(store.load_project_plan(pid)) and not workspace_estimated(pid):
                 # the shots and their sound cues are written: the film's music and effects go on the timeline at once
                 # (razgon_sound.py; a photo channel's film is not due and is left alone). A direction on times from the
                 # script waits for the voice: retime() lays them then.
@@ -558,7 +563,7 @@ def early_kit(pid: str, cli: Path, data: dict) -> None:
             return
         production_kit.seed(project)
         data["stage"] = "kit"
-        save(pid, data)
+        save(pid, {**data, "status": "running"})   # «Підготовка» shows as work; «done» is written when the run ends
         with job_timing.separate("kit", pid) as timing:   # «Підготовка» has its own row in «Час роботи»
             with production_sessions.STUDIO_SESSIONS:
                 _, answer = claude(cli, production.kit_brief(project, len(frames)), store.project_dir(pid) / "director-kit.log",
@@ -633,8 +638,8 @@ def after_voice(pid: str, create_video=False) -> None:
         plan = store.load_project_plan(pid) or {}
         # a new recognition of the same sentences keeps the director's frames; only a fresh or changed text needs a pass
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale") and animated(store.load_project(pid)):
-            if not retime(pid):
-                plan = store.load_project_plan(pid) or {}
+            if retime_soon(pid, create_video):
+                return   # the thread moves the shots onto the voice, then the music and the frames
         if plan.get("frame_source") == "razgon-direction" and not plan.get("director_stale"):
             if create_video:
                 import production
@@ -659,14 +664,61 @@ def after_voice(pid: str, create_video=False) -> None:
 RETIME_TIMEOUT = 600
 
 
+RETIMING: set[str] = set()
+
+
+def workspace_estimated(pid: str) -> bool:
+    """The Razgon workspace still carries the times estimated from the script, or a move onto the voice was cut halfway
+    (the marker tools/direction.py retime leaves until it has committed)."""
+    try:
+        link = store.read_json(store.project_dir(pid) / "razgon-link.json", {}) or {}
+    except (store.StudioError, OSError, ValueError):
+        return False
+    root = Path(link.get("project") or "")
+    if not link.get("project") or not root.is_dir():
+        return False
+    return bool((store.read_json(root / "story" / "studio_frames.json", {}) or {}).get("estimated")) or (root / "story" / ".retime-pending").exists()
+
+
+def retime_soon(pid: str, create_video: bool = False) -> bool:
+    """Move the direction onto the real voice in a thread of its own, holding no lock of the studio: its subprocess
+    talks to the studio over HTTP (16 November 2026 review: run under store.LOCK or the update mutex it froze the studio
+    for ten minutes). Then the music, and the frames when asked; a failure starts a fresh direction. False when nothing
+    needed moving."""
+    if not workspace_estimated(pid):
+        return False
+    with LOCK:
+        if pid in RETIMING:
+            return True
+        RETIMING.add(pid)
+
+    def work():
+        try:
+            plan = store.load_project_plan(pid) or {}
+            if (plan.get("timing") or {}).get("status") != "audio_synced":
+                return   # the voice is not timed yet: the recognition calls again
+            if retime(pid):
+                if create_video:
+                    import production
+                    production.start_from_plan(pid)
+            else:
+                start(pid, "create_video" if create_video else "voice")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        finally:
+            with LOCK:
+                RETIMING.discard(pid)
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
 def retime(pid: str) -> bool:
     """An animated direction made on times from the script moves onto the voice Whisper has just timed
     (tools/direction.py retime, no paid calls). Returns False when that failed: the plan is then marked director_stale
-    and the director makes a fresh pass, as for a changed text."""
+    and the director makes a fresh pass, as for a changed text. Called from retime_soon's thread only."""
     try:
-        link = store.read_json(store.project_dir(pid) / "razgon-link.json", {}) or {}
-        frames = Path(link.get("project") or "") / "story" / "studio_frames.json"
-        if not link.get("project") or not (store.read_json(frames, {}) or {}).get("estimated"):
+        if not workspace_estimated(pid):
             return True
         result = subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "direction.py"), "retime", pid],
                                 capture_output=True, text=True, timeout=RETIME_TIMEOUT, cwd=str(store.APP_ROOT))

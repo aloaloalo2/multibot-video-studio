@@ -136,3 +136,33 @@ class EarlyKitTest(unittest.TestCase):
         claude.assert_not_called()
         claude, data = self.run_kit(True, needed=False)
         claude.assert_not_called()
+
+
+class RetimeSoonTest(unittest.TestCase):
+    def test_the_move_runs_in_its_own_thread_and_starts_the_frames_after_it(self):
+        import threading
+        import time
+        from unittest.mock import patch
+        import director
+        import production
+        done = threading.Event()
+
+        def retime(pid):
+            with director.store.LOCK:   # the move may need the studio's lock (its subprocess posts to the studio)
+                return True
+        with patch.object(director, "workspace_estimated", return_value=True), \
+             patch.object(director.store, "load_project_plan", return_value={"timing": {"status": "audio_synced"}}), \
+             patch.object(director, "retime", side_effect=retime), \
+             patch.object(production, "start_from_plan", side_effect=lambda pid: done.set()) as frames:
+            with director.store.LOCK:   # a caller holding the lock returns at once instead of waiting for the move
+                began = time.monotonic()
+                self.assertTrue(director.retime_soon("p", create_video=True))
+                self.assertLess(time.monotonic() - began, 1)
+            self.assertTrue(done.wait(5))
+        frames.assert_called_once_with("p")
+
+    def test_nothing_to_move_runs_nothing(self):
+        from unittest.mock import patch
+        import director
+        with patch.object(director, "workspace_estimated", return_value=False):
+            self.assertFalse(director.retime_soon("p"))

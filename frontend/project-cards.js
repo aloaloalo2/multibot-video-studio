@@ -48,6 +48,7 @@ function updateProjectCard(card,project){
   card.classList.toggle('producing',working);card.classList.toggle('production-stopped',stopped);card.classList.toggle('episode-paused-card',!working&&!!project.episode_paused);
   let box=open.querySelector('.project-production-state');
   if(working||stopped){
+    if(box?.classList.contains('episode-paused')){box.remove();box=null;}
     if(!box){box=document.createElement('div');box.className='project-making project-production-state';open.insertBefore(box,meta);}
     box.classList.toggle('stopped',stopped);
     box.title=stopped?(making.error||'Відкрийте випуск, щоб продовжити роботу'):'';

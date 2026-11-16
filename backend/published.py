@@ -36,8 +36,8 @@ def blue(folder: Path) -> bool:
                              capture_output=True, text=True, timeout=5)
         if raw.returncode == 0:
             tags = plistlib.loads(bytes.fromhex(''.join(raw.stdout.split())))
-            found = any(str(tag).rsplit('\n', 1)[-1] == str(BLUE) for tag in tags if '\n' in str(tag))
-    except (OSError, subprocess.SubprocessError, ValueError, plistlib.InvalidFileException):
+            found = isinstance(tags, list) and any(str(tag).rsplit('\n', 1)[-1] == str(BLUE) for tag in tags if '\n' in str(tag))
+    except Exception:   # an odd tag from another app never breaks the project list
         found = False
     if not found:
         # Finder also keeps a folder's colour in its FinderInfo flags (bits 1-3 of byte 9): the blue dot the user saw

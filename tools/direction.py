@@ -179,9 +179,13 @@ def retime(studio, pid):
         raise ValueError('Режисура не відповідає озвучці. Потрібна нова режисура.')
     path = workspace(project)
     link = bridge.read_json(path / 'story/studio_frames.json')
-    if not link.get('estimated'):
+    pending = path / 'story' / '.retime-pending'
+    if not link.get('estimated') and not pending.exists():
         print('Режисура вже на часі справжньої озвучки.')
         return False
+    # until the recompiled shots are committed the workspace counts as estimated, even if prepare already rewrote the
+    # link (a move cut halfway is made again, never taken for done)
+    pending.write_text('retime started\n', encoding='utf-8')
     old = store.read_json(store.project_dir(pid) / 'director-context.json', {}) or {}
     draft = store.read_json(store.project_dir(pid) / 'director-draft.json', None)
     if not old.get('sentences') or not isinstance(draft, dict):
@@ -199,6 +203,7 @@ def retime(studio, pid):
              path / 'story/bible.md': compiled['bible']}
     report = staged_check(path, compiled)
     commit_files(files)
+    pending.unlink(missing_ok=True)
     target = store.project_dir(pid) / 'director-context'
     store.atomic_json(target.with_suffix('.json'), packet)
     store.atomic_text(target.with_suffix('.txt'), contract.context_text(packet))

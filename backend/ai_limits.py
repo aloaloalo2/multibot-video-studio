@@ -242,5 +242,8 @@ def cached(data_root: Path) -> dict:
         value = read(data_root)
         value['claude'] = _merge(_account(now), value['claude'], now)
         value['codex'] = _merge(_account(now, _CODEX_ACCOUNT, codex_usage), value['codex'], now)
+        if (value['codex'].get('week_resets_at') or now + 1) <= now:
+            # last week's figure never outlives its own reset while the account cannot be read
+            value['codex'] = {k: v for k, v in value['codex'].items() if k not in ('week_left', 'week_resets_at')}
         _CACHE.update(root=str(data_root), at=time.time(), value=value)
         return value

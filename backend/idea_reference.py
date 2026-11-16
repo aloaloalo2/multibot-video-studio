@@ -201,26 +201,42 @@ def describe(cid, ref):
     data = read(cid, ref)
     if isinstance(data.get('thumbnail_description'), dict):
         return data['thumbnail_description']
+    if data.get('thumbnail_description_failed_at') and time.time() - float(data['thumbnail_description_failed_at']) < 6 * 3600:
+        return None   # a failed reading is not repeated at every stage of the writing
     import director
     image = root / 'thumbnail.jpg'
-    command = [str(director.executable()), '--model', director.MODEL, '--effort', 'low', '--strict-mcp-config',
-               '--setting-sources', '', '--tools', 'Read', '--allowedTools', 'Read', '--add-dir', str(root),
-               '--output-format', 'json', '-p']
     prompt = DESCRIBE_PROMPT.format(path=json.dumps(str(image)), title=json.dumps(data.get('title', ''), ensure_ascii=False))
     try:
+        # the competitor's title and thumbnail are untrusted: the reader opens this one image and nothing else
+        # (16 November 2026 review: an unscoped Read could have been talked into reading the studio's keys)
+        command = [str(director.executable()), '--model', director.MODEL, '--effort', 'low', '--strict-mcp-config',
+                   '--safe-mode', '--setting-sources', '', '--tools', 'Read', '--allowedTools', f'Read({image})',
+                   '--disallowedTools', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Agent', 'Task',
+                   '--add-dir', str(root), '--output-format', 'json', '-p']
         done = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=DESCRIBE_TIMEOUT, cwd=str(root))
         answer = json.loads(done.stdout or '{}').get('result') or ''
         found = re.search(r'\{.*\}', answer, re.S)
         described = json.loads(found.group(0)) if found else None
     except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
-        return None
+        described = None
     if not isinstance(described, dict) or not any(isinstance(described.get(k), str) and described[k].strip() for k in ('text', 'shows', 'subject')):
+        with LOCK:
+            current = store.read_json(root / 'reference.json', {}) or {}
+            current['thumbnail_description_failed_at'] = time.time()
+            try:
+                store.atomic_json(root / 'reference.json', current)
+            except OSError:
+                pass
         return None
     described = {k: str(described.get(k) or '')[:1200] for k in ('text', 'shows', 'subject')}
     with LOCK:
         current = store.read_json(root / 'reference.json', {}) or {}
         current['thumbnail_description'] = described
-        store.atomic_json(root / 'reference.json', current)
+        current.pop('thumbnail_description_failed_at', None)
+        try:
+            store.atomic_json(root / 'reference.json', current)
+        except OSError:
+            pass
     return described
 
 

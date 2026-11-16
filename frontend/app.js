@@ -248,7 +248,8 @@ function renderProjectActivities(){
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':'Режисер складає план'}</span></span>`;
     // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
-    if(narrating||kind==='режисура'||kind==='мови'){
+    const pausableLanguage=kind==='мови'&&(activity?.jobs||[]).some(job=>['translate','voice'].includes(job.kind));
+    if(narrating||kind==='режисура'||pausableLanguage){
       const control=productionControl(card.dataset.projectId,true);control.classList.add('project-stage-control');
       if(narrating&&activity?.cancelling)control.disabled=true;
       card.append(control);
@@ -576,12 +577,15 @@ function productionControl(id,working){
         if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
+      // the director's cached state follows the click, so a resumed director never reads «на паузі» again
+      if(typeof loadDirector==='function'&&state.project?.id===id){await loadDirector(id);if(typeof refreshEpisode==='function')refreshEpisode();}
       // a poll already on its way carries the state from before the click: wait for it, then ask again
       // (user, 16 November 2026: «треба оновити сторінку чомусь щоб побачити»)
       for(const request of [...overviewProjectRequests.values()])await request.catch(()=>{});
       await refreshProjects().catch(()=>{});
       for(let i=0;i<40&&channelActivityPending;i++)await new Promise(resolve=>setTimeout(resolve,100));
       if(typeof pollChannelActivity==='function')await pollChannelActivity();
+      if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy');}
     }catch(error){status(error.message,true);button.disabled=false;button.removeAttribute('aria-busy');}
   });
   return button;
@@ -782,6 +786,7 @@ function renderProject() {
   const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=projectAnimated();
   // «Експорт MP4» belongs to «Монтаж» only (user, 31 October 2026)
   $('export-open').hidden=!state.project || state.restoringProject || state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
+  {const stop=document.getElementById('export-stop');if(stop)stop.hidden=$('export-open').hidden;}
   renderPlan();
   if(typeof renderThumbView==='function')renderThumbView();
   if(typeof renderLangView==='function')renderLangView();
@@ -1380,7 +1385,8 @@ function updateExportLock(){
   $('export-open').classList.toggle('export-busy',locked);$('export-open').setAttribute('aria-busy',String(locked));
   {let stop=document.getElementById('export-stop');const live=locked&&state.job&&state.job.status!=='cancelling';
    if(!live)stop?.remove();
-   else if(!stop||stop.dataset.job!==state.job.id){stop?.remove();stop=exportStopControl(state.job.id,async updated=>{if(updated)state.job=updated;updateExportLock();await pollJob();});stop.id='export-stop';stop.dataset.job=state.job.id;$('export-open').before(stop);}}
+   else if(!stop||stop.dataset.job!==state.job.id){stop?.remove();stop=exportStopControl(state.job.id,async updated=>{if(updated)state.job=updated;updateExportLock();await pollJob();});stop.id='export-stop';stop.dataset.job=state.job.id;$('export-open').before(stop);}
+   if(stop)stop.hidden=$('export-open').hidden;}
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
   if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
   else if(state.project)$('save-state').textContent='';

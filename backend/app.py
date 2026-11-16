@@ -870,6 +870,12 @@ def channel_completion_status(result, exports):
     return result
 
 
+def paused_view(pid):
+    """The project as the cards read it: with whether the episode waits for play and what it waits with."""
+    project = store.load_project(pid)
+    return {**project, "episode_paused": episode_pause.resumable(pid), "episode_pause_label": episode_pause.label(pid)}
+
+
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
     # A live frame worker must block an update even when its project metadata
@@ -899,6 +905,8 @@ def studio_work_status(exports):
         result['busy'].append('зразки голосів перекладу')
         result['active_channels']=sorted(set(result['active_channels'])|{cid for cid,code in channel_translation_voices.ACTIVE.copy()})
     import episode_ideas
+    result.setdefault('activities', [])
+    result.setdefault('active_channels', [])
     for data in episode_ideas.active_work():
         cid = data['channel_id']
         kind = 'редактура сценарію' if data.get('editing_status')=='running' or data['stage']=='editing' else {'openings': 'створення зачинів', 'metadata': 'створення метаданих'}.get(data['stage'], 'створення сценарію')
@@ -1456,8 +1464,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"results": search_pixabay(q, kind, limit)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match:
-            project = store.load_project(match.group(1))
-            return self.json_response({"project": {**project, "episode_paused": episode_pause.resumable(project["id"]), "episode_pause_label": episode_pause.label(project["id"])}})
+            return self.json_response({"project": paused_view(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan", path)
         if match:
             pid = match.group(1)
@@ -1717,6 +1724,8 @@ class Handler(BaseHTTPRequestHandler):
             project = store.load_project(match.group(1))
             result = store.generate_project_plan(project["channel_id"], project["name"], project["episode_path"],
                 script=body.get("script"), script_path=body.get("script_path"), duration=body.get("duration"), hints=body.get("hints"), project_id=project["id"], narration=body.get("narration"), timings=body.get("timings"), weights=body.get("weights"), use_channel_weights=body.get("use_channel_weights") is True)
+            if body.get("timings") or body.get("narration"):
+                director.retime_soon(project["id"])   # an animated direction made on the script follows the voice
             return self.json_response(result)
         if method == "POST" and path == "/api/service-keys/copy":
             return self.json_response({"key": credentials.copy_provider_key(body.get("provider_id"))})
@@ -1792,20 +1801,23 @@ class Handler(BaseHTTPRequestHandler):
             note = production.codex_limit_note(limit.get("reset")) if isinstance(limit, dict) else None
             if note is None and episode_pause.running(match.group(1)):
                 episode_pause.pause(match.group(1))   # the author's pause holds the whole episode still
-                return self.json_response({"project": store.load_project(match.group(1))})
-            return self.json_response({"project": production.pause(match.group(1), note)})
+                return self.json_response({"project": paused_view(match.group(1))})
+            if note is None and (store.load_project(match.group(1)).get("production_request") or {}).get("status") not in {"requested", "in_progress"}:
+                raise store.StudioError("Зараз над випуском немає роботи, яку можна призупинити", 409)
+            production.pause(match.group(1), note)
+            return self.json_response({"project": paused_view(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
             if episode_pause.resumable(match.group(1)):
                 episode_pause.resume(match.group(1))
-                return self.json_response({"project": store.load_project(match.group(1))})
-            return self.json_response({"project": production.resume(match.group(1))})
+            else:
+                production.resume(match.group(1))
+            return self.json_response({"project": paused_view(match.group(1))})
         # one pause for the whole episode: narration, director, «Підготовка» and frames (backend/episode_pause.py)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/(pause|resume)", path)
         if match and method == "POST":
             result = episode_pause.pause(match.group(1)) if match.group(2) == "pause" else episode_pause.resume(match.group(1))
-            project = store.load_project(match.group(1))
-            return self.json_response({"result": result, "project": {**project, "episode_paused": episode_pause.resumable(project["id"]), "episode_pause_label": episode_pause.label(project["id"])}})
+            return self.json_response({"result": result, "project": paused_view(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
         if match and method == "POST":
             if active_export(match.group(1)):

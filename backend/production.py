@@ -793,7 +793,10 @@ def start_from_plan(pid: str) -> dict:
         count = len(plan.get('frames') or [])
         if count and set(range(1, count + 1)) <= set(store.made_frames(project, plan)):
             return project
-        if request.get('paused') or request.get('status') == 'failed' and request.get('script_sha256') == plan.get('script_sha256'):
+        same_script = request.get('script_sha256') == plan.get('script_sha256')
+        # a run cut by a restart for an older script never blocks the frames of the new one
+        held = request.get('paused') and (same_script or request.get('paused_by') != 'restart')
+        if held or request.get('status') == 'failed' and same_script:
             raise store.StudioError('Створення кадрів призупинено. Продовжіть збережену роботу кнопкою продовження.', 409)
         project = store.request_production(pid, count)
     start(pid)

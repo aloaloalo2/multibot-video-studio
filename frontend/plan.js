@@ -157,7 +157,7 @@ function renderNarrationAnalysis(panel,pid){
     }
     return false;
   }
-  const stage=speechStageNames[job.stage]||'Розпізнаємо озвучку',percent=Number.isFinite(job.progress)?` · ${Math.round(job.progress)}%`:'';
+  const waiting=String(job.stage||'').startsWith('waiting_'),stage=speechStageNames[job.stage]||'Розпізнаємо озвучку',percent=!waiting&&Number.isFinite(job.progress)?` · ${Math.round(job.progress)}%`:'';
   ready.setAttribute('aria-busy','true');
   ready.querySelector('.narration-ready-heading strong').innerHTML=`Whisper · ${esc(stage)}${percent}`;const line=ready.querySelector('.episode-voice');if(line?.dataset)line.dataset.state='working';
   ready.querySelectorAll('.narration-settings,.narration-plan-action').forEach(control=>control.disabled=true);
@@ -405,7 +405,7 @@ function renderVoiceStart(panel){
       if(result.compact)result=await api(`/api/projects/${encodeURIComponent(project.id)}/analysis`);
       if(section.isConnected&&state.project?.id===project.id&&result.report)appendSpeechReport(section,result.report);return;
     }
-    lock(true);show(speechStageNames[job.stage] || 'Обробка',job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
+    lock(true);show(speechStageNames[job.stage] || 'Обробка',String(job.stage||'').startsWith('waiting_')?undefined:job.progress);setTimeout(()=>poll().catch(error=>{lock(false);show(error.message);}),1200);
   }
   // A recognition already running shows here too, started in another tab or by an agent through the API. An opening
   // project draws this page before its recognition has loaded (selectProject asks for it afterwards), so wait for it.

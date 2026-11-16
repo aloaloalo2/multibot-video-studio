@@ -50,8 +50,7 @@ class MotionDirectionTest(unittest.TestCase):
              patch.object(director,'channel_settings',return_value={}), \
              patch.object(production,'people_rules',return_value={'rule':'','stock':'','check':''}), \
              patch.object(production,'accents_step',return_value=''), \
-             patch.object(production,'mixed_assets_step',return_value=''), \
-             patch.object(production.channel_branding,'reserved_zone',return_value='none'):
+             patch.object(production,'mixed_assets_step',return_value=''):   # no logo corner any more (16 November 2026)
             briefs=[director.frames_brief(project),director.razgon_brief(project),production.photo_brief(project,request),production.brief(project,request)]
         for brief in briefs:
             with self.subTest(brief=brief[:50]):
