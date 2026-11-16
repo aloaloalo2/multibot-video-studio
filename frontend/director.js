@@ -217,7 +217,17 @@ function fillVoiceLine(box){
   if(!synced&&!working){
     const token=String(Date.now()+Math.random());box.dataset.narrationToken=token;
     api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{
-      if(box.dataset.narrationToken!==token||!box.isConnected||state.project?.id!==id||!['queued','running','cancelling'].includes(job?.status))return;
+      if(box.dataset.narrationToken!==token||!box.isConnected||state.project?.id!==id)return;
+      // a narration stopped half way (by the author or by HeyGen's limit) says so and goes on with the round play
+      if(['cancelled','failed'].includes(job?.status)&&Number(job.total)>0&&Number(job.completed)<Number(job.total)&&state.project.episode_paused){
+        box.dataset.state='warn';
+        box.querySelector('.episode-voice-state').textContent=`Озвучка зупинилась · ${Math.floor(100*(Number(job.completed)||0)/Number(job.total))}%`;
+        box.querySelector('.episode-voice-state').title=job.error||'';
+        for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
+        if(!box.querySelector('.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,false));
+        return;
+      }
+      if(!['queued','running','cancelling'].includes(job?.status))return;
       const total=Number(job.total)||0,percent=total?` · ${Math.min(99,Math.floor(100*(Number(job.completed)||0)/total))}%`:'';
       box.dataset.state='working';
       box.querySelector('.episode-voice-icon').innerHTML=exportSpinner;

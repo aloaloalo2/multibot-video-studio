@@ -88,7 +88,6 @@ class SlotTest(unittest.TestCase):
             with hg.synthesis_slot():
                 pass
 
-    def test_two_phrases_go_at_once(self):
-        with hg.synthesis_slot():
-            self.assertTrue(hg._SYNTHESIS_SLOT.acquire(blocking=False))
-            hg._SYNTHESIS_SLOT.release()
+    def test_one_phrase_at_a_time(self):
+        with hg.synthesis_slot():   # two at once made HeyGen answer 429 (16 November 2026)
+            self.assertFalse(hg._SYNTHESIS_SLOT.acquire(blocking=False))

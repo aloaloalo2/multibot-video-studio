@@ -12,10 +12,9 @@ import job_timing
 
 API='https://api.heygen.com'
 DEFAULT_MODEL='heygen-voice-1-turbo-free'
-# Two phrases go to HeyGen at once: one at a time used about half of its 28 requests a minute, so a narration of 140
-# phrases took 8 minutes (user, 16 November 2026: «поки йде озвучка… щоб швидкість була швидша»). The per-minute guard
-# below still holds every caller to the limit.
-SLOTS=2
+# One phrase at a time again: two at once made HeyGen answer 429 until two narrations stopped (16 November 2026,
+# user: «хейген не сильно любить багато запросів»). The worker pool stays, sized by SLOTS.
+SLOTS=1
 _SYNTHESIS_SLOT=threading.BoundedSemaphore(SLOTS)
 SLOT_WAIT=600   # longest wait in the queue for HeyGen before a phrase gives up with a clear note
 
