@@ -177,7 +177,7 @@ def run(pid,ctx,job):
     folder=narration.root(pid)/'revisions'/job['id'];folder.mkdir(parents=True,exist_ok=True)
     settings,ref=ctx['settings'],ctx['ref']
     try:
-        if settings['provider']=='heygen':narration.wait_heygen(pid,job)
+        if settings['provider']=='heygen':narration.wait_heygen(pid,job,path(pid))
         job.update(status='running',stage='preparing');store.atomic_json(path(pid),job)
         original=folder/'original.wav'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',ctx['asset']['path'],'-c:a','pcm_s16le',str(original)],'відкрити готову озвучку')

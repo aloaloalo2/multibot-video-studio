@@ -17,11 +17,15 @@ test('sequential and overlapping effects share one row without changing original
 });
 
 test('muting a compact sound row affects only its audio layers in one undoable action',()=>{
-  let listener;const calls=[],button={setAttribute(){},addEventListener:(event,fn)=>listener=fn};
+  // every control is its own element: the mute button sits beside the layer volume button (aeb0243)
+  const calls=[],buttons=[],button=()=>{const b={listeners:{},setAttribute(){},addEventListener:(event,fn)=>b.listeners[event]=fn};buttons.push(b);return b;};
   const c=load(universal,'function addLayerSoundControl(','function layerTime(',{
-    document:{createElement:()=>button},action:(...args)=>{calls.push(args);return Promise.resolve();}});
-  c.addLayerSoundControl({append(){},closest:()=>null},[{id:'a',clips:[{kind:'audio'}]},{id:'b',clips:[{kind:'audio'}],muted:true}], 'Звук ролика');
-  listener({stopPropagation(){}});
+    document:{createElement:button},esc:String,action:(...args)=>{calls.push(args);return Promise.resolve();}});
+  const appended=[];
+  c.addLayerSoundControl({append:b=>appended.push(b),closest:()=>null},[{id:'a',clips:[{kind:'audio'}]},{id:'b',clips:[{kind:'audio'}],muted:true}], 'Звук ролика');
+  assert.deepEqual(appended.map(b=>b.className),['layer-sound','layer-volume']);
+  appended[0].listeners.click({stopPropagation(){}});
+  assert.equal(calls.length,1);
   assert.equal(calls[0][0],'batch');assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1].actions)),[
     {type:'set_layer_mute',payload:{layer_id:'a',muted:true}},{type:'set_layer_mute',payload:{layer_id:'b',muted:true}}]);
 });

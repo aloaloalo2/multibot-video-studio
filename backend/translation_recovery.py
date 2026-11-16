@@ -32,20 +32,18 @@ def answers(answer, ids):
     """
     if not isinstance(answer, str):
         return {}, 'The model returned no text.'
-    text = answer.strip()
-    if text.startswith('```') and text.endswith('```'):
-        text = text.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-    decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
+    if not answer.strip():
+        return {}, 'The model returned an empty reply.'
+    import model_json
     try:
-        documents = []
-        remaining = text
-        while remaining:
-            value, end = decoder.raw_decode(remaining)
-            documents.append(value)
-            remaining = remaining[end:].strip()
-        if not documents:
-            return {}, 'The model returned an empty reply.'
+        # fences of any kind and words around the JSON are forgiven (model_json); ids stay as strict as before
+        documents = model_json.documents(answer, object_pairs_hook=_unique_object)
+        if len(documents) > 1 and any(isinstance(d, dict) for d in documents):
+            documents = [d for d in documents if isinstance(d, dict)]   # a «[1]» in a note after the reply is no line
         value = documents[0] if len(documents) == 1 else documents
+        # {"translations": …} around the lines (a wrapper MiniMax and DeepSeek both write now and then)
+        if isinstance(value, dict) and len(value) == 1 and next(iter(value)) in ('translations', 'lines', 'phrases', 'result'):
+            value = next(iter(value.values()))
         if isinstance(value, dict) and 'id' in value:
             pairs = [(value['id'], value.get('text') or value.get('translation'))]
         elif isinstance(value, dict):
@@ -60,6 +58,8 @@ def answers(answer, ids):
         for key, line in pairs:
             if isinstance(key, str) and key.isdecimal():
                 key = int(key)
+            if isinstance(key, str) and not key.isdecimal() and isinstance(value, dict):
+                continue   # a remark beside the lines ({"1": …, "note": …}) is not a line and not an invented id
             if type(key) is not int or key not in ids:
                 return {}, 'The reply contains an unexpected phrase id.'
             if key in seen:
@@ -115,8 +115,10 @@ def audit(answer, ids, *, strict=False):
 
 def audit_evidence(answer, ids):
     """Preserve explicit partial evidence without approving omitted neighbours."""
+    import model_json
     try:
-        value=json.loads(answer,object_pairs_hook=_unique_object)
+        # words or fences around the verdict are forgiven (a split and repaid audit used to follow); its content stays strict
+        value=model_json.loads(answer,object_pairs_hook=_unique_object,kinds=(dict,))
         checked=value.get('ids');entries=value.get('issues',[]);ok=value.get('ok')
         if (type(ok) is not bool or not isinstance(checked,list) or not checked
                 or any(type(i) is not int or i not in ids for i in checked)

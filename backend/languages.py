@@ -746,7 +746,8 @@ def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
         raise RuntimeError("OpenRouter не повернув переклад") from None
     spent = (result.get("usage") or {}).get("cost")
     cost = float(spent) if isinstance(spent, (int, float)) else 0.0
-    return re.sub(r"^```\w*\n|\n```$", "", text).strip(), cost
+    import model_json
+    return model_json.strip_fences(text), cost   # a fence of any form, at one end or both
 
 
 # The translation is written to be heard, not read (user, 2 November 2026: «1999-го — такі речення погані… краще слова
@@ -873,9 +874,13 @@ def speakable(code: str, texts: list[str]) -> tuple[list[str], float]:
     try:
         answer, spent = ask([{"role": "system", "content": system},
                              {"role": "user", "content": json.dumps([texts[i] for i in wrong], ensure_ascii=False)}])
-        found = json.loads(answer[answer.index("["):answer.rindex("]") + 1])
     except (RuntimeError, ValueError):
         return texts, 0.0
+    import model_json
+    try:
+        found = model_json.loads(answer, kinds=(list,))
+    except ValueError:
+        return texts, spent   # the request was paid: its cost stays in the job's total even when the answer is unusable
     if not isinstance(found, list) or len(found) != len(wrong) or not all(isinstance(text, str) and text.strip() for text in found):
         return texts, spent
     texts = list(texts)
@@ -1042,7 +1047,16 @@ def translate_part(code: str, items: list[dict], before: str) -> tuple[list[str]
         cost += spent
         text = " ".join(answer.strip().strip('"«»').split())
         if text.startswith(('{', '[', '```')):
-            raise store.StudioError('Перекладач повернув службовий формат замість тексту фрази.', 409)
+            # the line came back wrapped as JSON ({"1": "…"} or ["…"]): its one string is the translation
+            import model_json
+            try:
+                value = model_json.loads(answer)
+                strings = [v for v in (value.values() if isinstance(value, dict) else value) if isinstance(v, str) and v.strip()]
+                if len(strings) != 1:
+                    raise ValueError
+                text = " ".join(strings[0].split())
+            except (ValueError, AttributeError):
+                raise store.StudioError('Перекладач повернув службовий формат замість тексту фрази.', 409) from None
         if not text:
             raise RuntimeError("Перекладач не повернув переклад однієї фрази. Спробуйте ще раз")
         got[k] = text
@@ -1078,10 +1092,17 @@ def linguist_language_check(code, texts):
     finally:
         if previous is not None:
             TRANSLATION_CONTEXT.value = previous
+    import model_json
     try:
-        verdict = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', answer.strip()))
+        verdict = model_json.loads(answer, kinds=(dict, list))
     except ValueError:
         return report, cost
+    if isinstance(verdict, list):
+        # [true, false, …] in the lines' order, or [{"1": true}, …]: read as the same verdicts, never crash the job
+        if all(isinstance(x, bool) for x in verdict) and len(verdict) == len(lines):
+            verdict = {str(n + 1): x for n, x in enumerate(verdict)}
+        else:
+            verdict = {k: v for item in verdict if isinstance(item, dict) for k, v in item.items()}
     ok = [lines[n] for n in lines if verdict.get(n) is True]
     if ok:
         language_quality.confirm(code, ok)
@@ -3075,6 +3096,25 @@ def file_path(pid: str, code: str, kind: str) -> Path:
 
 
 # ---------- jobs ----------
+
+def record_automation_failure(pid: str, code: str, kind: str, message: str) -> None:
+    """An automatic translation or voice that could not start (no voice example, a busy lane, a failed language check)
+    shows in its language card as a failed job with the reason, not only in automation.json (16 November 2026
+    stability pass: the card just stood idle). A job that runs in that lane is left alone."""
+    slot = f"{code}|{group_of(kind)}"
+    if job_key(pid, code, group_of(kind)) in ACTIVE:
+        return
+    def change(data):
+        current = (data.get("jobs") or {}).get(slot) or {}
+        if current.get("status") == "running":
+            return
+        now = time.time()
+        failed = {"status": "failed", "kind": kind, "code": code, "slot": slot, "progress": 0, "automatic": True,
+                  "stage": "Автоматичний запуск не вдався", "error": str(message)[:400], "started_at": now, "finished_at": now}
+        data.setdefault("jobs", {})[slot] = failed
+        data["job"] = failed
+    update(pid, change)
+
 
 def put_job(pid: str, job: dict) -> None:
     def keep(data):

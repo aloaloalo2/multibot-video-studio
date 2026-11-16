@@ -22,7 +22,8 @@ function projectNextAction(model){
   if(model.direct&&!model.hasPictures)return action('media','Додати матеріали');
   if(model.hasFrames&&!model.pendingScript){
     if(model.allFrames)return action('export','Експорт MP4',{disabled:!model.canExport,reason:model.productionReason||'',settings:!model.canExport?'voice':null});
-    return action('frames',model.resume?'Продовжити створення ролика':'Створити відео',{disabled:!model.framesEnabled,reason:model.productionReason||(!model.framesEnabled?'Перевірте озвучку та план кадрів':''),settings:!model.framesEnabled?'montage':null});
+    // the export's reason («Тривалість монтажу…») is no reason not to make frames: shown only when frames can not start
+    return action('frames',model.resume||model.paused?'Продовжити створення ролика':'Створити відео',{disabled:!model.framesEnabled,reason:!model.framesEnabled?(model.productionReason||'Перевірте озвучку та план кадрів'):'',settings:!model.framesEnabled?'montage':null});
   }
   if(!model.script.trim())return action('script','Додати сценарій');
   if(!model.hasScriptField)return action('edit','Переглянути правки',{reason:model.pendingScript?'Озвучка потребує нової версії сценарію':''});
@@ -55,10 +56,12 @@ function projectNextContext(){
     writing:pending&&['queued','running','cancelling'].includes(pending.status),writingLabel:{openings:'Готуємо зачини',script:'Пишемо сценарій',metadata:'Готуємо метадані'}[pending?.stage],
     hooksPending:!!pending&&!pending.script_saved&&pending.stage!=='metadata',metadataPending:!!pending&&(pending.script_saved||pending.stage==='metadata'),hasHooks:!!root.querySelector('.episode-hook-option:not([disabled])'),draftError:pending?.error,
     narrating:voice?.classList.contains('is-generating'),narrationLabel:voice?.querySelector('.narration-progress-title strong')?.textContent,
-    analyzing:['queued','running'].includes(state.analysis?.job?.status),planning:['queued','running'].includes(direction?.status),producing:['requested','in_progress'].includes(project.production_request?.status),
+    analyzing:['queued','running'].includes(state.analysis?.job?.status)&&!String(state.analysis?.job?.stage||'').startsWith('waiting_'),
+    // a recognition done and waiting for the director's plan is the director's work: «Режисер планує кадри»
+    planning:['queued','running'].includes(direction?.status)||(['queued','running'].includes(state.analysis?.job?.status)&&String(state.analysis?.job?.stage||'').startsWith('waiting_')),producing:['requested','in_progress'].includes(project.production_request?.status),
     direct:directMontage(),hasPictures:filmClips(project).length>0,canExport:!!project.production?.export_ready,
     hasFrames:!!state.plan?.frames?.length,allFrames:!!state.plan?.frames?.length&&madeSet(state.plan.frames).size>=state.plan.frames.length,
-    framesEnabled:!!frames&&!frames.disabled&&!make.hidden,resume:project.production_request?.status==='failed'||filmClips(project).length>0,
+    framesEnabled:!!frames&&!frames.disabled&&!make.hidden,paused:!!project.episode_paused,resume:project.production_request?.status==='failed'||filmClips(project).length>0,
     productionReason:root.querySelector('.episode-make-hint')?.textContent||project.production?.reason||'',
     fileMode:root.querySelector('.narration-from-file')?.getAttribute('aria-pressed')==='true',hasFile:!!root.querySelector('.voice-drop.has-file'),uploadEnabled:!!upload&&!upload.disabled,
     readyVoice:!!ready&&!ready.hidden&&!ready.closest('[hidden]'),createEnabled:!!ready?.querySelector('.narration-plan-action:not([disabled])'),createReason:root.querySelector('.narration-create-error')?.textContent||'',
@@ -84,7 +87,8 @@ function updateProjectNextAction(){
   button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=true;   // the sliders live on the channel's settings button now (user, 16 November 2026)
   settings.dataset.section=decision.settings||'';
   // Keep voice actions beside the file or provider quote as well as in the header.
-  const target=['upload','narrate'].includes(decision.kind)?null:context.targets[decision.kind]||null;
+  // the frames' button stays in «Створення ролика» as well, where the author looks for it (16 November 2026)
+  const target=['upload','narrate','frames'].includes(decision.kind)?null:context.targets[decision.kind]||null;
   if(delegatedWorkflowTarget!==target){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=target;target?.classList.add('workflow-action-target');}
   if(!context.root.classList.contains('workflow-guided'))context.root.classList.add('workflow-guided');
 }

@@ -64,7 +64,8 @@ function updateProjectCard(card,project){
     // stopped before the frames (narration, director): the card still says it waits for «Продовжити»
     if(!box||!box.classList.contains('episode-paused')){box?.remove();box=document.createElement('div');box.className='project-making project-production-state stopped episode-paused';box.innerHTML='<span class="project-export-label"><span class="project-production-label"></span></span>';open.insertBefore(box,meta);}
     // the stopped work itself, as it read while it ran: «Озвучка · 117 з 171»
-    const text=project.episode_pause_label||'На паузі',label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
+    // older servers wrote «Режисура», «Озвучка · N%»: the card reads the words the author asked for (16 November 2026)
+    const legacy={'Режисура':'План кадрів'},raw=project.episode_pause_label||'На паузі',text=legacy[raw]||raw.replace(/^Озвучка · /,'Озвучуємо сценарій · ').replace(/^Озвучка перекладу · /,'Озвучуємо переклад · ').replace(/^Переклад · /,'Перекладаємо · '),label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
   }else box?.remove();
   const actionsKey=JSON.stringify([!!project.episode_path,!!project.freeable]);
   if(card._actionsKey!==actionsKey){

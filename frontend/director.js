@@ -55,7 +55,10 @@ function renderEpisode(panel){
   const episode=document.createElement('div');episode.className='episode';episode.dataset.project=id;
   panel.append(episode);
   arrangeEpisode(episode);
-  if(!directMontage()&&!directorRuns[id])loadDirector(id).then(()=>{if(state.project?.id===id)refreshEpisode(episode);});   // the director works on every channel
+  // read on every opening of the page: a director started (or a move that failed into a fresh one) while the author was
+  // elsewhere is seen at once, the cached state only fills the wait (16 November 2026 stability pass)
+  if(!directMontage())loadDirector(id).then(()=>{if(state.project?.id===id)refreshEpisode(episode);});   // the director works on every channel
+  if(id in drawnFrames)loadDrawn(id);   // frames drawn while the page was closed
   refreshEpisode(episode);
 }
 
@@ -192,6 +195,22 @@ function refreshEpisode(episode=document.querySelector('.episode')){
 
 const voiceIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>';
 // One line: the voice file, its length, how it was recognised, and the bin that starts the episode over.
+const analysisLineTimers=new Map();   // one per episode: a switch to another episode never leaves it unwatched
+function watchAnalysisLine(id){
+  if(analysisLineTimers.has(id))return;
+  analysisLineTimers.set(id,setTimeout(async()=>{
+    analysisLineTimers.delete(id);
+    if(state.project?.id!==id)return;
+    let result;try{result=await api(`/api/projects/${encodeURIComponent(id)}/analysis`);}catch{return watchAnalysisLine(id);}
+    if(state.project?.id!==id)return;
+    const before=state.analysis?.job?.status,after=result?.job?.status;
+    state.analysis=result;
+    // a recognition that ended and was applied changes the plan: the page is read again as a whole
+    if(['queued','running'].includes(before)&&after==='complete'&&result.report?.applied){selectProject(id,{view:state.view==='editor'?'editor':'plan'});return;}
+    if(typeof refreshEpisode==='function')refreshEpisode();
+    if(typeof updateProjectNextAction==='function')updateProjectNextAction();
+  },3000));
+}
 function fillVoiceLine(box){
   const id=state.project.id,analysis=episodeAnalysis(),report=analysis?.report,job=analysis?.job,synced=!!state.project.production?.plan_ready || state.plan?.timing?.status==='audio_synced';
   const audio=state.plan?.timing?.audio || {},frames=state.plan?.frames || [];
@@ -213,6 +232,9 @@ function fillVoiceLine(box){
   else if(state.plan?.timing?.status==='script_estimate'){state_='empty';text='кадри за сценарієм, час уточнить озвучка';}
   else{state_='empty';text='озвучку ще не додано';}
   box.dataset.state=state_;
+  // the recognition goes on after its window is closed («Можна закрити вікно»): the line reads it again by itself, so
+  // it never stays on an old percent (16 November 2026 stability pass)
+  if(working)watchAnalysisLine(id);
   const script=state.project.voice_script?.text ?? state.plan?.script ?? frames.map(frame=>(frame.sentences||[]).join(' ')).join('\n\n');
   const words=scriptWordCount(script)?`<small class="episode-voice-word-count">${scriptWordCountLabel(script)}</small>`:'';
   box.innerHTML=`<span class="episode-voice-icon">${working&&!waiting?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
@@ -472,9 +494,10 @@ function fillMake(make){
   refreshFrameEdits(make,id);
   const made=madeSet(frames);
   let floor=0;while(made.has(floor))floor++;
-  if(directorRuns[id]?.create_video&&!directorRuns[id].creation_error&&!request&&floor<frames.length){
+  if(directorRuns[id]?.create_video&&!directorRuns[id].creation_error&&!request&&floor<frames.length&&!state.project.episode_paused){
+    // the director's state is read again too: a failure written after the page loaded ends this wait (it spun for good)
     start.disabled=true;start.innerHTML=`${exportSpinner}<span>Починаємо створення кадрів</span>`;
-    hint.hidden=true;productionTimer=setTimeout(()=>pollProduction(id),1200);return;
+    hint.hidden=true;productionTimer=setTimeout(async()=>{await loadDirector(id);pollProduction(id);},1200);return;
   }
   make.dataset.floor=String(floor);
   const working=['requested','in_progress'].includes(request?.status);
@@ -526,6 +549,13 @@ function fillMake(make){
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
     const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?(/ліміт Codex/.test(request.error||'')?request.error:'Призупинено на ваше прохання. Готові кадри збережені.'):`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
+  }else if(state.project.episode_paused&&!allMade){
+    // the episode's pause holds the whole episode (backend/episode_pause.py): the button goes on with it, as the round
+    // play does, instead of a start the pause would only note (user, 16 November 2026: «немає як зазвичай кнопки»)
+    start.disabled=false;
+    start.textContent='Продовжити створення ролика';
+    start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
+    start.onclick=event=>{event.stopImmediatePropagation();productionControl(id,false).click();};
   }else{
     start.textContent=completed?`Кадри створені · ${made.size} з ${frames.length}`:productionStartLabel(request,made.size);
     if(completed){

@@ -233,6 +233,7 @@ function renderChannelNotices(){
   if(acknowledged)saveChannelNotices();
 }
 let channelActivityPending=false,channelProjectCounts={};
+const languageWork=new Set();   // projects whose languages work now, from /api/studio/status
 function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
@@ -248,7 +249,7 @@ function renderProjectActivities(){
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop,.project-stage-control'))previous.remove();
     if(!working)continue;
     const box=document.createElement('div');box.className='project-making project-stage-job';box.setAttribute('role','status');
-    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='музика й ефекти'?'Музика й ефекти':kind==='агент студії'?'Агент працює':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':'Режисер складає план'}</span></span>`;
+    box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):activity.with_kit?'Озвучка і підготовка'+percent:activity.with_plan?'Озвучка і план'+percent:'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='музика й ефекти'?'Музика й ефекти':kind==='агент студії'?'Агент працює':kind==='мови'?languageActivityLabel(activity.jobs):activity?.stage==='kit'?'Підготовка':activity?.stage==='retime'?'План переходить на озвучку':'Режисер складає план'}</span></span>`;
     // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
     const pausableLanguage=kind==='мови'&&(activity?.jobs||[]).some(job=>['translate','voice'].includes(job.kind));
@@ -284,7 +285,14 @@ function paintLanguageTabBusy(){
   const tab=document.getElementById('view-langs');if(!tab)return;
   const task=state.project?projectActivities.get(state.project.id):null;
   const open=!!state.project&&document.getElementById('project-langs')?.dataset.project===state.project.id;
-  const busy=(open&&typeof langBusy==='function'&&langBusy())||(typeof task==='object'&&task?.kind==='мови');
+  const busy=(open&&typeof langBusy==='function'&&langBusy())||(typeof task==='object'&&task?.kind==='мови')||languageWork.has(state.project?.id);
+  // work started elsewhere (the automation, the card's play, another tab) while «Мови» stands open and idle: read it
+  // again, so its cards show the job and lock their buttons
+  // (once a stretch of work: the page is not redrawn every few seconds under the author's typing)
+  if(!languageWork.has(state.project?.id))paintLanguageTabBusy.readFor=null;
+  if(open&&languageWork.has(state.project.id)&&typeof langBusy==='function'&&!langBusy()&&typeof loadLangs==='function'&&paintLanguageTabBusy.readFor!==state.project.id){
+    paintLanguageTabBusy.readFor=state.project.id;loadLangs(state.project.id);
+  }
   tab.classList.toggle('tab-busy',!!busy);
   let spinner=tab.querySelector('.tab-spinner');
   if(busy&&!spinner){spinner=document.createElement('span');spinner.className='export-spinner tab-spinner';spinner.setAttribute('aria-hidden','true');tab.append(spinner);}
@@ -309,9 +317,20 @@ async function pollChannelActivity(){
     // every kind of work per episode: the narration and the director can run side by side (backend/script_timing.py)
     const kinds=new Map(),seen=(id,kind)=>{if(!kinds.has(id))kinds.set(id,new Set());kinds.get(id).add(kind);},kitting=new Set();
     for(const task of activity.activities||[])if(task.kind==='режисура'&&task.stage==='kit')kitting.add(task.project_id);
-    for(const task of activity.activities||[])if(task.project_id){seen(task.project_id,task.kind);if(task.kind==='мови'){if(!projectActivities.has(task.project_id))projectActivities.set(task.project_id,{kind:'мови',jobs:task.jobs||[]});}else projectActivities.set(task.project_id,task.kind);}
+    // one label a card: a kind the card shows is never replaced by one it does not (a thumbnail hid «Музика й ефекти»);
+    // the languages' own spinner reads its own set, whatever else runs (16 November 2026 stability pass)
+    const cardKinds=['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови','музика й ефекти','агент студії'];
+    languageWork.clear();
+    for(const task of activity.activities||[])if(task.project_id){
+      seen(task.project_id,task.kind);
+      if(task.kind==='мови')languageWork.add(task.project_id);
+      const current=projectActivities.get(task.project_id),currentKind=typeof current==='object'?current?.kind:current;
+      if(current&&cardKinds.includes(currentKind)&&!cardKinds.includes(task.kind))continue;
+      if(task.kind==='мови'){if(!current||!cardKinds.includes(currentKind))projectActivities.set(task.project_id,{kind:'мови',jobs:task.jobs||[]});}
+      else projectActivities.set(task.project_id,task.kind);
+    }
     for(const line of activity.busy||[]){const match=line.match(/^(розпізнавання озвучки|режисура|озвучення сценарію):.*\(([0-9a-f]{24})\)$/);if(match){seen(match[2],match[1]);projectActivities.set(match[2],match[1]);}}
-    for(const id of kitting)if(projectActivities.get(id)==='режисура')projectActivities.set(id,{kind:'режисура',stage:'kit'});
+    for(const task of activity.activities||[])if(task.kind==='режисура'&&['kit','retime'].includes(task.stage)&&projectActivities.get(task.project_id)==='режисура')projectActivities.set(task.project_id,{kind:'режисура',stage:task.stage});
     // Only active narration needs a separate phrase-progress read.
     const narrationIds=[...kinds].filter(([,set])=>set.has('озвучення сценарію')).map(([id])=>id);
     await Promise.all(narrationIds.map(async id=>{try{const data=await api(`/api/projects/${id}/narration`);if(['queued','running','cancelling'].includes(data.job?.status)){const progress=data.job.total>0?Math.min(99,Math.max(0,Math.floor((data.job.completed||0)/data.job.total*100))):0;projectActivities.set(id,{kind:'озвучення сценарію',progress,queued:data.job.status==='queued',queue_position:data.job.queue_position,cancelling:data.job.status==='cancelling',with_plan:!!kinds.get(id)?.has('режисура'),with_kit:kitting.has(id)});}else if(projectActivities.get(id)==='озвучення сценарію')projectActivities.delete(id);}catch{}}));
@@ -582,7 +601,7 @@ function productionControl(id,working){
     try{
       const result=await api(`/api/projects/${encodeURIComponent(id)}/production-${working?'pause':'resume'}`,'POST',{});
       if(state.project?.id===id){
-        if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production};renderMontageMake();}
+        if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production,episode_paused:result.project.episode_paused,episode_pause_label:result.project.episode_pause_label};renderMontageMake();}
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
       // the director's cached state follows the click, so a resumed director never reads «на паузі» again

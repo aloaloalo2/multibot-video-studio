@@ -214,9 +214,13 @@ def describe(cid, ref):
                    '--disallowedTools', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Agent', 'Task',
                    '--add-dir', str(root), '--output-format', 'json', '-p']
         done = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=DESCRIBE_TIMEOUT, cwd=str(root))
-        answer = json.loads(done.stdout or '{}').get('result') or ''
-        found = re.search(r'\{.*\}', answer, re.S)
-        described = json.loads(found.group(0)) if found else None
+        import model_json
+        answer = (model_json.loads(done.stdout or '{}', kinds=(dict,)) or {}).get('result') or ''
+        try:
+            (root / 'thumbnail-description-answer.txt').write_text(answer, encoding='utf-8')   # kept for a later reading
+        except OSError:
+            pass
+        described = model_json.loads(answer, kinds=(dict,))
     except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
         described = None
     if not isinstance(described, dict) or not any(isinstance(described.get(k), str) and described[k].strip() for k in ('text', 'shows', 'subject')):

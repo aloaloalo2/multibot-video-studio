@@ -154,6 +154,10 @@ def apply(studio, pid, file, *, dry_run=False):
     if fresh['signature'] != packet['signature']:
         raise ValueError('Джерело змінилося під час перевірки. План не змінено.')
     commit_files(files)
+    if plan.get('timing', {}).get('status') == 'audio_synced':
+        # shots made on the real voice: a move cut halfway earlier has nothing left to move (16 November 2026 stability
+        # pass: the marker outlived the fresh direction and kept the frames refused as «ще переносимо»)
+        (path / 'story' / '.retime-pending').unlink(missing_ok=True)
     # the shot table itself, so `retime` can move it onto the real voice later
     store.atomic_json(store.project_dir(pid) / 'director-draft.json', draft)
     # Existing bridge owns frame import, sentence coverage, plan identity and code slots.

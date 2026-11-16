@@ -34,6 +34,28 @@ class LinguistTest(unittest.TestCase):
         self.assertEqual(linguist.resolve(**self.options,request=request),self.options['current'])
         self.assertEqual(len(self.calls),1)
 
+    def test_a_refused_review_is_read_again_at_its_own_stage_never_bought_again(self):
+        def request(model,messages,tokens):
+            self.calls.append(model);raise AssertionError('no new request may be made')
+        fingerprint=recovery.fingerprint(['linguist-v1','es',self.options['source'],self.options['current']])
+        self.ledger['3']={'fingerprint':fingerprint,'status':'blocked','error':linguist.INCOMPLETE,'failed_stage':'review',
+                          'answer':json.dumps({'id':3,'action':'retranslate','reason':'fresh'}),
+                          'decision':{'id':3,'action':'retranslate','reason':'fresh'},
+                          'candidate':'En dos mil catorce investigaron ratones.',
+                          'review_answer':'Sure:\n'+json.dumps({'id':3,'action':'keep','reason':'Good.'})}
+        self.assertEqual(linguist.resolve(**self.options,request=request),'En dos mil catorce investigaron ratones.')
+        self.assertEqual(self.calls,[])
+
+    def test_an_old_record_that_went_past_the_decision_is_not_sent_back_to_a_paid_retranslation(self):
+        def request(model,messages,tokens):
+            self.calls.append(model);return '{}'
+        fingerprint=recovery.fingerprint(['linguist-v1','es',self.options['source'],self.options['current']])
+        self.ledger['3']={'fingerprint':fingerprint,'status':'blocked','error':linguist.INCOMPLETE,
+                          'answer':json.dumps({'id':3,'action':'retranslate','reason':'fresh'}),'candidate':'X'}
+        with self.assertRaises(linguist.Unresolved):
+            linguist.resolve(**self.options,request=request)
+        self.assertEqual(self.calls,[])
+
     def test_correct_phrase_is_kept_and_saved_decision_is_reused_without_another_request(self):
         choice={'id':3,'action':'keep','reason':'Faithful native wording.'}
         self.assertEqual(self.run_decisions([choice]),self.options['current'])

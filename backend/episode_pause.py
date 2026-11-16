@@ -76,12 +76,13 @@ def label(pid: str) -> str | None:
         job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
         total = int(job.get("total") or 0)
         done = max(int(job.get("completed") or 0), int(job.get("cached") or 0))   # made phrases count from the start
-        return f"Озвучка · {round(100 * done / total)}%" if total else "Озвучка"
+        # the same words the card shows while the work runs (user, 16 November 2026: «текст зміни на більш привичний»)
+        return f"Озвучуємо сценарій · {round(100 * done / total)}%" if total else "Озвучуємо сценарій"
     if "director" in stopped:
-        return "Режисура"
+        return "Підготовка" if (stopped["director"] or {}).get("stage") == "kit" else "План кадрів"
     if "languages" in stopped:
         items = stopped["languages"]
-        word = "Переклад" if all(i["kind"] == "translate" for i in items) else "Озвучка перекладу"
+        word = "Перекладаємо" if all(i["kind"] == "translate" for i in items) else "Озвучуємо переклад"
         return word + " · " + ", ".join(i["code"].upper() for i in items)
     return None   # the frames: the card shows their own stopped line
 
@@ -139,7 +140,11 @@ def running(pid: str) -> dict:
         found["narration"] = {"script": job.get("script") or (project.get("voice_script") or {}).get("text")}
     if pid in director.ACTIVE:
         state = director.state(pid) or {}
-        found["director"] = {"reason": state.get("reason") or "voice", "create_video": bool(state.get("create_video"))}
+        found["director"] = {"reason": state.get("reason") or "voice", "create_video": bool(state.get("create_video")), "stage": state.get("stage")}
+    if pid in director.RETIMING and pid not in director.ACTIVE:
+        # the move onto the voice runs on (no paid calls); the pause holds what it would start next: the frames, a fresh
+        # direction, the music (each notes itself and «Продовжити» runs it)
+        found["retime"] = {}
     if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
         found["production"] = {}
     import languages
@@ -197,9 +202,10 @@ def _settle_director(pid: str, data: dict) -> None:
                 and file is not None and file.stat().st_mtime >= float(state.get("started_at") or 0))
     with LOCK:
         current = paused(pid)
-        if current is None or pid in director.ACTIVE:
-            return   # already resumed, or a new run started: nothing to mark
-        current["stopped"]["director"]["directed"] = directed
+        stopped = (current or {}).get("stopped") or {}
+        if current is None or pid in director.ACTIVE or not isinstance(stopped.get("director"), dict):
+            return   # already resumed, a new run started, or the director left the pause (started by hand)
+        stopped["director"]["directed"] = directed
         store.atomic_json(path(pid), current)
         state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
         director.save(pid, state)
@@ -238,6 +244,10 @@ def resume(pid: str) -> dict:
             errors.append("Сценарій змінився під час паузи: запустіть озвучку нового тексту окремо")
         elif job.get("status") != "done" or job.get("script") != narration["script"]:
             step(lambda: project_narration.start(project, narration["script"], resume=True))
+    if (store.read_json(project_narration.root(pid) / "job.json", {}) or {}).get("status") == "done":
+        # the pause's stop came after the voice was finished: its stop mark must not cancel the montage that follows
+        # (episode_automation.after_voice returns at a leftover narration/cancel)
+        (project_narration.root(pid) / "cancel").unlink(missing_ok=True)
     run = stopped.get("director")
     if run and not run.get("directed"):
         # his plan may have been written after the pause (its last request was on the way): read the plan itself
@@ -271,6 +281,9 @@ def resume(pid: str) -> dict:
         if key.startswith("translation_voice:"):
             code = key.split(":", 1)[1]
             step(lambda code=code: episode_automation.after_translation(pid, code, {"kind": "translate", "status": "done"}))
+    if "sound" in pending:
+        import razgon_sound
+        step(lambda: razgon_sound.start(pid, "resume"))
     if "translations" in pending:
         step(lambda: episode_automation.translate_all(pid))
     if "montage" in pending:

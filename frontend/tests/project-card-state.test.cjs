@@ -9,23 +9,29 @@ const exportSource=source.slice(source.indexOf('function updateOverviewExports()
 const activitySource=source.slice(source.indexOf('function renderProjectActivities()'),source.indexOf('async function pollChannelActivity()'));
 
 test('recognition and director status is replaced once and cleared when work ends',()=>{
-  const classes=new Set(),children=[],actions=[],attributes={},activities=new Map([['p','розпізнавання озвучки']]);
+  const classes=new Set(),children=[],actions=[],controls=[],attributes={},activities=new Map([['p','розпізнавання озвучки']]);
   const open={insertBefore:node=>children.push(node),querySelector:()=>({})};
   const card={dataset:{projectId:'p'},classList:{toggle:(key,on)=>on?classes.add(key):classes.delete(key),contains:key=>classes.has(key)},
-    setAttribute:(key,value)=>attributes[key]=value,querySelector:s=>s==='.project-actions'?{append:n=>actions.push(n)}:open,querySelectorAll:()=>[...children,...actions]};
+    setAttribute:(key,value)=>attributes[key]=value,querySelector:s=>s==='.project-actions'?{append:n=>actions.push(n)}:s==='.project-open'?open:null,
+    querySelectorAll:()=>[...children,...actions,...controls],append:node=>controls.push(node)};
   const document={querySelectorAll:()=>[card],createElement:()=>({setAttribute(){},remove(){const list=actions.includes(this)?actions:children;list.splice(list.indexOf(this),1);}})};
-  const c=vm.createContext({document,projectActivities:activities,exportSpinner:'spinner'});
+  // the narration and the director pause with the episode's round play-pause button (00dc092, user 16 November 2026)
+  const productionControl=(id,working)=>{const button={id,working,classes:new Set(),classList:{add:name=>button.classes.add(name)},remove(){controls.splice(controls.indexOf(button),1);}};return button;};
+  const c=vm.createContext({document,projectActivities:activities,exportSpinner:'spinner',productionControl});
   vm.runInContext(activitySource,c);
   const render=()=>vm.runInContext('renderProjectActivities()',c);
   render();const initial=children[0];render();assert.equal(children[0],initial);
   assert.equal(children.length,1);assert.equal(classes.has('stage-working'),true);assert.equal(attributes['aria-busy'],'true');
-  assert.match(children[0].innerHTML,/Розпізнаємо озвучку/);
+  assert.match(children[0].innerHTML,/Розпізнаємо озвучку/);assert.equal(controls.length,0);
   activities.set('p','режисура');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/Режисер складає план/);
+  assert.equal(controls.length,1);assert.equal(controls[0].id,'p');assert.equal(controls[0].working,true);assert.ok(controls[0].classes.has('project-stage-control'));
   activities.set('p',{kind:'озвучення сценарію',progress:42});render();assert.match(children[0].innerHTML,/Озвучуємо сценарій · 42%/);
+  assert.equal(controls.length,1);assert.notEqual(controls[0].disabled,true);
+  activities.set('p',{kind:'озвучення сценарію',progress:43,cancelling:true});render();assert.equal(controls.length,1);assert.equal(controls[0].disabled,true);
   activities.set('p','створення сценарію');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/spinner/);assert.match(children[0].innerHTML,/Opus пише сценарій/);
-  assert.equal(actions.length,1);render();assert.equal(actions.length,1);
+  assert.equal(actions.length,1);assert.equal(controls.length,0);render();assert.equal(actions.length,1);
   activities.set('p','створення зачинів');render();assert.match(children[0].innerHTML,/Opus готує зачини/);
-  activities.clear();render();assert.equal(children.length,0);assert.equal(actions.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
+  activities.clear();render();assert.equal(children.length,0);assert.equal(actions.length,0);assert.equal(controls.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
   classes.add('exporting');render();assert.equal(attributes['aria-busy'],'true');
 });
 
@@ -39,31 +45,40 @@ test('an old failed job with every frame made no longer shows a stopped warning'
 });
 test('export progress takes the single status slot and restores production status when export ends',()=>{
   const making={hidden:false},control={hidden:false},box={hidden:true,replaceChildren(){this.innerHTML='';}},classes=new Set(['production-stopped']);
+  // a running export has its own round stop button on the card (6bc7ac2, user 16 November 2026)
+  let stop=null;const stops=[];
+  const exportStopControl=jobId=>{const button={jobId,dataset:{},classes:new Set(),classList:{add:name=>button.classes.add(name)},remove(){if(stop===button)stop=null;}};stops.push(button);return button;};
   const card={dataset:{projectId:'p'},classList:{toggle:(key,on)=>on?classes.add(key):classes.delete(key),contains:key=>classes.has(key)},
-    setAttribute(){},querySelectorAll:()=>[],querySelector:selector=>({'.project-making':making,'.project-production-control':control,'.project-export-state':box})[selector]};
-  const jobs=new Map([['p',{status:'running',stage:'razgon_frames',razgon_completed:0,razgon_total:107,progress:0}]]);
-  const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner'});
+    setAttribute(){},querySelectorAll:()=>[],append:node=>stop=node,
+    querySelector:selector=>selector==='.project-export-stop'?stop:({'.project-making':making,'.project-production-control':control,'.project-export-state':box})[selector]};
+  const jobs=new Map([['p',{id:'job',status:'running',stage:'razgon_frames',razgon_completed:0,razgon_total:107,progress:0}]]);
+  const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner',exportStopControl});
   vm.runInContext(exportSource,c);vm.runInContext('updateOverviewExports()',c);
   assert.equal(making.hidden,true);assert.equal(control.hidden,true);assert.equal(box.hidden,false);
+  assert.equal(stop?.jobId,'job');assert.ok(stop.classes.has('project-export-stop'));assert.equal(stop.dataset.job,'job');
   assert.match(box.innerHTML,/<span>Експорт<\/span><strong>0%<\/strong>/);
   assert.doesNotMatch(box.innerHTML,/0\/107/);
   for(const stage of ['razgon_frames','razgon_sound','verifying','rendering']){
-    jobs.set('p',{status:'running',stage,razgon_completed:6,razgon_total:13,progress:42});
+    jobs.set('p',{id:'job',status:'running',stage,razgon_completed:6,razgon_total:13,progress:42});
     vm.runInContext('updateOverviewExports()',c);
     assert.match(box.innerHTML,/<span>Експорт<\/span><strong>42%<\/strong>/);
     assert.match(box.innerHTML,/aria-valuenow="42"/);
   }
+  assert.equal(stops.length,1); // the same job keeps its one stop button
+  jobs.set('p',{id:'job',status:'cancelling',progress:42});vm.runInContext('updateOverviewExports()',c);assert.equal(stop,null);
   jobs.clear();vm.runInContext('updateOverviewExports()',c);
-  assert.equal(making.hidden,false);assert.equal(control.hidden,false);assert.equal(box.hidden,true);
+  assert.equal(making.hidden,false);assert.equal(control.hidden,false);assert.equal(box.hidden,true);assert.equal(stop,null);
 });
 
 test('export leaves thumbnail creation available while destructive card actions stay locked',()=>{
   const buttons=['thumbnail','delete','space','rename'].map(kind=>({kind,disabled:false,classList:{contains:name=>name===kind}}));
   const box={replaceChildren(){}};
-  const card={dataset:{projectId:'p'},classList:{toggle(){},contains:()=>false},setAttribute(){},
-    querySelectorAll:()=>buttons,querySelector:s=>s==='.project-export-state'?box:null};
-  const jobs=new Map([['p',{status:'queued',queue_position:1}]]);
-  const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner',exportQueueLabel:()=> 'У черзі'});
+  let stop=null;
+  const card={dataset:{projectId:'p'},classList:{toggle(){},contains:()=>false},setAttribute(){},append:node=>stop=node,
+    querySelectorAll:()=>buttons,querySelector:s=>s==='.project-export-state'?box:s==='.project-export-stop'?stop:null};
+  const jobs=new Map([['p',{id:'job',status:'queued',queue_position:1}]]);
+  const exportStopControl=()=>{const button={dataset:{},classList:{add(){}},remove(){if(stop===button)stop=null;}};return button;};
+  const c=vm.createContext({$:()=>({querySelectorAll:()=>[card]}),state:{projectExports:jobs},exportSpinner:'spinner',exportQueueLabel:()=> 'У черзі',exportStopControl});
   vm.runInContext(exportSource,c);c.updateOverviewExports();
   assert.equal(buttons[0].disabled,false);
   assert.ok(buttons.slice(1).every(button=>button.disabled));

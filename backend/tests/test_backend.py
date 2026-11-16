@@ -1043,7 +1043,10 @@ class BackendTest(unittest.TestCase):
         status, result = self.request(endpoint, "PATCH", {"name": "Нова назва", "expected_revision": revision})
         self.assertEqual(status, 200)
         self.assertEqual(result["project"]["name"], "Нова назва")
+        # the rename takes the episode's folder along (AGENTS.md, backend/episode_folder.py); its files go with it
+        episode = episode.with_name("Нова назва")
         self.assertEqual(result["project"]["episode_path"], str(episode))
+        source = episode / "original.png"
         status, _ = self.request(endpoint, "PATCH", {"name": "Stale rename", "expected_revision": revision})
         self.assertEqual(status, 409)
         status, disk = self.request(endpoint + "/disk")
@@ -1064,7 +1067,7 @@ class BackendTest(unittest.TestCase):
         status, listed = self.request("/api/projects?channel=" + cid)
         self.assertEqual(status, 200)
         self.assertNotIn(project["id"], {item["id"] for item in listed["projects"]})
-        # the bin deletes the project from the studio's disk; the episode's own file stays
+        # the bin deletes the project from the studio's disk; the episode's own file stays (in its renamed folder)
         self.assertEqual(source.read_bytes(), b"original-media")
         self.assertFalse(Path(asset["path"]).exists())
         self.assertFalse((store.PROJECTS_ROOT / project["id"]).exists())

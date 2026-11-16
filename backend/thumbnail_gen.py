@@ -421,15 +421,23 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
     command = [str(cli), "--model", director.MODEL, "--effort", effort, "--strict-mcp-config", "--allowedTools", "Read",
                "--add-dir", str(work), "--output-format", "json", "-p"]
     result = subprocess.run(command, input=text, cwd=cwd, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
-    try:
-        answer = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
-    except ValueError:
-        answer = {}
+    try:   # the paid answer is kept whatever happens next (it was lost when its reading failed)
+        (work / "Відповідь Claude на промпт.txt").write_text(result.stdout or "", encoding="utf-8")
+    except OSError:
+        pass
+    import model_json
+    answer = {}
+    for line in reversed((result.stdout or "").strip().splitlines()):   # the envelope is the last JSON object line
+        try:
+            answer = model_json.loads(line, kinds=(dict,))
+            break
+        except ValueError:
+            continue
     import project_costs
     project_costs.record_at(work.parent, 'claude_code', answer.get('total_cost_usd'))
     if director.limit_stop(answer):
         raise RuntimeError(director.limit_stop(answer) + " Прев'ю можна згенерувати, коли ліміт оновиться.")
-    written = re.sub(r"^```\w*\n|\n```$", "", str(answer.get("result") or "").strip()).strip()
+    written = model_json.strip_fences(str(answer.get("result") or ""))
     if result.returncode or answer.get("is_error") or len(written) < 200:
         raise RuntimeError("Claude не написав промпт прев'ю. " + (written or result.stderr or result.stdout)[-300:].strip())
     return written, answer
@@ -500,8 +508,9 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 refs = [snapshot]
                 if channel_wishes_on:
                     # our thumbnails go to the prompt writer only, as copies named for what they are
-                    for number, path in enumerate(own_thumbnails(project), 1):
-                        copy = work / f"Наше прев'ю {number}.png"
+                    # «index», not «number»: that name holds the new version's number used below for its files
+                    for index, path in enumerate(own_thumbnails(project), 1):
+                        copy = work / f"Наше прев'ю {index}.png"
                         shutil.copyfile(path, copy)
                         refs.append(copy)
             else:

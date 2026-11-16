@@ -459,6 +459,12 @@ def stop(pid: str, kind: str) -> None:
         kill(process)
 
 
+def stop_asked(pid: str, kind: str) -> bool:
+    """Whether a stop of this run was asked, without taking the mark: the run's own end still reads it through
+    cancelled() (a check on the way used to eat it, and a Codex-limit pause then read «Призупинено на ваше прохання»)."""
+    return str(activity_path(pid, kind)) in CANCELLED
+
+
 def cancelled(pid: str, kind: str) -> bool:
     """True once for a run stopped on purpose, at its end."""
     feed = str(activity_path(pid, kind))
@@ -480,8 +486,10 @@ def run(pid: str, cli: Path) -> None:
             plan = store.load_project_plan(pid) or {}
             # the voice was timed while he worked on the script: his shots move onto it in their own thread (no lock
             # held, no paid calls), which starts the frames itself when asked
+            # every channel: a photo channel's Razgon workspace made on the script takes the voice the same way
+            # (a fresh direction after a changed text left it estimated and the frames were refused for good)
             moving = (data.get('status') == 'done' and (plan.get('timing') or {}).get('status') == 'audio_synced'
-                      and animated(store.load_project(pid)) and retime_soon(pid, bool(data.get('create_video'))))
+                      and retime_soon(pid, bool(data.get('create_video'))))
             if data.get('status') == 'done' and data.get('create_video') and not moving:
                 try:
                     import production
@@ -662,10 +670,9 @@ def after_voice(pid: str, create_video=False) -> None:
             return
         start(pid, "create_video" if create_video else "voice")
     except store.StudioError as error:
+        # recorded in every case, so the plan page says why nothing went on (it used to vanish without create_video)
+        failed(pid, str(error))
         if create_video:
-            data = state(pid) or {}
-            data['creation_error'] = str(error)
-            save(pid, data)
             raise
 
 
@@ -673,6 +680,18 @@ RETIME_TIMEOUT = 600
 
 
 RETIMING: set[str] = set()
+WANT_FRAMES: set[str] = set()   # moves whose end should start the frames (whoever asked, first or later)
+
+
+def failed(pid: str, message: str) -> None:
+    """A step after the director that could not go on: kept as the director's `creation_error`, which the plan page shows
+    with «Продовжити створення» (16 November 2026 stability pass: such failures were only printed to the log)."""
+    try:
+        data = state(pid) or {}
+        data["creation_error"] = message
+        save(pid, data)
+    except (OSError, ValueError, store.StudioError):
+        pass
 
 
 def workspace_estimated(pid: str) -> bool:
@@ -697,14 +716,28 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
         return False
     with LOCK:
         if pid in RETIMING:
+            if create_video:
+                WANT_FRAMES.add(pid)   # a second caller asking for the frames is heard by the move already running
             return True
         RETIMING.add(pid)
+        if create_video:
+            WANT_FRAMES.add(pid)
+
+    wanted = [False]
 
     def moved():
         # the move is over: the frames may start now (store.request_production refuses while the pid is RETIMING;
         # 16 November 2026 the thread started the frames before leaving RETIMING and every request was refused)
         with LOCK:
+            if pid in RETIMING:
+                wanted[0] = pid in WANT_FRAMES
             RETIMING.discard(pid)
+            WANT_FRAMES.discard(pid)
+        return wanted[0]
+
+    def frames():
+        import production
+        production.start_from_plan(pid)
 
     def work():
         try:
@@ -714,25 +747,54 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
             if not animated(store.load_project(pid)):
                 # a photo channel's Razgon workspace: the real voice, words and frames; no direction to move
                 done = refresh_workspace(pid)
-                moved()
-                if done and create_video:
-                    import production
-                    production.start_from_plan(pid)
+                if moved() and done:
+                    frames()
+                elif not done:
+                    failed(pid, "Не вдалося перенести робочу папку Razgon на справжню озвучку. Натисніть «Продовжити створення», щоб спробувати ще раз.")
             elif retime(pid):
-                moved()
-                if create_video:
-                    import production
-                    production.start_from_plan(pid)
+                if moved():
+                    frames()
             else:
-                moved()
-                start(pid, "create_video" if create_video else "voice")
-        except Exception:
+                # the move failed: a fresh direction, unless the author paused the episode meanwhile (then «Продовжити»
+                # takes this step; a paused episode starts nothing new, AGENTS.md)
+                want = moved()
+                import episode_pause
+                if not episode_pause.note(pid, "after_voice", create_video=want):
+                    start(pid, "create_video" if want else "voice")
+        except Exception as error:
+            # a failure on the way is shown on the plan page with «Продовжити створення», never only printed
             import traceback
             traceback.print_exc()
+            failed(pid, str(error) if isinstance(error, store.StudioError) else "Не вдалося продовжити після переносу режисури на озвучку. Натисніть «Продовжити створення».")
         finally:
             moved()
     threading.Thread(target=work, daemon=True).start()
     return True
+
+
+def resume_retimes() -> None:
+    """At start-up: a move onto the voice cut by a restart goes on by itself (its marker kept the frames refused as
+    «ще переносимо» for good). The frames follow when the director was asked for the whole video."""
+    time.sleep(20)
+    for folder in sorted((store.DATA_ROOT / "projects").glob("*/razgon-link.json")):
+        pid = folder.parent.name
+        try:
+            if pid in ACTIVE or not workspace_estimated(pid):
+                continue
+            plan = store.load_project_plan(pid) or {}
+            if (plan.get("timing") or {}).get("status") != "audio_synced" or plan.get("director_stale"):
+                continue
+            import episode_pause
+            if episode_pause.paused(pid) is not None:
+                continue   # a paused episode starts nothing by itself; «Продовжити» carries its steps
+            project = store.load_project(pid)
+            if animated(project) and plan.get("frame_source") != "razgon-direction":
+                continue   # no director's shots to move: the director's own way after the voice decides, not a restart
+            request = (project.get("production_request") or {}).get("status")
+            retime_soon(pid, bool((state(pid) or {}).get("create_video")) and request not in {"requested", "in_progress", "done"})
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
 
 def refresh_workspace(pid: str) -> bool:
@@ -762,7 +824,9 @@ def retime(pid: str) -> bool:
         result = subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "direction.py"), "retime", pid],
                                 capture_output=True, text=True, timeout=RETIME_TIMEOUT, cwd=str(store.APP_ROOT))
         if result.returncode == 0:
-            razgon_sound.start(pid, "director")
+            import episode_pause
+            if not episode_pause.note(pid, "sound"):   # paused meanwhile: «Продовжити» lays the music
+                razgon_sound.start(pid, "director")
             return True
         error = (result.stderr or result.stdout).strip()[-600:]
     except (OSError, subprocess.SubprocessError) as exc:

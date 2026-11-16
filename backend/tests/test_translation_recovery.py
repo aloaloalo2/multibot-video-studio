@@ -29,8 +29,18 @@ class StrictReplyTest(unittest.TestCase):
         self.assertIn('21, 22', issue)
 
     def test_malformed_or_prose_is_not_treated_as_translation(self):
-        for text in ['{"20":"unfinished', 'Here: {"20":"text"}', None]:
+        for text in ['{"20":"unfinished', 'Here is the translation you asked for.', None, '']:
             self.assertEqual(recovery.answers(text, [20])[0], {})
+
+    def test_words_and_fences_around_a_valid_reply_are_forgiven_but_ids_stay_strict(self):
+        # a correct translation must not be thrown away and bought again for its wrapping (16 November 2026)
+        for text in ['Here: {"20":"text"}', 'JSON\n{"20":"text"}', '```JSON\n{"20":"text"}\n```', '{"20":"text"}\nDone.',
+                     '{"translations":{"20":"text"}}', '```json\n{"20":"text"}']:
+            self.assertEqual(recovery.answers(text, [20])[0], {20: 'text'}, text)
+        self.assertEqual(recovery.answers('Here: {"20":"a","99":"b"}', [20])[0], {})
+        self.assertEqual(recovery.answers('{"20":"a","20":"b"}', [20])[0], {})
+        self.assertEqual(recovery.answers('{"20":"a","note":"kept it short"}', [20])[0], {20: 'a'})   # a remark is no id
+        self.assertEqual(recovery.audit_evidence('Verdict:\n{"ok":true,"ids":[20]}', [20]), ({}, [20]))
 
     def test_audit_rejects_contradictions_duplicates_and_unrequested_ids(self):
         invalid = ['{"ok":true,"ids":[0],"issues":[{"id":0,"reason":"Wrong unit"}]}',

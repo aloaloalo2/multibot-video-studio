@@ -33,10 +33,12 @@ test('trending request preserves source title/script and creates a new image wit
   const calls=[];
   const c=vm.createContext({state:{},thumbnailSources:new Map([['p',{title:'¿Qué pasaría?',script:'Texto español.'}]]),
     api:async(...args)=>{calls.push(args);return args[1]==='POST'?{job:{status:'running',writer:'trending'}}:{writers:['trending']};},thumbnailRuns:new Map(),
-    $:()=>({hidden:true}),showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status(){}});
+    // every element has a dataset, as in the DOM: the clone window's «Адаптувати під мій стиль» reads the backdrop's mode (8c0c4b6)
+    $:()=>({hidden:true,dataset:{}}),showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status(){}});
   vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p'},'trending','More emotion')",c);
   const body=calls.find(args=>args[1]==='POST')[2];assert.equal(body.writer,'trending');assert.equal(body.title,'¿Qué pasaría?');
   assert.equal(body.script,'Texto español.');assert.equal(body.base,undefined);assert.equal(body.wishes,'More emotion');
+  assert.equal(body.channel_wishes,undefined); // the channel-wishes choice belongs to clone mode only
 });
 test('an older running server cannot silently launch the normal paid mode for a trending request',async()=>{
   const calls=[];let error;
@@ -49,7 +51,7 @@ test('host checkbox sends the explicit per-run choice and is omitted when unavai
   for(const choice of [true,false,null]){
     let body;
     const c=vm.createContext({state:{},thumbnailSources:new Map(),thumbnailRuns:new Map(),
-      $:id=>id==='thumb-use-hero'?(choice===null?null:{checked:choice}):{hidden:true},
+      $:id=>id==='thumb-use-hero'?(choice===null?null:{checked:choice}):{hidden:true,dataset:{}},
       api:async(url,method,value)=>{body=value;return {job:{status:'running'}};},
       showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw new Error(message);}});
     vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',name:'T'},'claude','Idea')",c);
@@ -62,7 +64,7 @@ test('clone mode reads the chosen URL once and sends a per-cover reference witho
   for(const mode of ['clone','new']){
     const calls=[],backdrop={hidden:true,dataset:{thumbnailProject:'p',thumbnailMode:mode}};
     const c=vm.createContext({state:{channel:{id:'c'}},thumbnailSources:new Map([['p',{title:'Our episode',script:'Our script',reference_selection:true}]]),thumbnailRuns:new Map(),
-      $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:id==='thumb-use-hero'?{checked:false}:null,
+      $:id=>id==='modal-backdrop'?backdrop:id==='thumb-reference-url'?{value:' https://youtu.be/abcdefghijk '}:id==='thumb-use-hero'?{checked:false}:id==='thumb-use-wishes'?{checked:true}:null,
       api:async(...args)=>{calls.push(args);return args[0].endsWith('/idea-reference')?{id:'abcdefghijk',url:'https://youtu.be/abcdefghijk'}:{job:{status:'running'}};},
       showThumbnailState(){},markThumbnailCard(){},pollThumbnail(){},status:message=>{throw Error(message);}});
     vm.runInContext(generation,c);await vm.runInContext("generateThumbnail({id:'p',channel_id:'c'},'claude','Wishes')",c);
@@ -70,6 +72,7 @@ test('clone mode reads the chosen URL once and sends a per-cover reference witho
     const posted=calls.at(-1);assert.equal(posted[0],'/api/projects/p/thumbnail');
     assert.equal(posted[2].reference_id,mode==='clone'?'abcdefghijk':'');assert.equal(posted[2].title,'Our episode');
     assert.equal(posted[2].use_hero,false);
+    assert.equal(posted[2].channel_wishes,mode==='clone'?true:undefined); // «Адаптувати під мій стиль», clone only (8c0c4b6)
     if(mode==='clone')assert.equal(calls[0][2].url,'https://youtu.be/abcdefghijk');
   }
 });
@@ -98,7 +101,9 @@ function referenceFixture(data,api){
   controls['thumb-reference-url'].value=data.clone_reference?.url||'';
   const heroLabel={hidden:false};if(data.hero_reference)controls['thumb-use-hero']={checked:false,closest:()=>heroLabel};
   const buttons=['new','clone'].map(mode=>({...element(),dataset:{thumbMode:mode}})),writers=[element()];
-  controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector==='#modal-actions button'?writers:[];
+  // since 024e910 the label and gating reach only the create button, never the writer dropdown's own picker buttons
+  const actionButtons='#modal-actions button:not(.ui-picker-button):not(.ui-picker-item)';
+  controls['modal-backdrop'].querySelectorAll=selector=>selector==='[data-thumb-mode]'?buttons:selector===actionButtons?writers:[];
   const c=vm.createContext({$:id=>controls[id],state:{channel:{id:'c'}},thumbnailSources:new Map([['p',source]]),thumbnailFrames:2,showThumbnailState(){},api,setTimeout,clearTimeout});
   vm.runInContext(sourceText(),c);
   c.data=data;vm.runInContext("setupThumbnailModes({id:'p',channel_id:'c'},data)",c);

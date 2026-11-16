@@ -111,6 +111,15 @@ def verify(project, asset, script):
     root = store.project_dir(project['id']) / 'narration'
     try:
         job = store.read_json(root / 'job.json', {}) or {}
+        if job.get('status') != 'done':
+            # the narration hands on to the recognition before it writes «done» (it keeps the episode reserved until
+            # the next stage is registered): wait for it to finish rather than lose the takes' proof
+            import time
+            import project_narration
+            until = time.monotonic() + 30
+            while project['id'] in project_narration.ACTIVE and time.monotonic() < until:
+                time.sleep(.2)
+            job = store.read_json(root / 'job.json', {}) or {}
         if not isinstance(job, dict) or job.get('status') != 'done' or job.get('asset_id') != asset.get('id'):
             return None
         locale = number_text.detect_locale(script)

@@ -154,12 +154,16 @@ def ask(image_url: str, note: str = "") -> dict:
             content = json.load(response)["choices"][0]["message"]["content"]
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         raise StyleCopyError("DeepSeek не відповів. Перевірте ключ OpenRouter і спробуйте ще раз") from None
-    content = re.sub(r"//[^\n]*", "", content or "")
-    match = re.search(r"\{.*\}", content, re.S)
+    import model_json
     try:
-        answer = json.loads(match.group(0)) if match else None
+        answer = model_json.loads(content or "", kinds=(dict,))
     except ValueError:
-        answer = None
+        # «// comment» lines inside the object: dropped only where they stand alone on a line, so an address such as
+        # https://… inside a value survives (the former regex cut every «//» to the end of its line)
+        try:
+            answer = model_json.loads(re.sub(r"(?m)^\s*//[^\n]*$|[ \t]+//[^\n\"]*$", "", content or ""), kinds=(dict,))
+        except ValueError:
+            answer = None
     if not isinstance(answer, dict):
         raise StyleCopyError("DeepSeek повернув не стиль. Спробуйте іншу картинку")
     return answer

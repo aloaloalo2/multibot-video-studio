@@ -447,7 +447,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         last_review = {}
         def cancelled():
             current = store.load_project(pid).get('production_request') or {}
-            return director.cancelled(pid,'production') or current.get('paused') or current.get('id') != request['id']
+            return director.stop_asked(pid,'production') or current.get('paused') or current.get('id') != request['id']
         reviews = threading.local()   # two sessions verify side by side: each reads back its own review
         def verify(numbers):
             nonlocal last_review
@@ -796,8 +796,13 @@ def start_from_plan(pid: str) -> dict:
         same_script = request.get('script_sha256') == plan.get('script_sha256')
         # a run cut by a restart for an older script never blocks the frames of the new one
         held = request.get('paused') and (same_script or request.get('paused_by') != 'restart')
-        if held or request.get('status') == 'failed' and same_script:
+        if held or request.get('status') == 'failed' and same_script and (request.get('limit') or director.limit_stop({"result": request.get("error")})):
             raise store.StudioError('Створення кадрів призупинено. Продовжіть збережену роботу кнопкою продовження.', 409)
+        if request.get('status') == 'failed' and same_script:
+            # a run that failed (no pause, no limit) is not resumed by «Продовжити»: a new start goes on from the first
+            # frame not made, which the automation does not buy by itself (16 November 2026 stability pass: the old
+            # answer sent the author to a resume that refused with «Агент не стоїть на паузі»)
+            raise store.StudioError('Попереднє створення кадрів зупинилося з помилкою. Готові кадри збережено. Натисніть «Продовжити створення ролика» в блоці «Створення ролика»: робота піде з першого незробленого кадру.', 409)
         project = store.request_production(pid, count)
     start(pid)
     # A corrected explicit retry replaces the previous handoff error in the shared process status.

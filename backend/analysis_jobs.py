@@ -282,6 +282,8 @@ def worker(job, script, save_job):
                         time.sleep(3)
                         waited += 3
                 finally:
+                    if shown:   # the director is done: while another episode's Whisper holds the queue, say so
+                        progress(99, "comparing")
                     RUN_LOCK.acquire()
             with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
@@ -313,6 +315,13 @@ def worker(job, script, save_job):
             except Exception:
                 import traceback
                 traceback.print_exc()
+            try:   # the plan now follows the voice: the channel's automatic translations may start
+                # first, and apart: a failing director handoff used to skip them (16 November 2026 stability pass)
+                import episode_automation
+                episode_automation.translate_all(project["id"])
+            except Exception:
+                import traceback
+                traceback.print_exc()
             try:
                 # Publish completion and hand off under the same gate as a joining click.
                 with store.LOCK:
@@ -321,17 +330,15 @@ def worker(job, script, save_job):
                         director.after_voice(project['id'], create_video=True)
                     else:
                         director.after_voice(project["id"])
-                try:   # the plan now follows the voice: the channel's automatic translations may start
-                    import episode_automation
-                    episode_automation.translate_all(project["id"])
-                except Exception:
-                    import traceback
-                    traceback.print_exc()
                 with store.LOCK:
                     job.pop('handoff_error', None)
                     save_job(job)
             except Exception as error:   # keep applied recognition and expose a recoverable handoff failure
                 job['handoff_error'] = str(error)
+                try:   # where the plan page reads it, with «Продовжити створення»
+                    director.failed(project['id'], str(error) if isinstance(error, store.StudioError) else 'Розпізнавання готове, але режисер не запустився. Натисніть «Продовжити створення».')
+                except Exception:
+                    pass
                 import traceback
                 traceback.print_exc()
     except (store.StudioError, RuntimeError) as error:

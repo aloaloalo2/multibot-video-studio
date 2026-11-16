@@ -60,20 +60,31 @@ test('browser navigation invalidates pending project reads before awaiting resto
 test('channel selection renders once and ignores an older response',async()=>{
   const requests={},renders=[];
   const state={navigation:0,channels:[{id:'a'},{id:'b'}]};
+  // the clicked channel lights up at once while its episodes load (fa138d5, user 15 November 2026)
+  const classes=()=>{const set=new Set();return {set,toggle:(name,on)=>on?set.add(name):set.delete(name),remove:name=>set.delete(name)};};
+  const rows=['a','b'].map(id=>({dataset:{channelId:id},classList:classes()})),list={classList:classes()};
   const context=vm.createContext({state,cancelLocationRestore(){},stopPlayback(){},
+    document:{querySelectorAll:selector=>selector==='#channel-list .channel-item'?rows:[]},$:id=>id==='channel-list'?list:{classList:classes()},
     api:url=>new Promise(resolve=>requests[url]=resolve),renderChannels(){},
     renderProject:()=>renders.push(state.channel.id),syncRoute(){},status(){}});
   vm.runInContext(section('async function selectChannel(','function projectActions('),context);
   const older=context.selectChannel('a'),newer=context.selectChannel('b');
+  assert.deepEqual(rows.map(row=>row.classList.set.has('active')),[false,true]);assert.ok(list.classList.set.has('channel-opening'));
   requests['/api/projects?channel=b']({projects:[{id:'new'}]});assert.equal(await newer,true);
+  assert.equal(list.classList.set.has('channel-opening'),false);
   requests['/api/projects?channel=a']({projects:[{id:'old'}]});assert.equal(await older,false);
   assert.deepEqual(renders,['b']);assert.equal(state.projects[0].id,'new');
 });
 
+// what the poll touches beside the activity maps: the exporting channels (94cf3f3), the languages' own spinner
+// (6227200) and the channel notices (0f1db6f)
+const pollStubs=()=>({channelExporting:new Set(),languageWork:new Set(),paintLanguageTabBusy(){},
+  channelNoticeData:{},saveChannelNotices(){},renderChannelNotices(){}});
+
 test('activity polling reads phrase progress only for active narration and prevents overlapping polls',async()=>{
   let resolveStatus;const requests=[];
   const channelActivity=new Set(),projectActivities=new Map(),state={project:{id:'idle'},channels:[{id:'c',name:'Channel'}]};
-  const context=vm.createContext({state,channelActivity,projectActivities,channelActivityPending:false,
+  const context=vm.createContext({state,channelActivity,projectActivities,channelActivityPending:false,...pollStubs(),
     document:{hidden:false,querySelectorAll:()=>[]},renderProjectActivities(){},console,
     api:async url=>{
       requests.push(url);
@@ -95,7 +106,7 @@ test('activity polling reads phrase progress only for active narration and preve
 test('overview discovers director-to-frames handoff and new production without a reload',async()=>{
   const projectActivities=new Map([['p','режисура']]),state={project:null,projects:[{id:'p'}],channels:[]};
   let refreshes=0;
-  const context=vm.createContext({state,projectActivities,channelActivity:new Set(),channelActivityPending:false,
+  const context=vm.createContext({state,projectActivities,channelActivity:new Set(),channelActivityPending:false,...pollStubs(),
     document:{hidden:false,querySelectorAll:()=>[]},renderProjectActivities(){},console,
     api:async()=>({activities:[{project_id:'p',kind:'створення кадрів'}],active_channels:[],busy:[]}),
     refreshProjects:async()=>{refreshes++;state.projects=[{id:'p',production_request:{status:'in_progress'}}];}});

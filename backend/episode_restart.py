@@ -51,6 +51,12 @@ def restart(pid: str) -> dict:
         raise store.StudioError("Спочатку зупиніть озвучення й дочекайтеся його завершення",409)
     if pid in thumbnail_gen.ACTIVE:
         raise store.StudioError("Студія ще малює прев'ю цього випуску. Зачекайте, доки воно буде готове, і почніть заново", 409)
+    import razgon_sound, director
+    # the film's music and a move of the direction onto the voice would lay their work onto the emptied episode
+    if pid in razgon_sound.ACTIVE:
+        raise store.StudioError("Студія ще кладе музику й ефекти. Зачекайте хвилину й почніть заново", 409)
+    if pid in director.RETIMING:
+        raise store.StudioError("Студія ще переносить режисуру на озвучку. Зачекайте хвилину й почніть заново", 409)
     stop_runs(pid)
     with store.LOCK:
         project = store.load_project(pid)
@@ -64,7 +70,7 @@ def restart(pid: str) -> dict:
             plan = store.project_plan_file(project)
         except store.StudioError:
             plan = None
-        files = [folder / "narration" / "job.json", folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json", folder / "episode-pause.json",
+        files = [folder / "narration" / "job.json", folder / "narration" / "cancel", folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json", folder / "episode-pause.json",
                  store.history_folder(pid), director.state_path(pid), folder / "director.log",
                  director.activity_path(pid, "director"), director.activity_path(pid, "production"),
                  *sorted(folder.glob("production-*.log"))]

@@ -789,7 +789,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (project_narration.ACTIVE.copy() | director.ACTIVE.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
+    return (project_narration.ACTIVE.copy() | director.ACTIVE.copy() | director.RETIMING.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -823,8 +823,10 @@ def project_jobs(pid: str) -> dict:
             "агент студії": status(lambda: agent_runtime.snapshot(pid))}
     # A worker owns its slot until cleanup and the next-stage registration finish,
     # even if its terminal receipt was already written.
+    # the move of a direction onto the real voice is the director's work too: the card and the channel spin, and a
+    # restart waits for it (it took up to 10 minutes unseen; 16 November 2026 stability pass)
     for kind, owned in {'озвучення сценарію': project_narration.ACTIVE,
-                        'режисура': director.ACTIVE, 'створення кадрів': production.ACTIVE,
+                        'режисура': director.ACTIVE | director.RETIMING, 'створення кадрів': production.ACTIVE,
                         'музика й ефекти': razgon_sound.ACTIVE, "прев'ю": thumbnail_gen.ACTIVE,
                         'розпізнавання озвучки': set(analysis_jobs.ACTIVE_PROJECTS.copy().values())}.items():
         if pid in owned and jobs[kind] not in agent_view.BUSY:
@@ -849,7 +851,10 @@ def channel_task_outcome(task):
         if request.get('paused') and (request.get('paused_by') == 'user' or
                                       request.get('paused_by') is None and str(request.get('error') or '').startswith('Призупинено на ваше прохання')):
             return 'paused_by_user'
-    return project_jobs(pid).get(kind)
+    result = project_jobs(pid).get(kind)
+    if result == 'paused' and episode_pause.paused(pid) is not None:
+        return 'paused_by_user'   # the author's round pause stopped it, not a failure (it read «зупинилась сама»)
+    return result
 
 
 def channel_completion_status(result, exports):
@@ -897,7 +902,8 @@ def studio_work_status(exports):
                 item['jobs'] = []
         elif item.get('kind') == 'режисура':
             # the director's run makes the film's kit after the plan: the card reads «Підготовка» then
-            item['stage'] = (director.state(item['project_id']) or {}).get('stage')
+            item['stage'] = ('retime' if item['project_id'] in director.RETIMING and item['project_id'] not in director.ACTIVE
+                             else (director.state(item['project_id']) or {}).get('stage'))
     if trending_videos.busy():
         result['busy'].append('оновлення добірки конкурентів')
     if title_translation.busy():
@@ -949,7 +955,9 @@ def recent_exports(pid: str, limit: int = 5) -> list[dict]:
     for path in sorted(JOBS_ROOT.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)[:400]:
         try:
             job = store.read_json(path)
-        except (OSError, ValueError):
+            if isinstance(job, dict) and job.get("project_id") == pid and job.get("id"):
+                job = load_job(job["id"])   # an export cut by a restart reads as stopped, not «running 37%»
+        except (OSError, ValueError, store.StudioError):
             continue
         if isinstance(job, dict) and job.get("project_id") == pid and "output_path" in job:
             found.append({key: job.get(key) for key in ("id", "status", "progress", "stage", "remaining_seconds", "output_path", "error",
@@ -1378,6 +1386,15 @@ class Handler(BaseHTTPRequestHandler):
                 item['published'] = published.check(item)   # the blue Finder tag, kept even without the folder
                 item['episode_paused'] = episode_pause.resumable(item['id'])
                 item['episode_pause_label'] = episode_pause.label(item['id']) if item['episode_paused'] else None
+                if (item.get('production_request') or {}).get('status') in {'requested', 'in_progress'} and item['id'] not in production.ACTIVE:
+                    # a card must not read «Створюємо кадри» for a run no agent works on (it was put right only when
+                    # the project was opened; 16 November 2026 stability pass)
+                    try:
+                        settled = production.settle(item['id'])
+                        if settled is not None:
+                            item['production_request'] = {**item['production_request'], **{k: settled.get(k) for k in ('status', 'paused', 'paused_by', 'error', 'limit')}}
+                    except (store.StudioError, OSError, ValueError):
+                        pass
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
@@ -1702,6 +1719,7 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             project = store.request_production(match.group(1), body.get("frames"))
             production.start(project["id"])   # Claude Opus starts on the frames at once
+            episode_pause.started_by_hand(project["id"], "production")
             return self.json_response({"project": store.load_project(project["id"])})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/create-video", path)
         if match and method == "POST":
@@ -1841,7 +1859,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(director_plan.apply(match.group(1), body.get("frames"), bool(body.get("dry_run"))))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match and method == "POST":
-            return self.json_response({"director": director.start(match.group(1), "manual")})
+            run = director.start(match.group(1), "manual")
+            episode_pause.started_by_hand(match.group(1), "director")   # a director started by hand is no longer paused
+            return self.json_response({"director": run})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match and method == "PATCH":
             pid = match.group(1)
@@ -2111,6 +2131,7 @@ def main():
     threading.Thread(target=production_edits_loop,daemon=True).start()
     threading.Thread(target=tidy_loop, daemon=True).start()
     threading.Thread(target=razgon_kit_at_start, daemon=True).start()
+    threading.Thread(target=director.resume_retimes, daemon=True).start()
     # projects an earlier version hid when their episode folder was gone come back to the list
     threading.Thread(target=store.restore_hidden_projects, daemon=True).start()
     # every episode's sound gets a copy in the studio, so it still plays after the episode folder is deleted

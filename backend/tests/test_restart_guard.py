@@ -33,7 +33,8 @@ class RestartGuardTest(unittest.TestCase):
 
     def test_update_waits_for_frame_worker_even_when_project_is_missing_from_status(self):
         pid='b'*24
-        with patch.object(app.production,'ACTIVE',{pid}),patch.object(app,'IN_FLIGHT',1), \
+        # its own empty set of recognitions: one an earlier test of the run left behind must not answer for it
+        with patch.object(app.production,'ACTIVE',{pid}),patch.object(app,'IN_FLIGHT',1),patch.object(app.analysis_jobs,'ACTIVE_JOBS',set()), \
              patch.object(app.agent_view,'studio_status',side_effect=lambda *args:{'busy':[],'activities':[],'active_channels':[]}), \
              patch.object(episode_ideas,'active_work',return_value=[]), \
              patch.object(app.trending_videos,'busy',return_value=False), \

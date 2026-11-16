@@ -25,13 +25,13 @@ function openTrendingVideos({updateUrl=true}={}){
   const navigation=state.navigation;
   const live=()=>root.isConnected&&state.navigation===navigation&&state.view==='trending'&&!root.hidden;
   const select=root.querySelector('select'),button=root.querySelector('.trend-refresh'),feedback=root.querySelector('.trend-feedback'),grid=root.querySelector('.trend-grid');
+  const sortBox=root.querySelector('.trend-sort');   // taken before the heading moves to the toolbar above
   $('trending-toolbar').replaceChildren(root.querySelector('.trend-top'));
   let data=null,timer=null,readVersion=0,readFailures=0,refreshing=false,cardMarkup='';const used=new Set();
   // the sort the author picked last stays for the next visit (user, 16 November 2026: «перемикач… по іксу… за годину»)
   let sort='x';try{if(localStorage.getItem('trend-sort')==='hourly')sort='hourly';}catch{}
-  const sortBox=$('trending-toolbar').querySelector('.trend-sort');   // the heading moved to the toolbar above
-  const paintSort=()=>sortBox.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.trendSort===sort)));
-  sortBox.onclick=event=>{const pick=event.target.closest('[data-trend-sort]');if(!pick||pick.dataset.trendSort===sort)return;sort=pick.dataset.trendSort;try{localStorage.setItem('trend-sort',sort);}catch{}paintSort();render();};
+  const paintSort=()=>sortBox?.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.trendSort===sort)));
+  if(sortBox)sortBox.onclick=event=>{const pick=event.target.closest('[data-trend-sort]');if(!pick||pick.dataset.trendSort===sort)return;sort=pick.dataset.trendSort;try{localStorage.setItem('trend-sort',sort);}catch{}paintSort();render();};
   paintSort();
   const ordered=list=>sort==='hourly'?[...list].sort((a,b)=>(b.hourly??0)-(a.hourly??0)):list;   // the server sends the X order
   const readAt=()=>{if(data?.retry_after>0)readyAt=Math.max(readyAt,Date.now()+data.retry_after*1000);};

@@ -30,16 +30,17 @@ def release_heygen(pid):
     heygen_voice.queue_leave(heygen_owner(pid))
 
 
-def wait_heygen(pid, job):
+def wait_heygen(pid, job, record=None):
     """A HeyGen narration waits its turn behind the others (original and translations alike, heygen_voice.queue_wait),
-    showing «HeyGen · у черзі · N» meanwhile; a stop leaves the queue."""
+    showing «HeyGen · у черзі · N» meanwhile in `record` (its own job file: a sentence's revision writes its
+    revision-job.json, never the finished narration's job.json); a stop leaves the queue."""
     import heygen_voice
     if (root(pid)/'cancel').exists():raise Cancelled()
     def stop_check():
         if (root(pid)/'cancel').exists():raise Cancelled()
     def waiting(ahead):
         job.update(status='queued', queue_position=ahead)
-        store.atomic_json(root(pid)/'job.json', job)
+        store.atomic_json(record or root(pid)/'job.json', job)
     heygen_voice.STOP.check=stop_check
     try:
         heygen_voice.queue_wait(heygen_owner(pid), waiting)
@@ -235,7 +236,10 @@ def cancel(pid):
 def start(project,text,resume=False):
     pid=project['id'];cid=project['channel_id']
     with LOCK,lab.LOCK:
-        if (root(pid)/'cancel').exists() and resume is not True:raise store.StudioError('Озвучення зупинено користувачем. Для нового запуску потрібне явне підтвердження resume=true.',409)
+        # the author's stop holds for the text it stopped; a new text (a new script, an episode started over) is free to
+        # go (a leftover stop mark refused the automatic narration of every new script; 16 November 2026 stability pass)
+        stopped_text=(store.read_json(root(pid)/'job.json',{}) or {}).get('script')
+        if (root(pid)/'cancel').exists() and resume is not True and stopped_text==text:raise store.StudioError('Озвучення зупинено користувачем. Для нового запуску потрібне явне підтвердження resume=true.',409)
         if pid in ACTIVE:raise store.StudioError('Озвучення цього проєкту вже триває.',409)
         settings,ref,entries,quote=spec(project,text)
         job={'status':'running','completed':0,**quote,'started_at':time.time(),'script':text,'speed':settings['speed'],'render_settings':settings.copy()}

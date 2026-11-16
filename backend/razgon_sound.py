@@ -164,6 +164,10 @@ def _run(pid: str, reason: str) -> None:
         data.update(status="failed", error="Музика й ефекти не зібралися за годину")
     except (OSError, store.StudioError) as error:
         data.update(status="failed", error=str(error))
+    except Exception:   # any other failure ends the run as failed, never «running» read later as a restart
+        import traceback
+        traceback.print_exc()
+        data.update(status="failed", error="Музика й ефекти не зібралися через помилку студії. Спробуйте ще раз.")
     finally:
         with LOCK:
             STOPPED.discard(pid)

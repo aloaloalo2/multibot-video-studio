@@ -96,7 +96,7 @@ def estimate(script: str, pace: float) -> dict:
 
 def build(project: dict, script: str) -> dict:
     """An estimated plan of the script with the channel's settings and the episode's own format shares."""
-    channel = store.get_channel_folder(project["channel_id"])
+    channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
     settings = store.validate_settings(store.read_channel_settings(channel, {}))
     if project.get("plan_weights") is not None:
         settings = store.validate_settings({**settings, "weights": project["plan_weights"]})
@@ -118,7 +118,7 @@ def wanted(project: dict) -> str | None:
     """The script to direct before the voice, or None when this episode goes the usual way."""
     if store.project_plan_mode(project) == "direct" or not project.get("episode_path"):
         return None
-    channel = store.get_channel_folder(project["channel_id"])
+    channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
     if (store.read_channel_settings(channel, {}) or {}).get("auto_montage") is not True:
         return None   # the director runs only when the voice would hand the episode on to it anyway
     script = str((project.get("voice_script") or {}).get("text") or "").strip()

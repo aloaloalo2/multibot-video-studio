@@ -10,7 +10,9 @@ JOB_CALLBACKS = None
 
 
 def settings(project):
-    folder = store.get_channel_folder(project['channel_id'])
+    # a switched-off channel's episodes keep working like everywhere else in the Studio (a disabled channel used to
+    # stop every handoff with an uncaught «Канал не знайдено»)
+    folder = store.get_channel_folder(project['channel_id'], include_disabled=True)
     return store.read_channel_settings(folder, {})
 
 
@@ -33,6 +35,24 @@ def handoff(pid, stage, identity, action, retry_failed=False):
         if (data.get(stage) or {}).get('identity') == identity:
             data[stage].update(result)
             store.atomic_json(path, data)
+    if result['status'] == 'failed' and stage == 'montage':
+        # the plan page shows the director's creation_error with «Продовжити створення» (automation.json is read nowhere)
+        try:
+            import director
+            director.failed(pid, 'Автомонтаж після озвучки не запустився: ' + result['error'])
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    if result['status'] == 'failed' and stage.startswith('translation-'):
+        # the language card says why the automatic step did not start (automation.json alone was never shown)
+        try:
+            import languages
+            voice = stage.startswith('translation-voice-')
+            code = stage[len('translation-voice-'):] if voice else stage[len('translation-'):]
+            languages.record_automation_failure(pid, code, 'voice' if voice else 'translate', result['error'])
+        except Exception:
+            import traceback
+            traceback.print_exc()
     if result['status'] == 'failed' and stage == 'voice':
         # Existing narration UI offers its ordinary manual retry; no paid auto-retry.
         import project_narration

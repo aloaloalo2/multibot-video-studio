@@ -1,18 +1,20 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../app.js'),'utf8');
 function fixture(){
- const badge={setAttribute(key,value){this[key]=value;}},storage={};
- const context={state:{view:'editor',channel:null},channelActivity:new Set(),document:{querySelectorAll:()=>[{dataset:{channelId:'one'},querySelector:()=>badge}]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
+ const badge={setAttribute(key,value){this[key]=value;}},count={},storage={};
+ // the channel button holds the spinner slot and, since 5b2da23, a count of its working episodes beside it
+ const button={dataset:{channelId:'one'},querySelector:selector=>selector==='.channel-busy'?badge:selector==='.channel-count'?count:null};
+ const context={state:{view:'editor',channel:null},channelActivity:new Set(),channelExporting:new Set(),channelProjectCounts:{},document:{querySelectorAll:()=>[button]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
  vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf('const channelNoticeStorage='),source.indexOf('let channelActivityPending=')),context);
- return {context,badge,storage,run:code=>vm.runInContext(code,context)};
+ return {context,badge,count,storage,run:code=>vm.runInContext(code,context)};
 }
 test('spinner becomes a check or stop in the same slot and explicit click acknowledges it',()=>{
  const f=fixture();f.run("channelNoticeData.one={id:'1',status:'done'};renderChannelNotices()");
  assert.match(f.badge.className,/is-complete/);assert.match(f.badge.innerHTML,/check/);assert.equal(f.badge.hidden,false);
  f.context.channelActivity.add('one');f.context.renderChannelNotices();assert.equal(f.badge.innerHTML,'');assert.equal(f.badge.className,'channel-busy');
  f.context.channelActivity.clear();f.run("channelNoticeData.one={id:'2',status:'stopped'};renderChannelNotices()");
- assert.match(f.badge.className,/is-stopped/);f.context.acknowledgeChannelNotice('one');assert.equal(f.badge.hidden,true);
+ assert.match(f.badge.className,/is-stopped/);assert.match(f.badge.innerHTML,/pause/);f.context.acknowledgeChannelNotice('one');assert.equal(f.badge.hidden,true);
  f.context.renderChannelNotices();assert.equal(f.badge.hidden,true);
  f.run("channelNoticeData.one={id:'3',status:'done',seen:'2'};renderChannelNotices()");assert.equal(f.badge.hidden,false);
 });
@@ -23,7 +25,8 @@ test('automatic sidebar renders preserve an unread notice and no notice stays hi
 
 test('the open channel consumes completion silently while its running spinner remains visible',()=>{
  const f=fixture();f.context.state.channel={id:'one'};
- f.context.channelActivity.add('one');f.context.renderChannelNotices();assert.equal(f.badge.hidden,false);
+ f.context.channelProjectCounts.one=2;f.context.channelActivity.add('one');f.context.renderChannelNotices();assert.equal(f.badge.hidden,false);
+ assert.equal(f.count.hidden,false);assert.equal(f.count.textContent,'2');
  f.context.channelActivity.clear();
  for(const status of ['done','stopped']){
   f.run(`channelNoticeData.one={id:'${status}',status:'${status}'};renderChannelNotices()`);

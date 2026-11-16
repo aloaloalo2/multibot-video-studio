@@ -2949,3 +2949,6 @@ select option{background:#232327;color:#f1f1f2}
 .trend-sort>button:hover{color:var(--ui-control-text);background:var(--ui-outline-hover)}
 .trend-sort>button[aria-pressed=true]{background:#2c2f36;color:#eef0f3}
 .trend-refresh:disabled:not(.is-loading){opacity:.35;cursor:not-allowed;filter:grayscale(1)}
+
+/* a paused episode reads its stopped work in the colour of running work; the round play button says it is paused */
+.project-making.stopped.episode-paused{color:#c7cbd6}

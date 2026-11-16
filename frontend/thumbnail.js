@@ -123,6 +123,8 @@ const thumbnailLanguageRuns=new Map(),thumbnailSelection=new Map(),thumbnailDraf
 const thumbnailCreatePending=new Set();
 function readThumbnailData(id,data){
   if(data.job)thumbnailRuns.set(id,data.job);
+  // the server knows no job: an old «running» kept here would spin «Малюємо прев’ю» for good
+  else if('job' in data&&['queued','running'].includes(thumbnailRuns.get(id)?.status))thumbnailRuns.delete(id);
   thumbnailLanguageRuns.set(id,data.thumbnail_jobs || []);
 }
 function thumbnailWorking(id){return thumbnailBusy(id)||(thumbnailLanguageRuns.get(id)||[]).some(job=>job.status==='running');}

@@ -54,7 +54,10 @@ async function refreshAgent(projectId){
     $('agent-cancel').hidden=!working;$('agent-cancel').disabled=data.job?.status==='cancelling';
     $('agent-feedback').textContent=data.job?.status==='cancelling'?'Зупиняємо агента після поточного запиту.':working?'Агент працює. Це може зайняти кілька хвилин.':data.job?.status==='failed'?data.job.error || 'Помилка агента.':data.job?.status==='cancelled'?'Агента зупинено. Уже зроблені зміни збережені.':'';
     if(working){agentPoll=setTimeout(()=>refreshAgent(projectId),2000);}
-  }catch(error){if(agentDisplayedProject===projectId && state.view==='agent')$('agent-feedback').textContent=error.message;}
+  }catch(error){
+    // a failed read does not end the watch: the agent works on, the panel reads again a little later
+    if(agentDisplayedProject===projectId && state.view==='agent'){$('agent-feedback').textContent=error.message;clearTimeout(agentPoll);agentPoll=setTimeout(()=>refreshAgent(projectId),5000);}
+  }
 }
 
 async function saveAgentReasoning(projectId){

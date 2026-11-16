@@ -28,7 +28,9 @@ test('completed local reports do not start polling or paid mutations',async()=>{
   const f=fixture();f.context.openPerformance();f.waiting[0].resolve(report());await settle();
   assert.equal(f.requests.length,1);assert.equal(f.requests[0].method,undefined);
   assert.equal(f.requests[0].path,'/api/projects/one/performance');
-  assert.equal(f.timers.size,0);assert.match(f.panel().innerHTML,/Сценарій/);assert.match(f.panel().innerHTML,/2 с/);
+  assert.equal(f.timers.size,0);assert.match(f.panel().innerHTML,/Сценарій/);
+  // minutes and hours only since ac50581: two seconds of work read as «<1 хв»
+  assert.match(f.panel().innerHTML,/performance-duration" role="cell">&lt;1 хв</);
 });
 test('a delayed report cannot replace another project or modal',async()=>{
   const f=fixture();f.context.openPerformance();const old=f.panel();f.context.state.project={id:'two'};f.context.state.navigation++;
@@ -67,12 +69,22 @@ test('main processes merge resumed attempts, subtract idle spans and sort by act
   ]});
   assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>[row.workflow,row.active_ms]))),[['production',30000],['script',10000],['language_voice',5000]]);
   const html=f.context.performanceMarkup({runs:[{workflow:'script',elapsed_ms:2000,status:'interrupted',stages:{preparation:{ms:1000}}}]});
-  assert(!html.includes('Перервано'));assert(!html.includes('Підготовка'));assert(!html.includes('<details'));
+  // no per-run status or stage breakdown; the only fold is «Інше» for processes under a minute (ac50581, aad9026)
+  assert(!html.includes('Перервано'));assert(!html.includes('Підготовка'));assert(!html.includes('performance-stage'));
+  assert.deepEqual(html.match(/<details[^>]*>/g),['<details class="performance-small">']);assert.match(html,/<summary><span>Інше<\/span>/);
 });
 test('new reports are sorted defensively and keep tiny tasks and previews out of the list',()=>{
   const f=fixture();
-  const rows=f.context.performanceRows({processes:[{id:'s',workflow:'script',label:'Сценарій',active_ms:5000},{id:'p',workflow:'production',label:'Кадри',active_ms:9000},{id:'t',workflow:'thumbnail',active_ms:20000},{id:'m',workflow:'metadata',active_ms:1000}]});
-  assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>row.id))),['p','s']);
+  // the backend sends its runs beside the processes (job_timing.overview); since ac50581 the time comes from the runs
+  // and a process lends its row only the cost, or a row of its own when it has a cost and no time (kit, 07e6c14)
+  const cost={recorded:true,providers:{claude_code:{requests:1,usd:35}}};
+  const rows=f.context.performanceRows({
+    runs:[{workflow:'script',elapsed_ms:5000},{workflow:'production',elapsed_ms:9000},{workflow:'thumbnail',elapsed_ms:20000},{workflow:'metadata',elapsed_ms:1000}],
+    processes:[{id:'script',workflow:'script',label:'Сценарій',active_ms:5000},{id:'production',workflow:'production',label:'Кадри',active_ms:9000,cost},{id:'thumbnail',workflow:'thumbnail',active_ms:20000},{id:'metadata',workflow:'metadata',active_ms:1000}]});
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>row.id))),['production','script']);
+  assert.equal(rows[0].cost,cost);
+  const kit=f.context.performanceRows({runs:[],processes:[{workflow:'kit',active_ms:0,cost},{workflow:'thumbnail',active_ms:0,cost}]});
+  assert.deepEqual(JSON.parse(JSON.stringify(kit.map(row=>[row.id,row.cost_only]))),[['kit',true]]);
 });
 test('costs use the saved subscription convention and explain tokens without adding another row',()=>{
   const f=fixture(),cost=f.context.performanceCost({recorded:true,providers:{claude_code:{requests:1,usd:35},openrouter:{requests:1,usd:.02}},tokens:{input:100,output:200,cache_read:300}});

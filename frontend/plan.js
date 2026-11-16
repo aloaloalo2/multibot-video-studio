@@ -158,8 +158,9 @@ function renderNarrationAnalysis(panel,pid){
     return false;
   }
   const waiting=String(job.stage||'').startsWith('waiting_'),stage=speechStageNames[job.stage]||'Розпізнаємо озвучку',percent=!waiting&&Number.isFinite(job.progress)?` · ${Math.round(job.progress)}%`:'';
-  ready.setAttribute('aria-busy','true');
-  ready.querySelector('.narration-ready-heading strong').innerHTML=`Whisper · ${esc(stage)}${percent}`;const line=ready.querySelector('.episode-voice');if(line?.dataset)line.dataset.state='working';
+  // recognised and only waiting for the director's plan: no spinner on the voice (16 November 2026, as in director.js)
+  ready.setAttribute('aria-busy',String(!waiting));
+  ready.querySelector('.narration-ready-heading strong').innerHTML=waiting?`Whisper · розпізнано, час підставиться після плану режисера`:`Whisper · ${esc(stage)}${percent}`;const line=ready.querySelector('.episode-voice');if(line?.dataset)line.dataset.state=waiting?'done':'working';
   ready.querySelectorAll('.narration-settings,.narration-plan-action').forEach(control=>control.disabled=true);
   const note=panel.querySelector('.narration-status-row p');if(note)note.textContent='';
   const text=panel.querySelector('textarea') || panel.parentElement?.querySelector('.narration-script textarea');if(text)text.readOnly=true;
