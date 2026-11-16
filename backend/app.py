@@ -1364,7 +1364,8 @@ class Handler(BaseHTTPRequestHandler):
                 item['completion_notice'] = completion_notices.notice(project, receipts)
                 item['ready_stage'] = completion_notices.ready_stage(project, receipts, item)
                 item['published'] = published.check(item)   # the blue Finder tag, kept even without the folder
-                item['episode_paused'] = episode_pause.paused(item['id']) is not None
+                item['episode_paused'] = episode_pause.resumable(item['id'])
+                item['episode_pause_label'] = episode_pause.label(item['id']) if item['episode_paused'] else None
             return self.json_response({"projects": projects})
         if path == "/api/exports/active":
             with JOBS_LOCK:
@@ -1453,7 +1454,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match:
             project = store.load_project(match.group(1))
-            return self.json_response({"project": {**project, "episode_paused": episode_pause.paused(project["id"]) is not None}})
+            return self.json_response({"project": {**project, "episode_paused": episode_pause.resumable(project["id"]), "episode_pause_label": episode_pause.label(project["id"])}})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan", path)
         if match:
             pid = match.group(1)
@@ -1792,7 +1793,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"project": production.pause(match.group(1), note)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
-            if episode_pause.paused(match.group(1)):
+            if episode_pause.resumable(match.group(1)):
                 episode_pause.resume(match.group(1))
                 return self.json_response({"project": store.load_project(match.group(1))})
             return self.json_response({"project": production.resume(match.group(1))})
@@ -1801,7 +1802,7 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             result = episode_pause.pause(match.group(1)) if match.group(2) == "pause" else episode_pause.resume(match.group(1))
             project = store.load_project(match.group(1))
-            return self.json_response({"result": result, "project": {**project, "episode_paused": episode_pause.paused(project["id"]) is not None}})
+            return self.json_response({"result": result, "project": {**project, "episode_paused": episode_pause.resumable(project["id"]), "episode_pause_label": episode_pause.label(project["id"])}})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
         if match and method == "POST":
             if active_export(match.group(1)):

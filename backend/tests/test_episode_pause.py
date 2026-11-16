@@ -72,3 +72,18 @@ class LanguagePauseTest(unittest.TestCase):
              patch.object(project_narration, "ACTIVE", set()), patch.object(languages, "start") as start:
             episode_pause.resume("p")
         start.assert_called_once_with("p", "voice", "de")
+
+
+class StoppedNarrationTest(unittest.TestCase):
+    def test_a_narration_stopped_half_way_can_go_on(self):
+        import project_narration
+        folder = Path(tempfile.mkdtemp())
+        episode_pause.store.atomic_json(folder / "job.json", {"status": "cancelled", "script": "Текст.", "completed": 30, "total": 100})
+        project = {"id": "p", "voice_script": {"text": "Текст."}}
+        with patch.object(episode_pause.store, "project_dir", return_value=folder), \
+             patch.object(project_narration, "root", return_value=folder), \
+             patch.object(episode_pause.store, "load_project", return_value=project), \
+             patch.object(project_narration, "ACTIVE", set()), patch.object(project_narration, "start") as start:
+            self.assertTrue(episode_pause.resumable("p"))
+            episode_pause.resume("p")
+        start.assert_called_once_with(project, "Текст.", resume=True)

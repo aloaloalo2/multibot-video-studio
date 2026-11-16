@@ -45,7 +45,7 @@ function updateProjectCard(card,project){
   }else duration?.remove();
   updateProjectCardCover(card,project);
   const making=project.production_request,{total,done,working,stopped}=projectProductionCardState(making,project.last_export_at);
-  card.classList.toggle('producing',working);card.classList.toggle('production-stopped',stopped);
+  card.classList.toggle('producing',working);card.classList.toggle('production-stopped',stopped);card.classList.toggle('episode-paused-card',!working&&!!project.episode_paused);
   let box=open.querySelector('.project-production-state');
   if(working||stopped){
     if(!box){box=document.createElement('div');box.className='project-making project-production-state';open.insertBefore(box,meta);}
@@ -61,7 +61,9 @@ function updateProjectCard(card,project){
     if(progress){progress.setAttribute('aria-valuemax',total);progress.setAttribute('aria-valuenow',done);progress.firstElementChild.style.width=`${total?Math.round(done/total*100):0}%`;}
   }else if(project.episode_paused){
     // stopped before the frames (narration, director): the card still says it waits for «Продовжити»
-    if(!box||!box.classList.contains('episode-paused')){box?.remove();box=document.createElement('div');box.className='project-making project-production-state stopped episode-paused';box.innerHTML='<span class="project-export-label"><span class="project-production-label">На паузі</span></span>';open.insertBefore(box,meta);}
+    if(!box||!box.classList.contains('episode-paused')){box?.remove();box=document.createElement('div');box.className='project-making project-production-state stopped episode-paused';box.innerHTML='<span class="project-export-label"><span class="project-production-label"></span></span>';open.insertBefore(box,meta);}
+    // the stopped work itself, as it read while it ran: «Озвучка · 117 з 171»
+    const text=project.episode_pause_label||'На паузі',label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
   }else box?.remove();
   const actionsKey=JSON.stringify([!!project.episode_path,!!project.freeable]);
   if(card._actionsKey!==actionsKey){

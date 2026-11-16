@@ -2902,3 +2902,7 @@ select option{background:#232327;color:#f1f1f2}
 /* the one-line name must not widen the item past the list: its rounded highlight was cut on the right */
 #channel-list .channel-item{min-width:0;max-width:100%;box-sizing:border-box}
 .settings-voice-automation label:has(input:disabled){opacity:.45;cursor:not-allowed}
+/* «На паузі» takes the place of the stage line, as on a stopped production (user, 16 November 2026) */
+.project-card.episode-paused-card .project-created-group{display:none}
+/* the bottom shade of a card ~10% darker, so the line under the cover reads (user, 16 November 2026) */
+.overview-projects .project-card.has-cover:after{background:linear-gradient(180deg,rgba(8,8,11,0) 48%,rgba(8,8,11,.65) 74%,rgba(8,8,11,.98) 100%)}

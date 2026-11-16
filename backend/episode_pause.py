@@ -30,6 +30,49 @@ def paused(pid: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def stopped_narration(pid: str) -> dict | None:
+    """A narration the author stopped half way (its «Стоп»): the card offers play for it too, and play goes on from the
+    phrases already made (user, 16 November 2026: «озвучку зупинив, але плея нема… 30 фраз готово»)."""
+    import project_narration
+    if pid in project_narration.ACTIVE:
+        return None
+    job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+    if job.get("status") != "cancelled" or not job.get("script") or int(job.get("completed") or 0) >= int(job.get("total") or 0):
+        return None
+    try:
+        project = store.load_project(pid)
+    except store.StudioError:
+        return None
+    if (project.get("voice_script") or {}).get("text") != job["script"]:
+        return None   # the script changed since: a new narration is the author's choice
+    return job
+
+
+def resumable(pid: str) -> bool:
+    return paused(pid) is not None or stopped_narration(pid) is not None
+
+
+def label(pid: str) -> str | None:
+    """What the card says while the episode waits for play: the stopped work itself, as it read while it ran
+    (user, 16 November 2026: «не на паузі має бути, а озвучка там, як раніше писало»)."""
+    import project_narration
+    data = paused(pid)
+    stopped = (data or {}).get("stopped") or ({"narration": {}} if stopped_narration(pid) else {})
+    if not stopped:
+        return None
+    if "narration" in stopped:
+        job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+        total = int(job.get("total") or 0)
+        return f"Озвучка · {round(100 * int(job.get('completed') or 0) / total)}%" if total else "Озвучка"
+    if "director" in stopped:
+        return "Режисура"
+    if "languages" in stopped:
+        items = stopped["languages"]
+        word = "Переклад" if all(i["kind"] == "translate" for i in items) else "Озвучка перекладу"
+        return word + " · " + ", ".join(i["code"].upper() for i in items)
+    return None   # the frames: the card shows their own stopped line
+
+
 def note(pid: str, step: str, **details) -> bool:
     """A step that would start now on a paused episode waits for resume(). True when the episode is paused."""
     with LOCK:
@@ -130,7 +173,10 @@ def resume(pid: str) -> dict:
     with LOCK:
         data = paused(pid)
         if data is None:
-            raise store.StudioError("Випуск не на паузі", 409)
+            job = stopped_narration(pid)
+            if job is None:
+                raise store.StudioError("Випуск не на паузі", 409)
+            data = {"stopped": {"narration": {"script": job["script"]}}, "pending": {}}
         import languages
         if pid in project_narration.ACTIVE or pid in director.ACTIVE or any(
                 languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
