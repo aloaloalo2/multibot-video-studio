@@ -61,6 +61,8 @@ function organizeChannelSettings(channel){
   workspace.append(nav,content);body.append(workspace);
   const definitions=[
     ['projects','Основне','Для нових проєктів','Основне'],
+    // the channel's host and voice in one place, under «Основне», before «Побажання» (user, 16 November 2026)
+    ['avatar','Аватар','Головний герой і озвучка'],
     // every wish of the channel in one place, under «Основне» (user, 15 November 2026)
     ['wishes','Побажання','Сценарій, прев’ю, монтаж'],
     ['script','Сценарій','Зачини та повний текст'],
@@ -76,7 +78,7 @@ function organizeChannelSettings(channel){
   const preferenceKey=`channel-settings-panel:${channel.id}`;
   function select(key,focus=false){
     const sectionKey=['script','look','voice','thumbnails'].includes(key)?key:null;
-    if(sectionKey)key='projects';
+    if(sectionKey)key=sectionKey==='voice'?'avatar':'projects';
     if(!panels[key])key='projects';
     for(const [name,panel] of Object.entries(panels)){
       const active=name===key;panel.hidden=!active;tabs[name].setAttribute('aria-selected',String(active));tabs[name].tabIndex=active?0:-1;
@@ -89,7 +91,7 @@ function organizeChannelSettings(channel){
   for(const [key,label,note,group] of definitions){
     if(group){const heading=document.createElement('span');heading.className='channel-settings-nav-label';heading.textContent=group;nav.append(heading);}
     const tab=document.createElement('button');tab.type='button';tab.id=`channel-settings-tab-${key}`;tab.dataset.settingsTab=key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls',`channel-settings-panel-${key}`);
-    tab.innerHTML=`${channelSettingsIcon(key==='advanced'?'output':key)}<span>${label}</span>`;tab.addEventListener('click',()=>select(key));tabs[key]=tab;nav.append(tab);
+    tab.innerHTML=`${channelSettingsIcon(key==='advanced'?'output':key==='avatar'?'hero':key)}<span>${label}</span>`;tab.addEventListener('click',()=>select(key));tabs[key]=tab;nav.append(tab);
     const panel=document.createElement('section');panel.className='channel-settings-panel';panel.id=`channel-settings-panel-${key}`;panel.dataset.settingsPanel=key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);
     const heading=document.createElement('header');heading.className='channel-settings-panel-head';heading.innerHTML=`<h3>${label}</h3>`;panel.append(heading);panels[key]=panel;content.append(panel);
   }
@@ -163,14 +165,21 @@ function organizeChannelSettings(channel){
   {const logoSection=body.querySelector('.thumbnail-logo-section');if(logoSection){const keep=document.createElement('div');keep.hidden=true;keep.append(logoSection);body.append(keep);}}
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
   for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
+    if(only==='.hero-reference-section'){
+      // «Головний герой» is always open in «Аватар», a plain card with the picture on the left (user, 16 November 2026)
+      const section=panels[key].querySelector(only);
+      if(section){section.classList.add('avatar-hero-card');section.dataset.mainSection='hero';const heading=section.querySelector('h3');if(heading){heading.hidden=false;heading.textContent='Головний герой';}panels.avatar.append(section);}
+      continue;
+    }
     const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?(only==='.hero-reference-section'?'hero':'thumbnail-logo'):key;
     group.innerHTML=`<summary>${channelSettingsIcon(icon)}<span><strong>${label}</strong>${only?'':`<small class="settings-choice-summary" data-main-summary="${key}"></small>`}</span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
     const inner=group.lastElementChild;
     for(const child of [...panels[key].children])if(!child.classList.contains('channel-settings-panel-head')&&(!only||child.matches(only)))inner.append(child);
     if(!inner.children.length){if(!only)tabs[key].remove();continue;}   // its wishes went to «Побажання»
     if(key==='thumbnails')for(const section of inner.querySelectorAll(':scope>.settings-section')){const heading=section.querySelector('h3');if(heading)heading.hidden=true;}   // the block's own title says it
-    panels.projects.append(group);if(!only)tabs[key].remove();
+    (key==='voice'||only==='.hero-reference-section'?panels.avatar:panels.projects).append(group);if(!only)tabs[key].remove();
   }
+  {const hero=panels.avatar.querySelector('[data-main-section=hero]');if(hero)panels.avatar.insertBefore(hero,panels.avatar.querySelector('details,section:not(.avatar-hero-card)'));}   // «Головний герой» first, then «Озвучка»
   const fontSection=document.createElement('section');fontSection.className='settings-section settings-montage-fonts';
   fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
   fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';

@@ -13,10 +13,12 @@ import audience_policy
 PROMPT = '''Also write publication metadata in the channel language, using the finished script.
 Return metadata with exactly 3 distinct A/B titles (titles array), including the selected title verbatim.
 Alternative titles must contain no colon, dash, hyphen or list numbering. Do not invent claims.
-description: 2 short paragraphs, usually 2-4 sentences total. First thank viewers and invite them to
-subscribe in the channel voice; second state the informational/educational/entertainment purpose.
-For health topics add a brief note about individual professional consultation. No script summary,
-links, sources, hashtags, timestamps or SEO lists. tags: exactly 3 distinct relevant strings.
+description: 2 short paragraphs, usually 3-5 sentences total, written for THIS video, never a channel template that
+could stand under any episode (YouTube treats identical descriptions as mass-produced). First paragraph: one or two
+sentences in the host's own voice about what this video gives the viewer and the host's own take on it, then thanks and an
+invitation to subscribe worded for this topic. Second: the informational/educational/entertainment purpose.
+For health topics add a brief note about individual professional consultation. No full script summary,
+links, sources, hashtags, timestamps, keyword lists or clickbait. tags: exactly 3 distinct relevant strings.
 These metadata requirements override older metadata instructions in the reference material.
 Keep metadata entirely separate from the ready-to-speak script.'''
 

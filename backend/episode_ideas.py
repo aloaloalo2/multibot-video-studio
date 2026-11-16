@@ -798,7 +798,15 @@ def _work(cid, data):
                  'Write naturally for the channel audience, preserve its language and voice. Never use antithesis or em dashes. '
                  'Use simple, vivid conversational language. Do not copy previous episodes. '
                  # the author, 15 November 2026: no strained figurative phrases in any channel's script
-                 'Пиши без химерних образних зворотів: не переноси слова з однієї сфери в іншу заради краси, не чіпляй до буденних речей пафосний чи космічний масштаб і не підміняй пряму назву предмета або дії метафорою, яку глядачу доводиться розшифровувати; кажи прямо тими звичайними словами, якими людина описала б це другові в розмові.\n'
+                 'Пиши без химерних образних зворотів: не переноси слова з однієї сфери в іншу заради краси, не чіпляй до буденних речей пафосний чи космічний масштаб і не підміняй пряму назву предмета або дії метафорою, яку глядачу доводиться розшифровувати; кажи прямо тими звичайними словами, якими людина описала б це другові в розмові. '
+                 # the author, 16 November 2026: scripts YouTube sees as authentic, not template-made
+                 'Пиши автентичний для YouTube текст, а не шаблонний: у ведучого є власна позиція, він оцінює, порівнює, '
+                 'з чимось не погоджується й робить свій висновок; думки сказані ясно й по суті, без загальних слів; посилань на '
+                 'дослідження, дати чи імена заради переконливості не вставляй; будова, зачин і кінцівка підібрані під цю тему, а не '
+                 'під типовий шаблон; ролик дає глядачеві щось понад перший результат пошуку: несподіваний кут, пояснення «чому» або практичну пораду. '
+                 'Автентичний означає: цей текст міг сказати лише цей ведучий і лише про цю тему. Перевір так: якщо в тексті замінити '
+                 'тему на іншу, а сенс майже не зміниться, то текст шаблонний. Глядач має чути живу людину, яка думає вголос, сумнівається, '
+                 'має улюблені думки й звертається до нього, а не диктора, що читає довідку.\n'
                  'studio_audience_policy is the current Studio-wide audience rule and overrides historical examples or Russia-targeted localization preferences. '
                  'The author\'s standing rules are binding and outrank the samples: author_writing_rules, youtube_script_rules, '
                  'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '

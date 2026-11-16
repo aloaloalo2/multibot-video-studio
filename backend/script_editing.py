@@ -30,6 +30,7 @@ CRITERIA = [
     'Overlong, illogical participial constructions and bureaucratic wording',
     'Formulaic negative parallelisms and antitheses',
     'Forced groups of three',
+    'Inauthentic, template-made text YouTube would see as mass-produced: no host position or conclusion of his own, vague general words, a stock structure, opening or ending, nothing beyond common knowledge',
     'Strained figurative phrases: words carried over from another field for effect, pompous or cosmic scale given to everyday things, a metaphor the viewer must decode where a plain name of the thing or action fits',
     'Vague unnamed doctors, experts or researchers used as rhetorical authority',
     'Unnatural synonym cycling, respecting the actual word blacklist',

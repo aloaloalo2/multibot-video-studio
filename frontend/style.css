@@ -2889,3 +2889,7 @@ select option{background:#232327;color:#f1f1f2}
 /* the second check of a published episode: bright, right next to the first (user, 16 November 2026) */
 .project-completion .published-check{margin-left:-6px;color:#3b9bff;filter:drop-shadow(0 0 4px #3b9bff88)}
 .project-completion .published-check path{stroke:#3b9bff;stroke-width:2.6}
+/* «Головний герой» in «Аватар»: an open card, the picture on the left (user, 16 November 2026) */
+#channel-settings-panel-avatar .avatar-hero-card{display:flex;align-items:center;justify-content:flex-start;gap:16px;padding:14px 16px;margin-bottom:10px;border:1px solid #33343a;border-radius:12px;background:#1f2024}
+#channel-settings-panel-avatar .avatar-hero-card .hero-reference-pick{order:-1}
+#channel-settings-panel-avatar .avatar-hero-card h3{font-size:14px;margin:0 0 4px}
