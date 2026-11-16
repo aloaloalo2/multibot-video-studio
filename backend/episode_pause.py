@@ -42,8 +42,8 @@ def note(pid: str, step: str, **details) -> bool:
         return True
 
 
-def _wait(test) -> None:
-    until = time.monotonic() + STOP_WAIT
+def _wait(test, limit: float = STOP_WAIT) -> None:
+    until = time.monotonic() + limit
     while test() and time.monotonic() < until:
         time.sleep(.05)
 
@@ -63,6 +63,14 @@ def running(pid: str) -> dict:
         found["director"] = {"reason": state.get("reason") or "voice", "create_video": bool(state.get("create_video"))}
     if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
         found["production"] = {}
+    import languages
+    jobs = (languages.load_state(pid).get("jobs") or {})
+    # translations and their voices (a thumbnail of a language is quick and left to finish)
+    words = [{"kind": job["kind"], "code": job["code"]} for slot, job in jobs.items()
+             if languages.job_key(pid, job.get("code", ""), "voice") in languages.ACTIVE and slot.endswith("|voice")
+             and job.get("kind") in {"translate", "voice"} and job.get("status") == "running"]
+    if words:
+        found["languages"] = words
     return found
 
 
@@ -78,28 +86,41 @@ def pause(pid: str) -> dict:
             raise store.StudioError("Над випуском зараз нічого не працює", 409)
         data = {"paused_at": time.time(), "stopped": work, "pending": {}}
         store.atomic_json(path(pid), data)   # first: whatever ends while it stops finds the pause
+    # the stops are sent at once and the answer goes back at once, like «Стоп» (user, 16 November 2026: «пауза не така
+    # швидка, як стоп»); the phrase or part being made finishes in the background and is kept
     if "narration" in work:
         project_narration.cancel(pid)
+    if "languages" in work:
+        import languages
+        for item in work["languages"]:
+            languages.cancel(pid, f"{item['code']}|voice")
     if "director" in work:
         director.stop(pid, "director")
     if "production" in work:
-        production.pause(pid)
-    _wait(lambda: pid in project_narration.ACTIVE or pid in director.ACTIVE)
+        threading.Thread(target=production.pause, args=(pid,), daemon=True).start()
     if "director" in work:
-        import planner
-        state = director.state(pid) or {}
-        plan = store.load_project_plan(pid) or {}
-        file = store.project_plan_file(store.load_project(pid))
-        # stopped during the early «Підготовка»: his plan is written, only the kit is left, and production makes it
-        directed = (plan.get("frame_source") == planner.DIRECTOR_FRAME_SOURCE and not plan.get("director_stale")
-                    and file is not None and file.stat().st_mtime >= float(state.get("started_at") or 0))
-        with LOCK:
-            current = paused(pid) or data
-            current["stopped"]["director"]["directed"] = directed
-            store.atomic_json(path(pid), current)
-        state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
-        director.save(pid, state)
-    return paused(pid) or data
+        threading.Thread(target=_settle_director, args=(pid, data), daemon=True).start()
+    return data
+
+
+def _settle_director(pid: str, data: dict) -> None:
+    import director
+    _wait(lambda: pid in director.ACTIVE, 30.0)
+    import planner
+    state = director.state(pid) or {}
+    plan = store.load_project_plan(pid) or {}
+    file = store.project_plan_file(store.load_project(pid))
+    # stopped during the early «Підготовка»: his plan is written, only the kit is left, and production makes it
+    directed = (plan.get("frame_source") == planner.DIRECTOR_FRAME_SOURCE and not plan.get("director_stale")
+                and file is not None and file.stat().st_mtime >= float(state.get("started_at") or 0))
+    with LOCK:
+        current = paused(pid)
+        if current is None:
+            return   # already resumed: nothing to mark
+        current["stopped"]["director"]["directed"] = directed
+        store.atomic_json(path(pid), current)
+    state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
+    director.save(pid, state)
 
 
 def resume(pid: str) -> dict:
@@ -110,7 +131,9 @@ def resume(pid: str) -> dict:
         data = paused(pid)
         if data is None:
             raise store.StudioError("Випуск не на паузі", 409)
-        if pid in project_narration.ACTIVE or pid in director.ACTIVE:
+        import languages
+        if pid in project_narration.ACTIVE or pid in director.ACTIVE or any(
+                languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
             raise store.StudioError("Ще зупиняємо попередню роботу. Спробуйте за кілька секунд", 409)
         path(pid).unlink(missing_ok=True)
     stopped, pending, errors = data.get("stopped") or {}, data.get("pending") or {}, []
@@ -138,6 +161,9 @@ def resume(pid: str) -> dict:
             step(lambda: production.resume(pid))
     elif "production" in pending:
         step(lambda: production.start_from_plan(pid))
+    for item in stopped.get("languages", []):
+        # a translation goes on from its saved draft, a voice from its paid phrases
+        step(lambda item=item: languages.start(pid, item["kind"], item["code"]))
     if "montage" in pending:
         import episode_automation
         step(lambda: episode_automation.after_voice(pid, pending["montage"].get("job") or {}))

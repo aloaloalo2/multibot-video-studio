@@ -2901,3 +2901,4 @@ select option{background:#232327;color:#f1f1f2}
   -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 44px),transparent)}
 /* the one-line name must not widen the item past the list: its rounded highlight was cut on the right */
 #channel-list .channel-item{min-width:0;max-width:100%;box-sizing:border-box}
+.settings-voice-automation label:has(input:disabled){opacity:.45;cursor:not-allowed}

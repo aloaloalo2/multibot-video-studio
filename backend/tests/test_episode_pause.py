@@ -51,3 +51,24 @@ class EpisodePauseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LanguagePauseTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        p = patch.object(episode_pause.store, "project_dir", return_value=self.dir); p.start(); self.addCleanup(p.stop)
+
+    def test_a_translation_voice_stops_at_once_and_goes_on_after(self):
+        import director, languages, production, project_narration
+        state = {"jobs": {"de|voice": {"kind": "voice", "code": "de", "status": "running"}}}
+        with patch.object(episode_pause.store, "load_project", return_value={"id": "p"}), \
+             patch.object(languages, "load_state", return_value=state), \
+             patch.object(languages, "ACTIVE", {"p|de|voice"}), patch.object(director, "ACTIVE", set()), \
+             patch.object(project_narration, "ACTIVE", set()), patch.object(languages, "cancel") as cancel:
+            data = episode_pause.pause("p")
+        cancel.assert_called_once_with("p", "de|voice")
+        self.assertEqual(data["stopped"]["languages"], [{"kind": "voice", "code": "de"}])
+        with patch.object(languages, "ACTIVE", set()), patch.object(director, "ACTIVE", set()), \
+             patch.object(project_narration, "ACTIVE", set()), patch.object(languages, "start") as start:
+            episode_pause.resume("p")
+        start.assert_called_once_with("p", "voice", "de")

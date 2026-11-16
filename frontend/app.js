@@ -234,11 +234,12 @@ function renderProjectActivities(){
   for(const card of document.querySelectorAll('.project-card')){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
-    const working=!!open&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови'].includes(kind);
+    // a paused episode reads «На паузі» at once, while the phrase being made still finishes in the background
+    const working=!!open&&!card._project?.episode_paused&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови'].includes(kind);
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
-    const key=JSON.stringify(activity??null);
+    const key=JSON.stringify([activity??null,!!card._project?.episode_paused]);
     if(card._activityKey===key)continue;
     card._activityKey=key;
     for(const previous of card.querySelectorAll('.project-stage-job,.project-stage-stop,.project-stage-control'))previous.remove();
@@ -247,7 +248,7 @@ function renderProjectActivities(){
     box.innerHTML=`<span class="project-export-label">${exportSpinner}<span>${kind==='створення зачинів'?'Opus готує зачини':kind==='створення сценарію'?'Opus пише сценарій':kind==='редактура сценарію'?'Opus редагує сценарій':kind==='створення метаданих'?'Opus готує метадані':kind==='озвучення сценарію'?(activity.queued?'HeyGen · у черзі'+(activity.queue_position?' · '+activity.queue_position:''):'Озвучуємо сценарій'+percent):kind==='розпізнавання озвучки'?'Розпізнаємо озвучку':kind==='мови'?languageActivityLabel(activity.jobs):'Режисер складає план'}</span></span>`;
     // the narration and the director pause with the same round button as the frames (user, 16 November 2026)
     const narrating=kind==='озвучення сценарію';
-    if(narrating||kind==='режисура'){
+    if(narrating||kind==='режисура'||kind==='мови'){
       const control=productionControl(card.dataset.projectId,true);control.classList.add('project-stage-control');
       if(narrating&&activity?.cancelling)control.disabled=true;
       card.append(control);
@@ -572,6 +573,7 @@ function productionControl(id,working){
         else{state.project=result.project;if(state.view==='plan')renderPlan();}
       }
       else if(!state.project)await refreshProjects();
+      if(state.project)await refreshProjects().catch(()=>{});
       if(typeof pollChannelActivity==='function')pollChannelActivity();
     }catch(error){status(error.message,true);button.disabled=false;button.removeAttribute('aria-busy');}
   });

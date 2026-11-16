@@ -13,6 +13,10 @@ async function bindChannelVoices(channel){
   if(!data.voice_controls)return bindLegacyChannelVoices(channel,data);
   section.innerHTML=`<p class="channel-translation-note">Голос і модель для кожної мови. Застосовуються до випусків, де цю мову ще не озвучено.</p><div class="channel-translation-list"></div><div class="channel-voice-add"><select aria-label="Мова прикладу"><option value="">Додати мову…</option>${data.languages.filter(item=>!data.voices.some(voice=>voice.code===item.code)).map(item=>`<option value="${item.code}">${langFlags[item.code]||''} ${esc(item.name)}</option>`).join('')}</select><button type="button" class="secondary lang-own-record" disabled>${micIcon}Записати себе</button><label class="secondary lang-own-file is-off">${langIcons.upload}Додати запис<input type="file" accept="audio/*,video/*" hidden disabled></label></div>`;
   const options=data.narration_options;
+  // a channel without translation languages has nothing to translate: its auto switches stay grey (user, 16 November 2026)
+  const list=section.querySelector('.channel-translation-list');
+  const syncAuto=()=>{const none=!list.children.length;for(const id of ['settings-auto-translation','settings-auto-translation-voice']){const box=$(id);if(box){box.disabled=none;box.closest('label').title=none?'Спершу додайте мову перекладу нижче':'';}}};
+  new MutationObserver(syncAuto).observe(list,{childList:true});
   function cost(quote,provider){
     if(quote?.amount===0)return 'безкоштовно';
     if(quote?.amount==null)return 'за тарифом '+(options.providers.find(item=>item.id===provider)?.name||'сервісу');
@@ -88,6 +92,7 @@ async function bindChannelVoices(channel){
     load(row);
   }
   for(const item of data.voices)addRow(item);
+  syncAuto();
   section.voiceSettingsSnapshot=()=>Object.fromEntries([...rows].map(([code,row])=>[code,JSON.parse(JSON.stringify(row.settings))]));
   section.saveVoiceSettings=async settings=>{if(Object.keys(settings||{}).length)await api(base+'/settings','POST',{languages:settings});};
   const picker=section.querySelector('.channel-voice-add select'),record=section.querySelector('.lang-own-record'),label=section.querySelector('.lang-own-file'),file=label.querySelector('input');
