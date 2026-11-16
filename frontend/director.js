@@ -200,7 +200,11 @@ function fillVoiceLine(box){
   const working=!!job&&['queued','running'].includes(job.status);
   const percent=report?`${Number(report.word_match_percent).toFixed(1).replace('.',',')}%`:'';
   let state_,text;
-  if(working){state_='working';text=String(job.stage||'').startsWith('waiting_')?(speechStageNames[job.stage]||'Чекаємо режисера'):`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
+  // the voice is recognised and only waits for the director's plan to take its times: no spinner on the voice
+  // (user, 16 November 2026: «тут ж озвучка вже готова чому там спінер?»); the director's own line spins
+  const waiting=working&&String(job.stage||'').startsWith('waiting_');
+  if(waiting){state_='done';text=job.stage==='waiting_kit'?'розпізнано, час підставиться після підготовки':'розпізнано, час підставиться після плану режисера';}
+  else if(working){state_='working';text=`${speechStageNames[job.stage] || 'Обробка'}: ${job.progress}%`;}
   // recognised by the studio, or timed from a file the author brought (then there is no recognition to speak of)
   else if(synced||state.plan?.timing?.status==='audio_synced'){state_='done';text=state.project.voice_script?.source==='narration-revision'?'озвучку оновлено, таймінги збережено':percent?`розпізнано, збіг ${percent}`:state.analysis&&!state.analysis.job&&!state.analysis.report?'таймінги з файлу':'за озвучкою';}
   else if(report){state_='warn';text=`текст не збігся з озвучкою (${percent}): перевірте звіт`;}
@@ -211,7 +215,7 @@ function fillVoiceLine(box){
   box.dataset.state=state_;
   const script=state.project.voice_script?.text ?? state.plan?.script ?? frames.map(frame=>(frame.sentences||[]).join(' ')).join('\n\n');
   const words=scriptWordCount(script)?`<small class="episode-voice-word-count">${scriptWordCountLabel(script)}</small>`:'';
-  box.innerHTML=`<span class="episode-voice-icon">${working?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
+  box.innerHTML=`<span class="episode-voice-icon">${working&&!waiting?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
   if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
   // a narration being made shows here with its spinner and percent, and nothing offers another voice meanwhile
   // (user, 16 November 2026: «тут порядок наведи»); one answer per paint, so two paints never add two lines
