@@ -182,6 +182,31 @@ def examples(folder: Path) -> tuple[list[Path], list[Path]]:
     return sorted(style.glob("Еталон промпт прев'ю*.txt"))[:3], sorted(style.glob("Еталон прев'ю*.png"))[:3]
 
 
+def own_thumbnails(project: dict, limit: int = 3) -> list[Path]:
+    """The channel's own recent thumbnails (the cover of its newest other episodes), then its approved ones in
+    «Еталон стилю»: what «Адаптувати під мій стиль» shows the prompt writer as our look."""
+    found = []
+    try:
+        others = sorted((p for p in store.list_projects(project["channel_id"]) if p.get("id") != project["id"]),
+                        key=lambda p: float(p.get("updated_at") or p.get("created_at") or 0), reverse=True)
+    except (store.StudioError, KeyError, OSError):
+        others = []
+    for other in others:
+        cover = keep_dir(other["id"]) / PREVIEW
+        if cover.is_file():
+            found.append(cover)
+        if len(found) >= limit:
+            return found
+    return (found + examples(Path(project["episode_path"]))[1])[:limit]
+
+
+MY_STYLE = ("ADAPT TO OUR CHANNEL'S OWN STYLE (the author's choice «Адаптувати під мій стиль»). From the competitor's thumbnail take "
+            "only the idea: the concept, the situation, the emotion, what the viewer is promised and the meaning of its lettering. "
+            "Everything visual follows our channel instead: drawing style, how characters look, palette, lighting, typography, "
+            "text treatment and composition habits, as in the attached examples of our own thumbnails ({files}) and the channel's "
+            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely.")
+
+
 def pictures(project: dict) -> list[dict]:
     """The video's made frames: pictures on the timeline, apart from the channel's logo and plate, in time order."""
     clips = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])
@@ -450,17 +475,25 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         else:
             if channel_wishes and not clone:
                 wishes = "Постійні побажання каналу до прев’ю:\n" + channel_wishes + "\n\nПобажання до цього прев’ю, пріоритетні:\n" + wishes
-            elif channel_wishes and clone and channel_wishes_on:
-                # The author asked to apply the channel's own thumbnail wishes to this clone (user, 15 November 2026):
-                # they shape style and execution; the source idea and its exact wording stay.
-                wishes = ("Apply the channel's standing thumbnail wishes to this new version's style and execution. Keep the "
-                          "source idea and its exact thumbnail wording:\n" + channel_wishes
+            elif clone and channel_wishes_on:
+                # «Адаптувати під мій стиль» (user, 16 November 2026: «превью стиль якого наш канал наші побажання наші
+                # превьюшкі але ідея просто взята з конкурента»): the idea from the source, the look from our thumbnails
+                # and the channel's wishes.
+                style_refs = own_thumbnails(project)
+                wishes = (MY_STYLE.format(files=", ".join(f"Наше прев'ю {n}.png" for n in range(1, len(style_refs) + 1)) or "none saved yet")
+                          + ("\n\nChannel's standing thumbnail wishes:\n" + channel_wishes if channel_wishes else "")
                           + ("\n\nSpecific wishes for this thumbnail, priority:\n" + wishes if wishes.strip() else ""))
             # the video's own frames are the reference; the channel's style frames only stand in when they cannot be read
             if clone:
                 snapshot = work / 'idea-reference.jpg'
                 shutil.copyfile(clone_image, snapshot)
                 refs = [snapshot]
+                if channel_wishes_on:
+                    # our thumbnails go to the prompt writer only, as copies named for what they are
+                    for number, path in enumerate(own_thumbnails(project), 1):
+                        copy = work / f"Наше прев'ю {number}.png"
+                        shutil.copyfile(path, copy)
+                        refs.append(copy)
             else:
                 refs = frame_stills(project, work) or code_stills(project, work) or references(folder)
             # Each writer sees the same clone-only rules and source image. New ideas retain their own brief.
