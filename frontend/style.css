@@ -2942,3 +2942,5 @@ select option{background:#232327;color:#f1f1f2}
 .episode-director-dot{opacity:.6}
 /* «План готовий» and its grey note on one line (user, 16 November 2026) */
 .episode-director.done .episode-director-line{flex-direction:row;align-items:center;gap:12px;margin:0}
+/* the trends header as tall as the channel's, in line with the logo (user, 16 November 2026) */
+@media(min-width:761px){.trending-open .topbar{min-height:76px}}
