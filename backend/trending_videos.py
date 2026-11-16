@@ -13,7 +13,9 @@ RUNNING = False
 LAST_START = 0
 ERRORS = []
 TTL = 6 * 3600
+COOLDOWN = 60       # between two refreshes the author starts by hand
 MIN_VIEWS = 4000
+WINDOW_DAYS = 21
 
 
 def sources():
@@ -40,16 +42,24 @@ def rank(videos, now):
     result = []
     for video in films:
         age = (now - video['published_ts']) / 86400
-        if age > 14 or video['views'] < MIN_VIEWS:
+        if age > WINDOW_DAYS or video['views'] < MIN_VIEWS:
             continue
+        # Every film of the last three weeks (user, 16 November 2026: «можна і 3 неділі… місяць тому, якщо, то вже не
+        # беремо»), with two sort keys: «X» (per-day views against the channel's own median) and plain views an hour
+        # («скільки переглядів за годину»). A film younger than an hour counts as one hour.
+        daily = video['views'] / max(1, age)
+        hourly = video['views'] / max(1, age * 24)
         peers = [p for p in films if p['id'] != video['id']]
-        if len(peers) < 4:
-            continue
-        baseline = statistics.median(p['views'] / max(1, (now - p['published_ts']) / 86400) for p in peers)
-        score = (video['views'] / max(1, age)) / max(1, baseline)
-        if score >= 1.5 and video['views'] > 0:
-            result.append({**video, 'score': round(score, 2), 'baseline_daily': round(baseline), 'sample_size': len(peers), 'early': age < 1})
-    return sorted(result, key=lambda v: (v['score'], v['views']), reverse=True)
+        baseline = statistics.median(p['views'] / max(1, (now - p['published_ts']) / 86400) for p in peers) if len(peers) >= 4 else None
+        score = round(daily / max(1, baseline), 2) if baseline is not None else None
+        result.append({**video, 'score': score, 'daily': round(daily), 'hourly': round(hourly), 'baseline_daily': round(baseline) if baseline is not None else None,
+                       'sample_size': len(peers), 'early': age < 1})
+    return sorted(result, key=order)
+
+
+def order(video):
+    """The default order: the highest X first, films without a channel baseline after them by views a day."""
+    return (video['score'] is None, -(video['score'] or 0), -video['daily'])
 
 API_NOTE = []   # why the last refresh read the public pages although a key is saved (one line, without the key)
 
@@ -67,6 +77,37 @@ def collect(identity, previous=None):
         except (ValueError, KeyError):
             pass   # this one channel: the public page may still answer
     return youtube_public.collect(identity, previous)
+
+
+def state_path():
+    return store.DATA_ROOT / 'trending-state.json'
+
+
+def state():
+    data = store.read_json(state_path(), {}) or {}
+    if not data.get('last_refresh'):
+        cache = store.read_json(cache_path(), {}) or {}
+        data['last_refresh'] = max((entry.get('updated_at', 0) for entry in cache.values() if isinstance(entry, dict)), default=0)
+    return data
+
+
+def quota_reset(now):
+    """The Data API's daily quota starts again at midnight Pacific time."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    pacific = dt.datetime.fromtimestamp(now, ZoneInfo('America/Los_Angeles'))
+    return (pacific.replace(hour=0, minute=0, second=0, microsecond=0) + dt.timedelta(days=1)).timestamp()
+
+
+def limits(now=None):
+    """What keeps the button grey: a refresh running, the minute between two refreshes, or the key's daily quota."""
+    now = now or time.time()
+    data = state()
+    wait = max(0, int(COOLDOWN - (now - LAST_START)))
+    limit_until = data.get('limit_until') or 0
+    return {'last_refresh': data.get('last_refresh') or None, 'retry_after': wait,
+            'limit_until': limit_until if limit_until > now else None,
+            'limit_note': data.get('limit_note') if limit_until > now else None}
 
 
 def cache_path():
@@ -132,23 +173,30 @@ def view():
                 continue
             cards.append({**video, 'competitor_id': identity, 'competitor_name': entry['name'], 'subscribers': entry['subscribers'],
                           'for_channels': source['for_channels'], 'updated_at': entry['updated_at']})
-    cards.sort(key=lambda v: (v['score'], v['views']), reverse=True)
+    cards.sort(key=order)
     with LOCK:
         running, errors = RUNNING, list(ERRORS)
     return {'videos': cards, 'competitor_icons': {identity: source['icon_url'] for identity, source in linked.items() if source.get('icon_url')},
             'running': running, 'errors': errors, 'warnings': warnings,
             'competitors': len(linked), 'checked': sum(i in cache for i in linked),
             'channels': list({c['id']: c for s in linked.values() for c in s['for_channels']}.values()),
-            'needs_refresh': any(i not in cache or time.time()-cache[i]['updated_at'] >= TTL or cache[i].get('failed_videos') or cache[i].get('pagination_incomplete') for i in linked)}
+            'needs_refresh': any(i not in cache or time.time()-cache[i]['updated_at'] >= TTL or cache[i].get('failed_videos') or cache[i].get('pagination_incomplete') for i in linked),
+            **limits()}
 
 
-def refresh():
+def refresh(manual=True):
+    """Reads every competitor again, only when the author presses the button (user, 16 November 2026: «автооновлення не
+    потрібно взагалі»), and only while it is not grey."""
     global RUNNING, LAST_START, ERRORS
     linked = sources()
     with LOCK:
-        if RUNNING or time.time() - LAST_START < 60: return view_unlocked_busy()
+        now = time.time()
+        if RUNNING or now - LAST_START < COOLDOWN: return view_unlocked_busy()
+        limit = limits(now)
+        if limit['limit_until']:
+            return {'running': False, **limit}
         if not linked: return {'running': False}
-        RUNNING, LAST_START, ERRORS = True, time.time(), []
+        RUNNING, LAST_START, ERRORS = True, now, []
         API_NOTE.clear()
     def work():
         global RUNNING, ERRORS
@@ -157,11 +205,7 @@ def refresh():
             import concurrent.futures
             import youtube_api
             has_key = bool(youtube_api.key())
-            # with a key, what was read from the public pages (often with gaps) is read again through the API at once
-            stale = [(identity, source) for identity, source in linked.items()
-                     if not ((previous := cache.get(identity)) and time.time()-previous['updated_at'] < TTL
-                             and not (previous.get('failed_videos') or previous.get('pagination_incomplete'))
-                             and not (has_key and previous.get('source') != 'youtube-api'))]
+            stale = list(linked.items())
             def one(pair):
                 identity, source = pair
                 try:
@@ -190,6 +234,11 @@ def refresh():
                 store.atomic_json(cache_path(), trending_titles.decorate(cache))
             if API_NOTE:
                 with LOCK: ERRORS.append(API_NOTE[0])
+            saved = state()
+            saved['last_refresh'] = time.time()
+            if any('ліміт' in note for note in API_NOTE):
+                saved.update(limit_until=quota_reset(time.time()), limit_note='Денний ліміт ключа YouTube вичерпано')
+            store.atomic_json(state_path(), saved)
         finally:
             with LOCK: RUNNING = False
     threading.Thread(target=work, name='youtube-trends', daemon=True).start()
@@ -197,7 +246,8 @@ def refresh():
 
 
 def view_unlocked_busy():
-    return {'running': RUNNING, 'retry_after': max(0, 60-int(time.time()-LAST_START))}
+    return {'running': RUNNING, 'retry_after': max(0, COOLDOWN-int(time.time()-LAST_START))}
+
 
 
 def busy():

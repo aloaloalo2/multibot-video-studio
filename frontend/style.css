@@ -2944,3 +2944,8 @@ select option{background:#232327;color:#f1f1f2}
 .episode-director.done .episode-director-line{flex-direction:row;align-items:center;gap:12px;margin:0}
 /* the trends header as tall as the channel's, in line with the logo (user, 16 November 2026) */
 @media(min-width:761px){.trending-open .topbar{min-height:76px}}
+.trend-sort{display:inline-flex;border:1px solid var(--ui-outline-border);border-radius:var(--ui-radius-control);padding:3px;gap:2px}
+.trend-sort>button{min-height:30px;padding:5px 12px;border:0;border-radius:calc(var(--ui-radius-control) - 3px);background:transparent;color:#9ea1aa;font-size:13px;font-weight:550;cursor:pointer}
+.trend-sort>button:hover{color:var(--ui-control-text);background:var(--ui-outline-hover)}
+.trend-sort>button[aria-pressed=true]{background:#2c2f36;color:#eef0f3}
+.trend-refresh:disabled:not(.is-loading){opacity:.35;cursor:not-allowed;filter:grayscale(1)}

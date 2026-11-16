@@ -17,19 +17,24 @@ class TrendTests(unittest.TestCase):
     def test_relative_performance_and_window(self):
         peers=[self.video(str(i), i+3, (i+3)*1000) for i in range(8)]
         hit=self.video('hit',2,6000)
-        old=self.video('old',15,90000)
+        old=self.video('old',22,90000)
         future=self.video('future',-1,90000)
         result=trends.rank(peers+[hit,old,future], self.now)
-        self.assertEqual([v['id'] for v in result],['hit'])
+        self.assertNotIn('old',[v['id'] for v in result]);self.assertNotIn('future',[v['id'] for v in result])
+        self.assertEqual(result[0]['id'],'hit')   # the highest X leads
         self.assertEqual(result[0]['score'],3)
+        self.assertEqual((result[0]['daily'],result[0]['hourly']),(3000,125))
+        # every film of the 14 days stays in the list, also the ones below the channel's median
+        self.assertEqual({v['id'] for v in result},{'hit','1','2','3','4','5','6','7'})
     def test_short_format_and_insufficient_samples(self):
         peers=[self.video(str(i),5,500) for i in range(6)]
         self.assertEqual(trends.rank(peers+[self.video('short',2,90000,60)],self.now),[])
         # a 2:59 film on a channel of four-minute films is no Short: it is held against the channel's films
         films=[self.video('f'+str(i),10+i,10000,240) for i in range(5)]
-        self.assertEqual([v['id'] for v in trends.rank(films+[self.video('film',2,90000,179)],self.now)],['film'])
-        self.assertEqual(trends.rank(films+[self.video('short',2,90000,60)],self.now),[])
-        self.assertEqual(trends.rank([self.video('alone',2,90000)], self.now),[])
+        self.assertEqual(trends.rank(films+[self.video('film',2,90000,179)],self.now)[0]['id'],'film')
+        self.assertNotIn('short',[v['id'] for v in trends.rank(films+[self.video('short',2,90000,60)],self.now)])
+        alone=trends.rank([self.video('alone',2,90000)], self.now)   # no baseline: no X, the views a day still count
+        self.assertEqual((alone[0]['score'],alone[0]['daily']),(None,45000))
         # a channel of Shorts only: none of them enters the selection
         shorts=[self.video('s'+str(i),5+i,500,40) for i in range(6)]
         self.assertEqual(trends.rank(shorts+[self.video('viral',2,900000,30)],self.now),[])
@@ -43,13 +48,15 @@ class TrendTests(unittest.TestCase):
                     self.assertEqual(result[0]['sample_size'],5)
                     self.assertEqual(result[0]['baseline_daily'],10)
         strong=[self.video(str(i),5,50000) for i in range(5)]
-        self.assertEqual(trends.rank(strong+[self.video('weak-relative',2,4000)],self.now),[])
+        weak=trends.rank(strong+[self.video('weak-relative',2,4000)],self.now)
+        self.assertEqual(weak[-1]['id'],'weak-relative')   # a weak film stays, at the end of the X order
+        self.assertLess(weak[-1]['score'],1)
     def test_cached_aggregation_deduplicates_and_filters_removed(self):
         with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value={'channel':{'name':'C','for_channels':[{'id':'a','name':'A'},{'id':'b','name':'B'}]}}),patch.object(trends.time,'time',return_value=self.now):
             videos=[self.video(str(i),5,500) for i in range(5)]+[self.video('hit',2,10000),self.video('below-minimum',2,3999)]
             store.atomic_json(trends.cache_path(),{'channel':{'name':'C','subscribers':None,'videos':videos,'updated_at':self.now},'removed':{'videos':videos}})
             result=trends.view()
-            self.assertEqual(len(result['videos']),1)
+            self.assertEqual([v['id'] for v in result['videos']],['hit'])
             self.assertEqual(len(result['videos'][0]['for_channels']),2)
             self.assertFalse(result['needs_refresh'])
 
@@ -94,22 +101,33 @@ class TrendTests(unittest.TestCase):
             cache={'fresh':{'updated_at':self.now,'videos':[]},'bad':{'updated_at':0,'videos':[]}}
             store.atomic_json(trends.cache_path(),cache)
             trends.refresh()
-            collect.assert_called_once_with('bad',cache['bad'])
+            # a refresh by hand reads every competitor again, also the one read a moment ago
+            self.assertEqual([c.args[0] for c in collect.call_args_list],['fresh','bad'])
             self.assertEqual(store.read_json(trends.cache_path()),cache)
             self.assertFalse(trends.RUNNING)
-            self.assertIn('Bad',trends.ERRORS[0])
+            self.assertIn('Bad',trends.ERRORS[1])
             self.assertNotIn('secret',trends.ERRORS[0])
             self.assertFalse(trends.refresh()['running'])
 
-    def test_fresh_partial_sources_can_retry_without_reloading_complete_sources(self):
+    def test_the_button_waits_a_minute_and_the_key_quota_until_its_reset(self):
         class InlineThread:
             def __init__(self,target,**kwargs):self.target=target
             def start(self):self.target()
-        linked={key:{'name':key} for key in ('partial','complete')}
-        cache={key:{'updated_at':self.now,'videos':[],'failed_videos':int(key=='partial')} for key in linked}
-        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value=linked),patch.object(trends,'LAST_START',0),patch.object(trends,'RUNNING',False),patch.object(trends.time,'time',return_value=self.now),patch.object(trends.threading,'Thread',InlineThread),patch.object(trends,'collect',return_value={**cache['partial'],'failed_videos':0}) as collect,patch.object(trends.trending_titles,'update'):
-            store.atomic_json(trends.cache_path(),cache);trends.refresh()
-        collect.assert_called_once_with('partial',cache['partial'])
+        linked={'one':{'name':'One'}}
+        def quota(identity, previous):
+            trends.API_NOTE.append('YouTube Data API: денний ліміт ключа вичерпано. Дані читаю з публічних сторінок, це повільніше')
+            return {'updated_at':self.now,'videos':[]}
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(trends,'sources',return_value=linked),patch.object(trends,'LAST_START',0),patch.object(trends,'RUNNING',False),patch.object(trends,'ERRORS',[]),patch.object(trends.time,'time',return_value=self.now),patch.object(trends.threading,'Thread',InlineThread),patch.object(trends,'collect',side_effect=quota) as collect,patch.object(trends.trending_titles,'update'):
+            store.atomic_json(trends.cache_path(),{})
+            self.assertTrue(trends.refresh()['running'])
+            self.assertEqual(trends.refresh()['retry_after'],60)   # the minute after a refresh
+            limit=trends.limits(self.now)
+            self.assertEqual(limit['last_refresh'],self.now)
+            self.assertGreater(limit['limit_until'],self.now)
+            self.assertLessEqual(limit['limit_until'],self.now+86400)
+            trends.LAST_START=0
+            self.assertFalse(trends.refresh()['running'])   # the quota keeps it grey until midnight in California
+            self.assertEqual(collect.call_count,1)
 
 
 class TrendHTTPTests(unittest.TestCase):

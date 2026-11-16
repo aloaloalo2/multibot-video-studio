@@ -1,6 +1,6 @@
 /* Shared competitor ideas; late reads stay scoped to the current page. */
 const trendDays = new Intl.NumberFormat('uk-UA', {style:'unit', unit:'day', unitDisplay:'long'});
-function trendingCard(video, icons={}){
+function trendingCard(video, icons={}, sort='x'){
   const number=value=>new Intl.NumberFormat('uk-UA',{notation:'compact',maximumFractionDigits:1}).format(value);
   if(!/^[A-Za-z0-9_-]{11}$/.test(video.id))return '';
   const days=Math.max(0,Math.floor((Date.now()-Date.parse(video.published_at))/86400000));
@@ -11,7 +11,7 @@ function trendingCard(video, icons={}){
 
   const avatar=typeof icon==='string'&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(icon)?`<img class="trend-channel-avatar" src="${icon}" alt="" width="20" height="20" loading="lazy">`:'';
   const subscribers=video.subscribers==null?'':`<span class="trend-subscribers" title="Підписники" aria-label="${esc(number(video.subscribers))} підписників"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/><circle cx="9" cy="7" r="4"/></svg><span>${number(video.subscribers)}</span></span>`;
-  return `<article class="project-card has-cover cover-ready trend-card"><img class="project-cover" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" loading="lazy" alt=""><button type="button" class="project-open trend-open" data-use-idea="${video.id}" aria-label="Використати ідею ${esc(video.title)}"><div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><strong class="trend-views" title="Перегляди"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span>${number(video.views)}</span>${period?`<small class="trend-date">${period}</small>`:''}</strong><span class="trend-score" title="Перегляди на день відносно медіани інших недавніх відео цього каналу схожої тривалості">↑ ${esc(video.score)}×</span><span class="project-duration">${Math.floor(video.duration/60)}:${String(video.duration%60).padStart(2,'0')}</span></div></button><div class="project-actions"><button type="button" class="project-action trend-dismiss" data-dismiss-video="${video.id}" title="Більше не пропонувати" aria-label="Більше не пропонувати «${esc(video.title)}»"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></button></div><h2><a class="trend-youtube" href="https://www.youtube.com/watch?v=${video.id}" target="_blank" rel="noopener noreferrer" title="Відкрити відео на YouTube" aria-label="Відкрити «${esc(video.title)}» на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8ZM9.7 15V9l5.8 3-5.8 3Z"/></svg></a><a class="project-title-rename trend-title-link" href="https://www.youtube.com/watch?v=${video.id}" target="_blank" rel="noopener noreferrer" title="Відкрити на YouTube: ${esc(video.title)}">${language}${esc(video.title)}</a></h2><div class="trend-details">${video.title_uk?`<p class="trend-title-uk" lang="uk" title="${esc(video.title_uk)}">${esc(video.title_uk)}</p>`:''}<div class="trend-channel-row"><a class="trend-channel" href="https://www.youtube.com/channel/${encodeURIComponent(video.competitor_id)}" target="_blank" rel="noopener noreferrer">${avatar}<span>${esc(video.competitor_name)}</span></a>${subscribers}</div><div class="trend-source-row"><span>${video.for_channels.map(c=>esc(c.name)).join(' · ')}</span></div></div></article>`;
+  return `<article class="project-card has-cover cover-ready trend-card"><img class="project-cover" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" loading="lazy" alt=""><button type="button" class="project-open trend-open" data-use-idea="${video.id}" aria-label="Використати ідею ${esc(video.title)}"><div class="project-title-spacer" aria-hidden="true"></div><div class="project-meta"><strong class="trend-views" title="Перегляди"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span>${number(video.views)}</span>${period?`<small class="trend-date">${period}</small>`:''}</strong>${sort==='hourly'||video.score==null?`<span class="trend-score" title="Перегляди за годину: ${esc(number(video.views))} поділити на години від публікації${video.score==null?'':` · ${esc(video.score)}× до медіани каналу`}">${esc(number(video.hourly??0))}/год</span>`:`<span class="trend-score" title="Перегляди на день відносно медіани інших недавніх відео цього каналу схожої тривалості · ${esc(number(video.hourly??0))} за годину">↑ ${esc(video.score)}×</span>`}<span class="project-duration">${Math.floor(video.duration/60)}:${String(video.duration%60).padStart(2,'0')}</span></div></button><div class="project-actions"><button type="button" class="project-action trend-dismiss" data-dismiss-video="${video.id}" title="Більше не пропонувати" aria-label="Більше не пропонувати «${esc(video.title)}»"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></button></div><h2><a class="trend-youtube" href="https://www.youtube.com/watch?v=${video.id}" target="_blank" rel="noopener noreferrer" title="Відкрити відео на YouTube" aria-label="Відкрити «${esc(video.title)}» на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8ZM9.7 15V9l5.8 3-5.8 3Z"/></svg></a><a class="project-title-rename trend-title-link" href="https://www.youtube.com/watch?v=${video.id}" target="_blank" rel="noopener noreferrer" title="Відкрити на YouTube: ${esc(video.title)}">${language}${esc(video.title)}</a></h2><div class="trend-details">${video.title_uk?`<p class="trend-title-uk" lang="uk" title="${esc(video.title_uk)}">${esc(video.title_uk)}</p>`:''}<div class="trend-channel-row"><a class="trend-channel" href="https://www.youtube.com/channel/${encodeURIComponent(video.competitor_id)}" target="_blank" rel="noopener noreferrer">${avatar}<span>${esc(video.competitor_name)}</span></a>${subscribers}</div><div class="trend-source-row"><span>${video.for_channels.map(c=>esc(c.name)).join(' · ')}</span></div></div></article>`;
 }
 function openTrendingVideos({updateUrl=true}={}){
   cancelLocationRestore();++state.navigation;stopPlayback();
@@ -21,29 +21,47 @@ function openTrendingVideos({updateUrl=true}={}){
   state.channel=null;state.project=null;state.projects=[];state.assets=[];state.pixabay=[];state.selected=null;state.selectedTransition=null;state.selectedTrack=null;state.view='trending';
   closeModal();renderChannels();renderProject();status('');if(updateUrl)syncRoute();
   const root=$('trending-page');
-  root.innerHTML='<div class="overview-top trend-top"><div class="overview-heading trend-heading"><h1 id="trending-title">Зараз у тренді</h1><button type="button" class="history-button outline channel-settings-button trend-refresh" title="Оновити" aria-label="Оновити"><svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 4v6h6M4 9a8 8 0 1 1-1 7"/></svg></button></div><div class="overview-actions"><select class="trend-filter" aria-label="Ідеї для каналу"><option value="">Усі наші канали</option></select></div></div><section class="trending-view"><p class="trend-feedback" role="status">Завантажуємо…</p><div class="overview-projects trend-grid"></div></section>';
+  root.innerHTML='<div class="overview-top trend-top"><div class="overview-heading trend-heading"><h1 id="trending-title">Зараз у тренді</h1><button type="button" class="history-button outline channel-settings-button trend-refresh" title="Оновити" aria-label="Оновити"><svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 4v6h6M4 9a8 8 0 1 1-1 7"/></svg></button></div><div class="overview-actions"><div class="trend-sort" role="group" aria-label="Сортування"><button type="button" data-trend-sort="x" title="Найвищий X: перегляди на день відносно звичайних відео цього каналу">X</button><button type="button" data-trend-sort="hourly" title="Найбільше переглядів за годину: перегляди поділені на години від публікації">За годину</button></div><select class="trend-filter" aria-label="Ідеї для каналу"><option value="">Усі наші канали</option></select></div></div><section class="trending-view"><p class="trend-feedback" role="status">Завантажуємо…</p><div class="overview-projects trend-grid"></div></section>';
   const navigation=state.navigation;
   const live=()=>root.isConnected&&state.navigation===navigation&&state.view==='trending'&&!root.hidden;
   const select=root.querySelector('select'),button=root.querySelector('.trend-refresh'),feedback=root.querySelector('.trend-feedback'),grid=root.querySelector('.trend-grid');
   $('trending-toolbar').replaceChildren(root.querySelector('.trend-top'));
   let data=null,timer=null,readVersion=0,readFailures=0,refreshing=false,cardMarkup='';const used=new Set();
+  // the sort the author picked last stays for the next visit (user, 16 November 2026: «перемикач… по іксу… за годину»)
+  let sort='x';try{if(localStorage.getItem('trend-sort')==='hourly')sort='hourly';}catch{}
+  const sortBox=$('trending-toolbar').querySelector('.trend-sort');   // the heading moved to the toolbar above
+  const paintSort=()=>sortBox.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.trendSort===sort)));
+  sortBox.onclick=event=>{const pick=event.target.closest('[data-trend-sort]');if(!pick||pick.dataset.trendSort===sort)return;sort=pick.dataset.trendSort;try{localStorage.setItem('trend-sort',sort);}catch{}paintSort();render();};
+  paintSort();
+  const ordered=list=>sort==='hourly'?[...list].sort((a,b)=>(b.hourly??0)-(a.hourly??0)):list;   // the server sends the X order
+  const readAt=()=>{if(data?.retry_after>0)readyAt=Math.max(readyAt,Date.now()+data.retry_after*1000);};
   const schedule=(delay=2000)=>{clearTimeout(timer);if(live())timer=setTimeout(load,delay);};
-  function setRunning(running){button.disabled=running;button.classList.toggle('is-loading',running);button.setAttribute('aria-busy',String(running));}
+  let readyAt=0,coolTimer=null;   // the button stays grey while a refresh runs, for the minute after one, and on the key's daily limit
+  const clock=t=>new Date(t*1000).toLocaleString('uk-UA',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  function setRunning(running){
+    const now=Date.now()/1000,limited=!!data?.limit_until&&data.limit_until>now,cooling=readyAt>Date.now();
+    button.disabled=running||limited||cooling;button.classList.toggle('is-loading',running);button.setAttribute('aria-busy',String(running));
+    const last=data?.last_refresh?`Оновлено ${clock(data.last_refresh)}.`:'';
+    const why=running?'Оновлюємо добірку…':limited?`${data.limit_note||'Ліміт YouTube'}. Можна знову після ${clock(data.limit_until)}.`:cooling?`Можна оновити за ${Math.ceil((readyAt-Date.now())/1000)} с.`:'Оновити зараз.';
+    button.title=[why,last].filter(Boolean).join(' ');button.setAttribute('aria-label',button.title);
+    clearTimeout(coolTimer);
+    if(!running&&live()&&(cooling||limited))coolTimer=setTimeout(()=>{if(live())setRunning(refreshing||!!data?.running);},Math.min(60000,Math.max(1000,cooling?readyAt-Date.now()+50:(data.limit_until-now)*1000)));
+  }
   function render(){
     if(!live()||!data)return;
     const filtered=data.videos.filter(v=>!used.has(v.id)&&(!select.value||v.for_channels.some(c=>c.id===select.value)));
-    const markup=filtered.map(video=>trendingCard(video,data.competitor_icons)).join('');
+    const markup=ordered(filtered).map(video=>trendingCard(video,data.competitor_icons,sort)).join('');
     if(markup!==cardMarkup){cardMarkup=markup;grid.innerHTML=markup;}
     const running=refreshing||data.running;
     setRunning(running);
-    feedback.textContent=running?'Оновлюємо добірку…':!data.competitors?'Додайте конкурентів у налаштуваннях каналу.':!data.checked&&data.errors?.length?'Не вдалося оновити добірку. Спробуйте ще раз.':!data.checked?'Натисніть ↻, щоб отримати добірку.':!filtered.length?'Нових популярних відео поки немає.':'';
+    feedback.textContent=running?'Оновлюємо добірку…':!data.competitors?'Додайте конкурентів у налаштуваннях каналу.':!data.checked&&data.errors?.length?'Не вдалося оновити добірку. Спробуйте ще раз.':!data.checked?'Натисніть ↻, щоб отримати добірку.':!filtered.length?'Нових відео за три тижні поки немає.':'';
     feedback.hidden=!feedback.textContent;
   }
   async function load(){
     if(!live())return;
     clearTimeout(timer);const version=++readVersion;
     try{
-      const result=await api('/api/trending-videos');if(!live()||version!==readVersion)return;data=result;readFailures=0;
+      const result=await api('/api/trending-videos');if(!live()||version!==readVersion)return;data=result;readFailures=0;readAt();
       const value=select.value;
       select.innerHTML='<option value="">Усі наші канали</option>'+data.channels.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');select.value=value;
       render();if(data.running)schedule();
@@ -66,7 +84,7 @@ function openTrendingVideos({updateUrl=true}={}){
   button.onclick=async()=>{
     if(refreshing||data?.running)return;
     refreshing=true;readVersion++;clearTimeout(timer);setRunning(true);feedback.hidden=false;feedback.textContent='Оновлюємо добірку…';let refreshNote='';
-    try{const result=await api('/api/trending-videos/refresh','POST',{});if(!live())return;await load();if(result.running)schedule();else if(result.retry_after)refreshNote=`Спробуйте за ${result.retry_after} с`;}
+    try{const result=await api('/api/trending-videos/refresh','POST',{});if(!live())return;await load();if(result.running)schedule();else if(result.limit_until){data={...data,...result};}else if(result.retry_after){readyAt=Date.now()+result.retry_after*1000;}}
     catch(error){refreshNote=error.message;}
     finally{refreshing=false;if(live()){if(data)render();else setRunning(false);if(refreshNote){feedback.hidden=false;feedback.textContent=refreshNote;}}}
   };

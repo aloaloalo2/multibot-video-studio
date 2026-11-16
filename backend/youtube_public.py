@@ -13,7 +13,7 @@ from idea_reference import NoRedirect
 VIDEO_ID = re.compile(r'[A-Za-z0-9_-]{11}')
 VIDEO_TTL = 6 * 3600
 OLD_VIDEO_TTL = 3 * 86400
-FRESH_DAYS = 16
+FRESH_DAYS = 23
 
 
 class SkippedVideo(ValueError):
@@ -138,7 +138,7 @@ def collect(identity, previous=None):
     def fetch(item):
         saved=known.get(item['id'])
         if saved:
-            # Only uploads of the last 16 days can enter the selection (trending_videos.rank takes 14): they are read
+            # Only uploads of the last 23 days can enter the selection (trending_videos.rank takes 21): they are read
             # again every 6 hours. An older one only feeds the channel's usual pace and gains little, so its saved
             # numbers serve for three days: a refresh asks YouTube for about a fifth of the pages it used to.
             fresh=time.time()-saved.get('published_ts',0)<FRESH_DAYS*86400
