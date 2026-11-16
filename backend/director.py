@@ -700,6 +700,12 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
             return True
         RETIMING.add(pid)
 
+    def moved():
+        # the move is over: the frames may start now (store.request_production refuses while the pid is RETIMING;
+        # 16 November 2026 the thread started the frames before leaving RETIMING and every request was refused)
+        with LOCK:
+            RETIMING.discard(pid)
+
     def work():
         try:
             plan = store.load_project_plan(pid) or {}
@@ -707,21 +713,24 @@ def retime_soon(pid: str, create_video: bool = False) -> bool:
                 return   # the voice is not timed yet: the recognition calls again
             if not animated(store.load_project(pid)):
                 # a photo channel's Razgon workspace: the real voice, words and frames; no direction to move
-                if refresh_workspace(pid) and create_video:
+                done = refresh_workspace(pid)
+                moved()
+                if done and create_video:
                     import production
                     production.start_from_plan(pid)
             elif retime(pid):
+                moved()
                 if create_video:
                     import production
                     production.start_from_plan(pid)
             else:
+                moved()
                 start(pid, "create_video" if create_video else "voice")
         except Exception:
             import traceback
             traceback.print_exc()
         finally:
-            with LOCK:
-                RETIMING.discard(pid)
+            moved()
     threading.Thread(target=work, daemon=True).start()
     return True
 

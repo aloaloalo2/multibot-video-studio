@@ -163,6 +163,25 @@ class RetimeSoonTest(unittest.TestCase):
             self.assertTrue(done.wait(5))
         frames.assert_called_once_with("p")
 
+    def test_the_frames_start_after_the_move_has_left_retiming(self):
+        # store.request_production refuses while the episode is RETIMING (16 November 2026: the frames never started)
+        import threading
+        from unittest.mock import patch
+        import director
+        import production
+        done, seen = threading.Event(), []
+        def frames(pid):
+            seen.append(pid in director.RETIMING);done.set()
+        with patch.object(director, "workspace_estimated", return_value=True), \
+             patch.object(director.store, "load_project_plan", return_value={"timing": {"status": "audio_synced"}}), \
+             patch.object(director.store, "load_project", return_value={"id": "p"}), \
+             patch.object(director, "animated", return_value=True), \
+             patch.object(director, "retime", return_value=True), \
+             patch.object(production, "start_from_plan", side_effect=frames):
+            self.assertTrue(director.retime_soon("p", create_video=True))
+            self.assertTrue(done.wait(5))
+        self.assertEqual(seen, [False])
+
     def test_nothing_to_move_runs_nothing(self):
         from unittest.mock import patch
         import director
