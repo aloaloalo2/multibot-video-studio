@@ -111,11 +111,11 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
       const useThumbnail=root.querySelector('[name="use_thumbnail"]').checked;
       sending=true;note.hidden=true;root.querySelectorAll('input,select').forEach(field=>field.disabled=true);titleTranslator.refresh();
       try{
-        const draft=await api('/api/trending-videos/use','POST',{channel_id:cid,video_id:video.id,title,target_words:count,use_thumbnail:useThumbnail,use_hero:useThumbnail&&root.querySelector('[name="use_hero"]').checked,use_channel_wishes:useThumbnail&&!root.querySelector('[data-wishes-choice]').hidden&&root.querySelector('[name="use_wishes"]').checked,request_id:requestId});
+        await api('/api/trending-videos/use','POST',{channel_id:cid,video_id:video.id,title,target_words:count,use_thumbnail:useThumbnail,use_hero:useThumbnail&&root.querySelector('[name="use_hero"]').checked,use_channel_wishes:useThumbnail&&!root.querySelector('[data-wishes-choice]').hidden&&root.querySelector('[name="use_wishes"]').checked,request_id:requestId});
         onUsed();
         if(!live())return;
         closeModal();
-        if(await selectChannel(cid))await selectProject(draft.project_id);
+        await selectChannel(cid);   // the channel's page, where the new card shows «Opus готує зачини» (user, 16 November 2026)
       }catch(error){if(live()){note.hidden=false;note.textContent=error.message;}}
       finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);submit.disabled=!valid();titleTranslator.refresh();syncHero();}}
     }

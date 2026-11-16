@@ -17,6 +17,14 @@ class TrendingTitleTests(unittest.TestCase):
     def tearDown(self):
         self.patch.stop()
         self.temp.cleanup()
+    def test_a_title_skipped_in_an_answer_is_asked_again_and_the_rest_are_kept(self):
+        a,b='What If You Were a Robot?','What If the Moon Fell?'
+        answers=[{'translations':[{'source':a,'uk':'Що як ви робот?'}]},{'translations':[{'source':b,'uk':'Що як Місяць упаде?'}]}]
+        with patch('episode_ideas.opus',side_effect=answers) as opus:
+            titles.update([{'title':a},{'title':b}])
+        self.assertEqual(opus.call_count,2)
+        cache=store.read_json(titles.path(),{})
+        self.assertEqual((titles.reading(a,cache),titles.reading(b,cache)),('Що як ви робот?','Що як Місяць упаде?'))
     def test_translation_is_reused_only_for_the_same_source(self):
         source='What If You Aged Backwards?'
         with patch.object(titles,'request',return_value={source:'Що було б, якби ви молодшали?'}) as request:
