@@ -2937,4 +2937,6 @@ select option{background:#232327;color:#f1f1f2}
 /* the director has finished on the script and waits for the voice: a green check */
 .episode-director.done .episode-director-line strong{display:inline-flex;align-items:center;gap:8px}
 .episode-director-check{width:18px;height:18px;flex:none;color:#6bf2ae}
-.episode-director.done .episode-director-line+.episode-director-line{margin-top:10px}
+.episode-director-note{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.episode-director-check.small{width:13px;height:13px;color:#6bf2ae}
+.episode-director-dot{opacity:.6}

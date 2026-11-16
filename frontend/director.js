@@ -318,11 +318,14 @@ function fillDirectorLine(box){
     // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
     // режисер галочка, він закінчив свою роботу, і що він очікує»)
     const frames=(state.plan?.frames||[]).length;
-    line('План готовий',frames?`${frames} ${planFrameWord(frames)}`:'');
-    // the kit made after it gets its own check (user, 16 November 2026: «теж галочка»)
-    if(run.kit==='ready')line('Підготовка завершена');
+    const check=small=>`<svg class="episode-director-check${small?' small':''}" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    line('План готовий','');
     box.classList.add('done');
-    for(const title of box.querySelectorAll('.episode-director-line strong'))title.insertAdjacentHTML('afterbegin','<svg class="episode-director-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',check(false));
+    // the small grey line: the frames, and the kit with its own little check (user, 16 November 2026: «біля сірого
+    // малого тексту треба було»)
+    const parts=[frames?esc(`${frames} ${planFrameWord(frames)}`):'',run.kit==='ready'?`${check(true)}${esc('Підготовка завершена')}`:''].filter(Boolean);
+    if(parts.length){const note=document.createElement('span');note.className='episode-director-note';note.innerHTML=parts.join('<span class="episode-director-dot">·</span>');box.querySelector('.episode-director-line')?.append(note);}
   }else if(state.plan?.director_stale){
     line('Сценарій змінився після режисури','Режисер має заново розбити озвучку на кадри.');
     box.append(stepButton('Запустити режисуру',()=>startDirector(id),true));
