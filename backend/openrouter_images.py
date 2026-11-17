@@ -71,7 +71,25 @@ def spent(pid: str) -> dict:
     return {"sheets": len(mine), "usd": round(sum(float(e.get("amount") or 0) for e in mine), 4)}
 
 
-def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium") -> dict:
+MAX_REFERENCES = 16              # gpt-image-1-mini's limit (GET /api/v1/images/models, input_references)
+REFERENCE_BYTES = 8 * 1024 * 1024
+REFERENCE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+
+def references(paths) -> list[dict]:
+    """Reference pictures for the drawing, such as the host's avatar (user, 17 November 2026: «може юзати мій аватар?»).
+    OpenRouter takes them as input_references objects; a test the same day drew Karl from his avatar, recognisably."""
+    found = []
+    for item in list(paths or [])[:MAX_REFERENCES]:
+        path = __import__("pathlib").Path(item)
+        kind = REFERENCE_TYPES.get(path.suffix.lower())
+        if not kind or not path.is_file() or path.stat().st_size > REFERENCE_BYTES:
+            raise store.StudioError(f"Референс {path.name} не підходить: PNG, JPEG чи WebP до 8 МБ")
+        found.append({"type": "image_url", "image_url": {"url": f"data:{kind};base64," + base64.b64encode(path.read_bytes()).decode()}})
+    return found
+
+
+def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None) -> dict:
     """One transparent sheet: {'png': base64, 'cost': usd}. Never retried: a failed paid call is reported, not repeated."""
     chosen = setting(pid)
     if not chosen:
@@ -87,6 +105,8 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
     model = chosen.get("model") or DEFAULT_MODEL
     body = {"model": model, "prompt": prompt.strip(), "background": "transparent", "aspect_ratio": aspect_ratio,
             "quality": quality, "n": 1}
+    if refs:
+        body["input_references"] = references(refs)
     request = urllib.request.Request(BASE + "/images", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                                      method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     try:

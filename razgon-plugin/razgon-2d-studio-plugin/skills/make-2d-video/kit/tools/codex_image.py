@@ -168,7 +168,9 @@ def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
     import base64
     import openrouter_images
     try:
-        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], prompt.read_text(encoding="utf-8").strip())
+        # the reference pictures (the host's avatar and the like) go along, as with Codex
+        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], prompt.read_text(encoding="utf-8").strip(),
+                                        refs=[str(Path(ref).resolve()) for ref in a.ref])
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
         finish("failed", str(error)[-300:])
