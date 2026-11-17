@@ -47,6 +47,8 @@ class StoryFlowBriefTest(unittest.TestCase):
         review = (Path(ideas.__file__).parent / 'prompts' / 'script_self_review.txt').read_text(encoding='utf-8')
         self.assertIn(ideas.FLOW, review)
         self.assertNotIn('додай позицію\nведучого', review)
+        self.assertIn(ideas.CONCRETE, brief)
+        self.assertIn(ideas.CONCRETE, review)
 
 
 class ReadingTranslationTest(unittest.TestCase):
