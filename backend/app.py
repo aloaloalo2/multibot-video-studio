@@ -1819,6 +1819,10 @@ class Handler(BaseHTTPRequestHandler):
             job = languages.start(pid, action, code, body.get("provider"), body.get("wishes"), body.get("sentences"),body.get('add_flag'),body.get('preserve_text',False),cache_only=body.get('cache_only',False),use_hero=body.get('use_hero'),base=body.get('base'),expected_provider=body.get('expected_provider'))
             episode_pause.started_by_hand(pid, "languages", kind=action, code=code)   # no more «paused» on the card
             return self.json_response({"job": job}, 202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/logo", path)
+        if match and method == "POST":
+            import thumbnail_logo
+            return self.json_response(thumbnail_logo.place(match.group(1), str(body.get("base") or ""), body.get("x"), body.get("y"), body.get("width")))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail/choose", path)
         if match and method == "POST":
             return self.json_response(thumbnail_gen.choose(match.group(1), str(body.get("name") or "")))

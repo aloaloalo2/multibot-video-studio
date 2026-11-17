@@ -108,3 +108,51 @@ def stamp(picture: Path, logo: dict | None, work: Path) -> bool:
     image.convert("RGB").save(staged, format="PNG", optimize=True)
     staged.replace(picture)
     return True
+
+
+def place(pid: str, base: str, x, y, width) -> dict:
+    """The channel's logo laid by hand on one thumbnail version (user, 17 November 2026: «кнопку… логотип… вона зразу
+    додає логотип на картинку, яку я можу пересовувати… видалити… зменшити, збільшити»). `x`, `y` are the logo's top-left
+    corner and `width` its width, all as fractions of the picture. The result is a new version, made the cover, with the
+    picture it came from kept as it was; nothing is drawn by a model."""
+    import store
+    import thumbnail_compare
+    import thumbnail_gen
+    values = (x, y, width)
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in values) or not 0.02 <= width <= 0.8:
+        raise store.StudioError("Невірне місце чи розмір логотипа", 400)
+    project = store.load_project(pid)
+    logo = channel_branding.logo_path(project["channel_id"])
+    if not logo.is_file():
+        raise store.StudioError("У каналу ще немає логотипа. Додайте його в налаштуваннях каналу.", 409)
+    source = thumbnail_gen.version_file(pid, base)
+    work = thumbnail_gen.keep_dir(pid)
+    with thumbnail_gen.LOCK:
+        if pid in thumbnail_gen.ACTIVE:
+            raise store.StudioError("Зачекайте, доки домалюється нове прев'ю", 409)
+        try:
+            with Image.open(logo) as mark_file:
+                mark = mark_file.convert("RGBA")
+            with Image.open(source) as picture:
+                image = picture.convert("RGBA")
+        except (OSError, UnidentifiedImageError, Image.DecompressionBombError):
+            raise store.StudioError("Не вдалося відкрити прев'ю або логотип", 409) from None
+        w = max(1, round(image.width * width))
+        h = max(1, round(w * mark.height / mark.width))
+        left = round(min(max(x, 0.0), 1.0) * image.width)
+        top = round(min(max(y, 0.0), 1.0) * image.height)
+        left, top = min(left, image.width - w), min(top, image.height - h)   # the whole logo stays on the picture
+        image.alpha_composite(mark.resize((w, h), Image.Resampling.LANCZOS), (max(0, left), max(0, top)))
+        number = 1 + max([int(m.group(1)) for p in work.glob("Превью *.png") if (m := thumbnail_gen.VERSION.fullmatch(p.name))] or [0])
+        name = f"Превью v{number}.png"
+        staged = work / (".logo-" + name)
+        image.convert("RGB").save(staged, format="PNG", optimize=True)
+        staged.replace(work / name)
+        (work / f"Промпт прев'ю v{number}.txt").write_text(
+            f"[Правка {base}] Логотип каналу ({round(width * 100)}% ширини)\n", encoding="utf-8")
+        try:
+            thumbnail_compare.record(pid, name, base=base)
+        except (OSError, ValueError, store.StudioError):
+            pass   # the comparison is a help; the picture is made
+    thumbnail_gen.choose(pid, name)
+    return {"name": name, "versions": thumbnail_gen.versions(pid)}

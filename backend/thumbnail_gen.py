@@ -22,6 +22,7 @@ import director
 import frame_progress
 import store
 import job_timing
+import channel_branding
 import channel_hero
 import agent_storage
 import image_delivery
@@ -166,6 +167,8 @@ def defaults(pid: str) -> dict:
             "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
             "versions": versions(pid), "writers": list(PROMPT_WRITERS), "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None,
+            # the channel's logo for the gallery's «Логотип» button (thumbnail_logo.place); None when the channel has none
+            "channel_logo": channel_branding.logo_info(project['channel_id']) if project.get('channel_id') else None,
             # the clone window offers the channel's own thumbnail wishes only when the channel has some (user, 15 November 2026)
             "channel_wishes": bool(str((store.read_channel_settings(store.get_channel_folder(project['channel_id'], include_disabled=True), {}) or {}).get('thumbnail_wishes') or '').strip()) if project.get('channel_id') else False}
 

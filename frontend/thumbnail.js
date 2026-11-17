@@ -324,6 +324,8 @@ function buildThumbnailGallery(section,project,data){
   if(!selected&&typeof thumbnailComparison==='function')selected=items.find(item=>item.current&&thumbnailComparison(item,items,data))?.key||null;
   const grid=section.querySelector('.thumb-gallery-grid'),filters=section.querySelector('.thumb-filters'),frame=section.querySelector('.thumb-view-frame'),choose=section.querySelector('.thumb-set-cover'),workspace=section.querySelector('.thumb-workspace'),editor=section.querySelector('.thumb-compose'),input=section.querySelector('.thumb-edit-input');
   const compare=typeof bindThumbnailComparison==='function'?bindThumbnailComparison(section,project):()=>{};
+  // «Логотип» beside «Порівняти»: the channel's logo laid by hand, saved as a new version that becomes the cover
+  const logoTool=typeof bindThumbnailLogo==='function'?bindThumbnailLogo(section,project,data,name=>{thumbnailSelection.set(id,name);buildThumbView(section,project);}):()=>{};
   const draw=()=>{
     const codes=['all',...new Set(items.map(x=>x.code))];
     filters.innerHTML=codes.map(code=>`<button type="button" data-code="${code}" aria-pressed="${code===filter}">${code==='all'?'Усі':code==='original'?'Оригінал':`${flags[code] || '🌐'} ${esc(items.find(x=>x.code===code).label)}`}</button>`).join('');
@@ -338,6 +340,7 @@ function buildThumbnailGallery(section,project,data){
     const target=editor.querySelector('.thumb-compose-target');target.querySelector('img').src=item.url;target.querySelector('small').textContent=`${item.flag} ${item.label} · ${item.detail}`;
     input.value=thumbnailDrafts.get(`${id}:${key}`)||'';
     compare(item,items,data);
+    logoTool(item);
     choose.hidden=!item.name||item.current;draw();showThumbnailState(id);markThumbnailCard(id);
     if(focus){workspace.scrollIntoView({behavior:'smooth',block:'nearest'});input.focus({preventScroll:true});}
   };
