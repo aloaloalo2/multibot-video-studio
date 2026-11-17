@@ -52,7 +52,7 @@ function updateProjectCard(card,project){
     if(!box){box=document.createElement('div');box.className='project-making project-production-state';open.insertBefore(box,meta);}
     box.classList.toggle('stopped',stopped);
     box.title=stopped?(making.error||'Відкрийте випуск, щоб продовжити роботу'):'';
-    const text=working?(making.stage==='kit'?'Підготовка':`Створюємо кадри · ${done} з ${total}`):`${making.paused?(/ліміт Codex/.test(making.error||'')?'Пауза: ліміт Codex':'На паузі'):/claude auth login|Failed to authenticate|вийшов з облікового запису/i.test(making.error||'')?'Пауза: увійдіть у Claude':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}`;
+    const text=working?(making.stage==='kit'?'Підготовка':`Створюємо кадри · ${done} з ${total}`):`${making.paused?(/ліміт Codex/.test(making.error||'')?'Пауза: ліміт Codex':making.stage==='kit'?'Підготовка на паузі':'Кадри на паузі'):/claude auth login|Failed to authenticate|вийшов з облікового запису/i.test(making.error||'')?'Пауза: увійдіть у Claude':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}`;
     if(box._working!==working){
       box.innerHTML=`<span class="project-export-label">${working?exportSpinner:''}<span class="project-production-label"></span></span>${working?'<span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0"><span></span></span>':''}`;
       box._working=working;
@@ -65,7 +65,8 @@ function updateProjectCard(card,project){
     if(!box||!box.classList.contains('episode-paused')){box?.remove();box=document.createElement('div');box.className='project-making project-production-state stopped episode-paused';box.innerHTML='<span class="project-export-label"><span class="project-production-label"></span></span>';open.insertBefore(box,meta);}
     // the stopped work itself, as it read while it ran: «Озвучка · 117 з 171»
     // older servers wrote «Режисура», «Озвучка · N%»: the card reads the words the author asked for (16 November 2026)
-    const legacy={'Режисура':'План кадрів'},raw=project.episode_pause_label||'На паузі',text=legacy[raw]||raw.replace(/^Озвучка · /,'Озвучуємо сценарій · ').replace(/^Озвучка перекладу · /,'Озвучуємо переклад · ').replace(/^Переклад · /,'Перекладаємо · '),label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
+    // the stopped work by name and «на паузі» (user, 17 November 2026: «статуси мають писати озвучка на паузі»); older servers' words map onto it
+    const legacy={'Режисура':'План кадрів на паузі','План кадрів':'План кадрів на паузі','Підготовка':'Підготовка на паузі','Озвучуємо сценарій':'Озвучка на паузі','Переозвучуємо':'Переозвучка на паузі'},raw=project.episode_pause_label||'На паузі',text=legacy[raw]||raw.replace(/^(Озвучка|Озвучуємо сценарій) · /,'Озвучка на паузі · ').replace(/^Переозвучуємо · /,'Переозвучка на паузі · ').replace(/^(Озвучка перекладу|Озвучуємо переклад) · /,'Озвучка перекладу на паузі · ').replace(/^(Переклад|Перекладаємо) · /,'Переклад на паузі · '),label=box.querySelector('.project-production-label');if(label.textContent!==text)label.textContent=text;
   }else box?.remove();
   const actionsKey=JSON.stringify([!!project.episode_path,!!project.freeable]);
   if(card._actionsKey!==actionsKey){

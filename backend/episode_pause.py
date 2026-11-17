@@ -12,6 +12,7 @@ noted steps. The file lives beside the project, so a pause outlives a restart of
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 
@@ -60,29 +61,60 @@ def stopped_narration(pid: str) -> dict | None:
     return job
 
 
+def stopped_revision(pid: str) -> dict | None:
+    """A sentence revision stopped half way by «Стоп», by HeyGen's limit or by a restart: the card offers play, and play
+    goes on with its own text, the sentences already made coming from the cache (17 November 2026: HeyGen answered 429
+    for minutes and the revision of Nikolai Vetrov's voice stopped with no way to go on)."""
+    import narration_revision
+    import project_narration
+    if pid in project_narration.ACTIVE:
+        return None
+    revision = store.read_json(project_narration.root(pid) / "revision-job.json", {}) or {}
+    status, identity = revision.get("status"), revision.get("id")
+    if not identity or status not in {"queued", "running", "cancelling", "cancelled", "failed"}:
+        return None
+    # a revision that failed on its own text (a sentence far off its slot) would fail again: that is the author's edit
+    if status == "failed" and "продовжіть пізніше" not in str(revision.get("error") or ""):
+        return None
+    text_file = project_narration.root(pid) / "revisions" / identity / "text.txt"
+    job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+    if not text_file.is_file() or job.get("status") != "done" or float(job.get("started_at") or 0) > float(revision.get("started_at") or 0):
+        return None   # no text to go on with, or the voice was made again since
+    if narration_revision.digest(job.get("script") or "") == narration_revision.digest(text_file.read_text(encoding="utf-8")):
+        return None   # already applied
+    return revision
+
+
 def resumable(pid: str) -> bool:
-    return paused(pid) is not None or stopped_narration(pid) is not None
+    return paused(pid) is not None or stopped_narration(pid) is not None or stopped_revision(pid) is not None
 
 
 def label(pid: str) -> str | None:
-    """What the card says while the episode waits for play: the stopped work itself, as it read while it ran
-    (user, 16 November 2026: «не на паузі має бути, а озвучка там, як раніше писало»)."""
+    """What the card says while the episode waits for play: the stopped work by name and that it is paused
+    (user, 16 November 2026: «не на паузі має бути, а озвучка там, як раніше писало»; 17 November 2026: «коли ставлю
+    на паузу то статуси мають писати озвучка на паузі»)."""
     import project_narration
     data = paused(pid)
-    stopped = (data or {}).get("stopped") or ({"narration": {}} if stopped_narration(pid) else {})
+    revision = None if data else stopped_revision(pid)
+    stopped = (data or {}).get("stopped") or ({"narration": {"revision": revision["id"]}} if revision else
+                                             {"narration": {}} if stopped_narration(pid) else {})
     if not stopped:
         return None
+    if "narration" in stopped and (stopped["narration"] or {}).get("revision"):
+        job = store.read_json(project_narration.root(pid) / "revision-job.json", {}) or {}
+        total = int(job.get("total") or 0)
+        return f"Переозвучка на паузі · {round(100 * int(job.get('completed') or 0) / total)}%" if total else "Переозвучка на паузі"
     if "narration" in stopped:
         job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
         total = int(job.get("total") or 0)
         done = max(int(job.get("completed") or 0), int(job.get("cached") or 0))   # made phrases count from the start
         # the same words the card shows while the work runs (user, 16 November 2026: «текст зміни на більш привичний»)
-        return f"Озвучуємо сценарій · {round(100 * done / total)}%" if total else "Озвучуємо сценарій"
+        return f"Озвучка на паузі · {round(100 * done / total)}%" if total else "Озвучка на паузі"
     if "director" in stopped:
-        return "Підготовка" if (stopped["director"] or {}).get("stage") == "kit" else "План кадрів"
+        return "Підготовка на паузі" if (stopped["director"] or {}).get("stage") == "kit" else "План кадрів на паузі"
     if "languages" in stopped:
         items = stopped["languages"]
-        word = "Перекладаємо" if all(i["kind"] == "translate" for i in items) else "Озвучуємо переклад"
+        word = "Переклад на паузі" if all(i["kind"] == "translate" for i in items) else "Озвучка перекладу на паузі"
         return word + " · " + ", ".join(i["code"].upper() for i in items)
     return None   # the frames: the card shows their own stopped line
 
@@ -136,8 +168,13 @@ def running(pid: str) -> dict:
     project = store.load_project(pid)
     found = {}
     if pid in project_narration.ACTIVE:
-        job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
-        found["narration"] = {"script": job.get("script") or (project.get("voice_script") or {}).get("text")}
+        revision = store.read_json(project_narration.root(pid) / "revision-job.json", {}) or {}
+        if revision.get("status") in {"queued", "running", "cancelling"} and revision.get("id"):
+            # a sentence revision (narration_revision): play goes on with its new text, never the finished voice
+            found["narration"] = {"revision": revision["id"]}
+        else:
+            job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+            found["narration"] = {"script": job.get("script") or (project.get("voice_script") or {}).get("text")}
     if pid in director.ACTIVE:
         state = director.state(pid) or {}
         found["director"] = {"reason": state.get("reason") or "voice", "create_video": bool(state.get("create_video")), "stage": state.get("stage")}
@@ -211,6 +248,19 @@ def _settle_director(pid: str, data: dict) -> None:
         director.save(pid, state)
 
 
+def resume_revision(pid: str, identity: str) -> None:
+    """Start the paused sentence revision again with its own text; the sentences already made come from the cache."""
+    import narration_revision
+    import project_narration
+    text_file = project_narration.root(pid) / "revisions" / identity / "text.txt"
+    if not text_file.is_file():
+        raise store.StudioError("Текст переозвучки не збережено: запустіть її знову")
+    old = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
+    again = re.sub(r"-p\d+$", "", identity)[:60] + f"-p{int(time.time())}"
+    narration_revision.start(pid, {"text": text_file.read_text(encoding="utf-8"),
+                                   "expected_sha256": narration_revision.digest(old.get("script") or ""), "client_id": again})
+
+
 def resume(pid: str) -> dict:
     import director
     import production
@@ -218,10 +268,14 @@ def resume(pid: str) -> dict:
     with LOCK:
         data = paused(pid)
         if data is None:
-            job = stopped_narration(pid)
-            if job is None:
+            revision = stopped_revision(pid)
+            job = None if revision else stopped_narration(pid)
+            if revision:
+                data = {"stopped": {"narration": {"revision": revision["id"]}}, "pending": {}}
+            elif job is None:
                 raise store.StudioError("Випуск не на паузі", 409)
-            data = {"stopped": {"narration": {"script": job["script"]}}, "pending": {}}
+            else:
+                data = {"stopped": {"narration": {"script": job["script"]}}, "pending": {}}
         import languages
         if pid in project_narration.ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE or any(
                 languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
@@ -237,7 +291,9 @@ def resume(pid: str) -> dict:
             errors.append(str(error))
 
     narration = stopped.get("narration")
-    if narration and narration.get("script"):
+    if narration and narration.get("revision"):
+        step(lambda: resume_revision(pid, narration["revision"]))
+    elif narration and narration.get("script"):
         project = store.load_project(pid)
         job = store.read_json(project_narration.root(pid) / "job.json", {}) or {}
         if (project.get("voice_script") or {}).get("text") != narration["script"]:

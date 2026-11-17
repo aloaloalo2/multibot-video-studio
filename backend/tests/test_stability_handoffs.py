@@ -80,9 +80,9 @@ class PauseTest(unittest.TestCase):
 
     def test_the_card_reads_familiar_words(self):
         store.atomic_json(episode_pause.path("p"), {"stopped": {"director": {"reason": "voice"}}, "pending": {}})
-        self.assertEqual(episode_pause.label("p"), "План кадрів")
+        self.assertEqual(episode_pause.label("p"), "План кадрів на паузі")
         store.atomic_json(episode_pause.path("p"), {"stopped": {"languages": [{"kind": "voice", "code": "pl"}]}, "pending": {}})
-        self.assertEqual(episode_pause.label("p"), "Озвучуємо переклад · PL")
+        self.assertEqual(episode_pause.label("p"), "Озвучка перекладу на паузі · PL")
 
     def test_a_director_that_left_the_pause_is_not_marked_in_it(self):
         import director as d

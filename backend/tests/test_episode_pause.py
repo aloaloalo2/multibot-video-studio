@@ -49,6 +49,59 @@ class EpisodePauseTest(unittest.TestCase):
         voice.assert_called_once_with(project, "Текст.", resume=True)
         start.assert_called_once_with("p", "script")
 
+    def test_a_paused_sentence_revision_goes_on_with_its_own_text(self):
+        # 17 November 2026: the pause wrote the finished voice's script, so play had nothing to go on with
+        import narration_revision
+        import project_narration
+        import director
+        root = self.dir / "narration"
+        root.mkdir(exist_ok=True)
+        store = episode_pause.store
+        store.atomic_json(root / "job.json", {"status": "done", "script": "Старий текст."})
+        store.atomic_json(root / "revision-job.json", {"id": "fix-yo-12345", "status": "running", "completed": 1, "total": 4})
+        (root / "revisions" / "fix-yo-12345").mkdir(parents=True)
+        (root / "revisions" / "fix-yo-12345" / "text.txt").write_text("Новый текст с ё.", encoding="utf-8")
+        with patch.object(project_narration, "ACTIVE", {"p"}), patch.object(episode_pause.store, "load_project", return_value={"id": "p"}), \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "cancel") as cancel:
+            data = episode_pause.pause("p")
+        cancel.assert_called_once_with("p")
+        self.assertEqual(data["stopped"]["narration"], {"revision": "fix-yo-12345"})
+        self.assertEqual(episode_pause.label("p"), "Переозвучка на паузі · 25%")
+        with patch.object(narration_revision, "start") as revise, patch.object(project_narration, "start") as voice, \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            episode_pause.resume("p")
+        voice.assert_not_called()   # never the whole film again with the old text
+        body = revise.call_args.args[1]
+        self.assertEqual(body["text"], "Новый текст с ё.")
+        self.assertEqual(body["expected_sha256"], narration_revision.digest("Старий текст."))
+        self.assertRegex(body["client_id"], r"^fix-yo-12345-p\d+$")
+
+    def test_a_revision_stopped_by_heygen_limit_offers_play_and_goes_on(self):
+        import narration_revision
+        import project_narration
+        import director
+        root = self.dir / "narration"
+        root.mkdir(exist_ok=True)
+        store = episode_pause.store
+        store.atomic_json(root / "job.json", {"status": "done", "script": "Старий текст.", "started_at": 1})
+        (root / "revisions" / "fix-12345678").mkdir(parents=True)
+        (root / "revisions" / "fix-12345678" / "text.txt").write_text("Новый текст.", encoding="utf-8")
+        store.atomic_json(root / "revision-job.json", {"id": "fix-12345678", "status": "failed", "completed": 3, "total": 6, "started_at": 2,
+                                                       "error": "Ліміт запитів HeyGen не відпускає кілька хвилин поспіль. Зроблені фрази збережено, продовжіть пізніше"})
+        with patch.object(project_narration, "ACTIVE", set()):
+            self.assertTrue(episode_pause.resumable("p"))
+            self.assertEqual(episode_pause.label("p"), "Переозвучка на паузі · 50%")
+        with patch.object(narration_revision, "start") as revise, patch.object(project_narration, "start") as voice, \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            episode_pause.resume("p")
+        voice.assert_not_called()
+        self.assertEqual(revise.call_args.args[1]["text"], "Новый текст.")
+        # a revision that failed on its own text is not offered again
+        store.atomic_json(root / "revision-job.json", {"id": "fix-12345678", "status": "failed", "started_at": 2,
+                                                       "error": "Змінене речення суттєво відрізняється за тривалістю."})
+        with patch.object(project_narration, "ACTIVE", set()):
+            self.assertFalse(episode_pause.resumable("p"))
+
     def test_a_script_edited_during_the_pause_is_not_narrated_in_its_old_form(self):
         episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {"narration": {"script": "Старий."}}, "pending": {}})
         import director
