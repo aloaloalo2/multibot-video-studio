@@ -148,16 +148,20 @@ def pause(seconds):
 
 
 def speech_turn(now=time.monotonic,sleep=time.sleep):
-    """Wait until one more speech request fits into the shared minute, then count it."""
-    while True:
-        with SPEECH_LOCK:
-            moment=now()
-            while SPEECH_SENT and moment-SPEECH_SENT[0]>=60:SPEECH_SENT.pop(0)
-            if len(SPEECH_SENT)<SPEECH_PER_MINUTE:
-                SPEECH_SENT.append(moment);return
-            pause=60-(moment-SPEECH_SENT[0])+.05
-        stop_point()
-        sleep(min(max(pause,.05),1))
+    """Wait until one more speech request fits into the shared minute, then count it. A wait counts as «Черга»."""
+    import contextlib
+    with contextlib.ExitStack() as waiting:
+        queued=False
+        while True:
+            with SPEECH_LOCK:
+                moment=now()
+                while SPEECH_SENT and moment-SPEECH_SENT[0]>=60:SPEECH_SENT.pop(0)
+                if len(SPEECH_SENT)<SPEECH_PER_MINUTE:
+                    SPEECH_SENT.append(moment);return
+                pause=60-(moment-SPEECH_SENT[0])+.05
+            if not queued:waiting.enter_context(job_timing.span('queue'));queued=True
+            stop_point()
+            sleep(min(max(pause,.05),1))
 
 @job_timing.measure('service')
 def call(path,body=None,*,idempotency_key=None):
@@ -184,12 +188,36 @@ def call(path,body=None,*,idempotency_key=None):
             waits+=1
             if waits>RATE_LIMIT_WAITS:
                 raise store.StudioError('Ліміт запитів HeyGen не відпускає кілька хвилин поспіль. Зроблені фрази збережено, продовжіть пізніше') from None
-            pause(min(max(limited.seconds,5),RATE_LIMIT_MAX_WAIT))
+            with job_timing.span('queue'):   # HeyGen's limit is a wait, not its work: «Черга» in «Час роботи»
+                pause(min(max(limited.seconds,5),RATE_LIMIT_MAX_WAIT))
         except Gateway as error:
             if gateway_retried:
                 raise store.StudioError(f'HeyGen: помилка {error.code}, і повтор через {RETRY_AFTER} с теж не вдався. Зроблені фрази збережено, продовжіть пізніше') from None
             gateway_retried=True
             pause(RETRY_AFTER)
+
+LIMIT_LOG_BYTES=512*1024
+
+
+def note_limit(path,body,error,seconds):
+    """One line per 429 in data/heygen-limits.jsonl: which model, HeyGen's own code and its Retry-After. Turbo Free
+    shares a capacity with every free user and answers 429 below the account's 30 a minute (developers.heygen.com,
+    heygen-voice-speech); on 17 November 2026 a Turbo Free narration waited 46 of its 51 minutes while paid Turbo of
+    Космос PRO voiced 520 phrases in 26 minutes without one wait, and nothing recorded what HeyGen said."""
+    try:
+        code=None
+        try:
+            returned=json.loads(error.read(4096)).get('error',{})
+            code=str(returned.get('code') or '')[:40] if isinstance(returned,dict) else None
+        except (ValueError,TypeError,AttributeError,OSError):pass
+        log=store.DATA_ROOT/'heygen-limits.jsonl'
+        if log.is_file() and log.stat().st_size>LIMIT_LOG_BYTES:
+            log.replace(log.with_suffix('.jsonl.1'))
+        line={'at':round(time.time(),1),'path':path.split('?')[0][:60],'model':(body or {}).get('model'),'code':code,
+              'retry_after':seconds or None}
+        with open(log,'a',encoding='utf-8') as out:out.write(json.dumps(line)+'\n')
+    except OSError:pass
+
 
 def _call(path,body=None,*,idempotency_key=None):
     data=json.dumps(body).encode() if body is not None else None
@@ -204,6 +232,7 @@ def _call(path,body=None,*,idempotency_key=None):
         if error.code==429:
             try:seconds=float(error.headers.get('Retry-After') or 0)
             except (TypeError,ValueError):seconds=0
+            note_limit(path,body,error,seconds)
             raise RateLimited(seconds or 20) from None
         # Retain the provider's validation reason, never credentials or download URLs.
         detail=''
@@ -262,13 +291,23 @@ def voices(model='heygen-voice-1'):
             if not page.get('has_more') or not token:break
     return {'voices':result}
 
+READY={}          # voice path -> (time, voice) of a voice HeyGen called ready
+READY_FOR=600     # seconds a ready voice is trusted without asking again
+
+
 def ready_voice(path, *, status_optional=False):
+    # a ready voice stays ready: asking HeyGen before every phrase doubled the requests its limit counts (17 November
+    # 2026: narrations waited 17–51 minutes on 429 answers, while the voicing itself takes about 2 s a phrase)
+    known=READY.get(path)
+    if known and time.monotonic()-known[0]<READY_FOR:
+        return known[1]
     deadline=time.monotonic()+VOICE_READY_TIMEOUT
     delay=2
     while True:
         voice=call(path).get('data') or {}
         status=voice.get('status')
         if status=='ACTIVE' or (status_optional and status is None and voice):
+            READY[path]=(time.monotonic(),voice)
             return voice
         if status=='FAILED':
             reason=voice.get('failure_reason')
@@ -282,7 +321,7 @@ def ready_voice(path, *, status_optional=False):
         remaining=deadline-time.monotonic()
         if remaining<=0:
             raise store.StudioError('HeyGen усе ще готує голос. Повторіть спробу трохи пізніше з тим самим голосом.')
-        time.sleep(min(delay,remaining))
+        pause(min(delay,remaining))
         delay=min(delay*2,8)
 
 

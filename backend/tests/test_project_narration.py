@@ -16,7 +16,8 @@ class NarrationTests(unittest.TestCase):
                 project={'id':'0'*24,'channel_id':'1'*16}
                 with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'snapshot',return_value={'settings':settings,'reference':None}),patch.object(lab,'reference',side_effect=AssertionError('Local reference must not be read')),patch.object(lab,'estimate',return_value={'amount':0}),patch.object(lab.eleven_api,'balance',return_value={}),patch.object(lab,'fish_synthesis') as fish,patch.object(lab,'synthesis') as eleven,patch.object(lab.heygen_voice,'synthesize') as heygen:
                     _,ref,entries,quote=narration.spec(project,'First complete sentence. Second complete sentence.')
-                    self.assertTrue(ref['sha256']);self.assertEqual(len(entries),2)
+                    # HeyGen Turbo Free reads both sentences of the paragraph in one request (lab.sentences_per_request)
+                    self.assertTrue(ref['sha256']);self.assertEqual(len(entries),1 if provider=='heygen' else 2)
                     self.assertEqual(quote['provider'],provider);self.assertEqual(quote['estimated_usd'],0)
                     fish.assert_not_called();eleven.assert_not_called();heygen.assert_not_called()
 

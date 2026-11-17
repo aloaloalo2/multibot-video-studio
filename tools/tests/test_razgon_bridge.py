@@ -477,3 +477,44 @@ class EpisodeFolderTest(unittest.TestCase):
         (linked / "story" / "studio_frames.json").write_text('{"project_id": "' + "b" * 24 + '"}', encoding="utf-8")
         with self.assertRaises(razgon_bridge.BridgeError):
             razgon_bridge.episode_target(self.FakeStudio(), project, root, "25")
+
+
+class MixedTailTest(unittest.TestCase):
+    """A mixed episode's held copies are made while the other frames still render, and the cached ones at once."""
+
+    def test_tails_follow_each_finished_frame_and_keep_the_film_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            razgon = Path(tmp) / "projects" / "film"
+            (razgon / "build" / "studio").mkdir(parents=True)
+            frames = [{"number": n, "start": n - 1.0, "end": float(n)} for n in (1, 2, 3)]
+            cached = razgon_bridge.frame_clip(razgon, 2)
+            cached.write_bytes(b"old clip")
+            order = []
+
+            def ffmpeg(command, **_):
+                source, target = Path(command[command.index("-i") + 1]), Path(command[-1])
+                order.append(("tail", source.stem))
+                target.write_bytes(b"held")
+
+            def render(_razgon, todo, _fps, _workers, _jobs, done):
+                for frame in todo:
+                    razgon_bridge.frame_clip(razgon, frame["number"]).write_bytes(b"clip")
+                    order.append(("drawn", frame["number"]))
+                    done(frame)
+
+            events = []
+            with patch.object(razgon_bridge, "check_project", return_value=[]), \
+                 patch.object(razgon_bridge, "load_link", return_value=({"fps": 25, "frames": frames}, None, None)), \
+                 patch.object(razgon_bridge, "picture_fingerprints", return_value={1: "a", 2: "b", 3: "c"}), \
+                 patch.object(razgon_bridge, "fresh_clip", side_effect=lambda r, f, fps, p: f["number"] == 2), \
+                 patch.object(razgon_bridge, "video_encoder", return_value=("-c:v", "libx264")), \
+                 patch.object(razgon_bridge, "render_many", side_effect=render), \
+                 patch.object(razgon_bridge.subprocess, "run", side_effect=ffmpeg), \
+                 patch("builtins.print", side_effect=lambda line, **_: events.append(json.loads(line))):
+                razgon_bridge.studio_frames(SimpleNamespace(razgon=str(razgon), numbers="1,2,3", workers=None, jobs=2))
+            last = events[-1]
+            self.assertEqual(last["stage"], "razgon_frames_done")
+            self.assertEqual(list(last["clips"]), ["1", "2", "3"])
+            self.assertTrue(all(path.endswith("_tail.mp4") for path in last["clips"].values()))
+            self.assertEqual(sorted(stem for kind, stem in order if kind == "tail"), ["frame_001", "frame_002", "frame_003"])
+            self.assertEqual([n for kind, n in order if kind == "drawn"], [1, 3])   # the cached frame 2 is not drawn again

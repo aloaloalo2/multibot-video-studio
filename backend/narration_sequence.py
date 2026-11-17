@@ -99,6 +99,17 @@ def tempo_verified(root, job, baseline, base_hash, source_hash):
     return True
 
 
+def take_sentences(rows):
+    """How many sentences of the script each saved take reads (1 for takes made before groups), or None when the rows
+    cannot prove an order: not a list, a broken row, or a part of a sentence cut for its length."""
+    if not isinstance(rows, list) or not rows or not all(isinstance(row, dict) for row in rows):
+        return None
+    counts = [row.get('sentences', 1) for row in rows]
+    if any(type(count) is not int or count < 1 for count in counts):
+        return None
+    return counts
+
+
 @job_timing.measure('verification')
 def verify(project, asset, script):
     """Only an unchanged generated asset and an exact reconstruction qualify.
@@ -129,21 +140,29 @@ def verify(project, asset, script):
         if revision:
             if not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',str(revision)):return None
             revised=store.read_json(root/'revisions'/revision/'proof.json',{}) or {}
+            count=len(planner.split_sentences(job['script']))
             if (revised.get('source')=='revised_takes' and revised.get('revision_id')==revision
                     and revised.get('audio_sha256')==store.audio_fingerprint(Path(asset['path']))
                     and revised.get('script_sha256')==hashlib.sha256(job['script'].encode()).hexdigest()
-                    and len(revised.get('sentence_timings') or [])==len(planner.split_sentences(job['script']))):
+                    and (len(revised.get('sentence_timings') or [])==count
+                         or len(revised.get('take_timings') or [])==len(revised.get('take_sentences') or [None])
+                         and sum(revised.get('take_sentences') or [])==count)):
                 return revised
             return None
         rows = store.read_json(root / 'phrases.json', [])
         sentences = planner.split_sentences(job['script'])
         supplied = planner.split_sentences(script)
-        if not isinstance(rows, list) or len(rows) != len(sentences) or len(rows) != len(supplied) or not rows:
+        counts = take_sentences(rows)
+        if not counts or sum(counts) != len(sentences) or len(sentences) != len(supplied):
             return None
-        for row, sentence, current in zip(rows, sentences, supplied):
-            if (not isinstance(row, dict) or not re.fullmatch(r'[0-9a-f]{64}', row.get('key', ''))
-                    or number_text.comparison_tokens(row.get('text', ''), locale) != number_text.comparison_tokens(sentence, locale)
-                    or number_text.comparison_tokens(current, locale) != number_text.comparison_tokens(sentence, locale)):
+        offset = 0
+        for row, count in zip(rows, counts):
+            said = ' '.join(sentences[offset:offset + count])
+            current = ' '.join(supplied[offset:offset + count])
+            offset += count
+            if (not re.fullmatch(r'[0-9a-f]{64}', row.get('key', ''))
+                    or number_text.comparison_tokens(row.get('text', ''), locale) != number_text.comparison_tokens(said, locale)
+                    or number_text.comparison_tokens(current, locale) != number_text.comparison_tokens(said, locale)):
                 return None
         listing = '\n'.join("file '" + row['key'] + ".mp3'" for row in rows)
         if (root / 'concat.txt').read_text().strip() != listing:
@@ -177,12 +196,53 @@ def verify(project, asset, script):
         result = {'version': 1, 'signature': signature, 'source': 'generated_takes',
                   'sentences': len(rows), 'audio_sha256': audio_hash, 'assembly_sha256': base_hash}
         measured = sentence_timings(root, baseline, rows, ending, job, base_hash)
-        if measured:
+        if measured and all(count == 1 for count in counts):
             result.update(version=2, sentence_timings=measured)
+        elif measured:
+            # takes of several sentences (HeyGen reads a few at once): the takes' edges are measured, the sentences
+            # inside a take are placed by the recognition in align
+            result.update(version=2, take_timings=measured, take_sentences=counts)
         store.atomic_json(receipt, result)
         return result
     except (OSError, ValueError, TypeError, KeyError, store.StudioError, subprocess.SubprocessError):
         return None
+
+
+def inside_takes(sentences, takes, counts, words):
+    """Sentence spans from takes that read several sentences: a take's edges are measured in the assembly, and inside
+    it the recognition finds where one sentence ends and the next begins, halfway through the pause between them. None
+    when a boundary inside a take cannot be found: then the whole voice is compared as an uploaded file is."""
+    import speech
+    if not takes or not counts or len(takes) != len(counts) or sum(counts) != len(sentences):
+        return None
+    spans, offset = [], 0
+    for span, count in zip(takes, counts):
+        lo, hi = span['start'], span['end']
+        group = sentences[offset:offset + count]
+        offset += count
+        if count == 1:
+            spans.append({'start': lo, 'end': hi})
+            continue
+        heard = [{**w, 'start': max(0., w['start'] - lo), 'end': min(hi - lo, w['end'] - lo)}
+                 for w in words if lo <= (w['start'] + w['end']) / 2 < hi]
+        try:
+            phrases = speech.compare_script(' '.join(group), heard, hi - lo, sequence_verified=True)['phrases']
+        except (ValueError, TypeError, KeyError):
+            return None
+        if len(phrases) != count:
+            return None
+        edges = [lo]
+        for before, after in zip(phrases, phrases[1:]):
+            end, start = before.get('end'), after.get('start')
+            if end is None or start is None or start < end - .05:
+                return None
+            edge = lo + (end + max(end, start)) / 2
+            if not edges[-1] < edge < hi:
+                return None
+            edges.append(round(edge, 6))
+        edges.append(hi)
+        spans.extend({'start': a, 'end': b} for a, b in zip(edges, edges[1:]))
+    return spans
 
 
 @job_timing.measure('verification')
@@ -190,8 +250,10 @@ def align(script, words, duration, proof):
     """Use proven take order/times; recognition refines only words inside each take."""
     import speech
     sentences = planner.split_sentences(script)
-    measured = (proof or {}).get('sentence_timings')
-    if not measured or len(measured) != len(sentences) or proof.get('version') != 2:
+    if (proof or {}).get('version') != 2:
+        return None
+    measured = proof.get('sentence_timings') or inside_takes(sentences, proof.get('take_timings'), proof.get('take_sentences'), words)
+    if not measured or len(measured) != len(sentences):
         return None
     timings = [{'text': text, **span} for text, span in zip(sentences, measured)]
     try:

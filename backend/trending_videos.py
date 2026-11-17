@@ -157,6 +157,29 @@ def hidden_ids():
     return used_video_ids() | dismissed_ids()
 
 
+def icon_link(identity, icon):
+    """A competitor's picture as a link the browser keeps: 97 pictures inside the JSON made every open of the trends
+    4.3 MB (17 November 2026 audit). A picture that is not inline stays as it was."""
+    if not isinstance(icon, str) or not icon.startswith('data:image/'):
+        return icon
+    import hashlib
+    return f'/api/trending-videos/icon/{identity}?v={hashlib.sha256(icon.encode()).hexdigest()[:12]}'
+
+
+def icon(identity):
+    """(bytes, content type) of a competitor's inline picture, or None."""
+    import base64
+    source = sources().get(identity) or {}
+    value = source.get('icon_url')
+    if not isinstance(value, str) or not value.startswith('data:image/') or ';base64,' not in value:
+        return None
+    head, data = value.split(';base64,', 1)
+    try:
+        return base64.b64decode(data), head[5:]
+    except ValueError:
+        return None
+
+
 def view():
     linked = sources()
     cache = trending_titles.decorate(store.read_json(cache_path(), {}))
@@ -176,7 +199,7 @@ def view():
     cards.sort(key=order)
     with LOCK:
         running, errors = RUNNING, list(ERRORS)
-    return {'videos': cards, 'competitor_icons': {identity: source['icon_url'] for identity, source in linked.items() if source.get('icon_url')},
+    return {'videos': cards, 'competitor_icons': {identity: icon_link(identity, source['icon_url']) for identity, source in linked.items() if source.get('icon_url')},
             'running': running, 'errors': errors, 'warnings': warnings,
             'competitors': len(linked), 'checked': sum(i in cache for i in linked),
             'channels': list({c['id']: c for s in linked.values() for c in s['for_channels']}.values()),

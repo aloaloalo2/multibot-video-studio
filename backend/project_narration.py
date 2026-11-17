@@ -56,24 +56,68 @@ def root(pid):
     return path
 
 def phrases(text):
+    """The script's sentences in order, the way the narration is read and revised; a sentence over 1800 characters is
+    cut into parts within the providers' request limits."""
+    return [unit['text'] for unit in units(text)]
+
+
+GROUP_CHARS = 1500   # a group of sentences stays well inside one request (HeyGen takes up to 10 000 characters)
+
+
+def units(text, group=1):
+    """What each request reads: up to `group` neighbouring sentences of one paragraph, joined by a space, the groups of
+    a paragraph as even as they come (5 sentences by 3 are 3 and 2). A paragraph break always starts a new request, so
+    its pause stays. `sentences` is how many sentences of the script a unit holds: 0 for a part of a cut sentence."""
     if not isinstance(text, str) or not 10 <= len(text.strip()) <= 200000:
         raise store.StudioError('Введіть сценарій від 10 до 200 000 символів')
-    result = [part for line in text.strip().splitlines() for part in planner.split_sentences(line)]
-    # Very long paragraphs respect provider request limits.
-    return [p[i:i+1800] for p in result for i in range(0,len(p),1800)]
+    group = max(1, int(group or 1))
+    result = []
+    for line in text.strip().splitlines():
+        run = []
+        def flush():
+            count = max(1, math.ceil(len(run) / group)) if run else 0
+            base, extra = divmod(len(run), count) if count else (0, 0)
+            start = 0
+            for index in range(count):
+                part = run[start:start + base + (index < extra)]
+                start += len(part)
+                joined = ' '.join(part)
+                if len(part) > 1 and len(joined) > GROUP_CHARS:
+                    result.extend({'text': sentence, 'sentences': 1} for sentence in part)
+                else:
+                    result.append({'text': joined, 'sentences': len(part)})
+            run.clear()
+        for sentence in planner.split_sentences(line):
+            if len(sentence) > 1800:   # very long sentences respect provider request limits
+                flush()
+                result.extend({'text': sentence[i:i + 1800], 'sentences': 0} for i in range(0, len(sentence), 1800))
+                continue
+            run.append(sentence)
+        flush()
+    return result
 
 def spec(project, text):
-    parts = phrases(text);cid=project['channel_id'];profile=lab.snapshot(cid)
+    cid=project['channel_id'];profile=lab.snapshot(cid)
     settings=profile['settings'];ref=lab.effective_reference(cid,settings) if lab.selected_voice_id(settings) or settings['provider']=='heygen' else profile['reference']
+    parts=units(text,lab.sentences_per_request(settings))
     if settings['provider']=='heygen' and settings['heygen_model']=='starfish' and settings.get('heygen_starfish_ssml') and ('<' in text or '&' in text):
         if len(text)>5000:raise store.StudioError('Для сценарію SSML Starfish допускається до 5000 символів. Для довгого сценарію виберіть звичайний текст')
-        parts=[text]
+        parts=[{'text':text,'sentences':0}]
     if not ref:raise store.StudioError('Додайте або виберіть голос у налаштуваннях каналу')
-    entries=[]
-    for part in parts:
+    def entry(part,count):
         params={**settings,'text':part}
         key=lab.fingerprint(params,ref)
-        entries.append({'text':part,'key':key,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':lab.original_path(params,ref).is_file() or (settings['provider']=='elevenlabs' and (root(project['id'])/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')).is_file())})
+        return {'text':part,'key':key,'sentences':count,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':lab.original_path(params,ref).is_file() or (settings['provider']=='elevenlabs' and (root(project['id'])/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')).is_file())}
+    entries=[]
+    for part in parts:
+        made=entry(part['text'],part['sentences'])
+        if part['sentences']>1 and not (made['cached'] or made['raw_cached']):
+            # a narration voiced sentence by sentence before keeps its takes: a group whose every sentence is made
+            # already is read from them, with nothing sent again
+            singles=[entry(sentence,1) for sentence in planner.split_sentences(part['text'])]
+            if len(singles)==part['sentences'] and all(x['cached'] or x['raw_cached'] for x in singles):
+                entries.extend(singles);continue
+        entries.append(made)
     missing={x['key']:x for x in entries if not x['cached'] and not x['raw_cached']}.values()
     count=sum(len(x['text']) for x in missing)
     amount=sum(lab.estimate({**settings,'text':x['text']})['amount'] for x in missing)
@@ -328,7 +372,7 @@ def run(project,text,settings,ref,entries,job):
                     heygen_voice.STOP.check=None
             pool=ThreadPoolExecutor(max_workers=heygen_voice.SLOTS)
             try:
-                for future in [pool.submit(one,entry) for entry in entries]:
+                for future in [pool.submit(job_timing.carry(one),entry) for entry in entries]:
                     future.result()
             finally:   # a stop or an error: the phrases not started yet are not sent
                 pool.shutdown(wait=True,cancel_futures=True)

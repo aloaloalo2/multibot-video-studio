@@ -10,6 +10,9 @@ import channel_voice_lab as lab
 import store
 
 class HeyGenTests(unittest.TestCase):
+    def setUp(self):
+        hg.READY.clear()   # a ready voice is remembered for ten minutes; each test starts fresh
+
     def test_new_voice_waits_for_active_then_sends_one_speech_request(self):
         settings=lab.validated({'provider':'heygen','heygen_voice_id':'new-voice'})
         replies=[{'data':{'status':status,'mode':'instant'}} for status in ('PENDING','PENDING','ACTIVE')]
@@ -19,7 +22,7 @@ class HeyGenTests(unittest.TestCase):
         path='/v3/models/audio/voices/new-voice'
         self.assertEqual([args.args for args in call.call_args_list[:-1]],[(path,)]*3)
         self.assertEqual(call.call_args.args[0],'/v3/models/audio/tts')
-        self.assertEqual(sleep.call_count,2)
+        self.assertEqual(sum(c.args[0] for c in sleep.call_args_list),6)   # 2 s and 4 s, in one-second steps that hear a stop
 
     def test_pending_timeout_and_failed_voice_do_not_submit_speech(self):
         settings=lab.validated({'provider':'heygen','heygen_voice_id':'new-voice'})
@@ -108,6 +111,17 @@ class HeyGenTests(unittest.TestCase):
             with self.assertRaises(store.StudioError) as caught:hg.call('/v3/models/audio/tts',{})
         self.assertIn('несумісний',str(caught.exception))
         self.assertNotIn('test-secret',str(caught.exception))
+    def test_a_rate_limit_answer_is_written_down_with_its_code_and_wait(self):
+        import json,urllib.error
+        body=b'{"error":{"code":"rate_limit_exceeded","message":"Too many requests."}}'
+        error=urllib.error.HTTPError('https://api.heygen.com',429,'Too Many',{'Retry-After':'95'},io.BytesIO(body))
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'DATA_ROOT',Path(tmp)),patch.object(hg,'key',return_value='test-secret'),\
+             patch.object(hg.urllib.request,'urlopen',side_effect=error):
+            with self.assertRaises(hg.RateLimited) as caught:hg._call('/v3/models/audio/tts',{'model':'heygen-voice-1-turbo-free','text':'Привіт'})
+            line=json.loads((Path(tmp)/'heygen-limits.jsonl').read_text())
+        self.assertEqual(caught.exception.seconds,95)
+        self.assertEqual((line['model'],line['code'],line['retry_after'],line['path']),('heygen-voice-1-turbo-free','rate_limit_exceeded',95,'/v3/models/audio/tts'))
+        self.assertNotIn('Привіт',json.dumps(line))   # the text and the key stay out of the log
     def test_clone_is_explicit_instant_with_stable_idempotency(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'ref.mp3';path.write_bytes(b'audio')
@@ -163,3 +177,13 @@ class HeyGenNetworkTests(unittest.TestCase):
         bodies = [Body(b'ab', 4), Body(b'abcd', 4)]
         with patch.object(hg.urllib.request, 'urlopen', side_effect=lambda *a, **k: bodies.pop(0)), patch.object(hg, 'pause'):
             self.assertEqual(hg.download('https://audio.example/x.mp3'), b'abcd')
+
+
+
+class ReadyVoiceTest(unittest.TestCase):
+    # 17 November 2026: a voice-status request before every phrase doubled what HeyGen's limit counts
+    def test_a_ready_voice_is_asked_once_for_many_phrases(self):
+        hg.READY.clear()
+        with patch.object(hg,'call',return_value={'data':{'status':'ACTIVE','mode':'instant'}}) as call:
+            for _ in range(5):hg.ready_voice('/v3/models/audio/voices/v1')
+        self.assertEqual(call.call_count,1)

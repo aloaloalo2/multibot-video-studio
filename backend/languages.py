@@ -964,7 +964,7 @@ def translate_lines(code: str, lines: list[dict], total: float | None, pid: str,
                 "\n".join(line["source"] for line in lines[max(0, offset - 4):offset]))
     fault = None
     try:
-        running = {pool.submit(part, offset): offset for offset in starts if offset not in results}
+        running = {pool.submit(job_timing.carry(part), offset): offset for offset in starts if offset not in results}
         while running:
             finished, _ = wait(running, return_when=FIRST_COMPLETED)
             for future in finished:

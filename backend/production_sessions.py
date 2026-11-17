@@ -2,6 +2,8 @@
 import copy
 import threading
 
+import job_timing
+
 SESSION_FRAMES = 15  # fewer sessions re-reading the same brief: about a third cheaper (user, 16 November 2026: «15 кадрів зроби краще в 1 сесії»)
 
 
@@ -124,7 +126,7 @@ def run(targets, launch, verify, checkpoint, cancelled, stop, *, previous=None, 
         while queue or running:
             while queue and len(running) < width and not failure and not errors:
                 index, frames = queue.pop(0)
-                running.add(pool.submit(session, index, frames))
+                running.add(pool.submit(job_timing.carry(session), index, frames))   # the sessions' time counts as theirs
                 if len(running) < width and queue:
                     import time
                     time.sleep(STAGGER)   # the sessions do not start in the same instant

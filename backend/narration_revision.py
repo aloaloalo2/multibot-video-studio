@@ -48,8 +48,12 @@ def prepare(pid,text,expected):
     if not changed:raise store.StudioError('Внесіть зміни до сценарію.')
     asset=next((a for a in project.get('assets',[]) if a['id']==old.get('asset_id')),None)
     proof=narration_sequence.verify(project,asset,original) if asset else None
-    timings=(proof or {}).get('sentence_timings') or []
-    if len(timings)!=len(parts):raise store.StudioError('Не знайдено точні межі речень цієї озвучки. Попередній звук збережено.',409)
+    # a take may read several sentences (HeyGen groups): a changed sentence is voiced again with the sentences of its
+    # take, into that take's measured slot
+    rows=store.read_json(narration.root(pid)/'phrases.json',[]) or []
+    counts=narration_sequence.take_sentences(rows) or []
+    timings=(proof or {}).get('take_timings') or (proof or {}).get('sentence_timings') or []
+    if not counts or len(timings)!=len(rows) or sum(counts)!=len(parts):raise store.StudioError('Не знайдено точні межі речень цієї озвучки. Попередній звук збережено.',409)
     previous_end=0
     for span in timings:
         start,end=span.get('start'),span.get('end')
@@ -63,12 +67,16 @@ def prepare(pid,text,expected):
     if not settings:raise store.StudioError('Не збережені налаштування голосу цієї озвучки.',409)
     # Use the recorded identity rather than the channel's current selection.
     ref=lab.effective_reference(project['channel_id'],settings)
-    rows=store.read_json(narration.root(pid)/'phrases.json',[]) or []
-    if not ref or len(rows)!=len(before):raise store.StudioError('Не знайдено збережений голос для цієї озвучки.',409)
-    if any(lab.fingerprint({**settings,'text':part},ref)!=row.get('key') for part,row in zip(before,rows)):
-        raise store.StudioError('Початковий приклад голосу змінено. Відновіть його для точкової переозвучки.',409)
+    if not ref:raise store.StudioError('Не знайдено збережений голос для цієї озвучки.',409)
+    slots,offset=[],0
+    for index,(row,count) in enumerate(zip(rows,counts)):
+        first,offset=offset,offset+count
+        if lab.fingerprint({**settings,'text':' '.join(before[first:offset])},ref)!=row.get('key'):
+            raise store.StudioError('Початковий приклад голосу змінено. Відновіть його для точкової переозвучки.',409)
+        if any(first<=i<offset for i in changed):
+            slots.append({'row':index,'first':first,'sentences':count,'text':' '.join(parts[first:offset])})
     return {'project':project,'old':old,'asset':asset,'text':text,'parts':parts,'before':before,'changed':changed,
-            'timings':timings,'settings':settings,'ref':ref,'revision':project.get('revision',0),'proof':proof}
+            'slots':slots,'timings':timings,'settings':settings,'ref':ref,'revision':project.get('revision',0),'proof':proof}
 
 
 def start(pid,body):
@@ -80,7 +88,7 @@ def start(pid,body):
         if pid in narration.ACTIVE:raise store.StudioError('Озвучення вже триває.',409)
         ctx=prepare(pid,body.get('text'),body.get('expected_sha256'))
         cid=ctx['project']['channel_id']
-        job={'id':identity,'status':'running','completed':0,'total':len(ctx['changed']),'started_at':time.time()}
+        job={'id':identity,'status':'running','completed':0,'total':len(ctx['slots']),'started_at':time.time()}
         narration.ACTIVE.add(pid);lab.NARRATIONS[pid]=cid
         try:
             (narration.root(pid)/'cancel').unlink(missing_ok=True)
@@ -204,10 +212,10 @@ def run(pid,ctx,job):
     try:
         # a revision of a few sentences, or one whose takes are all made, does not wait behind whole narrations: the
         # phrase slot already sends HeyGen one request at a time (17 November 2026: one sentence waited 50 minutes)
-        def made(i):
-            params={**settings,'text':ctx['parts'][i]}
+        def made(slot):
+            params={**settings,'text':slot['text']}
             return (narration.root(pid)/(lab.fingerprint(params,ref)+'.mp3')).is_file() or lab.original_path(params,ref).is_file()
-        if settings['provider']=='heygen' and len(ctx['changed'])>SMALL and not all(made(i) for i in ctx['changed']):
+        if settings['provider']=='heygen' and len(ctx['changed'])>SMALL and not all(made(slot) for slot in ctx['slots']):
             narration.wait_heygen(pid,job,path(pid))
         # a stop is heard while a phrase waits for HeyGen's slot or limit too, as in a narration (17 November 2026:
         # a revision waited on its second sentence half an hour and the pause could not stop it)
@@ -235,10 +243,11 @@ def run(pid,ctx,job):
                        '-ar',str(rate),'-ac',str(channels),'-c:a','pcm_s16le',str(raw_original)],'підготувати оригінал для темпу')
         replacements=[];raw_replacements=[];rows=store.read_json(narration.root(pid)/'phrases.json',[])
 
-        for count,i in enumerate(ctx['changed'],1):
-            job.update(stage='synthesizing',current_sentence=i+1);store.atomic_json(path(pid),job)
+        for count,slot in enumerate(ctx['slots'],1):
+            i=slot['row']
+            job.update(stage='synthesizing',current_sentence=slot['first']+1);store.atomic_json(path(pid),job)
             if (narration.root(pid)/'cancel').exists():raise narration.Cancelled()
-            params={**settings,'text':ctx['parts'][i]};entry={'text':ctx['parts'][i],'key':lab.fingerprint(params,ref)}
+            params={**settings,'text':slot['text']};entry={'text':slot['text'],'key':lab.fingerprint(params,ref),'sentences':slot['sentences']}
             audio=narration.phrase_audio(ctx['project'],settings,ref,entry,secret,voice)
             span=ctx['timings'][i];raw_chunk=folder/f'{i}-raw.wav'
             fit(audio,raw_chunk,span['end']-span['start'],rate,channels)

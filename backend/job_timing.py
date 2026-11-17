@@ -1,6 +1,6 @@
 """Bounded, local wall-time measurements. Observation never controls a job."""
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from functools import wraps
 import inspect
 import math
@@ -56,6 +56,10 @@ class Measurement:
         self.finished = None
         self.stage = 'preparation'
         self.stages = {'preparation': {'ms': 0.0, 'calls': 1}}
+        # spans from worker threads (parallel frame sessions, HeyGen phrases): the latest one still open sets the stage
+        self.owner = threading.get_ident()
+        self.parallel = []
+        self.resume = None
         self.status = 'running'
         self.last_flush = float('-inf')
         self.path = None
@@ -94,6 +98,8 @@ class Measurement:
     def switch(self, stage, *, count=True):
         with LOCK:
             previous = self.stage
+            if self.finished is not None:   # a worker thread that outlived its run changes nothing
+                return previous
             now = time.monotonic()
             self.stages[previous]['ms'] += max(0, now - self.changed) * 1000
             self.stage, self.changed = stage, now
@@ -134,11 +140,45 @@ def span(stage):
         return
     if stage not in STAGES:
         raise ValueError('Unknown timing stage')
+    if threading.get_ident() != trace.owner:
+        with _parallel(trace, stage):
+            yield
+        return
     previous = trace.switch(stage)
     try:
         yield
     finally:
         trace.switch(previous, count=False)
+
+
+@contextmanager
+def _parallel(trace, stage):
+    """A span opened by a worker thread of the run (carry). Several workers overlap, so each one cannot simply switch
+    back to what it saw: the stage is that of the latest span still open, and the run's own stage returns after the
+    last one. Before this, eight frame sessions and HeyGen's phrases ran in pool threads without the measurement, and a
+    narration that waited 46 minutes on HeyGen's limit read as 51 minutes of «Підготовка» (17 November 2026)."""
+    token = object()
+    with LOCK:
+        if not trace.parallel:
+            trace.resume = trace.stage
+        trace.parallel.append((token, stage))
+        if trace.stage != stage:
+            trace.switch(stage)
+    try:
+        yield
+    finally:
+        with LOCK:
+            trace.parallel = [entry for entry in trace.parallel if entry[0] is not token]
+            target = trace.parallel[-1][1] if trace.parallel else trace.resume
+            if target and trace.stage != target:
+                trace.switch(target, count=False)
+
+
+def carry(function):
+    """`function` for another thread with this run's measurement: a pool thread starts with an empty context. Each call
+    makes its own copy, since one context cannot run in two threads at once."""
+    context = copy_context()
+    return lambda *args, **kwargs: context.run(function, *args, **kwargs)
 
 
 @contextmanager

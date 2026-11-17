@@ -1329,6 +1329,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({**openrouter_images.setting(provider.group(1)), 'spent': openrouter_images.spent(provider.group(1))})
         if path == '/api/title-translation':
             return self.json_response(title_translation.options())
+        picture = re.fullmatch(r"/api/trending-videos/icon/([A-Za-z0-9_-]{6,64})", path)
+        if picture:
+            found = trending_videos.icon(picture.group(1))
+            if not found:
+                raise store.StudioError("Немає картинки", 404)
+            data, kind = found
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")   # the link changes with the picture
+            self.end_headers()
+            self.wfile.write(data)
+            return None
         if path == "/api/trending-videos":
             return self.json_response(trending_videos.view())
         editing = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-editing(?:/(status|[0-9a-f]{32}))?', path)

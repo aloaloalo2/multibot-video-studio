@@ -1266,6 +1266,7 @@ def studio_export(args) -> None:
         raise SystemExit(1)
 
 
+TAIL_JOBS = 2      # held copies encoded at once, beside the renders
 MIXED_TAIL = 0.5   # seconds of held last picture after a mixed episode's frame: the Studio's transition out fades over it
 
 
@@ -1293,21 +1294,33 @@ def studio_frames(args) -> None:
         todo = [f for f in frames if not fresh_clip(razgon, f, fps, pictures[f["number"]])]
         length = lambda f: frame_index(f["end"], fps) - frame_index(f["start"], fps)
         whole, finished = sum(map(length, frames)), []
-        def progress(frame=None):
-            if frame:
-                finished.append(frame)
-            ready = whole - sum(map(length, todo)) + sum(map(length, finished))
-            report(stage="razgon", phase="razgon_frames", progress=round(ready / whole, 4), completed=len(frames) - len(todo) + len(finished), total=len(frames))
-        progress()
-        render_many(razgon, todo, fps, args.workers, args.jobs, progress)
-        clips = {}
-        for f in frames:
-            clip = frame_clip(razgon, f["number"])
+        encoder = video_encoder()
+        def hold(frame):
+            clip = frame_clip(razgon, frame["number"])
             held = clip.with_name(f"{clip.stem}_tail.mp4")
             if not held.is_file() or held.stat().st_mtime < clip.stat().st_mtime:
                 subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(clip), "-vf", f"tpad=stop_mode=clone:stop_duration={MIXED_TAIL}",
-                                *video_encoder(), "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
-            clips[str(f["number"])] = str(held)
+                                *encoder, "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
+            return held
+        # each held copy is made as soon as its frame is drawn, beside the renders of the others: made one by one after
+        # all of them they took 84 s of a 17-minute export (Николай Ветров, 17 November 2026)
+        tails, held = concurrent.futures.ThreadPoolExecutor(TAIL_JOBS), {}
+        def progress(frame=None):
+            if frame:
+                finished.append(frame)
+                held[frame["number"]] = tails.submit(hold, frame)
+            ready = whole - sum(map(length, todo)) + sum(map(length, finished))
+            report(stage="razgon", phase="razgon_frames", progress=round(ready / whole, 4), completed=len(frames) - len(todo) + len(finished), total=len(frames))
+        try:
+            drawing = {f["number"] for f in todo}
+            for f in frames:
+                if f["number"] not in drawing:
+                    held[f["number"]] = tails.submit(hold, f)
+            progress()
+            render_many(razgon, todo, fps, args.workers, args.jobs, progress)
+            clips = {str(f["number"]): str(held[f["number"]].result()) for f in frames}
+        finally:
+            tails.shutdown(wait=True, cancel_futures=True)
         report(stage="razgon_frames_done", clips=clips)
     except (BridgeError, subprocess.CalledProcessError, OSError, ValueError, KeyError) as error:
         report(stage="error", message=describe(error))

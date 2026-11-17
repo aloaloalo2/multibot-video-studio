@@ -27,7 +27,12 @@ def read_peaks(source, cache_dir, bins=8000):
             if audio.getsampwidth()!=2:audio.close();raise wave.Error('Convert sample format')
         except (wave.Error,EOFError):
             path=Path(work)/'decoded.wav'
-            subprocess.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(source),'-vn','-ac','1','-ar','8000','-c:a','pcm_s16le',str(path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=90)
+            try:
+                subprocess.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(source),'-vn','-ac','1','-ar','8000','-c:a','pcm_s16le',str(path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=90)
+            except (subprocess.CalledProcessError,subprocess.TimeoutExpired):
+                # a damaged or unreadable file says so instead of «Внутрішня помилка студії» (17 November 2026 audit)
+                import store
+                raise store.StudioError('Не вдалося прочитати звук цього файлу для хвилі',422) from None
             audio=wave.open(str(path),'rb')
         with audio:
             count=audio.getnframes();rate=audio.getframerate();size=max(1,math.ceil(count/bins));peaks=[]

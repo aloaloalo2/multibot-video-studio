@@ -502,8 +502,10 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
     state.analysis=analysis;
     if(state.view==='editor'){delete $('editor-production').dataset.planKey;renderMontageMake();}
   }).catch(error=>console.warn('Не вдалося завантажити аналіз озвучки',error));
+  let exportWatchBusy=false;   // one read at a time: on a slow server the reads piled up (17 November 2026 audit)
   state.exportWatch=setInterval(async()=>{
-    if(!state.project || state.project.id!==id || exportIsActive())return;
+    if(!state.project || state.project.id!==id || exportIsActive() || exportWatchBusy)return;
+    exportWatchBusy=true;
     try{
       const result=await api(`/api/projects/${encodeURIComponent(id)}/export/active`);
       if(state.project?.id!==id)return;
@@ -518,6 +520,7 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
       for(const asset of refreshed.values())if(!state.assets.some(item=>item.id===asset.id))state.assets.push(asset);
       renderPreview();renderTimeline();
     }catch(error){console.warn('Не вдалося оновити стан проєкту',error);}
+    finally{exportWatchBusy=false;}
   },10000);
   return true;
 }

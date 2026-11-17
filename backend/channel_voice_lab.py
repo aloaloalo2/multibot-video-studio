@@ -31,6 +31,23 @@ DEFAULTS = {'heygen_starfish_speed':1., 'heygen_starfish_ssml':False, 'heygen_st
             'temperature': .7, 'top_p': .7, 'speed': 1., 'reverb': narration_effects.DEFAULT, 'room_noise': narration_effects.NOISE_DEFAULT, 'chunk_length': 200, 'direction': '', 'noise_cleanup': True, 'text': DEFAULT_TEXT}
 PREPARATION_VERSION = 1
 DEFAULTS.update(fish_voice_id='', eleven_voice_id='')
+# Sentences of one paragraph read in one HeyGen request (user, 17 November 2026: «по три речення віддавати… щоб можна
+# було змінювати… 4, 5»). Turbo Free shares HeyGen's free capacity with every user and answers 429 after about forty
+# requests, then lets one through about every two minutes, so fewer requests make the narration faster. 0 is the
+# default: 3 on Turbo Free, 1 on the paid models, which have no such wait.
+DEFAULTS.update(heygen_sentences=0)
+SENTENCES_MAX = 5
+SENTENCES_FREE = 3
+
+
+def sentences_per_request(settings):
+    """How many sentences of a paragraph one HeyGen request reads; 1 for every other service and for Starfish."""
+    if settings.get('provider') != 'heygen' or settings.get('heygen_model') == 'starfish':
+        return 1
+    chosen = settings.get('heygen_sentences') or 0
+    if type(chosen) is int and 1 <= chosen <= SENTENCES_MAX:
+        return chosen
+    return SENTENCES_FREE if settings.get('heygen_model') == 'heygen-voice-1-turbo-free' else 1
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -96,6 +113,8 @@ def validated(raw):
     if (data['provider'] not in {'elevenlabs', 'fishaudio', 'heygen'} or data['fish_engine'] not in languages.FISH_ENGINES
         or data['language'] not in languages.LANGUAGES or data['model'] not in MODELS or data['delivery'] not in DELIVERY):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
+    if type(data['heygen_sentences']) is not int or not 0 <= data['heygen_sentences'] <= SENTENCES_MAX:
+        raise store.StudioError(f'Речень за один запит HeyGen: від 1 до {SENTENCES_MAX}')
     if data['heygen_model'] not in heygen_voice.MODELS or not isinstance(data['heygen_voice_id'],str) or (data['heygen_voice_id'] and not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',data['heygen_voice_id'])):raise store.StudioError('Невірна модель або голос HeyGen')
     speed=data['speed']
     if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not MIN_SPEED <= speed <= MAX_SPEED:

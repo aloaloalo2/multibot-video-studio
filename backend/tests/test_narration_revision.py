@@ -205,6 +205,53 @@ class RevisionTest(unittest.TestCase):
         proof['audio_sha256']='wrong';store.atomic_json(narration.root(self.pid)/'revisions/revision-test/proof.json',proof)
         self.assertIsNone(narration_sequence.verify(self.project,self.asset,self.oldtext))
 
+class GroupedRevisionTest(unittest.TestCase):
+    """The first take reads the first two sentences (HeyGen groups): a change in the first sentence voices that take
+    again, with the second sentence, into the take's own two seconds."""
+    write_wave=staticmethod(RevisionTest.write_wave)
+    prepare=RevisionTest.prepare
+
+    def setUp(self):
+        RevisionTest.setUp(self)
+        parts=narration.phrases(self.oldtext)
+        self.rows=[{'text':' '.join(parts[:2]),'sentences':2,'key':revision.lab.fingerprint({**self.settings,'text':' '.join(parts[:2])},self.ref)},
+                   {'text':parts[2],'sentences':1,'key':revision.lab.fingerprint({**self.settings,'text':parts[2]},self.ref)}]
+        store.atomic_json(narration.root(self.pid)/'phrases.json',self.rows)
+        self.proof={'version':2,'source':'generated_takes','take_timings':[{'start':0,'end':2},{'start':2,'end':3}],'take_sentences':[2,1]}
+
+    def test_one_edit_uses_recorded_voice_and_exact_existing_slot(self):
+        ctx=self.prepare()
+        self.assertEqual(ctx['changed'],[0])
+        self.assertEqual([(slot['row'],slot['sentences']) for slot in ctx['slots']],[(0,2)])
+        self.assertEqual(ctx['slots'][0]['text'],' '.join(narration.phrases(self.newtext)[:2]))
+        self.assertEqual(ctx['timings'][0],{'start':0,'end':2})
+
+    def test_success_synthesizes_only_changed_sentence_and_preserves_other_pcm(self):
+        ctx=self.prepare();job={'id':'grouped-edit','status':'running','total':1}
+        replacement=self.root/'take.wav';self.write_wave(replacement,[-400]*16000)
+        def imported(project,path,kind):
+            asset={'id':'updated-audio','path':str(path),'duration':store.media_duration(path),'kind':'audio'}
+            self.project['assets'].append(asset)
+            return asset
+        with patch.object(narration,'wait_heygen'),patch.object(narration,'phrase_audio',return_value=replacement) as paid, \
+             patch.object(store,'import_asset_file',side_effect=imported), \
+             patch.object(store,'save_project',side_effect=lambda value:self.project.update(copy.deepcopy(value))), \
+             patch.object(store,'load_project_plan',return_value={'script':self.oldtext,'frames':[],'timing':{}}):
+            revision.run(self.pid,ctx,job)
+        self.assertEqual(job['status'],'done',job.get('error'))
+        paid.assert_called_once()
+        self.assertEqual(paid.call_args.args[3]['text'],' '.join(narration.phrases(self.newtext)[:2]))
+        updated=Path(self.project['assets'][-1]['path']);decoded=self.root/'decoded.wav'
+        revision.languages.run(['ffmpeg','-v','error','-y','-i',str(updated),'-c:a','pcm_s16le',str(decoded)],'test decode')
+        with wave.open(str(self.source),'rb') as a,wave.open(str(decoded),'rb') as b:
+            before=a.readframes(a.getnframes());after=b.readframes(b.getnframes())
+        self.assertEqual(before[32000:],after[32000:])   # the third sentence, outside the take, sample for sample
+        self.assertNotEqual(before[:32000],after[:32000])
+        rows=store.read_json(narration.root(self.pid)/'phrases.json')
+        self.assertEqual([row.get('sentences') for row in rows],[2,1])
+        self.assertEqual(rows[0]['text'],' '.join(narration.phrases(self.newtext)[:2]))
+
+
 class EpisodeScriptFilesTest(unittest.TestCase):
     # 17 November 2026: after a revision the folder's «Сценарий.txt» kept the old words
     def test_folder_scripts_follow_the_revised_voice_and_keep_hand_edits(self):

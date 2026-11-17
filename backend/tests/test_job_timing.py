@@ -182,6 +182,74 @@ class JobTimingTest(unittest.TestCase):
         (trace.path.parent / 'broken.json').write_text('{bad json')
         self.assertEqual(len(self.runs()), 1)
 
+    def test_worker_threads_of_one_run_are_measured_by_the_latest_open_span(self):
+        # eight frame sessions or HeyGen phrases in a pool: their service and waits count, and overlapping spans
+        # neither lose time nor leave the run in a stage nobody is in (17 November 2026: 46 minutes of HeyGen's limit
+        # read as «Підготовка»)
+        import queue
+        from concurrent.futures import ThreadPoolExecutor
+        orders = {name: queue.Queue() for name in 'AB'}
+        acks = queue.Queue()
+
+        def worker(name):
+            def enter(stage):
+                with job_timing.span(stage):
+                    acks.put(('in', name, stage))
+                    while True:
+                        order = orders[name].get(timeout=3)
+                        if order == 'out':
+                            break
+                        enter(order)
+                acks.put(('out', name, stage))
+            enter(orders[name].get(timeout=3))
+
+        def say(name, order):
+            orders[name].put(order)
+            acks.get(timeout=3)
+
+        @job_timing.track('narration', project='pid')
+        def work(pid):
+            self.step(1)
+            with ThreadPoolExecutor(2) as pool:
+                futures = [pool.submit(job_timing.carry(worker), name) for name in 'AB']
+                say('A', 'service'); self.step(2)
+                say('B', 'service'); self.step(3)
+                say('A', 'out'); self.step(1)
+                say('B', 'queue'); self.step(4)
+                say('B', 'out'); self.step(1)
+                say('B', 'out'); self.step(2)
+                for future in futures:
+                    future.result(timeout=3)
+
+        work(self.pid)
+        row = self.runs()[0]
+        self.assertEqual({key: value['ms'] for key, value in row['stages'].items()},
+                         {'preparation': 3000, 'service': 7000, 'queue': 4000})
+        self.assertEqual(row['elapsed_ms'], 14000)
+
+    def test_a_worker_left_after_the_run_changes_nothing(self):
+        holder = {}
+
+        @job_timing.track('narration', project='pid')
+        def work(pid):
+            holder['trace'] = job_timing.CURRENT.get()
+            self.step(1)
+
+        work(self.pid)
+        trace = holder['trace']
+        token = job_timing.CURRENT.set(trace)
+        try:
+            done = threading.Event()
+            def late():
+                with job_timing.span('service'):
+                    self.step(5)
+                done.set()
+            threading.Thread(target=job_timing.carry(late)).start()
+            self.assertTrue(done.wait(3))
+        finally:
+            job_timing.CURRENT.reset(token)
+        self.assertEqual(self.runs()[0]['stages'], {'preparation': {'ms': 1000, 'calls': 1}})
+
     def test_thread_contexts_are_independent(self):
         self.clock_patch.stop()
         barrier = threading.Barrier(3)
