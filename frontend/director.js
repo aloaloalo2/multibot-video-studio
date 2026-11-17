@@ -338,7 +338,8 @@ function fillDirectorLine(box){
     box.append(stepButton('Продовжити створення',async()=>{try{await startVideoCreation(id,{asset_id:voiceAssetId(state.plan,state.project)});await selectProject(id,{view:'editor'});}catch(error){status(error.message,true);}}));
   }else if(run.status==='failed'){
     // the subscription limit only pauses the director: once it resets, the same button goes on
-    line(run.limit?'Режисер на паузі: закінчився ліміт підписки':'Режисура не вдалася',run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
+    const signedOut=run.limit&&claudeSignedOut(run.error);
+    line(signedOut?'Режисер на паузі: Claude Code вийшов з облікового запису':run.limit?'Режисер на паузі: закінчився ліміт підписки':'Режисура не вдалася',signedOut?'Увійдіть у налаштуваннях студії (шестерня внизу, розділ «Claude Code») і натисніть «Продовжити режисуру».':run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
     box.append(stepButton(run.limit?'Продовжити режисуру':'Спробувати ще раз',()=>startDirector(id),true));
   }else if(run.status==='done'&&state.plan?.timing?.status==='script_estimate'){
     // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
@@ -474,6 +475,9 @@ function filmStrip(frames){
   return {strip,cells};
 }
 
+// a run Claude Code stopped by itself: the subscription limit, or a login that expired on this Mac
+function claudeSignedOut(error){return /claude auth login|Failed to authenticate|вийшов з облікового запису/i.test(String(error||''));}
+function claudeStopped(error){return /hit your \w+ limit/i.test(String(error||''))||claudeSignedOut(error);}
 function fillMake(make){
   if(!make)return;
   clearTimeout(productionTimer);
@@ -502,7 +506,8 @@ function fillMake(make){
   make.dataset.floor=String(floor);
   const working=['requested','in_progress'].includes(request?.status);
   // a run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up
-  const paused=request?.status==='failed'&&(request.paused||request.limit||/hit your \w+ limit/i.test(request.error || ''));
+  // a limit or a login that expired (claude auth login) pauses: «Продовжити» goes on from the frames made
+  const paused=request?.status==='failed'&&(request.paused||request.limit||claudeStopped(request.error));
   // Why the button can not start yet, in the author's words; empty when it can.
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):state.plan?.timing?.status==='script_estimate'?'Кадри почнуться, щойно озвучку буде готово й розпізнано.':'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'
@@ -548,7 +553,7 @@ function fillMake(make){
     start.textContent='Продовжити створення ролика';
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
-    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?(/ліміт Codex/.test(request.error||'')?request.error:'Призупинено на ваше прохання. Готові кадри збережені.'):`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
+    const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?(/ліміт Codex/.test(request.error||'')?request.error:'Призупинено на ваше прохання. Готові кадри збережені.'):claudeSignedOut(request.error)?'Claude Code на цьому Mac вийшов з облікового запису. Увійдіть у налаштуваннях студії (шестерня внизу, розділ «Claude Code») і натисніть «Продовжити створення ролика». Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
   }else if(state.project.episode_paused&&!allMade){
     // the episode's pause holds the whole episode (backend/episode_pause.py): the button goes on with it, as the round
     // play does, instead of a start the pause would only note (user, 16 November 2026: «немає як зазвичай кнопки»)

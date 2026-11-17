@@ -400,9 +400,19 @@ def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resu
     return (0 if stopped_after_result else process.returncode), answer or {"is_error": True, "result": "Claude Code завершився без відповіді"}
 
 
+AUTH_LOST = re.compile(r"Failed to authenticate|claude auth login|Please run /login|Invalid API key|OAuth token (?:has )?expired"
+                       r"|authentication_error|Not logged in", re.I)
+AUTH_NOTE = ("Claude Code на цьому Mac вийшов з облікового запису. Увійдіть у налаштуваннях студії, розділ «Claude Code», "
+             "і натисніть «Продовжити»: усе зроблене збережено.")
+
+
 def limit_stop(answer: dict) -> str | None:
-    """When the run stopped because the Claude subscription limit ran out: a readable note with the reset time."""
+    """When the run stopped because the Claude subscription limit ran out: a readable note with the reset time. A login
+    that expired stops the same way and goes on the same way once the author signs in again (17 November 2026: frames
+    1–52 read «не вдалися… Виберіть кадри й почніть ще раз» for an expired login)."""
     text = str(answer.get("result") or "")
+    if AUTH_LOST.search(text) or answer.get("api_error") in {"authentication_failed", "authentication_error"}:
+        return AUTH_NOTE
     if answer.get("api_error") != "usage_limit_reached" and not re.search(r"hit your \w+ limit", text):
         return None
     reset = re.search(r"resets (\d{1,2})(?::(\d{2}))?\s*([ap]m)", text, re.I)

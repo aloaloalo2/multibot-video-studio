@@ -177,3 +177,52 @@ class ReviewFixesTest(unittest.TestCase):
             (Path(tmp) / "projects" / "p" / "razgon-link.json").write_text("{}")
             director.resume_retimes()
         move.assert_not_called()
+
+
+class SignedOutTest(unittest.TestCase):
+    def test_an_expired_login_pauses_like_a_limit_and_says_what_to_do(self):
+        answer = {"result": "Failed to authenticate: this login reached its time limit and cannot be renewed. Run `claude auth login` to sign in again"}
+        self.assertEqual(director.limit_stop(answer), director.AUTH_NOTE)
+        self.assertIn("Claude Code", director.AUTH_NOTE)
+        self.assertIsNone(director.limit_stop({"result": "Done."}))
+        # a request that already failed this way goes on with «Продовжити» (production.resume accepts it)
+        self.assertTrue(director.limit_stop({"result": answer["result"]}))
+
+
+class ClaudeLoginTest(unittest.TestCase):
+    def test_the_state_comes_from_claude_codes_own_answer(self):
+        import claude_login
+        answer = type("Done", (), {"stdout": '{"loggedIn": true, "email": "a@b.c", "loginExpiresAt": "2026-12-15T07:13:33Z", "authMethod": "claude.ai"}'})()
+        with patch.object(claude_login.director, "executable", return_value=Path("/bin/claude")), \
+             patch.object(claude_login.subprocess, "run", return_value=answer):
+            self.assertEqual(claude_login.status(), {"logged_in": True, "email": "a@b.c", "expires_at": "2026-12-15T07:13:33Z", "method": "claude.ai"})
+        with patch.object(claude_login.director, "executable", side_effect=RuntimeError("Не знайдено Claude Code на цьому Mac")):
+            self.assertEqual(claude_login.status()["logged_in"], False)
+
+    def test_a_code_is_only_passed_to_a_waiting_sign_in(self):
+        import claude_login
+        claude_login.LOGIN.clear()
+        with self.assertRaises(store.StudioError):
+            claude_login.submit_code("not a code; rm -rf /")
+        with self.assertRaises(store.StudioError):
+            claude_login.submit_code("abcdef123456#state")   # well formed, but nothing waits for it
+
+    def test_the_sign_in_shows_its_page_takes_the_code_and_ends_done(self):
+        import claude_login, os, stat
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "claude"
+            fake.write_text("#!/bin/sh\necho 'Opening browser to sign in...'\n"
+                            "echo \"If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true\"\n"
+                            "printf 'Paste code here if prompted > '\nread code\n[ \"$code\" = 'abc123#state' ] && echo 'Login successful.'\n")
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            with patch.object(claude_login.director, "executable", return_value=fake), \
+                 patch.object(claude_login, "status", return_value={"logged_in": False}):
+                started = claude_login.start()
+                self.assertEqual(started["login"]["url"], "https://claude.com/cai/oauth/authorize?code=true")
+                self.assertEqual(started["login"]["state"], "waiting")
+                claude_login.submit_code(" abc123#state ")
+                for _ in range(50):
+                    if claude_login.view()["login"]["state"] != "waiting":
+                        break
+                    time.sleep(.1)
+                self.assertEqual(claude_login.view()["login"]["state"], "done")

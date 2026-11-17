@@ -436,7 +436,8 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
     import project_costs
     project_costs.record_at(work.parent, 'claude_code', answer.get('total_cost_usd'))
     if director.limit_stop(answer):
-        raise RuntimeError(director.limit_stop(answer) + " Прев'ю можна згенерувати, коли ліміт оновиться.")
+        stop = director.limit_stop(answer)
+        raise RuntimeError(stop if stop == director.AUTH_NOTE else stop + " Прев'ю можна згенерувати, коли ліміт оновиться.")
     written = model_json.strip_fences(str(answer.get("result") or ""))
     if result.returncode or answer.get("is_error") or len(written) < 200:
         raise RuntimeError("Claude не написав промпт прев'ю. " + (written or result.stderr or result.stdout)[-300:].strip())

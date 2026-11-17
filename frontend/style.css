@@ -2952,3 +2952,8 @@ select option{background:#232327;color:#f1f1f2}
 
 /* a paused episode reads its stopped work in the colour of running work; the round play button says it is paused */
 .project-making.stopped.episode-paused{color:#c7cbd6}
+/* the settings' «Claude Code» sign-in (backend/claude_login.py) */
+#claude-login-state.warning{color:#f0c967}
+.claude-login-wait{display:grid;gap:10px;margin-top:10px}
+.claude-login-code{display:grid;gap:6px;font-size:13px;color:#b6b8c1}
+.claude-login-buttons{display:flex;gap:8px}

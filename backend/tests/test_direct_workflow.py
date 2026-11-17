@@ -53,6 +53,15 @@ class DirectWorkflowTest(unittest.TestCase):
         return store.generate_project_plan(self.cid, self.project['name'], self.project['episode_path'],
                                            project_id=self.pid, script=self.script, timings=self.timings)
 
+    def test_an_animated_project_keeps_its_frame_plan(self):
+        # an animated film is made only from the director's frame plan (user, 17 November 2026)
+        project = store.load_project(self.pid)
+        project['project_kind'] = 'animated'
+        store.save_project(project) if hasattr(store, 'save_project') else store.atomic_json(store.project_dir(self.pid) / 'project.json', project)
+        with self.assertRaisesRegex(store.StudioError, 'тільки з планом кадрів'):
+            store.apply_action(self.pid, 'set_plan_mode', {'mode': 'direct'})
+        self.assertEqual(store.project_plan_mode(store.load_project(self.pid)), 'director')
+
     def test_project_kind_uses_channel_default_only_at_creation(self):
         self.assertFalse(store.project_animated(self.project))
         store.update_channel_settings(self.cid, {'channel_kind':'animated'})

@@ -1279,7 +1279,18 @@ function openChannelSettings(channel) {
     $('settings-purpose').textContent=direct?'Пропорції та оформлення каналу залишаються орієнтирами для монтажу. Кадри розставляються без обов’язкового плану.':'Режисер ділить озвучку на кадри за цими частками форматів, а агент кадрів і студія беруть з цих налаштувань формат відео, акценти й початок ролика.';
     $('settings-weights-purpose').textContent=direct?'Бажане співвідношення форматів для монтажу. Ви можете вільно розставляти фото й відео на таймлайні.':'Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.';
   };
-  $('settings-plan-mode').addEventListener('change',showPlanMode);showPlanMode();
+  // an animated channel's film is made only from a frame plan: the director splits the voice, the frame agent draws
+  // the frames as code; «Без плану» would leave an empty montage (user, 17 November 2026)
+  const syncPlanToKind=()=>{
+    const animated=document.querySelector('input[name="channel-kind"]:checked')?.value==='animated',select=$('settings-plan-mode');
+    select.querySelector('option[value="direct"]').disabled=animated;
+    if(animated&&select.value==='direct')select.value='director';
+    showPlanMode();
+    if(animated)$('settings-plan-mode-note').textContent='Анімаційний ролик студія робить тільки з планом кадрів: режисер ділить озвучку на кадри, а агент малює їх кодом.';
+  };
+  $('settings-plan-mode').addEventListener('change',syncPlanToKind);
+  for(const radio of document.querySelectorAll('input[name="channel-kind"]'))radio.addEventListener('change',syncPlanToKind);
+  syncPlanToKind();
   brandingValues=bindBranding(channel);
   if(typeof bindChannelVoiceLab==='function')bindChannelVoiceLab(channel);
   if(typeof bindChannelVoices==='function')bindChannelVoices(channel);
@@ -1341,7 +1352,7 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 
 async function openStudioSettings(){
   try{
-    modal('Загальні налаштування студії',`${studioFolderMarkup()}${studioWordBlacklistMarkup()}${studioSpaceMarkup()}${serviceKeyMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Зберегти',primary:true,run:async()=>{
+    modal('Загальні налаштування студії',`${studioFolderMarkup()}${studioWordBlacklistMarkup()}${studioSpaceMarkup()}${serviceKeyMarkup()}${claudeLoginMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Зберегти',primary:true,run:async()=>{
       const generation=state.modalGeneration,section=$('studio-folder');
       try{
         if(await saveStudioFolder())await loadChannels();
@@ -1355,11 +1366,46 @@ async function openStudioSettings(){
     }}]);
     $('modal-backdrop').classList.add('settings-modal-open');
     fillExtension();
+    fillClaudeLogin();
     fillStudioSpace();
     fillStudioFolder();
     fillStudioWordBlacklist();
     await initServiceKeys();
   }catch(error){status(error.message,true);}
+}
+
+// Claude Code's sign-in on this Mac (backend/claude_login.py; user, 17 November 2026: «в студії в налаштуваннях… шоб
+// залогінитись»): its state, «Увійти» that opens the sign-in page, and a field for the code the page may show.
+function claudeLoginMarkup(){
+  return `<section class="settings-section" id="claude-login-section"><h3>Claude Code</h3><p id="claude-login-state" class="extension-state">Перевіряю вхід…</p><button id="claude-login-start" class="secondary" type="button" hidden>Увійти</button><div id="claude-login-wait" class="claude-login-wait" hidden><p class="muted">Увійдіть у браузері, на сторінці, що відкрилася. <a id="claude-login-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Відкрити сторінку входу</a></p><label class="claude-login-code">Якщо сторінка показала код, вставте його тут<input id="claude-login-code" type="text" autocomplete="off" spellcheck="false"></label><div class="claude-login-buttons"><button id="claude-login-send" class="secondary" type="button">Надіслати код</button><button id="claude-login-cancel" class="outline" type="button">Скасувати</button></div></div></section>`;
+}
+let claudeLoginTimer=null;
+function claudeLoginPaint(data){
+  const box=$('claude-login-state'),start=$('claude-login-start'),wait=$('claude-login-wait'),link=$('claude-login-link');if(!box)return false;
+  const login=data.login,waiting=login?.state==='waiting';
+  const until=data.expires_at?new Date(data.expires_at).toLocaleDateString('uk-UA',{day:'numeric',month:'long',year:'numeric'}):'';
+  box.textContent=data.logged_in?`Студія увійшла в Claude${data.email?` як ${data.email}`:''}.${until?` Вхід дійсний до ${until}.`:''}`
+    :data.error?data.error:'Claude Code не ввійшов. Без входу не працюють режисер, створення кадрів, зачини, сценарії й промпти прев’ю.';
+  box.classList.toggle('warning',!data.logged_in);
+  if(login?.state==='failed'&&login.error)box.textContent+=` Останній вхід не вдався: ${login.error}`;
+  start.hidden=waiting;start.textContent=data.logged_in?'Увійти знову':'Увійти';start.classList.toggle('primary',!data.logged_in);start.classList.toggle('secondary',!!data.logged_in);
+  wait.hidden=!waiting;
+  if(link){link.hidden=!login?.url;if(login?.url)link.href=login.url;}
+  return waiting;
+}
+async function fillClaudeLogin(){
+  clearTimeout(claudeLoginTimer);
+  const box=$('claude-login-state');if(!box)return;
+  const start=$('claude-login-start'),send=$('claude-login-send'),cancel=$('claude-login-cancel'),code=$('claude-login-code');
+  const poll=async()=>{
+    if(!box.isConnected)return;
+    try{const data=await api('/api/claude-login');if(!box.isConnected)return;if(claudeLoginPaint(data))claudeLoginTimer=setTimeout(poll,2000);}
+    catch(error){if(box.isConnected)box.textContent=error.message;}
+  };
+  start.onclick=async()=>{start.disabled=true;try{const data=await api('/api/claude-login/start','POST',{});if(claudeLoginPaint(data)){clearTimeout(claudeLoginTimer);claudeLoginTimer=setTimeout(poll,2000);}}catch(error){status(error.message,true);}finally{start.disabled=false;}};
+  send.onclick=async()=>{send.disabled=true;try{claudeLoginPaint(await api('/api/claude-login/code','POST',{code:code.value}));code.value='';clearTimeout(claudeLoginTimer);claudeLoginTimer=setTimeout(poll,1500);}catch(error){status(error.message,true);}finally{send.disabled=false;}};
+  cancel.onclick=async()=>{try{await api('/api/claude-login/cancel','POST',{});}catch{}poll();};
+  await poll();
 }
 
 // Multi Bot in the browser: where it is, whether GitHub has a newer version, and one button that takes it and sets up

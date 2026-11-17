@@ -1367,6 +1367,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/extension":
             import extension
             return self.json_response(extension.state())
+        if path == "/api/claude-login":
+            # Claude Code's sign-in on this Mac, for the settings' «Claude Code» section (backend/claude_login.py)
+            import claude_login
+            return self.json_response(claude_login.view())
         if path == "/api/settings":
             return self.json_response({"settings": store.global_settings()})
         if path == "/api/service-keys":
@@ -1762,6 +1766,14 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/agent/cancel", path)
         if match and method == "POST":
             return self.json_response({"job": agent_runtime.cancel(match.group(1))}, 202)
+        if method == "POST" and path in {"/api/claude-login/start", "/api/claude-login/code", "/api/claude-login/cancel"}:
+            import claude_login
+            action = path.rsplit("/", 1)[1]
+            if action == "start":
+                return self.json_response(claude_login.start())
+            if action == "code":
+                return self.json_response(claude_login.submit_code(body.get("code")))
+            return self.json_response(claude_login.cancel())
         if method == "POST" and path == "/api/extension/update":
             import extension
             return self.json_response(extension.update())

@@ -52,7 +52,7 @@ function updateProjectCard(card,project){
     if(!box){box=document.createElement('div');box.className='project-making project-production-state';open.insertBefore(box,meta);}
     box.classList.toggle('stopped',stopped);
     box.title=stopped?(making.error||'Відкрийте випуск, щоб продовжити роботу'):'';
-    const text=working?(making.stage==='kit'?'Підготовка':`Створюємо кадри · ${done} з ${total}`):`${making.paused?(/ліміт Codex/.test(making.error||'')?'Пауза: ліміт Codex':'На паузі'):making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}`;
+    const text=working?(making.stage==='kit'?'Підготовка':`Створюємо кадри · ${done} з ${total}`):`${making.paused?(/ліміт Codex/.test(making.error||'')?'Пауза: ліміт Codex':'На паузі'):/claude auth login|Failed to authenticate|вийшов з облікового запису/i.test(making.error||'')?'Пауза: увійдіть у Claude':making.limit?'Пауза: закінчився ліміт':'Зупинено'} · ${done} з ${total} ${planFrameWord(total)}`;
     if(box._working!==working){
       box.innerHTML=`<span class="project-export-label">${working?exportSpinner:''}<span class="project-production-label"></span></span>${working?'<span class="project-export-progress" role="progressbar" aria-label="Створення кадрів" aria-valuemin="0"><span></span></span>':''}`;
       box._working=working;
@@ -75,7 +75,7 @@ function updateProjectCard(card,project){
   }
   for(const button of card.querySelectorAll('.project-action'))button.setAttribute('aria-label',`${button.title} «${project.name}»`);
   // a paused episode keeps its round play button whatever was stopped (backend/episode_pause.py)
-  const controlKey=working?'working':project.episode_paused||stopped&&(making.paused||making.limit||/hit your \w+ limit/i.test(making.error||''))?'paused':'';
+  const controlKey=working?'working':project.episode_paused||stopped&&(making.paused||making.limit||/hit your \w+ limit|claude auth login|Failed to authenticate|вийшов з облікового запису/i.test(making.error||''))?'paused':'';
   if(card._controlKey!==controlKey){
     card.querySelector('.project-production-control')?.remove();
     if(controlKey){const control=productionControl(project.id,working);control.classList.add('project-production-control');card.append(control);}

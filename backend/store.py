@@ -2347,6 +2347,8 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
             mode = payload.get('mode')
             if mode not in {'director', 'direct'}:
                 raise StudioError('Невірний режим плану')
+            if mode == 'direct' and project_animated(project):
+                raise StudioError('Анімаційний ролик робиться тільки з планом кадрів: режисер ділить озвучку на кадри, агент малює їх кодом.', 409)
             import director, production
             if pid in director.ACTIVE or pid in production.ACTIVE:
                 raise StudioError('Спочатку призупиніть створення кадрів або режисуру', 409)
