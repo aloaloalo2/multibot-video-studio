@@ -226,3 +226,22 @@ class ClaudeLoginTest(unittest.TestCase):
                         break
                     time.sleep(.1)
                 self.assertEqual(claude_login.view()["login"]["state"], "done")
+
+
+class BugsToFixTest(unittest.TestCase):
+    def test_a_film_with_only_review_bugs_is_done_with_its_frames_to_fix(self):
+        review = {"passed": False, "errors": ["Перевірка кадрів Razgon не підтверджена: BUG кадр 31: стрілка"], "frames": [1, 2]}
+        with patch.object(production.production_quality, "bugs", return_value={31: "стрілка всередину", 49: "зникли стовпчики"}):
+            done = production.bugs_to_fix({}, {"frames": 131}, review)
+        self.assertTrue(done["passed"])
+        self.assertEqual(done["fix_later"], {"31": "стрілка всередину", "49": "зникли стовпчики"})
+
+    def test_any_other_failure_stays_a_failure(self):
+        other = {"passed": False, "errors": ["Не знайдено сцени Razgon для перевірки."]}
+        with patch.object(production.production_quality, "bugs", return_value={31: "x"}):
+            self.assertIsNone(production.bugs_to_fix({}, {"frames": 3}, other))
+        with patch.object(production.production_quality, "bugs", return_value={}):
+            self.assertIsNone(production.bugs_to_fix({}, {"frames": 3}, {"passed": False, "errors": ["Перевірка кадрів Razgon не підтверджена: x"]}))
+
+    def test_a_full_disk_reads_as_a_full_disk(self):
+        self.assertIn("закінчилось місце", production.DISK_FULL)

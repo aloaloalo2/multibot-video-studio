@@ -2966,3 +2966,6 @@ select option{background:#232327;color:#f1f1f2}
 .thumb-logo-bar{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;gap:6px;padding:6px;border-radius:11px;background:#16171bf0;border:1px solid #3a3c44;box-shadow:0 8px 24px #0008}
 .thumb-logo-bar button{min-height:32px;padding:5px 12px;font-size:13px}
 .thumb-view-frame.is-placing-logo .thumb-preview-tools{opacity:1}
+.production-fix-later ul{margin:6px 0 10px;padding-left:18px;display:grid;gap:4px;font-size:12.5px;line-height:1.4;color:#c7cbd6}
+.production-fix-later .production-fix-button{justify-self:start}
+.production-fix-later{align-items:flex-start}

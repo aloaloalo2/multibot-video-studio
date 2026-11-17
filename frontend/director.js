@@ -565,7 +565,21 @@ function fillMake(make){
     start.textContent=completed?`Кадри створені · ${made.size} з ${frames.length}`:productionStartLabel(request,made.size);
     if(completed){
       hint.hidden=true;
-      feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Примітка перевірки</strong><span>${esc(request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;
+      // frames the visual review marked as bugs: the film is done, these wait for one click (17 November 2026)
+      const toFix=Object.entries(request.quality?.fix_later||{}).map(([n,note])=>[Number(n),String(note)]).filter(([n])=>n>0).sort((a,b)=>a[0]-b[0]);
+      const fixBlock=toFix.length?`<div class="production-finished-review production-fix-later"><span aria-hidden="true">⚠</span><div><strong>${toFix.length} ${planFrameWord(toFix.length)} потребують виправлення</strong><ul>${toFix.map(([n,note])=>`<li><b>Кадр ${n}.</b> ${esc(note)}</li>`).join('')}</ul><button type="button" class="secondary production-fix-button">Виправити ${toFix.length} ${planFrameWord(toFix.length)}</button></div></div>`:'';
+      feed.innerHTML=`<div class="production-finished"><div class="production-finished-main"><span class="production-finished-icon" aria-hidden="true">✓</span><div><strong>Кадри створено</strong><span>Усі кадри на таймлайні</span></div><span class="production-finished-count">${made.size}<small> / ${frames.length}</small></span></div>${fixBlock}${request.completion_note?`<div class="production-finished-review"><span aria-hidden="true">⚠</span><div><strong>Примітка перевірки</strong><span>${esc(request.completion_note)}</span></div></div>`:''}<div class="production-finished-export">Експорт MP4 доступний</div></div>`;
+      const fix=feed.querySelector('.production-fix-button');
+      if(fix)fix.onclick=async()=>{
+        fix.disabled=true;fix.textContent='Надсилаємо…';
+        const notes=('Огляд знайшов вади, виправ лише їх: '+toFix.map(([n,note])=>`кадр ${n}: ${note.slice(0,380)}`).join('; ')).slice(0,3990);
+        try{
+          await api(`/api/projects/${encodeURIComponent(id)}/production-edits`,'POST',{notes,frame_numbers:toFix.map(([n])=>n),client_id:`review-fix-${String(request.id||id).slice(0,48)}`});
+          if(typeof frameEditQueueReads!=='undefined')delete frameEditQueueReads[id];
+          fix.textContent='Виправлення в черзі';status('Виправлення кадрів додано в чергу. Агент візьметься за них по черзі.');
+          if(typeof renderMontageMake==='function'&&state.view==='editor')renderMontageMake();else if(typeof refreshEpisode==='function')refreshEpisode();
+        }catch(error){status(error.message,true);fix.disabled=false;fix.textContent=`Виправити ${toFix.length} ${planFrameWord(toFix.length)}`;}
+      };
     }
     if(request?.status==='failed'){const note=document.createElement('p');note.className='plan-note';const error=(request.error || '').trim();
       note.textContent=`Кадри ${first}–${request.frames} не вдалися. ${error}${/почніть ще раз/.test(error)?'':' Виберіть кадри й почніть ще раз.'}`;feed.append(note);}

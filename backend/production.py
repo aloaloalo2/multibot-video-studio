@@ -642,6 +642,9 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 and bool(review.get('pending_review')) and drawn(pid, request["frames"], request.get('repair_frames'))
             if look_only:
                 review = {**review, 'passed': True, 'look_later': review['pending_review']}
+            elif not review['passed'] and not fields.get('limit') and not director.limit_stop(answer) \
+                    and drawn(pid, request["frames"], request.get('repair_frames')):
+                review = bugs_to_fix(store.load_project(pid), final_request, review) or review
             fields.update(quality=review, status='done' if review['passed'] else 'failed')
             if not review['passed']:
                 # A provider pause is the actionable cause; keep the local review
@@ -650,7 +653,10 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
     except subprocess.TimeoutExpired:
         fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
     except (OSError, store.StudioError, KeyError) as error:
-        fields.update(status="failed", error=str(error))
+        if getattr(error, 'errno', None) == 28:   # ENOSPC: the Mac's disk is full, nothing about the frames
+            fields.update(status="failed", paused=True, paused_by="disk", error=DISK_FULL)
+        else:
+            fields.update(status="failed", error=str(error))
     except Exception:   # a bug must not leave the request «in work» with nobody working on it
         import traceback
         traceback.print_exc()
@@ -842,6 +848,20 @@ def start(pid: str, notes: str = "") -> None:
 START_GRACE = 30
 
 
+def bugs_to_fix(project: dict, request: dict, review: dict) -> dict | None:
+    """A review that failed only on frames the visual review marked as bugs: every frame is drawn, the film is done and
+    those frames wait for the author's «Виправити» (17 November 2026: 131 of 131 frames made, 9 with bugs, read as
+    «Кадри 1–131 не вдалися» with a grey button). None for any other failure."""
+    if review.get('passed') or not review.get('errors') or not all(
+            str(error).startswith('Перевірка кадрів Razgon не підтверджена:') for error in review['errors']):
+        return None
+    frames = request.get('review_frames') or request.get('repair_frames') or list(range(1, int(request.get('frames') or 0) + 1))
+    found = production_quality.bugs(project, frames)
+    if not found:
+        return None
+    return {**review, 'passed': True, 'fix_later': {str(n): note for n, note in sorted(found.items())}}
+
+
 def settle(pid: str, project: dict | None = None) -> dict | None:
     """A request that says the agent works while no agent of this Studio runs (a restart, a run that never started:
     31 October 2026 a finished film read «Створюємо кадри» for good) is put right: done when every requested frame is
@@ -863,12 +883,17 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
         "error": "Студію перезапущено посеред роботи. Готові кадри збережені, натисніть «Продовжити»."}
     if made and request.get('quality_version') == 1:
         review = production_quality.check(project, request)
+        review = bugs_to_fix(project, request, review) or review
         fields.update(quality=review, status='done' if review['passed'] else 'failed',
                       error=None if review['passed'] else ' '.join(review['errors'])[:1600])
     saved = set_request(pid, finished_at=time.time(), **fields)
     if fields.get('status') == 'done':
         razgon_sound.start(pid, "production")
     return saved
+
+
+DISK_FULL = ("На диску Mac закінчилось місце, тому створення кадрів зупинилось. Готові кадри збережені. Звільніть місце "
+             "(кнопка «Звільнити місце» в загальних налаштуваннях студії або видаліть зайві файли) і натисніть «Продовжити».")
 
 
 SOUND_BED = 'Razgon · музика й ефекти'
