@@ -60,7 +60,10 @@ def setting(pid: str) -> dict:
     # 17 November 2026: «анімаційні ролики по дефолту… асети… через Open Router… вибирати це не потрібно»)
     if store.project_animated(project):
         return {"provider": "openrouter", "model": DEFAULT_MODEL, "from_kind": True}
-    return {}
+    # a regular episode with Razgon and code-animation frames draws their PNG props there too; its photos and other
+    # opaque pictures stay with Codex (user, 17 November 2026: «не анімаційні проекти, але там є розгон… теж все має
+    # бути від OpenRouter, асети»)
+    return {"provider": "openrouter", "model": DEFAULT_MODEL, "props_only": True}
 
 
 def set_provider(pid: str, provider: str, model: str | None = None, everything: bool = False) -> dict:

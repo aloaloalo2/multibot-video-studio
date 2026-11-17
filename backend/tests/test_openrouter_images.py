@@ -25,7 +25,7 @@ class OpenRouterSheetsTest(unittest.TestCase):
         return base64.b64encode(buffer.getvalue()).decode()
 
     def test_an_episode_on_openrouter_draws_a_sheet_and_records_its_cost(self):
-        self.assertEqual(images.setting('p' * 24), {})
+        self.assertTrue(images.setting('p' * 24)['props_only'])   # by default only the PNG props go there
         images.set_provider('p' * 24, 'openrouter')
         answer = json.dumps({'id': 'gen-1', 'usage': {'cost': 0.0127}, 'data': [{'b64_json': self.png()}]}).encode()
         class Response(io.BytesIO):
@@ -91,7 +91,8 @@ class OpenRouterSheetsTest(unittest.TestCase):
              patch.object(store, 'read_channel_settings', return_value={}), \
              patch.object(store, 'project_animated', return_value=False):
             images.path('p' * 24).unlink()
-            self.assertEqual(images.setting('p' * 24), {})   # a photo channel's pictures stay with Codex
+            # a regular episode: its PNG props go to OpenRouter, its photos stay with Codex (codex_image.py)
+            self.assertTrue(images.setting('p' * 24)['props_only'])
 
 
 if __name__ == '__main__':

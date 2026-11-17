@@ -189,7 +189,9 @@ def draw(a) -> None:
     # an episode or channel on OpenRouter has every picture drawn there: transparent props, the host's sheets and
     # backgrounds alike (user, 17 November 2026: «я не роблю обмежень open роутеру… головне, щоб ролик вийшов класний»;
     # it had been for transparent PNGs only). A prompt without transparency is drawn on its own opaque background.
-    if studio_provider().get("provider") == "openrouter":
+    chosen = studio_provider()
+    # props_only: a regular episode, whose transparent props go there while its photos stay with Codex
+    if chosen.get("provider") == "openrouter" and (not chosen.get("props_only") or TRANSPARENT.search(prompt.read_text(encoding="utf-8"))):
         def finish_or(status, error=""):
             if a.watch:
                 job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
