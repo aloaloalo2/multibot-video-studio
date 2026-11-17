@@ -50,7 +50,7 @@ CRITERIA = [
     'Jumps between paragraphs: a new topic opened by a header-like sentence instead of growing out of the previous thought, or a return to a part already closed',
     'The narrator\'s view as a separate announced block («my own view, you might disagree», «here\'s the part I keep coming back to») or asides about his feelings instead of content',
     'A like request before the story starts, or a comment request in the middle of the script',
-    'Sentences that give the viewer nothing new: bridges back to a question already raised, paragraph summaries, abstract verdicts instead of the result, vague actors, comparisons that explain nothing, evidence without its stated conclusion',
+    'Abstract sentences said only for how they sound: bridges back to a question already raised, paragraph summaries, vague verdicts instead of what happened, vague actors, pretty comparisons that explain nothing, evidence without its stated conclusion',
 ]
 EDITOR_MODE = 'author_self_review_v1'
 EDITOR_POLICY = 'slop_check_v3'
