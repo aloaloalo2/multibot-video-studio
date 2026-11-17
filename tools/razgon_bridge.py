@@ -940,6 +940,30 @@ def encode_bed(wav: Path, duration: float) -> Path:
     return out
 
 
+BED_INPUTS = "music_sfx.inputs.json"   # beside the bed: what it was made from and the clip it went into
+
+
+def bed_inputs(razgon: Path, duration: float) -> str:
+    """A digest of everything the bed is made from: the sound config and story as the mix reads them, the film's length,
+    the Studio's music and effect levels, the voice (the ducking follows it), a chosen music file and the kit's mixer
+    code. The same digest makes the same bed, so it is not made again (user, 17 November 2026: the music was rebuilt
+    for ten minutes after the frames, with nothing in it changed, and the film waited for it)."""
+    config, story = sound_inputs(razgon)
+    sys.path.insert(0, str(STUDIO_BACKEND))
+    import audio_level
+    digest = hashlib.sha256(json.dumps({"config": config, "story": story, "duration": round(float(duration), 3),
+                                        "music_db": audio_level.MUSIC_DB, "sfx_db": audio_level.SFX_DB},
+                                       sort_keys=True, ensure_ascii=False, default=str).encode())
+    root = razgon.parents[1]
+    music = (config.get("music") or {}).get("file")
+    files = [razgon / str(config.get("voiceover") or "input/voiceover.flac"), *([razgon / music] if music else []),
+             *sorted((root / "audio").glob("*.py"))]
+    for path in files:
+        digest.update(path.name.encode())
+        digest.update(sha256(path).encode() if path.is_file() else b"-")
+    return digest.hexdigest()
+
+
 def bed_in_place(project: dict, duration: float, fps: int) -> dict | None:
     """The one music-and-effects clip as the bridge lays it (the whole film, volume 1, on its own layer under the plate),
     or None when there is none, several, or it was moved."""
@@ -986,10 +1010,17 @@ def sound(args) -> None:
     studio = Studio(args.studio_url or link["studio_url"])
     pid, fps, duration = link["project_id"], int(link["fps"]), float(link["duration"])
     plan = studio.plan(pid)
-    wait_for_renders()
     sys.path.insert(0, str(STUDIO_BACKEND))
     import sfx_library
     sfx_library.place(studio, pid, read_json(razgon / "story" / "shots.json"))
+    inputs = bed_inputs(razgon, duration)
+    receipt = razgon / "build" / "studio" / BED_INPUTS
+    made = read_json(receipt) if receipt.is_file() else {}
+    current = bed_in_place(studio.project(pid), duration, fps)
+    if made.get("digest") == inputs and current and current.get("asset_id") == made.get("asset_id"):
+        print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
+        return
+    wait_for_renders()
     wav = render_bed(razgon)
     if wav is None:
         project = studio.project(pid)
@@ -1003,6 +1034,7 @@ def sound(args) -> None:
     current = bed_in_place(project, duration, fps)
     asset = next((item for item in project.get("assets", []) if current and item.get("id") == current.get("asset_id")), None)
     if asset and Path(asset.get("path", "")).is_file() and sha256(Path(asset["path"])) == sha256(bed):
+        write_json(receipt, {"digest": inputs, "asset_id": asset["id"]})
         print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
         return
     asset = studio.import_file(pid, bed)
@@ -1014,6 +1046,7 @@ def sound(args) -> None:
         except BridgeError as error:
             if " 409 " not in str(error) or attempt == 2:
                 raise
+    write_json(receipt, {"digest": inputs, "asset_id": asset["id"]})
     print(f"Музика й ефекти на таймлайні: «{BED_TITLE}», {duration / 60:.1f} хв, окремим шаром під плашкою каналу")
     with contextlib.suppress(BridgeError):
         studio.call("POST", f"/api/projects/{pid}/tidy", {})   # the replaced bed's file goes (store.prune_razgon_renders)

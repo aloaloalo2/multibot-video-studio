@@ -254,6 +254,8 @@ class SoundStudio:
 
     def call(self, method, path, body=None):
         self.calls.append((method, path))
+        if path == "/api/channels":   # the channel's sound settings (sound_inputs): none, the film's own config stands
+            return {"channels": [{"id": self.data.get("channel_id"), "settings": {}}]}
         return {}
 
 
@@ -276,7 +278,7 @@ class SoundTest(unittest.TestCase):
         voice = {"id": "voice", "kind": "audio", "title": "Озвучка", "start": 0, "duration": 4.0, "volume": 1}
         frame = lambda n: {"id": f"f{n}", "kind": "animation", "title": f"Razgon · кадр {n:03d}", "start": 2.0 * (n - 1), "duration": 2.0}
         plate = {"id": "logo", "kind": "image", "title": "Логотип каналу", "start": 0, "duration": 4.0, "channel_logo": True}
-        project = {"id": "p" * 24, "revision": 3, "assets": [],
+        project = {"id": "p" * 24, "channel_id": "c" * 16, "revision": 3, "assets": [],
                    "tracks": [{"id": "t0", "name": "Шар 1", "clips": [voice]}, {"id": "t1", "name": "Кадр 1", "clips": [frame(1)]},
                               {"id": "t2", "name": "Кадр 2", "clips": [frame(2)]}, {"id": "t3", "name": "Плашка каналу", "clips": [plate]}],
                    "scene_groups": [{"id": "g", "title": "Плашка каналу", "clip_ids": ["logo"], "role": "overlay"}]}
@@ -328,6 +330,7 @@ class SoundTest(unittest.TestCase):
         before = {clip["id"] for _, track in enumerate(self.studio.data["tracks"]) for clip in track["clips"]
                   if clip.get("title") != razgon_bridge.BED_TITLE}
         self.bed = lambda razgon: None
+        (self.razgon / "config.json").write_text(json.dumps({"fps": 25, "music": {"enabled": False}, "sfx": {"enabled": False}}))
         self.run_sound()
         self.assertEqual(self.beds(), [])
         after = {clip["id"] for track in self.studio.data["tracks"] for clip in track["clips"]}
@@ -339,9 +342,28 @@ class SoundTest(unittest.TestCase):
         self.assertIn("не змінилися", self.run_sound())
         self.assertEqual((len(self.studio.sent), len(self.studio.imported)), (sent, 1))  # nothing imported or sent again
         self.tone = 330                                                                    # new cues: a new bed
+        story = json.loads((self.razgon / "story" / "shots.json").read_text())
+        story["sfx"].append({"t": 3.0, "name": "ding"})
+        (self.razgon / "story" / "shots.json").write_text(json.dumps(story))
         self.run_sound()
         self.assertEqual(len(self.studio.imported), 2)
         self.assertEqual([clip["asset_id"] for _, _, clip in self.beds()], ["a1"])
+
+    def test_unchanged_sound_inputs_lay_nothing_again(self):
+        # 17 November 2026: after the frames the music was made again for ten minutes with nothing in it changed
+        made = []
+        bed = self.bed
+        self.bed = lambda razgon: made.append(1) or bed(razgon)
+        self.run_sound()
+        self.assertEqual(len(made), 1)
+        output = self.run_sound()
+        self.assertEqual(len(made), 1)                                   # same inputs: the mix is not made again
+        self.assertIn("не змінилися", output)
+        story = json.loads((self.razgon / "story" / "shots.json").read_text())
+        story["sfx"].append({"t": 2.0, "name": "whoosh"})               # a frame agent added a cue
+        (self.razgon / "story" / "shots.json").write_text(json.dumps(story))
+        self.run_sound()
+        self.assertEqual(len(made), 2)
 
     def test_an_edit_meanwhile_is_met_with_a_fresh_project(self):
         batch = self.studio.batch
