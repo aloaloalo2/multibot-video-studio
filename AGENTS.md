@@ -1196,3 +1196,9 @@ The user: «цифри писати треба буквами, тому що н�
 The user: «інколи він щось говорить, але незрозуміло, про що це йде мова… варто було би довести речення кожне до кінця обов'язково. Обмежень в довжині речень немає». The writer brief and the self-review now require each sentence to name what it is about in full, even when that makes it longer; no reference to something the viewer has not seen or that the text has not mentioned yet («такой фокус» names the process itself), no thought the viewer must finish himself. Voiced scripts are not rewritten.
 
 The cover is never mentioned in a script (user, same day: «ми не говоримо про обложку в ролику… це просто інформація про що ролик»): a reference video's thumbnail description only tells the writer what the topic is. The writer brief, its reference-video note and the self-review say so.
+
+## Descriptions like a person wrote them; a light start (17 November 2026)
+
+The user: the descriptions «не аутентичні… мають бути двома-трьома реченнями, знизу хештеги… як звичайна людина написала… і всі вони мають бути завжди різні для кожного ролика». `episode_metadata.PROMPT` now asks for 2-3 plain sentences about this video by the person who made it (no stock lines such as «Видео носит познавательный характер», «Спасибо, что смотрите»), an empty line and one line of 3 hashtags; `validate` checks that shape; `prompt(cid, pid)` hands the writer the channel's latest descriptions to differ from. Saved files are not rewritten.
+
+Same day, on a hook that opened on «тридцать шесть Солнц… двадцать девять… шестьдесят два»: the writer brief, OPENING_CRAFT and the self-review start with what the viewer grasps at once and bring heavy details later, one at a time, at most one number a sentence, a comparison rather than a dry figure.

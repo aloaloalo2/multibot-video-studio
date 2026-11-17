@@ -25,7 +25,7 @@ class MetadataTest(unittest.TestCase):
         self.pid = self.project['id']
         self.script = 'A selected opening. ' + 'Natural spoken words for this episode. ' * 32
         self.value = {'titles': [self.project['name'], 'Another fresh angle', 'A third fresh angle'],
-                      'description': 'Thanks for watching. Subscribe for more.\n\nThis video is for entertainment.',
+                      'description': 'I spent a week finding out what is really in that old garage. Here is what I learned.\n\n#garage #history #findings',
                       'tags': ['story', 'fiction', 'curiosity']}
 
     def draft(self):
@@ -253,3 +253,25 @@ class ScriptLengthTest(unittest.TestCase):
         report=ideas.script_length('word '*93,101)
         self.assertEqual((report['minimum'],report['maximum']),(94,108))
         self.assertIsNone(ideas.script_length('Manual source',None))
+
+
+class DescriptionRuleTest(unittest.TestCase):
+    """2-3 sentences of a person and a line of hashtags, never like the channel's earlier ones (17 November 2026)."""
+    TITLE = 'A title'
+
+    def value(self, description):
+        return {'titles': [self.TITLE, 'Second angle here', 'Third angle here'], 'description': description, 'tags': ['a', 'b', 'c']}
+
+    def test_sentences_then_hashtags(self):
+        good = 'I went looking for the oldest garage find. It took three weekends.\n\n#garage #finds #history'
+        self.assertEqual(metadata.validate(self.value(good), self.TITLE)['description'], good)
+        for bad in ('Only text without hashtags at all.', 'Text.\n\nno hashtags here', 'Text with #tag inside.\n\n#a #b',
+                    'Text.\n\nPurpose paragraph.\n\n#a #b', 'Text.\n\n#onlyone'):
+            with self.assertRaises(ValueError):
+                metadata.validate(self.value(bad), self.TITLE)
+
+    def test_the_brief_names_the_channels_latest_descriptions(self):
+        with patch.object(metadata, 'recent_descriptions', return_value=['Old one.\n\n#x #y']):
+            text = metadata.prompt('c', 'p')
+        self.assertIn('Old one.', text)
+        self.assertIn('must differ from all of them', text)

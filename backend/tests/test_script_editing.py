@@ -253,7 +253,7 @@ class SelfReviewWorkflowTest(unittest.TestCase):
         text='A selected opening. '+'Natural spoken words for the audience. '*33
         intermediate=text.replace('Natural','Clear')
         after=intermediate.replace('audience','listener')
-        metadata={'titles':['Author revision fixture','Another useful angle','A different angle'],'description':'Thank you for watching. Subscribe.\n\nFor entertainment.','tags':['story','fiction','curiosity']}
+        metadata={'titles':['Author revision fixture','Another useful angle','A different angle'],'description':'A short tale I wanted to tell for a long time. It ends somewhere quiet.\n\n#story #fiction #tale','tags':['story','fiction','curiosity']}
         data={'id':p['id'],'project_id':p['id'],'channel_id':p['channel_id'],'context':{},'stage':'script','status':'running','selected':{'title':p['name']},'opening':'A selected opening.','target_words':editor.word_count(text)}
         sessions=[]
         def opus(prompt,root,identity,cid,**kwargs):

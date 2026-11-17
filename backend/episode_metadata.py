@@ -13,18 +13,45 @@ import audience_policy
 PROMPT = '''Also write publication metadata in the channel language, using the finished script.
 Return metadata with exactly 3 distinct A/B titles (titles array), including the selected title verbatim.
 Alternative titles must contain no colon, dash, hyphen or list numbering. Do not invent claims.
-description: 2 short paragraphs, usually 3-5 sentences total, written for THIS video, never a channel template that
-could stand under any episode (YouTube treats identical descriptions as mass-produced). First paragraph: one or two
-sentences in the host's own voice about what this video gives the viewer and the host's own take on it, then thanks and an
-invitation to subscribe worded for this topic. Second: the informational/educational/entertainment purpose.
-For health topics add a brief note about individual professional consultation. No full script summary,
-links, sources, hashtags, timestamps, keyword lists or clickbait. tags: exactly 3 distinct relevant strings.
+description: written the way the person who made this video would write a few words under it, not a template
+(the author, 17 November 2026: «два-три речення, знизу хештеги… як звичайна людина написала»). 2-3 plain sentences in the
+channel language about what this video shows and why it is worth watching, in everyday words; a short invitation to
+subscribe only if it sounds natural here. No stock phrases that fit any video («Видео носит познавательный характер»,
+«Спасибо, что смотрите», «This video is for informational purposes»), no claims beyond the script, no summary of the
+whole script, no links, sources, timestamps or keyword lists. For a health topic one of the sentences may briefly say
+that the video does not replace a doctor's advice. Then an empty line and one line of 3 hashtags for this video in the
+channel language, each one word without spaces (for example #чёрныедыры #космос #гравитационныеволны). tags: exactly 3 distinct relevant strings.
 These metadata requirements override older metadata instructions in the reference material.
 Keep metadata entirely separate from the ready-to-speak script.'''
 
 
-def prompt():
-    return PROMPT + '\nCURRENT STUDIO AUDIENCE POLICY:\n' + audience_policy.text()
+def recent_descriptions(cid, skip=None, limit=6):
+    """The channel's latest descriptions (from each episode's publication-metadata.json, newest first), so a new one never
+    repeats them (the author, 17 November 2026: «всі вони мають бути завжди різні для кожного ролика»)."""
+    found = []
+    try:
+        projects = sorted((p for p in store.list_projects(cid) if p.get('id') != skip),
+                          key=lambda p: float(p.get('updated_at') or 0), reverse=True)
+    except (store.StudioError, OSError):
+        return []
+    for project in projects:
+        data = store.read_json(store.project_dir(project['id']) / 'publication-metadata.json', {}) or {}
+        text = data.get('description')
+        if isinstance(text, str) and text.strip():
+            found.append(text.strip())
+        if len(found) >= limit:
+            break
+    return found
+
+
+def prompt(cid=None, skip=None):
+    text = PROMPT + '\nCURRENT STUDIO AUDIENCE POLICY:\n' + audience_policy.text()
+    previous = recent_descriptions(cid, skip) if cid else []
+    if previous:
+        text += ('\nThe latest descriptions of this channel are below. Yours must differ from all of them: other words, '
+                 'another first sentence, another build and other hashtags where the topic allows; never reuse their '
+                 'phrases.\n' + json.dumps(previous, ensure_ascii=False))
+    return text
 
 
 def path(project):
@@ -56,9 +83,14 @@ def validate(value, title):
         raise ValueError('Потрібні три різні заголовки, включно з вибраним. Сценарій збережено.')
     if any(len(s.strip()) > 100 or (s.strip() != title and re.search(r'[:\-‐‑‒–—]|^\d+[.)]\s', s.strip())) for s in titles):
         raise ValueError('Некоректні заголовки метаданих. Сценарій збережено.')
-    if (not isinstance(description, str) or len(re.split(r'\n\s*\n', description.strip())) != 2
-            or len(description.split()) > 120 or re.search(r'https?://|#', description)):
-        raise ValueError('Потрібен короткий опис із двох абзаців. Сценарій збережено.')
+    parts = re.split(r'\n\s*\n', description.strip()) if isinstance(description, str) else []
+    text, tags_line = (parts[0], parts[-1]) if len(parts) == 2 else ('', '')
+    hashtags = tags_line.split()
+    sentences = [x for x in re.split(r'(?<=[.!?…])\s+', text.strip()) if x.strip()]
+    # 2-3 sentences of the person who made the video, then one line of hashtags (the author, 17 November 2026)
+    if (len(parts) != 2 or not 1 <= len(sentences) <= 4 or len(text.split()) > 80 or re.search(r'https?://|#', text)
+            or not 2 <= len(hashtags) <= 5 or not all(re.fullmatch(r'#[^\s#]{2,40}', h) for h in hashtags)):
+        raise ValueError('Потрібен короткий опис на 2-3 речення і рядок хештегів під ним. Сценарій збережено.')
     if not strings(tags, 3) or any(',' in s for s in tags):
         raise ValueError('Потрібні рівно три окремі теги. Сценарій збережено.')
     return {'titles': [s.strip() for s in titles], 'description': description.strip(), 'tags': [s.strip() for s in tags]}
@@ -100,7 +132,7 @@ def save_generated(project, value, script, complete):
     try:
         value = validate(value, project['name'])
     except ValueError as error:
-        brief = (prompt() + '\nReturn only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}. '
+        brief = (prompt(project.get('channel_id'), project.get('id')) + '\nReturn only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}. '
                   'Do not rewrite the script. The selected title is authoritative.\n'
                   + json.dumps({'channel':project.get('channel_name',''), 'selected_title':project['name'],
                                             'topic_excerpt':script[:800], 'validation_error':str(error)}, ensure_ascii=False))

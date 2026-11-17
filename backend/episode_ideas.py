@@ -445,7 +445,7 @@ OPENING_CRAFT = (
     '2. Від буденного до несподіваного: питання про звичну річ, коротка відповідь і різкий перехід до теми.\n'
     '3. Тема стосується самого глядача: «ви, найімовірніше, вже з цим стикалися», «ви робите це щодня, і робите неправильно», '
     'а наступним реченням знято образу чи страх.\n'
-    '4. Одне вражаюче число окремим коротким реченням, далі пояснення, чому воно таке.\n'
+    '4. Одне вражаюче число окремим коротким реченням, далі пояснення, чому воно таке. Саме одне: кілька чисел поспіль у зачині глядач не втримає.\n'
     '5. Незручне логічне питання, яке випливає з відомого факту, і глядач хоче почути відповідь.\n'
     '6. Коротка сцена або власна історія ведучого, тільки якщо правила каналу дозволяють особисті історії.\n'
     'Після гачка скажи, чому це важливо саме глядачеві. Кінцівку зачину роби щоразу іншою й під тему: одне конкретне '
@@ -803,6 +803,8 @@ def writer_brief(compact_context):
              'тему на іншу, а сенс майже не зміниться, то текст шаблонний. Глядач має чути живу людину, яка думає вголос, сумнівається, '
              'має улюблені думки й звертається до нього, а не диктора, що читає довідку.\n' + SCAFFOLD + '\n'
              # the author, 16 November 2026: channels get renamed, so a script never names its channel by itself
+             # the author, 17 November 2026: a hook that opened on three masses in a row
+             'Починай із того, що глядач розуміє одразу й без підготовки: знайомої картинки, простої ситуації чи питання. Важкі подробиці (кілька чисел поспіль, маси, точні дати, терміни) не вантаж на зачин і на початок розповіді: вводь їх пізніше, по одній, і лише тоді, коли кожна щось пояснює глядачеві. В одному реченні щонайбільше одне число, і тільки якщо без нього не зрозуміти думку; замість сухих чисел краще порівняння, яке легко уявити. Не «одна весила как тридцать шесть Солнц, другая как двадцать девять, а получилась одна на шестьдесят два», а спершу сама подія простими словами (автор, 17 листопада 2026: «з хука ми починаємо дуже з важкого… кому це треба ця інформація»). '
              # the author, 17 November 2026: «варто було би довести речення кожне до кінця обов'язково»
              'Кожне речення доведене до кінця й зрозуміле, навіть якщо почути його окремо: називай повністю, про що йдеться, навіть ціною довшого речення, бо обмеження довжини речення немає. Не відсилай до того, чого глядач не бачив, або до того, про що в тексті ще не було мови, і не лишай думку, яку він мусить домислювати сам. Наприклад, не «выйдет ровно то самое», а «выйдет, что одна чёрная дыра вытягивается и распадается на две»; не «для такого фокуса», а «чтобы одна чёрная дыра вот так распалась на две» (автор, 17 листопада 2026). Обкладинку чи прев’ю ролика в тексті не згадуй і до неї не повертайся: опис обкладинки лише довідка для автора про тему ролика. '
              # the author, 17 November 2026: «цифри писати треба буквами… неправильно вимовляються»
@@ -874,7 +876,7 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             script = project['voice_script']['text']
             data['length'] = script_length(script, data.get('target_words'))
-            result = opus(episode_metadata.prompt() + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
+            result = opus(episode_metadata.prompt(cid, data['project_id']) + '\nWrite only metadata for this saved script. Do not rewrite the script.\n'
                           + json.dumps({'channel': project['channel_name'], 'selected_title': project['name'],
                                         'topic_excerpt': script[:800], 'ending_excerpt': script[-800:]}, ensure_ascii=False)
                           + '\nReturn JSON only {"metadata":{"titles":["...","...","..."],"description":"...","tags":["...","...","..."]}}.',
@@ -958,7 +960,7 @@ def _work(cid, data):
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
                     f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
                     'Do not invent studies, quotes, statistics or medical claims; use cautious factual wording for uncertain facts. '
-                    + episode_metadata.prompt() + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
+                    + episode_metadata.prompt(cid, data.get('project_id')) + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
                     '"description":"...","tags":["...","...","..."]}}.', root, identity, cid, session=session)
                 script = result.get('script')
                 if not isinstance(script, str) or not script.strip():
