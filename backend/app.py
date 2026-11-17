@@ -1145,6 +1145,10 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "MultiBotVideoStudio/0.1"
 
     def log_message(self, fmt, *args):
+        # successful reads are the UI's polling (studio/status, export/active…): 99% of a log that grew to 89 MB; errors
+        # and every change stay (17 November 2026 audit)
+        if self.command == "GET" and len(args) >= 2 and str(args[1]).startswith(("2", "3")):
+            return
         sys.stderr.write("[video-studio] " + fmt % args + "\n")
 
     def json_response(self, value, status=200):
@@ -1287,6 +1291,12 @@ class Handler(BaseHTTPRequestHandler):
             sys.stderr.write(f"[video-studio] {self.command} {self.path}: {type(exc).__name__}: {exc}\n")
             traceback.print_exc()
             return self.json_response({"error": "Невірні параметри запиту"}, 400)
+        except OSError as exc:
+            if exc.errno == 28:   # ENOSPC: say what is wrong instead of «Внутрішня помилка» (17 November 2026 audit)
+                return self.json_response({"error": "На диску Mac закінчилось місце. Звільніть місце (кнопка «Звільнити місце» "
+                                                    "в налаштуваннях студії) і спробуйте ще раз."}, 507)
+            traceback.print_exc()
+            return self.json_response({"error": "Внутрішня помилка студії"}, 500)
         except Exception:
             traceback.print_exc()
             return self.json_response({"error": "Внутрішня помилка студії"}, 500)
@@ -1368,7 +1378,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(episode_ideas.public(episode_ideas.read_project(draft_match.group(1))))
         if path == "/api/sound-effects":
             import sound_settings
-            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "library": __import__("sfx_library").catalog(), "library_selection": True})
+            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "music_styles": sound_settings.music_catalog(), "library": __import__("sfx_library").catalog(), "library_selection": True})
         library_match = re.fullmatch(r"/api/sfx-library/([0-9]+)\.wav", path)
         if library_match:
             import sfx_library
@@ -1380,6 +1390,10 @@ class Handler(BaseHTTPRequestHandler):
         if sound_match:
             import sound_settings
             return self.serve_media(sound_settings.preview(sound_match.group(1)), cache=True)
+        music_style = re.fullmatch(r"/api/music-styles/([a-z]+)\.mp3", path)
+        if music_style:
+            import sound_settings
+            return self.serve_media(sound_settings.music_preview(music_style.group(1)), cache=True)
         transition_sound = re.fullmatch(r"/api/transition-sounds/([a-z]+)\.wav", path)
         if transition_sound:
             import sound_settings
@@ -1886,8 +1900,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"result": result, "project": paused_view(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/space", path)
         if match and method == "POST":
-            if active_export(match.group(1)):
-                raise store.StudioError("Зачекайте, доки закінчиться експорт, і звільніть місце потім", 409)
+            # the same guard as «Звільнити місце» for all projects: a thumbnail or a still in work keeps its cache
+            # (it deleted razgon/build/thumbnail-stills under a running thumbnail; 17 November 2026 audit)
+            blocked = cleanup_blocked(match.group(1))
+            if blocked:
+                raise store.StudioError(f"{blocked}. Звільніть місце, коли робота закінчиться", 409)
             return self.json_response(space.free(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/restart", path)
         if match and method == "POST":

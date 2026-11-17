@@ -66,16 +66,38 @@ def drum(kind, k, seed):
     return np.zeros(k, np.float32)
 
 
-def film_variation(name):
-    """A film's own seed, key shift and tempo, from its name: the same mood sounds different from film to film, and the
-    same film always gets the same music back (user, 17 November 2026: «замітив, що часто музика та сама»)."""
+def film_seed(name):
+    """A film's own seed from its name: within a channel's style the melody details differ from film to film, while the
+    instruments, key and tempo stay the style's (user, 17 November 2026: «замітив, що часто музика та сама» and «не хочу,
+    щоб кожен ролик був зовсім по-різному»). The same film always gets the same music back."""
     import hashlib
-    h = int(hashlib.sha256(str(name).encode("utf-8")).hexdigest(), 16)
-    return 2 + h % 99991, (h >> 20) % 7 - 3, 0.9 + ((h >> 40) % 5) * 0.05
+    return 2 + int(hashlib.sha256(str(name).encode("utf-8")).hexdigest(), 16) % 99991
 
 
-def render_section(mood, intensity, dur, seed=0, key=None, shift=0, tempo=1.0):
-    M = MOODS[mood]; r = rng(seed); I = float(np.clip(intensity, 0, 1))
+# A channel's music style («Стиль музики» in its sound settings): which instruments every mood plays and how fast.
+# «whatif» is the original score, kept as it was. Each style keeps the mood's key and chords.
+STYLES = {
+    "whatif": None,
+    "space": dict(layers=dict(drone=0, sub=0, bell=0, arp=0.35), tempo=0.7, bars=2, bright=0.9),
+    "piano": dict(layers=dict(piano=0, sub=0.3, bell=0.75), tempo=0.85, bars=2, bright=0.8),
+    "cinematic": dict(layers=dict(pad=0, sub=0, drone=0.3, pulse=0.2, kick=0.35, snare=0.55, brass=0.25), tempo=0.95, bars=1, bright=1.0),
+    "light": dict(layers=dict(pluck=0, bass=0, piano=0.3, hat=0.35, clap=0.5, bell=0.6), tempo=1.05, bars=1, bright=1.1),
+}
+STYLE_NAMES = {"whatif": "Як у What If", "space": "Космічний ембієнт", "piano": "Спокійне піаніно",
+               "cinematic": "Епічний кіно", "light": "Легкий ритм"}
+
+
+def styled(mood, style):
+    M = MOODS[mood]
+    change = STYLES.get(style or "whatif")
+    if not change:
+        return M
+    return {**M, "layers": change["layers"], "bpm": M["bpm"] * change["tempo"], "bars": change["bars"],
+            "bright": M["bright"] * change["bright"]}
+
+
+def render_section(mood, intensity, dur, seed=0, key=None, shift=0, tempo=1.0, style=None):
+    M = styled(mood, style); r = rng(seed); I = float(np.clip(intensity, 0, 1))
     on = {k: I >= v for k, v in M["layers"].items()}
     beat = 60 / (M["bpm"] * tempo); bar = 4 * beat; clen = bar * M["bars"]
     tail = 3.0; n = secs(dur + tail); key_midi = NOTE[key or M["key"]] + 48 + (0 if key else int(shift))
@@ -141,13 +163,13 @@ def render_section(mood, intensity, dur, seed=0, key=None, shift=0, tempo=1.0):
     return reverb(out, 2.8, 0.28, seed).astype(np.float32)
 
 
-def render_score(plan, total, seed=1, key=None, shift=0, tempo=1.0):
+def render_score(plan, total, seed=1, key=None, shift=0, tempo=1.0, style=None):
     n = secs(total + 0.5); out = np.zeros((n, 2), np.float32); xf = 2.0
     plan = sorted(plan, key=lambda s: s["start"])
     for i, s in enumerate(plan):
         st, en = max(0, s["start"]), min(total, s["end"])
         if en - st < 0.5: continue
-        y = render_section(s.get("mood", "mystery"), s.get("intensity", 0.5), en - st + xf, seed + i * 101, key, shift, tempo)
+        y = render_section(s.get("mood", "mystery"), s.get("intensity", 0.5), en - st + xf, seed + i * 101, key, shift, tempo, style)
         m = len(y); fin = secs(xf if i else 2.5); fo = secs(xf)
         ramp_in = np.sin(np.linspace(0, np.pi / 2, fin)) ** 2
         y[:fin] *= ramp_in[:, None]
@@ -165,7 +187,7 @@ def default_plan(total):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--project"); ap.add_argument("--mood"); ap.add_argument("--intensity", type=float, default=0.6)
-    ap.add_argument("--dur", type=float, default=30); ap.add_argument("--out"); ap.add_argument("--list", action="store_true"); ap.add_argument("--seed", type=int, default=1); ap.add_argument("--key")
+    ap.add_argument("--dur", type=float, default=30); ap.add_argument("--out"); ap.add_argument("--list", action="store_true"); ap.add_argument("--seed", type=int, default=1); ap.add_argument("--key"); ap.add_argument("--style", choices=list(STYLES))
     a = ap.parse_args()
     if a.list:
         for k, v in MOODS.items(): print(f"{k:9s} {v['bpm']:>3} bpm  key {v['key']}{'m' if v['minor'] else ''}  {' '.join(v['prog'])}")
@@ -175,9 +197,8 @@ if __name__ == "__main__":
         total = story.get("duration") or story["shots"][-1]["end"]
         plan = story.get("music") or default_plan(total)
         out = a.out or os.path.join(a.project, "build", "music.wav")
-        seed, shift, tempo = film_variation(os.path.basename(os.path.abspath(a.project)))
-        x = render_score(plan, total, seed, a.key, shift, tempo)
+        x = render_score(plan, total, film_seed(os.path.basename(os.path.abspath(a.project))), a.key, style=a.style)
     else:
-        x = render_score([{"start": 0, "end": a.dur, "mood": a.mood or "mystery", "intensity": a.intensity}], a.dur, a.seed, a.key)
+        x = render_score([{"start": 0, "end": a.dur, "mood": a.mood or "mystery", "intensity": a.intensity}], a.dur, a.seed, a.key, style=a.style)
         out = a.out or f"music_{a.mood}.wav"
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True); write_wav(out, x); print(f"wrote {out}  ({len(x) / SR:.1f}s)")

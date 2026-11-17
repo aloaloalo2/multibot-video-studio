@@ -2974,3 +2974,9 @@ select option{background:#232327;color:#f1f1f2}
 .episode-kit:not(.done):not(.working){border-color:#363840;background:#1d1e23}
 /* the plan's stage blocks round like the voice block above them (user, 17 November 2026: «округлення приведи до 1 стилю») */
 .episode-director{border-radius:var(--ui-radius-panel)}
+
+/* «Стиль музики» in the channel's sound settings (17 November 2026) */
+.channel-music-styles{display:grid;gap:6px;margin-top:8px}
+.channel-music-styles[hidden]{display:none!important}
+.channel-music-styles-title{font-size:13px;color:var(--muted,#999da8)}
+.channel-music-styles input[type=radio]{width:15px;height:15px;margin:0;accent-color:#c9ccd5}

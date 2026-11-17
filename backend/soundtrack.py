@@ -98,10 +98,11 @@ def place(ctx, spec, *, transition=False):
         # Bounded memory and reusable material, even for an hour-long film.
         count = max(1, math.ceil(total / 60.0))
         length = max(4.0, total / count)
-        path = folder / f'music-v1-{mood}-{length:.3f}.wav'
+        style = sound['music'].get('style', 'whatif')
+        path = folder / (f'music-v1-{mood}-{length:.3f}.wav' if style == 'whatif' else f'music-v2-{style}-{mood}-{length:.3f}.wav')
         with sound_settings.LOCK:
             if not path.exists():
-                samples = module.render_score([{'start': 0, 'end': length, 'mood': mood, 'intensity': .3}], length, seed=7)
+                samples = module.render_score([{'start': 0, 'end': length, 'mood': mood, 'intensity': .3}], length, seed=7, style=style)
                 module.write_wav(str(path), samples[:module.secs(length)])
         volume = music_volume(path)
         for index in range(count):

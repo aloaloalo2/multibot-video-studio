@@ -37,6 +37,11 @@ TRANSITIONS = (
     ('neon', 'Неоновий перелив'), ('warp', 'Об’ємний warp'), ('shimmer', 'Кришталеве сяйво'),
 )
 TRANSITION_IDS = {row[0] for row in TRANSITIONS}
+# The channel's music style (kit audio/music.py STYLES); «whatif» is the original score (user, 17 November 2026: «в
+# настройках хочу, щоб музику я міг вибрати… для What If ці звуки нравляться… для інших каналів… космічний стиль»).
+MUSIC_STYLES = (('whatif', 'Як у What If'), ('space', 'Космічний ембієнт'), ('piano', 'Спокійне піаніно'),
+                ('cinematic', 'Епічний кіно'), ('light', 'Легкий ритм'))
+MUSIC_STYLES = dict(MUSIC_STYLES)
 IDS = {row[0] for row in CATEGORIES}
 LOCK = threading.RLock()
 
@@ -58,7 +63,7 @@ def normalize(value=None):
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
         part = value.get(key, {})
-        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories'} if key == 'effects' else set())):
+        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories'} if key == 'effects' else {'style'})):
             raise ValueError('Невірні налаштування ' + key)
         result[key] = {}
         for flag, default in flags.items():
@@ -66,6 +71,10 @@ def normalize(value=None):
             if type(current) is not bool:
                 raise ValueError('Вибір звуку має бути увімкнено або вимкнено')
             result[key][flag] = current
+    style = value.get('music', {}).get('style', 'whatif')
+    if style not in MUSIC_STYLES:
+        raise ValueError('Невідомий стиль музики')
+    result['music']['style'] = style
     categories = value.get('effects', {}).get('categories', [row[0] for row in CATEGORIES])
     if not isinstance(categories, list) or any(not isinstance(key, str) or key not in IDS for key in categories) or len(set(categories)) != len(categories):
         raise ValueError('Невідома або повторена категорія звуку')
@@ -184,6 +193,30 @@ def preview(category, *, transition=False):
             peak = float(np.abs(samples).max(initial=0))
             samples *= .22 / max(peak, .22)
             module.write_wav(str(path), samples)
+    return path
+
+
+def music_catalog():
+    return [{'id': key, 'label': label, 'preview_url': f'/api/music-styles/{key}.mp3?v=1'} for key, label in MUSIC_STYLES.items()]
+
+
+def music_preview(style):
+    """Twenty seconds of the style, the same two moods for every style so they compare by ear; made once, locally."""
+    import store, subprocess
+    if style not in MUSIC_STYLES:
+        raise store.StudioError('Стиль музики не знайдено', 404)
+    folder = store.DATA_ROOT / 'cache' / 'music-style-previews-v1'
+    path = folder / (style + '.mp3')
+    with LOCK:
+        if not path.is_file():
+            folder.mkdir(parents=True, exist_ok=True)
+            module = audio_module('music')
+            plan = [{'start': 0, 'end': 10, 'mood': 'wonder', 'intensity': .6}, {'start': 10, 'end': 20, 'mood': 'mystery', 'intensity': .6}]
+            samples = module.render_score(plan, 20, seed=7, style=style)
+            wav = path.with_suffix('.wav')
+            module.write_wav(str(wav), samples)
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(wav), '-b:a', '160k', str(path)], check=True)
+            wav.unlink(missing_ok=True)
     return path
 
 

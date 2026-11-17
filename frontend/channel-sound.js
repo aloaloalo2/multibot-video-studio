@@ -4,6 +4,7 @@ function channelSoundMarkup(){
       <label class="check"><input id="sound-music" type="checkbox">Використовувати музику</label>
       <label class="check channel-sound-generate"><input id="sound-generate" type="checkbox">Створювати фонову музику</label>
       <small id="sound-music-note"></small>
+      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Стиль музики"><span class="channel-music-styles-title">Стиль музики</span><div class="channel-sound-categories"></div></div>
     </div>
     <details class="channel-sound-group"><summary><span>Ефекти акцентів</span><small id="sound-effect-count"></small></summary>
       <label class="check"><input id="sound-effects" type="checkbox">Використовувати для акцентів</label>
@@ -31,7 +32,9 @@ function bindChannelSound(saved){
     {key:'transitions',field:'styles',toggle:root.querySelector('#sound-transitions'),list:root.querySelector('#transition-categories'),count:root.querySelector('#sound-transition-count'),defaultOn:false},
     {key:'library',field:'ids',toggle:root.querySelector('#sound-library'),list:root.querySelector('#animation-sfx-library'),count:root.querySelector('#sound-library-count'),defaultOn:saved?.effects?.enabled??true}
   ];
-  root.soundValue={music:{enabled:music.checked,generate:generate.checked}};
+  let musicStyle=saved?.music?.style||'whatif';
+  const styles=root.querySelector('#music-styles');
+  root.soundValue={music:{enabled:music.checked,generate:generate.checked,style:musicStyle}};
   for(const group of groups){
     group.toggle.checked=saved?.[group.key]?.enabled??group.defaultOn;
     const choices=saved?.[group.key]?.[group.field];
@@ -43,7 +46,8 @@ function bindChannelSound(saved){
     generate.disabled=!music.checked;root.querySelector('.channel-sound-generate').hidden=!music.checked;
     root.querySelector('.channel-sound-generate').classList.toggle('muted',!music.checked);
     root.querySelector('#sound-music-note').textContent=!music.checked?'Ролик без фонової музики.':generate.checked?'Студія може створити музичний супровід.':'Використовуватиметься лише вже додана музика.';
-    root.soundValue.music={enabled:music.checked,generate:generate.checked};
+    root.soundValue.music={enabled:music.checked,generate:generate.checked,...(root.musicStylesReady?{style:musicStyle}:{})};
+    styles.hidden=!(music.checked&&generate.checked);
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
       inputs.forEach(input=>input.disabled=!group.toggle.checked||(group.key==='library'&&!root.librarySoundsReady));
@@ -58,6 +62,25 @@ function bindChannelSound(saved){
   api('/api/sound-effects').then(data=>{
     if(!root.isConnected)return;
     root.transitionSoundsReady=Array.isArray(data.transitions);
+    root.musicStylesReady=Array.isArray(data.music_styles);
+    // «Стиль музики»: the channel's generated score, heard before choosing (user, 17 November 2026)
+    for(const row of data.music_styles||[]){
+      const item=document.createElement('div');item.className='channel-sound-category';
+      const label=document.createElement('label');label.className='check';
+      const input=document.createElement('input');input.type='radio';input.name='music-style';input.value=row.id;input.checked=row.id===musicStyle;
+      input.addEventListener('change',()=>{musicStyle=row.id;update();});
+      label.append(input,document.createTextNode(row.label));
+      const play=document.createElement('button');play.type='button';play.className='sound-preview';play.setAttribute('aria-label',`Прослухати: ${row.label}`);play.setAttribute('aria-pressed','false');play.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
+      play.addEventListener('click',async()=>{
+        const wasPlaying=play.classList.contains('playing');stop();if(wasPlaying)return;
+        const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=.5;sample=audio;audio.hidden=true;item.append(audio);
+        audio.onended=audio.onerror=()=>{if(sample===audio)stop();audio.remove();};
+        play.classList.add('playing');play.setAttribute('aria-pressed','true');
+        try{await audio.play();}catch(error){if(sample===audio){stop();status('Не вдалося прослухати музику.',true);}audio.remove();}
+      });
+      item.append(label,play);styles.lastElementChild.append(item);
+    }
+    if(!root.musicStylesReady)styles.hidden=true;
     root.librarySoundsReady=data.library_selection===true&&Array.isArray(data.library);
     for(const group of groups){
       const rows=data[group.key==='effects'?'categories':group.key];
