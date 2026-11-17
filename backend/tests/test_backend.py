@@ -187,6 +187,11 @@ class BackendTest(unittest.TestCase):
             code, _ = self.request(base + '/thumbnail/choose', 'POST', {'name': 'Превью v1.png'})
             self.assertEqual(code, 200)
             choose.assert_called_once()
+            import thumbnail_logo   # a logo laid by hand on a cover is no change to the montage either
+            with patch.object(thumbnail_logo, 'place', return_value={'name': 'Превью v2.png', 'versions': []}) as place:
+                code, _ = self.request(base + '/thumbnail/logo', 'POST', {'base': 'Превью v1.png', 'x': .1, 'y': .1, 'width': .2})
+            self.assertEqual(code, 200)
+            place.assert_called_once()
             code, _ = self.request(base, 'PATCH', {'name': 'Changed'})
             self.assertEqual(code, 423)
             code, _ = self.request(base + '/actions', 'POST', {'type': 'add_layer', 'payload': {}})

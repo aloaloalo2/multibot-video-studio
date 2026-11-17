@@ -1218,7 +1218,7 @@ class Handler(BaseHTTPRequestHandler):
                 # a still only reads the project, as the live preview does
                 # the «Мови» tab works beside the montage: a translated voice and thumbnail change nothing in it
                 # Original covers also live separately from the frozen export manifest and media.
-                thumbnail_only = method == 'POST' and re.fullmatch(r'/api/projects/[0-9a-f]{24}/thumbnail(?:/choose)?', path)
+                thumbnail_only = method == 'POST' and re.fullmatch(r'/api/projects/[0-9a-f]{24}/thumbnail(?:/choose|/logo)?', path)   # a logo laid on a cover too (17 November 2026)
                 notice_only = method == 'POST' and path.endswith('/completion/seen')
                 if project_match and not (thumbnail_only or notice_only) and not path.endswith(('/export', '/razgon-live', '/still')) and '/languages' not in path and active_export(project_match.group(1)):
                     raise store.StudioError('Проєкт заблоковано під час експорту. Дочекайтеся завершення або скасуйте експорт.', 423)
