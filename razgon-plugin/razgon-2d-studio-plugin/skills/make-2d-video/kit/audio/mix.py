@@ -107,8 +107,10 @@ def beds(P, cfg, story, n, v_rms, env, music=True, sfx=True):
             print(f"generating music: {len(plan)} section(s) — " + ", ".join(f"{s['mood']}@{s.get('intensity', .5)}" for s in plan))
             # a seed set in config.json keeps that exact music; otherwise each film its own melody (music.film_seed), in
             # the channel's style (config music.style, from the channel's sound settings)
-            seed = mcfg["seed"] if "seed" in mcfg else MUSIC.film_seed(os.path.basename(os.path.abspath(P)))
-            mus = MUSIC.render_score(plan, total, seed, mcfg.get("key"), style=mcfg.get("style")); write_wav(path, mus)
+            # What If keeps its original score exactly (seed 1); another synthesizer gives each film its own melody details
+            style = mcfg.get("style") or "whatif"
+            seed = mcfg["seed"] if "seed" in mcfg else 1 if style == "whatif" else MUSIC.film_seed(cfg.get("film") or os.path.basename(os.path.abspath(P)))
+            mus = MUSIC.render_score(plan, total, seed, mcfg.get("key"), style=style); write_wav(path, mus)
         mus = as_stereo(mus)[:n]
         if len(mus) < n: mus = np.concatenate([mus, np.zeros((n - len(mus), 2), np.float32)])
         mus *= db(v_rms + mcfg.get("gainDb", -17) - rms_db(mus))

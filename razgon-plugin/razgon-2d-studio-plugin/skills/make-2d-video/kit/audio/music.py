@@ -74,17 +74,24 @@ def film_seed(name):
     return 2 + int(hashlib.sha256(str(name).encode("utf-8")).hexdigest(), 16) % 99991
 
 
-# A channel's music style («Стиль музики» in its sound settings): which instruments every mood plays and how fast.
-# «whatif» is the original score, kept as it was. Each style keeps the mood's key and chords.
+# A channel's music synthesizer («Синтезатор музики» in its sound settings). The music still changes with every mood of the
+# story, each mood keeping its own key, chords and tempo (user, 17 November 2026: «мені це подобалось, що воно
+# змінюється… What If… нічого не потрібно міняти»); a synthesizer only swaps which instruments play each mood.
+# «whatif» is the original score, unchanged. swap: instrument -> its replacement (None drops it); add: layers every mood
+# gains, with the intensity at which they come in.
+DRUMS = ("kick", "snare", "hat", "clap", "tick")
 STYLES = {
     "whatif": None,
-    "space": dict(layers=dict(drone=0, sub=0, bell=0, arp=0.35), tempo=0.7, bars=2, bright=0.9),
-    "piano": dict(layers=dict(piano=0, sub=0.3, bell=0.75), tempo=0.85, bars=2, bright=0.8),
-    "cinematic": dict(layers=dict(pad=0, sub=0, drone=0.3, pulse=0.2, kick=0.35, snare=0.55, brass=0.25), tempo=0.95, bars=1, bright=1.0),
-    "light": dict(layers=dict(pluck=0, bass=0, piano=0.3, hat=0.35, clap=0.5, bell=0.6), tempo=1.05, bars=1, bright=1.1),
+    "space": dict(swap={**{d: None for d in DRUMS}, "pad": "drone", "brass": "drone", "pluck": "arp", "bass": "sub", "piano": "bell",
+                        "pulse": "arp"}, add=dict(drone=0.2, bell=0.3), tempo=0.8, bright=0.9),
+    "piano": dict(swap={**{d: None for d in DRUMS}, "pad": None, "drone": None, "brass": "piano", "pluck": "piano",
+                        "arp": "piano", "pulse": None, "bass": "sub"}, add=dict(piano=0, sub=0.3), tempo=0.9, bright=0.8),
+    "cinematic": dict(swap={"pad": "brass", "pluck": "pulse", "piano": "brass", "bell": "brass", "clap": "snare", "hat": "tick"},
+                      add=dict(kick=0.4, snare=0.6, drone=0.3, sub=0.2), tempo=0.9, bright=1.0),
+    "light": dict(swap={"pad": "pluck", "drone": None, "brass": "pluck", "sub": "bass", "pulse": "pluck",
+                        "kick": "clap", "snare": "clap"}, add=dict(hat=0.35, clap=0.5), tempo=1.05, bright=1.1),
 }
-STYLE_NAMES = {"whatif": "Як у What If", "space": "Космічний ембієнт", "piano": "Спокійне піаніно",
-               "cinematic": "Епічний кіно", "light": "Легкий ритм"}
+STYLE_NAMES = {"whatif": "What If", "space": "Космос", "piano": "Піаніно", "cinematic": "Кіно", "light": "Легкий"}
 
 
 def styled(mood, style):
@@ -92,8 +99,12 @@ def styled(mood, style):
     change = STYLES.get(style or "whatif")
     if not change:
         return M
-    return {**M, "layers": change["layers"], "bpm": M["bpm"] * change["tempo"], "bars": change["bars"],
-            "bright": M["bright"] * change["bright"]}
+    layers = {}
+    for name, level in list(M["layers"].items()) + list(change["add"].items()):
+        name = change["swap"].get(name, name)
+        if name:
+            layers[name] = min(level, layers.get(name, 1.0))
+    return {**M, "layers": layers, "bpm": M["bpm"] * change["tempo"], "bright": M["bright"] * change["bright"]}
 
 
 def render_section(mood, intensity, dur, seed=0, key=None, shift=0, tempo=1.0, style=None):

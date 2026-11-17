@@ -4,7 +4,7 @@ function channelSoundMarkup(){
       <label class="check"><input id="sound-music" type="checkbox">Використовувати музику</label>
       <label class="check channel-sound-generate"><input id="sound-generate" type="checkbox">Створювати фонову музику</label>
       <small id="sound-music-note"></small>
-      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Стиль музики"><span class="channel-music-styles-title">Стиль музики</span><div class="channel-sound-categories"></div></div>
+      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Синтезатор музики"><span class="channel-music-styles-title">Синтезатор музики</span><small class="channel-music-styles-note">Музика й далі змінюється разом із настроєм розповіді; синтезатор задає, якими інструментами вона звучить.</small><div class="channel-sound-categories"></div></div>
     </div>
     <details class="channel-sound-group"><summary><span>Ефекти акцентів</span><small id="sound-effect-count"></small></summary>
       <label class="check"><input id="sound-effects" type="checkbox">Використовувати для акцентів</label>

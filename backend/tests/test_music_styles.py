@@ -30,6 +30,17 @@ class MusicStyleTest(unittest.TestCase):
                 self.assertLess(abs(np.corrcoef(music.hp(out[:n, 0], 300), music.hp(base[:n, 0], 300))[0, 1]), .6)
         self.assertEqual(set(sound_settings.MUSIC_STYLES), set(music.STYLES))
 
+    def test_every_synthesizer_keeps_the_music_changing_with_the_mood(self):
+        # The author likes that the score changes with the story (17 November 2026): a synthesizer swaps instruments only.
+        import numpy as np
+        music = sound_settings.audio_module('music')
+        for style in sound_settings.MUSIC_STYLES:
+            one, two = (music.hp(music.render_score([{'start': 0, 'end': 4, 'mood': mood, 'intensity': .6}], 4, seed=7, style=style)[:, 0], 300)
+                        for mood in ('mystery', 'wonder'))
+            n = min(len(one), len(two))
+            self.assertLess(abs(np.corrcoef(one[:n], two[:n])[0, 1]), .6, style)
+            self.assertNotEqual(music.styled('mystery', style)['bpm'], music.styled('tension', style)['bpm'])
+
 
 if __name__ == '__main__':
     unittest.main()

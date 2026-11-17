@@ -39,8 +39,7 @@ TRANSITIONS = (
 TRANSITION_IDS = {row[0] for row in TRANSITIONS}
 # The channel's music style (kit audio/music.py STYLES); «whatif» is the original score (user, 17 November 2026: «в
 # настройках хочу, щоб музику я міг вибрати… для What If ці звуки нравляться… для інших каналів… космічний стиль»).
-MUSIC_STYLES = (('whatif', 'Як у What If'), ('space', 'Космічний ембієнт'), ('piano', 'Спокійне піаніно'),
-                ('cinematic', 'Епічний кіно'), ('light', 'Легкий ритм'))
+MUSIC_STYLES = (('whatif', 'What If'), ('space', 'Космос'), ('piano', 'Піаніно'), ('cinematic', 'Кіно'), ('light', 'Легкий'))
 MUSIC_STYLES = dict(MUSIC_STYLES)
 IDS = {row[0] for row in CATEGORIES}
 LOCK = threading.RLock()
@@ -197,7 +196,7 @@ def preview(category, *, transition=False):
 
 
 def music_catalog():
-    return [{'id': key, 'label': label, 'preview_url': f'/api/music-styles/{key}.mp3?v=1'} for key, label in MUSIC_STYLES.items()]
+    return [{'id': key, 'label': label, 'preview_url': f'/api/music-styles/{key}.mp3?v=2'} for key, label in MUSIC_STYLES.items()]
 
 
 def music_preview(style):
@@ -205,7 +204,7 @@ def music_preview(style):
     import store, subprocess
     if style not in MUSIC_STYLES:
         raise store.StudioError('Стиль музики не знайдено', 404)
-    folder = store.DATA_ROOT / 'cache' / 'music-style-previews-v1'
+    folder = store.DATA_ROOT / 'cache' / 'music-style-previews-v2'
     path = folder / (style + '.mp3')
     with LOCK:
         if not path.is_file():

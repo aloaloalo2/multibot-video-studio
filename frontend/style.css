@@ -2980,3 +2980,4 @@ select option{background:#232327;color:#f1f1f2}
 .channel-music-styles[hidden]{display:none!important}
 .channel-music-styles-title{font-size:13px;color:var(--muted,#999da8)}
 .channel-music-styles input[type=radio]{width:15px;height:15px;margin:0;accent-color:#c9ccd5}
+.channel-music-styles-note{color:var(--muted,#999da8);font-size:12px;margin-bottom:4px}
