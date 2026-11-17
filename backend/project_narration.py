@@ -227,6 +227,11 @@ def cancel(pid):
             with HEYGEN_TURN:HEYGEN_TURN.notify_all()
             return snapshot(pid)
         job=store.read_json(root(pid)/'job.json',{})
+        if pid not in ACTIVE and job.get('status') in {'done','failed','cancelled'}:
+            # a stop that comes after the end (the button lives until the next poll, a pause checks before it stops)
+            # leaves a finished voice finished: «cancelled» over «done» hid the voice and refused revisions
+            (root(pid)/'cancel').unlink(missing_ok=True)
+            return snapshot(pid)
         job['status']='cancelling' if pid in ACTIVE else 'cancelled'
         with HEYGEN_TURN:HEYGEN_TURN.notify_all()
         store.atomic_json(root(pid)/'job.json',job)
@@ -290,7 +295,8 @@ def run(project,text,settings,ref,entries,job):
     pid=project['id'];cid=project['channel_id'];folder=None
     try:
         folder=root(pid)
-        if settings['provider']=='heygen':wait_heygen(pid,job)
+        # a narration whose phrases are all in the cache asks HeyGen nothing: it does not wait behind whole narrations
+        if settings['provider']=='heygen' and not all(x['cached'] or x.get('raw_cached') for x in entries):wait_heygen(pid,job)
         job['cost_receipts_version']=1
         store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
@@ -335,9 +341,12 @@ def run(project,text,settings,ref,entries,job):
         if (folder/'cancel').exists():raise Cancelled()
         with job_timing.span('saving'):
             listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))
-            target=folder/'Озвучка.mp3'
+            # assembled straight into the tempo baseline: «Озвучка.mp3» was a full copy of it that nothing read after the
+            # import (470 MB over 27 projects; 17 November 2026 audit)
+            target=folder/'speed-original.mp3'
             languages.run(['ffmpeg','-v','error','-nostdin','-y','-f','concat','-safe','0','-i',str(listing),'-c','copy',str(target)],'зібрати озвучку')
-            shutil.copy2(target,folder/'speed-original.mp3');store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
+            store.atomic_json(folder/'speed-original.json',{'speed':settings['speed']})
+            (folder/'Озвучка.mp3').unlink(missing_ok=True)
             import narration_effects
             effect = narration_effects.normalize(settings.get('reverb'))
             noise = narration_effects.noise_options(settings.get('room_noise'))

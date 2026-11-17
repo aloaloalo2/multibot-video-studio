@@ -203,8 +203,12 @@ function watchAnalysisLine(id){
   analysisLineTimers.set(id,setTimeout(async()=>{
     analysisLineTimers.delete(id);
     if(state.project?.id!==id)return;
-    let result;try{result=await api(`/api/projects/${encodeURIComponent(id)}/analysis`);}catch{return watchAnalysisLine(id);}
+    // the small answer while the recognition runs (1 KB instead of up to 1.7 MB every 3 s), the full one once it ends
+    // (17 November 2026 audit); the full report read before stays for the voice line
+    let result;try{result=await api(`/api/projects/${encodeURIComponent(id)}/analysis?compact=1`);}catch{return watchAnalysisLine(id);}
     if(state.project?.id!==id)return;
+    if(['queued','running'].includes(result?.job?.status))result={...result,report:{...(state.analysis?.report||{}),...(result.report||{})}};
+    else{try{result=await api(`/api/projects/${encodeURIComponent(id)}/analysis`);}catch{return watchAnalysisLine(id);}if(state.project?.id!==id)return;}
     const before=state.analysis?.job?.status,after=result?.job?.status;
     state.analysis=result;
     // a recognition that ended and was applied changes the plan: the page is read again as a whole

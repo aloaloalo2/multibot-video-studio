@@ -156,9 +156,17 @@ def resolve(*, index, language, language_name, source, current, issue, context, 
                   '"reason":"brief concrete explanation"}.')
         if language=='ru':
             prompt+=' Russian date example: spring of 2000 = «весной двухтысячного года». 2001 and 2200 are different years.'
-        answer = request(linguist_model, [{'role': 'system', 'content': prompt},
-            {'role': 'user', 'content': json.dumps({'id': index, 'source': source, 'translation': current,
-                'checker_issue': issue, 'source_context': context}, ensure_ascii=False)}], 1200)
+        try:
+            answer = request(linguist_model, [{'role': 'system', 'content': prompt},
+                {'role': 'user', 'content': json.dumps({'id': index, 'source': source, 'translation': current,
+                    'checker_issue': issue, 'source_context': context}, ensure_ascii=False)}], 1200)
+        except Exception as error:
+            # a stop before sending or an HTTP error answer billed nothing: free the reservation so a resume asks again
+            # (17 November 2026 audit); an unknown outcome keeps it, as before
+            if type(error).__name__ == 'Stop' or ': помилка ' in str(error):
+                ledger.pop(key, None)
+                save()
+            raise
         record['answer'] = answer   # every raw answer is kept: a reading fixed later takes it again without paying twice
         try:
             record['decision'] = decision(answer, index)

@@ -115,7 +115,10 @@ def _check(project, request):
                     lines=(result.stdout+result.stderr).strip().splitlines()
                     pending_lines=[line.strip() for line in lines if line.strip().startswith((
                         'changed frames needing fresh stills:','not reviewed:','missing cached stills:'))]
-                    clean=bool(pending_lines) and all(line.startswith('Frames reviewed ok:') or line.strip() in pending_lines for line in lines)
+                    # a marked bug of one frame does not hide the others that wait for a look: each frame stands
+                    # alone (bugs go to the fix round through bugs(); 17 November 2026 audit)
+                    clean=bool(pending_lines) and all(line.startswith('Frames reviewed ok:') or line.strip() in pending_lines
+                                                      or line.strip().startswith('BUG ') for line in lines)
                     if clean:
                         found={int(n) for line in pending_lines for n in re.findall(r'\d+',line)}
                         if found.issubset(wanted):pending_review.update(found)

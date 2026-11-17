@@ -81,7 +81,7 @@ def validate(value, title):
                 and len({s.strip().casefold() for s in items}) == count)
     if not strings(titles, 3) or title not in [s.strip() for s in titles]:
         raise ValueError('Потрібні три різні заголовки, включно з вибраним. Сценарій збережено.')
-    if any(len(s.strip()) > 100 or (s.strip() != title and re.search(r'[:\-‐‑‒–—]|^\d+[.)]\s', s.strip())) for s in titles):
+    if any(len(s.strip()) > 100 or (s.strip() != title and re.search(r'[:‒–—]|(?<!\w)[\-‐‑]|[\-‐‑](?!\w)|^\d+[.)]\s', s.strip())) for s in titles):
         raise ValueError('Некоректні заголовки метаданих. Сценарій збережено.')
     parts = re.split(r'\n\s*\n', description.strip()) if isinstance(description, str) else []
     text, tags_line = (parts[0], parts[-1]) if len(parts) == 2 else ('', '')

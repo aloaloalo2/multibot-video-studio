@@ -18,7 +18,9 @@ A background drawing stops by itself when the agent that started it is gone (a p
 import argparse, datetime, json, os, re, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
-LIMIT = re.compile(r"usage limit|hit your \w* ?limit|rate limit|quota|too many requests|\b429\b", re.I)
+# a bare «429» is not a limit: Codex ends its log with «tokens used» and a count such as «26 429» (17 November 2026
+# audit), and the log echoes the prompt; only an HTTP 429 named as such counts
+LIMIT = re.compile(r"usage limit|hit your \w* ?limit|rate limit|quota|too many requests|(?:status|code|error|http)\W{0,3}429\b|\b429 too many", re.I)
 
 
 def reset_time(text: str) -> str:

@@ -27,7 +27,9 @@ from pathlib import Path
 LOG_LIMIT = 2 * 1024 * 1024     # a production log longer than this keeps its last LOG_KEEP bytes
 LOG_KEEP = 1024 * 1024
 QUIET = 3600                    # a file written during the last hour may belong to work in progress
-LEVELED_AGE = 7 * 86400         # an unused leveled copy goes only after a week (a voice being replaced comes back fast)
+LEVELED_AGE = QUIET             # an unused leveled copy (up to 700 MB a film) goes after the quiet hour; it is rebuilt
+                                # from its voice in a minute if needed (was a week: 3.5 GB lay unused; 17 November 2026)
+CAPCUT_AGE = 3 * 86400          # a CapCut transition render not used for three days is rebuilt when needed
 
 
 def _size(path: Path) -> int:
@@ -92,6 +94,7 @@ class Tidy:
         for work in (folder / "languages").glob("*"):
             if work.is_dir():
                 self.language(work)
+        self.revisions(folder / "narration")
         for log in folder.glob("production-*.log"):
             try:
                 size = log.stat().st_size
@@ -120,8 +123,38 @@ class Tidy:
             self.files += 1
             self.by_kind["логи виробництва"] = self.by_kind.get("логи виробництва", 0) + max(0, size - LOG_KEEP)
 
+
+    def revisions(self, narration: Path) -> None:
+        """A sentence revision's working WAVs (the whole voice decoded twice, its patches and takes) once it has ended:
+        later runs read only its text.txt and proof.json, and the takes stay in the phrase cache (1.9 GB on 17 November
+        2026)."""
+        try:
+            job = json.loads((narration / "revision-job.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            job = {}
+        running = job.get("id") if job.get("status") in {"queued", "running", "cancelling"} else None
+        for entry in (narration / "revisions").glob("*"):
+            if not entry.is_dir() or entry.name == running or _recent(entry, self.now):
+                continue
+            for item in [*entry.glob("*.wav"), *entry.glob("*-effects.flac")]:
+                self.drop(item, "проміжні WAV переозвучки")
+
+    # ---- CapCut transition renders ---------------------------------------------------------------------------
+    def capcut(self) -> None:
+        for item in (self.data_root / "capcut-cache").glob("*"):
+            try:
+                old = item.is_file() and self.now - max(item.stat().st_mtime, item.stat().st_atime) > CAPCUT_AGE
+            except OSError:
+                continue
+            if old:
+                self.drop(item, "кеш переходів CapCut")
     # ---- leveled voice copies --------------------------------------------------------------------------------
     def leveled(self, projects: list[Path]) -> None:
+        # only the projects of this very data folder can say which copies are unused: any other list (a test's own
+        # projects) would make every real copy look unused
+        own = (self.data_root / "projects").resolve()
+        if any(Path(folder).resolve().parent != own for folder in projects):
+            return
         live = set()
         def remember(path: Path) -> None:
             try:
@@ -157,6 +190,7 @@ class Tidy:
             if folder.name not in skip:
                 self.project(folder)
         self.leveled(projects)
+        self.capcut()
         return self.report()
 
     def report(self) -> dict:

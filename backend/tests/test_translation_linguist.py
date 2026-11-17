@@ -83,6 +83,12 @@ class LinguistTest(unittest.TestCase):
         with self.assertRaises(linguist.Unresolved):self.run_decisions([])
         self.assertEqual(self.calls,[])
 
+    def test_an_http_error_answer_frees_the_reservation_for_a_resume(self):
+        # 17 November 2026 audit: an error answer bills nothing, yet the phrase stayed «requested» and blocked the draft
+        def rejected(*args):raise RuntimeError('OpenRouter: помилка 429. Rate limit')
+        with self.assertRaisesRegex(RuntimeError,'помилка 429'):linguist.resolve(**self.options,request=rejected)
+        self.assertNotIn('3',self.ledger)
+
     def test_wrong_year_or_foreign_language_cannot_be_approved_by_supervisor(self):
         self.options['validate']=lambda text:not translation_budget.missing_source_years(self.options['source'],text,'es')
         with self.assertRaises(linguist.Unresolved):

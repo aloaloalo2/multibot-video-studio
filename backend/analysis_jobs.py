@@ -282,9 +282,11 @@ def worker(job, script, save_job):
                         time.sleep(3)
                         waited += 3
                 finally:
-                    if shown:   # the director is done: while another episode's Whisper holds the queue, say so
-                        progress(99, "comparing")
-                    RUN_LOCK.acquire()
+                    try:
+                        if shown:   # the director is done: while another episode's Whisper holds the queue, say so
+                            progress(99, "comparing")
+                    finally:
+                        RUN_LOCK.acquire()   # always taken back: the caller releases it, never another run's lock
             with job_timing.span('saving'), store.LOCK:
                 current = store.load_project_narration(project["id"])
                 snapshot = store.load_project_source(project["id"]) if job.get("script_from") == "source" else current

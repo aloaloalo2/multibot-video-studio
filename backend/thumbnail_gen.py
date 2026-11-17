@@ -421,8 +421,10 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
         cli = director.executable()
     except RuntimeError as error:
         raise RuntimeError(str(error)) from None
-    command = [str(cli), "--model", director.MODEL, "--effort", effort, "--strict-mcp-config", "--allowedTools", "Read",
-               "--add-dir", str(work), "--output-format", "json", "-p"]
+    # only the Read tool and no settings or memory files: the prompt brings everything the writer needs; loading the
+    # session's settings and tool list cost 57 000–84 000 cache-written tokens a prompt (17 November 2026 audit)
+    command = [str(cli), "--model", director.MODEL, "--effort", effort, "--strict-mcp-config", "--tools", "Read",
+               "--allowedTools", "Read", "--setting-sources", "", "--add-dir", str(work), "--output-format", "json", "-p"]
     result = subprocess.run(command, input=text, cwd=cwd, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
     try:   # the paid answer is kept whatever happens next (it was lost when its reading failed)
         (work / "Відповідь Claude на промпт.txt").write_text(result.stdout or "", encoding="utf-8")

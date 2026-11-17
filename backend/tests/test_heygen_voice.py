@@ -131,3 +131,35 @@ class HeyGenTests(unittest.TestCase):
             self.assertNotEqual(lab.fingerprint(settings,ref),lab.fingerprint({**settings,'speed':1.05},ref))
 
 if __name__=='__main__':unittest.main()
+
+
+class HeyGenNetworkTests(unittest.TestCase):
+    # 17 November 2026: a DNS blip («nodename nor servname provided») stopped a narration at 104 of 127
+    def test_a_request_that_never_left_is_sent_again(self):
+        import socket
+        import urllib.error
+        attempts = [urllib.error.URLError(socket.gaierror(8, 'nodename nor servname provided')), {'data': {'ok': True}}]
+        def answer(*args, **kwargs):
+            item = attempts.pop(0)
+            if isinstance(item, Exception):
+                raise hg.network_failure(item)
+            return item
+        with patch.object(hg, '_call', side_effect=answer), patch.object(hg, 'pause') as wait:
+            self.assertEqual(hg.call('/v3/models/audio/voices/x'), {'data': {'ok': True}})
+        wait.assert_called_once()
+
+    def test_a_lost_paid_answer_is_never_repeated(self):
+        with patch.object(hg, '_call', side_effect=hg.Lost('reset')) as sent, patch.object(hg, 'pause'), patch.object(hg, 'speech_turn'):
+            with self.assertRaises(store.StudioError):
+                hg.call('/v3/models/audio/tts', {'model': 'heygen-voice-1'})
+        sent.assert_called_once()
+
+    def test_a_cut_off_download_is_fetched_again(self):
+        class Body(io.BytesIO):
+            def __init__(self, data, length):
+                super().__init__(data); self.headers = {'Content-Length': str(length)}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        bodies = [Body(b'ab', 4), Body(b'abcd', 4)]
+        with patch.object(hg.urllib.request, 'urlopen', side_effect=lambda *a, **k: bodies.pop(0)), patch.object(hg, 'pause'):
+            self.assertEqual(hg.download('https://audio.example/x.mp3'), b'abcd')

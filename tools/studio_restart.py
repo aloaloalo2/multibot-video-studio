@@ -102,8 +102,16 @@ def stop(pid: int) -> bool:
     return False
 
 
+LOG_LIMIT = 20 * 1024 * 1024   # a bigger log is moved to server.log.1 at the next start (it grew to 89 MB unrotated)
+
+
 def start() -> int:
     LOG.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if LOG.stat().st_size > LOG_LIMIT:
+            LOG.replace(LOG.with_name(LOG.name + ".1"))
+    except OSError:
+        pass
     with open(LOG, "ab") as log:
         process = subprocess.Popen([sys.executable, "-u", "backend/app.py", "--host", HOST, "--port", str(PORT)], cwd=APP,
                                    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

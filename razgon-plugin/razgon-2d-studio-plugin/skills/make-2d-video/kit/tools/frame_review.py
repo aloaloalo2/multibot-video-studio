@@ -151,6 +151,7 @@ def sheets(proj: Path, root: Path, a) -> None:
     times = sorted({t for f in todo for t in f["times"]})
     before = {t: thumb(keep / f"{t:.2f}.png") for t in times}   # the stills of the last run, to tell a real change from dust
     errors = []   # a scene that throws draws an ERROR line into its frame: the film is not reviewed until there are none
+    chunk_errors = []   # (the chunk's times, its error lines): an error belongs to the frames it names, else to its chunk
     for i in range(0, len(times), 90):
         chunk = ",".join(f"{t:.2f}" for t in times[i:i + 90])
         from chromium_gate import slot
@@ -160,9 +161,9 @@ def sheets(proj: Path, root: Path, a) -> None:
                                cwd=root, capture_output=True, text=True)
         if r.returncode:
             sys.exit(r.stdout[-1500:] + r.stderr[-1500:])
-        for line in (r.stdout + r.stderr).splitlines():
-            if "error" in line.lower():
-                errors.append(line.strip())
+        found = [line.strip() for line in (r.stdout + r.stderr).splitlines() if "error" in line.lower()]
+        errors.extend(found)
+        chunk_errors.append((set(times[i:i + 90]), found))
         for p in stills.glob("*.png"):
             if not p.name.startswith("sheet"):
                 p.replace(keep / p.name.split("_")[-1])
@@ -182,8 +183,18 @@ def sheets(proj: Path, root: Path, a) -> None:
                 backup.write_text(json.dumps(load_state(state_path), ensure_ascii=False, indent=1))
             reset += 1
             old = {}
+        # only this frame's errors: one broken scene used to mark every frame of the run, and no frame could be passed
+        # (VideoKey Studio audit, 17 November 2026)
+        own = set()
+        for chunk_times, lines in chunk_errors:
+            if not chunk_times & set(f["times"]):
+                continue
+            for line in lines:
+                named = [g for g in todo if any(str(take) in line for take in g["takes"])]
+                if not named or f in named:
+                    own.add(line)
         state["frames"][str(f["n"])] = {**old, "pixels": digest, "times": f["times"], "takes": f["takes"],
-                                         "source": sources[f["n"]], "scale": a.scale, "errors": sorted(set(errors))[:40]}
+                                         "source": sources[f["n"]], "scale": a.scale, "errors": sorted(own)[:40]}
     show = [f for f in frames if f['n'] in want and
             (state['frames'].get(str(f['n']),{}).get('verdict') != 'ok' or state['frames'][str(f['n'])].get('errors'))]
     for f in show:
@@ -271,10 +282,12 @@ def status(proj: Path, selected: str = "", *, as_json=False) -> int:
     units = [f for f in units if f["n"] in wanted]
     total = len(units)
     frames = {str(f["n"]): state.get("frames", {}).get(str(f["n"]), {}) for f in units}
-    bugs = [(n, e.get("note", "")) for n, e in frames.items() if e.get("verdict") == "bug"]
     unseen = [f["n"] for f in units if not frames.get(str(f["n"]), {}).get("verdict")]
     sources = fingerprints(proj, proj.parent.parent, units)
     stale = [f["n"] for f in units if frames.get(str(f["n"]), {}).get("source") != sources[f["n"]]]
+    # a bug marked on code that has changed since is a frame to look at again, not a bug: a fix session leaves the
+    # mark, and it held the whole batch failed after the fix (VideoKey Studio audit, 17 November 2026)
+    bugs = [(n, e.get("note", "")) for n, e in frames.items() if e.get("verdict") == "bug" and int(n) not in stale]
     errors = sorted({error for entry in frames.values() for error in entry.get("errors", [])})
     if not selected: errors = sorted(set(errors) | set(state.get("errors") or []))
     missing = [f["n"] for f in units if not frames[str(f["n"])].get("times") or not all((proj / "build/review/frames" / f"{t:.2f}.png").is_file() for t in frames[str(f["n"])].get("times", []))]

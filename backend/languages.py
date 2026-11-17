@@ -1259,7 +1259,8 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
             ledger[key] = {'input_hash': audit_key(i, current[i]), 'status': 'requested'}
             draft.save(single_pass_repairs=ledger, repair_model=TRANSLATION_REPAIR_MODEL)
             job['translation_repair_model'] = TRANSLATION_REPAIR_MODEL
-            with review_request(detail['phase'], current, [i], TRANSLATION_REPAIR_MODEL), translation_trace(
+            try:
+              with review_request(detail['phase'], current, [i], TRANSLATION_REPAIR_MODEL), translation_trace(
                     pid, code, job, i, request_model=TRANSLATION_REPAIR_MODEL):
                 answer, cost = ask([{'role':'system','content':target_rule(code)+
                     '\nRevise only this ONE narration phrase once. Follow the requested percentage change '
@@ -1271,6 +1272,14 @@ def before_translate(pid, code, src, texts, source_units, job, draft=None):
                     'Do not count characters manually. Return only JSON mapping the requested id to its best natural text.'},
                     {'role':'user','content':json.dumps([item],ensure_ascii=False)}],
                     min(2048, max(384, 2*(len(current[i])+len(source_units[i])))))
+            except (Stop, RuntimeError) as error:
+                # a stop before sending, or an HTTP error answer, made and billed nothing: the reservation goes, so a
+                # resume may ask again; only an unknown outcome (timeout, broken connection) keeps it (17 November 2026
+                # audit: the draft stayed blocked and voicing refused «спершу завершіть переклад»)
+                if isinstance(error, Stop) or ': помилка ' in str(error):
+                    ledger.pop(key, None)
+                    draft.save(single_pass_repairs=ledger)
+                raise
             charge(cost)
             found, issue = translation_recovery.answers(answer, [i])
             value = found.get(i)

@@ -341,3 +341,28 @@ class ReviewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleBugTest(ReviewTest):
+    # 17 November 2026 audit: a fix session left the frame's old «bug» mark, and the whole batch read failed after the fix
+    def test_a_bug_on_changed_code_waits_for_a_look_instead_of_failing(self):
+        hashes = self.hashes()
+        state = {"frames": {str(n): {"verdict": "bug" if n == 3 else "ok", "note": "arrow", "source": hashes[n],
+                                     "times": [], "errors": []} for n in hashes}}
+        state_path = self.proj / "build/review/review.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(json.dumps(state))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            review.status(self.proj, "3", as_json=True)
+        self.assertEqual(json.loads(out.getvalue())["bugs"], {"3": "arrow"})       # unchanged code: still a bug
+        (self.proj / "scenes/s3.js").write_text("take('s3', {fixed:true});")      # the fix session changed it
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            review.status(self.proj, "3", as_json=True)
+        self.assertEqual(json.loads(out.getvalue())["bugs"], {})                   # now a frame to look at again
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            review.status(self.proj, "3")
+        self.assertIn("changed frames needing fresh stills: 3", out.getvalue())
+        self.assertNotIn("BUG", out.getvalue())

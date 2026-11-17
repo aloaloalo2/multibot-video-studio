@@ -2,6 +2,7 @@
 import difflib
 import hashlib
 import json
+import writer_context
 import re
 import time
 import uuid
@@ -228,8 +229,10 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         policy=PROMPT_PATH.read_text(encoding='utf-8')
         report['prompt_sha256']=digest(policy)
         requirements={'title':ctx.get('selected_title'),'approved_opening':ctx.get('approved_opening'),
-            'channel_context':{k:ctx.get(k) for k in ('channel','audience','language','narrator',
-                'channel_agent_rules','script_wishes','author_writing_rules','youtube_script_rules','channel_script_rules','claude_memory_notes')},
+            # the same compacted rules the writer got: without the model-routing sections (they once made Opus refuse a
+            # normal script) and without repeated paragraphs, about 14 000 characters less on each pass (17 November 2026)
+            'channel_context':writer_context.compact({k:ctx.get(k) for k in ('channel','audience','language','narrator',
+                'channel_agent_rules','script_wishes','author_writing_rules','youtube_script_rules','channel_script_rules','claude_memory_notes')}),
             'studio_audience_policy': audience_policy.text(),
             'minimum_words':minimum,'maximum_words':maximum,'blacklist':blacklist,
             'blacklist_matching':'Case-insensitive complete words/phrases; whitespace normalized, ё=е, apostrophes normalized. '

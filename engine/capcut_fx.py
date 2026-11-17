@@ -167,8 +167,17 @@ def _strip(layers: list[dict], drop: set[str], top_z: float | None = None) -> li
     return out
 
 
+def _used(path: Path) -> None:
+    """A reused cache entry is fresh again: storage_tidy drops entries untouched for three days."""
+    try:
+        os.utime(path, None)
+    except OSError:
+        pass
+
+
 def _movie(path: Path, job: dict, width: int, height: int) -> Path:
     if path.exists() and path.stat().st_size > 0:
+        _used(path)
         return path
     tmp = path.with_name(path.stem + ".part" + path.suffix)
     job = {**job, "out": str(tmp), "out_width": width, "out_height": height}
@@ -189,6 +198,7 @@ def _transition(render, project, project_file, clip, width, height, fps) -> str:
     suffix = ".mp4" if PREVIEW else ".mov"
     path = cache_dir() / f"transition-direct-capcut-{key}{suffix}"
     if path.exists():
+        _used(path)
         return str(path)
     a_raw, b_raw = cache_dir() / f"{key}-a.raw", cache_dir() / f"{key}-b.raw"
     try:
@@ -224,6 +234,7 @@ def _content(render, project, project_file, clip, layer_z, width, height, fps) -
                _sources_stamp(below, project_file))
     path = cache_dir() / f"transition-direct-capcut-{key}.mov"
     if path.exists():
+        _used(path)
         return str(path)
     raw = cache_dir() / f"{key}-base.raw"
     try:

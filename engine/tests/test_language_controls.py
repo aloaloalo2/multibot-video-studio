@@ -1,5 +1,9 @@
+import sys
 import unittest
-from preview_js import run
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # the CLAUDE.md command runs it as engine.tests.*
+from preview_js import run  # noqa: E402
 
 class LanguageControlsTest(unittest.TestCase):
     def test_default_save_is_scoped_to_the_open_language(self):

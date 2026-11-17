@@ -12,7 +12,7 @@ test('one create action uses the remembered writer while preserving each project
   const saved={p:{status:'done',wishes:'Акцент на проблемі.\nБез зайвих елементів.'},other:{status:'failed',wishes:'Інше побажання'}};
   const button={dataset:{},classList:{add(){}},querySelector:()=>({})},footer={append(){},prepend(){},querySelector:()=>button};
   const c=vm.createContext({state:{},api:async url=>({title:'¿Qué pasaría?',script:'Texto español.',job:saved[url.split('/')[3]]}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
-    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?footer:{value:'Make the face large',dataset:{},classList:{add(){}}},esc:s=>s,
+    thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?footer:{value:'Make the face large',dataset:{},classList:{add(){}},closest(){return this;}},esc:s=>s,
     document:{createElement:()=>({append(){}}),querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
     localStorage:{getItem:key=>preferences.get(key),setItem:(key,value)=>preferences.set(key,value)},captureChoice:(root,options)=>{choice=options;},
     generateThumbnail:(...args)=>calls.push(args),status(){}});

@@ -1,6 +1,7 @@
 """HeyGen v3 audio only. Explicit model choice, no paid fallback or automatic synthesis retries."""
 import json
 import os
+import socket
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -111,6 +112,22 @@ class Gateway(Exception):
 class RateLimited(Exception):
     def __init__(self,seconds):self.seconds=seconds
 
+class NotSent(Exception):
+    """The request never reached HeyGen (the name did not resolve, the connection was refused): nothing was made or
+    paid, so it is safe to send again (17 November 2026: a DNS blip stopped a narration at 104 of 127)."""
+
+class Lost(Exception):
+    """The connection broke or timed out after the request was sent: HeyGen may have made (and billed) it."""
+
+NETWORK_RETRIES=3   # quiet repeats of a request that never left this Mac, RETRY_AFTER apart
+
+
+def network_failure(error):
+    reason=getattr(error,'reason',error)
+    if isinstance(reason,(socket.gaierror,ConnectionRefusedError)) or 'nodename nor servname' in str(reason):
+        return NotSent(str(reason))
+    return Lost(str(reason))
+
 # A narration's stop button is heard while a phrase waits here too: the worker sets STOP.check, which raises when the
 # author pressed «Зупинити» (user, 15 November 2026: «Зупиняємо… не можу зупинити» while HeyGen made it wait minutes).
 STOP=threading.local()
@@ -149,11 +166,20 @@ def call(path,body=None,*,idempotency_key=None):
     # 15 секунд»); any other error, or a second gateway error, stops as before. A 429 (over the limit) is waited out for
     # as long as HeyGen's Retry-After says, a few times in a row: nothing was made, so nothing is paid twice.
     speech=path.startswith(SPEECH_PATHS)
+    # a lost answer may be repeated only where a second request costs nothing: a status read, or the free model
+    free=not speech or (body or {}).get('model')=='heygen-voice-1-turbo-free'
     gateway_retried=False
-    waits=0
+    waits=network=0
     while True:
         if speech:speech_turn()
         try:return _call(path,body,idempotency_key=idempotency_key)
+        except (NotSent,Lost) as error:
+            if isinstance(error,Lost) and not free:
+                raise store.StudioError('HeyGen не відповів після запиту, повтору не буде, щоб не заплатити двічі. Зроблені фрази збережено, продовжіть пізніше') from None
+            network+=1
+            if network>NETWORK_RETRIES:
+                raise store.StudioError('Немає зв’язку з HeyGen кілька хвилин поспіль. Зроблені фрази збережено, продовжіть пізніше') from None
+            pause(RETRY_AFTER*network)
         except RateLimited as limited:
             waits+=1
             if waits>RATE_LIMIT_WAITS:
@@ -195,6 +221,26 @@ def _call(path,body=None,*,idempotency_key=None):
         except (ValueError,TypeError,AttributeError):pass
         messages={401:'Перевірте ключ HeyGen',402:'Недостатньо коштів HeyGen',403:'Ключ HeyGen не має доступу',429:'Ліміт HeyGen. Спробуйте пізніше; платного повтору не буде'}
         raise store.StudioError(messages.get(error.code,f'HeyGen: помилка {error.code}{detail}. Автоматичного повтору немає')) from None
+    except (urllib.error.URLError,OSError) as error:   # no HTTP answer at all: see NotSent and Lost
+        raise network_failure(error) from None
+
+
+def download(url):
+    """The finished audio, a free GET: repeated on a network failure, and checked against its Content-Length, since
+    Python 3.9 returns a cut-off body without an error and a clipped take would be cached for good."""
+    for attempt in range(1,NETWORK_RETRIES+1):
+        try:
+            with urllib.request.urlopen(url,timeout=120) as response:
+                audio=response.read(100*1024*1024+1)
+                headers=getattr(response,'headers',None)
+                expected=headers.get('Content-Length') if headers is not None else None
+            if len(audio)>100*1024*1024:raise store.StudioError('Аудіофайл HeyGen завеликий')
+            if expected and expected.isdigit() and len(audio)!=int(expected):raise Lost(f'{len(audio)} of {expected} bytes')
+            return audio
+        except (urllib.error.URLError,OSError,Lost) as error:
+            if attempt==NETWORK_RETRIES:
+                raise store.StudioError('Не вдалося завантажити готовий звук HeyGen. Зроблені фрази збережено, продовжіть пізніше') from None
+            pause(RETRY_AFTER*attempt)
 
 def voices(model='heygen-voice-1'):
     if model not in MODELS:raise store.StudioError('Невідома модель HeyGen')
@@ -255,10 +301,7 @@ def synthesize(settings):
         result=call('/v3/models/audio/tts',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')
-    with urllib.request.urlopen(url,timeout=120) as response:
-        audio=response.read(100*1024*1024+1)
-    if len(audio)>100*1024*1024:raise store.StudioError('Аудіофайл HeyGen завеликий')
-    return audio
+    return download(url)
 
 
 def synthesize_starfish(settings):
@@ -279,8 +322,7 @@ def synthesize_starfish(settings):
         result=call('/v3/voices/speech',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')
-    with urllib.request.urlopen(url,timeout=120) as response:audio=response.read(100*1024*1024+1)
-    if len(audio)>100*1024*1024:raise store.StudioError('Аудіофайл HeyGen завеликий')
+    audio=download(url)
     # Starfish can return WAV; the Studio's immutable raw cache stores real MP3.
     import tempfile
     from pathlib import Path

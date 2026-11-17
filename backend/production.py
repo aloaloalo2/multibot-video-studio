@@ -345,7 +345,7 @@ def light_review_brief(project: dict, numbers: list[int]) -> str:
     """The one look at the finished frames: marks only, no edits (user, 15 November 2026)."""
     linked = frame_progress.razgon_project(project)
     chunks = [numbers[i:i + 10] for i in range(0, len(numbers), 10)]
-    sheets = '\n'.join(f'   python3 tools/frame_review.py --project "{linked}" sheets --frames {",".join(map(str, c))} --scale 0.3'
+    sheets = '\n'.join(f'   python3 tools/frame_review.py --project "{linked}" sheets --frames {",".join(map(str, c))}'
                         for c in chunks)
     return f"""Ти переглядаєш готові кадри анімаційного фільму «{project['name']}» у VideoKey Studio і ставиш кожному вердикт.
 Нічого не виправляй, не редагуй і не створюй жодних файлів сцен. Твоя робота лише подивитись і позначити.
@@ -354,8 +354,8 @@ def light_review_brief(project: dict, numbers: list[int]) -> str:
 1. По черзі для кожної десятки кадрів зроби аркуш і відкрий картинку, шлях до якої друкує команда:
 {sheets}
    На аркуші три моменти кожного кадру: старт, основний стан і фінал.
-2. Для кожного кадру одразу постав вердикт:
-   python3 tools/frame_review.py --project "{linked}" mark <номер> ok
+2. Після кожного аркуша постав вердикти одним рядком для всіх добрих кадрів і окремо кожній ваді:
+   python3 tools/frame_review.py --project "{linked}" mark <номери через кому або діапазон, наприклад 1,2,4-10> ok
    python3 tools/frame_review.py --project "{linked}" mark <номер> bug "<що саме не так і де>"
 3. Помилка — це лише вада, яку помітить глядач: предмет не той або невпізнаваний, криві чи зламані руки й ноги, текст обрізаний,
    нечитабельний або перекритий, стрілка не туди, предмет висить у повітрі чи проходить крізь інший, порожній або чорний кадр,
@@ -602,9 +602,9 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 review_code, review_answer = look(razgon_pending, 2500)
                 found = production_quality.bugs(store.load_project(pid), razgon_pending)
                 if found and not (review_code or review_answer.get('is_error') or director.limit_stop(review_answer)):
-                    notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(found.items()))
+                    bug_notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(found.items()))   # not `notes`: that is the author's wish
                     fix_code, fix_answer = production_sessions.run(
-                        sorted(found), lambda ns, _, index: launch(ns, 'Огляд знайшов вади, виправ лише їх: ' + notes, 3000 + index),
+                        sorted(found), lambda ns, _, index: launch(ns, 'Огляд знайшов вади, виправ лише їх: ' + bug_notes, 3000 + index),
                         verify, lambda receipt: None, cancelled, director.limit_stop)
                     answer = production_sessions.merge_answers(answer, fix_answer)
                     if not (fix_code or fix_answer.get('is_error') or director.limit_stop(fix_answer)):
@@ -615,9 +615,9 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                             # what the second look still finds is fixed once more here, and the film ends: the author
                             # wants the finished video, not frames to look at or a button to press (17 November 2026:
                             # «я взагалі не хочу нічого переглядати мені треба просто результат готове відео»)
-                            notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(left.items()))
+                            left_notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(left.items()))
                             fix_code, fix_answer = production_sessions.run(
-                                sorted(left), lambda ns, _, index: launch(ns, 'Повторний огляд ще бачить вади, виправ лише їх: ' + notes, 3100 + index),
+                                sorted(left), lambda ns, _, index: launch(ns, 'Повторний огляд ще бачить вади, виправ лише їх: ' + left_notes, 3100 + index),
                                 verify, lambda receipt: None, cancelled, director.limit_stop)
                             answer = production_sessions.merge_answers(answer, fix_answer)
                             if not (fix_code or fix_answer.get('is_error')):
@@ -665,7 +665,16 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 # details in quality without replacing the quota reset message.
                 fields['error'] = director.limit_stop(answer) or ' '.join(review['errors'])[:1600]
     except subprocess.TimeoutExpired:
-        fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
+        try:
+            made = drawn(pid, request["frames"], request.get('repair_frames'))
+        except (OSError, store.StudioError, KeyError, ValueError):
+            made = False
+        if made:
+            # every frame is drawn and only the look at them ran out of time: the film is done (17 November 2026 audit:
+            # a finished film read «не вклалося в 6 годин» and could not be resumed)
+            fields.update(status="done", error=None, quality={'passed': True, 'errors': [], 'look_later': [], 'review_timed_out': True})
+        else:
+            fields.update(status="failed", error="Створення кадрів не вклалося в 6 годин")
     except (OSError, store.StudioError, KeyError) as error:
         if getattr(error, 'errno', None) == 28:   # ENOSPC: the Mac's disk is full, nothing about the frames
             fields.update(status="failed", paused=True, paused_by="disk", error=DISK_FULL)
@@ -712,7 +721,9 @@ def fix(pid: str, notes: str, *, handoff: bool = False, frame_numbers=None) -> d
     if request.get("status") not in {"done", "failed"}:
         raise store.StudioError("Агент ще працює над цими кадрами")
     selected=request.get('repair_frames') if handoff else None
-    film = frame_numbers == [] and not handoff
+    # a whole-film edit stopped by a limit or a pause goes on as a whole-film edit: the continuation used to drop it,
+    # run no session and read «done», losing the author's wish (17 November 2026 audit)
+    film = (frame_numbers == [] and not handoff) or (handoff and bool(request.get('repair_film')))
     if frame_numbers is not None and not film:
         selected=validate_repair_frames(pid,request,frame_numbers)
     task_notes = str(request.get("task_notes", request.get("notes", "")) or "") if handoff else notes[:4000]

@@ -195,11 +195,20 @@ def sync_razgon_voice(project,plan,asset):
     store.atomic_json(path,link)
 
 
+SMALL=10   # sentences a revision voices without waiting its turn in the HeyGen queue
+
+
 def run(pid,ctx,job):
     folder=narration.root(pid)/'revisions'/job['id'];folder.mkdir(parents=True,exist_ok=True)
     settings,ref=ctx['settings'],ctx['ref']
     try:
-        if settings['provider']=='heygen':narration.wait_heygen(pid,job,path(pid))
+        # a revision of a few sentences, or one whose takes are all made, does not wait behind whole narrations: the
+        # phrase slot already sends HeyGen one request at a time (17 November 2026: one sentence waited 50 minutes)
+        def made(i):
+            params={**settings,'text':ctx['parts'][i]}
+            return (narration.root(pid)/(lab.fingerprint(params,ref)+'.mp3')).is_file() or lab.original_path(params,ref).is_file()
+        if settings['provider']=='heygen' and len(ctx['changed'])>SMALL and not all(made(i) for i in ctx['changed']):
+            narration.wait_heygen(pid,job,path(pid))
         # a stop is heard while a phrase waits for HeyGen's slot or limit too, as in a narration (17 November 2026:
         # a revision waited on its second sentence half an hour and the pause could not stop it)
         import heygen_voice

@@ -368,16 +368,29 @@ def video_frame_count(path: Path) -> int:
     return int(result.stdout.strip().strip(",") or 0)
 
 
+LOCK_WAIT = 1800   # seconds a render, export or bed waits for the one before it on the same project
+
+
 @contextlib.contextmanager
 def project_lock(razgon: Path):
     """One render or assembly of a Razgon project at a time: push, final and the Studio export write the same build files."""
     path = razgon / "build" / "studio" / ".bridge.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise BridgeError("Цей проєкт Razgon уже рендерить або збирає інший процес (push, final чи експорт студії)") from None
+        # the next one waits its turn: «Експорт MP4» pressed while the music was laid after the frames failed at once, and
+        # a bed asked for during an export failed until the next restart (17 November 2026 audit)
+        until, told = time.monotonic() + LOCK_WAIT, False
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= until:
+                    raise BridgeError("Цей проєкт Razgon уже рендерить або збирає інший процес (push, final чи експорт студії)") from None
+                if not told:
+                    print("Чекаю, поки закінчиться інша робота з цим роликом (музика, експорт чи рендер)", flush=True)
+                    told = True
+                time.sleep(2)
         yield
 
 
@@ -620,7 +633,9 @@ def sound_workspace(razgon: Path, config: dict, story: dict):
         target = Path(temp)
         (target / 'story').mkdir()
         (target / 'build').mkdir()
-        config = {**config, 'voiceover': str((razgon / config['voiceover']).resolve())}
+        # the film's own name for its music (kit audio/mix.py): the temporary folder's name gave the export different
+        # music from the bed in «Наживо» and from the export before (17 November 2026)
+        config = {**config, 'voiceover': str((razgon / config['voiceover']).resolve()), 'film': config.get('film') or razgon.name}
         if (config.get('music') or {}).get('file'):
             config['music'] = {**config['music'], 'file': str((razgon / config['music']['file']).resolve())}
         write_json(target / 'config.json', config)

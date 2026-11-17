@@ -51,6 +51,19 @@ class StoryFlowBriefTest(unittest.TestCase):
         self.assertIn(ideas.CONCRETE, review)
 
 
+class PretendedToolCallTest(unittest.TestCase):
+    # 17 November 2026, Karl Brenners: Opus wrote the whole script inside «<invoke name="Bash">… cat > s.txt <<'EOF'»
+    def test_a_script_inside_a_pretended_shell_call_is_read(self):
+        body = ' '.join(['Wort'] * 200)
+        answer = '<invoke name="Bash">\n<parameter name="command">cat > s.txt <<\'EOF\'\n' + body + '\nEOF\nwc -w s.txt</parameter>\n</invoke>'
+        self.assertEqual(ideas.unpack(answer), {'script': body})
+        with self.assertRaises(ValueError):
+            ideas.unpack('<invoke name="Bash">ls</invoke>')
+
+    def test_every_writing_request_says_there_are_no_tools(self):
+        self.assertIn('no tools', ideas.NO_TOOLS)
+
+
 class ReadingTranslationTest(unittest.TestCase):
     def test_russian_topics_and_hooks_have_no_ukrainian_duplicate_including_saved_rows(self):
         saved={'ideas':[{'title':'Просыпаюсь в 4 утра после 60?', 'uk':'Прокидаюся о 4 ранку після 60?'}],

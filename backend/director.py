@@ -628,14 +628,21 @@ def start_kit(pid: str) -> bool:
         except Exception as error:   # the frames make the kit themselves, as after any failed kit
             data.update(kit="failed", kit_error=str(error)[:400])
         finally:
+            stopped = cancelled(pid, "director")   # consume a pause's stop mark, or it kills the next director run
             with LOCK:
                 ACTIVE.discard(pid)
                 try:
-                    save(pid, {**data, "status": "done", "finished_at": time.time()})
+                    if not stopped:   # a pause records the stopped kit itself (episode_pause._settle_director)
+                        save(pid, {**data, "status": "done", "finished_at": time.time()})
                 except OSError:
                     pass
 
-    threading.Thread(target=work, daemon=True).start()
+    try:
+        threading.Thread(target=work, daemon=True).start()
+    except Exception:
+        with LOCK:
+            ACTIVE.discard(pid)   # never left «running» with no thread: recognition would wait for it for hours
+        raise
     return True
 
 

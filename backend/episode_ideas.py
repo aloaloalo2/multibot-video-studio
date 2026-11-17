@@ -357,6 +357,10 @@ def unpack(text):
     except ValueError:
         found = []
     if not found:
+        # a whole text written inside a pretended shell call («cat > s.txt <<'EOF' … EOF»): the paid text is kept
+        heredoc = re.search(r"<<\\?'?\"?(\w+)'?\"?\n(.*?)\n\1\b", text, re.S)
+        if heredoc and len(heredoc.group(2).split()) >= 150:
+            return {'script': heredoc.group(2).strip()}
         raise ValueError('Модель повернула відповідь, яку студія не змогла прочитати. Повторний запит автоматично не запускається.')
     # Opus sometimes sends a draft object and then its corrected final one (15 November 2026: «Extra data: line 5
     # column 1», the first had a Russian hook in a French channel): the last complete object is the answer.
@@ -542,6 +546,9 @@ def judge_openings(data, root, identity):
     return {'status': 'chosen', 'index': best['index'], 'scores': ordered, 'by': 'DeepSeek', 'chosen_at': time.time()}
 
 
+NO_TOOLS = ("\nThis session has no tools. Never write tool calls, shell commands, XML or code blocks; count words and check the rules yourself, silently, then answer with the requested JSON only.")
+
+
 def refused(answer):
     return 'safeguards flagged' in str(answer.get('result') or '') or answer.get('stop_reason') == 'refusal'
 
@@ -560,6 +567,9 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
         baseline=session.get('api_cost_usd')
         if baseline is None and not resume:baseline=0
         options['previous_session_cost']=baseline
+    # no tools in this session: Opus once wrote a whole script inside a pretended «<invoke name="Bash">… cat <<EOF» call to
+    # count its words, and the answer could not be read (17 November 2026, Karl Brenners, $0.72)
+    prompt += NO_TOOLS
     try:
         code, answer = writing_jobs.run(cmd, prompt, root, identity, **options)
     except subprocess.TimeoutExpired:
@@ -830,6 +840,7 @@ def writer_brief(compact_context):
              'навіть якщо попередні сценарії, зразки чи сценарій конкурента називають канал. Називай канал лише тоді, коли '
              'автор прямо попросив про це в поточних побажаннях.\n'
              'studio_audience_policy is the current Studio-wide audience rule and overrides historical examples or Russia-targeted localization preferences. '
+             'In author_writing_rules the work-order sections for a chat (offer 10–15 angles and wait, run slop-check, the script file layout with headlines and 15 tags) do not apply here: this task\'s own instructions and JSON answer replace them; its language rules apply in full. '
              'The author\'s standing rules are binding: author_writing_rules, youtube_script_rules, '
              'channel_script_rules, claude_memory_notes, channel_agent_rules and script_wishes (the author\'s channel preferences for hooks and scripts). '
              'channel_agent_rules is the shared channel memory. Apply its wishes relevant to the current task. Specific current author wishes and the structured channel settings take priority. '
@@ -883,9 +894,10 @@ def _work(cid, data):
                             length=script_length(script,data['target_words']),review_required=False)
                 draft = store.read_json(root/'script-draft.json',{}) or {}
                 store.atomic_json(root/'script-draft.json',{**draft,'script':script,'author':'Opus, саморедактура','saved_at':time.time()})
-                data['metadata_file'] = episode_metadata.save_generated(project,draft.get('metadata'),script,
-                    lambda prompt: opus(prompt,root,'metadata-fix-'+identity,cid))
-                data.update(completed=True,metadata_saved=True,status='done',finished_at=time.time())
+            writing_jobs.check()
+            data['metadata_file'] = episode_metadata.save_generated(project,draft.get('metadata'),script,
+                lambda prompt: opus(prompt,root,'metadata-fix-'+identity,cid))   # outside the lock, as above
+            data.update(completed=True,metadata_saved=True,status='done',finished_at=time.time())
             return
         if stage == 'metadata':
             project = store.load_project(data['project_id'])
@@ -946,9 +958,13 @@ def _work(cid, data):
                 writing_jobs.check()
                 if not isinstance(rows, list) or len(rows) != 4 or any(not isinstance(r, dict) or not isinstance(r.get('text'), str) or not r['text'].strip() or not isinstance(r.get('uk', ''), str) for r in rows):
                     raise ValueError('Модель не повернула 4 непорожні зачини. Повторний запит автоматично не запускається.')
-                blocked=word_blacklist.message('\n'.join(row['text'] for row in rows),ctx.get('studio_word_blacklist',[]))
-                if blocked:raise ValueError(blocked+' Автоматичного повторного запиту немає.')
-                data['openings'] = [{**row, 'uk': reading_translation(row['text'], row.get('uk'))} for row in rows]
+                # a hook with a banned word is left out, the clean ones are kept: all four paid hooks were thrown away
+                # for one word before (17 November 2026 audit); only when none is clean the run fails
+                banned=ctx.get('studio_word_blacklist',[])
+                clean=[row for row in rows if not word_blacklist.message(row['text'],banned)]
+                if not clean:
+                    raise ValueError(word_blacklist.message('\n'.join(row['text'] for row in rows),banned)+' Автоматичного повторного запиту немає.')
+                data['openings'] = [{**row, 'uk': reading_translation(row['text'], row.get('uk'))} for row in clean]
                 if auto_opening_enabled(cid) and data.get('project_id'):
                     data['auto_opening'] = {'status': 'running'}
                     save_draft(cid, data, make_current=False)
@@ -1014,9 +1030,11 @@ def _work(cid, data):
                         store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                      'author': 'Opus, саморедактура', 'saved_at': time.time()})
                     data.update(actual_words=words(script))
-                    data['metadata_file'] = episode_metadata.save_generated(project, result.get('metadata'), script,
-                        lambda prompt: opus(prompt, root, 'metadata-fix-' + identity, cid))
-                    data.update(completed=True, metadata_saved=True)
+                # the metadata, with a possible Opus fix of up to 45 minutes, outside the lock: under it the studio's
+                # status, every draft and cancel waited for that call (17 November 2026 audit)
+                data['metadata_file'] = episode_metadata.save_generated(project, result.get('metadata'), script,
+                    lambda prompt: opus(prompt, root, 'metadata-fix-' + identity, cid))
+                data.update(completed=True, metadata_saved=True)
             # Move idea receipts into the selected project's cumulative accounting once.
             origin = path(cid).parent / 'idea-runs' / data['id'] / 'project-costs.json'
             for event_id, event in (store.read_json(origin, {}).get('events') or {}).items():

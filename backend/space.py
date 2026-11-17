@@ -138,7 +138,9 @@ def free_all(blocked=lambda pid: None) -> dict:
             except (OSError, ValueError, KeyError, TypeError, store.StudioError):
                 result["unavailable"] += 1
         # leveled voice copies that no project plays any more belong to no project
-        tidy = storage_tidy.Tidy(store.DATA_ROOT)
+        # the copies and the projects that play them from the same data folder: a test with its own projects once
+        # judged the real copies unused and removed 6.5 GB of them (17 November 2026)
+        tidy = storage_tidy.Tidy(store.PROJECTS_ROOT.parent)
         tidy.leveled(sorted(store.PROJECTS_ROOT.glob("*/")))
         result["freed"] += tidy.freed
         return result
