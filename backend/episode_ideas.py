@@ -593,6 +593,13 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
 # One bounded request: choose varied editorial angles internally, return only five finished titles.
 TOPIC_PROMPT = r"""
 Propose exactly 5 fresh, compelling YouTube video topics for this channel's audience.
+The channel's niche comes first from the author's current description of the channel: channel_agent_rules and script_wishes,
+then the newest samples. A channel can change its subject: previous_titles of an older, different subject are only
+exclusions and never define the niche. Every one of the five ideas must sit squarely inside that niche. A neighbouring
+field is off-topic: for a space and astronomy channel every idea is about space (planets, the Moon, the Sun, stars,
+galaxies, black holes, spaceflight, the Universe), and everyday physics such as a kettle, ice or the colour of the sky
+is not. Freshness means a new subject within the niche, never a step out of it (author, 17 November 2026: ideas came
+«не в тему каналу»).
 Current author instruction: create bold, highly clickable titles with stronger curiosity and emotion.
 Use natural question marks and exclamation marks across the set, and one short emphasized
 ALL-CAPS word or phrase in some titles where it strengthens the hook. Never make whole titles
@@ -818,7 +825,7 @@ def writer_brief(compact_context):
              # the author, 17 November 2026: «цифри писати треба буквами… неправильно вимовляються»
              'Числа в тексті для озвучки пиши тільки словами, у правильному відмінку й узгоджені з іменником, бо цифри голос читає без відмінків і помиляється («слияние два черных дыр» замість «слияние двух чёрных дыр», «как 36 солнц» замість «как тридцать шесть солнц»). Так само роки й дати («в две тысячи пятнадцатом году»), відсотки, дроби, грошові суми й одиниці виміру («три целых восемь десятых сантиметра», «четыре миллиарда лет»); жодних цифр, знаків %, +, ÷, ~ і скорочень на кшталт км, млрд, °C. Після озвучки студія сама покаже числа цифрами на екрані (автор, 17 листопада 2026). '
              # the author, 17 November 2026: «для озвучки варто використовувати букву ё… в першу чергу»
-             'Російський текст для озвучки: завжди пиши «ё» там, де вона вимовляється (чёрный, ещё, всё, её, идёт, звёзды, учёные, приведённый); без неї голос ставить неправильний наголос або плутає «все» і «всё» (автор, 17 листопада 2026). '
+             'Російський текст для озвучки: завжди пиши «ё» там, де вона вимовляється (чёрный, ещё, всё, её, идёт, звёзды, учёные, приведённый); без неї голос ставить неправильний наголос або плутає «все» і «всё» (автор, 17 листопада 2026). Це лише для тексту, який читає голос (зачини, сценарій); у заголовках, тайтлах і назвах тем «ё» не обов’язкова й пишеться як звично на YouTube, тобто без неї («Что будет с Землей…», автор, 17 листопада 2026). '
              'Назву каналу в тексті не пиши: заклик підписатися чи поставити лайк звучить без назви («подпишитесь на канал»), '
              'навіть якщо попередні сценарії, зразки чи сценарій конкурента називають канал. Називай канал лише тоді, коли '
              'автор прямо попросив про це в поточних побажаннях.\n'
