@@ -240,8 +240,16 @@ def under(path: Path, root: Path) -> bool:
         return False
 
 
+_CHANNEL_IDS: dict = {}
+
+
 def channel_id(folder: Path) -> str:
-    return hashlib.sha256(str(folder.resolve()).encode()).hexdigest()[:16]
+    # remembered per path: a «Мови» page read asked it 9 000 times, each a full path resolve (17 November 2026 audit)
+    key = str(folder)
+    found = _CHANNEL_IDS.get(key)
+    if found is None:
+        found = _CHANNEL_IDS[key] = hashlib.sha256(str(folder.resolve()).encode()).hexdigest()[:16]
+    return found
 
 
 def channel_settings_path(folder: Path) -> Path:
@@ -273,7 +281,32 @@ def disabled_ids() -> set[str]:
     return set(value if isinstance(value, list) else [])
 
 
+_FOLDERS: dict = {}
+FOLDERS_TTL = 2.0   # seconds a listing of the channel folders is reused while nothing in it changed
+
+
+def _folders_key():
+    def stamp(path):
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return None
+    return (str(YOUTUBE_ROOT), str(DATA_ROOT), stamp(YOUTUBE_ROOT), stamp(DISABLED_PATH), stamp(DATA_ROOT / "channels"))
+
+
 def channel_folders(include_disabled=False) -> list[Path]:
+    # one «Мови» read walked the YOUTUBE folder 476 times (2–3.6 s a poll every 2 s); the listing is kept for two
+    # seconds and dropped at once when the folder, the disabled list or the channels' settings change
+    key, now = _folders_key(), time.monotonic()
+    cached = _FOLDERS.get(include_disabled)
+    if cached and cached[0] == key and now - cached[1] < FOLDERS_TTL:
+        return list(cached[2])
+    result = _channel_folders(include_disabled)
+    _FOLDERS[include_disabled] = (key, now, result)
+    return list(result)
+
+
+def _channel_folders(include_disabled=False) -> list[Path]:
     result = []
     disabled = disabled_ids()
     if not YOUTUBE_ROOT.is_dir():
@@ -514,7 +547,35 @@ def update_channel_settings(cid: str, patch: dict) -> dict:
         import technical_files
         technical_files.migrate_channel(folder)
         atomic_json(channel_settings_path(folder), next_value)
+        if next_value.get("channel_kind") != current.get("channel_kind"):
+            follow_channel_kind(cid, next_value.get("channel_kind"))
     return channel_record(folder)
+
+
+def follow_channel_kind(cid: str, kind) -> list[str]:
+    """A project keeps the kind its channel had when it was made, so a finished film never changes under the author. An
+    episode with no frame plan and no frame work yet follows the channel's new kind (user, 17 November 2026: Karl's
+    channel became animated, and the Venus episode made just before still came out as a photo film). Returns their ids."""
+    target = "animated" if kind == "animated" else "regular"
+    moved = []
+    if not PROJECTS_ROOT.is_dir():
+        return moved
+    with LOCK:
+        for folder in PROJECTS_ROOT.iterdir():
+            project = read_json(folder / "project.json", None)
+            if not isinstance(project, dict) or project.get("channel_id") != cid or project.get("project_kind") == target:
+                continue
+            try:
+                plan_path = project_plan_file(project)
+                plan = cached_plan(plan_path)[0] if plan_path else None
+            except (OSError, StudioError, ValueError):
+                continue   # unreadable plan: leave the project as it is
+            if project.get("production_request") or (isinstance(plan, dict) and plan.get("frames")):
+                continue
+            project["project_kind"] = target
+            atomic_json(folder / "project.json", project)
+            moved.append(project["id"])
+    return moved
 
 
 def project_dir(pid: str) -> Path:
