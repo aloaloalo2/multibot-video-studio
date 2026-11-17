@@ -36,14 +36,26 @@ def path(pid: str):
 
 
 def setting(pid: str) -> dict:
-    data = store.read_json(path(pid), {}) or {}
-    return data if data.get("provider") == "openrouter" else {}
+    """The episode's own choice when it has one, else its channel's «Малює» (animation.image_provider in the channel's
+    settings; user, 17 November 2026: «в студії прям вибирати, чи можна мені юзати ці асети»)."""
+    data = store.read_json(path(pid), None)
+    if isinstance(data, dict) and data.get("provider") in ("openrouter", "codex"):
+        return data if data["provider"] == "openrouter" else {}
+    try:
+        project = store.load_project(pid)
+        channel = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
+    except (store.StudioError, KeyError, OSError):
+        return {}
+    if (channel.get("animation") or {}).get("image_provider") == "openrouter":
+        return {"provider": "openrouter", "model": DEFAULT_MODEL, "from_channel": True}
+    return {}
 
 
 def set_provider(pid: str, provider: str, model: str | None = None) -> dict:
     store.load_project(pid)
     if provider == "codex":
-        path(pid).unlink(missing_ok=True)
+        # kept as a file, so an episode can draw with Codex although its channel chose OpenRouter
+        store.atomic_json(path(pid), {"provider": "codex"})
         return {}
     if provider != "openrouter":
         raise store.StudioError("Невідомий спосіб малювання картинок")

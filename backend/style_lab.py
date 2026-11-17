@@ -97,6 +97,8 @@ def validate(animation) -> None:
         raise StyleLabError("Невідомий стиль анімації")
     if "assets" in animation and not isinstance(animation["assets"], bool):
         raise StyleLabError("Невірний перемикач асетів")
+    if "image_provider" in animation and animation["image_provider"] not in ("codex", "openrouter"):
+        raise StyleLabError("Невідомий спосіб малювання картинок")
     if "allow_stickmen" in animation and not isinstance(animation["allow_stickmen"], bool):
         raise StyleLabError("Невірний перемикач стікменів")
     if "title_font" in animation and animation["title_font"] not in TITLE_FONTS + LEGACY_FONTS:
