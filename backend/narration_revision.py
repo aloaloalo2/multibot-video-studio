@@ -159,6 +159,24 @@ def patched_plan(plan,ctx,audio):
     return plan
 
 
+def episode_files(project,old_plan,plan,ctx):
+    """The episode folder's script files follow the revised voice, as after a recognition (17 November 2026: the
+    revision changed the voice and the studio's text, and «Сценарий.txt» in the folder kept the old words). A file
+    the author changed by hand since the last voice is left as it is."""
+    folder=Path(project.get('episode_path') or '')
+    if not project.get('episode_path') or not folder.is_dir():return
+    for name,before,after in (('Сценарий для озвучки.txt',ctx['old'].get('script') or '',ctx['text']),
+                              ('Сценарий.txt',(old_plan or {}).get('script') or '',plan.get('script') or ctx['text'])):
+        target=folder/name
+        try:
+            if target.exists():
+                current=target.read_text(encoding='utf-8-sig')
+                if current==after or current.strip()!=before.strip():continue
+            store.atomic_text(target,after)
+        except (OSError,UnicodeDecodeError):
+            continue   # the folder is the author's: a file it cannot write leaves the voice and plan saved
+
+
 def sync_razgon_voice(project,plan,asset):
     """Update the existing animation's voice without prepare, scene edits or a new review."""
     import shutil
@@ -255,7 +273,9 @@ def run(pid,ctx,job):
                 spoken_path=store.project_dir(pid)/'source-history'/('Озвученный сценарий '+digest(ctx['text'])[:12]+'.txt')
                 spoken_path.parent.mkdir(exist_ok=True);spoken_path.write_text(ctx['text'])
                 plan['spoken_script_file']=str(spoken_path)
-                target=store.project_dir(pid)/'imported-plan.json';store.atomic_json(target,patched_plan(plan,ctx,asset));current['plan_source']=str(target);current['plan_updated_at']=time.time()
+                revised=patched_plan(plan,ctx,asset)
+                target=store.project_dir(pid)/'imported-plan.json';store.atomic_json(target,revised);current['plan_source']=str(target);current['plan_updated_at']=time.time()
+                episode_files(current,plan,revised,ctx)
             source=store.project_dir(pid)/'source-timing.json'
             if source.is_file():store.atomic_json(source,patched_plan(store.read_json(source,{}),ctx,asset))
             store.save_project(current)

@@ -169,3 +169,22 @@ class RevisionTest(unittest.TestCase):
         self.assertEqual(narration_sequence.verify(self.project,self.asset,self.oldtext),proof)
         proof['audio_sha256']='wrong';store.atomic_json(narration.root(self.pid)/'revisions/revision-test/proof.json',proof)
         self.assertIsNone(narration_sequence.verify(self.project,self.asset,self.oldtext))
+
+class EpisodeScriptFilesTest(unittest.TestCase):
+    # 17 November 2026: after a revision the folder's «Сценарий.txt» kept the old words
+    def test_folder_scripts_follow_the_revised_voice_and_keep_hand_edits(self):
+        import tempfile
+        from pathlib import Path
+        import narration_revision as revision
+        folder = Path(tempfile.mkdtemp())
+        (folder / 'Сценарий для озвучки.txt').write_text('В 1971 году черная дыра.', encoding='utf-8')
+        (folder / 'Сценарий.txt').write_text('Мой текст, исправленный вручную.', encoding='utf-8')
+        ctx = {'old': {'script': 'В 1971 году черная дыра.'}, 'text': 'В тысяча девятьсот семьдесят первом году чёрная дыра.'}
+        revision.episode_files({'episode_path': str(folder)}, {'script': 'В 1971 году черная дыра.'},
+                               {'script': 'В 1971 году чёрная дыра.'}, ctx)
+        self.assertEqual((folder / 'Сценарий для озвучки.txt').read_text(encoding='utf-8'), ctx['text'])
+        self.assertEqual((folder / 'Сценарий.txt').read_text(encoding='utf-8'), 'Мой текст, исправленный вручную.')
+        (folder / 'Сценарий.txt').write_text('В 1971 году черная дыра.', encoding='utf-8')
+        revision.episode_files({'episode_path': str(folder)}, {'script': 'В 1971 году черная дыра.'},
+                               {'script': 'В 1971 году чёрная дыра.'}, ctx)
+        self.assertEqual((folder / 'Сценарий.txt').read_text(encoding='utf-8'), 'В 1971 году чёрная дыра.')
