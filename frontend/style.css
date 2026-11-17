@@ -2972,3 +2972,5 @@ select option{background:#232327;color:#f1f1f2}
 .episode-kit .episode-director-line{flex-direction:row;align-items:center;gap:12px;margin:0}
 .episode-kit .episode-director-line>span{color:#8e919a;font-size:13px}
 .episode-kit:not(.done):not(.working){border-color:#363840;background:#1d1e23}
+/* the plan's stage blocks round like the voice block above them (user, 17 November 2026: «округлення приведи до 1 стилю») */
+.episode-director{border-radius:var(--ui-radius-panel)}

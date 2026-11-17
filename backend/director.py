@@ -622,7 +622,8 @@ def start_kit(pid: str) -> bool:
         data = state(pid) or {}
         try:
             data.update(model=data.get("model") or store.channel_director_model(project),
-                        effort=data.get("effort") or store.channel_effort(project))
+                        effort=data.get("effort") or store.channel_effort(project),
+                        started_at=time.time())   # «Працює N хв» counts this kit, not the director's earlier run
             early_kit(pid, executable(), data)
         except Exception as error:   # the frames make the kit themselves, as after any failed kit
             data.update(kit="failed", kit_error=str(error)[:400])

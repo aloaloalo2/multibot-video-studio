@@ -317,6 +317,12 @@ def resume(pid: str) -> dict:
     if run and run.get("directed"):
         if run.get("stage") == "kit":
             step(lambda: director.start_kit(pid))   # the kit goes on beside the voice, not after it
+    elif not run and "narration" in stopped and (director.state(pid) or {}).get("status") == "done":
+        # a kit stopped by an earlier pause and never made: it goes on beside the voice too (start_kit does nothing
+        # when the kit is ready, and early_kit nothing once the voice is real; 17 November 2026, the Moon film)
+        import script_timing
+        if script_timing.estimated(store.load_project_plan(pid) or {}):
+            step(lambda: director.start_kit(pid))
         if run.get("create_video"):
             later.append(lambda: director.after_voice(pid, create_video=True))
     elif run:
