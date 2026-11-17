@@ -63,5 +63,36 @@ class OpenRouterSheetsTest(unittest.TestCase):
             self.assertEqual(image.format, 'PNG')
 
 
+    def test_a_picture_from_the_hosts_avatar_goes_to_the_stronger_model(self):
+        images.set_provider('p' * 24, 'openrouter')
+        avatar = self.root / 'avatar.png'; Image.new('RGB', (4, 4)).save(avatar)
+        answer = json.dumps({'id': 'gen-3', 'usage': {'cost': 0.06}, 'data': [{'b64_json': self.png()}]}).encode()
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        with patch.object(images.credentials, 'vault') as vault, \
+             patch.object(images.urllib.request, 'urlopen', side_effect=lambda *a, **k: Response(answer)) as call:
+            vault.return_value.read.return_value = 'key'
+            images.draw('p' * 24, 'the host in three poses', refs=[avatar])
+            face = json.loads(call.call_args.args[0].data)['model']
+            images.draw('p' * 24, 'six props')
+            props = json.loads(call.call_args.args[0].data)['model']
+        self.assertEqual((face, props), (images.FACE_MODEL, images.DEFAULT_MODEL))
+
+
+    def test_an_animated_film_draws_through_openrouter_with_nothing_to_choose(self):
+        with patch.object(store, 'get_channel_folder', return_value=self.root), \
+             patch.object(store, 'read_channel_settings', return_value={}), \
+             patch.object(store, 'project_animated', return_value=True):
+            self.assertEqual(images.setting('p' * 24)['provider'], 'openrouter')
+            images.set_provider('p' * 24, 'codex')   # an episode switched back by hand keeps Codex
+            self.assertEqual(images.setting('p' * 24), {})
+        with patch.object(store, 'get_channel_folder', return_value=self.root), \
+             patch.object(store, 'read_channel_settings', return_value={}), \
+             patch.object(store, 'project_animated', return_value=False):
+            images.path('p' * 24).unlink()
+            self.assertEqual(images.setting('p' * 24), {})   # a photo channel's pictures stay with Codex
+
+
 if __name__ == '__main__':
     unittest.main()

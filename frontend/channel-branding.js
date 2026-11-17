@@ -59,7 +59,6 @@ function brandingSections(channel,projectDefaults=''){
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <div class="style-toolbar"><label>Шрифт<select id="style-title-font">${titleFonts.map(font=>`<option style="font-family:'${esc(font)}'" value="${esc(font)}" ${(titleFonts.includes(animation.title_font)?animation.title_font:'Nunito')===font?'selected':''}>${font}</option>`).join('')}</select></label>
           <label class="logo-toggle" title="PNG предмети для кодової анімації та Razgon, в універсальних і анімаційних проєктах. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> PNG асети</label>
-          <label class="logo-toggle style-image-provider" title="Хто малює PNG предмети для анімації: Codex (підписка ChatGPT) або OpenRouter (оплата з балансу OpenRouter, приблизно $0.013 за аркуш)."><span>Малює</span><select id="style-image-provider"><option value="codex" ${animation.image_provider!=='openrouter'?'selected':''}>Codex</option><option value="openrouter" ${animation.image_provider==='openrouter'?'selected':''}>OpenRouter</option></select></label>
           <label class="logo-toggle animated-only" title="Дозволяти стікменів у нових анімаційних кадрах."><input id="style-stickmen" type="checkbox" ${animation.allow_stickmen!==false?'checked':''}> Стікмени</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
         <div id="style-film" class="style-film" hidden></div></div></section>`;
@@ -239,8 +238,6 @@ function bindBranding(channel){
   });
   $('style-title-font').addEventListener('change',()=>{swap();if(!film.hidden)loadFilm();});
   $('style-assets').addEventListener('change',()=>{swap();if(!film.hidden)loadFilm();});
-  const providerState=()=>{const select=$('style-image-provider');if(select)select.disabled=!$('style-assets').checked;};
-  $('style-assets').addEventListener('change',providerState);providerState();
   for(const button of document.querySelectorAll('.logo-position'))button.addEventListener('click',()=>{logo.position=button.dataset.position;document.querySelectorAll('.logo-position').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));draw();});
   for(const id of ['logo-size','logo-margin','logo-opacity','logo-enabled','thumbnail-logo-enabled','thumbnail-logo-size'])$(id).addEventListener('input',draw);
   const upload=async file=>{
@@ -272,5 +269,5 @@ function bindBranding(channel){
   return ()=>({display_name:displayName(),channel_kind:kind(),
     thumbnail_logo:{enabled:$('thumbnail-logo-enabled').checked,position:$('thumbnail-logo-position').value,size:Number($('thumbnail-logo-size').value)},
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Number($('logo-margin').value),opacity:Number($('logo-opacity').value),version},
-    animation:{...animation,...(chosen?{style:chosen}:{}),...textStyle(),allow_stickmen:$('style-stickmen').checked,image_provider:$('style-image-provider')?.value||'codex'}});
+    animation:{...animation,...(chosen?{style:chosen}:{}),...textStyle(),allow_stickmen:$('style-stickmen').checked}});
 }

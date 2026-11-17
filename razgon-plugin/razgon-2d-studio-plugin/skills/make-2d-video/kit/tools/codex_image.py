@@ -72,6 +72,7 @@ ap.add_argument("--prompt", help="UTF-8 text file with the picture's description
 ap.add_argument("--out", help="PNG to write")
 ap.add_argument("--ref", action="append", default=[], help="reference picture to attach (repeatable)")
 ap.add_argument("--background", action="store_true", help="start drawing and return at once; collect it with --wait")
+ap.add_argument("--detail", action="store_true", help="a detailed picture: OpenRouter draws it with its stronger model")
 ap.add_argument("--wait", nargs="+", metavar="OUT", help="wait for pictures started with --background")
 ap.add_argument("--watch", type=int, help=argparse.SUPPRESS)
 
@@ -171,7 +172,7 @@ def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
         # the reference pictures (the host's avatar and the like) go along, as with Codex
         text = prompt.read_text(encoding="utf-8").strip()
         result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, refs=[str(Path(ref).resolve()) for ref in a.ref],
-                                        transparent=bool(TRANSPARENT.search(text)))
+                                        transparent=bool(TRANSPARENT.search(text)), detail=bool(getattr(a, "detail", False)))
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
         finish("failed", str(error)[-300:])
@@ -254,7 +255,7 @@ def main() -> None:
         out = Path(a.out).resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
         args = [sys.executable, os.path.abspath(__file__), "--prompt", str(Path(a.prompt).resolve()), "--out", str(out),
-                "--watch", str(agent_pid())] + [x for ref in a.ref for x in ("--ref", str(Path(ref).resolve()))]
+                "--watch", str(agent_pid())] + [x for ref in a.ref for x in ("--ref", str(Path(ref).resolve()))] + (["--detail"] if a.detail else [])
         job = job_file(out)
         job.write_text(json.dumps({"status": "drawing"}), encoding="utf-8")
         with open(out.with_name(out.name + ".job.log"), "w") as log:

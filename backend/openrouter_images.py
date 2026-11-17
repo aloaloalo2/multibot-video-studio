@@ -27,6 +27,11 @@ import project_costs
 import store
 
 DEFAULT_MODEL = "openai/gpt-image-1-mini"
+# A picture drawn from a reference, the host's avatar above all, goes to a stronger model: the mini one does not hold a
+# face well (user, 17 November 2026: «якщо це стосується лиць… аватар мій… краще сильнішу модель, ця не тягне»).
+# GPT Image 2.6 Sunburst is OpenAI's detail tier, keeps details consistent between edits and still draws transparent
+# backgrounds; its tokens cost about 3.75 times the mini's (OpenRouter /images/models, the same day).
+FACE_MODEL = "openai/gpt-image-2.6-sunburst"
 BASE = "https://openrouter.ai/api/v1"
 MAX_BYTES = 20 * 1024 * 1024
 
@@ -43,11 +48,18 @@ def setting(pid: str) -> dict:
         return data if data["provider"] == "openrouter" else {}
     try:
         project = store.load_project(pid)
+    except (store.StudioError, OSError):
+        return {}
+    try:
         channel = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
     except (store.StudioError, KeyError, OSError):
-        return {}
+        channel = {}
     if (channel.get("animation") or {}).get("image_provider") == "openrouter":
         return {"provider": "openrouter", "model": DEFAULT_MODEL, "from_channel": True}
+    # an animated film draws its PNG props through OpenRouter as the Studio's base, with nothing to choose (user,
+    # 17 November 2026: «анімаційні ролики по дефолту… асети… через Open Router… вибирати це не потрібно»)
+    if store.project_animated(project):
+        return {"provider": "openrouter", "model": DEFAULT_MODEL, "from_kind": True}
     return {}
 
 
@@ -93,7 +105,8 @@ def references(paths) -> list[dict]:
     return found
 
 
-def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None, transparent: bool = True) -> dict:
+def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None, transparent: bool = True,
+         detail: bool = False) -> dict:
     """One sheet: {'png': base64, 'cost': usd}, transparent unless the prompt asks for a background of its own. Never
     retried: a failed paid call is reported, not repeated."""
     chosen = setting(pid)
@@ -107,7 +120,10 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
         key = credentials.vault().read(credentials.service_name("openrouter"))
     except RuntimeError:
         raise store.StudioError("Додайте ключ OpenRouter у налаштуваннях студії", 503) from None
-    model = chosen.get("model") or DEFAULT_MODEL
+    # a face from a reference, or a picture the agent marks as detailed, goes to the stronger model; the rest to the cheap
+    # one, which draws animation props well (user, 17 November 2026: «якщо щось треба намалювати якісно, деталізовано…
+    # старшу модель… поки ця дешева справляється окей»)
+    model = FACE_MODEL if refs or detail else chosen.get("model") or DEFAULT_MODEL
     body = {"model": model, "prompt": prompt.strip(), "background": "transparent" if transparent else "opaque", "aspect_ratio": aspect_ratio,
             "quality": quality, "n": 1}
     if refs:

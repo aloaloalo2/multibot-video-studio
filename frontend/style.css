@@ -2983,5 +2983,3 @@ select option{background:#232327;color:#f1f1f2}
 .channel-music-styles-note{color:var(--muted,#999da8);font-size:12px;margin-bottom:4px}
 
 /* «Малює: Codex / OpenRouter» next to «PNG асети» (17 November 2026) */
-.style-image-provider{display:inline-flex;align-items:center;gap:6px}
-.style-image-provider select{min-width:0;padding:4px 8px;font-size:12px}

@@ -127,6 +127,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait <аркуш> і tools/split_sheet.py --clean 40.
    Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
+   Аркуш, якому потрібна висока деталізація (складна техніка, дрібні деталі, впізнаване обличчя), запускай з --detail: його малює сильніша модель. Звичайні предмети без --detail.
    split_sheet сам перевіряє предмети й друкує один аркуш перегляду <аркуш>.preview.png: окремі PNG не відкривай, подивись лише його.{channel_hero.production_rule(project)}
 3. Перевірка: у папці {store.razgon_rel()} лише безкоштовні node render.mjs --logic-check і --text-check з --from/--to свого інтервалу.
    Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots. Аркушів кадрів не роби й mark не став: огляд у кінці.
