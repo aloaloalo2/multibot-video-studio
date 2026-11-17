@@ -883,6 +883,13 @@ def paused_view(pid):
 
 def studio_work_status(exports):
     result = agent_view.studio_status(exports, project_jobs, busy_candidates())
+    # an episode on the author's pause shows «на паузі» at once while the phrase being made still finishes: its channel
+    # does not spin for that tail (user, 17 November 2026: «тут спінер крутить, а на проектах нічого нема»). The busy list
+    # keeps it, so a restart still waits for it.
+    paused = {pid for pid in {a.get('project_id') for a in result.get('activities', [])} if pid and episode_pause.paused(pid)}
+    if paused:
+        result['activities'] = [a for a in result['activities'] if a.get('project_id') not in paused]
+        result['active_channels'] = sorted(set(result.get('exporting_channels', [])) | {a.get('channel_id') for a in result['activities'] if a.get('channel_id')})
     # A live frame worker must block an update even when its project metadata
     # is temporarily unreadable or its final receipt was already written.
     visible={item['project_id'] for item in result.get('activities',[]) if item.get('kind')=='створення кадрів'}
@@ -1306,6 +1313,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.json_response({"asset": asset}, 201)
 
     def route_get(self, path, query):
+        provider = re.fullmatch(r'/api/projects/([0-9a-f]{24})/image-provider', path)
+        if provider:
+            import openrouter_images
+            return self.json_response({**openrouter_images.setting(provider.group(1)), 'spent': openrouter_images.spent(provider.group(1))})
         if path == '/api/title-translation':
             return self.json_response(title_translation.options())
         if path == "/api/trending-videos":
@@ -1667,6 +1678,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(path)
 
     def route_mutation(self, method, path, body):
+        # prop sheets through OpenRouter for an episode while Codex's limit is out (backend/openrouter_images.py)
+        provider = re.fullmatch(r'/api/projects/([0-9a-f]{24})/image-provider(/draw)?', path)
+        if provider and method == 'POST':
+            import openrouter_images
+            if provider.group(2):
+                return self.json_response(openrouter_images.draw(provider.group(1), body.get('prompt'), body.get('aspect_ratio') or '3:2', body.get('quality') or 'medium'))
+            return self.json_response(openrouter_images.set_provider(provider.group(1), body.get('provider'), body.get('model')))
         if path == '/api/title-translation' and method == 'POST':
             return self.json_response(title_translation.translate(body))
         if path == "/api/trending-videos/use" and method == "POST":

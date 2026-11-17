@@ -355,7 +355,6 @@ async function pollChannelActivity(){
     channelProjectCounts=activity.channel_projects||{};channelWork=activity.channel_work||{};
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const id of activity.exporting_channels||[]){channelActivity.add(id);channelExporting.add(id);}
-    for(const channel of state.channels)if((activity.busy||[]).some(line=>line.includes(`: ${channel.name} / `)))channelActivity.add(channel.id);
     for(const [id,notice] of Object.entries(activity.channel_notices||{})){
       channelNoticeData[id]={...notice,seen:channelNoticeData[id]?.seen};
     }

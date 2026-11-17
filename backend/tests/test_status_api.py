@@ -57,6 +57,16 @@ class StatusAPITest(unittest.TestCase):
         code,data=self.request('/api/studio/status')
         self.assertEqual(data['channel_work'],{})
 
+    def test_a_paused_episode_finishing_its_phrase_does_not_spin_its_channel(self):
+        # 17 November 2026: CORBIN spun while its cards read «Озвучка перекладу на паузі»
+        pid=self.project['id']
+        busy={'busy':['мови: x'],'active_channels':[self.cid],'activities':[{'project_id':pid,'channel_id':self.cid,'kind':'мови','status':'running'}]}
+        with patch.object(app.agent_view,'studio_status',return_value=busy), patch.object(app.episode_pause,'paused',return_value={'stopped':{}}):
+            result=app.studio_work_status([])
+        self.assertEqual(result['active_channels'],[])
+        self.assertEqual(result['activities'],[])
+        self.assertEqual(result['busy'][0],'мови: x')   # a restart still waits for it
+
     def test_channel_notice_follows_real_receipt_without_starting_work(self):
         from channel_activity import Notices
         task={'channel_id':self.cid,'project_id':self.project['id'],'kind':'створення кадрів','status':'running'}
