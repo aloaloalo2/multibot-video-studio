@@ -1182,3 +1182,11 @@ An animated film is made only from a frame plan (user, same day): the channel se
 ## A scene that goes on keeps one shot and no transition (17 November 2026)
 
 The user, on frames 1 and 2 of «Откуда взялась Луна» (one orbit scene split in two with a zoom between them): «перехід дуже дивно виглядає… студія не має нічого перевіряти, це мало би бути продумано наперед». The director's brief (`direction_contract.context_text`) now says so before he plans: the 10-25 s guide never cuts a continuing scene (one shot even at 40-60 s), a transition only where the viewer goes to another set, episode or time, a continuation gets `"in":{"type":"cut"}` starting exactly where the previous shot ended, and the schema's example shot carries a cut instead of a fade. No check was added. Films already directed keep their shots.
+
+## «ё» in Russian scripts (17 November 2026)
+
+The user: «для озвучки варто використовувати букву ё. Це в першу чергу». Every Russian script, opening and edit writes «ё» wherever it is pronounced (чёрный, ещё, всё, её, идёт, звёзды): without it the voice may stress the word wrongly or read «все» for «всё». The writer brief (`episode_ideas.writer_brief`) and the self-review (`prompts/script_self_review.txt`) carry the rule. Voiced scripts are not rewritten.
+
+## Numbers in words in every script for the voice (17 November 2026)
+
+The user: «цифри писати треба буквами, тому що неправильно вимовляються» (the voice read «слияние два черных дыр», «как 36 солнц»). The writer brief and the self-review now require every number, year, date, percentage, fraction, sum and unit spelled out in words in its right case and agreement («двух чёрных дыр», «в две тысячи пятнадцатом году»), with no digits, %, +, ÷, ~ or shorthand such as км, млрд. After the recognition the Studio shows numbers as digits on screen by itself (backend/number_text.py). Titles keep digits.
