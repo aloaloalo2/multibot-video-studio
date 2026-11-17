@@ -47,6 +47,9 @@ CRITERIA = [
     'Chains of transitions through a question the narrator answers at once (at most two in the whole script)',
     'Theatrical boldness: announcing that a claim is daring or disputed, or that viewers are «not told» something',
     'Pronouns and short sentences whose subject or object the listener has to guess',
+    'Jumps between paragraphs: a new topic opened by a header-like sentence instead of growing out of the previous thought, or a return to a part already closed',
+    'The narrator\'s view as a separate announced block («my own view, you might disagree», «here\'s the part I keep coming back to») or asides about his feelings instead of content',
+    'A like request before the story starts, or a comment request in the middle of the script',
 ]
 EDITOR_MODE = 'author_self_review_v1'
 EDITOR_POLICY = 'slop_check_v3'

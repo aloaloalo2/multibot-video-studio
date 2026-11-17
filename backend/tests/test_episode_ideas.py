@@ -1,6 +1,7 @@
 import copy
 import unittest
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import patch
 import test_backend as fixtures
 import store
@@ -34,6 +35,18 @@ class TitleCleanupTest(unittest.TestCase):
         rows[0]['subject'] = rows[1]['subject']
         with self.assertRaises(ValueError):
             ideas.validate_titles({'ideas':rows}, {'previous_titles':[]})
+
+
+class StoryFlowBriefTest(unittest.TestCase):
+    # 17 November 2026, the Korea script of CORBIN: header sentences, announced opinion blocks and a like request
+    # before the story broke the gradual flow of thoughts
+    def test_writer_and_self_review_ask_for_a_gradual_story(self):
+        brief = ideas.writer_brief({})
+        self.assertIn(ideas.FLOW, brief)
+        self.assertNotIn('думає вголос, сумнівається', brief)
+        review = (Path(ideas.__file__).parent / 'prompts' / 'script_self_review.txt').read_text(encoding='utf-8')
+        self.assertIn(ideas.FLOW, review)
+        self.assertNotIn('додай позицію\nведучого', review)
 
 
 class ReadingTranslationTest(unittest.TestCase):
