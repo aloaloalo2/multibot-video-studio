@@ -883,6 +883,8 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
     made, otherwise stopped, so the button can be pressed again. Returns the request as it stands."""
     project = project or store.load_project(pid)
     request = project.get("production_request") or {}
+    if review_only_failure(request) and pid not in ACTIVE:
+        return settle_review_failure(pid, project, request)
     if request.get("status") not in {"requested", "in_progress"} or pid in ACTIVE:
         return request or None
     if request["status"] == "requested" and time.time() - float(request.get("created_at") or 0) < START_GRACE:
@@ -903,6 +905,42 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
                       error=None if review['passed'] else ' '.join(review['errors'])[:1600])
     saved = set_request(pid, finished_at=time.time(), **fields)
     if fields.get('status') == 'done':
+        razgon_sound.start(pid, "production")
+    return saved
+
+
+REVIEW_FAILURE = 'Перевірка кадрів Razgon не підтверджена:'
+
+
+def review_only_failure(request: dict) -> bool:
+    """A run an older Studio marked failed only because the last look at its frames was not confirmed (frames to look
+    at again, or bugs the look still saw): the frames themselves are made."""
+    errors = (request.get('quality') or {}).get('errors') if isinstance(request.get('quality'), dict) else None
+    return (request.get('status') == 'failed' and not request.get('paused') and not request.get('limit')
+            and not request.get('review_settle_tried')
+            and bool(errors) and all(str(error).startswith(REVIEW_FAILURE) for error in errors))
+
+
+def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
+    """Such a run is done now, as the end of a run decides it today (user, 17 November 2026: «у дівчини пише не вдались
+    кадри» on a film whose frames were all made): frames waiting for a look and bugs the look still saw stay in the
+    record, the author is not asked to look at them. Not drawn frames keep the run failed."""
+    try:
+        if not drawn(pid, int(request.get('frames') or 0), request.get('repair_frames')):
+            return set_request(pid, review_settle_tried=True)   # looked at once, not on every read of the project
+        final = {**request, 'review_frames': request.get('repair_frames') or list(range(1, int(request['frames']) + 1))}
+        review = production_quality.check(project, final)
+    except (store.StudioError, OSError, ValueError, KeyError):
+        return request
+    if not review.get('passed'):
+        if review.get('pending_review') and all(str(error).startswith(REVIEW_FAILURE) for error in review.get('errors') or []):
+            review = {**review, 'passed': True, 'look_later': review['pending_review']}
+        else:
+            review = bugs_to_fix(project, final, review) or review
+    if not review.get('passed'):
+        return set_request(pid, review_settle_tried=True)
+    saved = set_request(pid, status='done', error=None, quality=review)
+    if not request.get('repair_frames'):
         razgon_sound.start(pid, "production")
     return saved
 

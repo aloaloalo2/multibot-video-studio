@@ -135,6 +135,31 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(request['status'], 'done')
         self.assertNotIn('fix_later', request['quality'])
 
+    def test_a_run_failed_only_by_the_last_look_is_done_after_an_update(self):
+        # 17 November 2026: on another Mac «Кадри не вдалися» stayed on a film whose frames were all made
+        failed = {'passed': False, 'errors': ['Перевірка кадрів Razgon не підтверджена: Frames reviewed ok: 0/2'], 'pending_review': [1, 2]}
+        self.project['production_request'].update(status='failed', error='Перевірка…', quality=failed)
+        with patch.object(production,'drawn',return_value=True), patch.object(production.razgon_sound,'start') as sound, \
+             patch.object(production.production_quality,'check',return_value=failed) as check:
+            production.settle(self.project['id'])
+            production.settle(self.project['id'])
+        request = self.project['production_request']
+        self.assertEqual((request['status'], request['error']), ('done', None))
+        self.assertEqual(request['quality']['look_later'], [1, 2])
+        check.assert_called_once()
+        sound.assert_called_once()
+
+    def test_a_run_with_frames_missing_stays_failed_and_is_not_checked_again(self):
+        failed = {'passed': False, 'errors': ['Перевірка кадрів Razgon не підтверджена: x'], 'pending_review': [3]}
+        self.project['production_request'].update(status='failed', quality=failed)
+        with patch.object(production,'drawn',return_value=False) as drawn, \
+             patch.object(production.production_quality,'check') as check:
+            production.settle(self.project['id'])
+            production.settle(self.project['id'])
+        self.assertEqual(self.project['production_request']['status'], 'failed')
+        drawn.assert_called_once()
+        check.assert_not_called()
+
     def test_unchanged_pictures_keep_their_verdicts_without_a_claude_session(self):
         # «Галактики», 14 November 2026: a review session's new PNGs staled 39 untouched frames; fresh stills of the
         # same pictures keep their verdicts, so no paid review is needed
