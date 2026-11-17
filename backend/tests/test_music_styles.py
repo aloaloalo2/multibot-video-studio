@@ -25,7 +25,7 @@ class MusicStyleTest(unittest.TestCase):
             self.assertTrue(np.isfinite(out).all())
             if style == 'whatif':
                 self.assertTrue(np.allclose(out, base))   # What If keeps the very same score
-            else:   # above the shared bass line the instruments and the tune differ
+            elif style not in ('soft', 'deep'):   # above the shared bass line the instruments and the tune differ
                 n = min(len(out), len(base))
                 self.assertLess(abs(np.corrcoef(music.hp(out[:n, 0], 300), music.hp(base[:n, 0], 300))[0, 1]), .6)
         self.assertEqual(set(sound_settings.MUSIC_STYLES), set(music.STYLES))
@@ -40,6 +40,14 @@ class MusicStyleTest(unittest.TestCase):
             n = min(len(one), len(two))
             self.assertLess(abs(np.corrcoef(one[:n], two[:n])[0, 1]), .6, style)
             self.assertNotEqual(music.styled('mystery', style)['bpm'], music.styled('tension', style)['bpm'])
+
+    def test_the_soft_beds_have_no_struck_notes(self):
+        # «без дзвінких нот, які заставляють проснутися» (17 November 2026): held sounds only, in every mood
+        music = sound_settings.audio_module('music')
+        struck = {'bell', 'arp', 'pluck', 'piano', 'pulse', 'brass', 'kick', 'snare', 'hat', 'clap', 'tick', 'bass'}
+        for style in ('soft', 'deep'):
+            for mood in music.MOODS:
+                self.assertFalse(set(music.styled(mood, style)['layers']) & struck, (style, mood))
 
 
 if __name__ == '__main__':

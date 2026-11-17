@@ -91,7 +91,14 @@ STYLES = {
     "light": dict(swap={"pad": "pluck", "drone": None, "brass": "pluck", "sub": "bass", "pulse": "pluck",
                         "kick": "clap", "snare": "clap"}, add=dict(hat=0.35, clap=0.5), tempo=1.05, bright=1.1),
 }
-STYLE_NAMES = {"whatif": "What If", "space": "Космос", "piano": "Піаніно", "cinematic": "Кіно", "light": "Легкий"}
+# Two calm beds with no bright struck notes (no bells, plucks, arpeggios, piano, drums): only held sounds under the voice
+# (user, 17 November 2026: «різкі звуки… не підходять для фона… без дзвінких нот, які заставляють проснутися»).
+SOFT = {name: "pad" for name in ("bell", "arp", "pluck", "piano", "pulse", "brass")}
+STYLES["soft"] = dict(swap={**SOFT, **{d: None for d in DRUMS}, "bass": "sub"}, add=dict(pad=0, sub=0.3), tempo=0.85, bright=0.45)
+STYLES["deep"] = dict(swap={**SOFT, **{d: None for d in DRUMS}, "pad": "drone", "bass": "sub"}, add=dict(drone=0, sub=0, pad=0.5),
+                      tempo=0.7, bright=0.35)
+STYLE_NAMES = {"whatif": "What If", "space": "Космос", "piano": "Піаніно", "cinematic": "Кіно", "light": "Легкий",
+               "soft": "М'який фон", "deep": "Глибокий фон"}
 
 
 def styled(mood, style):

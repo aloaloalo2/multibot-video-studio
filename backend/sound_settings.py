@@ -39,7 +39,8 @@ TRANSITIONS = (
 TRANSITION_IDS = {row[0] for row in TRANSITIONS}
 # The channel's music style (kit audio/music.py STYLES); «whatif» is the original score (user, 17 November 2026: «в
 # настройках хочу, щоб музику я міг вибрати… для What If ці звуки нравляться… для інших каналів… космічний стиль»).
-MUSIC_STYLES = (('whatif', 'What If'), ('space', 'Космос'), ('piano', 'Піаніно'), ('cinematic', 'Кіно'), ('light', 'Легкий'))
+MUSIC_STYLES = (('whatif', 'What If'), ('soft', 'М’який фон'), ('deep', 'Глибокий фон'), ('space', 'Космос'), ('piano', 'Піаніно'),
+                ('cinematic', 'Кіно'), ('light', 'Легкий'))
 MUSIC_STYLES = dict(MUSIC_STYLES)
 IDS = {row[0] for row in CATEGORIES}
 LOCK = threading.RLock()

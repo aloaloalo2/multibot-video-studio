@@ -1,10 +1,10 @@
 function channelSoundMarkup(){
   return `<section class="settings-section settings-sound"><h3 hidden>Музика й ефекти</h3>
     <div class="channel-sound-music">
-      <label class="check"><input id="sound-music" type="checkbox">Використовувати музику</label>
+      <div hidden><label class="check"><input id="sound-music" type="checkbox">Використовувати музику</label>
       <label class="check channel-sound-generate"><input id="sound-generate" type="checkbox">Створювати фонову музику</label>
-      <small id="sound-music-note"></small>
-      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Синтезатор музики"><span class="channel-music-styles-title">Синтезатор музики</span><small class="channel-music-styles-note">Музика й далі змінюється разом із настроєм розповіді; синтезатор задає, якими інструментами вона звучить.</small><div class="channel-sound-categories"></div></div>
+      <small id="sound-music-note"></small></div>
+      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Фонова музика"><span class="channel-music-styles-title">Фонова музика</span><small class="channel-music-styles-note">Музика змінюється разом із настроєм розповіді; вибір задає, якими інструментами вона звучить. «М’який фон» і «Глибокий фон» без дзвінких нот.</small><div class="channel-sound-categories"></div></div>
     </div>
     <details class="channel-sound-group"><summary><span>Ефекти акцентів</span><small id="sound-effect-count"></small></summary>
       <label class="check"><input id="sound-effects" type="checkbox">Використовувати для акцентів</label>
@@ -33,6 +33,8 @@ function bindChannelSound(saved){
     {key:'library',field:'ids',toggle:root.querySelector('#sound-library'),list:root.querySelector('#animation-sfx-library'),count:root.querySelector('#sound-library-count'),defaultOn:saved?.effects?.enabled??true}
   ];
   let musicStyle=saved?.music?.style||'whatif';
+  // one choice instead of two checkboxes (user, 17 November 2026): «Без музики», a synthesizer, or the channel's own track
+  let musicChoice=!music.checked?'none':!generate.checked?'own':musicStyle;
   const styles=root.querySelector('#music-styles');
   root.soundValue={music:{enabled:music.checked,generate:generate.checked,style:musicStyle}};
   for(const group of groups){
@@ -47,7 +49,7 @@ function bindChannelSound(saved){
     root.querySelector('.channel-sound-generate').classList.toggle('muted',!music.checked);
     root.querySelector('#sound-music-note').textContent=!music.checked?'Ролик без фонової музики.':generate.checked?'Студія може створити музичний супровід.':'Використовуватиметься лише вже додана музика.';
     root.soundValue.music={enabled:music.checked,generate:generate.checked,...(root.musicStylesReady?{style:musicStyle}:{})};
-    styles.hidden=!(music.checked&&generate.checked);
+    styles.hidden=!root.musicStylesReady;
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
       inputs.forEach(input=>input.disabled=!group.toggle.checked||(group.key==='library'&&!root.librarySoundsReady));
@@ -64,12 +66,15 @@ function bindChannelSound(saved){
     root.transitionSoundsReady=Array.isArray(data.transitions);
     root.musicStylesReady=Array.isArray(data.music_styles);
     // «Стиль музики»: the channel's generated score, heard before choosing (user, 17 November 2026)
-    for(const row of data.music_styles||[]){
+    const choose=value=>{musicChoice=value;music.checked=value!=='none';generate.checked=value!=='none'&&value!=='own';if(value!=='none'&&value!=='own')musicStyle=value;update();};
+    const rows=[{id:'none',label:'Без музики'},...(data.music_styles||[]),...(musicChoice==='own'?[{id:'own',label:'Лише своя музика'}]:[])];
+    for(const row of rows){
       const item=document.createElement('div');item.className='channel-sound-category';
       const label=document.createElement('label');label.className='check';
-      const input=document.createElement('input');input.type='radio';input.name='music-style';input.value=row.id;input.checked=row.id===musicStyle;
-      input.addEventListener('change',()=>{musicStyle=row.id;update();});
+      const input=document.createElement('input');input.type='radio';input.name='music-style';input.value=row.id;input.checked=row.id===musicChoice;
+      input.addEventListener('change',()=>choose(row.id));
       label.append(input,document.createTextNode(row.label));
+      if(!row.preview_url){item.append(label);styles.lastElementChild.append(item);continue;}
       const play=document.createElement('button');play.type='button';play.className='sound-preview';play.setAttribute('aria-label',`Прослухати: ${row.label}`);play.setAttribute('aria-pressed','false');play.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
       play.addEventListener('click',async()=>{
         const wasPlaying=play.classList.contains('playing');stop();if(wasPlaying)return;
@@ -80,7 +85,7 @@ function bindChannelSound(saved){
       });
       item.append(label,play);styles.lastElementChild.append(item);
     }
-    if(!root.musicStylesReady)styles.hidden=true;
+    if(!root.musicStylesReady){styles.hidden=true;root.querySelector('.channel-sound-music>div').hidden=false;}   // an older studio: the two checkboxes
     root.librarySoundsReady=data.library_selection===true&&Array.isArray(data.library);
     for(const group of groups){
       const rows=data[group.key==='effects'?'categories':group.key];
