@@ -169,8 +169,9 @@ def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
     import openrouter_images
     try:
         # the reference pictures (the host's avatar and the like) go along, as with Codex
-        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], prompt.read_text(encoding="utf-8").strip(),
-                                        refs=[str(Path(ref).resolve()) for ref in a.ref])
+        text = prompt.read_text(encoding="utf-8").strip()
+        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, refs=[str(Path(ref).resolve()) for ref in a.ref],
+                                        transparent=bool(TRANSPARENT.search(text)))
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
         finish("failed", str(error)[-300:])
@@ -184,9 +185,10 @@ def draw(a) -> None:
     prompt, out = Path(a.prompt).resolve(), Path(a.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     job = job_file(out)
-    # only transparent PNGs go to OpenRouter; backgrounds, photos and other pictures stay with Codex (user, 17 November 2026:
-    # «опен роутер поки що лише для пнг файлів з прозорим фоном»)
-    if studio_provider().get("provider") == "openrouter" and TRANSPARENT.search(prompt.read_text(encoding="utf-8")):
+    # an episode or channel on OpenRouter has every picture drawn there: transparent props, the host's sheets and
+    # backgrounds alike (user, 17 November 2026: «я не роблю обмежень open роутеру… головне, щоб ролик вийшов класний»;
+    # it had been for transparent PNGs only). A prompt without transparency is drawn on its own opaque background.
+    if studio_provider().get("provider") == "openrouter":
         def finish_or(status, error=""):
             if a.watch:
                 job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")

@@ -26,9 +26,20 @@ class UnitsTest(unittest.TestCase):
         self.assertEqual([u['text'] for u in narration.units(self.text, 1)], narration.phrases(self.text))
         self.assertEqual(len(narration.phrases(self.text)), 7)   # the sentences, as a revision reads them
 
+    def test_ten_sentences_run_on_across_paragraphs_only_when_asked(self):
+        self.assertEqual([u['sentences'] for u in narration.units(self.text, 10)], [5, 2])
+        joined = narration.units(self.text, 10, join=True)
+        self.assertEqual([u['sentences'] for u in joined], [7])
+        self.assertEqual(joined[0]['text'], ' '.join(narration.phrases(self.text)))   # as a revision rebuilds it
+        free = lab.validated({'provider': 'heygen', 'heygen_join_paragraphs': True})
+        self.assertTrue(lab.joins_paragraphs(free))
+        self.assertFalse(lab.joins_paragraphs({**free, 'heygen_sentences': 1}))
+        with self.assertRaises(store.StudioError):
+            lab.validated({'heygen_join_paragraphs': 'yes'})
+
     def test_long_sentences_and_cut_parts_keep_their_own_request(self):
         long = ' '.join(['Word number %d is here.' % i for i in range(3)])
-        wide = ' '.join(('A' + 'b' * 590 + ' end %d.' % i) for i in range(3))
+        wide = ' '.join(('A' + 'b' * 1190 + ' end %d.' % i) for i in range(3))
         self.assertEqual([u['sentences'] for u in narration.units(long, 3)], [3])
         self.assertEqual([u['sentences'] for u in narration.units(wide, 3)], [1, 1, 1])   # 1800 characters together
         cut = narration.units('Short one here. ' + 'x' * 2000 + '.', 3)
@@ -49,7 +60,8 @@ class SettingTest(unittest.TestCase):
 
     def test_the_setting_is_one_to_five(self):
         self.assertEqual(lab.validated({'heygen_sentences': 5})['heygen_sentences'], 5)
-        for wrong in (6, -1, 2.5, '3', True):
+        self.assertEqual(lab.validated({'heygen_sentences': 10})['heygen_sentences'], 10)
+        for wrong in (11, -1, 2.5, '3', True):
             with self.subTest(wrong=wrong), self.assertRaises(store.StudioError):
                 lab.validated({'heygen_sentences': wrong})
 

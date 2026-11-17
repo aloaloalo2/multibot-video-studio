@@ -35,8 +35,10 @@ DEFAULTS.update(fish_voice_id='', eleven_voice_id='')
 # було змінювати… 4, 5»). Turbo Free shares HeyGen's free capacity with every user and answers 429 after about forty
 # requests, then lets one through about every two minutes, so fewer requests make the narration faster. 0 is the
 # default: 3 on Turbo Free, 1 on the paid models, which have no such wait.
-DEFAULTS.update(heygen_sentences=0)
-SENTENCES_MAX = 5
+# heygen_join_paragraphs lets a group run on past a paragraph break (user: «10» sentences a request; a paragraph holds
+# 5–6 of them, so without it a group stops at the paragraph's end)
+DEFAULTS.update(heygen_sentences=0, heygen_join_paragraphs=False)
+SENTENCES_MAX = 10
 SENTENCES_FREE = 3
 
 
@@ -48,6 +50,10 @@ def sentences_per_request(settings):
     if type(chosen) is int and 1 <= chosen <= SENTENCES_MAX:
         return chosen
     return SENTENCES_FREE if settings.get('heygen_model') == 'heygen-voice-1-turbo-free' else 1
+
+
+def joins_paragraphs(settings):
+    return sentences_per_request(settings) > 1 and settings.get('heygen_join_paragraphs') is True
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -115,6 +121,7 @@ def validated(raw):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
     if type(data['heygen_sentences']) is not int or not 0 <= data['heygen_sentences'] <= SENTENCES_MAX:
         raise store.StudioError(f'Речень за один запит HeyGen: від 1 до {SENTENCES_MAX}')
+    if type(data['heygen_join_paragraphs']) is not bool:raise store.StudioError('Склеювання абзаців має бути увімкнене або вимкнене')
     if data['heygen_model'] not in heygen_voice.MODELS or not isinstance(data['heygen_voice_id'],str) or (data['heygen_voice_id'] and not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',data['heygen_voice_id'])):raise store.StudioError('Невірна модель або голос HeyGen')
     speed=data['speed']
     if isinstance(speed,bool) or not isinstance(speed,(int,float)) or not math.isfinite(speed) or not MIN_SPEED <= speed <= MAX_SPEED:

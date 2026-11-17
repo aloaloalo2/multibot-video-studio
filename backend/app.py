@@ -1711,7 +1711,7 @@ class Handler(BaseHTTPRequestHandler):
             import openrouter_images
             if provider.group(2):
                 return self.json_response(openrouter_images.draw(provider.group(1), body.get('prompt'), body.get('aspect_ratio') or '3:2', body.get('quality') or 'medium'))
-            return self.json_response(openrouter_images.set_provider(provider.group(1), body.get('provider'), body.get('model')))
+            return self.json_response(openrouter_images.set_provider(provider.group(1), body.get('provider'), body.get('model'), body.get('all') is True))
         if path == '/api/title-translation' and method == 'POST':
             return self.json_response(title_translation.translate(body))
         if path == "/api/trending-videos/use" and method == "POST":

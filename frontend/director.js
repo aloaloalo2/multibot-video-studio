@@ -579,6 +579,17 @@ function fillMake(make){
     start.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>');
     start.onclick=event=>{event.stopImmediatePropagation();resumeFrames(id,start);};
     const note=document.createElement('p');note.className='plan-note';note.textContent=request.paused?(/ліміт Codex/.test(request.error||'')?request.error:'Призупинено на ваше прохання. Готові кадри збережені.'):claudeSignedOut(request.error)?'Claude Code на цьому Mac вийшов з облікового запису. Увійдіть у налаштуваннях студії (шестерня внизу, розділ «Claude Code») і натисніть «Продовжити створення ролика». Готові кадри збережені.':`${request.limit?request.error:'Закінчився ліміт підписки Claude.'} Усе зроблене збережено. Коли ліміт оновиться, натисніть «Продовжити створення ролика».`;feed.append(note);
+    if(request.paused&&/ліміт Codex/.test(request.error||'')){
+      // Codex's limit is out for days: the episode may go on with every picture drawn through OpenRouter, paid from its
+      // balance (user, 17 November 2026: «додай кнопку може продовжити з опен роутер»)
+      const other=document.createElement('button');other.type='button';other.className='secondary production-openrouter';
+      other.textContent='Продовжити через OpenRouter';other.title='Усі картинки цього випуску намалює OpenRouter, з балансу OpenRouter';
+      other.onclick=async event=>{event.stopImmediatePropagation();other.disabled=true;
+        try{await api(`/api/projects/${encodeURIComponent(id)}/image-provider`,'POST',{provider:'openrouter',all:true});}
+        catch(error){other.disabled=false;status(error.message,true);return;}
+        resumeFrames(id,other);};
+      feed.append(other);
+    }
   }else if(state.project.episode_paused&&!allMade){
     // the episode's pause holds the whole episode (backend/episode_pause.py): the button goes on with it, as the round
     // play does, instead of a start the pause would only note (user, 16 November 2026: «немає як зазвичай кнопки»)

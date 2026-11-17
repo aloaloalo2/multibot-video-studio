@@ -51,7 +51,7 @@ def setting(pid: str) -> dict:
     return {}
 
 
-def set_provider(pid: str, provider: str, model: str | None = None) -> dict:
+def set_provider(pid: str, provider: str, model: str | None = None, everything: bool = False) -> dict:
     store.load_project(pid)
     if provider == "codex":
         # kept as a file, so an episode can draw with Codex although its channel chose OpenRouter
@@ -60,6 +60,10 @@ def set_provider(pid: str, provider: str, model: str | None = None) -> dict:
     if provider != "openrouter":
         raise store.StudioError("Невідомий спосіб малювання картинок")
     data = {"provider": "openrouter", "model": model or DEFAULT_MODEL}
+    if everything:
+        # «Продовжити через OpenRouter» after Codex ran out of its limit: every picture of the episode is drawn here, the
+        # host's sheets and backgrounds too, not only transparent props (user, 17 November 2026)
+        data["all"] = True
     store.atomic_json(path(pid), data)
     return data
 
@@ -89,8 +93,9 @@ def references(paths) -> list[dict]:
     return found
 
 
-def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None) -> dict:
-    """One transparent sheet: {'png': base64, 'cost': usd}. Never retried: a failed paid call is reported, not repeated."""
+def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None, transparent: bool = True) -> dict:
+    """One sheet: {'png': base64, 'cost': usd}, transparent unless the prompt asks for a background of its own. Never
+    retried: a failed paid call is reported, not repeated."""
     chosen = setting(pid)
     if not chosen:
         raise store.StudioError("Для цього випуску картинки малює Codex", 409)
@@ -103,7 +108,7 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
     except RuntimeError:
         raise store.StudioError("Додайте ключ OpenRouter у налаштуваннях студії", 503) from None
     model = chosen.get("model") or DEFAULT_MODEL
-    body = {"model": model, "prompt": prompt.strip(), "background": "transparent", "aspect_ratio": aspect_ratio,
+    body = {"model": model, "prompt": prompt.strip(), "background": "transparent" if transparent else "opaque", "aspect_ratio": aspect_ratio,
             "quality": quality, "n": 1}
     if refs:
         body["input_references"] = references(refs)
@@ -126,8 +131,12 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
         if not 0 < len(data) <= MAX_BYTES:
             raise ValueError("size")
         with Image.open(io.BytesIO(data)) as image:
-            if image.format != "PNG" or "A" not in image.getbands():
+            if transparent and (image.format != "PNG" or "A" not in image.getbands()):
                 raise ValueError("not a transparent PNG")
+            if image.format != "PNG":   # an opaque picture may come as JPEG or WebP: the tools expect a PNG
+                saved = io.BytesIO()
+                image.convert("RGB").save(saved, "PNG")
+                data = saved.getvalue()
     except (KeyError, IndexError, TypeError, ValueError, binascii.Error, UnidentifiedImageError):
-        raise store.StudioError("OpenRouter не повернув прозорий PNG", 502) from None
+        raise store.StudioError("OpenRouter не повернув прозорий PNG" if transparent else "OpenRouter не повернув картинку", 502) from None
     return {"png": base64.b64encode(data).decode(), "cost": amount, "model": model}

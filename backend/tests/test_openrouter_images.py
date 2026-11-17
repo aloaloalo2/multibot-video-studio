@@ -44,5 +44,24 @@ class OpenRouterSheetsTest(unittest.TestCase):
             images.draw('p' * 24, 'six props')
 
 
+    def test_continue_through_openrouter_draws_every_picture_and_an_opaque_one_comes_back_as_png(self):
+        # Codex ran out of its limit mid-film and the host's sheet on grey was waiting for it (17 November 2026)
+        self.assertNotIn('all', images.set_provider('p' * 24, 'openrouter'))
+        self.assertTrue(images.set_provider('p' * 24, 'openrouter', everything=True)['all'])
+        self.assertTrue(images.setting('p' * 24)['all'])
+        buffer = io.BytesIO(); Image.new('RGB', (6, 4), (128, 128, 128)).save(buffer, 'JPEG')
+        answer = json.dumps({'id': 'gen-2', 'usage': {'cost': 0.02}, 'data': [{'b64_json': base64.b64encode(buffer.getvalue()).decode()}]}).encode()
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        with patch.object(images.credentials, 'vault') as vault, \
+             patch.object(images.urllib.request, 'urlopen', return_value=Response(answer)) as call:
+            vault.return_value.read.return_value = 'key'
+            result = images.draw('p' * 24, 'six poses on grey', transparent=False)
+        self.assertEqual(json.loads(call.call_args.args[0].data)['background'], 'opaque')
+        with Image.open(io.BytesIO(base64.b64decode(result['png']))) as image:
+            self.assertEqual(image.format, 'PNG')
+
+
 if __name__ == '__main__':
     unittest.main()

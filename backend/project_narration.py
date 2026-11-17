@@ -61,18 +61,18 @@ def phrases(text):
     return [unit['text'] for unit in units(text)]
 
 
-GROUP_CHARS = 1500   # a group of sentences stays well inside one request (HeyGen takes up to 10 000 characters)
+GROUP_CHARS = 3000   # a group of sentences stays well inside one request (HeyGen takes up to 10 000 characters)
 
 
-def units(text, group=1):
+def units(text, group=1, join=False):
     """What each request reads: up to `group` neighbouring sentences of one paragraph, joined by a space, the groups of
-    a paragraph as even as they come (5 sentences by 3 are 3 and 2). A paragraph break always starts a new request, so
-    its pause stays. `sentences` is how many sentences of the script a unit holds: 0 for a part of a cut sentence."""
+    a paragraph as even as they come (5 sentences by 3 are 3 and 2). A paragraph break starts a new request, so its
+    pause stays, unless `join` lets groups run on across paragraphs. `sentences` is how many sentences of the script a unit holds: 0 for a part of a cut sentence."""
     if not isinstance(text, str) or not 10 <= len(text.strip()) <= 200000:
         raise store.StudioError('Введіть сценарій від 10 до 200 000 символів')
     group = max(1, int(group or 1))
     result = []
-    for line in text.strip().splitlines():
+    for line in ([' '.join(text.strip().splitlines())] if join else text.strip().splitlines()):
         run = []
         def flush():
             count = max(1, math.ceil(len(run) / group)) if run else 0
@@ -99,7 +99,7 @@ def units(text, group=1):
 def spec(project, text):
     cid=project['channel_id'];profile=lab.snapshot(cid)
     settings=profile['settings'];ref=lab.effective_reference(cid,settings) if lab.selected_voice_id(settings) or settings['provider']=='heygen' else profile['reference']
-    parts=units(text,lab.sentences_per_request(settings))
+    parts=units(text,lab.sentences_per_request(settings),lab.joins_paragraphs(settings))
     if settings['provider']=='heygen' and settings['heygen_model']=='starfish' and settings.get('heygen_starfish_ssml') and ('<' in text or '&' in text):
         if len(text)>5000:raise store.StudioError('Для сценарію SSML Starfish допускається до 5000 символів. Для довгого сценарію виберіть звичайний текст')
         parts=[{'text':text,'sentences':0}]
