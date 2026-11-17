@@ -610,6 +610,20 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                     if not (fix_code or fix_answer.get('is_error') or director.limit_stop(fix_answer)):
                         production_quality.refresh_stills(store.load_project(pid), sorted(found))
                         review_code, review_answer = look(sorted(found), 2600)
+                        left = production_quality.bugs(store.load_project(pid), sorted(found))
+                        if left and not (review_code or review_answer.get('is_error') or director.limit_stop(review_answer)):
+                            # what the second look still finds is fixed once more here, and the film ends: the author
+                            # wants the finished video, not frames to look at or a button to press (17 November 2026:
+                            # «я взагалі не хочу нічого переглядати мені треба просто результат готове відео»)
+                            notes = '; '.join(f'кадр {n}: {note}' for n, note in sorted(left.items()))
+                            fix_code, fix_answer = production_sessions.run(
+                                sorted(left), lambda ns, _, index: launch(ns, 'Повторний огляд ще бачить вади, виправ лише їх: ' + notes, 3100 + index),
+                                verify, lambda receipt: None, cancelled, director.limit_stop)
+                            answer = production_sessions.merge_answers(answer, fix_answer)
+                            if not (fix_code or fix_answer.get('is_error')):
+                                production_quality.refresh_stills(store.load_project(pid), sorted(left))
+                            if director.limit_stop(fix_answer):
+                                review_code, review_answer = fix_code, fix_answer
                     else:
                         review_code, review_answer = fix_code, fix_answer
                 fields.update(cost_usd=spent_before+float(answer.get('total_cost_usd') or 0),
@@ -849,9 +863,10 @@ START_GRACE = 30
 
 
 def bugs_to_fix(project: dict, request: dict, review: dict) -> dict | None:
-    """A review that failed only on frames the visual review marked as bugs: every frame is drawn, the film is done and
-    those frames wait for the author's «Виправити» (17 November 2026: 131 of 131 frames made, 9 with bugs, read as
-    «Кадри 1–131 не вдалися» with a grey button). None for any other failure."""
+    """A review that failed only on frames the visual review marked as bugs: every frame is drawn and the film is done
+    (17 November 2026: 131 of 131 frames made, 9 with bugs, read as «Кадри 1–131 не вдалися»). The bugs were already
+    fixed twice in the run; they stay in `fix_later` for the record, the author is not asked to look at them. None for
+    any other failure."""
     if review.get('passed') or not review.get('errors') or not all(
             str(error).startswith('Перевірка кадрів Razgon не підтверджена:') for error in review['errors']):
         return None

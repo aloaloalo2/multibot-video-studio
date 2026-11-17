@@ -115,6 +115,26 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.project['production_request']['status'],'done')
         self.assertAlmostEqual(self.project['production_request']['cost_usd'],.2)
 
+    def test_bugs_the_second_look_still_finds_are_fixed_once_more_and_the_film_is_done(self):
+        # 17 November 2026: «я взагалі не хочу нічого переглядати мені треба просто результат готове відео»
+        plan = {'frames': [{'number': n, 'start': (n-1)*2, 'end': n*2, 'format': 'razgon_2d'} for n in (1, 2, 3)]}
+        unconfirmed = {'passed': False, 'errors': ['Перевірка кадрів Razgon не підтверджена: 2'], 'pending_review': [2]}
+        with patch.object(store,'made_frames',return_value=[1,2,3]), patch.object(store,'load_project_plan',return_value=plan), \
+             patch.object(production,'drawn',return_value=True), \
+             patch.object(production.logo_layer,'place'),patch.object(production.razgon_sound,'start'), \
+             patch('production_kit.needed',return_value=False), \
+             patch.object(production.production_quality,'refresh_stills'), \
+             patch.object(production.production_quality,'check',side_effect=[unconfirmed, unconfirmed, unconfirmed]), \
+             patch.object(production.production_quality,'bugs',side_effect=[{2:'стрілка не туди'},{2:'стрілка досі не туди'},{}]), \
+             patch.object(production,'light_review',return_value=(0,{'result':'marked'})) as look, \
+             patch.object(production.production_sessions,'run',return_value=(0,{'result':'fixed'})) as sessions:
+            production.run(self.project['id'],Path('claude'))
+        self.assertEqual(look.call_count, 2)   # one look at the film, one at the fixed frames, never a third
+        self.assertEqual([call.args[0] for call in sessions.call_args_list[1:]], [[2], [2]])   # fixed twice
+        request = self.project['production_request']
+        self.assertEqual(request['status'], 'done')
+        self.assertNotIn('fix_later', request['quality'])
+
     def test_unchanged_pictures_keep_their_verdicts_without_a_claude_session(self):
         # «Галактики», 14 November 2026: a review session's new PNGs staled 39 untouched frames; fresh stills of the
         # same pictures keep their verdicts, so no paid review is needed
