@@ -597,11 +597,28 @@ def save_project(project: dict) -> None:
     atomic_json(project_path(project["id"]), project)
 
 
+def owned_razgon_project(project: dict) -> Path | None:
+    """The Razgon animation folder made for this studio project only: its story/studio_frames.json names this project's id.
+    It goes with the project (user, 17 November 2026: «я видаляю проект з студії, а його файли лишаються… вони ж мають
+    видалятися»); a folder that names another project, or none, is never touched."""
+    try:
+        link = razgon_link(project) or {}
+    except (OSError, StudioError):
+        return None
+    folder = Path(link.get("project") or "")
+    if not link.get("project") or folder.parent.name != "projects" or not folder.is_dir():
+        return None
+    owner = read_json(folder / "story" / "studio_frames.json", None)
+    return folder if isinstance(owner, dict) and owner.get("project_id") == project.get("id") else None
+
+
 def project_bytes(pid: str) -> int:
     """What deleting the project frees: its files in the studio, without hard links that the episode folder still holds,
-    and the episode's VideoKey folder, which goes with it."""
+    the episode's VideoKey folder and the project's own Razgon animation, which go with it."""
     project = read_json(project_path(pid), {}) or {}
-    roots = [project_dir(pid)] + ([Path(project["episode_path"]) / EPISODE_STORE] if project.get("episode_path") else [])
+    project.setdefault("id", pid)
+    razgon = owned_razgon_project(project)
+    roots = [project_dir(pid)] + ([Path(project["episode_path"]) / EPISODE_STORE] if project.get("episode_path") else []) + ([razgon] if razgon else [])
     return sum(stat.st_size for root in roots if root.is_dir() for item in root.rglob("*")
                if not item.is_symlink() and item.is_file() and (stat := item.stat()).st_nlink == 1)
 
@@ -612,8 +629,13 @@ def delete_project(pid: str) -> int:
     channel stays as it is. Returns the bytes freed."""
     with LOCK:
         project = read_json(project_path(pid), {}) or {}
+        project.setdefault("id", pid)
         freed = project_bytes(pid)
+        razgon = owned_razgon_project(project)   # found before the project's folder (and its link) goes
         shutil.rmtree(project_dir(pid))
+        if razgon:
+            shutil.rmtree(razgon, ignore_errors=True)
+            _FOUND_RAZGON.pop(pid, None)
         # the episode's VideoKey folder holds what the studio brought in for it: it goes with the project, the author's
         # own files in the episode folder stay
         store = Path(project["episode_path"]) / EPISODE_STORE if project.get("episode_path") else None
