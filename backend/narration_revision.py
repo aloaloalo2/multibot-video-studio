@@ -256,7 +256,13 @@ def run(pid,ctx,job):
         with store.LOCK:
             current=store.load_project(pid)
             if (narration.root(pid)/'cancel').exists():raise narration.Cancelled()
-            if current.get('revision',0)!=ctx['revision']:raise store.StudioError('Випуск змінено під час переозвучення. Готове речення збережене в кеші.',409)
+            # an unrelated edit meanwhile (a clip moved, the logo laid) is kept: the revision needs only the voice it was
+            # made from still on the timeline and still the finished narration (17 November 2026: 78 of 78 sentences were
+            # voiced in 40 minutes, and two timeline edits threw the whole revision away at the last step)
+            finished=store.read_json(narration.root(pid)/'job.json',{}) or {}
+            on_timeline=any(c.get('kind')=='audio' and c.get('asset_id')==ctx['asset']['id'] for t in current.get('tracks',[]) for c in t.get('clips',[]))
+            if not on_timeline or finished.get('asset_id')!=ctx['old'].get('asset_id') or finished.get('script')!=ctx['old'].get('script'):
+                raise store.StudioError('Озвучку випуску замінено під час переозвучення. Готові речення збережено в кеші.',409)
             plan=store.load_project_plan(pid)
             store.atomic_json(folder/'previous-job.json',ctx['old']);store.atomic_json(folder/'previous-plan.json',plan or {})
             asset=store.import_asset_file(current,output,'narration-revision');current=store.load_project(pid)

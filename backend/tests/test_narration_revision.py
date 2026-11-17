@@ -108,6 +108,41 @@ class RevisionTest(unittest.TestCase):
         self.assertEqual(len(before),len(after))
         self.assertIsNotNone(narration_sequence.verify(self.project,self.project['assets'][-1],self.newtext))
 
+    def run_with_edit_meanwhile(self,edit):
+        ctx=self.prepare();job={'id':'edit-meanwhile','status':'running','total':1}
+        replacement=self.root/'take.wav';self.write_wave(replacement,[-400]*8000)
+        def imported(project,path,kind):
+            asset={'id':'updated-audio','path':str(path),'duration':store.media_duration(path),'kind':'audio'}
+            self.project['assets'].append(asset)
+            return asset
+        def voiced(*args):
+            edit()   # the author edits the episode while the sentence is voiced
+            return replacement
+        with patch.object(narration,'wait_heygen'),patch.object(narration,'phrase_audio',side_effect=voiced), \
+             patch.object(store,'import_asset_file',side_effect=imported), \
+             patch.object(store,'save_project',side_effect=lambda value:self.project.update(copy.deepcopy(value))), \
+             patch.object(store,'load_project_plan',return_value={'script':self.oldtext,'frames':[],'timing':{}}):
+            revision.run(self.pid,ctx,job)
+        return job
+
+    def test_an_unrelated_edit_meanwhile_keeps_the_revision(self):
+        # 17 November 2026: two timeline edits during a 40-minute revision threw away 78 voiced sentences
+        def edit():
+            self.project['revision']+=2
+            self.project['tracks'].append({'clips':[{'id':'logo','kind':'image','duration':3}]})
+        job=self.run_with_edit_meanwhile(edit)
+        self.assertEqual(job['status'],'done',job.get('error'))
+        self.assertEqual(self.project['tracks'][0]['clips'][0]['asset_id'],'updated-audio')
+        self.assertEqual(self.project['tracks'][-1]['clips'][0]['id'],'logo')   # the edit is kept
+        self.assertEqual(self.project['voice_script']['text'],self.newtext)
+
+    def test_a_voice_replaced_meanwhile_stops_the_revision(self):
+        def edit():
+            self.project['tracks'][0]['clips'][0]['asset_id']='another-voice'
+        job=self.run_with_edit_meanwhile(edit)
+        self.assertEqual(job['status'],'failed')
+        self.assertEqual(self.project['voice_script']['text'],self.oldtext)
+
     def test_duplicate_click_does_not_start_another_worker(self):
         body={'client_id':'request-123','text':self.newtext,'expected_sha256':revision.digest(self.oldtext)}
         with patch.object(narration_sequence,'verify',return_value=self.proof),patch.object(revision.threading,'Thread') as thread:
