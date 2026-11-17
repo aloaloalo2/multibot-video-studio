@@ -28,7 +28,7 @@ async function openThumbnail(project){
   modal('Нове прев’ю',`
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
-    ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Використати ведучого каналу на прев’ю</label>':''}
+    ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Використати ведучого каналу на прев’ю</label>':'<label class="thumb-hero-choice is-unavailable" title="У каналу ще немає головного героя: додайте фото в налаштуваннях каналу, розділ «Основне» → «Головний герой»"><input id="thumb-no-hero" type="checkbox" disabled>Використати ведучого каналу (додайте його в налаштуваннях каналу)</label>'}
     <label class="thumb-hero-choice" id="thumb-wishes-choice" hidden title="Ідея з прев’ю конкурента, а стиль з наших прев’ю й побажань каналу"><input id="thumb-use-wishes" type="checkbox">Адаптувати під мій стиль</label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     [{label:'Створити',primary:true,enabled:()=>!thumbnailBusy(project.id)&&!thumbnailCreatePending.has(project.id)&&create.dataset.gated!=='1'&&create.dataset.referenceMissing!=='1',run:()=>generateThumbnail(project,writer,$('thumb-create-wishes').value)}]);
@@ -36,7 +36,7 @@ async function openThumbnail(project){
   const controls=document.createElement('div');controls.className='thumb-create-controls';actions.append(controls);
   StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
   $('modal-actions').prepend($('thumb-wishes-choice'));
-  if(data.hero_reference)$('modal-actions').prepend($('thumb-use-hero').closest('label'));
+  $('modal-actions').prepend(($('thumb-use-hero')||$('thumb-no-hero')).closest('label'));
   $('modal-title').innerHTML=`${thumbnailIcon}<span>Нове прев’ю</span>`;
   $('modal-backdrop').dataset.thumbnailProject=project.id;
   $('modal-backdrop').classList.add('thumb-modal-open');
