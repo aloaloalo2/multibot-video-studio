@@ -274,11 +274,13 @@ function renderProjectActivities(){
       card.append(control);
     }else if(['створення зачинів','створення сценарію','створення метаданих','редактура сценарію'].includes(kind)){
       const label='Зупинити роботу Opus';
-      const stop=document.createElement('button');stop.className='project-action project-stage-stop';stop.type='button';stop.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>';   // a line icon like the card's other buttons, not the glyph ■
+      // the round button where the narration's and the director's pause stands, at the work line, not among the card's
+      // own actions at the top (user, 17 November 2026: «кнопка стоп не там де нада»)
+      const stop=document.createElement('button');stop.className='production-control project-stage-control project-stage-stop';stop.type='button';stop.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>';   // a line icon like the card's other buttons, not the glyph ■
       stop.title=label;stop.setAttribute('aria-label',label);
       if(narrating&&activity?.cancelling)stop.disabled=true;
       stop.onclick=async event=>{event.stopPropagation();event.preventDefault();stop.disabled=true;try{await api(`/api/projects/${card.dataset.projectId}/episode-draft`,'POST',{action:'cancel'});await pollChannelActivity();}catch(error){status(error.message,true);stop.disabled=false;}};
-      (card.querySelector('.project-actions')||card).append(stop);
+      card.append(stop);
     }
     open.insertBefore(box,open.querySelector('.project-meta'));
   }
