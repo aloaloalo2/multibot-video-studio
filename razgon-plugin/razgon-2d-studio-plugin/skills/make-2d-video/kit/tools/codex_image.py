@@ -15,7 +15,7 @@ A background drawing stops by itself when the agent that started it is gone (a p
   python3 tools/codex_image.py --prompt P.txt --out sheet_A.png --background
   python3 tools/codex_image.py --wait sheet_A.png sheet_B.png
 """
-import argparse, datetime, json, os, re, subprocess, sys, time, urllib.request
+import argparse, datetime, json, os, re, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
 LIMIT = re.compile(r"usage limit|hit your \w* ?limit|rate limit|quota|too many requests|\b429\b", re.I)
@@ -136,10 +136,58 @@ def wait_for(outs) -> None:
         sys.exit("Codex не намалював: " + "; ".join(failed))
 
 
+TRANSPARENT = re.compile(r"transparen|alpha|прозор", re.I)
+
+
+def studio_backend():
+    """The Studio's backend folder above this tool (the working copy and the kit both live inside the Studio)."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "backend" / "openrouter_images.py").is_file():
+            return parent / "backend"
+    return None
+
+
+def studio_provider() -> dict:
+    """The episode's way of drawing: an episode the author switched to OpenRouter while Codex's limit is out has its
+    sheets drawn there (backend/openrouter_images.py, 17 November 2026). Codex otherwise. Read from the Studio's own
+    files, so it works without a restart of the server."""
+    project, backend = os.environ.get("VIDEOKEY_PROJECT_ID"), studio_backend()
+    if not project or not backend:
+        return {}
+    try:
+        sys.path.insert(0, str(backend))
+        import openrouter_images
+        return openrouter_images.setting(project)
+    except Exception:
+        return {}
+
+
+def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
+    import base64
+    import openrouter_images
+    try:
+        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], prompt.read_text(encoding="utf-8").strip())
+        out.write_bytes(base64.b64decode(result["png"]))
+    except Exception as error:
+        finish("failed", str(error)[-300:])
+        sys.exit(f"OpenRouter не намалював {out.name}: {error}")
+    out.with_suffix(".log.txt").write_text(f"OpenRouter {result.get('model')}: ${result.get('cost')}\n", encoding="utf-8")
+    finish("done")
+    print(out)
+
+
 def draw(a) -> None:
     prompt, out = Path(a.prompt).resolve(), Path(a.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     job = job_file(out)
+    # only transparent PNGs go to OpenRouter; backgrounds, photos and other pictures stay with Codex (user, 17 November 2026:
+    # «опен роутер поки що лише для пнг файлів з прозорим фоном»)
+    if studio_provider().get("provider") == "openrouter" and TRANSPARENT.search(prompt.read_text(encoding="utf-8")):
+        def finish_or(status, error=""):
+            if a.watch:
+                job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
+        draw_openrouter(a, prompt, out, finish_or)
+        return
     text = prompt.read_text(encoding="utf-8").strip() + (
         f'\n\nUse the built-in image generation tool and make exactly one image. Save it in the current working directory as '
         f'"{out.name}" and reply only with the saved path.')
