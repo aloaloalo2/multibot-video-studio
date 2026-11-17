@@ -938,6 +938,15 @@ def studio_work_status(exports):
         if cid:
             counts[cid] = counts.get(cid, 0) + 1
     result['channel_projects'] = counts
+    # the channel's own work has no episode card to spin: the channel page names it, or the sidebar spinner reads as
+    # a stuck episode (user, 17 November 2026: «спінери не сходяться… там крутиться, тут нічого не крутиться»)
+    channel_work = {}
+    for cid in channel_voice_lab.ACTIVE.copy():
+        sample = store.read_json(channel_voice_lab.folder(cid) / 'job.json', {}) or {}
+        channel_work.setdefault(cid, []).append('Зразок голосу' if sample.get('status') in agent_view.BUSY else 'Голос каналу')
+    for cid, code in channel_translation_voices.ACTIVE.copy():
+        channel_work.setdefault(cid, []).append('Зразок голосу перекладу · ' + str(code).upper())
+    result['channel_work'] = channel_work
     return result
 
 
@@ -2132,6 +2141,17 @@ def main():
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("Only local loopback is supported")
+    # `kill -USR1 <pid>` writes where every thread stands, without stopping anything: a job hung for half an hour
+    # (17 November 2026, a sentence revision) could not be read from outside, and only a forced restart ended it
+    try:
+        import faulthandler
+        import signal
+        threads_log = Path.home() / "Library" / "Logs" / "VideoKey Studio" / "threads.log"
+        threads_log.parent.mkdir(parents=True, exist_ok=True)
+        main.threads_file = open(threads_log, "a", encoding="utf-8")
+        faulthandler.register(signal.SIGUSR1, file=main.threads_file, all_threads=True)
+    except (OSError, AttributeError, ValueError):
+        pass
     server = StudioHTTPServer((args.host, args.port), Handler)
     for cid, result in technical_files.migrate_channels().items():
         if isinstance(result, dict) and result.get("error"):

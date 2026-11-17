@@ -84,6 +84,10 @@ def start(pid,body):
         narration.ACTIVE.add(pid);lab.NARRATIONS[pid]=cid
         try:
             (narration.root(pid)/'cancel').unlink(missing_ok=True)
+            # the text stays beside its takes: the round pause continues this revision, not the old narration
+            # (17 November 2026: the pause wrote the finished voice's script and «Продовжити» had nothing to go on with)
+            folder=narration.root(pid)/'revisions'/identity;folder.mkdir(parents=True,exist_ok=True)
+            (folder/'text.txt').write_text(ctx['text'],encoding='utf-8')
             store.atomic_json(path(pid),job)
             threading.Thread(target=run,args=(pid,ctx,job),daemon=True).start()
         except Exception:
@@ -178,6 +182,12 @@ def run(pid,ctx,job):
     settings,ref=ctx['settings'],ctx['ref']
     try:
         if settings['provider']=='heygen':narration.wait_heygen(pid,job,path(pid))
+        # a stop is heard while a phrase waits for HeyGen's slot or limit too, as in a narration (17 November 2026:
+        # a revision waited on its second sentence half an hour and the pause could not stop it)
+        import heygen_voice
+        def stop_check():
+            if (narration.root(pid)/'cancel').exists():raise narration.Cancelled()
+        heygen_voice.STOP.check=stop_check
         job.update(status='running',stage='preparing');store.atomic_json(path(pid),job)
         original=folder/'original.wav'
         languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',ctx['asset']['path'],'-c:a','pcm_s16le',str(original)],'відкрити готову озвучку')
@@ -260,5 +270,8 @@ def run(pid,ctx,job):
     except narration.Cancelled:job.update(status='cancelled',error='Переозвучення зупинено. Попередня озвучка збережена.')
     except Exception as error:job.update(status='failed',error=str(error),finished_at=time.time())
     finally:
+        import heygen_voice
+        heygen_voice.STOP.check=None
         with narration.LOCK,lab.LOCK:
-            store.atomic_json(path(pid),job);narration.ACTIVE.discard(pid);lab.NARRATIONS.pop(pid,None);narration.release_heygen(pid)
+            try:store.atomic_json(path(pid),job)
+            finally:narration.ACTIVE.discard(pid);lab.NARRATIONS.pop(pid,None);narration.release_heygen(pid)

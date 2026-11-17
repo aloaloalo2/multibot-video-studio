@@ -45,6 +45,18 @@ class StatusAPITest(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(),'image/jpeg');self.assertEqual(response.read()[:2],b'\xff\xd8')
         self.assertEqual(self.request('/api/projects/'+'0'*24+'/thumbnail?compact=1')[0],404)
 
+    def test_channel_work_names_a_voice_sample_that_has_no_episode_card(self):
+        # the sidebar spun for a channel's voice sample while no card did (user, 17 November 2026)
+        import channel_voice_lab
+        store.atomic_json(channel_voice_lab.folder(self.cid)/'job.json',{'status':'running','stage':'speech'})
+        with patch.object(channel_voice_lab,'ACTIVE',{self.cid}):
+            code,data=self.request('/api/studio/status')
+        self.assertEqual(code,200)
+        self.assertEqual(data['channel_work'],{self.cid:['Зразок голосу']})
+        self.assertIn(self.cid,data['active_channels'])
+        code,data=self.request('/api/studio/status')
+        self.assertEqual(data['channel_work'],{})
+
     def test_channel_notice_follows_real_receipt_without_starting_work(self):
         from channel_activity import Notices
         task={'channel_id':self.cid,'project_id':self.project['id'],'kind':'створення кадрів','status':'running'}

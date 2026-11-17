@@ -4,7 +4,7 @@ function fixture(){
  const badge={setAttribute(key,value){this[key]=value;}},count={},storage={};
  // the channel button holds the spinner slot and, since 5b2da23, a count of its working episodes beside it
  const button={dataset:{channelId:'one'},querySelector:selector=>selector==='.channel-busy'?badge:selector==='.channel-count'?count:null};
- const context={state:{view:'editor',channel:null},channelActivity:new Set(),channelExporting:new Set(),channelProjectCounts:{},document:{querySelectorAll:()=>[button]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
+ const context={state:{view:'editor',channel:null},channelActivity:new Set(),channelExporting:new Set(),channelProjectCounts:{},channelWork:{},document:{querySelectorAll:()=>[button]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
  vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf('const channelNoticeStorage='),source.indexOf('let channelActivityPending=')),context);
  return {context,badge,count,storage,run:code=>vm.runInContext(code,context)};
@@ -37,4 +37,13 @@ test('the open channel consumes completion silently while its running spinner re
 test('a selected channel keeps unseen notifications while the trends page is open',()=>{
  const f=fixture();f.context.state.channel={id:'one'};f.context.state.view='trends';
  f.run("channelNoticeData.one={id:'done',status:'done'};renderChannelNotices()");assert.equal(f.badge.hidden,false);
+});
+
+test('a channel spinning for its own work names that work',()=>{
+ // 17 November 2026: the sidebar spun for a voice sample in the channel's settings while no episode card did
+ const {context,badge}=fixture();
+ context.channelActivity.add('one');context.channelWork.one=['Зразок голосу'];
+ context.renderChannelNotices();
+ assert.equal(badge.hidden,false);
+ assert.equal(badge['aria-label'],'У каналі йде: Зразок голосу');
 });
