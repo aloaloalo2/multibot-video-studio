@@ -315,6 +315,8 @@ def resume(pid: str) -> dict:
             if state.get("status") in {"paused", "running", "queued"}:
                 director.save(pid, {**state, "status": "done"})
     if run and run.get("directed"):
+        if run.get("stage") == "kit":
+            step(lambda: director.start_kit(pid))   # the kit goes on beside the voice, not after it
         if run.get("create_video"):
             later.append(lambda: director.after_voice(pid, create_video=True))
     elif run:

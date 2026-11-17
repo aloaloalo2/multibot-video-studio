@@ -79,8 +79,10 @@ function arrangeEpisode(episode){
   episode.append(stage);
   if(!direct){
     const director=document.createElement('section');director.className='episode-director';director.hidden=true;
+    // «Підготовка» has a block of its own under «План готовий» (user, 17 November 2026: «такий самий окремий блок»)
+    const kit=document.createElement('section');kit.className='episode-director episode-kit';kit.hidden=true;
     const make=document.createElement('section');make.className='episode-make';buildMake(make);
-    episode.append(director,make);
+    episode.append(director,kit,make);
   }
   // The author's script, then what the recognition heard in the voice with its report (user, 31 October 2026).
   const frames=state.plan?.frames || [];
@@ -313,10 +315,28 @@ function fillDirectorLine(box){
   clearTimeout(directorTimer);
   // a director on the script while the voice is made shows here too (backend/script_timing.py)
   const id=state.project.id,run=directorRuns[id],synced=!!state.project.production?.plan_ready||state.plan?.timing?.status==='script_estimate'||run?.reason==='script';
-  box.replaceChildren();box.hidden=true;box.classList.remove('working');
+  box.replaceChildren();box.hidden=true;box.classList.remove('working','done');
+  const kitBox=box.parentElement?.querySelector('.episode-kit');
+  if(kitBox){kitBox.replaceChildren();kitBox.hidden=true;kitBox.classList.remove('working','done');}
   if(!synced||!run)return;
-  const line=(text,note)=>{const head=document.createElement('p');head.className='episode-director-line';head.innerHTML=`<strong>${esc(text)}</strong>${note?`<span>${esc(note)}</span>`:''}`;box.append(head);box.hidden=false;};
-  if(run.status==='queued'||run.status==='running'){
+  const line=(text,note,target=box)=>{const head=document.createElement('p');head.className='episode-director-line';head.innerHTML=`<strong>${esc(text)}</strong>${note?`<span>${esc(note)}</span>`:''}`;target.append(head);target.hidden=false;};
+  const check=small=>`<svg class="episode-director-check${small?' small':''}" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const planReady=()=>{
+    const frames=(state.plan?.frames||[]).length;
+    line('План готовий','');box.classList.add('done');
+    box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',check(false));
+    if(frames){const note=document.createElement('span');note.className='episode-director-note';note.textContent=`${frames} ${planFrameWord(frames)}`;box.querySelector('.episode-director-line')?.append(note);}
+  };
+  if(kitBox&&run.stage==='kit'&&(run.status==='queued'||run.status==='running')){
+    // the plan is written and «Підготовка» works beside the voice: two blocks, the plan done and the kit at work
+    planReady();
+    kitBox.classList.add('working');
+    const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
+    line('Підготовка',minutes===null?'':minutes<1?'Працює менше хвилини.':`Працює ${minutes} хв.`,kitBox);
+    kitBox.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
+    {const pause=productionControl(id,true);pause.classList.add('episode-director-control');kitBox.append(pause);}
+    directorTimer=setTimeout(()=>pollDirector(id),8000);
+  }else if(run.status==='queued'||run.status==='running'){
     box.classList.add('working');
     // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
@@ -344,15 +364,16 @@ function fillDirectorLine(box){
   }else if(run.status==='done'&&state.plan?.timing?.status==='script_estimate'){
     // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
     // режисер галочка, він закінчив свою роботу, і що він очікує»)
-    const frames=(state.plan?.frames||[]).length;
-    const check=small=>`<svg class="episode-director-check${small?' small':''}" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    line('План готовий','');
-    box.classList.add('done');
-    box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',check(false));
-    // the small grey line: the frames, and the kit with its own little check (user, 16 November 2026: «біля сірого
-    // малого тексту треба було»)
-    const parts=[frames?esc(`${frames} ${planFrameWord(frames)}`):'',run.kit==='ready'?`${check(true)}${esc('Підготовка завершена')}`:''].filter(Boolean);
-    if(parts.length){const note=document.createElement('span');note.className='episode-director-note';note.innerHTML=parts.join('<span class="episode-director-dot">·</span>');box.querySelector('.episode-director-line')?.append(note);}
+    planReady();
+    if(kitBox){
+      if(run.kit==='ready'){
+        line('Підготовка готова','',kitBox);kitBox.classList.add('done');
+        kitBox.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',check(false));
+      }else{
+        // stopped by a pause or failed: the frames make it first, nothing is lost
+        line('Підготовка не завершена','Буде на старті кадрів',kitBox);
+      }
+    }
   }else if(state.plan?.director_stale){
     line('Сценарій змінився після режисури','Режисер має заново розбити озвучку на кадри.');
     box.append(stepButton('Запустити режисуру',()=>startDirector(id),true));

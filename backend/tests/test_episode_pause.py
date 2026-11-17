@@ -113,6 +113,18 @@ class EpisodePauseTest(unittest.TestCase):
         voice.assert_not_called()
         self.assertTrue(result["errors"])
 
+    def test_play_after_a_pause_in_the_early_kit_makes_the_kit_beside_the_voice(self):
+        # 17 November 2026: the Moon film's kit stopped before its sheets, and play resumed only the voice
+        episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {
+            "director": {"reason": "script", "create_video": False, "stage": "kit", "directed": True}}, "pending": {}})
+        import director
+        import project_narration
+        with patch.object(director, "start_kit", return_value=True) as kit, patch.object(director, "start") as again, \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            episode_pause.resume("p")
+        kit.assert_called_once_with("p")
+        again.assert_not_called()   # the plan is written: no new direction
+
     def test_a_director_stopped_in_the_early_kit_is_not_run_again(self):
         episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {
             "director": {"reason": "script", "directed": True}}, "pending": {}})

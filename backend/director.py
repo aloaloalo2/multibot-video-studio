@@ -605,6 +605,39 @@ def early_kit(pid: str, cli: Path, data: dict) -> None:
         data.pop("stage", None)
 
 
+def start_kit(pid: str) -> bool:
+    """«Продовжити» after a pause taken during the early «Підготовка»: the kit goes on beside the voice again, as it ran
+    before the pause (17 November 2026: the Moon film's pause stopped the kit before its two sheets were drawn, and play
+    resumed only the voice, so the kit waited for the frames). False when there is nothing to make or a run is on."""
+    import production_kit
+    project = store.load_project(pid)
+    if production_kit.ready(project):
+        return False
+    with LOCK:
+        if pid in ACTIVE:
+            return False
+        ACTIVE.add(pid)
+
+    def work():
+        data = state(pid) or {}
+        try:
+            data.update(model=data.get("model") or store.channel_director_model(project),
+                        effort=data.get("effort") or store.channel_effort(project))
+            early_kit(pid, executable(), data)
+        except Exception as error:   # the frames make the kit themselves, as after any failed kit
+            data.update(kit="failed", kit_error=str(error)[:400])
+        finally:
+            with LOCK:
+                ACTIVE.discard(pid)
+                try:
+                    save(pid, {**data, "status": "done", "finished_at": time.time()})
+                except OSError:
+                    pass
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
 def start(pid: str, reason: str = "voice") -> dict:
     """Start the director for a project; a second start while one runs returns the running one."""
     project = store.load_project(pid)
