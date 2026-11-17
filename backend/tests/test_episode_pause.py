@@ -125,6 +125,23 @@ class EpisodePauseTest(unittest.TestCase):
         kit.assert_called_once_with("p")
         again.assert_not_called()   # the plan is written: no new direction
 
+    def test_play_of_a_stopped_voice_with_its_director_done_starts_a_missing_kit(self):
+        # 17 November 2026: this play answered «Внутрішня помилка студії» (run was None) while the voice went on
+        import director
+        import project_narration
+        import script_timing
+        episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {"narration": {"script": "Текст."}}, "pending": {}})
+        project = {"id": "p", "voice_script": {"text": "Текст."}}
+        with patch.object(director, "start_kit", return_value=True) as kit, patch.object(director, "state", return_value={"status": "done"}), \
+             patch.object(project_narration, "start") as voice, patch.object(script_timing, "estimated", return_value=True), \
+             patch.object(episode_pause.store, "load_project", return_value=project), \
+             patch.object(episode_pause.store, "load_project_plan", return_value={}), \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            result = episode_pause.resume("p")
+        voice.assert_called_once()
+        kit.assert_called_once_with("p")
+        self.assertEqual(result["errors"], [])
+
     def test_a_director_stopped_in_the_early_kit_is_not_run_again(self):
         episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {
             "director": {"reason": "script", "directed": True}}, "pending": {}})
