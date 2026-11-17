@@ -803,6 +803,8 @@ def writer_brief(compact_context):
              'тему на іншу, а сенс майже не зміниться, то текст шаблонний. Глядач має чути живу людину, яка думає вголос, сумнівається, '
              'має улюблені думки й звертається до нього, а не диктора, що читає довідку.\n' + SCAFFOLD + '\n'
              # the author, 16 November 2026: channels get renamed, so a script never names its channel by itself
+             # the author, 17 November 2026: «варто було би довести речення кожне до кінця обов'язково»
+             'Кожне речення доведене до кінця й зрозуміле, навіть якщо почути його окремо: називай повністю, про що йдеться, навіть ціною довшого речення, бо обмеження довжини речення немає. Не відсилай до того, чого глядач не бачив, або до того, про що в тексті ще не було мови, і не лишай думку, яку він мусить домислювати сам. Наприклад, не «выйдет ровно то самое», а «выйдет, что одна чёрная дыра вытягивается и распадается на две»; не «для такого фокуса», а «чтобы одна чёрная дыра вот так распалась на две» (автор, 17 листопада 2026). Обкладинку чи прев’ю ролика в тексті не згадуй і до неї не повертайся: опис обкладинки лише довідка для автора про тему ролика. '
              # the author, 17 November 2026: «цифри писати треба буквами… неправильно вимовляються»
              'Числа в тексті для озвучки пиши тільки словами, у правильному відмінку й узгоджені з іменником, бо цифри голос читає без відмінків і помиляється («слияние два черных дыр» замість «слияние двух чёрных дыр», «как 36 солнц» замість «как тридцать шесть солнц»). Так само роки й дати («в две тысячи пятнадцатом году»), відсотки, дроби, грошові суми й одиниці виміру («три целых восемь десятых сантиметра», «четыре миллиарда лет»); жодних цифр, знаків %, +, ÷, ~ і скорочень на кшталт км, млрд, °C. Після озвучки студія сама покаже числа цифрами на екрані (автор, 17 листопада 2026). '
              # the author, 17 November 2026: «для озвучки варто використовувати букву ё… в першу чергу»
@@ -908,6 +910,9 @@ def _work(cid, data):
                 brief += ('\nThe author selected a reference video topic. Keep the same central topic and title promise, '
                           'write an original script in this channel voice and language. Do not claim to have watched '
                           'the source or invent its content. '
+                          # the cover is background only (the author, 17 November 2026: «ми не говоримо про обложку в ролику»)
+                          + 'Never mention any thumbnail or cover in the script, neither the source one nor this video\'s: '
+                            'the viewer does not look at it while listening, so the script tells what it is about in its own words. '
                           + ('The source thumbnail (described in words below) shows what the title means concretely: '
                              'the script is about exactly the subject it shows and names, not another one the title could also fit. '
                              if seen else '')

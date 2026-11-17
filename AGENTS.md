@@ -1190,3 +1190,9 @@ The user: «для озвучки варто використовувати бу
 ## Numbers in words in every script for the voice (17 November 2026)
 
 The user: «цифри писати треба буквами, тому що неправильно вимовляються» (the voice read «слияние два черных дыр», «как 36 солнц»). The writer brief and the self-review now require every number, year, date, percentage, fraction, sum and unit spelled out in words in its right case and agreement («двух чёрных дыр», «в две тысячи пятнадцатом году»), with no digits, %, +, ÷, ~ or shorthand such as км, млрд. After the recognition the Studio shows numbers as digits on screen by itself (backend/number_text.py). Titles keep digits.
+
+## Every sentence finished and clear on its own (17 November 2026)
+
+The user: «інколи він щось говорить, але незрозуміло, про що це йде мова… варто було би довести речення кожне до кінця обов'язково. Обмежень в довжині речень немає». The writer brief and the self-review now require each sentence to name what it is about in full, even when that makes it longer; no reference to something the viewer has not seen or that the text has not mentioned yet («такой фокус» names the process itself), no thought the viewer must finish himself. Voiced scripts are not rewritten.
+
+The cover is never mentioned in a script (user, same day: «ми не говоримо про обложку в ролику… це просто інформація про що ролик»): a reference video's thumbnail description only tells the writer what the topic is. The writer brief, its reference-video note and the self-review say so.
