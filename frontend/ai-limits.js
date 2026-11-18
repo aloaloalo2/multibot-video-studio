@@ -41,7 +41,7 @@
   }
   function line(kind,item){
     item=item&&item.known?main(item):item;
-    if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;
+    if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.login_expired?(kind==='claude'?'Оновлюємо вхід Claude Code, залишок з’явиться за хвилину.':'Codex давно не запускався, тому його вхід ще не оновлений. Залишок з’явиться з першою роботою Codex.'):item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;
     const age=Math.max(0,Math.floor((Date.now()/1000-(item.seen_at||0))/60));
     const fresh=item.stale?`Останні дані: ${age} хв тому · `:'';
     const when=fresh+(item.reset?'Очікуємо актуальні дані':`Оновиться ${until(item.resets_at)}`);

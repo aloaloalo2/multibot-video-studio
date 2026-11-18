@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import json
 import subprocess
+import tempfile
 import sys
 import urllib.error
 import urllib.request
@@ -122,6 +123,30 @@ def _view(best, now: float) -> dict:
             "resets_at": resets, "seen_at": seen, "source":"logs", "stale":now-seen>90}
 
 
+RENEW_EVERY = 1800   # seconds between two asks to the CLI to renew its login
+_RENEW: dict = {}
+_RENEW_LOCK = threading.Lock()   # its own: cached() holds _LOCK while it reads the account
+
+
+def renew_claude_login(now: float) -> bool:
+    """Start `claude -p /usage` in the background, at most once in RENEW_EVERY: a local command of Claude Code that
+    makes no model request and renews the stored login."""
+    with _RENEW_LOCK:
+        if now - _RENEW.get('at', 0) < RENEW_EVERY:
+            return False
+        _RENEW['at'] = now
+    try:
+        import director
+        cli = director.executable()
+        work = Path(tempfile.gettempdir()) / 'videokey-claude-usage'
+        work.mkdir(exist_ok=True)
+        subprocess.Popen([str(cli), '-p', '/usage', '--setting-sources', ''], cwd=work, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    except (OSError, RuntimeError, ImportError):
+        return False
+
+
 def claude_usage(home=None, now=None):
     """Use the same OAuth usage route as the installed CLI, without refreshing auth."""
     home=Path(home or Path.home());now=time.time() if now is None else now
@@ -138,6 +163,14 @@ def claude_usage(home=None, now=None):
         if not isinstance(saved,dict):return None
         token=(saved.get('claudeAiOauth') or {}).get('accessToken')
         if not isinstance(token,str) or not token:return None
+        expires=(saved.get('claudeAiOauth') or {}).get('expiresAt')
+        if type(expires) in (int,float) and expires/1000<=now:
+            # Claude Code renews its login only when it runs (user, 18 November 2026: «як це час минув… чому не
+            # підтягується… а як тоді бачити статус онлайн»). The studio never renews it itself, which could log the CLI
+            # out; it asks the CLI's own local /usage command, which spends nothing from the limit and renews the login
+            # (checked that day: the login went from 01:10 to 15:57). The next reading then sees the account.
+            renew_claude_login(now)
+            return {'login_expired':True}
         request=urllib.request.Request('https://api.anthropic.com/api/oauth/usage?skip_spend=1',headers={
             'Authorization':'Bearer '+token,'anthropic-beta':'oauth-2025-04-20','User-Agent':'VideoKey-Studio/1.0'})
         try:
@@ -179,7 +212,8 @@ def codex_usage(home=None, now=None):
                 try:wait=float(error.headers.get('Retry-After') or ACCOUNT_BACKOFF)
                 except (TypeError,ValueError):wait=ACCOUNT_BACKOFF
                 return {'retry_after':max(ACCOUNT_EVERY,min(wait,3600))}
-            return None
+            # Codex renews its login when it runs: until then the panel says so instead of an empty line
+            return {'login_expired':True} if error.code==401 else None
         window=(data.get('rate_limit') or {}).get('primary_window') or {}
         used=window.get('used_percent')
         resets=window.get('reset_at')
@@ -205,6 +239,9 @@ def _account(now: float, state: dict | None = None, fetch=None):
     fetch = fetch or claude_usage
     if now >= state.get('next', 0):
         got = fetch()
+        state['login_expired'] = bool(got and got.get('login_expired'))
+        if got and got.get('login_expired'):
+            got = None
         if got and 'retry_after' in got:
             state['next'] = now + got['retry_after']
         elif got:
@@ -241,7 +278,11 @@ def cached(data_root: Path) -> dict:
             return _CACHE["value"]
         value = read(data_root)
         value['claude'] = _merge(_account(now), value['claude'], now)
+        if _ACCOUNT.get('login_expired') and not value['claude'].get('known'):
+            value['claude'] = {**value['claude'], 'login_expired': True}
         value['codex'] = _merge(_account(now, _CODEX_ACCOUNT, codex_usage), value['codex'], now)
+        if _CODEX_ACCOUNT.get('login_expired') and not value['codex'].get('known'):
+            value['codex'] = {**value['codex'], 'login_expired': True}
         if (value['codex'].get('week_resets_at') or now + 1) <= now:
             # last week's figure never outlives its own reset while the account cannot be read
             value['codex'] = {k: v for k, v in value['codex'].items() if k not in ('week_left', 'week_resets_at')}

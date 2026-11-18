@@ -115,6 +115,19 @@ class AiLimitsTest(unittest.TestCase):
         self.assertTrue(request.full_url.startswith('https://api.anthropic.com/api/oauth/usage'))
         self.assertNotIn('test-only-token',json.dumps(result))
 
+    def test_an_expired_login_is_named_and_not_sent(self):
+        # Claude Code renews its login only when it runs: after a night without a run the studio says so plainly
+        folder=self.home/'.claude';folder.mkdir(exist_ok=True)
+        (folder/'.credentials.json').write_text(json.dumps({'claudeAiOauth':{'accessToken':'old','expiresAt':(time.time()-60)*1000}}))
+        ai_limits._RENEW.clear()
+        with patch.object(ai_limits.urllib.request,'urlopen',side_effect=AssertionError('no request with an expired login')), \
+             patch.object(ai_limits.subprocess,'Popen') as cli:
+            self.assertEqual(ai_limits.claude_usage(self.home),{'login_expired':True})
+            self.assertEqual(ai_limits.claude_usage(self.home),{'login_expired':True})
+        # the CLI's own local /usage renews the login, once in RENEW_EVERY
+        cli.assert_called_once()
+        self.assertEqual(cli.call_args.args[0][1:3],['-p','/usage'])
+
     def test_account_failure_keeps_explicitly_dated_fallback(self):
         self.account_response()
         with patch.object(ai_limits.urllib.request,'urlopen',side_effect=OSError('offline')):
