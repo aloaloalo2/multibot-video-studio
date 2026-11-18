@@ -138,9 +138,9 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
     flag.textContent=codeOf(titleLanguage);flag.hidden=!titleLanguage;
     // the competitor's own title stands under its preview as the video's caption (user, 18 November 2026: «це має
     // бути підпис ролика»)
-    original.replaceChildren();
-    if(video.title_language){const chip=document.createElement('span');chip.className='trend-language';chip.textContent=codeOf(video.title_language);original.append(chip,' ');}
-    original.append(video.title);
+    const clip=document.createElement('span');clip.className='trend-clip';
+    if(video.title_language){const chip=document.createElement('span');chip.className='trend-language';chip.textContent=codeOf(video.title_language);clip.append(chip,' ');}
+    clip.append(video.title);original.replaceChildren(clip);
   };
   root.querySelector('[name="title"]').addEventListener('input',showFlags);
   async function toChannelLanguage(){
