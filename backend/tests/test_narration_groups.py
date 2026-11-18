@@ -99,5 +99,19 @@ class SpecTest(unittest.TestCase):
         self.assertEqual(quote['cached'], 3)
 
 
+    def test_takes_of_another_grouping_are_used_again_when_paragraphs_are_joined_mid_narration(self):
+        # 18 November 2026: Jupiter was voiced by paragraph, the paragraphs were then joined and «Продовжити» started over
+        ref = {'sha256': 'ref'}
+        first = narration.units(UnitsTest.text, 10)[0]   # the first paragraph, voiced already
+        (self.folder / (lab.fingerprint({**self.settings, 'text': first['text']}, ref) + '.mp3')).write_bytes(b'take')
+        joined = {**self.settings, 'heygen_sentences': 10, 'heygen_join_paragraphs': True}
+        with patch.object(lab, 'snapshot', return_value={'settings': joined, 'reference': None}):
+            _, _, entries, quote = narration.spec({'id': 'a' * 24, 'channel_id': 'c' * 16}, UnitsTest.text)
+        self.assertEqual([e['sentences'] for e in entries], [5, 2])
+        self.assertTrue(entries[0]['cached'])
+        self.assertEqual(quote['cached'], 1)
+        self.assertEqual(' '.join(e['text'] for e in entries), ' '.join(narration.phrases(UnitsTest.text)))
+
+
 if __name__ == '__main__':
     unittest.main()

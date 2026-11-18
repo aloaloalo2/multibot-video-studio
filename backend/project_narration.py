@@ -96,10 +96,70 @@ def units(text, group=1, join=False):
         flush()
     return result
 
+def _even(count, group):
+    """Sizes of `count` sentences cut into groups of at most `group`, as even as they come."""
+    parts = max(1, math.ceil(count / group)) if count else 0
+    base, extra = divmod(count, parts) if parts else (0, 0)
+    return [base + (index < extra) for index in range(parts)]
+
+
+def _spans(sentences, start, end, group, join):
+    """(start, count) of the groups over sentences[start:end], each sentence a (paragraph, text) pair."""
+    spans, at = [], start
+    while at < end:
+        stop = at
+        while stop < end and (join or sentences[stop][0] == sentences[at][0]):
+            stop += 1
+        for size in _even(stop - at, group):
+            texts = [text for _, text in sentences[at:at + size]]
+            if size > 1 and len(' '.join(texts)) > GROUP_CHARS:
+                spans.extend((at + k, 1) for k in range(size))
+            else:
+                spans.append((at, size))
+            at += size
+    return spans
+
+
+def reusing_units(text, group, join, made):
+    """units(), but a take already voiced for the same sentences is used again, whatever grouping made it: the
+    sentences between such takes are grouped anew (user, 18 November 2026: «нажав продовжити озвучку і почалось
+    заново?» after the paragraphs were joined mid-narration and none of the six paragraph takes matched the new groups)."""
+    fresh = units(text, group, join)
+    if any(unit['sentences'] == 0 for unit in fresh):
+        return fresh   # a sentence cut for its length: the plain grouping
+    sentences = [(line, sentence) for line, row in enumerate(text.strip().splitlines()) for sentence in planner.split_sentences(row)]
+    joined = lambda start, count: ' '.join(sentence for _, sentence in sentences[start:start + count])
+    done = {}
+    for size in range(1, lab.SENTENCES_MAX + 1):
+        for together in (False, True):
+            for start, count in _spans(sentences, 0, len(sentences), size, together):
+                if count > done.get(start, 0) and made(joined(start, count)):
+                    done[start] = count
+    if not done:
+        return fresh
+    result, at, pending = [], 0, None
+    def flush(stop):
+        if pending is not None:
+            result.extend({'text': joined(a, c), 'sentences': c} for a, c in _spans(sentences, pending, stop, group, join))
+    while at < len(sentences):
+        if at in done:
+            flush(at); pending = None
+            result.append({'text': joined(at, done[at]), 'sentences': done[at]})
+            at += done[at]
+        else:
+            pending = at if pending is None else pending
+            at += 1
+    flush(len(sentences))
+    return result
+
+
 def spec(project, text):
     cid=project['channel_id'];profile=lab.snapshot(cid)
     settings=profile['settings'];ref=lab.effective_reference(cid,settings) if lab.selected_voice_id(settings) or settings['provider']=='heygen' else profile['reference']
-    parts=units(text,lab.sentences_per_request(settings),lab.joins_paragraphs(settings))
+    def made(part):
+        params={**settings,'text':part}
+        return (root(project['id'])/(lab.fingerprint(params,ref)+'.mp3')).is_file() or lab.original_path(params,ref).is_file() if ref else False
+    parts=reusing_units(text,lab.sentences_per_request(settings),lab.joins_paragraphs(settings),made)
     if settings['provider']=='heygen' and settings['heygen_model']=='starfish' and settings.get('heygen_starfish_ssml') and ('<' in text or '&' in text):
         if len(text)>5000:raise store.StudioError('Для сценарію SSML Starfish допускається до 5000 символів. Для довгого сценарію виберіть звичайний текст')
         parts=[{'text':text,'sentences':0}]
@@ -108,16 +168,8 @@ def spec(project, text):
         params={**settings,'text':part}
         key=lab.fingerprint(params,ref)
         return {'text':part,'key':key,'sentences':count,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':lab.original_path(params,ref).is_file() or (settings['provider']=='elevenlabs' and (root(project['id'])/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')).is_file())}
-    entries=[]
-    for part in parts:
-        made=entry(part['text'],part['sentences'])
-        if part['sentences']>1 and not (made['cached'] or made['raw_cached']):
-            # a narration voiced sentence by sentence before keeps its takes: a group whose every sentence is made
-            # already is read from them, with nothing sent again
-            singles=[entry(sentence,1) for sentence in planner.split_sentences(part['text'])]
-            if len(singles)==part['sentences'] and all(x['cached'] or x['raw_cached'] for x in singles):
-                entries.extend(singles);continue
-        entries.append(made)
+    # takes voiced before, by sentence or in other groups, are used again (reusing_units)
+    entries=[entry(part['text'],part['sentences']) for part in parts]
     missing={x['key']:x for x in entries if not x['cached'] and not x['raw_cached']}.values()
     count=sum(len(x['text']) for x in missing)
     amount=sum(lab.estimate({**settings,'text':x['text']})['amount'] for x in missing)
