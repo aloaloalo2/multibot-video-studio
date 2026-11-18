@@ -55,7 +55,17 @@
     const text=k=>data[k]&&data[k].known?`${names[k]} ${main(data[k]).left}% ${span(main(data[k]))}`:`${names[k]} немає даних`;
     const label=`Залишок лімітів: ${text('claude')}, ${text('codex')}`;
     button.title=label;button.setAttribute('aria-label',label);
-    if(panel)panel.innerHTML=`<h4>Залишок лімітів</h4>${line('claude',data.claude)}${line('codex',data.codex)}`;
+    if(panel)panel.innerHTML=`<h4>Залишок лімітів</h4>${line('claude',data.claude)}${line('codex',data.codex)}${spent(data.spending)}`;
+  }
+  // what the paid services cost (user, 18 November 2026: «підрахунок… скільки потрачено за сьогодні… за останні 30
+  // днів… всього»): OpenRouter from its key's counters, HeyGen and ElevenLabs from the studio's receipts, UTC windows
+  function money(v){return Number.isFinite(v)?'$'+(v<10?v.toFixed(2):v.toFixed(0)):'—';}
+  function spent(s){
+    if(!s||!s.services)return '';
+    const rows=[['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs']].filter(([k])=>s.services[k]&&(s.services[k].month||s.services[k].week||s.services[k].day));
+    const cell=v=>`<td>${money(v)}</td>`;
+    const body=rows.map(([k,name])=>`<tr><th>${name}</th>${cell(s.services[k].day)}${cell(s.services[k].week)}${cell(s.services[k].month)}</tr>`).join('');
+    return `<h4 class="ai-spend-title">Витрати</h4><table class="ai-spend"><thead><tr><th></th><th>Сьогодні</th><th>Тиждень</th><th>Місяць</th></tr></thead><tbody>${body}<tr class="ai-spend-total"><th>Усього</th>${cell(s.total.day)}${cell(s.total.week)}${cell(s.total.month)}</tr></tbody></table><span class="ai-limit-note">Claude і Codex працюють за підпискою. ElevenLabs орієнтовно, за тарифом плану з податком.</span>`;
   }
   async function load(){
     if(pending)return;pending=true;

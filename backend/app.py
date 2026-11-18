@@ -1381,7 +1381,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(space.all_usage(cleanup_blocked))
         if path == '/api/limits':
             import ai_limits   # Claude Code's and Codex's 5-hour limits, from their own local logs
-            return self.json_response(ai_limits.cached(store.DATA_ROOT))
+            import spending   # and what the paid services cost today, this week and this month
+            return self.json_response({**ai_limits.cached(store.DATA_ROOT), 'spending': spending.summary()})
         revision=re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration/revision',path)
         if revision:
             return self.json_response(narration_revision.snapshot(revision.group(1)))

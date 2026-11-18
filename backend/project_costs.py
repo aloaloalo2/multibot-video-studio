@@ -45,6 +45,27 @@ def record_at(root: Path, provider: str, amount, *, identity=None, category="thu
             events[f"{provider}:{identity}"]["language"] = language
         store.atomic_json(path, data)
         CACHE.pop(root.name, None)
+        ledger(provider, amount, identity, category, root)
+
+
+def ledger(provider, amount, identity, category, root):
+    """Every paid charge in one studio-wide journal with its time, apart from the projects: the limits panel's
+    spending survives a deleted project (user, 18 November 2026: «має працювати… навіть якщо я видалю проект»)."""
+    if not number(amount) or amount <= 0 or provider == "claude_code":   # Claude runs on the subscription
+        return
+    try:
+        if Path(root).resolve().parent != Path(store.PROJECTS_ROOT).resolve():
+            return   # a folder outside the studio's projects (a test's) writes no studio-wide charge
+    except OSError:
+        return
+    try:
+        import json, time
+        line = {"at": round(time.time(), 1), "provider": provider, "amount": amount, "identity": identity,
+                "category": category, "project": Path(root).name}
+        with open(store.DATA_ROOT / "spending-ledger.jsonl", "a", encoding="utf-8") as out:
+            out.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def collect(root: Path, data: dict) -> dict:

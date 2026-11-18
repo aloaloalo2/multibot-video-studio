@@ -412,7 +412,11 @@ function projectActions(project,current=()=>project){
   const icons={delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v5m4-5v5"/></svg>'};
   if(canCreateThumbnail)icons.thumbnail=thumbnailIcon;
   icons.space=spaceIcon;
-  for(const [type,title,run] of [...(canCreateThumbnail?[['thumbnail','Створити прев’ю',()=>openThumbnail(current())]]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(current())]]:[]),['delete','Видалити випуск',()=>deleteProject(current())]]){
+  // an episode that has its thumbnail opens its «Прев’ю» tab instead of a new one (user, 18 November 2026: «якщо прев'юшка
+  // вже є… просто прев'ю… перекидає мене в проект в прев'ю»)
+  const hasCover=!!project.preview_mtime;
+  const thumbnailAction=hasCover?['thumbnail','Прев’ю',()=>selectProject(current().id,{view:'thumb'}).catch(error=>status(error.message,true))]:['thumbnail','Створити прев’ю',()=>openThumbnail(current())];
+  for(const [type,title,run] of [...(canCreateThumbnail?[thumbnailAction]:[]),...(project.freeable?[['space','Звільнити місце',()=>openSpace(current())]]:[]),['delete','Видалити випуск',()=>deleteProject(current())]]){
     const button=document.createElement('button');button.type='button';button.className=`project-action ${type}`;button.innerHTML=icons[type];button.title=title;button.setAttribute('aria-label',`${title} «${project.name}»`);button.addEventListener('click',run);actions.append(button);
   }
   return actions;
