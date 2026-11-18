@@ -85,7 +85,10 @@ def queue_ahead(owner):
 
 VOICE_READY_TIMEOUT=120
 MODELS={'heygen-voice-1':'HeyGen Voice 1','heygen-voice-1-turbo':'HeyGen Voice Turbo','heygen-voice-1-turbo-free':'HeyGen Voice Turbo Free','starfish':'Starfish'}
-RATES={'heygen-voice-1':30/1000000,'heygen-voice-1-turbo':15/1000000,'heygen-voice-1-turbo-free':0}
+# HeyGen's API price list (help.heygen.com «HeyGen API Pricing Explained», checked 18 November 2026): Turbo $4 and the
+# instant Voice 1 $15 a million characters. The wallet agreed: about 60 thousand Turbo characters took $0.25 from it the
+# same day, while the old $15 for Turbo had shown $0.90 (user: «якбудто студія не правильно рахує»).
+RATES={'heygen-voice-1':15/1000000,'heygen-voice-1-turbo':4/1000000,'heygen-voice-1-turbo-free':0}
 STARFISH_PER_MINUTE=.12
 # Duration estimate only: actual Starfish charges depend on generated audio length.
 RATES['starfish']=STARFISH_PER_MINUTE/900
