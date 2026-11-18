@@ -43,6 +43,10 @@ def openrouter() -> dict | None:
 
 LEDGER = "spending-ledger.jsonl"
 BACKFILLED = "spending-ledger.backfilled"
+CLAUDE_BACKFILLED = "spending-ledger.claude-backfilled"
+# Claude runs on the subscription: its API-equivalent cost divided by the author's coefficient, as on the project cards
+# (frontend/project-costs.js claudeSubscriptionDivisor; user, 18 November 2026: «клод не рахується?»)
+CLAUDE_DIVISOR = 35
 
 
 def backfill() -> None:
@@ -68,9 +72,38 @@ def backfill() -> None:
         pass
 
 
+def backfill_claude() -> None:
+    """Once: the Claude run reports written before Claude went into the journal, the latest report of each run log."""
+    marker = store.DATA_ROOT / CLAUDE_BACKFILLED
+    if marker.exists():
+        return
+    latest = {}
+    for path in store.PROJECTS_ROOT.glob("*/spend/*.json"):
+        try:
+            row = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        cost, log = row.get("cost_usd"), row.get("log")
+        if not isinstance(cost, (int, float)) or cost <= 0 or not log:
+            continue
+        key = (path.parents[1].name, log)
+        at = row.get("made_at") or path.stat().st_mtime
+        if key not in latest or at > latest[key]["at"]:
+            latest[key] = {"at": at, "provider": "claude_code", "amount": cost, "identity": log, "category": "production",
+                           "project": key[0]}
+    try:
+        with open(store.DATA_ROOT / LEDGER, "a", encoding="utf-8") as out:
+            for line in latest.values():
+                out.write(json.dumps(line, ensure_ascii=False) + "\n")
+        marker.write_text("done")
+    except OSError:
+        pass
+
+
 def receipts(now: float) -> dict:
     """HeyGen and ElevenLabs from the studio-wide journal (project_costs.ledger), which outlives deleted projects."""
     backfill()
+    backfill_claude()
     edges = windows(now)
     rate = (store.read_json(store.DATA_ROOT / "eleven-credit-usd.json", {}) or {}).get("credit_usd_rate")
     rows = {}
@@ -81,16 +114,18 @@ def receipts(now: float) -> dict:
                     row = json.loads(text)
                 except ValueError:
                     continue
-                if row.get("provider") in ("heygen", "elevenlabs") and (row.get("at") or 0) >= edges["month"]:
-                    rows[f"{row['provider']}:{row.get('identity')}"] = row   # a charge recorded twice counts once
+                if row.get("provider") in ("heygen", "elevenlabs", "claude_code") and (row.get("at") or 0) >= edges["month"]:
+                    # a charge recorded twice counts once; a Claude run's report grows, its latest amount stands
+                    rows[f"{row['provider']}:{row.get('project')}:{row.get('identity')}"] = row
     except OSError:
         pass
-    totals = {name: {"day": 0.0, "week": 0.0, "month": 0.0} for name in ("heygen", "elevenlabs")}
+    totals = {name: {"day": 0.0, "week": 0.0, "month": 0.0} for name in ("heygen", "elevenlabs", "claude_code")}
     for row in rows.values():
         amount = row.get("amount")
         if not isinstance(amount, (int, float)):
             continue
-        usd = amount if row["provider"] == "heygen" else (amount * rate * 1.2 if rate else 0)
+        usd = (amount if row["provider"] == "heygen" else amount / CLAUDE_DIVISOR if row["provider"] == "claude_code"
+               else (amount * rate * 1.2 if rate else 0))
         for window, start in edges.items():
             if row["at"] >= start:
                 totals[row["provider"]][window] += usd

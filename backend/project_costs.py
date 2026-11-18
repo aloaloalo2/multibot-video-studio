@@ -51,7 +51,7 @@ def record_at(root: Path, provider: str, amount, *, identity=None, category="thu
 def ledger(provider, amount, identity, category, root):
     """Every paid charge in one studio-wide journal with its time, apart from the projects: the limits panel's
     spending survives a deleted project (user, 18 November 2026: «має працювати… навіть якщо я видалю проект»)."""
-    if not number(amount) or amount <= 0 or provider == "claude_code":   # Claude runs on the subscription
+    if not number(amount) or amount <= 0:
         return
     try:
         if Path(root).resolve().parent != Path(store.PROJECTS_ROOT).resolve():

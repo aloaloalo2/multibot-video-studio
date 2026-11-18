@@ -62,10 +62,11 @@
   function money(v){return Number.isFinite(v)?'$'+(v<10?v.toFixed(2):v.toFixed(0)):'—';}
   function spent(s){
     if(!s||!s.services)return '';
-    const rows=[['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs']].filter(([k])=>s.services[k]&&(s.services[k].month||s.services[k].week||s.services[k].day));
+    // today and the month only (user, 18 November 2026: «тиждень не нада»)
+    const rows=[['claude_code','Claude ≈'],['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs']].filter(([k])=>s.services[k]&&(s.services[k].month||s.services[k].day));
     const cell=v=>`<td>${money(v)}</td>`;
-    const body=rows.map(([k,name])=>`<tr><th>${name}</th>${cell(s.services[k].day)}${cell(s.services[k].week)}${cell(s.services[k].month)}</tr>`).join('');
-    return `<h4 class="ai-spend-title">Витрати</h4><table class="ai-spend"><thead><tr><th></th><th>Сьогодні</th><th>Тиждень</th><th>Місяць</th></tr></thead><tbody>${body}<tr class="ai-spend-total"><th>Усього</th>${cell(s.total.day)}${cell(s.total.week)}${cell(s.total.month)}</tr></tbody></table><span class="ai-limit-note">Claude і Codex працюють за підпискою. ElevenLabs орієнтовно, за тарифом плану з податком.</span>`;
+    const body=rows.map(([k,name])=>`<tr><th>${name}</th>${cell(s.services[k].day)}${cell(s.services[k].month)}</tr>`).join('');
+    return `<h4 class="ai-spend-title">Витрати</h4><table class="ai-spend"><thead><tr><th></th><th>Сьогодні</th><th>Місяць</th></tr></thead><tbody>${body}<tr class="ai-spend-total"><th>Усього</th>${cell(s.total.day)}${cell(s.total.month)}</tr></tbody></table>`;
   }
   async function load(){
     if(pending)return;pending=true;
