@@ -89,7 +89,7 @@ function updateProjectCardCover(card,project){
   if(card._coverSource===source&&(!card._coverRetryAt||Date.now()<card._coverRetryAt))return;
   card._coverSource=source;delete card._coverRetryAt;
   const previous=card.querySelector('.project-cover');
-  if(!source){previous?.remove();card.classList.remove('has-cover','cover-ready');card.classList.add('no-cover');return;}
+  if(!source){previous?.remove();card.querySelector('.project-cover-blur')?.remove();card.classList.remove('has-cover','cover-ready');card.classList.add('no-cover');return;}
   const cover=document.createElement('img');cover.className='project-cover';cover.alt='';cover.decoding='async';
   // Replacements load offscreen. The previous picture stays visible until the new one is decoded.
   cover.loading=previous?'eager':'lazy';
@@ -102,6 +102,10 @@ function updateProjectCardCover(card,project){
     const old=card.querySelector('.project-cover');
     if(old!==cover){if(old)old.replaceWith(cover);else card.append(cover);}
     card.classList.remove('no-cover');card.classList.add('has-cover','cover-ready');
+    // the band above the picture shows the same picture blurred, not an empty dark strip (user, 18 November 2026)
+    let blur=card.querySelector('.project-cover-blur');
+    if(!blur){blur=document.createElement('div');blur.className='project-cover-blur';blur.setAttribute('aria-hidden','true');}
+    blur.style.backgroundImage=`url("${source}")`;cover.before(blur);
   },{once:true});
   cover.addEventListener('error',()=>{
     if(card._coverSource===source)card._coverRetryAt=Date.now()+30000;
