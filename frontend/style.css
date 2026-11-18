@@ -2964,10 +2964,12 @@ select option{background:#232327;color:#f1f1f2}
 /* the channel's logo laid by hand on a thumbnail (frontend/thumbnail-logo.js) */
 .thumb-logo-layer{position:absolute;z-index:4;cursor:move;touch-action:none;outline:1.5px dashed #ffffffcc;outline-offset:2px;user-select:none}
 .thumb-logo-layer>img{display:block;width:100%;height:100%;pointer-events:none}
-.thumb-logo-resize{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #23252b;cursor:nwse-resize}
+.thumb-logo-resize{position:absolute;left:-8px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #23252b}
+.thumb-logo-resize.top{top:-8px;cursor:nwse-resize}.thumb-logo-resize.bottom{bottom:-8px;cursor:nesw-resize}
+.thumb-logo-layer.quiet{outline-color:transparent}.thumb-logo-layer.quiet .thumb-logo-resize,.thumb-logo-layer.quiet .thumb-logo-remove{display:none}
 .thumb-logo-remove{position:absolute;top:-12px;right:-12px;width:24px;height:24px;min-height:0;padding:0;border-radius:50%;border:1px solid #5a5d67;background:#23252bf2;color:#eef0f3;font-size:15px;line-height:1;cursor:pointer}
 .thumb-logo-remove:hover{background:#572e34;border-color:#a55963;color:#ffc2c7}
-.thumb-logo-bar{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;gap:6px;padding:6px;border-radius:11px;background:#16171bf0;border:1px solid #3a3c44;box-shadow:0 8px 24px #0008}
+.thumb-logo-bar{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;gap:6px}
 .thumb-logo-bar button{min-height:32px;padding:5px 12px;font-size:13px}
 .thumb-view-frame.is-placing-logo .thumb-preview-tools{opacity:1}
 /* «Підготовка» under «План готовий»: one line like it, a grey note when the kit waits for the frames (17 November 2026) */

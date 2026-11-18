@@ -2927,11 +2927,9 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
     base = language_thumbnails.version_file(pid, code, selected) if selected else cover(project)
     if not base:
         raise RuntimeError("У випуску ще немає прев'ю")
-    if not thumbnail_gen.CODEX.is_file():
-        raise RuntimeError("Не знайдено Codex у ChatGPT.app")
     work = work_dir(pid, code)
     work.mkdir(parents=True, exist_ok=True)
-    progress(pid, job, 20, "Codex генерує прев’ю, зазвичай 1-3 хвилини")
+    progress(pid, job, 20, "OpenRouter малює прев’ю, зазвичай до хвилини")
     name = "thumbnail-new.png"
     (work / name).unlink(missing_ok=True)
     title = ((load_state(pid).get("languages") or {}).get(code) or {}).get("title")
@@ -2943,36 +2941,24 @@ def thumbnail(pid: str, code: str, job: dict) -> None:
         prompt = thumbnail_gen.editing(str(job.get('wishes') or ''), name)
         prompt += f"\nKeep existing text in {LANGUAGES[code][1]} unless the author explicitly requests a text change."
         hero = None
-        progress(pid, job, 20, 'Codex вносить правки у вибране прев’ю')
+        progress(pid, job, 20, 'OpenRouter вносить правки у вибране прев’ю')
     else:
         prompt=thumbnail_brief(code,title,str(job.get('wishes') or ''),job.get('add_flag') is True,name)
         import channel_hero
         hero,hero_rules=channel_hero.prepare(project,work,job.get('use_hero'))
         prompt+=hero_rules
+    # the lines that tell Codex to use its tool and where to save mean nothing to OpenRouter
+    prompt = re.sub(r"\n?Use the built-in image generation tool[^\n]*(\n[^\n]*reply only with the saved path\.?)?", "", prompt)
     (work/'thumbnail-prompt.txt').write_text(prompt,encoding='utf-8')
-    command = [str(thumbnail_gen.CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work), "-i", str(base)]
-    if hero:command.extend(['-i',str(hero)])
-    command.append('-')
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=work, text=True,
-                               start_new_session=True)
-    PROCS[job["key"]] = process
-    try:
-        out, err = process.communicate(prompt, timeout=thumbnail_gen.TIMEOUT)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        raise
-    finally:
-        PROCS.pop(job["key"], None)
+    # drawn by OpenRouter, as the episode's own thumbnails (user, 18 November 2026: Codex's week was out and the
+    # translated thumbnails could not be made); the picture to translate and the host go along as references
+    import openrouter_images
+    drawn = openrouter_images.draw_thumbnail(pid, prompt, [str(base)] + ([str(hero)] if hero else []))
     if job["key"] in CANCEL:
         raise Stop()
-    result = subprocess.CompletedProcess(command, process.returncode, out, err)
-    (work / "thumbnail-log.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
-    from PIL import Image, UnidentifiedImageError
-    try:
-        with Image.open(work / name) as image:
-            image.verify()
-    except (OSError, UnidentifiedImageError):
-        raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip()) from None
+    (work / name).write_bytes(drawn["png"])
+    (work / "thumbnail-log.txt").write_text(f"OpenRouter {drawn['model']}: ${drawn['cost']}\n", encoding="utf-8")
+    job['cost_usd'] = drawn['cost']
     result=publish_thumbnail(pid,code,work/name,job,prompt)
     job['version']=result['number']
 

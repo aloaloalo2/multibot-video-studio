@@ -593,19 +593,15 @@ class LanguagesTest(unittest.TestCase):
         cover.parent.mkdir()
         Image.new("RGB", (64, 36)).save(cover)
         prompts = []
-        class Codex:
-            def __init__(self, command, cwd, **kwargs):
-                self.cwd, self.returncode, self.pid = Path(cwd), 0, 0
-            def communicate(self, prompt, timeout=None):
-                prompts.append(prompt)
-                Image.new("RGB", (64, 36), "red").save(self.cwd / "thumbnail-new.png")
-                return "", ""
-            def poll(self):
-                return 0
+        def drawn(pid, prompt, refs):   # OpenRouter draws the translated thumbnail (18 November 2026)
+            prompts.append(prompt)
+            import io
+            png = io.BytesIO(); Image.new("RGB", (64, 36), "red").save(png, "PNG")
+            return {"png": png.getvalue(), "cost": 0.07, "model": "openai/gpt-image-2.6-sunburst"}
         languages.add(self.pid, "de")
         # the thumbnail is translated while the text of the same language is at work (user, 2 November 2026)
         languages.ACTIVE.add(languages.job_key(self.pid, "de", "voice"))
-        with patch.object(thumbnail_gen, "CODEX", self.voice), patch.object(languages.subprocess, "Popen", Codex):
+        with patch("openrouter_images.draw_thumbnail", side_effect=drawn):
             languages.start(self.pid, "thumbnail", "de", wishes="напис жовтий")
             self.assertEqual(self.wait("de|thumbnail")["status"], "done")
         self.assertIn(languages.job_key(self.pid, "de", "voice"), languages.ACTIVE)
@@ -614,7 +610,7 @@ class LanguagesTest(unittest.TestCase):
         self.assertIn("напис жовтий", prompts[0])
         self.assertTrue(languages.file_path(self.pid, "de", "thumbnail").is_file())
         self.assertTrue((self.episode / "Мови" / "Deutsch" / "Прев'ю Deutsch.png").is_file())
-        with patch.object(thumbnail_gen,"CODEX",self.voice),patch.object(languages.subprocess,"Popen",Codex):
+        with patch("openrouter_images.draw_thumbnail", side_effect=drawn):
             languages.start(self.pid,'thumbnail','pl',wishes='невеликий прапор на кепці',add_flag=True)
             self.assertEqual(self.wait('pl|thumbnail')['status'],'done')
         self.assertIn('translate every word written on it into Polish',prompts[-1])
@@ -634,24 +630,19 @@ class LanguagesTest(unittest.TestCase):
         work=languages.work_dir(self.pid,'es');work.mkdir(parents=True,exist_ok=True)
         legacy=work/'thumbnail.png';Image.new('RGB',(64,36),'red').save(legacy)
         old=legacy.read_bytes();calls=[]
-        class Codex:
-            def __init__(self,command,cwd,**kwargs):
-                self.cwd,self.returncode,self.pid=Path(cwd),0,0
-                calls.append(command)
-            def communicate(self,prompt,timeout=None):
-                calls.append(prompt)
-                attached=Path(calls[0][calls[0].index('-i')+1])
-                self_check=attached.read_bytes()
-                assert self_check==old
-                Image.new('RGB',(64,36),'blue').save(self.cwd/'thumbnail-new.png')
-                return '',''
-        with patch.object(thumbnail_gen,'CODEX',self.voice),patch.object(languages.subprocess,'Popen',Codex), \
+        def drawn(pid,prompt,refs):
+            calls.append(refs);calls.append(prompt)
+            assert Path(refs[0]).read_bytes()==old
+            import io
+            png=io.BytesIO();Image.new('RGB',(64,36),'blue').save(png,'PNG')
+            return {'png':png.getvalue(),'cost':0.07,'model':'openai/gpt-image-2.6-sunburst'}
+        with patch('openrouter_images.draw_thumbnail',side_effect=drawn), \
              patch('channel_hero.prepare') as hero:
             languages.start(self.pid,'thumbnail','es',wishes='Make the phone larger',base='v1.png')
             result=self.wait('es|thumbnail')
         self.assertEqual(result['status'],'done',result)
         hero.assert_not_called()
-        self.assertEqual(calls[0].count('-i'),1)
+        self.assertEqual(len(calls[0]),1)   # only the picture to edit, no host
         self.assertIn('Edit the attached',calls[1])
         self.assertIn('Make the phone larger',calls[1])
         self.assertNotIn('translate every word',calls[1])
