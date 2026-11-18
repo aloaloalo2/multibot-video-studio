@@ -188,20 +188,20 @@ button.danger:hover:not(:disabled){background:#523034}
 .overview-projects .project-meta{position:absolute;left:16px;right:10px;bottom:11px;margin:0}
 .overview-projects .project-duration{margin-left:auto}   /* stays on the right while the export line hides the date */
 .overview-projects .project-export-state{position:absolute;left:16px;right:90px;bottom:14px;text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.overview-projects .project-cover{inset:auto;top:45px;left:0;width:100%;height:auto;aspect-ratio:16/9}
+.overview-projects .project-cover{inset:auto;top:50px;left:0;width:100%;height:auto;aspect-ratio:16/9}
 .overview-projects .project-card.has-cover{background:#0c0c0f}
 .overview-projects .project-card.has-cover:hover{background:#0c0c0f}
 /* the dark band melts into the picture: solid behind the title, gone 60 px lower */
-.overview-projects .project-card.has-cover:before{content:'';position:absolute;left:0;right:0;top:0;height:108px;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(12,12,15,.85) 0,rgba(12,12,15,.8) 46px,rgba(12,12,15,.55) 62px,rgba(12,12,15,.22) 84px,rgba(12,12,15,0) 108px)}
+.overview-projects .project-card.has-cover:before{content:'';position:absolute;left:0;right:0;top:0;height:113px;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(12,12,15,.85) 0,rgba(12,12,15,.8) 51px,rgba(12,12,15,.55) 67px,rgba(12,12,15,.22) 89px,rgba(12,12,15,0) 113px)}
 /* the title stands 5 px higher above the picture, on a blurred copy of it, and the shade covers less of the picture (user, 18 November 2026) */
-.overview-projects .project-cover-blur{position:absolute;left:-20px;right:-20px;top:-20px;height:140px;background-size:cover;background-position:center top;filter:blur(18px) brightness(.5) saturate(1.2);pointer-events:none}
+.overview-projects .project-cover-blur{position:absolute;left:-20px;right:-20px;top:-20px;height:145px;background-size:cover;background-position:center top;filter:blur(18px) brightness(.3) saturate(1.1);pointer-events:none}
 /* no seam where the sharp picture starts: it fades in over the blurred copy, and the copy fades out under it */
 .overview-projects .project-card.has-cover .project-cover{-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 36px);mask-image:linear-gradient(180deg,transparent 0,#000 36px)}
 .overview-projects .project-cover-blur{-webkit-mask-image:linear-gradient(180deg,#000 75%,transparent 100%);mask-image:linear-gradient(180deg,#000 75%,transparent 100%)}
-.overview-projects .project-card.has-cover:after{content:'';position:absolute;left:0;right:0;top:45px;bottom:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,8,11,0) 52%,rgba(8,8,11,.55) 76%,rgba(8,8,11,.92) 100%)}
+.overview-projects .project-card.has-cover:after{content:'';position:absolute;left:0;right:0;top:50px;bottom:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,8,11,0) 52%,rgba(8,8,11,.55) 76%,rgba(8,8,11,.92) 100%)}
 .overview-projects .project-card.has-cover:hover .project-cover,.overview-projects .project-card.has-cover:focus-within .project-cover{transform:none;filter:brightness(1.06)}
 .overview-projects .project-card.has-cover .project-created{color:#e2e3e8;text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.overview-projects .project-card.no-cover:before{right:auto;bottom:auto;left:50%;top:calc(45px + 100cqw * 9 / 32 - 32px);transform:translateX(-50%);z-index:2}
+.overview-projects .project-card.no-cover:before{right:auto;bottom:auto;left:50%;top:calc(50px + 100cqw * 9 / 32 - 32px);transform:translateX(-50%);z-index:2}
 /* A card without a picture keeps the picture's place as a quiet panel that melts into the title band, as on a cover,
    instead of an empty card (user, 31 October 2026: «баг»). */
 .overview-projects .project-card.no-cover,.overview-projects .project-card.no-cover:hover,.overview-projects .project-card.no-cover:focus-within{background:#121215}
@@ -1139,7 +1139,7 @@ select:disabled{cursor:not-allowed;opacity:.6}
 select option{background:#232327;color:#f1f1f2}
 /* a long title's second line sits over the top of the cover (its dark fade is made for it), not under it */
 .overview-projects .project-card>h2{position:absolute;top:12px;left:16px;right:16px;padding-right:100px;z-index:3;display:flex;gap:8px;pointer-events:none;overflow:visible}
-.project-title-spacer{height:49px;flex:0 0 49px;order:0}
+.project-title-spacer{height:54px;flex:0 0 54px;order:0}
 .project-card .project-title-rename{pointer-events:auto;min-width:0;padding:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;display:block;max-height:2.8em;overflow:hidden;filter:none;transition:color .15s,filter .15s}
 /* a long title's second line runs to the edge and fades out to the right instead of «…» (title-fade.js; user, 18 November 2026) */
 .project-card .project-title-rename .title-tail{display:block;white-space:nowrap;overflow:hidden;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 52px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 52px),transparent)}
