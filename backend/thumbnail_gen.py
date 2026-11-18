@@ -199,6 +199,30 @@ def examples(folder: Path) -> tuple[list[Path], list[Path]]:
     return sorted(style.glob("Еталон промпт прев'ю*.txt"))[:3], sorted(style.glob("Еталон прев'ю*.png"))[:3]
 
 
+LOGO_EDIT = re.compile(r"\[Правка (Превью (?:до )?v[1-9][0-9]*\.png)\] Логотип каналу")
+
+
+def without_logo(pid: str, cover: Path) -> Path:
+    """The cover as it was before the channel's logo was laid on it by hand (thumbnail_logo.place), so a style example
+    does not teach the next thumbnail to copy our logo (user, 18 November 2026: «воно бере мій логотип… використовує
+    прев'юшки мої як референс»). The cover itself when it never had one laid."""
+    work = keep_dir(pid)
+    current = next((path for path in sorted(work.glob("Превью v*.png")) if VERSION.fullmatch(path.name)
+                    and filecmp.cmp(path, cover, shallow=False)), None)
+    for _ in range(10):   # a logo laid on a logo version: back to the first picture without one
+        number = VERSION.fullmatch(current.name).group(1) if current else None
+        prompt = work / f"Промпт прев'ю v{number}.txt" if number else None
+        try:
+            head = prompt.read_text(encoding="utf-8", errors="replace")[:200] if prompt else ""
+        except OSError:
+            head = ""
+        edit = LOGO_EDIT.match(head)
+        if not edit or not (work / edit.group(1)).is_file():
+            break
+        current = work / edit.group(1)
+    return current or cover
+
+
 def own_thumbnails(project: dict, limit: int = 3) -> list[Path]:
     """The channel's own recent thumbnails (the cover of its newest other episodes), then its approved ones in
     «Еталон стилю»: what «Адаптувати під мій стиль» shows the prompt writer as our look."""
@@ -211,7 +235,7 @@ def own_thumbnails(project: dict, limit: int = 3) -> list[Path]:
     for other in others:
         cover = keep_dir(other["id"]) / PREVIEW
         if cover.is_file():
-            found.append(cover)
+            found.append(without_logo(other["id"], cover))
         if len(found) >= limit:
             return found
     return (found + examples(Path(project["episode_path"]))[1])[:limit]
@@ -221,7 +245,8 @@ MY_STYLE = ("ADAPT TO OUR CHANNEL'S OWN STYLE (the author's choice «Адапт�
             "only the idea: the concept, the situation, the emotion, what the viewer is promised and the meaning of its lettering. "
             "Everything visual follows our channel instead: drawing style, how characters look, palette, lighting, typography, "
             "text treatment and composition habits, as in the attached examples of our own thumbnails ({files}) and the channel's "
-            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely.")
+            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely. "
+            "Our examples may carry the channel's logo or a watermark: never describe, copy or place any logo, emblem or watermark.")
 
 
 def pictures(project: dict) -> list[dict]:

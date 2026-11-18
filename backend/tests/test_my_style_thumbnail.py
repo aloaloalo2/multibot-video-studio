@@ -23,6 +23,19 @@ class OwnThumbnailsTest(unittest.TestCase):
                 found = thumbnail_gen.own_thumbnails({"id": "this", "channel_id": "c", "episode_path": tmp + "/c/e"})
         self.assertEqual([path.parent.name for path in found], ["new", "old"])   # newest first, never its own
 
+    def test_a_cover_with_our_logo_laid_on_it_teaches_the_picture_before_the_logo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            (work / "Превью v1.png").write_bytes(b"clean")
+            (work / "Превью v2.png").write_bytes(b"with logo")
+            (work / "Промпт прев'ю v2.txt").write_text("[Правка Превью v1.png] Логотип каналу (10% ширини)\n", encoding="utf-8")
+            (work / thumbnail_gen.PREVIEW).write_bytes(b"with logo")
+            with patch.object(thumbnail_gen, "keep_dir", return_value=work):
+                self.assertEqual(thumbnail_gen.without_logo("p", work / thumbnail_gen.PREVIEW).name, "Превью v1.png")
+                (work / thumbnail_gen.PREVIEW).write_bytes(b"clean")
+                self.assertEqual(thumbnail_gen.without_logo("p", work / thumbnail_gen.PREVIEW).name, "Превью v1.png")
+        self.assertIn("never describe, copy or place any logo", thumbnail_gen.MY_STYLE)
+
     def test_the_brief_keeps_the_idea_and_takes_our_look(self):
         text = thumbnail_gen.MY_STYLE.format(files="Наше прев'ю 1.png")
         self.assertIn("only the idea", text)
