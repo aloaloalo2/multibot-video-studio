@@ -2832,8 +2832,13 @@ select option{background:#232327;color:#f1f1f2}
 .workflow-guided .narration-ready .narration-ready-actions:has(.workflow-action-target){display:grid}
 .workflow-guided .narration-ready .narration-ready-actions .narration-plan-action.workflow-action-target{display:inline-flex!important}
 /* ai-limits.js: Claude Code's weekly limit left, as a number beside «Налаштування» */
-#channel-sidebar .sidebar-bottom button.sidebar-round.ai-limits{font-size:11px;font-weight:600;color:#c9ccd4;padding:0;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
-.ai-limits-pct[data-tone=mid]{color:#f0b429}.ai-limits-pct[data-tone=low]{color:#ff6b6b}.ai-limits-pct[data-tone=none]{color:#8d909a}
+#channel-sidebar .sidebar-bottom button.sidebar-round.ai-limits{border-color:transparent;border-radius:10px;padding:0}
+.ai-battery{position:relative;display:inline-flex;align-items:center;justify-content:center;width:31px;height:15px;margin-right:3px;border-radius:5px;background:#55585f;overflow:visible}
+.ai-battery:after{content:"";position:absolute;right:-3.5px;top:50%;width:2.5px;height:5px;transform:translateY(-50%);border-radius:0 2px 2px 0;background:#55585f}
+.ai-battery-fill{position:absolute;left:0;top:0;bottom:0;width:calc(100% * var(--level,0));border-radius:5px 0 0 5px;background:#c9ccd4}
+.ai-battery[data-tone=mid] .ai-battery-fill{background:#f0b429}.ai-battery[data-tone=low] .ai-battery-fill{background:#ff6b6b}
+.ai-limits-pct{position:relative;font-size:10px;font-weight:600;line-height:1;color:#141417;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.ai-battery[data-tone=none] .ai-limits-pct{color:#c9ccd4}
 .ai-limits-panel{position:fixed;z-index:60;width:320px;padding:14px 16px 12px;background:#18181b;border:1px solid var(--ui-outline-border);border-radius:var(--ui-radius-panel);box-shadow:0 14px 40px #0009;color:#e8eaf0}
 .ai-limits-panel h4{margin:0 0 10px;font-size:13px;font-weight:600;color:#c9ccd4}
 .ai-limit-row{display:grid;grid-template-columns:1fr auto;gap:5px 10px;align-items:baseline;margin-bottom:12px}

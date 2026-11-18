@@ -37,7 +37,10 @@
     if(!data)return;
     // only Claude Code's weekly share as a number (user, 18 November 2026: «просто там відсоток і все… тижневий»)
     const pct=button.querySelector('.ai-limits-pct'),c=data.claude&&data.claude.known?main(data.claude):null;
-    pct.textContent=c?`${c.left}%`:'—';pct.dataset.tone=c?tone(c.left):'none';
+    pct.textContent=c?String(c.left):'—';
+    // a battery, as on an iPhone (user, 18 November 2026: «замість круга… батарею… акумулятор»): filled to what is left
+    const battery=button.querySelector('.ai-battery');battery.dataset.tone=c?tone(c.left):'none';
+    battery.style.setProperty('--level',String(c?Math.max(0,Math.min(100,c.left))/100:0));
     const text=k=>data[k]&&data[k].known?`${names[k]} ${main(data[k]).left}% ${span(main(data[k]))}`:`${names[k]} немає даних`;
     const label=`Залишок лімітів: ${text('claude')}, ${text('codex')}`;
     button.title=label;button.setAttribute('aria-label',label);
