@@ -8,7 +8,7 @@ LOCK = threading.RLock()
 CACHE = OrderedDict()
 MAX_CACHE = 128
 JOB_KEYS = ('id', 'project_id', 'type', 'kind', 'code', 'status', 'stage', 'progress', 'error', 'handoff_error',
-            'started_at', 'finished_at', 'updated_at', 'writer', 'file', 'version', 'total', 'completed',
+            'started_at', 'finished_at', 'updated_at', 'writer', 'drawer', 'file', 'version', 'total', 'completed',
             'provider', 'queue_position')
 
 

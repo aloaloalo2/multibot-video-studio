@@ -470,6 +470,8 @@ DRAWERS = ("codex", "openrouter")
 def drawn_by_openrouter(pid: str, prompt: str, name: str, work: Path, refs) -> subprocess.CompletedProcess:
     """The picture from OpenRouter instead of Codex, with the same prompt and references; its price beside it."""
     import openrouter_images
+    # the lines that tell Codex to use its tool and where to save mean nothing to OpenRouter
+    prompt = re.sub(r"\n?Use the built-in image generation tool[^\n]*(\n[^\n]*reply only with the saved path\.?)?", "", prompt)
     result = openrouter_images.draw_thumbnail(pid, prompt, [str(ref) for ref in refs if ref])
     (work / name).write_bytes(result["png"])
     (work / (Path(name).stem + ".json")).write_text(json.dumps({"drawer": "openrouter", "model": result["model"], "cost": result["cost"]}), encoding="utf-8")
@@ -668,6 +670,14 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 number = 1 + max((item['number'] for item in versions(pid)), default=0)
                 base = f"Превью до v{number}.png"
                 shutil.copy2(source, keep_dir(pid) / base)
+        if base and drawer == "codex":
+            # a picture OpenRouter drew is edited by OpenRouter too (18 November 2026: «Внести правки» went to Codex,
+            # whose limit was out, on Jupiter's OpenRouter thumbnail)
+            try:
+                if json.loads((keep_dir(pid) / (Path(base).stem + ".json")).read_text()).get("drawer") == "openrouter":
+                    drawer = "openrouter"
+            except (OSError, ValueError):
+                pass
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" and not clone else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
                 "writer": writer, "drawer": drawer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
                 **({"channel_wishes": True} if channel_wishes is True else {})}
