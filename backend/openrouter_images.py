@@ -36,6 +36,27 @@ BASE = "https://openrouter.ai/api/v1"
 MAX_BYTES = 20 * 1024 * 1024
 
 
+def refusal(code: int, detail: str) -> str:
+    """OpenRouter's refusal in the author's words. A key with a daily cap answers 403 «Key limit exceeded (daily limit)»
+    (18 November 2026: «$2.68 of $2.00 used»): the cap is the author's own setting of the key, shared with translations
+    and DeepSeek."""
+    import re
+    if code == 403 and "Key limit exceeded" in detail:
+        used = re.search(r"\$([\d.]+) of \$([\d.]+) used", detail)
+        resets = re.search(r"resets (\d{4}-\d\d-\d\dT\d\d:\d\d)", detail)
+        when = ""
+        if resets:
+            from datetime import datetime, timezone
+            moment = datetime.strptime(resets.group(1), "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc).astimezone()
+            when = f" Ліміт оновиться {moment:%d.%m о %H:%M}."
+        spent = f" Витрачено ${used.group(1)} з ${used.group(2)} на день." if used else ""
+        return ("Вичерпано денний ліміт ключа OpenRouter." + spent + when +
+                " Його можна підняти в налаштуваннях ключа на openrouter.ai/settings/keys; цей ключ тратять і переклади.")
+    if code == 402:
+        return "На балансі OpenRouter закінчились кошти. Поповніть баланс на openrouter.ai."
+    return f"OpenRouter відповів {code}: {detail[:300]}"
+
+
 def path(pid: str):
     return store.project_dir(pid) / "image-provider.json"
 
@@ -134,7 +155,7 @@ def draw_thumbnail(pid: str, prompt: str, refs=None) -> dict:
             result = json.load(response)
     except urllib.error.HTTPError as error:
         detail = error.read(2000).decode("utf-8", "replace").replace(key, "[ключ]")
-        raise store.StudioError(f"OpenRouter відповів {error.code}: {detail[:300]}", 502) from None
+        raise store.StudioError(refusal(error.code, detail), 502) from None
     except (OSError, ValueError) as error:
         raise store.StudioError(f"OpenRouter не відповів: {error}", 502) from None
     cost = (result.get("usage") or {}).get("cost")
@@ -185,7 +206,7 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
             result = json.load(response)
     except urllib.error.HTTPError as error:
         detail = error.read(2000).decode("utf-8", "replace").replace(key, "[ключ]")
-        raise store.StudioError(f"OpenRouter відповів {error.code}: {detail[:300]}", 502) from None
+        raise store.StudioError(refusal(error.code, detail), 502) from None
     except (OSError, ValueError) as error:
         raise store.StudioError(f"OpenRouter не відповів: {error}", 502) from None
     cost = (result.get("usage") or {}).get("cost")
