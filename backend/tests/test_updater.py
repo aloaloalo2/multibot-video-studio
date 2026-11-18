@@ -62,6 +62,17 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual((self.install/'app.txt').read_text(), 'second')
         self.assertEqual(self.data.read_text(), 'my project')
 
+    def test_manual_check_names_versions_and_why_github_failed(self):
+        self.publish()
+        self.updater.refresh()
+        version = self.updater.version()
+        self.assertNotEqual(version['local']['commit'], version['remote']['commit'])
+        self.assertTrue(version['remote']['date'])
+        self.git(self.install, 'remote', 'set-url', 'origin', str(Path(self.temp.name)/'missing.git'))
+        state = self.updater.refresh()
+        self.assertEqual(state['status'], 'offline')
+        self.assertIn('missing.git', self.updater.public_state()['error'])
+
     def backup(self):
         folder=Path(self.updater.state['backup'])
         return folder,json.loads((folder/'manifest.json').read_text())

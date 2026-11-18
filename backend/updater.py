@@ -30,7 +30,11 @@ class Updater:
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise UpdateError('Не вдалося перевірити оновлення.') from exc
         if check and result.returncode:
-            raise UpdateError('Не вдалося отримати оновлення. Перевірте доступ до GitHub.')
+            error = UpdateError('Не вдалося отримати оновлення. Перевірте доступ до GitHub.')
+            # git's own words, shown in the settings' «Оновлення студії» (user, 18 November 2026: the button did not
+            # appear on another Mac and nothing said why)
+            error.detail = result.stderr.decode('utf-8', 'replace').strip()[-300:]
+            raise error
         return result
 
     def text(self, *arguments):
@@ -73,8 +77,8 @@ class Updater:
                 self.git('fetch', '--quiet', '--no-tags', 'origin', timeout=30)
                 with self.lock:
                     state = self._inspect()
-        except UpdateError:
-            state = {'status': 'offline'}
+        except UpdateError as error:
+            state = {'status': 'offline', 'error': getattr(error, 'detail', '') or str(error)}
         with self.lock:
             self.state = state
             return dict(self.state)
@@ -123,6 +127,21 @@ class Updater:
                 raise UpdateError('Не вдалося оновити студію. Попередні файли збережено; можна спробувати ще раз.') from error
             self.failed = None
             self.state = {'status': 'current', 'backup': str(backup.folder)}
+
+    def version(self):
+        """This folder's version and GitHub's, as a short commit and its date, for the settings' manual check."""
+        found = {}
+        if not (self.root / '.git').exists():
+            return found
+        for key, ref in (('local', 'HEAD'), ('remote', 'origin/main')):
+            try:
+                line = self.git('log', '-1', '--format=%h|%cI', ref, check=False).stdout.decode('utf-8', 'replace').strip()
+            except UpdateError:
+                continue
+            if '|' in line:
+                commit, date = line.split('|', 1)
+                found[key] = {'commit': commit, 'date': date}
+        return found
 
     def public_state(self):
         """Compact readiness, genuine failures, protected paths and the local recovery point."""

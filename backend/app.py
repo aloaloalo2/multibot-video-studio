@@ -1766,6 +1766,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'seen': True})
         if method=='POST' and path=='/api/studio/restart/prepare':
             return self.json_response(prepare_local_restart())
+        if method == 'POST' and path == '/api/update/check':
+            # «Перевірити оновлення» in the studio's settings: ask GitHub now, not at the next two-minute round
+            UPDATE_MANAGER.refresh()
+            return self.json_response({**UPDATE_MANAGER.public_state(), 'version': UPDATE_MANAGER.version(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
         if method == 'POST' and path == '/api/update/apply':
             try:
                 begin_update()

@@ -1376,7 +1376,7 @@ function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(value
 
 async function openStudioSettings(){
   try{
-    modal('Загальні налаштування студії',`${studioFolderMarkup()}${studioWordBlacklistMarkup()}${studioSpaceMarkup()}${serviceKeyMarkup()}${claudeLoginMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Зберегти',primary:true,run:async()=>{
+    modal('Загальні налаштування студії',`${studioFolderMarkup()}${studioWordBlacklistMarkup()}${studioSpaceMarkup()}${serviceKeyMarkup()}${claudeLoginMarkup()}${studioUpdateMarkup()}<section class="settings-section" id="extension-section"><h3>Розширення Multi Bot</h3><p id="extension-state" class="extension-state">Шукаю розширення в Chrome…</p><button id="extension-update" class="secondary" type="button" hidden>Оновити розширення</button></section>`, [{label:'Зберегти',primary:true,run:async()=>{
       const generation=state.modalGeneration,section=$('studio-folder');
       try{
         if(await saveStudioFolder())await loadChannels();
@@ -1391,11 +1391,41 @@ async function openStudioSettings(){
     $('modal-backdrop').classList.add('settings-modal-open');
     fillExtension();
     fillClaudeLogin();
+    fillStudioUpdate();
     fillStudioSpace();
     fillStudioFolder();
     fillStudioWordBlacklist();
     await initServiceKeys();
   }catch(error){status(error.message,true);}
+}
+
+// «Оновлення студії» in the settings: the version, a manual check against GitHub and the update itself (user,
+// 18 November 2026: «в настройки… щоб вручну оновити самому»; on another Mac the top button never appeared and nothing
+// said why). The check asks GitHub now; «Оновити зараз» is the top button's own action (updates.js).
+function studioUpdateMarkup(){
+  return `<section class="settings-section" id="studio-update-section"><h3>Оновлення студії</h3><p id="studio-update-state" class="extension-state">Перевіряю…</p><div class="claude-login-buttons"><button id="studio-update-check" class="secondary" type="button">Перевірити оновлення</button><button id="studio-update-now" class="primary" type="button" hidden>Оновити зараз</button></div></section>`;
+}
+function studioUpdateText(data){
+  const when=v=>v?.date?new Date(v.date).toLocaleString('uk-UA',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}):'';
+  const mine=data.version?.local?` Ваша версія ${data.version.local.commit} від ${when(data.version.local)}.`:'';
+  const theirs=data.version?.remote?` На GitHub ${data.version.remote.commit} від ${when(data.version.remote)}.`:'';
+  if(data.queued)return `Оновлення чекає: ${data.queued}. Студія оновиться, щойно робота закінчиться.`;
+  return {current:'Студія оновлена до останньої версії.'+mine,
+    available:'Є нова версія.'+mine+theirs,
+    update_failed:'Минуле оновлення не вдалося, студія лишилась на попередній версії.'+(data.error?` Причина: ${data.error}`:'')+mine,
+    offline:'Не вдалося зв’язатися з GitHub. Перевірте інтернет і вхід у GitHub на цьому Mac.'+(data.error?` Git відповів: ${data.error}`:'')+mine,
+    not_configured:'Ця студія встановлена без git, тому сама оновитися не може. Завантажте її заново з GitHub через git clone.',
+    unsafe_update:'Нова версія зачепила б особисті дані чи ключі, тому студія її не ставить.'+mine}[data.status]||`Стан оновлення: ${data.status}.`+mine;
+}
+async function fillStudioUpdate(){
+  const box=$('studio-update-state');if(!box)return;
+  const check=$('studio-update-check'),now=$('studio-update-now');
+  const paint=data=>{if(!box.isConnected)return;box.textContent=studioUpdateText(data);
+    box.classList.toggle('warning',['offline','not_configured','update_failed','unsafe_update'].includes(data.status));
+    now.hidden=!['available','update_failed'].includes(data.status)||!!data.queued;};
+  check.onclick=async()=>{check.disabled=true;box.textContent='Питаю GitHub…';try{paint(await api('/api/update/check','POST',{}));}catch(error){box.textContent=error.message;}finally{check.disabled=false;}};
+  now.onclick=async()=>{now.disabled=true;box.textContent='Запускаю оновлення…';try{await applyStudioUpdate();box.textContent=updateQueued?'Оновлення чекає, поки закінчиться робота над випусками. Студія оновиться сама.':'Студія оновлюється. Сторінка перезавантажиться сама.';now.hidden=true;}finally{now.disabled=false;}};
+  check.onclick();
 }
 
 // Claude Code's sign-in on this Mac (backend/claude_login.py; user, 17 November 2026: «в студії в налаштуваннях… шоб
