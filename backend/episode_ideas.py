@@ -374,14 +374,16 @@ def deepseek(prompt, root, identity, *, max_tokens=3500, cost_category='script')
     except RuntimeError: raise RuntimeError('Додайте ключ OpenRouter у налаштуваннях студії') from None
     payload = {'model': agent_openrouter.MODEL, 'messages': [{'role': 'user', 'content': prompt}],
                'max_tokens': max_tokens, 'reasoning': {'effort': 'none'},
-               # Relace's shared pool repeatedly returns 429; choose another low-cost endpoint once.
-               'provider': {'require_parameters': True, 'allow_fallbacks': False,
+               # the cheapest provider first, and another one when it is busy (18 November 2026: Wafer answered 429 and
+               # the automatic choice of an opening stopped; with fallbacks off nothing else was tried)
+               'provider': {'require_parameters': True, 'allow_fallbacks': True,
                             'ignore': ['relace'], 'sort': 'price'},
                'response_format': {'type': 'json_object'}, 'usage': {'include': True}}
     req = urllib.request.Request(agent_openrouter.BASE + '/chat/completions', data=json.dumps(payload).encode(),
                                  headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=120) as response: result = json.load(response)
+        import openrouter_http   # a busy provider is retried, unbilled (openrouter_http.py)
+        with openrouter_http.urlopen(req, timeout=120) as response: result = json.load(response)
     except urllib.error.HTTPError as error:
         # Keep bounded routing facts, never raw provider text, request headers or prompts.
         detail = {'status': error.code, 'model': agent_openrouter.MODEL}
@@ -411,7 +413,7 @@ def deepseek(prompt, root, identity, *, max_tokens=3500, cost_category='script')
             message = f'OpenRouter відхилив доступ до DeepSeek ({error.code}). Перевірте ключ і його обмеження.'
         else:
             message = f'OpenRouter не завершив запит до DeepSeek ({error.code}). Спробуйте пізніше.'
-        raise RuntimeError(message + ' Попередні теми збережено. Автоматичного повтору немає.') from None
+        raise RuntimeError(message + (' Студія вже повторила запит кілька разів.' if error.code == 429 else '') + ' Попередні теми збережено.') from None
     except OSError:
         store.atomic_json(root / 'topic-response.json', {'error': {'type': 'connection', 'model': agent_openrouter.MODEL}})
         raise RuntimeError('З’єднання з OpenRouter перервалося. Попередні теми збережено. Повторіть запит вручну пізніше.') from None

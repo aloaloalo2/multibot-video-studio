@@ -88,5 +88,5 @@ function bindTitleTranslation(input,{channelId,live,available=()=>true,enabled=(
   button.addEventListener('click',open);input.addEventListener('input',changed);
   const observer=new MutationObserver(refresh);observer.observe(input,{attributes:true,attributeFilter:['hidden','disabled','readonly']});
   refresh();
-  return {refresh,get busy(){return busy;},dispose(){disposed=true;serial++;closeMenu();observer.disconnect();button.removeEventListener('click',open);input.removeEventListener('input',changed);if(busy)setBusy(false);}};
+  return {refresh,translate,get busy(){return busy;},dispose(){disposed=true;serial++;closeMenu();observer.disconnect();button.removeEventListener('click',open);input.removeEventListener('input',changed);if(busy)setBusy(false);}};
 }

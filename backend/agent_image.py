@@ -9,6 +9,7 @@ import json
 import math
 import tempfile
 import urllib.request
+import openrouter_http   # busy providers and gateway errors are retried, unbilled
 import uuid
 from pathlib import Path
 
@@ -58,7 +59,7 @@ def generate_image_asset(project_id, prompt, *, transparent=False, aspect_ratio=
     request = urllib.request.Request(agent_openrouter.BASE + "/images", data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json"})
     amount, request_id = None, None
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with openrouter_http.urlopen(request, timeout=120) as response:
             request_id = response.headers.get("X-Generation-Id") if hasattr(response, "headers") else None
             result = json.load(response)
         request_id = request_id or result.get("id")

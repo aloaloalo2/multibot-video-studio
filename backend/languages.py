@@ -600,7 +600,9 @@ def key(service: str) -> str:
 @job_timing.measure('service')
 def request(url: str, data: bytes, headers: dict, what: str) -> bytes:
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, data=data, method="POST", headers=headers), timeout=TIMEOUT) as response:
+        import openrouter_http   # OpenRouter's busy providers and gateway errors are retried, unbilled
+        opener = openrouter_http.urlopen if what == "OpenRouter" else urllib.request.urlopen
+        with opener(urllib.request.Request(url, data=data, method="POST", headers=headers), timeout=TIMEOUT) as response:
             audio = response.read()
             return eleven_api.SpeechAudio(audio, response.headers) if what == 'ElevenLabs' else audio
     except urllib.error.HTTPError as error:
@@ -732,7 +734,8 @@ def ask(messages: list, max_tokens: int = 12000) -> tuple[str, float]:
     # A reasoning-only answer used to multiply this budget up to 96,000 tokens.
     # Return its empty content and cost to structured callers, which split the
     # batch into smaller requests and preserve completed units.
-    payload = {"model": model, "max_tokens": min(max_tokens,12000), "usage": {"include": True}, "messages": messages}
+    payload = {"model": model, "max_tokens": min(max_tokens,12000), "usage": {"include": True}, "messages": messages,
+               "provider": {"allow_fallbacks": True}}   # another provider of the model when one is busy
     if reasoning:
         payload["reasoning"] = reasoning
     raw = request(agent_openrouter.BASE + "/chat/completions", json.dumps(payload, ensure_ascii=False).encode(),

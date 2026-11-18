@@ -29,11 +29,14 @@ def chat(project_id, messages, tools=None, max_output_tokens=4096, reasoning_eff
         payload["provider"] = {"require_parameters": True}
     if tools:
         payload["tools"] = tools
+    import openrouter_http
+    openrouter_http.fallbacks(payload)
     request = urllib.request.Request(BASE + "/chat/completions", data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json"})
     amount = None
     request_id = None
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        import openrouter_http
+        with openrouter_http.urlopen(request, timeout=120) as response:
             result = json.load(response)
         request_id = result.get("id")
         raw_amount = result.get("usage", {}).get("cost")

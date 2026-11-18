@@ -409,13 +409,13 @@ class TopicTransportTest(unittest.TestCase):
             send.assert_called_once()
             payload=json.loads(send.call_args.args[0].data)
             self.assertEqual(payload['reasoning'],{'effort':'none'})
-            self.assertFalse(payload['provider']['allow_fallbacks'])
+            self.assertTrue(payload['provider']['allow_fallbacks'])
             self.assertEqual(payload['provider']['ignore'],['relace'])
             self.assertEqual(payload['provider']['sort'],'price')
             diagnostic=json.loads((Path(folder)/'topic-response.json').read_text())
             self.assertEqual(diagnostic['finish_reason'],'length')
 
-    def test_rate_limit_keeps_safe_diagnostics_and_never_retries(self):
+    def test_rate_limit_keeps_safe_diagnostics_after_bounded_retries(self):
         import io, json, tempfile, urllib.error
         from pathlib import Path
         failure = urllib.error.HTTPError('https://openrouter.ai/api/v1/chat/completions', 429, 'Too Many Requests',
@@ -423,11 +423,13 @@ class TopicTransportTest(unittest.TestCase):
                 'provider_name':'DeepSeek','limit_source':'upstream_provider','raw':'private provider contents'}}}).encode()))
         with tempfile.TemporaryDirectory() as folder, patch.object(ideas.credentials,'vault') as vault, \
                 patch.object(ideas.urllib.request,'urlopen',side_effect=failure) as send, \
+                patch('openrouter_http.time.sleep') as wait, \
                 patch.object(ideas.project_costs,'record_at') as cost:
             vault.return_value.read.return_value='test-key'
             with self.assertRaisesRegex(RuntimeError, 'через 45 с'):
                 ideas.deepseek('private prompt',Path(folder),'test-run')
-            send.assert_called_once()
+            self.assertEqual(send.call_count,5)
+            self.assertEqual([c.args[0] for c in wait.call_args_list],[30,30,30,30])
             cost.assert_not_called()
             text=(Path(folder)/'topic-response.json').read_text()
             self.assertNotIn('private',text)

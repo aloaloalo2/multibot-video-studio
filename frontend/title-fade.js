@@ -1,0 +1,31 @@
+// A long episode title fills both lines and its second line fades out to the right instead of ending in «…» (user,
+// 18 November 2026: «щоб воно не через точки пропадало, а через тінь… вниз не треба… лише справа»). The first line
+// wraps as usual; the rest goes on one line that runs to the card's edge and fades there.
+(function(){
+  const SELECTOR='.project-card .project-title-rename';
+  const sized=new ResizeObserver(entries=>{for(const e of entries)lay(e.target);});
+  const seen=new WeakSet();
+  function lay(button){
+    const text=button.textContent;
+    if(button._laid===text+'|'+button.clientWidth)return;
+    if(button.firstElementChild)button.textContent=text;
+    const node=button.firstChild,line=parseFloat(getComputedStyle(button).lineHeight)||20;
+    if(node&&node.nodeType===3&&button.scrollHeight>line*2+2){
+      const range=document.createRange(),top=button.getBoundingClientRect().top;
+      let low=0,high=text.length;   // the first character that sits below the first line
+      while(low<high){const mid=(low+high)>>1;range.setStart(node,mid);range.setEnd(node,mid+1);
+        const rect=range.getClientRects()[0];if(rect&&rect.top-top>line*0.6)high=mid;else low=mid+1;}
+      if(low>0&&low<text.length){
+        const tail=document.createElement('span');tail.className='title-tail';tail.textContent=text.slice(low);
+        button.textContent=text.slice(0,low);button.append(tail);
+      }
+    }
+    button._laid=button.textContent+'|'+button.clientWidth;
+  }
+  function scan(){for(const button of document.querySelectorAll(SELECTOR)){
+    if(!seen.has(button)){seen.add(button);sized.observe(button);}lay(button);}}
+  let queued=false;
+  new MutationObserver(()=>{if(!queued){queued=true;requestAnimationFrame(()=>{queued=false;scan();});}})
+    .observe(document.body,{childList:true,subtree:true,characterData:true});
+  scan();
+})();

@@ -13,6 +13,7 @@ import base64, binascii, hashlib, io, json, math, re, time, urllib.error, urllib
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 import agent_openrouter
+import openrouter_http   # busy providers and gateway errors are retried, unbilled
 import credentials
 import store
 
@@ -147,10 +148,11 @@ def ask(image_url: str, note: str = "") -> dict:
     # Short reasoning: the look is read from the picture, and long thinking only uses up the answer's tokens.
     payload = {"model": agent_openrouter.MODEL, "max_tokens": 6000, "reasoning": {"effort": "low"}, "response_format": {"type": "json_object"},
                "messages": [{"role": "user", "content": [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": image_url}}]}]}
+    openrouter_http.fallbacks(payload)
     request = urllib.request.Request(agent_openrouter.BASE + "/chat/completions", data=json.dumps(payload).encode(), method="POST",
                                      headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with openrouter_http.urlopen(request, timeout=120) as response:
             content = json.load(response)["choices"][0]["message"]["content"]
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         raise StyleCopyError("DeepSeek не відповів. Перевірте ключ OpenRouter і спробуйте ще раз") from None

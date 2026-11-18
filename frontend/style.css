@@ -182,7 +182,7 @@ button.danger:hover:not(:disabled){background:#523034}
    the band has no hard edge (user: «щоб грань була нечітка»). */
 .overview-projects .project-card{aspect-ratio:auto;container-type:inline-size}
 .overview-projects .project-open{padding:12px 16px 0}
-.overview-projects .project-card h2{order:0;height:44px;margin:0;font-size:16px;font-weight:600;line-height:1.38;align-items:flex-start;overflow:hidden}
+.overview-projects .project-card h2{order:0;height:44px;margin:0;font-size:15px;font-weight:600;line-height:1.38;align-items:flex-start;overflow:hidden}
 .overview-projects .project-card h2 svg{flex:none;margin-top:2px;opacity:.7}
 .overview-projects .project-open:before{content:'';order:1;display:block;aspect-ratio:16/9;margin:-16px -16px 0}
 .overview-projects .project-meta{position:absolute;left:16px;right:10px;bottom:11px;margin:0}
@@ -1135,7 +1135,9 @@ select option{background:#232327;color:#f1f1f2}
 /* a long title's second line sits over the top of the cover (its dark fade is made for it), not under it */
 .overview-projects .project-card>h2{position:absolute;top:12px;left:16px;right:16px;padding-right:100px;z-index:3;display:flex;gap:8px;pointer-events:none;overflow:visible}
 .project-title-spacer{height:44px;flex:0 0 44px;order:0}
-.project-card .project-title-rename{pointer-events:auto;min-width:0;padding:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;filter:none;transition:color .15s,filter .15s}
+.project-card .project-title-rename{pointer-events:auto;min-width:0;padding:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;line-height:inherit;text-align:left;cursor:pointer;display:block;max-height:2.8em;overflow:hidden;filter:none;transition:color .15s,filter .15s}
+/* a long title's second line runs to the edge and fades out to the right instead of «…» (title-fade.js; user, 18 November 2026) */
+.project-card .project-title-rename .title-tail{display:block;white-space:nowrap;overflow:hidden;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 52px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 52px),transparent)}
 .project-card .project-title-rename:hover:not(:disabled),.project-card .project-title-rename:focus-visible{background:none;color:#b3f5db;filter:drop-shadow(0 0 5px rgba(114,240,187,.65)) drop-shadow(0 0 10px rgba(114,240,187,.22));text-decoration:none;box-shadow:none;outline:none}
 .project-card .project-title-rename:disabled{cursor:default;opacity:1}
 .project-costs{position:absolute;left:12px;right:12px;bottom:44px;z-index:4;display:flex;flex-direction:row;align-items:center;gap:5px;opacity:0;visibility:hidden;transform:translateY(3px);transition:opacity .16s,transform .16s,visibility .16s;pointer-events:none}
@@ -3002,3 +3004,6 @@ select option{background:#232327;color:#f1f1f2}
 .trend-idea-rest{display:grid;gap:14px}.trend-idea-rest[hidden]{display:none}
 .trend-idea-rest>label:not(.trend-idea-check){display:grid;gap:7px;font-size:12px;color:#b6b8c1}
 .thumb-logo-resize.right{left:auto;right:-8px;bottom:-8px;cursor:nwse-resize}
+.trend-title-row{display:flex;align-items:center;gap:8px}.trend-title-row>.title-translation-field,.trend-title-row>input{flex:1;min-width:0}
+.trend-title-flag{font-size:18px;line-height:1}.trend-title-flag[hidden]{display:none}
+.trend-title-original{margin:-6px 0 0;font-size:12px;color:#9aa0a8}

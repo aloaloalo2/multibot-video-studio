@@ -18,6 +18,7 @@ import json
 import math
 import urllib.error
 import urllib.request
+import openrouter_http   # busy providers and gateway errors are retried, unbilled
 import uuid
 
 from PIL import Image, UnidentifiedImageError
@@ -151,7 +152,7 @@ def draw_thumbnail(pid: str, prompt: str, refs=None) -> dict:
     request = urllib.request.Request(BASE + "/images", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                                      method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=600) as response:
+        with openrouter_http.urlopen(request, timeout=600) as response:
             result = json.load(response)
     except urllib.error.HTTPError as error:
         detail = error.read(2000).decode("utf-8", "replace").replace(key, "[ключ]")
@@ -202,7 +203,7 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
     request = urllib.request.Request(BASE + "/images", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                                      method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=300) as response:
+        with openrouter_http.urlopen(request, timeout=300) as response:
             result = json.load(response)
     except urllib.error.HTTPError as error:
         detail = error.read(2000).decode("utf-8", "replace").replace(key, "[ключ]")
