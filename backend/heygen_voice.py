@@ -20,6 +20,16 @@ _SYNTHESIS_SLOT=threading.BoundedSemaphore(SLOTS)
 SLOT_WAIT=600   # longest wait in the queue for HeyGen before a phrase gives up with a clear note
 
 
+FREE_MODEL='heygen-voice-1-turbo-free'
+
+
+def queued(model):
+    """Only Turbo Free shares HeyGen's capacity with every free user and answers 429 under load, so only it takes HeyGen
+    one phrase and one narration at a time. A paid model is voiced at once, beside the others (user, 18 November 2026:
+    «фрі ми… стаємо в чергу хайген. А турбо… не потрібно ставити в чергу»)."""
+    return (model or DEFAULT_MODEL)==FREE_MODEL
+
+
 class synthesis_slot:
     """At most SLOTS phrases at a time go to HeyGen. The queue listens for «Зупинити» and never waits forever: four voicings
     froze for 20 minutes behind one stuck phrase and could not be cancelled (user, 16 November 2026: «ру також завис»)."""
@@ -336,7 +346,8 @@ def synthesize(settings):
         'text':settings['text'],'language':settings['language'],
         'output_format':{'encoding':'mp3','sample_rate_hertz':44100,'bitrate_bps':128000}}
     if voice.get('mode')!='professional':payload['expressiveness_boost']=settings.get('heygen_expressiveness',.5)
-    with synthesis_slot():
+    import contextlib
+    with synthesis_slot() if queued(settings['heygen_model']) else contextlib.nullcontext():
         result=call('/v3/models/audio/tts',payload)
     url=(result.get('data') or {}).get('audio_url')
     if not isinstance(url,str) or urllib.parse.urlparse(url).scheme!='https':raise store.StudioError('HeyGen не повернув аудіофайл')

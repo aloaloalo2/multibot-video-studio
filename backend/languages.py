@@ -3153,7 +3153,7 @@ def _worker(pid: str, kind: str, code: str, provider: str | None, job: dict) -> 
     heygen_voice.STOP.check = stop_check
     queued = None
     try:
-        if kind == "voice" and provider == "heygen" and not job.get("cache_only"):
+        if kind == "voice" and provider == "heygen" and not job.get("cache_only") and heygen_voice.queued(provider_engine(pid, provider, code)):
             # a whole HeyGen voicing waits its turn behind the other narrations, original ones too
             # (heygen_voice.queue_wait; user, 16 November 2026: «в перекладах теж»)
             queued = f"language:{pid}:{code}"

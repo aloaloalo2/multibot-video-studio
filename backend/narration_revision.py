@@ -215,7 +215,7 @@ def run(pid,ctx,job):
         def made(slot):
             params={**settings,'text':slot['text']}
             return (narration.root(pid)/(lab.fingerprint(params,ref)+'.mp3')).is_file() or lab.original_path(params,ref).is_file()
-        if settings['provider']=='heygen' and len(ctx['changed'])>SMALL and not all(made(slot) for slot in ctx['slots']):
+        if settings['provider']=='heygen' and __import__('heygen_voice').queued(settings.get('heygen_model')) and len(ctx['changed'])>SMALL and not all(made(slot) for slot in ctx['slots']):
             narration.wait_heygen(pid,job,path(pid))
         # a stop is heard while a phrase waits for HeyGen's slot or limit too, as in a narration (17 November 2026:
         # a revision waited on its second sentence half an hour and the pause could not stop it)

@@ -88,8 +88,23 @@ class NarrationConcurrencyTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
         return [store.read_json(narration.root(pid) / 'job.json') for pid in self.projects]
 
+    def test_a_paid_heygen_model_never_queues(self):
+        # paid Turbo is voiced at once beside another narration (user, 18 November 2026: «турбо… не потрібно в чергу»)
+        both=threading.Barrier(2,timeout=5)
+        def synthesize(settings):
+            both.wait()   # both narrations are at HeyGen at the same time
+            return settings['text'].encode()
+        with patch.object(lab.heygen_voice, 'synthesize', side_effect=synthesize):
+            first,second=self.projects.values()
+            narration.start(first,'First project sentence.')
+            narration.start(second,'Second project sentence.')
+            jobs=self.finished()
+        self.assertEqual([j['status'] for j in jobs],['done','done'])
+        self.assertEqual(narration.HEYGEN_QUEUE,[])
+
     def test_heygen_projects_wait_their_turn_with_isolated_settings(self):
-        # One HeyGen narration at a time, first come first served, the next one «у черзі» (user, 16 November 2026)
+        # One Turbo Free narration at a time, first come first served, the next one «у черзі» (user, 16 November 2026)
+        self.settings['heygen_model']='heygen-voice-1-turbo-free'
         entered=threading.Event();order=[]
         def synthesize(settings):
             order.append(settings['text']);entered.set()

@@ -392,7 +392,7 @@ def run(project,text,settings,ref,entries,job):
     try:
         folder=root(pid)
         # a narration whose phrases are all in the cache asks HeyGen nothing: it does not wait behind whole narrations
-        if settings['provider']=='heygen' and not all(x['cached'] or x.get('raw_cached') for x in entries):wait_heygen(pid,job)
+        if settings['provider']=='heygen' and _heygen.queued(settings.get('heygen_model')) and not all(x['cached'] or x.get('raw_cached') for x in entries):wait_heygen(pid,job)
         job['cost_receipts_version']=1
         store.atomic_json(folder/'job.json',job)
         missing=any(not x['cached'] for x in entries)
