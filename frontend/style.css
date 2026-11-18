@@ -3005,5 +3005,6 @@ select option{background:#232327;color:#f1f1f2}
 .trend-idea-rest>label:not(.trend-idea-check){display:grid;gap:7px;font-size:12px;color:#b6b8c1}
 .thumb-logo-resize.right{left:auto;right:-8px;bottom:-8px;cursor:nwse-resize}
 .trend-title-row{display:flex;align-items:center;gap:8px}.trend-title-row>.title-translation-field,.trend-title-row>input{flex:1;min-width:0}
-.trend-title-flag{font-size:18px;line-height:1}.trend-title-flag[hidden]{display:none}
+.trend-title-flag.trend-language{margin:0;font-size:11px;padding:3px 6px}.trend-title-flag[hidden]{display:none}
+.trend-title-original .trend-language{font-size:10px;margin-right:2px}
 .trend-title-original{margin:-6px 0 0;font-size:12px;color:#9aa0a8}

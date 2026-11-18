@@ -111,7 +111,8 @@ const modalActionPaths={
   save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M7 3v6h10M7 21v-8h10v8"/>',
   add:'<path d="M12 5v14M5 12h14"/>',
   refresh:'<path d="M3 4v6h6M4 9a8 8 0 1 1-1 7"/>',
-  check:'<path d="m5 12 4 4L19 6"/>'
+  check:'<path d="m5 12 4 4L19 6"/>',
+  magic:'<path d="m21.6 3.6-1.2-1.2a1.2 1.2 0 0 0-1.7 0L2.4 18.6a1.2 1.2 0 0 0 0 1.7l1.2 1.2a1.2 1.2 0 0 0 1.7 0L21.6 5.4a1.2 1.2 0 0 0 0-1.8M14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9"/>'
 };
 function modalActionIcon(action){
   const key=action.icon||({'Зберегти':'save','Додати':'add','Додати канал':'add','Оновити':'refresh','Спробувати ще раз':'refresh','Застосувати':'check'}[action.label]);

@@ -102,8 +102,8 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   let generation,root,submit,titleTranslator,ready=false,sending=false,translating=false,wordsEdited=false,channelRead=0;
   const live=()=>root?.isConnected&&state.modalGeneration===generation&&state.navigation===navigation&&!$('modal-backdrop').hidden;
   const valid=()=>ready&&!sending&&!translating&&!!root?.querySelector('[name="channel"]').value&&!!root?.querySelector('[name="title"]').value.trim();
-  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><p class="trend-title-original" hidden></p><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span></label><label class="episode-word-count">Обсяг сценарію <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
-    label:'Створити зачини',primary:true,enabled:valid,run:async()=>{
+  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag trend-language" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><p class="trend-title-original" hidden></p><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span></label><label class="episode-word-count">Обсяг сценарію <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
+    label:'Створити відео',icon:'magic',primary:true,enabled:valid,run:async()=>{
       if(!live()||!valid())return;
       const cid=root.querySelector('[name="channel"]').value,title=root.querySelector('[name="title"]').value.trim();
       const count=Number(root.querySelector('[name="words"]').value);
@@ -129,13 +129,16 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   // the title follows the chosen channel's language at once, with flags: ours beside the field, the competitor's
   // original under it (user, 18 November 2026: «заголовок… одразу має перевестись на мову… каналу… знизу… на
   // оригінальній мові… флажок»)
-  const flagOf=code=>(typeof langFlags!=='undefined'&&langFlags[code])||'🌐';
+  // the language as the trend cards mark it: its letters in a small box, not a flag (user, 18 November 2026:
+  // «прапори ці заміни на значки… прямокутничок і писала мова»)
+  const codeOf=code=>String(code||'').toUpperCase();
   const original=root.querySelector('.trend-title-original'),flag=root.querySelector('.trend-title-flag');
   let titleLanguage=video.title_language||'';
   const showFlags=()=>{
-    flag.textContent=titleLanguage?flagOf(titleLanguage):'';flag.hidden=!titleLanguage;
+    flag.textContent=codeOf(titleLanguage);flag.hidden=!titleLanguage;
     const changed=root.querySelector('[name="title"]').value.trim()!==video.title.trim();
-    original.hidden=!changed;original.textContent=changed?`${flagOf(video.title_language)} ${video.title}`:'';
+    original.hidden=!changed;original.replaceChildren();
+    if(changed){const chip=document.createElement('span');chip.className='trend-language';chip.textContent=codeOf(video.title_language||'?');original.append(chip,' '+video.title);}
   };
   root.querySelector('[name="title"]').addEventListener('input',showFlags);
   async function toChannelLanguage(){

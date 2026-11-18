@@ -6,21 +6,25 @@
   const sized=new ResizeObserver(entries=>{for(const e of entries)lay(e.target);});
   const seen=new WeakSet();
   function lay(button){
-    const text=button.textContent;
-    if(button._laid===text+'|'+button.clientWidth)return;
-    if(button.firstElementChild)button.textContent=text;
-    const node=button.firstChild,line=parseFloat(getComputedStyle(button).lineHeight)||20;
-    if(node&&node.nodeType===3&&button.scrollHeight>line*2+2){
+    // a leading language box of a trend card («EN», «FR») stays in front of the title (it had been flattened away)
+    const badge=button.querySelector(':scope > .trend-language');
+    const text=[...button.childNodes].filter(n=>n!==badge).map(n=>n.textContent).join('');
+    const key=(badge?badge.textContent:'')+'|'+text+'|'+button.clientWidth;
+    if(button._laid===key)return;
+    const node=document.createTextNode(text);
+    button.replaceChildren(...(badge?[badge]:[]),node);
+    const line=parseFloat(getComputedStyle(button).lineHeight)||20;
+    if(button.scrollHeight>line*2+2){
       const range=document.createRange(),top=button.getBoundingClientRect().top;
       let low=0,high=text.length;   // the first character that sits below the first line
       while(low<high){const mid=(low+high)>>1;range.setStart(node,mid);range.setEnd(node,mid+1);
         const rect=range.getClientRects()[0];if(rect&&rect.top-top>line*0.6)high=mid;else low=mid+1;}
       if(low>0&&low<text.length){
         const tail=document.createElement('span');tail.className='title-tail';tail.textContent=text.slice(low);
-        button.textContent=text.slice(0,low);button.append(tail);
+        node.textContent=text.slice(0,low);button.append(tail);
       }
     }
-    button._laid=button.textContent+'|'+button.clientWidth;
+    button._laid=key;
   }
   function scan(){for(const button of document.querySelectorAll(SELECTOR)){
     if(!seen.has(button)){seen.add(button);sized.observe(button);}lay(button);}}
