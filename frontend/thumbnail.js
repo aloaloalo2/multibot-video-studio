@@ -24,7 +24,7 @@ async function openThumbnail(project){
   const writers=thumbnailWriterOptions(data),preference='thumbnail-writer:'+project.channel_id;
   if(!writers.length){status('Для прев’ю потрібен Codex або Claude. Оновіть студію.',true);return;}
   const available=writers.map(item=>item.value);
-  let writer=StudioUI.preference(preference,available,available.includes('claude')?'claude':available[0]);
+  let writer=available.length===1?available[0]:StudioUI.preference(preference,available,available.includes('claude')?'claude':available[0]);
   modal('Нове прев’ю',`
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
@@ -34,7 +34,8 @@ async function openThumbnail(project){
     [{label:'Створити',primary:true,enabled:()=>!thumbnailBusy(project.id)&&!thumbnailCreatePending.has(project.id)&&create.dataset.gated!=='1'&&create.dataset.referenceMissing!=='1',run:()=>generateThumbnail(project,writer,$('thumb-create-wishes').value)}]);
   const actions=$('modal-actions'),create=actions.querySelector('button');create.id='thumb-create-submit';create.innerHTML=thumbnailIcon+'<span>Створити</span>';create.classList.add('glow-action');
   const controls=document.createElement('div');controls.className='thumb-create-controls';actions.append(controls);
-  StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
+  // one way only (Claude writes, OpenRouter draws): no choice to show (user, 18 November 2026: «поле можемо скрити»)
+  if(writers.length>1)StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
   $('modal-actions').prepend($('thumb-wishes-choice'));
   // without a channel host there is nothing to choose and no hint (user, 18 November 2026: «це прибери… якщо немає ведучого»)
   if($('thumb-use-hero'))$('modal-actions').prepend($('thumb-use-hero').closest('label'));

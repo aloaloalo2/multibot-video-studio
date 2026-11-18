@@ -141,7 +141,7 @@ class CloneEpisodeTest(unittest.TestCase):
                 patch('thumbnail_gen.state', return_value={}), patch('thumbnail_gen.preview', return_value=None), patch('thumbnail_gen.start', return_value={'status': 'running'}) as start:
             draft = ideas.start(self.cid, body)
             pid = draft['project_id']
-            start.assert_called_once_with(pid, 'Clone cover', 'Clone cover', writer='trending')
+            start.assert_called_once_with(pid, 'Clone cover', 'Clone cover', writer='claude_openrouter')
             self.assertTrue(ideas.read_project(pid)['clone_thumbnail_attempted'])
             ideas.ACTIVE.clear()
             data = ideas.read_project(pid)

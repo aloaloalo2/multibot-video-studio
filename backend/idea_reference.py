@@ -293,7 +293,7 @@ def start_thumbnail(data):
         project = store.load_project(data['project_id'])
         if (thumbnail_gen.state(project['id']) or {}).get('status') or thumbnail_gen.preview(project):
             return
-        thumbnail_gen.start(project['id'], project['name'], data.get('opening') or project['name'], writer='trending',
+        thumbnail_gen.start(project['id'], project['name'], data.get('opening') or project['name'], writer='claude_openrouter',
                             **({'use_hero':data['clone_use_hero']} if 'clone_use_hero' in data else {}),
                             **({'channel_wishes': True} if data.get('clone_channel_wishes') is True else {}))
     except Exception as error:

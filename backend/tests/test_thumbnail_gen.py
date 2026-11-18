@@ -45,7 +45,7 @@ class ThumbnailTest(unittest.TestCase):
 
     def test_retired_writer_is_not_offered_or_started_for_new_or_cloned_thumbnails(self):
         pid = self.project['id']
-        self.assertEqual(thumbnail_gen.defaults(pid)['writers'], ['claude', 'trending', 'claude_openrouter'])
+        self.assertEqual(thumbnail_gen.defaults(pid)['writers'], ['claude_openrouter'])
         with patch.object(thumbnail_gen.threading, 'Thread') as worker:
             for source in ('', 'abcdefghijk'):
                 with self.subTest(source=source), self.assertRaisesRegex(store.StudioError, 'Codex або Claude'):
@@ -89,10 +89,9 @@ class ThumbnailTest(unittest.TestCase):
         self.made_frames(2)
         with patch.object(thumbnail_gen, "CODEX", Path(sys.executable)), patch.object(thumbnail_gen.threading, "Thread") as thread:
             job = thumbnail_gen.start(self.project["id"], "T", "S", writer="trending")
-        self.assertEqual((job["writer"], job["stage"]), ("trending", "drawing"))
-        self.assertEqual(thread.call_args.kwargs["args"][4], "trending")
-        with self.assertRaisesRegex(store.StudioError, "без бази"):
-            thumbnail_gen.start(self.project["id"], "T", "S", writer="trending", base="Превью v1.png")
+        # since 18 November 2026 every thumbnail goes one way: Claude writes the prompt, OpenRouter draws
+        self.assertEqual((job["writer"], job["drawer"], job["stage"]), ("claude", "openrouter", "prompt"))
+        self.assertEqual(thread.call_args.kwargs["args"][4], "claude")
 
     def test_host_reference_and_opt_out_reach_each_thumbnail_writer_and_codex(self):
         import channel_hero
@@ -437,7 +436,7 @@ class ThumbnailTest(unittest.TestCase):
                     patch.object(thumbnail_gen.threading, 'Thread') as thread:
                 job = thumbnail_gen.start(self.project['id'], 'Our title', 'Full script.', 'Our wishes', writer=writer)
                 self.assertEqual(job['status'], 'running')
-                self.assertEqual(thread.call_args.kwargs['args'][1:5], ('Our title', 'Full script.', 'Our wishes', writer))
+                self.assertEqual(thread.call_args.kwargs['args'][1:5], ('Our title', 'Full script.', 'Our wishes', 'claude'))   # Claude + OpenRouter
         thumbnail_gen.ACTIVE.clear()
         with self.assertRaisesRegex(store.StudioError, 'заголовок'):
             thumbnail_gen.start(self.project['id'], ' ', 'Full script.')

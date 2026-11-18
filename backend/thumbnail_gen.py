@@ -41,6 +41,9 @@ PROMPT_EFFORT = "high"
 # Animated projects take their look from made frames; regular projects can start from their script and title.
 # «Claude + OpenRouter»: Claude writes the prompt, OpenRouter's detail model draws it (beta, 18 November 2026)
 PROMPT_WRITERS = ("claude", "trending", "claude_openrouter")
+# the one way since 18 November 2026 (user: «прев'юшки по дефолту… Claude плюс Open Router… не будемо нічого
+# вибирати… поле можемо скрити»): Claude writes, OpenRouter draws; every new thumbnail and every edit goes this way
+OFFERED_WRITERS = ("claude_openrouter",)
 MIN_FRAMES = 2
 STILLS = 3
 # YouTube puts the video's length in the bottom-right corner, so every thumbnail keeps it empty (user, 15 November 2026:
@@ -169,7 +172,7 @@ def defaults(pid: str) -> dict:
     return {"title": (first_title(folder) if folder.is_dir() and project.get("episode_path") else None) or project["name"], "script": script.strip(), "job": state(pid),
             "preview": bool(preview(project)), "pictures": store.picture_count(project), "min_frames": 0 if clone else creation_min_frames(project),
             "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
-            "versions": versions(pid), "writers": list(PROMPT_WRITERS), "image_editing": True,
+            "versions": versions(pid), "writers": list(OFFERED_WRITERS), "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None,
             # the channel's logo for the gallery's «Логотип» button (thumbnail_logo.place); None when the channel has none
             "channel_logo": channel_branding.logo_info(project['channel_id']) if project.get('channel_id') else None,
@@ -625,8 +628,8 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False, drawer: str = "codex") -> dict:
-    if writer == "claude_openrouter":
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False, drawer: str = "openrouter") -> dict:
+    if writer in PROMPT_WRITERS:
         writer, drawer = "claude", "openrouter"
     if drawer not in DRAWERS:
         raise store.StudioError("Оберіть, хто малює прев’ю: Codex або OpenRouter", 400)
