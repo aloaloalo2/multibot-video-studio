@@ -162,7 +162,7 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
         raise store.StudioError("Для цього випуску картинки малює Codex", 409)
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 30000:
         raise store.StudioError("Опишіть картинку")
-    if aspect_ratio not in {"1:1", "3:2", "2:3"} or quality not in {"low", "medium", "high"}:
+    if aspect_ratio not in {"1:1", "3:2", "2:3", "16:9", "9:16"} or quality not in {"low", "medium", "high"}:
         raise store.StudioError("Непідтримуваний формат картинки")
     try:
         key = credentials.vault().read(credentials.service_name("openrouter"))
@@ -172,6 +172,8 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
     # one, which draws animation props well (user, 17 November 2026: «якщо щось треба намалювати якісно, деталізовано…
     # старшу модель… поки ця дешева справляється окей»)
     model = FACE_MODEL if refs or detail else chosen.get("model") or DEFAULT_MODEL
+    if model == DEFAULT_MODEL and aspect_ratio in {"16:9", "9:16"}:
+        aspect_ratio = "3:2" if aspect_ratio == "16:9" else "2:3"   # the mini model draws only 1:1, 3:2 and 2:3
     body = {"model": model, "prompt": prompt.strip(), "background": "transparent" if transparent else "opaque", "aspect_ratio": aspect_ratio,
             "quality": quality, "n": 1}
     if refs:

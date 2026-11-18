@@ -165,14 +165,17 @@ def studio_provider() -> dict:
         return {}
 
 
-def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
+def draw_openrouter(a, prompt: Path, out: Path, finish, strong: bool = False) -> None:
     import base64
     import openrouter_images
     try:
         # the reference pictures (the host's avatar and the like) go along, as with Codex
         text = prompt.read_text(encoding="utf-8").strip()
-        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, refs=[str(Path(ref).resolve()) for ref in a.ref],
-                                        transparent=bool(TRANSPARENT.search(text)), detail=bool(getattr(a, "detail", False)))
+        # a 2 × 2 sheet of photos is 16:9, as Codex draws it (sheet_2x2.py cuts it in four)
+        wide = bool(re.search(r"16:9|2\s*[×x]\s*2", text))
+        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, aspect_ratio="16:9" if wide else "3:2",
+                                        refs=[str(Path(ref).resolve()) for ref in a.ref],
+                                        transparent=bool(TRANSPARENT.search(text)), detail=strong or bool(getattr(a, "detail", False)))
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
         finish("failed", str(error)[-300:])
@@ -180,6 +183,29 @@ def draw_openrouter(a, prompt: Path, out: Path, finish) -> None:
     out.with_suffix(".log.txt").write_text(f"OpenRouter {result.get('model')}: ${result.get('cost')}\n", encoding="utf-8")
     finish("done")
     print(out)
+
+
+LIMIT_PAUSE = 3600   # seconds after Codex's limit when pictures go straight to OpenRouter, then Codex is tried again
+
+
+def limit_marker():
+    backend = studio_backend()
+    return backend / "data" / "codex-limit.json" if backend else None
+
+
+def codex_out() -> bool:
+    """Codex said its limit was out less than LIMIT_PAUSE ago: no minute is spent asking it again."""
+    marker = limit_marker()
+    try:
+        return bool(marker) and time.time() - json.loads(marker.read_text()).get("at", 0) < LIMIT_PAUSE
+    except (OSError, ValueError):
+        return False
+
+
+def instead_of_codex() -> bool:
+    """Inside a studio episode, OpenRouter's detail model takes over when Codex's limit is out (user, 18 November 2026:
+    «якщо кодекс недоступен, то використовуємо sunburst»: photos, infographics and text drawn there, no pause)."""
+    return bool(os.environ.get("VIDEOKEY_PROJECT_ID") and studio_backend())
 
 
 def draw(a) -> None:
@@ -196,6 +222,12 @@ def draw(a) -> None:
             if a.watch:
                 job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
         draw_openrouter(a, prompt, out, finish_or)
+        return
+    def finish_or(status, error=""):
+        if a.watch:
+            job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
+    if instead_of_codex() and codex_out():
+        draw_openrouter(a, prompt, out, finish_or, strong=True)
         return
     text = prompt.read_text(encoding="utf-8").strip() + (
         f'\n\nUse the built-in image generation tool and make exactly one image. Save it in the current working directory as '
@@ -234,6 +266,13 @@ def draw(a) -> None:
         if process.poll() is None:
             process.kill()
     out.with_suffix(".log.txt").write_text(stdout + stderr, encoding="utf-8")
+    if not out.is_file() and LIMIT.search(stdout + stderr) and instead_of_codex():
+        try:
+            limit_marker().write_text(json.dumps({"at": time.time(), "reset": reset_time(stdout + stderr)}), encoding="utf-8")
+        except OSError:
+            pass
+        draw_openrouter(a, prompt, out, finish, strong=True)
+        return
     if not out.is_file() and LIMIT.search(stdout + stderr):
         reset = reset_time(stdout + stderr)
         finish("limit", "CODEX_LIMIT: закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") +
