@@ -23,22 +23,6 @@
   const main=item=>{const w=week(item);return w===null?item:{...item,left:w,resets_at:item.week_resets_at,window:'seven_day',
     five_left:item.left,five_resets_at:item.resets_at};};
   const five=item=>item&&Number.isFinite(item.five_left)?item.five_left:null;
-  // every arc hangs centred on the bottom of its ring and shrinks towards it (user, 16 November 2026: «дуга, щоб була
-  // знизу… все по центру донизу»); the ring starts at the top, so the bottom is half way along it
-  function arc(circle,share){
-    const part=Math.max(0,Math.min(100,share));
-    circle.style.strokeDasharray=`${part} ${100-part}`;
-    circle.style.strokeDashoffset=`${part/2-50}`;
-  }
-  function ring(kind,item){
-    item=main(item);
-    const el=button.querySelector(`.ring-${kind}`),bg=button.querySelector(`.ring-bg-${kind}`);
-    const left=item&&item.known?item.left:0;
-    arc(el,left);
-    el.dataset.tone=item&&item.known?tone(left):'none';
-    const rest=five(item);
-    arc(bg,rest===null?(weekly(item)?0:100):rest);
-  }
   function line(kind,item){
     item=item&&item.known?main(item):item;
     if(!item||!item.known)return `<div class="ai-limit-row"><span class="ai-limit-name ${kind}">${names[kind]}</span><span class="ai-limit-note">${item?.login_expired?(kind==='claude'?'Оновлюємо вхід Claude Code, залишок з’явиться за хвилину.':'Codex давно не запускався, тому його вхід ще не оновлений. Залишок з’явиться з першою роботою Codex.'):item?.reset?'Час оновлення минув. Уточнюємо залишок.':"Актуальних даних поки немає."}</span></div>`;
@@ -51,7 +35,9 @@
   }
   function draw(){
     if(!data)return;
-    ring('claude',data.claude);ring('codex',data.codex);
+    // only Claude Code's weekly share as a number (user, 18 November 2026: «просто там відсоток і все… тижневий»)
+    const pct=button.querySelector('.ai-limits-pct'),c=data.claude&&data.claude.known?main(data.claude):null;
+    pct.textContent=c?`${c.left}%`:'—';pct.dataset.tone=c?tone(c.left):'none';
     const text=k=>data[k]&&data[k].known?`${names[k]} ${main(data[k]).left}% ${span(main(data[k]))}`:`${names[k]} немає даних`;
     const label=`Залишок лімітів: ${text('claude')}, ${text('codex')}`;
     button.title=label;button.setAttribute('aria-label',label);
