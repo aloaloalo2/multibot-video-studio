@@ -2993,3 +2993,11 @@ select option{background:#232327;color:#f1f1f2}
 .ai-spend th:first-child{text-align:left;color:#9aa0a8}
 .ai-spend thead th{color:#7d838c;font-size:11px}
 .ai-spend-total th,.ai-spend-total td{border-top:1px solid #34373e;color:#eef0f3;font-weight:600}
+.title-language-menu>.title-language-more{grid-column:1/-1;color:#9aa0a8;font-size:12px}
+.title-language-menu>button[data-language]:first-child{grid-column:1/-1}
+.title-language-rest{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
+.title-language-rest[hidden]{display:none}
+.title-language-rest>button{min-width:0;padding:9px 10px;border:0;border-radius:9px;background:transparent;box-shadow:none;text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title-language-rest>button:hover,.title-language-rest>button:focus-visible{background:#373941;color:#fff}
+.trend-idea-rest{display:grid;gap:14px}.trend-idea-rest[hidden]{display:none}
+.trend-idea-rest>label:not(.trend-idea-check){display:grid;gap:7px;font-size:12px;color:#b6b8c1}

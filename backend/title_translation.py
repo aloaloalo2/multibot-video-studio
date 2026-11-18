@@ -17,7 +17,7 @@ VERSION = 1
 def options():
     import languages
     import episode_ideas
-    codes=set()
+    codes=set();by_channel={}
     for channel in store.list_channels():
         settings=channel.get('settings') or {}
         # the language of the channel's avatar voice comes first (user, 16 November 2026: «студія має визначати мову
@@ -39,9 +39,11 @@ def options():
             else:
                 voice=store.read_json(store.DATA_ROOT/'channels'/channel['id']/'voice-lab'/'settings.json',{}) or {}
                 code=voice.get('language')
-        if code in languages.LANGUAGES:codes.add(code)
+        if code in languages.LANGUAGES:codes.add(code);by_channel[channel['id']]=code
+    # each channel's own language, so the menu offers it first (user, 18 November 2026: «краще використовувати одну мову,
+    # мову цього каналу… інші… маленьким відкриваючим списком»)
     return {'languages':[{'code':code,'name':row[0],'label':row[1]}
-                         for code,row in languages.LANGUAGES.items() if code in codes]}
+                         for code,row in languages.LANGUAGES.items() if code in codes],'channels':by_channel}
 
 
 def busy():

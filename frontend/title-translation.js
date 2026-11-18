@@ -1,7 +1,7 @@
 /* One explicit title translator shared by clone and Trends dialogs. */
 const titleTranslationIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h12M7 2v3m-3 3 6 8m1-11c0 5-3 9-8 12m10 4 5-11 5 11m-8-4h6"/></svg>';
 function titleTranslationOptions(){
-  return api('/api/title-translation').then(data=>data.languages);
+  return api('/api/title-translation').then(data=>Object.assign(data.languages,{channels:data.channels||{}}));
 }
 function bindTitleTranslation(input,{channelId,live,available=()=>true,enabled=()=>true,context=()=>'',onBusy=()=>{}}){
   const wrap=document.createElement('div');wrap.className='title-translation-field';input.before(wrap);wrap.append(input);
@@ -61,11 +61,24 @@ function bindTitleTranslation(input,{channelId,live,available=()=>true,enabled=(
       if(!languages.length){note.hidden=false;note.textContent='Спершу налаштуйте мову голосу свого каналу.';return;}
       menu=document.createElement('div');menu.className='title-language-menu';menu.setAttribute('role','menu');menu.setAttribute('aria-label','Мова заголовка');
       let preferred='';try{preferred=localStorage.getItem('title-translation-language')||'';}catch{}
-      for(const language of languages){
+      const item=language=>{
         const choice=document.createElement('button');choice.type='button';choice.setAttribute('role','menuitem');choice.dataset.language=language.code;
         choice.textContent=(typeof langFlags!=='undefined'&&langFlags[language.code]?langFlags[language.code]+' ':'')+language.name;
-        choice.title='Мова перекладу: '+language.label;choice.onclick=()=>translate(language.code);menu.append(choice);
-      }
+        choice.title='Мова перекладу: '+language.label;choice.onclick=()=>translate(language.code);return choice;
+      };
+      // the chosen channel's own language first; the others fold under «Інші мови» (user, 18 November 2026)
+      const own=languages.find(language=>language.code===languages.channels?.[channelId()]);
+      if(own){
+        menu.append(item(own));
+        const rest=languages.filter(language=>language!==own);
+        if(rest.length){
+          const more=document.createElement('button');more.type='button';more.className='title-language-more';more.setAttribute('aria-expanded','false');more.textContent='Інші мови ▾';
+          const list=document.createElement('div');list.className='title-language-rest';list.hidden=true;rest.forEach(language=>list.append(item(language)));
+          more.onclick=()=>{list.hidden=!list.hidden;more.setAttribute('aria-expanded',String(!list.hidden));more.textContent=list.hidden?'Інші мови ▾':'Інші мови ▴';position();};
+          menu.append(more,list);
+        }
+        preferred=own.code;
+      }else for(const language of languages)menu.append(item(language));
       document.body.append(menu);button.setAttribute('aria-expanded','true');position();
       document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',keys,true);window.addEventListener('resize',position);document.addEventListener('scroll',position,true);
       (menu.querySelector(`[data-language="${preferred.replace(/[^a-z]/g,'')}"]`)||menu.querySelector('button'))?.focus();
