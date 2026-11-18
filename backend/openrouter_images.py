@@ -108,6 +108,51 @@ def references(paths) -> list[dict]:
     return found
 
 
+THUMBNAIL_MODEL = FACE_MODEL
+THUMBNAIL_REFS = 10
+
+
+def draw_thumbnail(pid: str, prompt: str, refs=None) -> dict:
+    """A YouTube thumbnail drawn by OpenRouter, in beta beside Codex (user, 18 November 2026: «підключи її до студії…
+    щоб вона зробила мені прев'юшку… в бета-тесті… щоб я ціну знав»). The detail tier, 16:9, high quality, opaque;
+    the same references Codex gets (the host, the video's stills, the logo). {'png': bytes, 'cost': usd, 'model'}."""
+    store.load_project(pid)
+    if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 30000:
+        raise store.StudioError("Опишіть прев’ю")
+    try:
+        key = credentials.vault().read(credentials.service_name("openrouter"))
+    except RuntimeError:
+        raise store.StudioError("Додайте ключ OpenRouter у налаштуваннях студії", 503) from None
+    body = {"model": THUMBNAIL_MODEL, "prompt": prompt.strip(), "background": "opaque", "aspect_ratio": "16:9",
+            "quality": "high", "n": 1}
+    if refs:
+        body["input_references"] = references(list(refs)[:THUMBNAIL_REFS])
+    request = urllib.request.Request(BASE + "/images", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                                     method="POST", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=600) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        detail = error.read(2000).decode("utf-8", "replace").replace(key, "[ключ]")
+        raise store.StudioError(f"OpenRouter відповів {error.code}: {detail[:300]}", 502) from None
+    except (OSError, ValueError) as error:
+        raise store.StudioError(f"OpenRouter не відповів: {error}", 502) from None
+    cost = (result.get("usage") or {}).get("cost")
+    amount = cost if type(cost) in (int, float) and math.isfinite(cost) and cost >= 0 else None
+    project_costs.record_at(store.project_dir(pid), "openrouter", amount, identity="thumbnail-" + str(result.get("id") or uuid.uuid4().hex),
+                            category="thumbnail", estimated=amount is None)
+    try:
+        data = base64.b64decode(result["data"][0]["b64_json"], validate=True)
+        if not 0 < len(data) <= MAX_BYTES:
+            raise ValueError("size")
+        with Image.open(io.BytesIO(data)) as image:
+            saved = io.BytesIO()
+            image.convert("RGB").save(saved, "PNG")
+    except (KeyError, IndexError, TypeError, ValueError, binascii.Error, UnidentifiedImageError):
+        raise store.StudioError("OpenRouter не повернув картинку прев’ю", 502) from None
+    return {"png": saved.getvalue(), "cost": amount, "model": THUMBNAIL_MODEL}
+
+
 def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "medium", refs=None, transparent: bool = True,
          detail: bool = False) -> dict:
     """One sheet: {'png': base64, 'cost': usd}, transparent unless the prompt asks for a background of its own. Never

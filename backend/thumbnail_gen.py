@@ -39,7 +39,8 @@ TRENDING_RULES = Path(__file__).parent / "prompts" / "trending_thumbnail.md"
 # раніше було... получались дуже круті результати»)
 PROMPT_EFFORT = "high"
 # Animated projects take their look from made frames; regular projects can start from their script and title.
-PROMPT_WRITERS = ("claude", "trending")
+# «Claude + OpenRouter»: Claude writes the prompt, OpenRouter's detail model draws it (beta, 18 November 2026)
+PROMPT_WRITERS = ("claude", "trending", "claude_openrouter")
 MIN_FRAMES = 2
 STILLS = 3
 # YouTube puts the video's length in the bottom-right corner, so every thumbnail keeps it empty (user, 15 November 2026:
@@ -120,7 +121,10 @@ def versions(pid: str) -> list[dict]:
         comparison = thumbnail_compare.describe(pid, path.name, comparisons)
         legacy = re.match(r'\[Правка (Превью (?:до )?v[1-9][0-9]*\.png)\]', head)
         if not comparison and legacy:comparison = {'kind':'edit','base':legacy.group(1)}
+        try:drawn = json.loads((work / (path.stem + ".json")).read_text())
+        except (OSError, ValueError):drawn = {}
         items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
+                      **({"drawer": "openrouter", "cost": drawn.get("cost")} if drawn.get("drawer") == "openrouter" else {}),
                       **({'comparison': comparison} if comparison else {}),
                       **({"from": int(edit.group(1)), "notes": edit.group(2).strip()} if edit else {}),
                       "current": kept.is_file() and filecmp.cmp(path, kept, shallow=False), "time": path.stat().st_mtime})
@@ -460,8 +464,20 @@ Use the built-in image generation tool and make exactly one image. Save it in th
 and reply only with the saved path."""
 
 
+DRAWERS = ("codex", "openrouter")
+
+
+def drawn_by_openrouter(pid: str, prompt: str, name: str, work: Path, refs) -> subprocess.CompletedProcess:
+    """The picture from OpenRouter instead of Codex, with the same prompt and references; its price beside it."""
+    import openrouter_images
+    result = openrouter_images.draw_thumbnail(pid, prompt, [str(ref) for ref in refs if ref])
+    (work / name).write_bytes(result["png"])
+    (work / (Path(name).stem + ".json")).write_text(json.dumps({"drawer": "openrouter", "model": result["model"], "cost": result["cost"]}), encoding="utf-8")
+    return subprocess.CompletedProcess([], 0, f"OpenRouter {result['model']}: ${result['cost']}\n", "")
+
+
 @job_timing.track('thumbnail', project='pid', job=lambda values: state(values['pid']))
-def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes_on: bool = False) -> None:
+def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes_on: bool = False, drawer: str = "codex") -> None:
     data = {}
     try:
         data = state(pid) or {}
@@ -556,7 +572,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         store.atomic_json(job_path(pid), data)
         # Clone drawings run in a fresh, clean workspace with text and optional host identity only.
         with job_timing.span('service'):
-            if clone and not base:
+            if drawer == "openrouter":
+                # a clone keeps the competitor's picture out of the drawing, as with Codex: the host and logo only
+                result = drawn_by_openrouter(pid, written, name, work, [hero, logo_ref] if clone and not base else refs)
+            elif clone and not base:
                 result = draw_clone_from_text(written, name, work, hero, logo_ref)
             else:
                 command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
@@ -569,7 +588,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             with Image.open(made) as image:
                 image.verify()
         except (OSError, UnidentifiedImageError):
-            raise RuntimeError("Codex не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
+            raise RuntimeError(("OpenRouter" if drawer == "openrouter" else "Codex") + " не зберіг картинку. " + (result.stderr or result.stdout)[-300:].strip())
         with job_timing.span('saving'):
             thumbnail_logo.stamp(made, logo, work)
             try:thumbnail_compare.record(pid, name, base=base, reference=clone, image=clone_image)
@@ -604,7 +623,11 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
-def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False) -> dict:
+def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False, drawer: str = "codex") -> dict:
+    if writer == "claude_openrouter":
+        writer, drawer = "claude", "openrouter"
+    if drawer not in DRAWERS:
+        raise store.StudioError("Оберіть, хто малює прев’ю: Codex або OpenRouter", 400)
     if use_hero is not None and not isinstance(use_hero, bool):
         raise store.StudioError('Оберіть, чи використовувати головного героя', 400)
     if writer not in PROMPT_WRITERS:
@@ -629,7 +652,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
     required = creation_min_frames(project)
     if not base and not clone and required and store.picture_count(project) < required:
         raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {required} кадри ролику: з них береться стиль", 409)
-    if not CODEX.is_file():
+    if (drawer == "codex" or writer == "trending") and not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)
     with LOCK:
         if pid in ACTIVE:
@@ -646,7 +669,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 base = f"Превью до v{number}.png"
                 shutil.copy2(source, keep_dir(pid) / base)
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" and not clone else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
-                "writer": writer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
+                "writer": writer, "drawer": drawer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
                 **({"channel_wishes": True} if channel_wishes is True else {})}
         ACTIVE.add(pid)
         try:
@@ -655,7 +678,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
             ACTIVE.discard(pid)
             raise
     try:
-        threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id, channel_wishes is True), daemon=True).start()
+        threading.Thread(target=run, args=(pid, title, script, wishes, writer, base, use_hero, reference_id, channel_wishes is True, drawer), daemon=True).start()
     except Exception:
         data.update(status='failed', error='Не вдалося запустити створення прев’ю', finished_at=time.time())
         try:

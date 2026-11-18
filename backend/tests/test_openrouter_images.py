@@ -97,3 +97,28 @@ class OpenRouterSheetsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OpenRouterThumbnailTest(unittest.TestCase):
+    """«Claude + OpenRouter» in the thumbnail window: OpenRouter's detail model draws, its price is kept (18 November 2026)."""
+
+    def test_the_thumbnail_is_drawn_16_9_and_its_price_shows_in_the_library(self):
+        import thumbnail_gen
+        root = Path(tempfile.mkdtemp())
+        buffer = io.BytesIO(); Image.new('RGB', (16, 9), (200, 30, 30)).save(buffer, 'JPEG')
+        answer = json.dumps({'id': 'gen-t', 'usage': {'cost': 0.123}, 'data': [{'b64_json': base64.b64encode(buffer.getvalue()).decode()}]}).encode()
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        with patch.object(store, 'project_dir', return_value=root), patch.object(store, 'load_project', return_value={'id': 'p' * 24}), \
+             patch.object(images.credentials, 'vault') as vault, \
+             patch.object(images.urllib.request, 'urlopen', return_value=Response(answer)) as call, \
+             patch.object(thumbnail_gen, 'keep_dir', return_value=root):
+            vault.return_value.read.return_value = 'key'
+            thumbnail_gen.drawn_by_openrouter('p' * 24, 'a bold thumbnail', 'Превью v1.png', root, [])
+            sent = json.loads(call.call_args.args[0].data)
+            listed = thumbnail_gen.versions('p' * 24)
+        self.assertEqual((sent['model'], sent['aspect_ratio'], sent['background']), (images.THUMBNAIL_MODEL, '16:9', 'opaque'))
+        with Image.open(root / 'Превью v1.png') as image:
+            self.assertEqual(image.format, 'PNG')
+        self.assertEqual((listed[0]['drawer'], listed[0]['cost']), ('openrouter', 0.123))

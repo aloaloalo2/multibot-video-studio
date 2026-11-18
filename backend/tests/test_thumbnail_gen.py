@@ -45,7 +45,7 @@ class ThumbnailTest(unittest.TestCase):
 
     def test_retired_writer_is_not_offered_or_started_for_new_or_cloned_thumbnails(self):
         pid = self.project['id']
-        self.assertEqual(thumbnail_gen.defaults(pid)['writers'], ['claude', 'trending'])
+        self.assertEqual(thumbnail_gen.defaults(pid)['writers'], ['claude', 'trending', 'claude_openrouter'])
         with patch.object(thumbnail_gen.threading, 'Thread') as worker:
             for source in ('', 'abcdefghijk'):
                 with self.subTest(source=source), self.assertRaisesRegex(store.StudioError, 'Codex або Claude'):

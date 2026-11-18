@@ -7,7 +7,7 @@ const thumbnailRuns=new Map(),thumbnailSources=new Map();
 
 const thumbnailFrames=2;
 function thumbnailBusy(id){return thumbnailRuns.get(id)?.status==='running';}
-function thumbnailWriterOptions(data){return [{value:'trending',label:'Codex'},{value:'claude',label:'Claude'}].filter(item=>!data.writers||data.writers.includes(item.value));}
+function thumbnailWriterOptions(data){return [{value:'trending',label:'Codex'},{value:'claude',label:'Claude'},{value:'claude_openrouter',label:'Claude + OpenRouter'}].filter(item=>!data.writers||data.writers.includes(item.value));}
 
 // Every thumbnail made for the episode, newest first, the cover marked; a click makes another one the cover. A new run
 // adds one more and keeps the others (user, 1 November 2026: «немає бібліотеки моїх прев'юшок… не видно, що
@@ -28,7 +28,7 @@ async function openThumbnail(project){
   modal('Нове прев’ю',`
     ${data.reference_selection?`<div class="thumb-mode-switch episode-entry-options" id="thumb-mode-switch" role="group" aria-label="Спосіб створення прев’ю"><button type="button" data-thumb-mode="new">${thumbnailIcon}<span>Нове прев’ю</span></button><button type="button" data-thumb-mode="clone">${thumbnailIcon}<span>Клонувати прев’ю</span></button></div><div class="thumb-reference-field" id="thumb-reference-field" hidden><label for="thumb-reference-url">Посилання на YouTube</label><div class="episode-reference-input">${episodeIcon('link')}<input id="thumb-reference-url" type="url" placeholder="Вставте посилання на YouTube" value="${esc(data.clone_reference?.url || '')}"><button type="button" class="secondary" id="thumb-reference-load" disabled>${thumbnailIcon}<span>Клонувати</span></button></div><small id="thumb-reference-state" role="status" hidden></small></div>`:''}
     <div class="thumb-brief-layout" id="thumb-brief-layout"><figure class="thumb-reference-preview" id="thumb-reference-preview" hidden><figcaption id="thumb-reference-caption">Прев’ю конкурента</figcaption><img id="thumb-reference-image" alt="Прев’ю конкурента" hidden></figure><label class="thumb-wishes"><span>Побажання <em>необов’язково</em></span><textarea id="thumb-create-wishes" rows="4" maxlength="2000" placeholder="Вкажіть побажання для нового прев’ю…">${esc(data.job?.wishes || '')}</textarea></label></div>
-    ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Використати ведучого каналу на прев’ю</label>':'<label class="thumb-hero-choice is-unavailable" title="У каналу ще немає головного героя: додайте фото в налаштуваннях каналу, розділ «Основне» → «Головний герой»"><input id="thumb-no-hero" type="checkbox" disabled>Використати ведучого каналу (додайте його в налаштуваннях каналу)</label>'}
+    ${data.hero_reference?'<label class="thumb-hero-choice"><input id="thumb-use-hero" type="checkbox" checked>Використати ведучого каналу на прев’ю</label>':''}
     <label class="thumb-hero-choice" id="thumb-wishes-choice" hidden title="Ідея з прев’ю конкурента, а стиль з наших прев’ю й побажань каналу"><input id="thumb-use-wishes" type="checkbox">Адаптувати під мій стиль</label>
     <p id="thumb-state" class="thumb-state" role="status" aria-live="polite"></p>`,
     [{label:'Створити',primary:true,enabled:()=>!thumbnailBusy(project.id)&&!thumbnailCreatePending.has(project.id)&&create.dataset.gated!=='1'&&create.dataset.referenceMissing!=='1',run:()=>generateThumbnail(project,writer,$('thumb-create-wishes').value)}]);
@@ -36,7 +36,8 @@ async function openThumbnail(project){
   const controls=document.createElement('div');controls.className='thumb-create-controls';actions.append(controls);
   StudioUI.choice(controls,{id:'thumb-writer',label:'Хто пише промпт',items:writers,value:writer,onChange:value=>{writer=value;StudioUI.remember(preference,value);}});controls.append(create);
   $('modal-actions').prepend($('thumb-wishes-choice'));
-  $('modal-actions').prepend(($('thumb-use-hero')||$('thumb-no-hero')).closest('label'));
+  // without a channel host there is nothing to choose and no hint (user, 18 November 2026: «це прибери… якщо немає ведучого»)
+  if($('thumb-use-hero'))$('modal-actions').prepend($('thumb-use-hero').closest('label'));
   $('modal-title').innerHTML=`${thumbnailIcon}<span>Нове прев’ю</span>`;
   $('modal-backdrop').dataset.thumbnailProject=project.id;
   $('modal-backdrop').classList.add('thumb-modal-open');
@@ -217,7 +218,7 @@ function markThumbnailCard(id){
   if(!veil){veil=document.createElement('div');veil.className='thumb-progress';veil.setAttribute('role','status');
     veil.innerHTML=`<span class="thumb-progress-pill">${typeof exportSpinner==='string'?exportSpinner:''}<span><b>Малюємо прев’ю</b><small></small></span></span>`;card.append(veil);}
   const stage=thumbnailRuns.get(id)?.stage;
-  veil.querySelector('small').textContent=stage==='prompt'?`${({deepseek:'DeepSeek',trending:'Codex',claude:'Claude'})[thumbnailRuns.get(id)?.writer]||'Claude'} пише промпт`:stage==='drawing'?'Codex малює картинку':'Зазвичай 1–3 хвилини';
+  veil.querySelector('small').textContent=stage==='prompt'?`${({deepseek:'DeepSeek',trending:'Codex',claude:'Claude'})[thumbnailRuns.get(id)?.writer]||'Claude'} пише промпт`:stage==='drawing'?(thumbnailRuns.get(id)?.drawer==='openrouter'?'OpenRouter малює картинку':'Codex малює картинку'):'Зазвичай 1–3 хвилини';
 }
 
 // Automatic clone covers can start after the card's initial thumbnail read.
@@ -317,7 +318,7 @@ function buildThumbnailGallery(section,project,data){
   const id=project.id,base=`/api/projects/${encodeURIComponent(id)}`;
   const flags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
   const versions=data.versions || [];
-  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`,current:v.current,comparison:v.comparison,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
+  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`+(v.drawer==='openrouter'?` · OpenRouter${Number.isFinite(v.cost)?' $'+v.cost.toFixed(3):''}`:''),current:v.current,comparison:v.comparison,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
     ...(data.translated_thumbnails || []).map(v=>({key:`${v.code}:${v.version_name}`,code:v.code,base:v.version_name,label:v.name,comparison:v.comparison,detail:v.number?`v${v.number}`:'Переклад',url:`${base}/languages/${v.code}/thumbnails/${encodeURIComponent(v.version_name)}?v=${v.stamp}`,flag:flags[v.code] || '🌐'}))];
   if(data.preview&&!versions.some(v=>v.current))items.unshift({key:'cover',code:'original',base:'current',label:'Оригінал',detail:'Обкладинка',current:true,url:`${base}/cover?v=${Date.now()}`,flag:flags[data.original_language] || '◈'});
   let selected=thumbnailSelection.get(id),filter='all';
