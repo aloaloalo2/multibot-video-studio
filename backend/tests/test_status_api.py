@@ -67,6 +67,17 @@ class StatusAPITest(unittest.TestCase):
         self.assertEqual(result['activities'],[])
         self.assertEqual(result['busy'][0],'мови: x')   # a restart still waits for it
 
+    def test_a_language_voice_started_after_the_pause_shows_on_the_card(self):
+        # 18 November 2026: CORBIN voiced Russian while its episode held yesterday's pause, and the card showed nothing
+        pid=self.project['id']
+        busy={'busy':['мови: x'],'active_channels':[self.cid],'activities':[{'project_id':pid,'channel_id':self.cid,'kind':'мови','status':'running'}]}
+        state={'jobs':{'ru|voice':{'status':'running','kind':'voice','code':'ru','started_at':2000}}}
+        with patch.object(app.agent_view,'studio_status',return_value=busy), patch.object(app.episode_pause,'paused',return_value={'paused_at':1000,'stopped':{}}), \
+             patch.object(app.languages,'load_state',return_value=state):
+            result=app.studio_work_status([])
+        self.assertEqual([a['kind'] for a in result['activities']],['мови'])
+        self.assertEqual(result['active_channels'],[self.cid])
+
     def test_channel_notice_follows_real_receipt_without_starting_work(self):
         from channel_activity import Notices
         task={'channel_id':self.cid,'project_id':self.project['id'],'kind':'створення кадрів','status':'running'}

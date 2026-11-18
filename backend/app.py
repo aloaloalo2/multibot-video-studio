@@ -887,8 +887,20 @@ def studio_work_status(exports):
     # does not spin for that tail (user, 17 November 2026: «тут спінер крутить, а на проектах нічого нема»). The busy list
     # keeps it, so a restart still waits for it.
     paused = {pid for pid in {a.get('project_id') for a in result.get('activities', [])} if pid and episode_pause.paused(pid)}
+    def started_after_pause(activity):
+        # work the author starts by hand on a paused episode (a language's voice) is its own and shows on the card (user,
+        # 18 November 2026: «корбин перекладає мову, але його зміни нема на проєкті»: Russian voiced while the episode
+        # held its pause from the day before)
+        if activity.get('kind') != 'мови':
+            return False
+        since = (episode_pause.paused(activity['project_id']) or {}).get('paused_at') or 0
+        try:
+            jobs = (languages.load_state(activity['project_id']).get('jobs') or {}).values()
+        except (OSError, ValueError, store.StudioError):
+            return False
+        return any(isinstance(job, dict) and job.get('status') == 'running' and (job.get('started_at') or 0) > since for job in jobs)
     if paused:
-        result['activities'] = [a for a in result['activities'] if a.get('project_id') not in paused]
+        result['activities'] = [a for a in result['activities'] if a.get('project_id') not in paused or started_after_pause(a)]
         result['active_channels'] = sorted(set(result.get('exporting_channels', [])) | {a.get('channel_id') for a in result['activities'] if a.get('channel_id')})
     # A live frame worker must block an update even when its project metadata
     # is temporarily unreadable or its final receipt was already written.

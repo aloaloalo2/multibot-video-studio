@@ -254,7 +254,8 @@ function renderProjectActivities(){
     const activity=projectActivities.get(card.dataset.projectId),kind=typeof activity==='object'?activity?.kind:activity,open=card.querySelector('.project-open');
     const percent=typeof activity==='object'&&Number.isFinite(activity.progress)?` · ${activity.progress}%`:'';
     // a paused episode reads «На паузі» at once, while the phrase being made still finishes in the background
-    const working=!!open&&!card._project?.episode_paused&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови','музика й ефекти','агент студії'].includes(kind);   // every kind that spins the channel spins its card too
+    // a language job the author started after the pause comes through the server's filter and shows (app.studio_work_status)
+    const working=!!open&&(!card._project?.episode_paused||kind==='мови')&&['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','озвучення сценарію','розпізнавання озвучки','режисура','мови','музика й ефекти','агент студії'].includes(kind);   // every kind that spins the channel spins its card too
     card.classList.toggle('stage-working',working);
     card.setAttribute('aria-busy',String(!!kind||card.classList.contains('producing')||card.classList.contains('exporting')||card.classList.contains('thumb-running')));
     updateProjectDeleteButton(card,kind);
