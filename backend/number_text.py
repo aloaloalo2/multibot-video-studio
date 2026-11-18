@@ -56,10 +56,6 @@ for value, word in enumerate("first second third fourth fifth sixth seventh eigh
     suffix = "th" if 10 <= value % 100 <= 20 else {1:"st",2:"nd",3:"rd"}.get(value%10,"th")
     ORDINAL[word] = (value,suffix)
 for value, word in [(30,"thirtieth"),(40,"fortieth"),(50,"fiftieth"),(60,"sixtieth"),(70,"seventieth"),(80,"eightieth"),(90,"ninetieth"),(100,"hundredth"),(1000,"thousandth")]: ORDINAL[word]=(value,"th")
-ODIN={"один","одна","одно","одни","одну","одной","одного","одним","одном","одних","одними","одному","одне","одні","однієї","одній","однією","одним"}
-VAGUE={"несколько","нескольких","несколькими","десятки","десятков","десятками","сотни","сотен","сотнями","тысячи","тысяч","тысячами","кілька","кількох","десятки","десятків","сотні","сотень","тисячі","тисяч"}
-PLURAL_SCALE={"тысячи","тысяч","миллионы","миллионов","миллиарды","миллиардов","тисячі","тисяч","мільйони","мільйонів","мільярди","мільярдів"}
-GENITIVE_BEFORE={"около","до","от","из","без","более","менее","свыше","порядка","почти","примерно","больше","меньше","с","со","близько","понад","від","з"}
 RU_ROOTS={"перв":1,"втор":2,"трет":3,"четверт":4,"пят":5,"шест":6,"седьм":7,"восьм":8,"девят":9,"десят":10,"одиннадцат":11,"двенадцат":12,"тринадцат":13,"четырнадцат":14,"пятнадцат":15,"шестнадцат":16,"семнадцат":17,"восемнадцат":18,"девятнадцат":19,"двадцат":20,"тридцат":30,"сороков":40,"пятидесят":50,"шестидесят":60,"семидесят":70,"восьмидесят":80,"девяност":90,"сот":100,"тысячн":1000}
 ENDINGS={"ый":"й","ий":"й","ой":"й","ая":"я","ое":"е","ые":"е","ую":"ю","ого":"го","ому":"му","ым":"м","ом":"м","ых":"х","ыми":"ми","ей":"й","ья":"я","ье":"е","ью":"ю","ьего":"го","ьему":"му","ьим":"м","ьем":"м","ьих":"х","ьими":"ми"}
 for root,value in RU_ROOTS.items():
@@ -177,27 +173,9 @@ def replacements(text,locale=None):
         if word in {"millions","billions","millionen","milliarden"}:
             i+=1;continue
         # Indefinite expressions such as «одно из» and «одни из» stay in words.
-        if (locale == "ru" and word in {"один", "одна", "одно", "одни", "одного", "одной", "одному", "одним", "одном", "одну", "одних", "одними"} and i+1<len(matches)
+        if (locale == "ru" and word in {"один", "одна", "одно", "одни"} and i+1<len(matches)
                 and text[matches[i].end():matches[i+1].start()].isspace()
                 and fold(matches[i+1].group()) == "из"):
-            i+=1;continue
-        # «один» as a pronoun stays a word: «ни один шар», «ещё один источник», «сводится к одному: к массе» (no noun
-        # after it). A count («одно исследование», «ровно одно одолжение») is still a number. (18 November 2026:
-        # Jupiter's studio text read «ни 1 шар», «сводится к 1: к массе».)
-        if locale in {"ru","uk"} and word in ODIN:
-            before=fold(matches[i-1].group()) if i and text[matches[i-1].end():matches[i].start()].isspace() else ""
-            alone=not re.match(r"\s*[\w\d]", text[matches[i].end():])
-            if alone or before in {"ни","ані","жоден","ещё","еще","ще"}:
-                i+=1;continue
-        # A vague amount stays in words: «нескольких миллионов», «десятков тысяч», «сотни миллионов».
-        previous=fold(matches[i-1].group()) if i and text[matches[i-1].end():matches[i].start()].isspace() else ""
-        if locale in {"ru","uk"} and previous in VAGUE and (word in SCALE or word in CARDINAL):
-            i+=1;continue
-        # A bare plural scale is a vague amount: «известны тысячи коричневых карликов», «миллиарды лет»; «около тысячи»
-        # is one thousand.
-        following=fold(matches[i+1].group()) if i+1<len(matches) and text[matches[i].end():matches[i+1].start()].isspace() else ""
-        if (locale in {"ru","uk"} and word in PLURAL_SCALE and following not in CARDINAL
-                and not (word in {"тысячи","тисячі"} and previous in GENITIVE_BEFORE)):
             i+=1;continue
         # In the expression «одно с другим», «одно» is a pronoun, not a quantity.
         if (locale == "ru" and word == "одно" and i+2<len(matches)
@@ -270,15 +248,11 @@ def replacements(text,locale=None):
                 if value is None or value>9:break
                 digits.append(str(value));k+=1
             if digits:number=Fraction(number)+Fraction(int("".join(digits)),10**len(digits));j=k
-        scale_word=None
-        if seen and j<len(matches) and fold(matches[j].group()) in {"and","и","und","с"}:
+        if seen and j<len(matches) and fold(matches[j].group()) in {"and","и","und"}:
             k=j+1
             if k<len(matches) and fold(matches[k].group()) in {"a","an"}:k+=1
             if k<len(matches) and fold(matches[k].group()) in {"half","halfes","hälfte","половина","половиной"}:
                 number=Fraction(number)+Fraction(1,2);j=k+1
-                # «четыре с половиной миллиарда лет» is «4,5 миллиарда лет»
-                if j<len(matches) and fold(matches[j].group()) in SCALE and text[matches[j-1].end():matches[j].start()].isspace():
-                    scale_word=matches[j].group();j+=1
             elif locale == "ru" and k+1<len(matches):
                 numerator=CARDINAL.get(fold(matches[k].group()))
                 denominator=DENOM.get(fold(matches[k+1].group()))
@@ -298,10 +272,6 @@ def replacements(text,locale=None):
                     number+=ending[0];suffix=ending[1];j+=1
         if not seen:
             value=ordinal(word,locale)
-            # «где электроны успели первыми,» is an adverb: a lone ordinal with no noun after it stays a word
-            if (value and locale in {"ru","uk"} and not re.match(r"\s*[^\W\d_]", text[matches[start].end():])
-                    and not text[:matches[start].start()].endswith("-")):
-                value=None
             if value:
                 number,suffix=value;seen=True;j=start+1
             elif word in {"half","половина","половину","треть","четверть","чверть"}:
@@ -318,7 +288,7 @@ def replacements(text,locale=None):
             if (locale=="en" and start and word in {"hundred","thousand","million","billion"}
                     and fold(matches[start-1].group()) in {"a","an"} and text[matches[start-1].end():begin].isspace()):
                 begin=matches[start-1].start()
-            result.append((begin,end,str(int(number))+suffix if suffix else written(number,locale)+(" "+scale_word if scale_word else "")))
+            result.append((begin,end,str(int(number))+suffix if suffix else written(number,locale)))
             i=j
         else:i+=1
     return result

@@ -24,16 +24,6 @@ def tearDownModule():
     planner.DIGITS_AFTER_WHISPER = setUpModule.previous
 
 class NumberTextTest(unittest.TestCase):
-    def test_a_one_with_no_noun_after_it_is_a_pronoun(self):
-        # 18 November 2026: Jupiter's studio text read «сводится к 1: к массе»
-        self.assertEqual(number_text.to_digits('Разница между ними сводится к одному: к массе.', 'ru'), 'Разница между ними сводится к одному: к массе.')
-        self.assertEqual(number_text.to_digits('Осталось одно.', 'ru'), 'Осталось одно.')
-        self.assertEqual(number_text.to_digits('У него один глаз.', 'ru'), 'У него 1 глаз.')
-        self.assertEqual(number_text.to_digits('не может ни один шар.', 'ru'), 'не может ни один шар.')
-        self.assertEqual(number_text.to_digits('около четырёх с половиной миллиарда лет', 'ru'), 'около 4,5 миллиарда лет')
-        self.assertEqual(number_text.to_digits('известны тысячи карликов и десятки миллионов звёзд', 'ru'), 'известны тысячи карликов и десятки миллионов звёзд')
-        self.assertEqual(number_text.to_digits('где электроны успели первыми, такого', 'ru'), 'где электроны успели первыми, такого')
-
     def test_hyphenated_enumeration_matches_digitized_speech(self):
         script = "Во-первых, вы видите цвет. Во-вторых, уточните форму. В-третьих, оцените самочувствие."
         phrases = planner.split_sentences(script)
