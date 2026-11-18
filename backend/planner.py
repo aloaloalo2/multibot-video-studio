@@ -404,7 +404,15 @@ DIGITS_AFTER_WHISPER = False
 
 def digitize_synced_plan(plan):
     """Format actual post-ASR text while retaining the immutable spoken source."""
-    if not DIGITS_AFTER_WHISPER or plan.get("timing", {}).get("status") != "audio_synced":
+    if plan.get("timing", {}).get("status") != "audio_synced":
+        return plan
+    if not DIGITS_AFTER_WHISPER:
+        # the voiced words stay the studio text, and the plan still names its spoken source: saving a recognition reads
+        # it (18 November 2026: without it every recognition failed with KeyError 'spoken_script' and Karl's episode
+        # never moved onto its voice)
+        plan = copy.deepcopy(plan)
+        plan["spoken_script"] = plan["script"]
+        plan["spoken_script_sha256"] = hashlib.sha256(plan["script"].encode("utf-8")).hexdigest()
         return plan
     plan = copy.deepcopy(plan)
     source = plan["script"]

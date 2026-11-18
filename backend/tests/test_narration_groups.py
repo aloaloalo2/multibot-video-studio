@@ -123,4 +123,7 @@ class StudioTextKeepsWordsTest(unittest.TestCase):
         import planner
         self.assertFalse(planner.DIGITS_AFTER_WHISPER)
         plan = {'script': 'Солнце греет Землю четыре с половиной миллиарда лет.', 'timing': {'status': 'audio_synced', 'sentences': []}, 'frames': []}
-        self.assertIs(planner.digitize_synced_plan(plan), plan)
+        result = planner.digitize_synced_plan(plan)
+        self.assertEqual(result['script'], plan['script'])
+        self.assertEqual(result['spoken_script'], plan['script'])   # saving a recognition reads it
+        self.assertNotIn('number_format', result)

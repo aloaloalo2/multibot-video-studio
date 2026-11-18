@@ -26,7 +26,7 @@ class MetadataTest(unittest.TestCase):
         self.script = 'A selected opening. ' + 'Natural spoken words for this episode. ' * 32
         self.value = {'titles': [self.project['name'], 'Another fresh angle', 'A third fresh angle'],
                       'description': 'I spent a week finding out what is really in that old garage. Here is what I learned.\n\n#garage #history #findings',
-                      'tags': ['story', 'fiction', 'curiosity']}
+                      'tags': ['stories', 'fiction', 'curiosity', 'tales']}
 
     def draft(self):
         return {'id': self.pid, 'project_id': self.pid, 'context': {}, 'stage': 'script', 'status': 'running',
@@ -64,7 +64,7 @@ class MetadataTest(unittest.TestCase):
         model.assert_called_once()
         self.assertTrue(data['completed'])
         self.assertEqual(store.load_project(self.pid)['voice_script']['text'], self.script.strip())
-        self.assertIn('Теги\nstory, fiction, curiosity', metadata.path(self.project).read_text())
+        self.assertIn('Теги\nstories, fiction, curiosity, tales', metadata.path(self.project).read_text())
         self.assertFalse(store.load_project(self.pid).get('plan_source'))
         self.assertEqual(store.read_json(store.project_dir(self.pid) / 'publication-metadata.json')['author'], 'Opus')
 
@@ -110,7 +110,8 @@ class MetadataTest(unittest.TestCase):
         model.assert_not_called()
 
     def test_invalid_tags_cannot_publish_partial_file(self):
-        for tags in ([], ['one'], ['same'] * 3, ['one,two', 'three', 'four']):
+        # 4 to 15 tags, each one word (the author, 18 November 2026)
+        for tags in ([], ['one'], ['same'] * 4, ['one,two', 'three', 'four', 'five'], ['space', 'deep space', 'stars', 'moon'], ['a1'] * 16):
             with self.subTest(tags=tags), self.assertRaises(ValueError):
                 metadata.save(self.project, {**self.value, 'tags': tags}, self.script)
         self.assertFalse(metadata.path(self.project).exists())
@@ -260,7 +261,7 @@ class DescriptionRuleTest(unittest.TestCase):
     TITLE = 'A title'
 
     def value(self, description):
-        return {'titles': [self.TITLE, 'Second angle here', 'Third angle here'], 'description': description, 'tags': ['a', 'b', 'c']}
+        return {'titles': [self.TITLE, 'Second angle here', 'Third angle here'], 'description': description, 'tags': ['aa', 'bb', 'cc', 'dd']}
 
     def test_sentences_then_hashtags(self):
         good = 'I went looking for the oldest garage find. It took three weekends.\n\n#garage #finds #history'

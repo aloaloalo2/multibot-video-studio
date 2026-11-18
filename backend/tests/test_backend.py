@@ -938,6 +938,25 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(again["plan"]["spoken_script"], script)
         store.planner.validate_synced_plan(again["plan"], 3)
 
+    def test_attaching_timings_with_numbers_in_words_keeps_the_voiced_text(self):
+        # 18 November 2026: with the digits off, saving a recognition failed with KeyError 'spoken_script'
+        cid = store.channel_id(self.channel)
+        episode = self.channel / "Words stay"
+        episode.mkdir(exist_ok=True)
+        script = "Насыпьте восемь граммов. Затем двадцать один грамм."
+        source_path = episode / "Сценарий.txt"
+        source_path.write_text(script, encoding="utf-8")
+        payload = {"channel_id": cid, "name": episode.name, "episode_path": str(episode), "script_path": str(source_path),
+                   "timings": {"duration": 3, "sentences": [{"text":"Насыпьте восемь граммов.","start":0,"end":1}, {"text":"Затем двадцать один грамм.","start":1.3,"end":2.8}]}}
+        with patch.object(store.planner, "DIGITS_AFTER_WHISPER", False):
+            status, result = self.request("/api/projects/generate-plan", "POST", payload)
+            self.assertEqual(status, 200, result)
+            plan = result["plan"]
+            self.assertNotIn("number_format", plan)
+            self.assertEqual(plan["script"], script)
+            self.assertEqual(source_path.read_text(), script)
+            store.planner.validate_synced_plan(plan, 3)
+
     def test_settings_media_range_and_source_safety(self):
         cid = store.channel_id(self.channel)
         status, result = self.request("/api/channels/%s" % cid, "PATCH", {"settings": {"weights": {"stock_video": 20, "stock_photo": 60, "animation": 20}}})

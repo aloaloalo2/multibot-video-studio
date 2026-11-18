@@ -37,7 +37,8 @@ function bindThumbnailLogo(section,project,data,saved){
     const b=box(),pointer={x:event.clientX,y:event.clientY},start={...place},target=event.currentTarget,startH=heightShare(b);target.setPointerCapture?.(event.pointerId);
     const move=e=>{
       const dx=(e.clientX-pointer.x)/b.width,dy=(e.clientY-pointer.y)/b.height;
-      if(resize){
+      if(resize==='right'){place.width=Math.min(.8,Math.max(.03,start.width+dx));}   // the bottom-right dot: left and top edges stay
+      else if(resize){
         place.width=Math.min(.8,Math.max(.03,start.width-dx));place.x=start.x+start.width-place.width;
         if(resize==='top')place.y=start.y+startH-heightShare(b);
       }else{place.x=start.x+dx;place.y=start.y+dy;}
@@ -58,10 +59,11 @@ function bindThumbnailLogo(section,project,data,saved){
     if(!logo||!item?.name||!picture())return;
     close();place={x:.03,y:.04,width:lastWidth()};
     layer=document.createElement('div');layer.className='thumb-logo-layer';layer.title='Перетягніть логотип; точка ліворуч змінює розмір';
-    layer.innerHTML=`<img src="${logo.url}" alt="Логотип каналу" draggable="false"><span class="thumb-logo-resize top" aria-hidden="true"></span><span class="thumb-logo-resize bottom" aria-hidden="true"></span><button type="button" class="thumb-logo-remove" title="Прибрати логотип" aria-label="Прибрати логотип">×</button>`;
+    layer.innerHTML=`<img src="${logo.url}" alt="Логотип каналу" draggable="false"><span class="thumb-logo-resize top" aria-hidden="true"></span><span class="thumb-logo-resize bottom" aria-hidden="true"></span><span class="thumb-logo-resize right" aria-hidden="true"></span><button type="button" class="thumb-logo-remove" title="Прибрати логотип" aria-label="Прибрати логотип">×</button>`;
     layer.addEventListener('pointerdown',event=>{layer.classList.remove('quiet');if(!event.target.closest('.thumb-logo-remove,.thumb-logo-resize'))drag(event,false);});
     layer.querySelector('.thumb-logo-resize.top').addEventListener('pointerdown',event=>drag(event,'top'));
     layer.querySelector('.thumb-logo-resize.bottom').addEventListener('pointerdown',event=>drag(event,'bottom'));
+    layer.querySelector('.thumb-logo-resize.right').addEventListener('pointerdown',event=>drag(event,'right'));
     // a click anywhere beside the logo hides its frame, dots and ×; a click on the logo brings them back
     outside=event=>{if(layer&&!event.target.closest('.thumb-logo-layer,.thumb-logo-bar,.thumb-logo-toggle'))layer.classList.add('quiet');};
     document.addEventListener('pointerdown',outside,true);
