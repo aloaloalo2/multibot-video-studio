@@ -1909,6 +1909,10 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             limit = body.get("codex_limit") if isinstance(body, dict) else None
             note = production.codex_limit_note(limit.get("reset")) if isinstance(limit, dict) else None
+            part = body.get("part") if isinstance(body, dict) and body.get("part") in episode_pause.PARTS else None
+            if note is None and part and part != "production":
+                episode_pause.pause(match.group(1), {part})   # the plan page's own button: only that work
+                return self.json_response({"project": paused_view(match.group(1))})
             if note is None and episode_pause.running(match.group(1)):
                 episode_pause.pause(match.group(1))   # the author's pause holds the whole episode still
                 return self.json_response({"project": paused_view(match.group(1))})
@@ -1918,7 +1922,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"project": paused_view(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-resume", path)
         if match and method == "POST":
-            if episode_pause.resumable(match.group(1)):
+            part = body.get("part") if isinstance(body, dict) and body.get("part") in episode_pause.PARTS else None
+            if part and part != "production":
+                episode_pause.resume(match.group(1), {part})
+            elif episode_pause.resumable(match.group(1)):
                 episode_pause.resume(match.group(1))
             else:
                 production.resume(match.group(1))

@@ -616,15 +616,17 @@ function renderOverview() {
   if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
 }
 
-function productionControl(id,working){
+// `part` («narration», «director») pauses only that work: the plan page has a button for each (18 November 2026);
+// without it, as on the project card, the whole episode
+function productionControl(id,working,part){
   const button=document.createElement('button');button.type='button';button.className='production-control';
   // one round play-pause for the whole episode: narration, director, «Підготовка» and frames (backend/episode_pause.py)
-  const label=working?'Призупинити роботу над випуском':'Продовжити роботу над випуском';button.title=label;button.setAttribute('aria-label',label);
+  const label=part==='narration'?(working?'Призупинити озвучку':'Продовжити озвучку'):part==='director'?(working?'Призупинити режисера':'Продовжити режисуру'):working?'Призупинити роботу над випуском':'Продовжити роботу над випуском';button.title=label;button.setAttribute('aria-label',label);
   button.innerHTML=working?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="4"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
   button.addEventListener('click',async event=>{
     event.stopPropagation();button.disabled=true;button.setAttribute('aria-busy','true');
     try{
-      const result=await api(`/api/projects/${encodeURIComponent(id)}/production-${working?'pause':'resume'}`,'POST',{});
+      const result=await api(`/api/projects/${encodeURIComponent(id)}/production-${working?'pause':'resume'}`,'POST',part?{part}:{});
       if(state.project?.id===id){
         if(state.view==='editor'){state.project={...state.project,production_request:result.project.production_request,production:result.project.production,episode_paused:result.project.episode_paused,episode_pause_label:result.project.episode_pause_label};renderMontageMake();}
         else{state.project=result.project;if(state.view==='plan')renderPlan();}

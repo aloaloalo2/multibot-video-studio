@@ -49,6 +49,32 @@ class EpisodePauseTest(unittest.TestCase):
         voice.assert_called_once_with(project, "Текст.", resume=True)
         start.assert_called_once_with("p", "script")
 
+    def test_the_plan_page_pauses_and_resumes_the_voice_and_the_director_each_alone(self):
+        import director
+        import project_narration
+        project = {"id": "p", "voice_script": {"text": "Текст."}}
+        with patch.object(episode_pause, "running", return_value={"narration": {"script": "Текст."}, "director": {"reason": "script"}}), \
+             patch.object(project_narration, "cancel") as cancel, patch.object(director, "stop") as stop:
+            episode_pause.pause("p", {"narration"})
+        cancel.assert_called_once()
+        stop.assert_not_called()   # the director works on
+        self.assertEqual(set(episode_pause.paused("p")["stopped"]), {"narration"})
+        episode_pause.store.atomic_json(episode_pause.path("p"), {"stopped": {
+            "narration": {"script": "Текст."}, "director": {"reason": "script"}}, "pending": {"production": {}}})
+        with patch.object(director, "start") as start, patch.object(project_narration, "start") as voice, \
+             patch.object(episode_pause.store, "load_project", return_value=project), \
+             patch.object(episode_pause.store, "load_project_plan", return_value={}), \
+             patch.object(director, "ACTIVE", set()), patch.object(project_narration, "ACTIVE", set()):
+            episode_pause.resume("p", {"narration"})
+            voice.assert_called_once()
+            start.assert_not_called()
+            left = episode_pause.paused("p")
+            self.assertEqual(set(left["stopped"]), {"director"})   # still paused, its noted step waits for it
+            self.assertIn("production", left["pending"])
+            episode_pause.resume("p", {"director"})
+            start.assert_called_once_with("p", "script")
+        self.assertIsNone(episode_pause.paused("p"))
+
     def test_a_paused_sentence_revision_goes_on_with_its_own_text(self):
         # 17 November 2026: the pause wrote the finished voice's script, so play had nothing to go on with
         import narration_revision

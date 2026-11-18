@@ -260,7 +260,7 @@ function fillVoiceLine(box){
         box.querySelector('.episode-voice-state').title=job.error||'';
         for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
         box.querySelector('.episode-voice>.production-control')?.remove();
-        box.querySelector('.episode-voice-text')?.after(productionControl(id,false));
+        box.querySelector('.episode-voice-text')?.after(productionControl(id,false,'narration'));
         return;
       }
       if(!['queued','running','cancelling'].includes(job.status))return;
@@ -270,7 +270,7 @@ function fillVoiceLine(box){
       box.querySelector('.episode-voice-state').textContent=job.status==='queued'?'Озвучка в черзі HeyGen':job.status==='cancelling'?'Зупиняємо озвучку…':'Озвучка'+percent;
       for(const button of box.querySelectorAll('button'))if(button.textContent.trim()==='Додати озвучку')button.remove();
       // the same round pause as on the card (user, 16 November 2026: «на проекті також нема плей, паузи»)
-      if(job.status!=='cancelling'&&!box.querySelector('.episode-voice>.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,true));
+      if(job.status!=='cancelling'&&!box.querySelector('.episode-voice>.production-control'))box.querySelector('.episode-voice-text')?.after(productionControl(id,true,'narration'));
     };
     queueMicrotask(()=>apply(narrationSeen[id]));
     api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{
@@ -338,7 +338,7 @@ function fillDirectorLine(box){
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
     line('Підготовка',minutes===null?'':minutes<1?'Працює менше хвилини.':`Працює ${minutes} хв.`,kitBox);
     kitBox.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
-    {const pause=productionControl(id,true);pause.classList.add('episode-director-control');kitBox.append(pause);}
+    {const pause=productionControl(id,true,'director');pause.classList.add('episode-director-control');kitBox.append(pause);}
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.status==='queued'||run.status==='running'){
     box.classList.add('working');
@@ -347,7 +347,7 @@ function fillDirectorLine(box){
     const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
     line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
-    {const pause=productionControl(id,true);pause.classList.add('episode-director-control');box.append(pause);}
+    {const pause=productionControl(id,true,'director');pause.classList.add('episode-director-control');box.append(pause);}
 
     // Keep the current stage compact; the work log stays out of the main plan.
 
@@ -355,7 +355,7 @@ function fillDirectorLine(box){
   }else if(run.status==='paused'){
     // the episode's pause stopped the director; the same round button goes on (backend/episode_pause.py)
     line('Режисер на паузі','Кругла кнопка продовжить роботу: режисер складе план заново.');
-    {const play=productionControl(id,false);play.classList.add('episode-director-control');box.append(play);}
+    {const play=productionControl(id,false,'director');play.classList.add('episode-director-control');box.append(play);}
     directorTimer=setTimeout(()=>pollDirector(id),8000);
   }else if(run.creation_error&&!state.project.production_request){
     line('Не вдалося продовжити створення відео',run.creation_error);

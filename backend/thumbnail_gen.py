@@ -245,8 +245,7 @@ MY_STYLE = ("ADAPT TO OUR CHANNEL'S OWN STYLE (the author's choice «Адапт�
             "only the idea: the concept, the situation, the emotion, what the viewer is promised and the meaning of its lettering. "
             "Everything visual follows our channel instead: drawing style, how characters look, palette, lighting, typography, "
             "text treatment and composition habits, as in the attached examples of our own thumbnails ({files}) and the channel's "
-            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely. "
-            "Our examples may carry the channel's logo or a watermark: never describe, copy or place any logo, emblem or watermark.")
+            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely.")
 
 
 def pictures(project: dict) -> list[dict]:
@@ -540,7 +539,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                       + agent_rules + "\n\nSpecific wishes for this thumbnail:\n" + wishes)
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
-            refs, answer = [thumbnail_logo.clean(work, base) or version_file(pid, base)], {}
+            refs, answer = [thumbnail_logo.clean(work, base) or without_logo(pid, version_file(pid, base))], {}
             written, note = editing(wishes, name), f"[Правка {base}] {wishes.strip()}"
         else:
             if channel_wishes and not clone:

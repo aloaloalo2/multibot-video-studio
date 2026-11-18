@@ -34,7 +34,6 @@ class OwnThumbnailsTest(unittest.TestCase):
                 self.assertEqual(thumbnail_gen.without_logo("p", work / thumbnail_gen.PREVIEW).name, "Превью v1.png")
                 (work / thumbnail_gen.PREVIEW).write_bytes(b"clean")
                 self.assertEqual(thumbnail_gen.without_logo("p", work / thumbnail_gen.PREVIEW).name, "Превью v1.png")
-        self.assertIn("never describe, copy or place any logo", thumbnail_gen.MY_STYLE)
 
     def test_the_brief_keeps_the_idea_and_takes_our_look(self):
         text = thumbnail_gen.MY_STYLE.format(files="Наше прев'ю 1.png")

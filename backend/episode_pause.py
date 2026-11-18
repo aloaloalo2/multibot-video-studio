@@ -195,12 +195,20 @@ def running(pid: str) -> dict:
     return found
 
 
-def pause(pid: str) -> dict:
+PARTS = {"narration", "director", "retime", "production", "languages"}
+
+
+def pause(pid: str, parts=None) -> dict:
+    """The whole episode, or only `parts` of it: the plan page pauses the voice and the director each on its own button,
+    the project card still all at once (user, 18 November 2026: «в цьому місці розділити, але кнопка на проєкті вона
+    об'єднує ці два моменти»)."""
     import director
     import production
     import project_narration
     with LOCK:
         work = running(pid)
+        if parts:
+            work = {key: value for key, value in work.items() if key in parts}
         current = paused(pid)
         if not work:
             if current:
@@ -261,12 +269,21 @@ def resume_revision(pid: str, identity: str) -> None:
                                    "expected_sha256": narration_revision.digest(old.get("script") or ""), "client_id": again})
 
 
-def resume(pid: str) -> dict:
+def resume(pid: str, parts=None) -> dict:
+    """Everything the pause stopped, or only `parts` of it; the rest stays paused and its noted steps wait for it."""
     import director
     import production
     import project_narration
     with LOCK:
         data = paused(pid)
+        rest = {}
+        if data is not None and parts:
+            stopped_all = data.get("stopped") or {}
+            if not any(key in parts for key in stopped_all):
+                data = None   # e.g. a narration stopped by HeyGen's limit while the director's pause holds the episode
+            else:
+                rest = {key: value for key, value in stopped_all.items() if key not in parts}
+                data = {**data, "stopped": {key: value for key, value in stopped_all.items() if key in parts}}
         if data is None:
             revision = stopped_revision(pid)
             job = None if revision else stopped_narration(pid)
@@ -280,7 +297,12 @@ def resume(pid: str) -> dict:
         if pid in project_narration.ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE or any(
                 languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
             raise store.StudioError("Ще зупиняємо попередню роботу. Спробуйте за кілька секунд", 409)
-        path(pid).unlink(missing_ok=True)
+        if rest:
+            # the other parts stay paused, with the steps noted meanwhile: they start when those parts go on
+            store.atomic_json(path(pid), {**paused(pid), "stopped": rest})
+            data = {**data, "pending": {}}
+        else:
+            path(pid).unlink(missing_ok=True)
     stopped, pending, errors = data.get("stopped") or {}, data.get("pending") or {}, []
     later = []   # steps that may run a long subprocess (a retime): after the answer, in the background
 
