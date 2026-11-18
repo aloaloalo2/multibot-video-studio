@@ -115,3 +115,12 @@ class SpecTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StudioTextKeepsWordsTest(unittest.TestCase):
+    def test_the_studio_text_keeps_the_numbers_as_the_narrator_said_them(self):
+        # 18 November 2026: «сценарист має писати… з цифрами, але в тексті», no formatting after Whisper
+        import planner
+        self.assertFalse(planner.DIGITS_AFTER_WHISPER)
+        plan = {'script': 'Солнце греет Землю четыре с половиной миллиарда лет.', 'timing': {'status': 'audio_synced', 'sentences': []}, 'frames': []}
+        self.assertIs(planner.digitize_synced_plan(plan), plan)

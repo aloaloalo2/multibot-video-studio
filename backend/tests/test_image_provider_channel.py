@@ -26,7 +26,8 @@ class ChannelImageProviderTest(unittest.TestCase):
 
     def test_channel_choice_and_episode_override(self):
         self.assertEqual(self.check("openrouter", None), "openrouter")
-        self.assertIsNone(self.check("codex", None))
+        # «Малює» left the settings (18 November 2026): PNG props go to OpenRouter by default, photos stay with Codex
+        self.assertEqual(self.check("codex", None), "openrouter")
         self.assertIsNone(self.check("openrouter", "codex"))
         self.assertEqual(self.check("codex", "openrouter"), "openrouter")
 

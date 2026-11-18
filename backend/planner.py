@@ -395,9 +395,16 @@ def apply_number_fixes(plan, fixes):
     return plan
 
 
+# The studio text keeps the numbers in words, as the narrator said them (user, 18 November 2026: «сценарист має писати
+# сценарій… з цифрами, але в тексті… максимально природно»; «це ти не маєш нічого оформлювати… це редактура»). The
+# formatter that turned them into digits after Whisper wrote «сводится к 1: к массе» and «4 с 500000000 лет» into
+# Jupiter; a digit that slips into a script is the editor's to fix before the voice. Off unless turned on again.
+DIGITS_AFTER_WHISPER = False
+
+
 def digitize_synced_plan(plan):
     """Format actual post-ASR text while retaining the immutable spoken source."""
-    if plan.get("timing", {}).get("status") != "audio_synced":
+    if not DIGITS_AFTER_WHISPER or plan.get("timing", {}).get("status") != "audio_synced":
         return plan
     plan = copy.deepcopy(plan)
     source = plan["script"]

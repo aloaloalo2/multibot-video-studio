@@ -14,6 +14,18 @@ import project_narration as narration
 import store
 
 
+
+def setUpModule():
+    # these tests cover the post-Whisper digits, off by default since 18 November 2026 (planner.DIGITS_AFTER_WHISPER)
+    import planner
+    setUpModule.previous = planner.DIGITS_AFTER_WHISPER
+    planner.DIGITS_AFTER_WHISPER = True
+
+
+def tearDownModule():
+    import planner
+    planner.DIGITS_AFTER_WHISPER = setUpModule.previous
+
 class RevisionTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)

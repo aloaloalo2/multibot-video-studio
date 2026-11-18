@@ -25,6 +25,18 @@ import planner  # noqa: E402
 import director  # noqa: E402
 
 
+
+def setUpModule():
+    # these tests cover the post-Whisper digits, off by default since 18 November 2026 (planner.DIGITS_AFTER_WHISPER)
+    import planner
+    setUpModule.previous = planner.DIGITS_AFTER_WHISPER
+    planner.DIGITS_AFTER_WHISPER = True
+
+
+def tearDownModule():
+    import planner
+    planner.DIGITS_AFTER_WHISPER = setUpModule.previous
+
 class BackendTest(unittest.TestCase):
     def test_thumbnail_downloads_are_clean_while_inline_and_sources_stay_original(self):
         from test_image_delivery import marked_png
