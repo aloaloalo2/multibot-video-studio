@@ -287,7 +287,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out <аркуш у службовій папці студії> --background.
    Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
    {SHEET_RULE.format(tools=tools, folder=f'{rel}/кадри')}
-   Якщо codex_image.py пише про ліміт Codex, одразу заверши роботу: студія вже на паузі. Не замінюй створені картинки стоком чи кодом.
+   Коли в Codex закінчився ліміт, codex_image.py сам малює через OpenRouter, продовжуй як звичайно. Лише якщо він усе ж пише CODEX_LIMIT, заверши роботу: студія вже на паузі. Не замінюй створені картинки стоком чи кодом.
    {people['rule']}{channel_hero.production_rule(project)}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
