@@ -208,6 +208,10 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
                 activities.append({"project_id": pid, "channel_id": item.get("channel_id"), "kind": what, "status": status})
                 active_channels.add(item.get("channel_id"))
                 busy.append(f"{what}: {names.get(item.get('channel_id'), '')} / {item.get('name') or pid} ({pid})")
+    import published   # an episode waiting for or going through its YouTube publication turns its channel's spinner
+    publishing = published.active_channels()
+    active_channels |= publishing
     # a channel with an export running or queued shows its spinner in the export's amber (user, 14 November 2026)
     return {"busy": busy, "exports": active_exports, "active_channels": sorted(x for x in active_channels if x),
-            "exporting_channels": sorted(x for x in exporting if x), "activities": activities}
+            "exporting_channels": sorted(x for x in exporting if x), "activities": activities,
+            "publishing_channels": sorted(publishing - {x for x in active_channels if x in exporting})}

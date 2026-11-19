@@ -204,7 +204,7 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
 function channelIdentityIcon(channel){
   return channel?.icon_url?`<img class="channel-icon channel-avatar" src="${esc(channel.icon_url)}" alt="" draggable="false">`:channelIcon;
 }
-const channelActivity=new Set(),channelExporting=new Set(),projectActivities=new Map();
+const channelActivity=new Set(),channelExporting=new Set(),channelPublishing=new Set(),projectActivities=new Map();
 const channelNoticeStorage='videokey-channel-notices';
 let channelNoticeData={};
 try{channelNoticeData=JSON.parse(localStorage.getItem(channelNoticeStorage))||{};}catch{}
@@ -224,9 +224,9 @@ function renderChannelNotices(){
     const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen&&notice.status!=='paused';
     const stopped=notice?.status==='stopped';
     badge.hidden=!busy&&!unread;
-    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':'');
+    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':busy&&channelPublishing.has(id)&&!channelWork[id]?.length?' is-publishing':'');
     badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'pause':'check'):'';
-    const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy&&channelWork[id]?.length?`У каналі йде: ${channelWork[id].join(' · ')}`:busy?'У каналі триває робота':stopped?'Робота зупинилась сама':'Роботу завершено';
+    const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy&&channelPublishing.has(id)&&!channelWork[id]?.length?'У каналі йде публікація на YouTube':busy&&channelWork[id]?.length?`У каналі йде: ${channelWork[id].join(' · ')}`:busy?'У каналі триває робота':stopped?'Робота зупинилась сама':'Роботу завершено';
     badge.setAttribute('aria-label',label);badge.title=label;
     const count=button.querySelector('.channel-count'),projects=busy?Number(channelProjectCounts[id])||0:0;
     if(count){count.hidden=!projects;count.textContent=projects?String(projects):'';count.title=projects?`Випусків у роботі: ${projects}`:'';}
@@ -331,7 +331,7 @@ async function pollChannelActivity(){
   channelActivityPending=true;
   try{
     const previousStages=[...projectActivities].filter(([,task])=>['створення зачинів','створення сценарію','створення метаданих','редактура сценарію','режисура','розпізнавання озвучки','озвучення сценарію'].includes(typeof task==='object'?task?.kind:task)).map(([id])=>id);
-    const activity=await api('/api/studio/status');channelActivity.clear();channelExporting.clear();projectActivities.clear();
+    const activity=await api('/api/studio/status');channelActivity.clear();channelExporting.clear();channelPublishing.clear();projectActivities.clear();
     if(typeof discoverThumbnailActivity==='function')for(const task of activity.activities||[])if(task.kind==="прев'ю")discoverThumbnailActivity(task.project_id);
     // every kind of work per episode: the narration and the director can run side by side (backend/script_timing.py)
     const kinds=new Map(),seen=(id,kind)=>{if(!kinds.has(id))kinds.set(id,new Set());kinds.get(id).add(kind);},kitting=new Set();
@@ -359,6 +359,8 @@ async function pollChannelActivity(){
     channelProjectCounts=activity.channel_projects||{};channelWork=activity.channel_work||{};
     for(const id of activity.active_channels||[])channelActivity.add(id);
     for(const id of activity.exporting_channels||[]){channelActivity.add(id);channelExporting.add(id);}
+    // a channel publishing on YouTube turns in the card's light blue (user, 19 November 2026)
+    for(const id of activity.publishing_channels||[]){channelActivity.add(id);channelPublishing.add(id);}
     for(const [id,notice] of Object.entries(activity.channel_notices||{})){
       channelNoticeData[id]={...notice,seen:channelNoticeData[id]?.seen};
     }
@@ -428,8 +430,9 @@ function projectActions(project,current=()=>project){
 // (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
 // The task for a new Claude Code session: publish this episode, then wait for the next ones
 function youtubeSessionTask(project,root){
-  return `Опублікуй на YouTube випуск «${project.name}» (проєкт студії ${project.id}), він уже в черзі студії. `
+  return `Опублікуй на YouTube випуски з черги студії по одному, першим «${project.name}» (проєкт студії ${project.id}). `
     +`Порядок і правила: ${root}/docs/YOUTUBE_PUBLISH.md, інструмент: python3 "${root}/tools/youtube_publish.py". `
+    +'Якщо цей випуск уже є в «Контенті» каналу чернеткою, продовж її, а не завантажуй удруге. '
     +'Після публікації стань сесією публікації: запусти у фоні (Bash, run_in_background) wait і, коли він закінчиться, публікуй наступний випуск з черги так само.';
 }
 // «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати», «створюється нова сесія і все»): the
@@ -441,7 +444,7 @@ async function openYoutubePublish(project){
   try{
     const result=await api(`/api/projects/${encodeURIComponent(project.id)}/youtube-publish`,'POST',{});
     await refreshProjects().catch(()=>{});
-    if(result.listener){status('Випуск у черзі. Сесія публікації візьме його за кілька секунд.');return;}
+    if(!result.open_session){status(result.listener?'Випуск у черзі. Сесія публікації візьме його, щойно закінчить попередній.':'Випуск у черзі. Сесія публікації, яку щойно відкрито, візьме й його.');return;}
     const link='claude://code/new?source=desktop_action&prompt='+encodeURIComponent(youtubeSessionTask(project,result.studio_root));
     const anchor=document.createElement('a');anchor.href=link;document.body.append(anchor);anchor.click();anchor.remove();
     status('Відкриваю нову сесію Claude із завданням. Натисніть у ній Enter.');
@@ -599,7 +602,9 @@ function completionMark(project){
   const published=project.published?.at?`<svg class="published-check" viewBox="0 0 20 20" role="img" aria-label="Опубліковано на YouTube"><title>Опубліковано на YouTube</title><path d="m4 10 4 4 8-8"/></svg>`:'';
   // after the export: a blue «Опублікувати» (user, 19 November 2026: «синю кнопку після неї… опублікувати на YouTube…
   // після натискання йде публікація»); «Публікація» while tools/youtube_publish.py works, the blue check once it is done
-  const publish=stage==='export'&&!published?(project.publishing
+  const publish=stage==='export'&&!published?(project.publishing==='stopped'
+    ?`<span class="project-publish-stopped" title="${esc(project.publishing_note||'Сесія публікації зупинилась')}">Публікація зупинилась</span><span class="project-publish" role="button" tabindex="0" title="Продовжити публікацію на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Продовжити</span></span>`
+    :project.publishing
     ?`<span class="project-publishing">${exportSpinner}<span>${project.publishing==='queued'?'У черзі на публікацію':'Публікація'}</span></span>`
     :'<span class="project-publish" role="button" tabindex="0" title="Опублікувати на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Опублікувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
@@ -737,10 +742,11 @@ async function pollOverviewExports(force=false){
 }
 // every 3 s while an episode of the channel exports, otherwise every 15 s (an export started by an agent shows up too)
 (function overviewExportLoop(){setTimeout(async()=>{await pollOverviewExports();overviewExportLoop();},state.projectExports?.size?3000:15000);})();
-// While the agent makes frames of an episode of this channel, its card is read again now and then.
+// While the agent makes frames of an episode of this channel, or one waits for or goes through its publication on YouTube,
+// its card is read again now and then.
 setInterval(()=>{
   if(state.project || !state.channel || document.hidden)return;
-  if(state.projects.some(project=>['requested','in_progress'].includes(project.production_request?.status)))refreshProjects().catch(()=>{});
+  if(state.projects.some(project=>['requested','in_progress'].includes(project.production_request?.status)||['queued','publishing'].includes(project.publishing)))refreshProjects().catch(()=>{});
 },8000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollOverviewExports();});
 

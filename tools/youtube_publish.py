@@ -8,6 +8,8 @@ into YouTube Studio's file inputs by a script.
 
     python3 tools/youtube_publish.py wait                 # waits for the card's «Опублікувати» and prints the project id
     python3 tools/youtube_publish.py prepare P            # the export, cover and metadata; starts the local file server
+    python3 tools/youtube_publish.py step P "що зроблено"   # marks a step; quiet for 15 min = «зупинилась» on the card
+    python3 tools/youtube_publish.py failed P "причина"     # the card reads «Публікація зупинилась» with «Продовжити»
     python3 tools/youtube_publish.py stop                 # stops the file server
     python3 tools/youtube_publish.py channel P UC…        # remembers the YouTube channel id of P's studio channel
     python3 tools/youtube_publish.py done P VIDEO_ID "2026-11-24 15:00"   # records the publication in the studio
@@ -41,6 +43,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Private-Network', 'true')
+        self.send_header('Cache-Control', 'no-store')
         super().end_headers()
     def do_OPTIONS(self):
         self.send_response(204); self.end_headers()
@@ -152,14 +155,19 @@ def prepare(ref: str) -> dict:
     folder = Path(project["episode_path"])
     data = metadata(folder)
     mp4, png = video(project), cover(project)
-    base = serve({"video.mp4": mp4, **({"preview.png": png} if png else {})})
+    # names unique to the episode and the cover's version: a browser never hands Studio another episode's cached cover
+    # (19 November 2026: Titan's upload first got the black-hole film's cover from the cache)
+    video_name = f"video-{project['id']}.mp4"
+    cover_name = f"cover-{project['id']}-{int(png.stat().st_mtime)}.png" if png else None
+    base = serve({video_name: mp4, **({cover_name: png} if png else {})})
     (DATA / "projects" / project["id"] / "publishing.json").write_text(json.dumps({"at": time.time()}), encoding="utf-8")
     take(project["id"])   # off the queue: the card now reads «Публікація»
     channel = channels().get(project["channel_id"], {})
     return {"project": project["id"], "studio_channel": project["channel"].get("name"),
             "youtube_channel_id": channel.get("youtube_id"), "playlist": channel.get("playlist"),
             "video": str(mp4), "video_name": mp4.name, "video_mb": round(mp4.stat().st_size / 1e6),
-            "video_url": base + "/video.mp4", "cover_url": base + "/preview.png" if png else None,
+            "video_url": f"{base}/{video_name}", "cover_url": f"{base}/{cover_name}" if png else None,
+            "upload_script": str(HERE / "youtube_upload.js"),
             **data, "published": read_json(DATA / "projects" / project["id"] / "published.json", None)}
 
 
@@ -172,6 +180,16 @@ def main(argv=None) -> int:
             print(wait())
         elif args[:1] == ["queue"]:
             print(json.dumps(read_json(QUEUE, []), ensure_ascii=False))
+        elif args[:1] in (["step"], ["failed"]) and len(args) == 3:
+            # the session marks each step («Відео у формі», «Розклад 21.11 15:00»); a card whose session goes quiet
+            # for 15 minutes or says «failed» reads «Публікація зупинилась» with «Продовжити» (backend/published.py)
+            project = studio.find_project(args[1])
+            file = DATA / "projects" / project["id"] / "publishing.json"
+            state = {**read_json(file, {}), "updated": time.time()}
+            state.setdefault("at", time.time())
+            state["failed" if args[0] == "failed" else "step"] = args[2]
+            file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            print("ok")
         elif args[:1] == ["stop"]:
             print("Сервер файлів зупинено" if stop() else "Сервер файлів не працював")
         elif args[:1] == ["channel"] and len(args) == 3 and re.fullmatch(r"UC[\w-]{22}", args[2]):

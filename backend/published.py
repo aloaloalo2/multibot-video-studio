@@ -68,7 +68,7 @@ def check(item: dict) -> dict | None:
     return None
 
 
-PUBLISHING_HOURS = 3   # a publication session that never said «done» stops showing «Публікація» after this
+STARTING_MINUTES = 10   # a session opened by the button has this long to start waiting before another is opened
 
 
 def queue_path() -> Path:
@@ -94,24 +94,79 @@ def listener() -> bool:
     return True
 
 
+def in_progress() -> bool:
+    """A publishing session is uploading an episode right now (tools/youtube_publish.py prepare, no «done» yet)."""
+    for marker in store.PROJECTS_ROOT.glob('*/publishing.json'):
+        try:
+            item = store.listed_project(marker.parent / 'project.json')
+        except (OSError, ValueError, store.StudioError):
+            continue
+        if publishing({**item, 'id': marker.parent.name, 'published': store.read_json(path(marker.parent.name), None)}) == 'publishing':
+            return True
+    return False
+
+
 def enqueue(pid: str) -> dict:
     """«Опублікувати» on the card: the episode waits for the publishing session, which listens with
     `tools/youtube_publish.py wait` (user, 19 November 2026: «просто відправити в Клод, щоб він опублікував»)."""
     project = store.load_project(pid)
     if (store.read_json(path(pid), {}) or {}).get('at'):
         raise store.StudioError('Цей випуск уже опубліковано', 409)
+    (store.project_dir(pid) / 'publishing.json').unlink(missing_ok=True)   # a stopped attempt starts again
     rows = [row for row in queue() if row.get('project') != pid]
     rows.append({'project': pid, 'channel_id': project.get('channel_id'), 'at': time.time()})
     store.atomic_json(queue_path(), rows)
-    return {'queued': True, 'position': len(rows), 'listener': listener(), 'studio_root': str(store.APP_ROOT)}
+    # One publishing session at a time: a new one is opened only when none waits, none is publishing and none was opened
+    # in the last minutes. Three episodes sent at once wait in the queue for that one session, which publishes them in
+    # turn (they would otherwise fight over the file server's port).
+    working = listener() or in_progress()
+    starting = store.DATA_ROOT / 'youtube-session-opened.json'
+    recent = time.time() - float((store.read_json(starting, {}) or {}).get('at') or 0) < STARTING_MINUTES * 60
+    open_session = not working and not recent
+    if open_session:
+        store.atomic_json(starting, {'at': time.time()})
+    return {'queued': True, 'position': len(rows), 'listener': working, 'open_session': open_session,
+            'studio_root': str(store.APP_ROOT)}
+
+
+STALE_MINUTES = 15   # a publishing session that marks no step for this long has stopped (a lost connection, a refusal)
 
 
 def publishing(item: dict) -> str | None:
-    """'queued' while the episode waits for the publishing session, 'publishing' once tools/youtube_publish.py prepare
-    has started on it, None otherwise or once it is on YouTube."""
+    """'queued' while the episode waits for the publishing session; 'publishing' while tools/youtube_publish.py marks its
+    steps; 'stopped' when the session said it failed or went quiet (user, 19 November 2026: «публікація зупинилась… я б
+    це мав би в студії бачити»); None otherwise or once it is on YouTube."""
     if (item.get('published') or {}).get('at'):
         return None
     if any(row.get('project') == item['id'] for row in queue()):
         return 'queued'
-    started = (store.read_json(store.project_dir(item['id']) / 'publishing.json', {}) or {}).get('at') or 0
-    return 'publishing' if time.time() - float(started) < PUBLISHING_HOURS * 3600 else None
+    state = store.read_json(store.project_dir(item['id']) / 'publishing.json', {}) or {}
+    if not state.get('at'):
+        return None
+    if state.get('failed'):
+        return 'stopped'
+    last = float(state.get('updated') or state.get('at') or 0)
+    if time.time() - last < STALE_MINUTES * 60:
+        return 'publishing'
+    return 'stopped' if time.time() - float(state['at']) < 7 * 86400 else None
+
+
+def stopped_note(pid: str) -> str:
+    state = store.read_json(store.project_dir(pid) / 'publishing.json', {}) or {}
+    return state.get('failed') or (f"Остання дія: {state['step']}" if state.get('step') else '')
+
+
+def active_channels() -> set:
+    """Channels with an episode in the YouTube queue or being published: their spinner turns in the sidebar (user,
+    19 November 2026: «вийде публікація… спінер на каналі… нема його»). A publication never blocks a studio restart:
+    it runs in its own Claude session."""
+    found = {row.get('channel_id') for row in queue() if row.get('channel_id')}
+    for marker in store.PROJECTS_ROOT.glob('*/publishing.json'):
+        pid = marker.parent.name
+        try:
+            item = store.listed_project(marker.parent / 'project.json')
+        except (OSError, ValueError, store.StudioError):
+            continue
+        if publishing({**item, 'id': pid, 'published': store.read_json(path(pid), None)}) == 'publishing':
+            found.add(item.get('channel_id'))
+    return {cid for cid in found if cid}

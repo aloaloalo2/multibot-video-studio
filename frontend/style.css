@@ -1836,6 +1836,7 @@ select option{background:#232327;color:#f1f1f2}
 @keyframes channel-activity-spin{to{transform:rotate(360deg)}}
 /* a channel exporting spins in the export's amber (the project card's colour) */
 .channel-busy.is-exporting{border-color:#f5c04a40;border-top-color:#f5c04a}
+.channel-busy.is-publishing{border-color:#7fb3ff40;border-top-color:#7fb3ff}
 
 .thumb-modal-open .modal{width:min(820px,100%)}
 .thumb-writer-button{display:inline-flex;align-items:center;justify-content:center;gap:9px}
@@ -3026,3 +3027,4 @@ select option{background:#232327;color:#f1f1f2}
 .project-publish svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
 .project-publish svg path{fill:currentColor;stroke:none}
 .project-publishing{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:#7fb3ff;font-size:11.5px;font-weight:600}
+.project-publish-stopped{margin-left:8px;color:#f0c967;font-size:11.5px;font-weight:600}

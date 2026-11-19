@@ -1449,6 +1449,8 @@ class Handler(BaseHTTPRequestHandler):
                 item['ready_stage'] = completion_notices.ready_stage(project, receipts, item)
                 item['published'] = published.check(item)   # the blue Finder tag, kept even without the folder
                 item['publishing'] = published.publishing(item)   # tools/youtube_publish.py prepare is at work
+                if item['publishing'] == 'stopped':
+                    item['publishing_note'] = published.stopped_note(item['id'])
                 item['episode_paused'] = episode_pause.resumable(item['id'])
                 item['episode_pause_label'] = episode_pause.label(item['id']) if item['episode_paused'] else None
                 if (item.get('production_request') or {}).get('status') in {'requested', 'in_progress'} and item['id'] not in production.ACTIVE:

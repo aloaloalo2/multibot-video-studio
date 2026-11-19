@@ -26,34 +26,40 @@
 (`claude://code/new?prompt=…`); автор натискає Enter, сесія публікує цей випуск і далі сама стає сесією публікації.
 У її вбудованому браузері має бути вхід у YouTube. `queue` показує чергу.
 
+## Надійність
+
+- Після кожного кроку: `youtube_publish.py step <id> "що зроблено"`. Картка показує «Публікація»; якщо 15 хвилин немає
+  жодного кроку, на ній «Публікація зупинилась» з кнопкою «Продовжити».
+- Якщо крок не вдався двічі або дію відхилили, не вгадуй: `youtube_publish.py failed <id> "причина"`, `stop`, скажи
+  автору, що саме зупинилось. Діалог із завантаженим відео лишається чернеткою в «Контенті».
+- Перед завантаженням подивись «Контент» каналу: якщо там уже є чернетка з цією назвою (обірвана спроба), відкрий її
+  редагування й продовж з неї, а не завантажуй відео вдруге.
+- Файли мають унікальні адреси без кешу (`video-<id>.mp4`, `cover-<id>-<час>.png`): не підставляй адреси з попередньої
+  публікації, бери їх з `prepare`.
+
 ## Кроки
 
-1. `python3 "VideoKey Studio/tools/youtube_publish.py" prepare <id проєкту>` друкує назви, опис, теги, ID каналу YouTube,
-   плейлист і адреси файлів, і запускає локальний сервер файлів на 127.0.0.1:8899. Поле `published` не порожнє: випуск
-   уже викладено, зупинись і скажи автору.
-2. Канал. Якщо `youtube_channel_id` відомий: `https://studio.youtube.com/channel/<id>/videos/upload`. Якщо ні, знайди
-   канал на `https://www.youtube.com/channel_switcher`, клікни його, ID візьми так:
+1. `python3 "VideoKey Studio/tools/youtube_publish.py" prepare <id>` друкує назви, опис, теги, ID каналу YouTube,
+   плейлист, адреси файлів і шлях до `youtube_upload.js`, і запускає сервер файлів на 127.0.0.1:8899. Поле `published`
+   не порожнє: випуск уже викладено, зупинись і скажи автору.
+2. Канал. Відомий `youtube_channel_id`: відкрий `https://studio.youtube.com/channel/<id>/videos/upload`. Невідомий: знайди
+   канал на `https://www.youtube.com/channel_switcher`, клікни його, ID візьми
    `(await fetch('/@'+encodeURIComponent('ХЕНДЛ')).then(r=>r.text())).match(/"channelId":"(UC[\w-]{22})"/)[1]`
-   і запиши: `youtube_publish.py channel <id проєкту> UC…`. Подивись у «Контенті» дату останнього запланованого ролика.
-3. Діалог завантаження відкривай кнопками Studio через JS (пряма адреса `?d=ud` інколи блокується):
-   кнопка «Создать» (`ytcp-button#create-icon`), потім пункт `tp-yt-paper-item` «Добавить видео». Відео в поле:
-   ```js
-   window.__up={state:'start'};(async()=>{try{const r=await fetch('VIDEO_URL');const total=+r.headers.get('content-length');
-   const rd=r.body.getReader();const parts=[];let got=0;while(true){const {done,value}=await rd.read();if(done)break;
-   parts.push(value);got+=value.length;window.__up={state:'dl',got,total};}
-   const f=new File(parts,'НАЗВА.mp4',{type:'video/mp4'});const dt=new DataTransfer();dt.items.add(f);
-   const i=document.querySelector('input[type=file][name=Filedata]');i.files=dt.files;i.dispatchEvent(new Event('change',{bubbles:true}));
-   window.__up={state:'set',size:f.size};}catch(e){window.__up={state:'err',msg:e.message}}})();
-   ```
-   Прогрес читай `JSON.stringify(window.__up)`.
-4. Назва й опис: `el.focus(); document.execCommand('selectAll'); document.execCommand('insertText', false, текст)` для
-   `#title-textarea #textbox` і `#description-textarea #textbox`.
-5. Прев'ю: той самий спосіб, що й відео, з `COVER_URL` у `ytcp-thumbnail-uploader input[type=file]`.
-6. Аудиторія: `tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]`. Кнопка «Развернуть» відкриває теги.
-   Теги вводь справжнім набором (`computer type`) через кому з комою в кінці, потім blur: присвоєння значення скриптом
-   лишає лічильник 0/500. Плейлист: відкрий список, постав галочку, «Готово».
-7. `#next-button` тричі до «Доступ». Там `#privacy-radios [name=PRIVATE]`, розгорни «Запланировать», вибери дату в
-   календарі, час вибери зі списку (пункт «15:00»), а не набирай. Кнопки внизу діалогу клікай через JS
-   (`#next-button`, `#done-button`): вузька панель зсуває координати. Перевір дату й час перед `#done-button`.
-8. Після «Видео запланировано»: `youtube_publish.py done <id проєкту> <VIDEO_ID> "РРРР-ММ-ДД ГГ:ХХ"` і
-   `youtube_publish.py stop`. Скажи автору дату, час і посилання.
+   і запиши `youtube_publish.py channel <id> UC…`. Перевір назву каналу на сторінці. Подивись дату останнього
+   запланованого ролика й чернетки (див. «Надійність»).
+3. Прочитай `tools/youtube_upload.js` і виконай його ЦІЛИМ одним викликом javascript_tool: він створює `window.__vk`.
+   Після переходу на іншу сторінку виконай його знову. Далі кожен крок один виклик, кожен відповідає JSON з `ok`:
+   - `await __vk.open()` діалог завантаження кнопками Studio;
+   - `await __vk.video(VIDEO_URL, 'назва.mp4')`, потім `step <id> "Відео у формі"`;
+   - `await __vk.details(НАЗВА, ОПИС)` (назва: перший тайтл);
+   - `await __vk.cover(COVER_URL)` і подивись скриншотом, що прев'ю саме цього випуску;
+   - `await __vk.notForKids()`;
+   - `await __vk.tagsField()`, потім теги справжнім набором `computer type` через кому з комою в кінці, перевір
+     `__vk.tags()` (кількість чипів = кількість тегів); плейлист каналу: відкрий список, галочка, «Готово»;
+   - `__vk.progress()` показує завантаження.
+4. `await __vk.toVisibility()` доходить до «Доступ», ставить «Приватне» й відкриває розклад. Дату вибери в календарі,
+   час зі списку (пункт «15:00»), не набирай. `__vk.schedule()` має показати потрібні дату й час. `step <id> "Розклад …"`.
+5. `await __vk.finish()` натискає «Запланировать» і чекає підтвердження; повертає `video_id`. Якщо його немає, візьми
+   ID з посилання в діалозі або з «Контенту».
+6. `youtube_publish.py done <id> <VIDEO_ID> "РРРР-ММ-ДД ГГ:ХХ"`, `youtube_publish.py stop`. A/B-тест назв, якщо Studio
+   його дає, додай у редакторі відео. Скажи автору дату, час і посилання.
