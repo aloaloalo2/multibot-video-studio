@@ -1,6 +1,6 @@
 // Saved local work and billing only. Opening this panel never starts a job or a paid request.
-const performanceWorkflows={openings:'Зачини',script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',kit:'Підготовка',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів'};
-const performanceAliases={language_sample:'language_voice',language_save:'language_voice',language_refit:'language_voice'};
+const performanceWorkflows={script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',kit:'Підготовка',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів'};
+const performanceAliases={openings:'script',language_sample:'language_voice',language_save:'language_voice',language_refit:'language_voice'};
 function performanceWorkflow(value){const key=performanceAliases[value]||value;return Object.hasOwn(performanceWorkflows,key)?key:null;}
 function performanceTime(ms){
   // Minutes and hours only: 57 s reads as 1 хв, anything under half a minute as <1 хв.
@@ -27,10 +27,21 @@ function performanceSpan(spans){
   }
   return total+spans.filter(([from])=>!Number.isFinite(from)).reduce((sum,[,to])=>sum+to,0);
 }
+// two processes counted as one row (the openings with the script) add their costs and tokens together
+function performanceMergeCost(a,b){
+  if(!a)return b;if(!b)return a;
+  const providers={...(a.providers||{})};
+  for(const [name,row] of Object.entries(b.providers||{})){const old=providers[name];
+    providers[name]=!old?row:{...old,requests:(old.requests||0)+(row.requests||0),unknown:(old.unknown||0)+(row.unknown||0),
+      usd:typeof old.usd==='number'&&typeof row.usd==='number'?old.usd+row.usd:(old.usd??row.usd),estimated:!!(old.estimated||row.estimated)};}
+  const tokens={...(a.tokens||{})};for(const [k,v] of Object.entries(b.tokens||{}))tokens[k]=(Number(tokens[k])||0)+(Number(v)||0);
+  return {...a,recorded:!!(a.recorded||b.recorded),providers,tokens};
+}
 function performanceRows(data){
   // Time comes from the saved runs, so a busy older backend shows the same honest split: finished, running and paused
   // runs are useful time, failed and interrupted attempts are listed apart.
-  const groups=new Map(),costs=new Map((data.processes||[]).map(row=>[row.workflow,row.cost]));
+  const groups=new Map(),costs=new Map();
+  for(const row of data.processes||[]){const key=performanceWorkflow(row.workflow);if(key)costs.set(key,performanceMergeCost(costs.get(key),row.cost));}
   for(const run of data.runs||[]){
     const workflow=performanceWorkflow(run.workflow);if(!workflow)continue;
     const row=groups.get(workflow)||{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,active:[],lost:[],cost:costs.get(workflow)||{recorded:['analysis','export'].includes(workflow)}};
@@ -88,7 +99,7 @@ function performanceMarkup(data){
   const money=value=>`$${value.toFixed(value>0&&value<.01?4:2)}`;
   const attempts=row=>row.lost_runs?`<small class="performance-lost">${row.active_ms>1000?'ще ':''}${esc(performanceTime(row.lost_ms))} у ${row.lost_runs===1?'невдалій спробі':row.lost_runs+' невдалих спробах'}</small>`:'';
   const line=row=>{const cost=performanceCost(row.cost);return `<div class="performance-row" role="row" data-id="${esc(row.id)}"><span class="performance-name" role="cell">${performanceIcon(row.workflow)}<span class="performance-label"><strong>${esc(row.label||performanceWorkflows[row.workflow])}${row.running?' <em>триває</em>':''}</strong>${performanceParallel.has(row.workflow)?'<small class="performance-parallel">паралельно, не входить у «Разом»</small>':''}${attempts(row)}</span></span><span class="performance-duration" role="cell">${row.active_ms>1000?esc(performanceTime(row.active_ms)):'—'}</span><span class="performance-cost" role="cell" title="${esc(cost.title)}">${esc(cost.label)}</span></div>`;};
-  const main=rows.filter(row=>row.active_ms>=60000||row.cost_only),small=rows.filter(row=>row.active_ms<60000&&!row.cost_only);
+  const main=rows.filter(row=>row.active_ms>=120000||row.cost_only),small=rows.filter(row=>row.active_ms<120000&&!row.cost_only);
   let total=0,approximate=false,unknown=false;
   for(const row of rows){const cost=performanceCost(row.cost);if(row.cost?.recorded){total+=cost.amount||0;approximate||=!!cost.approximate;unknown||=!!cost.unknown;}}
   // «Разом» is the time from start to end: the narration and the plan made side by side count once

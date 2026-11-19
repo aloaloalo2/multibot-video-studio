@@ -45,7 +45,7 @@ function updateProjectCard(card,project){
   }else duration?.remove();
   updateProjectCardCover(card,project);
   const making=project.production_request,{total,done,working,stopped}=projectProductionCardState(making,project.last_export_at);
-  card.classList.toggle('producing',working);card.classList.toggle('production-stopped',stopped);card.classList.toggle('episode-paused-card',!working&&!!project.episode_paused);
+  card.classList.toggle('producing',working);card.classList.toggle('producing-kit',working&&making?.stage==='kit');card.classList.toggle('production-stopped',stopped);card.classList.toggle('episode-paused-card',!working&&!!project.episode_paused);
   let box=open.querySelector('.project-production-state');
   if(working||stopped){
     if(box?.classList.contains('episode-paused')){box.remove();box=null;}

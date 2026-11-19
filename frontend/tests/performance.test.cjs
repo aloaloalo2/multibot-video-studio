@@ -135,3 +135,18 @@ test('translations run beside the pipeline and stay out of the total time',()=>{
   assert.match(html,/performance-total"><strong>Разом<\/strong><span class="performance-duration">10 хв</);
   assert.equal((html.match(/паралельно, не входить у «Разом»/g)||[]).length,2);
 });
+test('the openings count with the script and a process under two minutes goes to «Інше»',()=>{
+  const {context}=fixture();
+  const data={runs:[
+    {workflow:'openings',status:'complete',elapsed_ms:240000,started_at:1000},
+    {workflow:'script',status:'complete',elapsed_ms:600000,started_at:2000},
+    {workflow:'metadata',status:'complete',elapsed_ms:90000,started_at:3000}],
+    processes:[{workflow:'openings',cost:{recorded:true,providers:{openrouter:{requests:1,usd:0.5}}}},
+               {workflow:'script',cost:{recorded:true,providers:{openrouter:{requests:2,usd:1}}}}]};
+  const rows=context.performanceRows(data);
+  assert.equal(rows.map(row=>row.workflow).join(),'script,metadata');
+  assert.equal(rows[0].active_ms,840000);
+  assert.equal(rows[0].cost.providers.openrouter.usd,1.5);
+  const markup=context.performanceMarkup(data);
+  assert.ok(markup.indexOf('Метадані')>markup.indexOf('Інше'));   // 1.5 minutes sits under «Інше»
+});

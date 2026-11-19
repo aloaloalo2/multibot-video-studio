@@ -1872,6 +1872,9 @@ select option{background:#232327;color:#f1f1f2}
 .voice-progress-stage,.episode-director-line strong{display:flex;align-items:center;gap:8px}
 .episode-voice[data-state="working"] .episode-voice-icon{animation:none}
 .project-stage-job{color:#c7cbd6}
+/* the frame agent's «Підготовка» looks like the director's: grey, no green frame (19 November 2026) */
+.project-card.producing.producing-kit{border-color:#35353a}
+.project-card.producing-kit .project-production-state{color:#c7cbd6}
 .project-card.stage-working .project-created-group,.project-card.stage-working .project-making:not(.project-stage-job),.project-card.stage-working .project-production-control{display:none}
 .overview-projects .project-card.stage-working .project-stage-job{right:90px}
 
