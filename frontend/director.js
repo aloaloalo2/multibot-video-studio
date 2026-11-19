@@ -336,7 +336,7 @@ function fillDirectorLine(box){
     planReady();
     kitBox.classList.add('working');
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
-    line('Підготовка',minutes===null?'':minutes<1?'Працює менше хвилини.':`Працює ${minutes} хв.`,kitBox);
+    line('Підготовка',minutes===null||minutes<2?'':`Працює ${minutes} хв.`,kitBox);
     kitBox.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
     {const pause=productionControl(id,true,'director');pause.classList.add('episode-director-control');kitBox.append(pause);}
     directorTimer=setTimeout(()=>pollDirector(id),8000);
@@ -344,7 +344,7 @@ function fillDirectorLine(box){
     box.classList.add('working');
     // how long it works, so a long film (an hour of voice takes the director a while) reads as moving, not stuck
     const minutes=run.started_at?Math.max(0,Math.floor((Date.now()/1000-Number(run.started_at))/60)):null;
-    const took=minutes===null?'':minutes<1?' Працює менше хвилини.':` Працює ${minutes} хв.`;
+    const took=minutes===null||minutes<2?'':` Працює ${minutes} хв.`;   // under two minutes the time stays hidden
     line(run.stage==='kit'?'Підготовка':run.reason==='script'?'Режисер складає план за сценарієм':'Режисер складає план',took.trim());
     box.querySelector('.episode-director-line strong')?.insertAdjacentHTML('afterbegin',exportSpinner);
     {const pause=productionControl(id,true,'director');pause.classList.add('episode-director-control');box.append(pause);}
