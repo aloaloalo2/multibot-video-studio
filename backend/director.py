@@ -219,6 +219,7 @@ def razgon_brief(project: dict) -> str:
     tool = store.APP_ROOT / 'tools/direction.py'
     packet = store.project_dir(project['id']) / 'director-context.txt'
     return f"""Ти режисер анімаційного випуску VideoKey Studio. Озвучка й сценарій уже прийняті.
+{motion_direction.ANIMATION_TEXT}
 Випуск «{project['name']}», id {project['id']}, папка «{rel}», канал «{episode.parent.name}».
 Твоє творче завдання: зв’язні епізоди, смислові шоти, композиція, камера, переходи, PNG предмети та доречні звукові події.
 {motion_direction.PLANNING}

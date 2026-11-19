@@ -133,6 +133,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Режисуру вже прийнято. Спочатку постав готові блоки на таймлайн через slots. Аркушів кадрів не роби й mark не став: огляд у кінці.
 {motion_direction.EXECUTION}
 {motion_direction.ACCENTS}
+{motion_direction.ANIMATION_TEXT}
 {QUALITY.replace("<студія>", store.app_rel())}
 4. python3 "{store.app_rel()}/tools/razgon_bridge.py" slots --razgon <проєкт> --frames {frames}: кадри стоять на таймлайні студії блоками-кодом
    «Кадр N», і автор дивиться їх у режимі «Наживо», де код Razgon малює картинку. Кадр, уже відрендерений раніше, ця команда
@@ -212,6 +213,7 @@ def kit_brief(project: dict, frames: int) -> str:
     import engine_index
     import production_kit
     return (production_kit.brief(project, list(range(1, frames + 1)))
+            + (motion_direction.ANIMATION_TEXT + "\n" if store.project_animated(project) else "")
             + montage_context.rules(project, production=True) + mixed_assets_step(project)
             + director.animation_style(project) + director.channel_memory(project)
             + engine_index.brief() + engine_index.project_index(project) + montage_context.COMMANDS)
@@ -376,7 +378,7 @@ def light_review(pid: str, numbers, cli: Path, log: Path, timeout: int, model: s
 
 def film_repair_brief(project: dict, request: dict, notes: str) -> str:
     """The author's request about the whole film, from the Claude button by «Увесь ролик» (user, 15 November 2026)."""
-    accents = motion_direction.ACCENTS if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
+    accents = (motion_direction.ACCENTS + "\n" + motion_direction.ANIMATION_TEXT) if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
     return f"""Ти режисер, який вносить авторську правку в готовий ролик VideoKey Studio.
 Проєкт {project['id']}: {project['name']}. Кадри не вибрані: правка стосується ролика загалом.
 Побажання автора:
@@ -395,7 +397,7 @@ python3 tools/studio.py summary {project['id']} --issues і, за потреби
 
 def repair_brief(project: dict, request: dict, notes: str) -> str:
     frames=', '.join(map(str,request['repair_frames']))
-    accents = motion_direction.ACCENTS if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
+    accents = (motion_direction.ACCENTS + "\n" + motion_direction.ANIMATION_TEXT) if store.project_animated(project) else accents_step(project, store.app_rel() + "/tools")
     return f"""Ти режисер, який вносить авторські правки у готовий ролик VideoKey Studio.
 Проєкт {project['id']}: {project['name']}. Правки ЛИШЕ до кадрів: {frames}.
 Побажання автора:
