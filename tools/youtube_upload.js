@@ -135,7 +135,8 @@
       if (!button) return { ok: false, skipped: true, error: 'no A/B test on this channel or video: skip it' };
       button.scrollIntoView({ block: 'center' });
       button.querySelector('button')?.click() || button.click();
-      const dialog = await until(() => [...document.querySelectorAll('ytcp-dialog')].find(d => shown(d.querySelector('#set-test-button'))), 8000);
+      // the dialog counts as open by its size: its «set test» button stays disabled (and unseen) until the fields are full
+      const dialog = await until(() => [...document.querySelectorAll('ytcp-dialog')].find(d => d.querySelector('#set-test-button') && d.querySelector('ytcp-social-suggestions-textbox') && [...d.querySelectorAll('ytcp-social-suggestions-textbox #textbox')].some(shown)), 8000);
       if (!dialog) return { ok: false, error: 'the A/B dialog did not open' };
       const radios = [...dialog.querySelectorAll('tp-yt-paper-radio-button, [role=radio]')].filter(shown);
       if (radios[0] && radios[0].getAttribute('aria-checked') !== 'true') { radios[0].click(); await sleep(600); }   // titles only
@@ -145,6 +146,19 @@
       dialog.querySelector('#set-test-button')?.click();
       await sleep(1500);
       return { ok: written.every(Boolean), fields: boxes.length, closed: !shown(dialog.querySelector('#set-test-button')) };
+    },
+    // the video file is still going up to YouTube while the progress line shows a percentage; leaving the page or closing
+    // the tab then leaves it an unfinished draft (19 November 2026). Waits up to 4 minutes a call: call again until ok
+    async waitUpload() {
+      const end = Date.now() + 240000;
+      for (;;) {
+        const line = text(document.querySelector('ytcp-video-upload-progress'));
+        // only the upload's own percentage: «Проверка: 13 %» after it is YouTube's copyright check, the file is up by then
+        const uploading = /(Загрузка|Загружается|Завантаження|Uploading|Upload)[^%]{0,30}\d+\s*%/i.test(line);
+        if (!uploading) return { ok: true, progress: line.slice(0, 120) };
+        if (Date.now() > end) return { ok: false, still_uploading: true, progress: line.slice(0, 120), next: 'call waitUpload() again; do not leave the page' };
+        await sleep(5000);
+      }
     },
     progress() {
       return { upload: text(document.querySelector('ytcp-video-upload-progress')).slice(0, 120) };
@@ -196,8 +210,16 @@
     // a video that has one keeps it
     async endScreen() {
       const big = el => !!el && el.getBoundingClientRect().width > 0;   // the editor's buttons have no offsetParent
-      const link = await until(() => document.querySelector('#endscreen-editor-link'), 15000);
-      if (!link) return { ok: false, error: 'no end-screen link: open studio.youtube.com/video/<id>/edit and run this file again' };
+      // in the upload form, step «Дополнения» (#endscreens-button), before the video is scheduled: the built-in browser's
+      // safety check refused editing a video already scheduled (19 November 2026); the edit page's link stays a fallback
+      if (shown(document.querySelector('ytcp-uploads-dialog')) && !document.querySelector('#endscreens-button')) {
+        for (let i = 0; i < 2 && !document.querySelector('#endscreens-button'); i++) {
+          document.querySelector('#next-button')?.click();
+          await sleep(1500);
+        }
+      }
+      const link = await until(() => [...document.querySelectorAll('#endscreens-button, #endscreen-editor-link')].find(e => e.getBoundingClientRect().width > 0), 15000);
+      if (!link) return { ok: false, error: 'no end-screen button: in the upload form go to its second step («Дополнения»)' };
       link.scrollIntoView({ block: 'center' });
       link.click();
       const modal = await until(() => { const m = document.querySelector('ytve-endscreen-modal'); return big(m?.querySelector('ytve-endscreen-editor-timeline')) && m; }, 60000);   // a long video loads its editor slowly
@@ -216,16 +238,31 @@
       const closed = await until(() => !big(modal.querySelector('ytve-endscreen-editor-timeline')), 15000);
       return { ok: !!closed, kept_existing: !!existing, elements };
     },
+    // on the channel's «Контент» page: is this video really scheduled or published, not a draft or a half upload? Its
+    // answer `proof` is what `youtube_publish.py done` asks for (19 November 2026: «Эти галактики» was marked done while
+    // YouTube kept it a draft)
+    async verify(videoId) {
+      const row = await until(() => [...document.querySelectorAll('ytcp-video-row')].find(r => r.innerHTML.includes(`/vi/${videoId}/`)), 20000);
+      if (!row) return { ok: false, error: 'no row of this video in «Контент»: open the channel content page, run this file again' };
+      // a draft's row has its thumbnail as .draft-thumbnail (the draft buttons appear only on hover); a scheduled one
+      // shows .schedule-icon. Class names, not captions: the same in any language of Studio
+      const draft = !!row.querySelector('.draft-thumbnail, .edit-draft-button, .resume-upload-button');
+      return draft ? { ok: false, error: 'still a draft or an unfinished upload on YouTube: open it with open(video_id) and finish' }
+                   : { ok: true, proof: 'VK-' + videoId };
+    },
     async finish() {
       const done = document.querySelector('#done-button');
       if (!done) return { ok: false, error: 'no schedule button' };
       done.click();
-      const link = await until(() => [...document.querySelectorAll('a')].map(a => a.href).find(h => /youtu\.be\/[\w-]{11}/.test(h)), 20000);
-      const id = link && (link.match(/youtu\.be\/([\w-]{11})/) || [])[1];
-      // the «scheduled» window: close it
+      // only the confirmation window counts: the upload form shows the video's link from the start, so a link alone
+      // proved nothing (19 November 2026: «Эти галактики» stayed a draft)
+      const shared = await until(() => [...document.querySelectorAll('ytcp-video-share-dialog')].find(shown), 30000);
+      if (!shared) return { ok: false, error: 'no «scheduled» confirmation: look at the dialog (a warning, a missing field) and fix it' };
+      const link = [...shared.querySelectorAll('a')].map(a => a.href).find(h => /youtu\.be\/[\w-]{11}/.test(h)) || text(shared);
+      const id = (String(link).match(/youtu\.be\/([\w-]{11})/) || [])[1];
       await sleep(800);
-      [...document.querySelectorAll('ytcp-video-share-dialog ytcp-button, ytcp-uploads-still-processing-dialog ytcp-button')].find(shown)?.click();
-      return { ok: !!id, video_id: id || null };
+      [...shared.querySelectorAll('ytcp-button')].find(shown)?.click();
+      return { ok: !!id, video_id: id || null, next: 'verify(video_id) on the channel content page before done' };
     },
   };
   return 'window.__vk ready: ' + Object.keys(window.__vk).join(', ');

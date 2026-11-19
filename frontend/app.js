@@ -619,8 +619,13 @@ function completionMark(project){
     :'<span class="project-publish" role="button" tabindex="0" title="Опублікувати на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Опублікувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
-  const age=when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
-  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}</span>${publish}`;
+  // on YouTube: the card says the day the video goes out, «24 листопада», not when it was exported (user, 19 November 2026)
+  const out=String(project.published?.scheduled||'').match(/^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/);
+  const outDate=out?new Date(+out[1],+out[2]-1,+out[3],+out[4],+out[5]):null;
+  const age=outDate?`<time class="project-stage-date" datetime="${out[1]}-${out[2]}-${out[3]}" title="${esc(publishedLabel)}">${esc(outDate.toLocaleDateString('uk-UA',{day:'numeric',month:'long'}))}</time>`
+    :when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
+  // the release date stands after the blue «published» check (user, 19 November 2026)
+  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}${outDate?age:''}</span>${publish}`;
 }
 async function markProjectSeen(id){
   const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;
@@ -860,7 +865,7 @@ function renderProject() {
   if(state.project){
     const name=document.createElement('button');name.type='button';name.className='project-name';name.title=`Перейменувати випуск «${state.project.name}»`;name.setAttribute('aria-label',`Перейменувати випуск «${state.project.name}»`);name.innerHTML=`${projectIcon}<span>${esc(state.project.name)}</span>`;name.addEventListener('click',()=>renameProject(state.project));title.append(name);
   }
-  document.title=state.project?.name || state.channel?.name?`${state.project?.name || state.channel.name} | VideoKey Studio`:'VideoKey Studio';
+  document.title='VideoKey Studio';   // the tab says only the studio, never the channel or episode (user, 19 November 2026)
   $('save-state').textContent='';
   const trending=state.view==='trending'&&!state.project;
   document.querySelector('.app-shell').classList.toggle('trending-open',trending);
@@ -868,7 +873,7 @@ function renderProject() {
   $('trending-page').hidden=!trending;
   $('trending-videos').classList.toggle('active',trending);
   $('trending-videos').setAttribute('aria-current',trending?'page':'false');
-  if(trending){channelName.textContent='Зараз у тренді';document.title='Зараз у тренді | VideoKey Studio';}
+  if(trending){channelName.textContent='Зараз у тренді';}
   $('channel-overview').hidden=trending || !!state.project || state.restoringProject;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';

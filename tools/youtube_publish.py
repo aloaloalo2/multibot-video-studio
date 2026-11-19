@@ -13,7 +13,7 @@ into YouTube Studio's file inputs by a script.
     python3 tools/youtube_publish.py failed P "причина"     # the card reads «Публікація зупинилась» with «Продовжити»
     python3 tools/youtube_publish.py stop                 # stops the file server
     python3 tools/youtube_publish.py channel P UC…        # remembers the YouTube channel id of P's studio channel
-    python3 tools/youtube_publish.py done P VIDEO_ID "2026-11-24 15:00"   # records the publication in the studio
+    python3 tools/youtube_publish.py done P VIDEO_ID "2026-11-24 15:00" VK-VIDEO_ID   # after __vk.verify: records it
 """
 from __future__ import annotations
 
@@ -190,6 +190,85 @@ def prepare(ref: str) -> dict:
             **data, "published": read_json(DATA / "projects" / project["id"] / "published.json", None)}
 
 
+# $ per million tokens, as backend/spend_report.PRICE (Opus 5.5, the 1-hour cache)
+PRICE = {"input": 3.0, "output": 15.0, "read": 0.30, "write_1h": 6.0, "write_5m": 3.75}
+TRANSCRIPTS = Path.home() / ".claude" / "projects"
+
+
+def session_cost(pid: str, start: float, end: float) -> dict | None:
+    """The publishing session's Claude tokens between `prepare` and `done` of this episode, read from its transcript on
+    disk (the session runs in the Claude app, not in the studio; user, 19 November 2026: «публікація теж рахується в
+    розходи… і в час?»). The session is the transcript that ran `prepare <pid>`; each message counts once."""
+    from datetime import datetime
+    marker = f"prepare {pid}"
+    for path in sorted(TRANSCRIPTS.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:40]:
+        if path.stat().st_mtime < start - 60:
+            continue
+        seen, tokens, found = set(), {"input": 0, "output": 0, "read": 0, "write_1h": 0, "write_5m": 0}, False
+        with path.open(encoding="utf-8", errors="replace") as source:
+            for line in source:
+                if marker in line and not found:
+                    # only the session that ran `prepare` itself in its shell, within this publication's time
+                    try:
+                        row = json.loads(line)
+                        at = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).timestamp()
+                        found = start - 120 <= at <= end and any(
+                            part.get("type") == "tool_use" and part.get("name") == "Bash" and marker in str((part.get("input") or {}).get("command"))
+                            for part in (row.get("message") or {}).get("content") or [] if isinstance(part, dict))
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        pass
+                if '"usage"' not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    at = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).timestamp()
+                except (ValueError, KeyError):
+                    continue
+                message = row.get("message") or {}
+                usage = message.get("usage")
+                if row.get("type") != "assistant" or not isinstance(usage, dict) or not start - 5 <= at <= end + 5:
+                    continue
+                key = message.get("id") or row.get("uuid")
+                if key in seen:
+                    continue
+                seen.add(key)
+                cache = usage.get("cache_creation") or {}
+                tokens["input"] += usage.get("input_tokens") or 0
+                tokens["output"] += usage.get("output_tokens") or 0
+                tokens["read"] += usage.get("cache_read_input_tokens") or 0
+                tokens["write_1h"] += cache.get("ephemeral_1h_input_tokens") or 0
+                tokens["write_5m"] += cache.get("ephemeral_5m_input_tokens") or (
+                    0 if cache else usage.get("cache_creation_input_tokens") or 0)
+        if found and seen:
+            usd = sum(tokens[k] * PRICE[k] for k in PRICE) / 1e6
+            return {"usd": round(usd, 4), "tokens": tokens, "turns": len(seen), "transcript": path.name}
+    return None
+
+
+def record(pid: str, status: str) -> dict:
+    """The publication's run in «Час роботи» (backend/job_timing format) and its Claude cost in the episode's costs."""
+    import uuid
+    folder = DATA / "projects" / pid
+    state = read_json(folder / "publishing.json", {})
+    start, end = float(state.get("at") or time.time()), time.time()
+    run = uuid.uuid4().hex
+    row = {"version": 1, "id": run, "project_id": pid, "workflow": "publication", "job_id": None,
+           "status": "complete" if status == "done" else "failed", "language": None, "started_at": start,
+           "finished_at": end, "elapsed_ms": round((end - start) * 1000, 2), "active_stage": None,
+           "stages": {"service": {"ms": round((end - start) * 1000, 2), "calls": 1}}}
+    (folder / "performance").mkdir(exist_ok=True)
+    (folder / "performance" / f"{int(start * 1e9):020d}-{run}.json").write_text(json.dumps(row), encoding="utf-8")
+    cost = session_cost(pid, start, end)
+    if cost:
+        costs = folder / "project-costs.json"
+        data = read_json(costs, {})
+        data.setdefault("events", {})[f"claude_code:publication-{run}"] = {
+            "provider": "claude_code", "amount": cost["usd"], "estimated": True, "category": "publication",
+            "workflow": "publication", "run_id": run, "tokens": cost["tokens"]}
+        costs.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return {"minutes": round((end - start) / 60, 1), "cost": cost}
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
@@ -210,6 +289,8 @@ def main(argv=None) -> int:
             state.setdefault("at", time.time())
             state["failed" if args[0] == "failed" else "step"] = args[2]
             file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            if args[0] == "failed":
+                record(project["id"], "failed")   # the attempt's time and cost, listed apart as a failed attempt
             print("ok")
         elif args[:1] == ["stop"]:
             print("Сервер файлів зупинено" if stop() else "Сервер файлів не працював")
@@ -220,14 +301,18 @@ def main(argv=None) -> int:
                                             "name": project["channel"].get("name")}
             CHANNELS.write_text(json.dumps(saved, ensure_ascii=False, indent=1), encoding="utf-8")
             print(f"{project['channel'].get('name')}: {args[2]}")
-        elif args[:1] == ["done"] and len(args) == 4:
+        elif args[:1] == ["done"] and len(args) in (4, 5):
+            if len(args) != 5 or args[4] != "VK-" + args[2]:
+                raise studio.Failure("Спершу перевір у «Контенті»: await __vk.verify(VIDEO_ID) має дати ok і proof; "
+                                     "тоді done P VIDEO_ID \"дата час\" PROOF. Чернетку не позначай опублікованою.")
             project = studio.find_project(args[1])
-            record = {"at": time.time(), "source": "youtube_publish", "video_id": args[2], "url": f"https://youtu.be/{args[2]}",
+            mark = {"at": time.time(), "source": "youtube_publish", "video_id": args[2], "url": f"https://youtu.be/{args[2]}",
                       "scheduled": args[3]}
             folder = DATA / "projects" / project["id"]
-            (folder / "published.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+            (folder / "published.json").write_text(json.dumps(mark, ensure_ascii=False), encoding="utf-8")
+            mark["work"] = record(project["id"], "done")
             (folder / "publishing.json").unlink(missing_ok=True)
-            print(json.dumps(record, ensure_ascii=False))
+            print(json.dumps(mark, ensure_ascii=False))
         else:
             print(__doc__)
             return 2

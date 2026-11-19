@@ -8,7 +8,7 @@ LABELS = {
     'openings': 'Зачини', 'script': 'Сценарій', 'metadata': 'Метадані',
     'narration': 'Озвучка', 'analysis': 'Розпізнавання озвучки',
     'planning': 'План кадрів', 'kit': 'Підготовка', 'production': 'Створення кадрів', 'export': 'Експорт',
-    'translation': 'Переклад', 'language_voice': 'Озвучка перекладів',
+    'translation': 'Переклад', 'language_voice': 'Озвучка перекладів', 'publication': 'Публікація на YouTube',
 }
 ALIASES = {'language_sample': 'language_voice', 'language_save': 'language_voice', 'language_refit': 'language_voice'}
 LOCAL = {'analysis', 'export'}

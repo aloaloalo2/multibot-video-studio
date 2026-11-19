@@ -24,6 +24,7 @@ WORKFLOWS = {
     'translation': 'Переклад', 'language_voice': 'Озвучка перекладу',
     'language_sample': 'Зразок перекладу', 'language_save': 'Збереження перекладу',
     'language_refit': 'Вирівнювання перекладу', 'language_thumbnail': 'Прев’ю перекладу',
+    'publication': 'Публікація на YouTube',
 }
 LANGUAGE_WORKFLOWS = {
     'translate': 'translation', 'voice': 'language_voice', 'sample': 'language_sample',

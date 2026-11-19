@@ -1,5 +1,5 @@
 // Saved local work and billing only. Opening this panel never starts a job or a paid request.
-const performanceWorkflows={script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',kit:'Підготовка',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів'};
+const performanceWorkflows={script:'Сценарій',metadata:'Метадані',narration:'Озвучка',analysis:'Розпізнавання озвучки',planning:'План кадрів',kit:'Підготовка',production:'Створення кадрів',export:'Експорт',translation:'Переклад',language_voice:'Озвучка перекладів',publication:'Публікація на YouTube'};
 const performanceAliases={openings:'script',language_sample:'language_voice',language_save:'language_voice',language_refit:'language_voice'};
 function performanceWorkflow(value){const key=performanceAliases[value]||value;return Object.hasOwn(performanceWorkflows,key)?key:null;}
 function performanceTime(ms){
@@ -91,6 +91,7 @@ const performanceIcons={
   export:'<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>',
   translation:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
   language_voice:'<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/>',
+  publication:'<rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/>',
 };
 function performanceIcon(workflow){return `<svg class="performance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${performanceIcons[workflow]||'<circle cx="12" cy="12" r="8"/>'}</svg>`;}
 function performanceMarkup(data){
