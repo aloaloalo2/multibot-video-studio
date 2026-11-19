@@ -381,7 +381,7 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Побажання до прев’ю мають містити до 4000 символів")
     if not isinstance(value.get("script_wishes", ""), str) or len(value.get("script_wishes", "")) > 30000:
         raise StudioError("Побажання сценаристу мають містити до 30000 символів")
-    for flag in ('auto_narration', 'auto_montage', 'auto_opening', 'auto_translation', 'auto_translation_voice'):
+    for flag in ('auto_narration', 'auto_montage', 'auto_opening', 'auto_translation', 'auto_translation_voice', 'auto_export', 'auto_publish'):
         if type(value.get(flag, False)) is not bool:
             raise StudioError("Автоматичні дії мають бути увімкнені або вимкнені")
     weights = value.get("weights")

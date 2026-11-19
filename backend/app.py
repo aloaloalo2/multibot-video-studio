@@ -2250,6 +2250,8 @@ def main():
     threading.Thread(target=update_loop, daemon=True).start()
     import youtube_dates   # release dates of episodes marked published by Finder's blue tag, from the channels' feeds
     youtube_dates.start()
+    import auto_pipeline   # «Автоекспорт» and «Автопублікація» of the channels that switched them on
+    auto_pipeline.start(lambda project, confirmation, bitrate: start_export(project, confirmation, bitrate), active_export)
     # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
