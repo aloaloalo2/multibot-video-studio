@@ -491,11 +491,9 @@ def add_channel(folder: Path, copy_from: str | None = None) -> dict:
             import technical_files
             technical_files.migrate_channel(folder)
         if not config.exists():
-            if copy_from:
-                template = read_channel_settings(get_channel_folder(copy_from), None)
-            else:
-                templates = channel_folders()
-                template = read_channel_settings(templates[0], None) if templates else None
+            # only a channel the author chose is copied; otherwise the new channel starts clean (user, 19 November 2026:
+            # «я створив канал, і одразу підтягнулися всі побажання… з чистих»)
+            template = read_channel_settings(get_channel_folder(copy_from), None) if copy_from else None
             if not template:
                 template = {"short_sentence_words": 5, "max_sentences_per_scene": 4, "words_per_minute": 145, "opening_seconds": 90, "opening_clip_count": 6, "opening_clip_types": ["stock_video"] * 6, "weights": {"stock_video": 10, "stock_photo": 45, "generated_photo": 25, "animation": 20}}
             atomic_json(config, template)
