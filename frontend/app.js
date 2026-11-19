@@ -428,6 +428,9 @@ function projectActions(project,current=()=>project){
 // «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати»): the episode goes into the studio's queue;
 // the publishing Claude session listens with tools/youtube_publish.py wait and starts at once in the built-in browser
 // (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
+// «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати»): the episode goes into the studio's queue;
+// the publishing Claude session listens with tools/youtube_publish.py wait and starts at once in the built-in browser
+// (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
 // The task for a new Claude Code session: publish this episode, then wait for the next ones
 function youtubeSessionTask(project,root){
   return `Опублікуй на YouTube випуски з черги студії по одному, першим «${project.name}» (проєкт студії ${project.id}). `
@@ -445,9 +448,8 @@ async function openYoutubePublish(project){
     const result=await api(`/api/projects/${encodeURIComponent(project.id)}/youtube-publish`,'POST',{});
     await refreshProjects().catch(()=>{});
     if(!result.open_session){status(result.listener?'Випуск у черзі. Сесія публікації візьме його, щойно закінчить попередній.':'Випуск у черзі. Сесія публікації, яку щойно відкрито, візьме й його.');return;}
-    const link='claude://code/new?source=desktop_action&prompt='+encodeURIComponent(youtubeSessionTask(project,result.studio_root));
-    const anchor=document.createElement('a');anchor.href=link;document.body.append(anchor);anchor.click();anchor.remove();
-    status('Відкриваю нову сесію Claude із завданням. Натисніть у ній Enter.');
+    // the studio has opened a new Claude Code session on this Mac itself (backend/published.open_claude): no browser dialog
+    status('Відкрито нову сесію Claude із завданням. Натисніть у ній Enter.');
   }catch(error){status(error.message,true);}
 }
 

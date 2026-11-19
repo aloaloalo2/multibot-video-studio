@@ -106,6 +106,28 @@ def in_progress() -> bool:
     return False
 
 
+def session_task(project: dict) -> str:
+    root = store.APP_ROOT
+    return (f"Опублікуй на YouTube випуски з черги студії по одному, першим «{project.get('name')}» (проєкт студії {project['id']}). "
+            f"Порядок і правила: {root}/docs/YOUTUBE_PUBLISH.md, інструмент: python3 \"{root}/tools/youtube_publish.py\". "
+            "Якщо цей випуск уже є в «Контенті» каналу чернеткою, продовж її, а не завантажуй удруге. "
+            "Після публікації стань сесією публікації: запусти у фоні (Bash, run_in_background) wait і, коли він закінчиться, "
+            "публікуй наступний випуск з черги так само.")
+
+
+def open_claude(project: dict) -> bool:
+    """A new Claude Code session with the task filled in, opened by the studio on this Mac itself (`open claude://…`): a
+    link from the page made the browser ask «Відкрити Claude?» every time (user, 19 November 2026: «я такого не хотів»).
+    The author presses Enter in it."""
+    import subprocess
+    import urllib.parse
+    link = 'claude://code/new?source=desktop_action&prompt=' + urllib.parse.quote(session_task(project))
+    try:
+        return subprocess.run(['open', link], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def enqueue(pid: str) -> dict:
     """«Опублікувати» on the card: the episode waits for the publishing session, which listens with
     `tools/youtube_publish.py wait` (user, 19 November 2026: «просто відправити в Клод, щоб він опублікував»)."""
@@ -125,6 +147,7 @@ def enqueue(pid: str) -> dict:
     open_session = not working and not recent
     if open_session:
         store.atomic_json(starting, {'at': time.time()})
+        open_session = open_claude(project)
     return {'queued': True, 'position': len(rows), 'listener': working, 'open_session': open_session,
             'studio_root': str(store.APP_ROOT)}
 

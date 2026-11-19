@@ -17,9 +17,11 @@ class QueueTest(unittest.TestCase):
             projects = {pid: {"id": pid, "channel_id": "c" + pid} for pid in ("a", "b", "c")}
             with patch.object(store, "DATA_ROOT", root), patch.object(store, "PROJECTS_ROOT", root / "projects"), \
                  patch.object(store, "project_dir", side_effect=lambda pid: root / "projects" / pid), \
-                 patch.object(store, "load_project", side_effect=lambda pid: projects[pid]):
+                 patch.object(store, "load_project", side_effect=lambda pid: projects[pid]), \
+                 patch.object(published, "open_claude", return_value=True) as opened:
                 answers = [published.enqueue(pid) for pid in ("a", "b", "c")]
                 self.assertEqual([a["open_session"] for a in answers], [True, False, False])
+                opened.assert_called_once()   # one new session for all three
                 self.assertEqual([row["project"] for row in published.queue()], ["a", "b", "c"])
                 self.assertEqual(published.active_channels(), {"ca", "cb", "cc"})
                 self.assertEqual(published.publishing({"id": "b"}), "queued")
