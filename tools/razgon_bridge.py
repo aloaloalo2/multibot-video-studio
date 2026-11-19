@@ -51,7 +51,7 @@ OVERLAY_TITLE = "Плашка каналу"
 RESOLUTIONS = {720: "720p", 1080: "1080p", 1440: "1440p", 2160: "2160p"}
 JOBS = max(1, min(8, (os.cpu_count() or 2) // 2))   # at most this many Studio frames render at the same time (render_many)
 CHROMIUM_BYTES = 2.2e9   # one render.mjs worker drawing 1920x1080 (06 Fast Food, 31 October 2026)
-RAM_LIMIT = float(os.environ.get("RAZGON_RAM_LIMIT", 0.8))   # renders fill the Mac's memory up to this share (user, 31 October 2026)
+RAM_LIMIT = float(os.environ.get("RAZGON_RAM_LIMIT", 0.88))   # renders fill the Mac's memory up to this share (user: 80% on 31 October 2026, «експорт дозволяю до 88% рам» on 19 November 2026)
 RAMP = 15.0              # seconds a new Chromium takes to reach its full memory
 
 
