@@ -124,6 +124,7 @@ def versions(pid: str) -> list[dict]:
         comparison = thumbnail_compare.describe(pid, path.name, comparisons)
         legacy = re.match(r'\[Правка (Превью (?:до )?v[1-9][0-9]*\.png)\]', head)
         if not comparison and legacy:comparison = {'kind':'edit','base':legacy.group(1)}
+        if LOGO_EDIT.match(head):comparison = None   # only the channel's logo laid on: nothing to compare (19 November 2026)
         try:drawn = json.loads((work / (path.stem + ".json")).read_text())
         except (OSError, ValueError):drawn = {}
         items.append({"name": path.name, "number": number, "earlier": " до " in path.name, "writer": writer,
