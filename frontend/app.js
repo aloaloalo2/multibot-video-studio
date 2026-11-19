@@ -622,10 +622,12 @@ function completionMark(project){
   // on YouTube: the card says the day the video goes out, «24 листопада», not when it was exported (user, 19 November 2026)
   const out=String(project.published?.scheduled||'').match(/^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/);
   const outDate=out?new Date(+out[1],+out[2]-1,+out[3],+out[4],+out[5]):null;
+  // published with no known release date (an old Finder mark): no date at all rather than the export's «Сьогодні»
   const age=outDate?`<time class="project-stage-date" datetime="${out[1]}-${out[2]}-${out[3]}" title="${esc(publishedLabel)}">${esc(outDate.toLocaleDateString('uk-UA',{day:'numeric',month:'long'}))}</time>`
+    :project.published?.at?''
     :when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
   // the release date stands after the blue «published» check (user, 19 November 2026)
-  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}${outDate?age:''}</span>${publish}`;
+  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}${published?'':'<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>'}${published}${outDate?age:''}</span>${publish}`;   // the blue check replaces the export's (user, 19 November 2026)
 }
 async function markProjectSeen(id){
   const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;

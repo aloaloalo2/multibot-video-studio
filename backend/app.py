@@ -2248,6 +2248,8 @@ def main():
         if isinstance(result, dict) and result.get("error"):
             print(f"Technical file migration of {pid}: {result['error']}", flush=True)
     threading.Thread(target=update_loop, daemon=True).start()
+    import youtube_dates   # release dates of episodes marked published by Finder's blue tag, from the channels' feeds
+    youtube_dates.start()
     # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
     threading.Thread(target=warm_project_cache, daemon=True).start()
     threading.Thread(target=style_lab.warm, daemon=True).start()
