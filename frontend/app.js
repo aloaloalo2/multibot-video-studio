@@ -423,6 +423,31 @@ function projectActions(project,current=()=>project){
   return actions;
 }
 
+// «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати»): the episode goes into the studio's queue;
+// the publishing Claude session listens with tools/youtube_publish.py wait and starts at once in the built-in browser
+// (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
+// The task for a new Claude Code session: publish this episode, then wait for the next ones
+function youtubeSessionTask(project,root){
+  return `Опублікуй на YouTube випуск «${project.name}» (проєкт студії ${project.id}), він уже в черзі студії. `
+    +`Порядок і правила: ${root}/docs/YOUTUBE_PUBLISH.md, інструмент: python3 "${root}/tools/youtube_publish.py". `
+    +'Після публікації стань сесією публікації: запусти у фоні (Bash, run_in_background) wait і, коли він закінчиться, публікуй наступний випуск з черги так само.';
+}
+// «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати», «створюється нова сесія і все»): the
+// episode goes into the studio's queue. A publishing session that already waits (tools/youtube_publish.py wait) takes it
+// in a few seconds; with none on this Mac the button opens a new Claude Code session with the task filled in
+// (claude://code/new?prompt=…), and the author only presses Enter. The card reads «У черзі на публікацію»,
+// «Публікація», then the blue check.
+async function openYoutubePublish(project){
+  try{
+    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/youtube-publish`,'POST',{});
+    await refreshProjects().catch(()=>{});
+    if(result.listener){status('Випуск у черзі. Сесія публікації візьме його за кілька секунд.');return;}
+    const link='claude://code/new?source=desktop_action&prompt='+encodeURIComponent(youtubeSessionTask(project,result.studio_root));
+    const anchor=document.createElement('a');anchor.href=link;document.body.append(anchor);anchor.click();anchor.remove();
+    status('Відкриваю нову сесію Claude із завданням. Натисніть у ній Enter.');
+  }catch(error){status(error.message,true);}
+}
+
 const overviewProjectRequests=new Map();
 async function refreshProjects(){
   const channelId=state.channel?.id;if(!channelId)return;
@@ -572,10 +597,15 @@ function completionMark(project){
   // the second, bright check: the episode is on YouTube (its folder got Finder's blue tag; the studio keeps the mark
   // even when the folder is gone) (user, 16 November 2026)
   const published=project.published?.at?`<svg class="published-check" viewBox="0 0 20 20" role="img" aria-label="Опубліковано на YouTube"><title>Опубліковано на YouTube</title><path d="m4 10 4 4 8-8"/></svg>`:'';
+  // after the export: a blue «Опублікувати» (user, 19 November 2026: «синю кнопку після неї… опублікувати на YouTube…
+  // після натискання йде публікація»); «Публікація» while tools/youtube_publish.py works, the blue check once it is done
+  const publish=stage==='export'&&!published?(project.publishing
+    ?`<span class="project-publishing">${exportSpinner}<span>${project.publishing==='queued'?'У черзі на публікацію':'Публікація'}</span></span>`
+    :'<span class="project-publish" role="button" tabindex="0" title="Опублікувати на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Опублікувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
   const age=when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
-  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}</span>`;
+  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${age}${stage==='export'?'':`<span>${label}</span>`}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>${published}</span>${publish}`;
 }
 async function markProjectSeen(id){
   const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;

@@ -1448,6 +1448,7 @@ class Handler(BaseHTTPRequestHandler):
                 item['completion_notice'] = completion_notices.notice(project, receipts)
                 item['ready_stage'] = completion_notices.ready_stage(project, receipts, item)
                 item['published'] = published.check(item)   # the blue Finder tag, kept even without the folder
+                item['publishing'] = published.publishing(item)   # tools/youtube_publish.py prepare is at work
                 item['episode_paused'] = episode_pause.resumable(item['id'])
                 item['episode_pause_label'] = episode_pause.label(item['id']) if item['episode_paused'] else None
                 if (item.get('production_request') or {}).get('status') in {'requested', 'in_progress'} and item['id'] not in production.ACTIVE:
@@ -1905,6 +1906,9 @@ class Handler(BaseHTTPRequestHandler):
             import production_edits
             return self.json_response(production_edits.cancel(match.group(1),match.group(2)) if match.group(2) else
                 production_edits.enqueue(match.group(1),body.get('notes'),body.get('frame_numbers'),body.get('client_id')),202)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/youtube-publish", path)
+        if match and method == "POST":
+            return self.json_response(published.enqueue(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
         if match and method == "POST":
             limit = body.get("codex_limit") if isinstance(body, dict) else None

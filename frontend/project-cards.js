@@ -17,7 +17,9 @@ function createProjectCard(project){
   const current=()=>card._project;
   const open=document.createElement('button');open.type='button';open.className='project-open';
   open.innerHTML='<div class="project-title-spacer" aria-hidden="true"></div><div class="project-export-state" hidden></div><div class="project-meta"><span class="project-created-group"></span></div>';
-  open.addEventListener('click',()=>{
+  open.addEventListener('click',event=>{
+    // the blue «Опублікувати» beside the export check opens the publication task, not the episode
+    if(event.target.closest('.project-publish')){event.stopPropagation();openYoutubePublish(current());return;}
     const latest=current(),count=latest.scene_count??latest.scenes?.length??0;
     selectProject(latest.id,{view:directMontage(latest)||count?'editor':'plan'}).catch(error=>status(error.message,true));
   });

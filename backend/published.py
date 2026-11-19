@@ -66,3 +66,52 @@ def check(item: dict) -> dict | None:
             pass
         return saved
     return None
+
+
+PUBLISHING_HOURS = 3   # a publication session that never said «done» stops showing «Публікація» after this
+
+
+def queue_path() -> Path:
+    return store.DATA_ROOT / 'youtube-queue.json'
+
+
+def queue() -> list:
+    rows = store.read_json(queue_path(), [])
+    return rows if isinstance(rows, list) else []
+
+
+def listener() -> bool:
+    """A publishing session on this Mac waits with tools/youtube_publish.py wait: its process is alive. Another Mac has
+    none until the author starts one (user, 19 November 2026: «а на іншому комп'ютері… може не буде така сесія»)."""
+    import os
+    pid = (store.read_json(store.DATA_ROOT / 'youtube-listener.json', {}) or {}).get('pid')
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def enqueue(pid: str) -> dict:
+    """«Опублікувати» on the card: the episode waits for the publishing session, which listens with
+    `tools/youtube_publish.py wait` (user, 19 November 2026: «просто відправити в Клод, щоб він опублікував»)."""
+    project = store.load_project(pid)
+    if (store.read_json(path(pid), {}) or {}).get('at'):
+        raise store.StudioError('Цей випуск уже опубліковано', 409)
+    rows = [row for row in queue() if row.get('project') != pid]
+    rows.append({'project': pid, 'channel_id': project.get('channel_id'), 'at': time.time()})
+    store.atomic_json(queue_path(), rows)
+    return {'queued': True, 'position': len(rows), 'listener': listener(), 'studio_root': str(store.APP_ROOT)}
+
+
+def publishing(item: dict) -> str | None:
+    """'queued' while the episode waits for the publishing session, 'publishing' once tools/youtube_publish.py prepare
+    has started on it, None otherwise or once it is on YouTube."""
+    if (item.get('published') or {}).get('at'):
+        return None
+    if any(row.get('project') == item['id'] for row in queue()):
+        return 'queued'
+    started = (store.read_json(store.project_dir(item['id']) / 'publishing.json', {}) or {}).get('at') or 0
+    return 'publishing' if time.time() - float(started) < PUBLISHING_HOURS * 3600 else None

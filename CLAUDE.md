@@ -93,6 +93,12 @@ First read the current project's `plan_mode`. With `direct` («Без плану
   `POST /api/projects/<id>/ops`, `POST /api/projects/<id>/still`, `GET /api/projects/<id>/exports` (backend/README.md).
 - Starting an export (`POST /api/projects/<id>/export`) is the user's button: do it only when asked.
 
+## Publishing on YouTube
+
+The blue «Опублікувати» beside an exported episode's check gives a task for a new Claude session. The session follows
+docs/YOUTUBE_PUBLISH.md: `python3 tools/youtube_publish.py prepare P` (export, cover, metadata, a local file server),
+YouTube Studio in the built-in browser, then `done P VIDEO_ID "date time"` (the card's blue check) and `stop`.
+
 ## Rules that are easy to break
 
 - Frames of Razgon 2D animation stay code until the user presses «Експорт MP4»: put them on the timeline as
