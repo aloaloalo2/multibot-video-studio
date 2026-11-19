@@ -224,7 +224,7 @@ function renderChannelNotices(){
     const busy=channelActivity.has(id),unread=notice&&notice.id!==notice.seen&&notice.status!=='paused';
     const stopped=notice?.status==='stopped';
     badge.hidden=!busy&&!unread;
-    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':busy&&channelPublishing.has(id)&&!channelWork[id]?.length?' is-publishing':'');
+    badge.className='channel-busy'+(!busy&&unread?(stopped?' is-stopped':notice.publish?' is-complete is-published':' is-complete'):'')+(busy&&channelExporting.has(id)?' is-exporting':busy&&channelPublishing.has(id)&&!channelWork[id]?.length?' is-publishing':'');
     badge.innerHTML=!busy&&unread?StudioUI.icon(stopped?'pause':'check'):'';
     const label=busy&&channelExporting.has(id)?'У каналі йде експорт':busy&&channelPublishing.has(id)&&!channelWork[id]?.length?'У каналі йде публікація на YouTube':busy&&channelWork[id]?.length?`У каналі йде: ${channelWork[id].join(' · ')}`:busy?'У каналі триває робота':stopped?'Робота зупинилась сама':'Роботу завершено';
     badge.setAttribute('aria-label',label);badge.title=label;
@@ -601,7 +601,15 @@ function completionMark(project){
   const label={openings:'Зачини',script:'Сценарій',voice:'Озвучка',plan:'План кадрів',frames:'Кадри',export:'Експорт'}[stage];
   // the second, bright check: the episode is on YouTube (its folder got Finder's blue tag; the studio keeps the mark
   // even when the folder is gone) (user, 16 November 2026)
-  const published=project.published?.at?`<svg class="published-check" viewBox="0 0 20 20" role="img" aria-label="Опубліковано на YouTube"><title>Опубліковано на YouTube</title><path d="m4 10 4 4 8-8"/></svg>`:'';
+  // the check says when the video goes out (user, 19 November 2026: «не опубліковано на YouTube, а… заплановано на і дату»)
+  const publishedLabel=(()=>{
+    const when=String(project.published?.scheduled||'').match(/^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/);
+    if(!when)return 'Опубліковано на YouTube';
+    const date=new Date(+when[1],+when[2]-1,+when[3],+when[4],+when[5]);
+    const text=`${date.toLocaleDateString('uk-UA',{day:'numeric',month:'long'})} о ${when[4]}:${when[5]}`;
+    return date.getTime()>Date.now()?`Заплановано на YouTube на ${text}`:`Опубліковано на YouTube ${text}`;
+  })();
+  const published=project.published?.at?`<svg class="published-check" viewBox="0 0 20 20" role="img" aria-label="${esc(publishedLabel)}"><title>${esc(publishedLabel)}</title><path d="m4 10 4 4 8-8"/></svg>`:'';
   // after the export: a blue «Опублікувати» (user, 19 November 2026: «синю кнопку після неї… опублікувати на YouTube…
   // після натискання йде публікація»); «Публікація» while tools/youtube_publish.py works, the blue check once it is done
   const publish=stage==='export'&&!published?(project.publishing==='stopped'

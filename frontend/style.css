@@ -3028,3 +3028,4 @@ select option{background:#232327;color:#f1f1f2}
 .project-publish svg path{fill:currentColor;stroke:none}
 .project-publishing{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:#7fb3ff;font-size:11.5px;font-weight:600}
 .project-publish-stopped{margin-left:8px;color:#f0c967;font-size:11.5px;font-weight:600}
+.channel-busy.is-complete.is-published,.channel-busy.is-complete.is-published svg{color:#7fb3ff}

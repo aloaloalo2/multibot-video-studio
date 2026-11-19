@@ -838,6 +838,8 @@ def channel_task_outcome(task):
     kind, cid, pid = task['kind'], task['channel_id'], task.get('project_id')
     if kind == 'експорт':
         return load_job(task['job_id']).get('status')
+    if kind == 'публікація':   # on YouTube: done with its blue check, otherwise it stopped
+        return 'done' if (store.read_json(published.path(pid), {}) or {}).get('at') else 'stopped'
     if kind == 'зразок голосу':
         return store.read_json(channel_voice_lab.folder(cid) / 'job.json', {}).get('status')
     if kind == 'зразок перекладу':
@@ -871,6 +873,12 @@ def channel_completion_status(result, exports):
         tasks.append({'channel_id': cid, 'kind': 'зразок голосу'})
     for cid, code in channel_translation_voices.ACTIVE.copy():
         tasks.append({'channel_id': cid, 'kind': 'зразок перекладу', 'language': code})
+    for pid, cid in published.active_projects().items():
+        tasks.append({'channel_id': cid, 'project_id': pid, 'kind': 'публікація'})
+    try:
+        published.ensure_session()   # a queue nobody takes opens a publishing session
+    except Exception:
+        pass
     result['channel_notices'] = channel_activity.notices.update(result['active_channels'], tasks, channel_task_outcome)
     return result
 
@@ -947,6 +955,8 @@ def studio_work_status(exports):
     for job in exports:
         if job.get('status') in agent_view.BUSY and job.get('project_id'):
             working.setdefault(job['project_id'], None)
+    for pid, cid in published.active_projects().items():   # queued for or going through its YouTube publication
+        working.setdefault(pid, cid)
     counts = {}
     for pid, cid in working.items():
         if not cid:

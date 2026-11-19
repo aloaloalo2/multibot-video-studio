@@ -179,11 +179,10 @@ def stopped_note(pid: str) -> str:
     return state.get('failed') or (f"Остання дія: {state['step']}" if state.get('step') else '')
 
 
-def active_channels() -> set:
-    """Channels with an episode in the YouTube queue or being published: their spinner turns in the sidebar (user,
-    19 November 2026: «вийде публікація… спінер на каналі… нема його»). A publication never blocks a studio restart:
-    it runs in its own Claude session."""
-    found = {row.get('channel_id') for row in queue() if row.get('channel_id')}
+def active_projects() -> dict:
+    """{project id: channel id} of the episodes in the YouTube queue or being published (user, 19 November 2026: their
+    channel's spinner turns and counts them). A publication never blocks a studio restart: it runs in its own session."""
+    found = {row['project']: row.get('channel_id') for row in queue() if row.get('project')}
     for marker in store.PROJECTS_ROOT.glob('*/publishing.json'):
         pid = marker.parent.name
         try:
@@ -191,5 +190,31 @@ def active_channels() -> set:
         except (OSError, ValueError, store.StudioError):
             continue
         if publishing({**item, 'id': pid, 'published': store.read_json(path(pid), None)}) == 'publishing':
-            found.add(item.get('channel_id'))
-    return {cid for cid in found if cid}
+            found[pid] = item.get('channel_id')
+    return {pid: cid for pid, cid in found.items() if cid}
+
+
+def active_channels() -> set:
+    return set(active_projects().values())
+
+
+STALL_SECONDS = 60
+
+
+def ensure_session() -> bool:
+    """Episodes wait in the queue and nobody takes them (a session that stopped and did not wait again, the app restarted):
+    the studio opens one new publishing session itself (user, 19 November 2026: «у черзі на публікацію висить… і нічого
+    не відбувається»). Called with the studio's status, so within seconds; at most one session per STARTING_MINUTES."""
+    rows = queue()
+    if not rows or time.time() - float(rows[0].get('at') or 0) < STALL_SECONDS or listener() or in_progress():
+        return False
+    starting = store.DATA_ROOT / 'youtube-session-opened.json'
+    if time.time() - float((store.read_json(starting, {}) or {}).get('at') or 0) < STARTING_MINUTES * 60:
+        return False
+    try:
+        project = store.load_project(rows[0]['project'])
+    except store.StudioError:
+        store.atomic_json(queue_path(), rows[1:])   # a deleted episode leaves the queue
+        return False
+    store.atomic_json(starting, {'at': time.time()})
+    return open_claude(project)

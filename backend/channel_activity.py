@@ -37,7 +37,10 @@ class Notices:
                     status = 'paused'
                 else:
                     status = 'stopped'
-                self.finished[cid] = {'id': str(time.time_ns()), 'status': status}
+                # a channel whose finished work was only YouTube publications shows its check in the publication's blue
+                # (user, 19 November 2026: «галочка такого кольору теж… біля каналу»)
+                only_publishing = all(task.get('kind') == 'публікація' for task in self.running[cid].values())
+                self.finished[cid] = {'id': str(time.time_ns()), 'status': status, **({'publish': True} if only_publishing else {})}
                 del self.running[cid]
             return {cid: dict(value) for cid, value in self.finished.items()}
 

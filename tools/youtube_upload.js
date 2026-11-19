@@ -1,11 +1,14 @@
 // The YouTube Studio side of a publication (docs/YOUTUBE_PUBLISH.md). Run this whole file once with the built-in
-// browser's javascript_tool on studio.youtube.com; it defines window.__vk. Each step waits for its part of the upload
-// dialog and returns a short JSON answer, so a publication is a few calls instead of dozens of clicks (user, 19 November
-// 2026: «щоб завантаження було чітко… і не було шансів на збій»). The selectors are the ones the first publications
-// used (Космос PRO, 19 November 2026).
+// browser's javascript_tool on studio.youtube.com; it defines window.__vk. Every step waits for its part of the page and
+// answers JSON with `ok`, so a publication is a dozen calls and no hand clicks (user, 19 November 2026: «щоб не було
+// права на помилку… щоб все він знав, що робити»).
+//
+// Nothing here reads a button's caption: Studio may speak Russian, Ukrainian or English (user: «в когось браузер на
+// український, когось на англійський»). Elements are found by id, test-id, name and position. Every selector was tried
+// on a real draft on 19 November 2026 (Николай Ветров, «Мы нашли сверхбыстро мигающий объект…», scheduled 21.11 15:00).
 (() => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const visible = el => !!el && el.offsetParent !== null;
+  const shown = el => !!el && el.offsetParent !== null;
   async function until(find, ms = 20000) {
     const end = Date.now() + ms;
     for (;;) {
@@ -15,19 +18,17 @@
       await sleep(300);
     }
   }
-  const dialog = () => document.querySelector('ytcp-uploads-dialog');
   const text = el => (el?.innerText || '').replace(/\s+/g, ' ').trim();
+  const enter = el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, composed: true }));
 
-  async function setText(selector, value) {
-    const el = await until(() => document.querySelector(selector));
-    if (!el) return false;
+  function write(el, value) {
     el.focus();
     document.execCommand('selectAll', false, null);
     document.execCommand('insertText', false, value);
     return text(el) === value.replace(/\s+/g, ' ').trim();
   }
 
-  // a file from the studio's local server into a file field; no Finder window, no browser cache
+  // a file from the studio's local server into a file field: no Finder window, no browser cache
   async function attach(selector, url, name, type) {
     const input = await until(() => document.querySelector(selector));
     if (!input) return { ok: false, error: 'no file field ' + selector };
@@ -42,85 +43,189 @@
   }
 
   window.__vk = {
-    // the dialog through Studio's own buttons («Создать» → «Добавить видео»), not by address
-    async open() {
-      if (visible(dialog())) return { ok: true, already: true };
-      const create = await until(() => document.querySelector('ytcp-button#create-icon, #create-icon'));
-      if (!create) return { ok: false, error: 'no Create button: is this studio.youtube.com of the right channel?' };
-      create.click();
-      const item = await until(() => [...document.querySelectorAll('tp-yt-paper-item')]
-        .find(e => visible(e) && /Добавить видео|Загрузить видео|Upload videos|Завантажити відео/i.test(text(e))), 5000);
-      if (!item) return { ok: false, error: 'no «Добавить видео» item' };
-      item.click();
-      const field = await until(() => document.querySelector('input[type=file][name=Filedata]'));
-      return { ok: !!field };
+    // the channel shown in Studio's header: compare it with the episode's channel before anything else
+    channel() {
+      return { name: text(document.querySelector('ytcp-header #entity-name, #entity-name, ytcp-account-menu #channel-title')) || document.title,
+               url: location.href };
     },
-    // the video file; returns at once, the upload itself goes on in Studio
+    // a draft of this title already in «Контент» (an earlier attempt): its video id, to continue it instead of uploading again
+    draft(title) {
+      // a row of the content list by its title; the id is in its thumbnail's address (/vi/<id>/), the rows carry no links
+      const row = [...document.querySelectorAll('ytcp-video-row')].find(r => text(r.querySelector('#video-title')) === title.trim());
+      const id = row && (row.innerHTML.match(/\/vi\/([\w-]{11})\//) || [])[1];
+      return { found: !!id, video_id: id || null };
+    },
+    // the upload dialog of a new video («Создать» → upload), or of a draft by its id
+    async open(draftId) {
+      if (draftId) {
+        const base = location.pathname.match(/\/channel\/[\w-]+/)?.[0];
+        if (!base) return { ok: false, error: 'not on a channel page of studio.youtube.com' };
+        location.href = `https://studio.youtube.com${base}/videos/upload?d=ud&udvid=${draftId}`;
+        return { ok: true, reloading: true, next: 'run this file again, then continue with details()' };
+      }
+      if (shown(document.querySelector('ytcp-uploads-dialog'))) return { ok: true, already: true };
+      const create = await until(() => document.querySelector('ytcp-button.ytcpAppHeaderCreateIcon, ytcp-button#create-icon, #create-icon'));
+      if (!create) return { ok: false, error: 'no Create button' };
+      create.click();
+      const item = await until(() => [...document.querySelectorAll('tp-yt-paper-item[test-id="upload"]')].find(shown), 6000);
+      if (!item) return { ok: false, error: 'no upload item in the Create menu' };
+      item.click();
+      return { ok: !!(await until(() => document.querySelector('input[type=file][name=Filedata]'))) };
+    },
     video: (url, name) => attach('input[type=file][name=Filedata]', url, name, 'video/mp4'),
     async details(title, description) {
-      const t = await setText('#title-textarea #textbox', title);
-      const d = await setText('#description-textarea #textbox', description);
-      return { ok: t && d, title: t, description: d };
+      const t = await until(() => document.querySelector('#title-textarea #textbox'));
+      const d = await until(() => document.querySelector('#description-textarea #textbox'));
+      if (!t || !d) return { ok: false, error: 'no title or description field' };
+      const a = write(t, title), b = write(d, description);
+      return { ok: a && b, title: a, description: b };
     },
     async cover(url) {
-      const shown = await attach('ytcp-thumbnail-uploader input[type=file]', url, 'cover.png', 'image/png');
+      const done = await attach('ytcp-thumbnail-uploader input[type=file]', url, 'cover.png', 'image/png');
       await sleep(2500);
-      return shown;
+      return done;
     },
     async notForKids() {
       const radio = await until(() => document.querySelector('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]'));
       if (!radio) return { ok: false, error: 'no audience choice' };
       radio.click();
-      const more = [...document.querySelectorAll('ytcp-button')].find(e => /^(Развернуть|Показать все|Show more|Показати більше)$/i.test(text(e)));
-      if (more) more.click();
-      await sleep(600);
-      return { ok: radio.getAttribute('aria-checked') === 'true' };
+      const more = document.querySelector('ytcp-button#toggle-button');
+      if (more && !document.querySelector('#tags-container')) more.click();
+      await sleep(800);
+      return { ok: radio.getAttribute('aria-checked') === 'true', tags_field: !!document.querySelector('#tags-container') };
     },
-    // the tag field: the session types the tags itself (computer type, comma at the end); this focuses and reads it
-    async tagsField() {
-      const input = await until(() => document.querySelector('#tags-container input'), 8000);
-      if (!input) return { ok: false, error: 'no tags field' };
-      input.scrollIntoView({ block: 'center' });
-      input.focus();
-      return { ok: true };
+    // the tags as chips, typed by script (the field takes «tag,» + Enter); answers the chips Studio shows
+    async tags(list) {
+      const box = await until(() => document.querySelector('#tags-container'), 8000);
+      if (!box) return { ok: false, error: 'no tags field (call notForKids first, it opens «more»)' };
+      const input = box.querySelector('input');
+      const have = new Set([...box.querySelectorAll('ytcp-chip')].map(c => text(c).toLowerCase()));
+      for (const tag of list) {
+        if (have.has(tag.toLowerCase())) continue;
+        input.focus();
+        document.execCommand('insertText', false, tag + ',');
+        enter(input);
+        await sleep(250);
+      }
+      input.blur();
+      await sleep(500);
+      const chips = [...box.querySelectorAll('ytcp-chip')].map(c => text(c));
+      return { ok: list.every(tag => chips.some(c => c.toLowerCase() === tag.toLowerCase())), chips };
     },
-    tags() {
-      const box = document.querySelector('#tags-container');
-      return { chips: box ? box.querySelectorAll('ytcp-chip').length : 0, text: text(box).slice(0, 300) };
+    // the playlist with exactly this name; none of that name: { ok: false, playlists } (skip it then)
+    async playlist(name) {
+      const field = await until(() => document.querySelector('ytcp-video-metadata-playlists'));
+      if (!field) return { ok: false, error: 'no playlist field' };
+      field.scrollIntoView({ block: 'center' });
+      (field.querySelector('ytcp-text-dropdown-trigger') || field).click();
+      const dialog = await until(() => { const d = document.querySelector('ytcp-playlist-dialog'); return shown(d?.querySelector('ytcp-checkbox-lit')) && d; }, 8000);
+      if (!dialog) return { ok: false, error: 'the playlist list did not open' };
+      const boxes = [...dialog.querySelectorAll('ytcp-checkbox-lit')];
+      const label = box => text(box.closest('li,label,div'));
+      const box = boxes.find(b => label(b) === name.trim());
+      if (box && box.getAttribute('aria-checked') !== 'true' && box.querySelector('[aria-checked]')?.getAttribute('aria-checked') !== 'true') box.click();
+      await sleep(400);
+      dialog.querySelector('ytcp-button.done-button')?.click();
+      await sleep(900);
+      return { ok: !!box, playlists: boxes.map(label).slice(0, 20), field: text(field) };
+    },
+    // A/B test of the titles: the first is the title itself, the others go to the next fields; saved with the dialog
+    async abTitles(titles) {
+      const button = await until(() => [...document.querySelectorAll('ytcp-button#ab-test-button')].find(shown), 6000);
+      if (!button) return { ok: false, skipped: true, error: 'no A/B test on this channel or video: skip it' };
+      button.scrollIntoView({ block: 'center' });
+      button.querySelector('button')?.click() || button.click();
+      const dialog = await until(() => [...document.querySelectorAll('ytcp-dialog')].find(d => shown(d.querySelector('#set-test-button'))), 8000);
+      if (!dialog) return { ok: false, error: 'the A/B dialog did not open' };
+      const radios = [...dialog.querySelectorAll('tp-yt-paper-radio-button, [role=radio]')].filter(shown);
+      if (radios[0] && radios[0].getAttribute('aria-checked') !== 'true') { radios[0].click(); await sleep(600); }   // titles only
+      const boxes = [...dialog.querySelectorAll('ytcp-social-suggestions-textbox #textbox')].filter(shown);
+      const written = titles.slice(0, boxes.length).map((title, i) => (text(boxes[i]) === title.trim() ? true : write(boxes[i], title)));
+      await sleep(500);
+      dialog.querySelector('#set-test-button')?.click();
+      await sleep(1500);
+      return { ok: written.every(Boolean), fields: boxes.length, closed: !shown(dialog.querySelector('#set-test-button')) };
     },
     progress() {
-      return { upload: text(document.querySelector('ytcp-video-upload-progress')).slice(0, 120),
-               step: text(document.querySelector('ytcp-stepper [aria-selected=true]')) };
+      return { upload: text(document.querySelector('ytcp-video-upload-progress')).slice(0, 120) };
     },
-    // «Далее» up to the «Доступ» step
+    // «Далее» up to «Доступ», «Приватное», the schedule opened
     async toVisibility() {
-      for (let i = 0; i < 4; i++) {
-        if (await until(() => document.querySelector('#privacy-radios'), 1500)) break;
+      for (let i = 0; i < 5 && !shown(document.querySelector('#privacy-radios')); i++) {
         document.querySelector('#next-button')?.click();
-        await sleep(1200);
+        await sleep(1500);
       }
-      const radios = document.querySelector('#privacy-radios');
-      if (!radios) return { ok: false, error: 'did not reach the visibility step' };
-      radios.querySelector('tp-yt-paper-radio-button[name=PRIVATE]')?.click();
-      const expand = document.querySelector('#second-container-expand-button');
-      if (expand) expand.click();
-      const picker = await until(() => document.querySelector('ytcp-datetime-picker'), 6000);
-      picker?.scrollIntoView({ block: 'center' });
-      return { ok: !!picker, picker: text(picker) };
-    },
-    schedule() {
+      if (!shown(document.querySelector('#privacy-radios'))) return { ok: false, error: 'did not reach the visibility step' };
+      if (!shown(document.querySelector('ytcp-datetime-picker #datepicker-trigger'))) {
+        document.querySelector('#second-container-expand-button')?.click();
+        await sleep(1000);
+      }
       const picker = document.querySelector('ytcp-datetime-picker');
-      return { picker: text(picker), time: picker?.querySelector('input')?.value, button: text(document.querySelector('#done-button')),
-               upload: text(document.querySelector('ytcp-video-upload-progress')).slice(0, 120) };
+      return { ok: shown(picker), date: text(picker?.querySelector('#datepicker-trigger')) };
+    },
+    // the date ('2026-11-21') in the calendar and the time ('15:00', on the quarter hour) in the time list
+    async schedule(date, time) {
+      const [y, m, d] = date.split('-').map(Number), [hh, mm] = time.split(':').map(Number);
+      const picker = document.querySelector('ytcp-datetime-picker');
+      if (!picker) return { ok: false, error: 'call toVisibility first' };
+      picker.querySelector('#datepicker-trigger').click();
+      const calendar = await until(() => { const c = document.querySelector('ytcp-date-picker #calendar-main'); return shown(c) && c; }, 6000);
+      if (!calendar) return { ok: false, error: 'the calendar did not open' };
+      const now = new Date(), months = [...calendar.querySelectorAll('.calendar-month')];
+      const offset = (y - now.getFullYear()) * 12 + (m - 1) - now.getMonth();   // the calendar starts at this month
+      const day = months[offset] && [...months[offset].querySelectorAll('.calendar-day')].find(s => s.textContent.trim() === String(d) && !s.classList.contains('disabled'));
+      if (!day) return { ok: false, error: 'that day is not open in the calendar (past, or too far)' };
+      day.click();
+      await sleep(800);
+      const input = picker.querySelector('#time-of-day-container input');
+      input.click();
+      input.focus();
+      const items = await until(() => { const list = [...document.querySelectorAll('tp-yt-paper-item')].filter(e => shown(e) && /\d:\d\d/.test(text(e))); return list.length >= 96 && list; }, 6000);
+      if (!items || mm % 15) return { ok: false, error: 'the time list did not open or the time is not on a quarter hour' };
+      items[hh * 4 + mm / 15].click();   // 00:00, 00:15, … in any language and clock format
+      await sleep(800);
+      return { ok: true, date: text(picker.querySelector('#datepicker-trigger')), time: input.value };
+    },
+    // the AI-content question is never answered (the author's rule); this only reports it
+    aiQuestion() {
+      return [...document.querySelectorAll('tp-yt-paper-radio-button')].filter(e => /ALTERED|SYNTHETIC|SELF_DECLARED/i.test(e.getAttribute('name') || ''))
+        .map(e => e.getAttribute('name') + ':' + e.getAttribute('aria-checked'));
+    },
+    // the end screen on the video's edit page (studio.youtube.com/video/<id>/edit): Studio's first template, one video and
+    // the «Subscribe» button over the last 20 seconds (user, 19 November 2026: «кінечну заставку треба ще ставити»);
+    // a video that has one keeps it
+    async endScreen() {
+      const big = el => !!el && el.getBoundingClientRect().width > 0;   // the editor's buttons have no offsetParent
+      const link = await until(() => document.querySelector('#endscreen-editor-link'), 15000);
+      if (!link) return { ok: false, error: 'no end-screen link: open studio.youtube.com/video/<id>/edit and run this file again' };
+      link.scrollIntoView({ block: 'center' });
+      link.click();
+      const modal = await until(() => { const m = document.querySelector('ytve-endscreen-modal'); return big(m?.querySelector('ytve-endscreen-editor-timeline')) && m; }, 60000);   // a long video loads its editor slowly
+      if (!modal) return { ok: false, error: 'the end-screen editor did not open' };
+      await sleep(2000);
+      const timeline = () => text(modal.querySelector('ytve-endscreen-editor-timeline'));   // «Подписаться: … | Видео: …»
+      const existing = timeline();
+      if (!existing) {
+        const card = await until(() => [...modal.querySelectorAll('ytve-endscreen-template-picker .card')].find(big), 8000);
+        if (!card) return { ok: false, error: 'no end-screen templates' };
+        card.click();
+        if (!(await until(() => timeline(), 8000))) return { ok: false, error: 'the template did not apply' };
+      }
+      const elements = timeline();
+      modal.querySelector(existing ? '#discard-button' : '#save-button').click();
+      const closed = await until(() => !big(modal.querySelector('ytve-endscreen-editor-timeline')), 15000);
+      return { ok: !!closed, kept_existing: !!existing, elements };
     },
     async finish() {
       const done = document.querySelector('#done-button');
       if (!done) return { ok: false, error: 'no schedule button' };
       done.click();
-      const said = await until(() => (document.body.innerText.match(/Видео запланировано[^\n]*|Video scheduled[^\n]*|Відео заплановано[^\n]*/) || [])[0], 15000);
-      const link = [...document.querySelectorAll('a')].map(a => a.href).find(h => /youtu\.be\/|watch\?v=/.test(h)) || '';
-      const id = (link.match(/(?:youtu\.be\/|v=)([\w-]{11})/) || [])[1] || null;
-      return { ok: !!said, said, video_id: id };
+      const link = await until(() => [...document.querySelectorAll('a')].map(a => a.href).find(h => /youtu\.be\/[\w-]{11}/.test(h)), 20000);
+      const id = link && (link.match(/youtu\.be\/([\w-]{11})/) || [])[1];
+      // the «scheduled» window: close it
+      await sleep(800);
+      [...document.querySelectorAll('ytcp-video-share-dialog ytcp-button, ytcp-uploads-still-processing-dialog ytcp-button')].find(shown)?.click();
+      return { ok: !!id, video_id: id || null };
     },
   };
   return 'window.__vk ready: ' + Object.keys(window.__vk).join(', ');

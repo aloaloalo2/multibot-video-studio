@@ -8,6 +8,7 @@ into YouTube Studio's file inputs by a script.
 
     python3 tools/youtube_publish.py wait                 # waits for the card's «Опублікувати» and prints the project id
     python3 tools/youtube_publish.py prepare P            # the export, cover and metadata; starts the local file server
+    python3 tools/youtube_publish.py slot 2026-11-20      # date and time of the next video after that day («none»: none yet)
     python3 tools/youtube_publish.py step P "що зроблено"   # marks a step; quiet for 15 min = «зупинилась» on the card
     python3 tools/youtube_publish.py failed P "причина"     # the card reads «Публікація зупинилась» with «Продовжити»
     python3 tools/youtube_publish.py stop                 # stops the file server
@@ -128,6 +129,24 @@ def serve(files: dict) -> str:
     return f"http://127.0.0.1:{PORT}"
 
 
+def slot(last: str, now=None) -> dict:
+    """When the next video of a channel goes out: the day after the last scheduled (or, with none scheduled, the last
+    published) video, but never before today; 15:00, or on today the next quarter hour at least 30 minutes ahead within
+    13:00-18:00, else the next day at 15:00 (user, 19 November 2026: «якщо останній ролик був опублікований вчора… і
+    нових… запланованих немає, то публікуємо… на сьогодні»)."""
+    from datetime import date, datetime, timedelta
+    now = now or datetime.now()
+    day = now.date() if last in ("", "none") else max(date.fromisoformat(last) + timedelta(days=1), now.date())
+    if day == now.date():
+        soonest = now + timedelta(minutes=30)
+        soonest = soonest.replace(second=0, microsecond=0) + timedelta(minutes=(15 - soonest.minute % 15) % 15)
+        start = max(soonest, datetime.combine(day, datetime.min.time()).replace(hour=13))
+        if start.hour < 18 or (start.hour == 18 and start.minute == 0):
+            return {"date": day.isoformat(), "time": start.strftime("%H:%M")}
+        day += timedelta(days=1)
+    return {"date": day.isoformat(), "time": "15:00"}
+
+
 QUEUE = DATA / "youtube-queue.json"   # «Опублікувати» on a card puts the episode here (backend/published.enqueue)
 LISTENER = DATA / "youtube-listener.json"
 
@@ -178,6 +197,8 @@ def main(argv=None) -> int:
             print(json.dumps(prepare(args[1]), ensure_ascii=False, indent=1))
         elif args[:1] == ["wait"]:
             print(wait())
+        elif args[:1] == ["slot"] and len(args) == 2:
+            print(json.dumps(slot(args[1])))
         elif args[:1] == ["queue"]:
             print(json.dumps(read_json(QUEUE, []), ensure_ascii=False))
         elif args[:1] in (["step"], ["failed"]) and len(args) == 3:
