@@ -92,6 +92,30 @@ class SafetyRetryTest(unittest.TestCase):
                 episode_ideas.opus('p', None, 'script-y', 'c', session=dict(session))
         self.assertIn('Фільтр безпеки', str(error.exception))
 
+    def test_a_lost_connection_resumes_the_same_session_again_and_again(self):
+        import episode_ideas, writing_jobs, director
+        from unittest import mock
+        lost = {'is_error': True, 'terminal_reason': 'api_error', 'result': 'API Error: Connection lost mid-response. The response above may be incomplete.'}
+        calls = []
+        def run(cmd, prompt, root, identity, **options):
+            calls.append((cmd, prompt))
+            if len(calls) == 1:
+                return 1, lost
+            return 0, {'result': '{"script":"ok"}', 'session_id': 'first', 'modelUsage': {}}
+        session = {'session_id': 'first', 'model': director.MODEL, 'effort': 'high', 'api_cost_usd': 0}
+        with mock.patch.object(writing_jobs, 'run', side_effect=run), mock.patch.object(writing_jobs, 'check'), \
+             mock.patch.object(episode_ideas.time, 'sleep'):
+            self.assertEqual(episode_ideas.opus('p', None, 'edit-x', 'c', session=session, resume=True), {'script': 'ok'})
+        self.assertEqual(len(calls), 2)
+        self.assertIn('--resume', calls[1][0]); self.assertIn('first', calls[1][0])
+        self.assertTrue(calls[1][1].startswith(episode_ideas.RESEND))
+        with mock.patch.object(writing_jobs, 'run', return_value=(1, lost)) as runs, mock.patch.object(writing_jobs, 'check'), \
+             mock.patch.object(episode_ideas.time, 'sleep'):
+            with self.assertRaises(RuntimeError) as error:
+                episode_ideas.opus('p', None, 'edit-y', 'c', session=dict(session), resume=True)
+        self.assertEqual(runs.call_count, episode_ideas.LOST_RETRIES + 1)   # several drops in a row are retried
+        self.assertIn("обривалось", str(error.exception))
+
     def test_the_writer_gets_no_model_routing_sections(self):
         import writer_context
         text = '## Живая речь\nПиши живо.\n\n## Сценарии только Claude Opus 5.5 Medium\nУсилие medium.\n\n## Теги\nТри тега.'

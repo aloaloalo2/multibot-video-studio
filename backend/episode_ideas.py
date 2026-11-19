@@ -555,7 +555,21 @@ def refused(answer):
     return 'safeguards flagged' in str(answer.get('result') or '') or answer.get('stop_reason') == 'refusal'
 
 
-def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script', _retried=False):
+def lost(answer):
+    """The answer stopped because the connection to Claude dropped mid-stream, not because of Opus or the studio
+    (19 November 2026: a self-review of 2 486 words lost its connection twice, «Opus не завершив відповідь»)."""
+    return answer.get('terminal_reason') == 'api_error' and 'connection lost' in str(answer.get('result') or '').casefold()
+
+
+LOST_RETRIES = 4   # a dropped connection may happen several times in one episode (user, 19 November 2026)
+LOST_WAIT = 20     # seconds before the first retry, more each time
+
+
+RESEND = ("Попередня відповідь обірвалась через втрату з'єднання. Надішли відповідь на попереднє завдання повністю ще раз, "
+          "у тому самому форматі, нічого не скорочуючи й без пояснень про обрив.")
+
+
+def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script', _retried=False, _lost=0):
     # Pure writing: no tools, no old conversation, no access to paid production commands.
     effort = session['effort'] if session else store.channel_effort({'channel_id': cid})
     if getattr(writing_jobs.LOCAL, 'job', None) is not None:
@@ -587,7 +601,20 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
             session.update(session_id=str(uuid.uuid4()), api_cost_usd=0)
         return opus(prompt, root, identity + '-again', cid, session=session, session_cwd=session_cwd,
                     cost_category=cost_category, _retried=True)
+    if (code or answer.get('is_error')) and lost(answer) and _lost < LOST_RETRIES:
+        # the same session from its cache, again after each drop (much cheaper than writing everything anew); the waits
+        # grow so a shaky network has time to settle
+        time.sleep(LOST_WAIT * (_lost + 1))
+        writing_jobs.check()
+        if session:
+            return opus(RESEND, root, f'{identity}-resend{_lost + 1}', cid, session=session, resume=True, session_cwd=session_cwd,
+                        cost_category=cost_category, _retried=_retried, _lost=_lost + 1)
+        return opus(prompt[:-len(NO_TOOLS)], root, f'{identity}-again{_lost + 1}', cid, session_cwd=session_cwd,
+                    cost_category=cost_category, _retried=_retried, _lost=_lost + 1)
     if code or answer.get('is_error'):
+        if lost(answer):
+            raise RuntimeError(f"З'єднання з Claude обривалось {LOST_RETRIES + 1} разів поспіль посеред відповіді. "
+                               'Готові результати збережені. Спробуйте ще раз трохи згодом.')
         if refused(answer):
             # Opus's own safety filter stopped a normal script (15 November 2026, a French space episode,
             # «[reasoning_extraction]»); the message says so itself and a new session usually passes
