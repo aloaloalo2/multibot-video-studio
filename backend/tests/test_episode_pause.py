@@ -49,6 +49,20 @@ class EpisodePauseTest(unittest.TestCase):
         voice.assert_called_once_with(project, "Текст.", resume=True)
         start.assert_called_once_with("p", "script")
 
+    def test_opus_writing_pauses_and_play_starts_the_same_step_again(self):
+        import episode_ideas
+        with patch.object(episode_pause, "running", return_value={"writing": {"stage": "script", "index": 2}}), \
+             patch.object(episode_ideas, "start_project") as start:
+            episode_pause.pause("p")
+        start.assert_called_once_with("p", {"action": "cancel"})
+        self.assertEqual(episode_pause.label("p"), "Сценарій на паузі")
+        with patch.object(episode_ideas, "start_project") as start, patch.object(episode_ideas, "ACTIVE", {}), \
+             patch.object(episode_pause.store, "load_project", return_value={"id": "p"}):
+            episode_pause.resume("p")
+        body = start.call_args[0][1]
+        self.assertEqual((body["action"], body["index"]), ("script", 2))
+        self.assertIsNone(episode_pause.paused("p"))
+
     def test_the_plan_page_pauses_and_resumes_the_voice_and_the_director_each_alone(self):
         import director
         import project_narration

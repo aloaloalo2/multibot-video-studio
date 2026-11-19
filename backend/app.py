@@ -1411,7 +1411,11 @@ class Handler(BaseHTTPRequestHandler):
         draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
         if draft_match:
             import episode_ideas
-            return self.json_response(episode_ideas.public(episode_ideas.read_project(draft_match.group(1))))
+            draft = episode_ideas.public(episode_ideas.read_project(draft_match.group(1)))
+            stopped = (episode_pause.paused(draft_match.group(1)) or {}).get("stopped") or {}
+            if "writing" in stopped and draft.get("status") not in {"queued", "running", "cancelling"}:
+                draft["writing_paused"] = episode_pause.WRITING.get(stopped["writing"].get("stage"), "Сценарій на паузі")
+            return self.json_response(draft)
         if path == "/api/sound-effects":
             import sound_settings
             return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "music_styles": sound_settings.music_catalog(), "library": __import__("sfx_library").catalog(), "library_selection": True})

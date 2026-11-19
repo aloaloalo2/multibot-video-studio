@@ -59,6 +59,15 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     }catch(error){sending=false;signature='';draw(current);report(error,()=>request(payload));}
     finally{sending=false;}
   }
+  async function pauseWriting(what){
+    if(!connected()||sending)return;
+    sending=true;lock();
+    try{await api(`/api/projects/${encodeURIComponent(pid)}/production-${what}`,'POST',{part:'writing'});}
+    catch(error){status(error.message,true);}
+    finally{sending=false;signature='';}
+    refreshProjects().catch(()=>{});
+    setTimeout(poll,what==='pause'?800:300);
+  }
   function controls(data,hasHooks){
     const footer=document.createElement('div');footer.className='episode-draft-actions';
     footer.innerHTML=button('episode-draft-cancel','Скасувати задачу','close')+button('episode-draft-refresh',hasHooks?'Нові зачини':'Створити зачини','refresh',!hasHooks);
@@ -74,10 +83,16 @@ function mountEpisodeDraftPanel(root,pid,initial,panel){
     const error=data.status==='failed'?`<p class="episode-error" role="alert">${esc(data.error||'Не вдалося завершити запит.')}</p>`:'';
     if(['queued','running','cancelling'].includes(data.status)){
       const label=data.status==='cancelling'?'Зупиняємо роботу':data.manual_revision?'Opus вносить ваші правки':data.editing_status==='running'||data.stage==='editing'?(data.author_session?'Opus перевіряє й редагує свій сценарій':'Редактура сценарію'):(data.stage==='openings'&&data.auto_opening?.status==='running'?'DeepSeek обирає зачин':{openings:'Opus готує зачини',script:data.auto_opening?.status==='chosen'?`Opus пише сценарій · зачин ${data.auto_opening.index+1} обрав DeepSeek`:'Opus пише сценарій',metadata:'Opus готує метадані'}[data.stage]||'Готуємо сценарій');
-      root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><span class="export-spinner" aria-hidden="true"></span><strong>${label}</strong></div><button type="button" id="episode-draft-stop" class="production-control episode-draft-stop" title="Зупинити роботу Opus" aria-label="Зупинити роботу Opus"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg></button></div>`;
+      root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><span class="export-spinner" aria-hidden="true"></span><strong>${label}</strong></div><button type="button" id="episode-draft-stop" class="production-control episode-draft-stop" title="Призупинити роботу Opus" aria-label="Призупинити роботу Opus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="4"/></svg></button></div>`;
+      // the same round pause as the narration and the frames (user, 19 November 2026); play starts this step again
       root.querySelector('#episode-draft-stop').disabled=data.status==='cancelling';
-      root.querySelector('#episode-draft-stop').onclick=()=>request({action:'cancel'});
+      root.querySelector('#episode-draft-stop').onclick=()=>pauseWriting('pause');
       timer=setTimeout(poll,2000);return;
+    }
+    if(data.writing_paused){
+      root.innerHTML=`<div class="episode-writing-card"><div class="episode-writing" role="status"><strong>${esc(data.writing_paused)}</strong></div><button type="button" id="episode-draft-play" class="production-control episode-draft-stop" title="Продовжити роботу Opus" aria-label="Продовжити роботу Opus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg></button></div>`;
+      root.querySelector('#episode-draft-play').onclick=()=>pauseWriting('resume');
+      return;
     }
     if(data.script_saved||data.stage==='metadata'){
       const unfinished=data.editing_status&&data.editing_status!=='done';

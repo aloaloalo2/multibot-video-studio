@@ -14,7 +14,8 @@ const episodeIconPaths={
 function episodeIcon(name){return `<svg class="episode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${episodeIconPaths[name]||episodeIconPaths.episode}</svg>`;}
 
 function episodeDraftPending(data){
-  return !!data?.project_id&&!data.completed&&!data.cancelled&&data.status!=='cancelled'&&['openings','script','metadata','editing'].includes(data.stage);
+  // a step the episode's pause stopped stays in place with its play button (episode_pause, part «writing»)
+  return !!data?.project_id&&!data.completed&&(!!data.writing_paused||!data.cancelled&&data.status!=='cancelled')&&['openings','script','metadata','editing'].includes(data.stage);
 }
 
 async function openNewEpisodeWizard({projectId=null,draft=null}={}){

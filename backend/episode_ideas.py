@@ -178,6 +178,9 @@ def launch(cid, data, action, request_id=None):
             topics.setdefault('topic_projects', {})[str(data['selected_index'])] = data['project_id']
             store.atomic_json(topics_path(cid), topics)
     ACTIVE[data.get('project_id') or cid] = data
+    if data.get('project_id'):
+        import episode_pause
+        episode_pause.started_by_hand(data['project_id'], 'writing')   # a step started by hand leaves the pause
     try:
         if action == 'script':
             import idea_reference

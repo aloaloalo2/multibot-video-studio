@@ -112,6 +112,8 @@ def label(pid: str) -> str | None:
         return f"Озвучка на паузі · {round(100 * done / total)}%" if total else "Озвучка на паузі"
     if "director" in stopped:
         return "Підготовка на паузі" if (stopped["director"] or {}).get("stage") == "kit" else "План кадрів на паузі"
+    if "writing" in stopped:
+        return WRITING.get((stopped["writing"] or {}).get("stage"), "Сценарій на паузі")
     if "languages" in stopped:
         items = stopped["languages"]
         word = "Переклад на паузі" if all(i["kind"] == "translate" for i in items) else "Озвучка перекладу на паузі"
@@ -192,10 +194,18 @@ def running(pid: str) -> dict:
              and job.get("kind") in {"translate", "voice"} and job.get("status") == "running"]
     if words:
         found["languages"] = words
+    import episode_ideas
+    job = episode_ideas.ACTIVE.get(pid)
+    if job and job.get("stage") in WRITING:
+        # Opus writing the openings, the script, its self-review or the metadata pauses like the rest (user, 19 November
+        # 2026: «відрізняється кнопки має пауза»): the step is stopped and «Продовжити» starts that same step again
+        found["writing"] = {"stage": job["stage"], "index": job.get("selected_index")}
     return found
 
 
-PARTS = {"narration", "director", "retime", "production", "languages"}
+WRITING = {"openings": "Зачини на паузі", "script": "Сценарій на паузі", "editing": "Саморедактура на паузі",
+           "metadata": "Метадані на паузі"}
+PARTS = {"narration", "director", "retime", "production", "languages", "writing"}
 
 
 def pause(pid: str, parts=None) -> dict:
@@ -228,6 +238,9 @@ def pause(pid: str, parts=None) -> dict:
             languages.cancel(pid, f"{item['code']}|voice")
     if "director" in work:
         director.stop(pid, "director")
+    if "writing" in work:
+        import episode_ideas
+        episode_ideas.start_project(pid, {"action": "cancel"})
     if "production" in work:
         production.pause(pid)   # at most a couple of seconds; a play right after finds the request paused
     if "director" in work:
@@ -294,7 +307,9 @@ def resume(pid: str, parts=None) -> dict:
             else:
                 data = {"stopped": {"narration": {"script": job["script"]}}, "pending": {}}
         import languages
-        if pid in project_narration.ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE or any(
+        import episode_ideas
+        if pid in project_narration.ACTIVE or pid in director.ACTIVE or pid in production.ACTIVE or (
+                "writing" in (data.get("stopped") or {}) and pid in episode_ideas.ACTIVE) or any(
                 languages.job_key(pid, item["code"], "voice") in languages.ACTIVE for item in (data.get("stopped") or {}).get("languages", [])):
             raise store.StudioError("Ще зупиняємо попередню роботу. Спробуйте за кілька секунд", 409)
         if rest:
@@ -312,6 +327,13 @@ def resume(pid: str, parts=None) -> dict:
         except (store.StudioError, OSError, RuntimeError) as error:
             errors.append(str(error))
 
+    writing = stopped.get("writing")
+    if writing:
+        import episode_ideas
+        body = {"action": writing["stage"], "request_id": f"resume-{int(time.time() * 1000)}"}
+        if writing["stage"] == "script":
+            body["index"] = writing.get("index")
+        step(lambda: episode_ideas.start_project(pid, body))
     narration = stopped.get("narration")
     if narration and narration.get("revision"):
         step(lambda: resume_revision(pid, narration["revision"]))
