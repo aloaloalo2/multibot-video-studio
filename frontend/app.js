@@ -653,6 +653,15 @@ function projectProductionCardState(request,lastExportAt=0){
     stopped:request?.status==='failed'&&!(lastExportAt>Number(request.finished_at||0))&&(done<total||request?.quality?.passed===false)};
 }
 
+// Episodes not on YouTube yet come first, in the studio's order; the published ones follow by their release date, the
+// latest to come out first (user, 19 November 2026: «найпізніше які вийдуть» on the first place)
+function projectsInOrder(projects){
+  const release=project=>{const m=String(project.published?.scheduled||'').match(/^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/);return m?new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5]).getTime():0;};
+  const waiting=projects.filter(project=>!project.published?.at);
+  const out=projects.filter(project=>project.published?.at).map((project,index)=>[project,release(project),index]);
+  out.sort((a,b)=>(b[1]-a[1])||(a[2]-b[2]));   // undated marks keep their order after the dated ones
+  return [...waiting,...out.map(row=>row[0])];
+}
 function renderOverview() {
   $('overview-title').textContent=state.channel?'Випуски':'Оберіть канал';renderChannelWork();
   $('overview-create').disabled=!state.channel;
@@ -663,7 +672,7 @@ function renderOverview() {
     if(container._empty!==empty||!container.querySelector('.overview-empty'))container.innerHTML=`<div class="overview-empty">${empty}</div>`;
     container._empty=empty;return;
   }
-  delete container._empty;reconcileProjectCards(container,state.projects);
+  delete container._empty;reconcileProjectCards(container,projectsInOrder(state.projects));
   renderProjectActivities();updateOverviewExports();pollOverviewExports(true);
   if(typeof watchThumbnails==='function')watchThumbnails(state.projects);
 }
