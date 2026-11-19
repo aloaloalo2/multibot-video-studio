@@ -3029,3 +3029,33 @@ select option{background:#232327;color:#f1f1f2}
 .project-publishing{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:#7fb3ff;font-size:11.5px;font-weight:600}
 .project-publish-stopped{margin-left:8px;color:#f0c967;font-size:11.5px;font-weight:600}
 .channel-busy.is-complete.is-published,.channel-busy.is-complete.is-published svg{color:#7fb3ff}
+
+/* «Автоматика»: the episode's steps as a line of groups, each switch with its icon (19 November 2026) */
+.auto-flow{position:relative;display:flex;flex-direction:column;gap:14px}
+.auto-step{position:relative;display:flex;flex-direction:column;gap:8px}
+.auto-step-head{display:flex;align-items:center;gap:7px}
+.auto-step-head h4{margin:0;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#9a9ea8}
+.auto-step-icon{display:inline-flex;align-items:center;justify-content:center;color:#9a9ea8}
+.auto-step-icon svg,.auto-switch-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.auto-step-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.channel-settings-panel .auto-switch{display:flex;align-items:center;gap:11px;padding:11px 12px;margin:0;background:#ffffff05;border:1px solid #ffffff0d;border-radius:12px;cursor:pointer;transition:background .15s,border-color .15s}
+.channel-settings-panel .auto-switch:hover{background:#ffffff09;border-color:#ffffff1a}
+.auto-switch>span:not(.auto-switch-icon){flex:1;min-width:0}
+.auto-switch strong{display:block;font-size:13px;font-weight:600;color:#eceef2}
+.auto-switch small{display:block;margin-top:2px;font-size:11.5px;color:#8d909a}
+.auto-switch-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;border-radius:9px;background:#ffffff0a;color:#9a9ea8;transition:background .15s,color .15s}
+.auto-switch input{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:36px;height:20px;margin:0;border-radius:999px;background:#3a3c43;cursor:pointer;transition:background .18s}
+.auto-switch input:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#c9ccd4;transition:transform .18s,background .18s}
+.auto-switch input:checked{background:#2fb87a}
+.auto-switch input:checked:after{transform:translateX(16px);background:#fff}
+.auto-switch:has(input:checked){border-color:#6bf2ae40;background:#6bf2ae0a}
+.auto-switch:has(input:checked) .auto-switch-icon{background:#6bf2ae1f;color:#6bf2ae}
+.auto-switch:has(input:disabled){opacity:.5;cursor:not-allowed}
+.auto-switch input:disabled{cursor:not-allowed}
+.auto-switch input:focus-visible{outline:2px solid #7fb3ff;outline-offset:2px}
+/* the switch overrides the studio's square checkbox and the settings' column labels */
+.channel-settings-panel .auto-flow label.auto-switch{flex-direction:row!important;align-items:center!important;text-align:left!important;justify-content:flex-start}
+.auto-flow .auto-switch input[type=checkbox]{width:36px!important;height:20px!important;min-width:36px;border:0;border-radius:999px;background:#3a3c43;box-shadow:none;display:inline-block;padding:0}
+.auto-flow .auto-switch input[type=checkbox]::before{content:none}
+.auto-flow .auto-switch input[type=checkbox]:checked{background:#2fb87a;border:0;box-shadow:0 0 8px #2fb87a55}
+.auto-flow .auto-switch input[type=checkbox]:disabled{opacity:1}

@@ -165,6 +165,41 @@ function organizeChannelSettings(channel){
   const translationAuto=document.createElement('div');translationAuto.className='settings-voice-automation settings-translation-automation';
   translationAuto.innerHTML=`<label><input type="checkbox" id="settings-auto-translation" ${channel.settings?.auto_translation?'checked':''}><span><strong>Автопереклад</strong><small>Після готової озвучки сценарію</small></span></label><label><input type="checkbox" id="settings-auto-translation-voice" ${channel.settings?.auto_translation_voice?'checked':''}><span><strong>Автоозвучка перекладу</strong><small>Після перевіреного перекладу</small></span></label>`;
   panels.automation.append(translationAuto);   // the translations' boxes live with the other automatic steps
+  // «Автоматика» as the episode's assembly line (user, 19 November 2026: «інтерактивніше… зі значком… розділити по
+  // групам»): four steps in the order the work goes, each switch with its own icon; the inputs keep their ids for saving
+  {
+    const flow=document.createElement('div');flow.className='auto-flow';
+    const svg=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+    const icons={
+      script:svg('<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/>'),
+      opening:svg('<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4l-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/>'),
+      voice:svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>'),
+      montage:svg('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M8 5v5M16 5v5"/>'),
+      export:svg('<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>'),
+      publish:svg('<rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z" fill="currentColor"/>'),
+      translate:svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'),
+      dub:svg('<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/>'),
+    };
+    const groups=[
+      ['Сценарій',icons.script,[['settings-auto-opening',icons.opening]]],
+      ['Озвучка й монтаж',icons.voice,[['settings-auto-narration',icons.voice],['settings-auto-montage',icons.montage]]],
+      ['Готовий ролик',icons.export,[['settings-auto-export',icons.export],['settings-auto-publish',icons.publish]]],
+      ['Переклад',icons.translate,[['settings-auto-translation',icons.translate],['settings-auto-translation-voice',icons.dub]]],
+    ];
+    for(const [title,icon,items] of groups){
+      const group=document.createElement('section');group.className='auto-step';
+      group.innerHTML=`<header class="auto-step-head"><span class="auto-step-icon">${icon}</span><h4>${title}</h4></header><div class="auto-step-items"></div>`;
+      const list=group.querySelector('.auto-step-items');
+      for(const [id,itemIcon] of items){
+        const label=$(id)?.closest('label');if(!label)continue;
+        label.classList.add('auto-switch');label.insertAdjacentHTML('afterbegin',`<span class="auto-switch-icon">${itemIcon}</span>`);
+        label.append(label.querySelector('input'));   // the switch on the right
+        list.append(label);
+      }
+      flow.append(group);
+    }
+    automation.remove();translationAuto.remove();panels.automation.append(flow);
+  }
   move('.hero-reference-section','thumbnails',{icon:'hero',title:'Головний герой'});
   // «Логотип на прев’ю» is switched off (user, 16 November 2026: «цю функцію варто прибрати»): its fields stay hidden
   // in the page so the saved value goes back unchanged, but nothing shows it
@@ -246,7 +281,7 @@ function organizeChannelSettings(channel){
     const source=voice?.querySelector('.voice-lab-reference-player');
     const idField={heygen:'heygen_voice_id',fishaudio:'fish_voice_id',elevenlabs:'eleven_voice_id'}[provider?.value];
     const hasVoice=!!(idField&&voice?.querySelector(`[name=${idField}]`)?.value)||!!source?.querySelector('audio');
-    for(const field of automation.querySelectorAll('#settings-auto-narration, #settings-auto-montage')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
+    for(const field of body.querySelectorAll('#settings-auto-narration, #settings-auto-montage')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
     text('[data-main-summary=voice]',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     text('[data-quick=voice] .settings-quick-value',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     const style=body.querySelector('.style-thumb[aria-checked=true] span')?.textContent;
