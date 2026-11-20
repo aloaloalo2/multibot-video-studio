@@ -225,6 +225,10 @@ def replacements(text,locale=None):
             if value is None and scale is None:value=german_value(current)
             # Articles are not numbers outside a numeric quantity or compound.
             if j==start and current in {"ein","eine","einen","einem","einer","eines"} and locale=="de":
+                # «ein 2. Mal», «eine 3-stündige»: the article stands before a number written in digits; reading it
+                # as «1» broke the comparison of a German script with its own digit form (20 November 2026).
+                gap=text[matches[j].end():matches[j+1].start()] if j+1<len(matches) else text[matches[j].end():]
+                if re.search(r"\d",gap):break
                 following=fold(matches[j+1].group()) if j+1<len(matches) else ""
                 if following not in SCALE and following not in DENOM and not re.match(r"^(jahr|tag|woche|monat|stunde|minute|sekunde|liter|gramm|kilogramm|meter|kilometer|milligramm|euro|prozent|mal)",following):break
             if value is None and scale is None:

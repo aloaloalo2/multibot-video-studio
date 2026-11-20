@@ -85,8 +85,14 @@ def repair_script(audio: Path, script: str, words: list[dict], language=None, *,
     if not script or not words:
         return words, 0
     duration = duration or max(word['end'] for word in words)
-    compare = lambda value: speech.compare_script(script, value, duration, sequence_verified=sequence_verified, order_only=order_only)
-    report = compare(words)
+    def compare(value):
+        return speech.compare_script(script, value, duration, sequence_verified=sequence_verified, order_only=order_only)
+    try:
+        report = compare(words)
+    except ValueError:
+        # Rehearing is an optional repair: a check that cannot run leaves the recognised words as they are, and the
+        # main comparison afterwards reports the real state (20 November 2026: one phrase failed the whole recognition).
+        return words, 0
     if report['status'] == 'matched':
         return words, 0
     blocking = speech.blocking_issues(sequence_verified, order_only=order_only)
@@ -132,7 +138,10 @@ def repair_script(audio: Path, script: str, words: list[dict], language=None, *,
                       'end': round(max(start, min(end, word['end'] + start)), 3)} for word in heard]
             heard = [word for word in heard if word['end'] > word['start']]
             candidate = words[:a] + heard + words[b + 1:]
-            reviewed = compare(candidate)
+            try:
+                reviewed = compare(candidate)
+            except ValueError:
+                continue
             old_bad, old_hits = score(report)
             new_bad, new_hits = score(reviewed)
             if new_bad <= old_bad and new_hits >= old_hits and (len(new_bad) < len(old_bad) or new_hits > old_hits):

@@ -63,10 +63,12 @@ class PlannerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             planner.validate_synced_plan(plan, 4)
 
-    def test_alignment_requires_complete_text_and_ordered_real_intervals(self):
+    def test_alignment_requires_every_sentence_and_ordered_real_intervals(self):
         script = "First complete sentence. Second complete sentence."
         good = [{"text": "First complete sentence.", "start": .1, "end": .5}, {"text": "Second complete sentence.", "start": .7, "end": 1.2}]
-        invalid = [good[:1], [dict(good[0], text="Different sentence."), good[1]], [good[0], dict(good[1], start=.4)], [good[0], dict(good[1], end=3)], [dict(good[0], start=True), good[1]]]
+        # the heard text is not compared with the script any more (user, 20 November 2026): only the time is checked
+        self.assertEqual(planner.validate_sentence_timings(script, [dict(good[0], text="Different sentence."), good[1]], 2)[0]["text"], "First complete sentence.")
+        invalid = [good[:1], [good[0], dict(good[1], start=.4)], [good[0], dict(good[1], end=3)], [dict(good[0], start=True), good[1]]]
         for timings in invalid:
             with self.subTest(timings=timings), self.assertRaises(ValueError):
                 planner.validate_sentence_timings(script, timings, 2)

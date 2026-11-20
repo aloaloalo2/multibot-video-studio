@@ -24,7 +24,6 @@ import store
 import job_timing
 import channel_branding
 import channel_hero
-import agent_storage
 import image_delivery
 import thumbnail_compare
 import thumbnail_logo
@@ -527,13 +526,9 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         channel_wishes = str(settings.get("thumbnail_wishes") or "").strip()
         logo = thumbnail_logo.spec(project, settings)
         logo_ref, logo_rules = thumbnail_logo.prepare(logo, work)
-        try:
-            agent_rules = agent_storage.get_memory(project['channel_id']).strip()
-        except (store.StudioError, KeyError):
-            agent_rules = ''
-        if agent_rules:
-            wishes = ("Shared channel Agent rules (apply relevant thumbnail wishes; specific current wishes take priority):\n"
-                      + agent_rules + "\n\nSpecific wishes for this thumbnail:\n" + wishes)
+        # The channel Agent's memory holds frame-plan and montage rules; it never goes into a thumbnail (user,
+        # 20 November 2026: «побажання до плану кадрів і монтажу не попадала до прев'ю»). Thumbnail preferences come
+        # only from the channel's own «Побажання до прев’ю».
         if base:
             # an author's remark on a picture already made: Codex redraws that picture, the remark is the prompt
             refs, answer = [thumbnail_logo.clean(work, base) or without_logo(pid, version_file(pid, base))], {}

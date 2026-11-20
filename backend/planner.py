@@ -163,13 +163,15 @@ def validate_sentence_timings(script, timings, duration):
     if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("Для таймінгів потрібна виміряна тривалість аудіо")
     sentences = split_sentences(script)
-    locale = number_text.detect_locale(script)
     if not isinstance(timings, list) or len(timings) != len(sentences):
         raise ValueError("Потрібні таймінги кожної фрази сценарію з готової озвучки")
     result, previous = [], 0.0
     for number, (text, item) in enumerate(zip(sentences, timings), 1):
-        if not isinstance(item, dict) or speech_text(item.get("text", ""), locale) != speech_text(text, locale):
-            raise ValueError(f"Текст фрази {number} не відповідає сценарію. Звірте розшифровку озвучки")
+        # The script is the text; timings only give each sentence its time. Their words, digits or number forms are
+        # never compared with the script (user, 20 November 2026: «не треба, щоб студія перевіряла фразу, цифри…
+        # вона може звучати по-різному»; one German «ein 2. Mal» failed a whole recognition).
+        if not isinstance(item, dict):
+            raise ValueError(f"Невірний час фрази {number} у готовій озвучці")
         start, end = item.get("start"), item.get("end")
         if any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end)) or start < previous or end <= start or end > duration + .001:
             raise ValueError(f"Невірний час фрази {number} у готовій озвучці")

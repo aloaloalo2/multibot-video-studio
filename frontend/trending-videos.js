@@ -102,16 +102,16 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   let generation,root,submit,titleTranslator,ready=false,sending=false,translating=false,wordsEdited=false,channelRead=0;
   const live=()=>root?.isConnected&&state.modalGeneration===generation&&state.navigation===navigation&&!$('modal-backdrop').hidden;
   const valid=()=>ready&&!sending&&!translating&&!!root?.querySelector('[name="channel"]').value&&!!root?.querySelector('[name="title"]').value.trim();
-  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag trend-language" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><figure class="trend-idea-video"><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><figcaption class="trend-title-original"></figcaption></figure><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span></label><label class="episode-word-count">Обсяг сценарію <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
+  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag trend-language" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><figure class="trend-idea-video"><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><figcaption class="trend-title-original"></figcaption></figure><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span></label><label class="episode-word-count trend-idea-words">Сценарій <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
     label:'Створити відео',icon:'magic',primary:true,enabled:valid,run:async()=>{
       if(!live()||!valid())return;
       const cid=root.querySelector('[name="channel"]').value,title=root.querySelector('[name="title"]').value.trim();
-      const count=Number(root.querySelector('[name="words"]').value);
+      const count=Number(words.value);
       const note=root.querySelector('.trend-idea-feedback');
       if(!Number.isInteger(count)||count<200||count>15000){note.hidden=false;note.textContent='Вкажіть обсяг від 200 до 15 000 слів';return;}
       if(title.length>100){note.hidden=false;note.textContent='Скоротіть заголовок до 100 символів';return;}
       const useThumbnail=root.querySelector('[name="use_thumbnail"]').checked;
-      sending=true;note.hidden=true;root.querySelectorAll('input,select').forEach(field=>field.disabled=true);titleTranslator.refresh();
+      sending=true;note.hidden=true;root.querySelectorAll('input,select').forEach(field=>field.disabled=true);words.disabled=true;titleTranslator.refresh();
       try{
         await api('/api/trending-videos/use','POST',{channel_id:cid,video_id:video.id,title,target_words:count,use_thumbnail:useThumbnail,use_hero:useThumbnail&&root.querySelector('[name="use_hero"]').checked,use_channel_wishes:useThumbnail&&!root.querySelector('[data-wishes-choice]').hidden&&root.querySelector('[name="use_wishes"]').checked,request_id:requestId});
         onUsed();
@@ -119,12 +119,14 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
         closeModal();
         await selectChannel(cid);   // the channel's page, where the new card shows «Opus готує зачини» (user, 16 November 2026)
       }catch(error){if(live()){note.hidden=false;note.textContent=error.message;}}
-      finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);submit.disabled=!valid();titleTranslator.refresh();syncHero();}}
+      finally{sending=false;if(live()){root.querySelectorAll('input,select').forEach(field=>field.disabled=false);words.disabled=false;submit.disabled=!valid();titleTranslator.refresh();syncHero();}}
     }
   }]);
   generation=state.modalGeneration;root=$('modal-body').querySelector('.trend-idea-form');
   StudioUI.picker(root.querySelector('[name="channel"]'),{picture:id=>channelIdentityIcon(channels.find(c=>c.id===id))});   // channel logos in the list
   submit=$('modal-actions').querySelector('button');submit.disabled=true;
+  // the word count sits beside the create button, on its left (user, 20 November 2026: «біля кнопки зліва… просто сценарій»)
+  const words=root.querySelector('[name="words"]'),wordsLabel=words.closest('label');$('modal-actions').prepend(wordsLabel);wordsLabel.hidden=root.querySelector('.trend-idea-rest').hidden;
   root.querySelector('[name="title"]').oninput=()=>{submit.disabled=!valid();};
   // the title follows the chosen channel's language at once, with flags: ours beside the field, the competitor's
   // original under it (user, 18 November 2026: «заголовок… одразу має перевестись на мову… каналу… знизу… на
@@ -141,6 +143,9 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
     const clip=document.createElement('span');clip.className='trend-clip';
     if(video.title_language){const chip=document.createElement('span');chip.className='trend-language';chip.textContent=codeOf(video.title_language);clip.append(chip,' ');}
     clip.append(video.title);original.replaceChildren(clip);
+    // the ready Ukrainian translation under the original, smaller and without a chip, to know what the video is about
+    // (user, 20 November 2026: «під ним має бути ще й українська… меншим шрифтом»)
+    if(video.title_uk&&video.title_language!=='uk'&&video.title_uk.trim()!==video.title.trim()){const uk=document.createElement('span');uk.className='trend-clip-uk';uk.lang='uk';uk.textContent=video.title_uk;original.append(uk);}
   };
   root.querySelector('[name="title"]').addEventListener('input',showFlags);
   async function toChannelLanguage(){
@@ -156,7 +161,7 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   }
   titleTranslator=bindTitleTranslation(root.querySelector('[name="title"]'),{channelId:()=>root.querySelector('[name="channel"]').value,live,enabled:()=>!sending,onBusy:value=>{translating=value;if(live())submit.disabled=!valid();}});
   $('modal-body').channelSettingsCleanup=()=>titleTranslator.dispose();
-  root.querySelector('[name="words"]').oninput=()=>{wordsEdited=true;};
+  words.oninput=()=>{wordsEdited=true;};
   const syncHero=()=>{
     const field=root.querySelector('[name="use_hero"]'),hasHero=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;
     field.disabled=sending||!hasHero||!root.querySelector('[name="use_thumbnail"]').checked;
@@ -176,10 +181,10 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
     if(!cid)return;
     try{
       const data=await api(`/api/channels/${encodeURIComponent(cid)}/episode-ideas?view=topics`);
-      if(live()&&version===channelRead&&!sending&&!wordsEdited&&Number.isInteger(data.target_words))root.querySelector('[name="words"]').value=data.target_words;
+      if(live()&&version===channelRead&&!sending&&!wordsEdited&&Number.isInteger(data.target_words))words.value=data.target_words;
     }catch(error){/* The editable default remains available when a recommendation cannot be read. */}
   }
-  root.querySelector('[name="channel"]').onchange=()=>{root.querySelector('.trend-idea-rest').hidden=!root.querySelector('[name="channel"]').value;submit.disabled=!valid();titleTranslator.refresh();toChannelLanguage();const field=root.querySelector('[name="use_hero"]');field.checked=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;syncHero();recommendation();};
+  root.querySelector('[name="channel"]').onchange=()=>{root.querySelector('.trend-idea-rest').hidden=!root.querySelector('[name="channel"]').value;wordsLabel.hidden=root.querySelector('.trend-idea-rest').hidden;submit.disabled=!valid();titleTranslator.refresh();toChannelLanguage();const field=root.querySelector('[name="use_hero"]');field.checked=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;syncHero();recommendation();};
   api('/api/health').then(health=>{
     if(!live())return;ready=health.trending_use_idea===true;submit.disabled=!valid();
     if(!ready){const note=root.querySelector('.trend-idea-feedback');note.hidden=false;note.textContent='Оновлення стане доступним після безпечного перезапуску студії';}

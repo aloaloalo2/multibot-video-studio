@@ -343,7 +343,11 @@ def worker(job, script, save_job):
                     pass
                 import traceback
                 traceback.print_exc()
-    except (store.StudioError, RuntimeError) as error:
+    except (store.StudioError, RuntimeError, ValueError) as error:
+        # the real reason, never the generic message below for a check that said what was wrong (20 November 2026)
+        if isinstance(error, ValueError):
+            import traceback
+            traceback.print_exc()
         job.update(status="failed", stage="failed", error=str(error))
     except Exception:
         import traceback
