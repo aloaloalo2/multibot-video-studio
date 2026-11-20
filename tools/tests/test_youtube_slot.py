@@ -14,7 +14,8 @@ class SlotTest(unittest.TestCase):
         self.assertEqual(y.slot("2026-11-20", now), {"date": "2026-11-21", "time": "15:00"})
         self.assertEqual(y.slot("2026-11-18", now), {"date": "2026-11-19", "time": "13:00"})   # out yesterday: today
         self.assertEqual(y.slot("none", datetime(2026, 11, 19, 14, 5)), {"date": "2026-11-19", "time": "14:45"})
-        self.assertEqual(y.slot("2026-11-18", datetime(2026, 11, 19, 19, 0)), {"date": "2026-11-20", "time": "15:00"})
+        # today is the day but the window is over: still today, the next quarter hour at least 30 minutes ahead
+        self.assertEqual(y.slot("2026-11-18", datetime(2026, 11, 19, 19, 5)), {"date": "2026-11-19", "time": "19:45"})
 
     def test_the_channel_interval_counts_from_the_last(self):
         now = datetime(2026, 11, 19, 10, 0)

@@ -139,7 +139,7 @@ def interval(project: dict) -> int:
 def slot(last: str, now=None, days: int = 1) -> dict:
     """When the next video of a channel goes out: `days` (the channel's interval) after the last scheduled (or, with none scheduled, the last
     published) video, but never before today; 15:00, or on today the next quarter hour at least 30 minutes ahead within
-    13:00-18:00, else the next day at 15:00 (user, 19 November 2026: «якщо останній ролик був опублікований вчора… і
+    13:00-18:00, after 18:00 still today at that quarter hour (user, 19 November 2026: «якщо останній ролик був опублікований вчора… і
     нових… запланованих немає, то публікуємо… на сьогодні»)."""
     from datetime import date, datetime, timedelta
     now = now or datetime.now()
@@ -150,7 +150,10 @@ def slot(last: str, now=None, days: int = 1) -> dict:
         start = max(soonest, datetime.combine(day, datetime.min.time()).replace(hour=13))
         if start.hour < 18 or (start.hour == 18 and start.minute == 0):
             return {"date": day.isoformat(), "time": start.strftime("%H:%M")}
-        day += timedelta(days=1)
+        # past the window the video's day is still today: scheduled for the next quarter hour at least 30 minutes
+        # ahead, not moved to tomorrow (user, 20 November 2026: «якщо сьогодні вже 18:00… ставити на 20 чи 30 хвилин
+        # пізніше, ніж теперішній час»)
+        return {"date": soonest.date().isoformat(), "time": soonest.strftime("%H:%M")}
     return {"date": day.isoformat(), "time": "15:00"}
 
 
