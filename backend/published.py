@@ -98,6 +98,31 @@ def listener() -> bool:
         os.kill(int(pid), 0)
     except (OSError, ValueError):
         return False
+    # the pid must still be the waiting script, and its session must still be there: a session closed while it waited
+    # left the script running under launchd (pid 1), and «Опублікувати» queued episodes nobody took and opened no new
+    # session (user, 20 November 2026: «нажав опубликувати але в клод тепер не перекинуло»)
+    return waiting_script(int(pid))
+
+
+def waiting_script(pid: int) -> bool:
+    import os
+    import signal
+    import subprocess
+
+    def row(p: int) -> tuple[int, str]:
+        out = subprocess.run(['ps', '-o', 'ppid=,command=', '-p', str(p)], capture_output=True, text=True, timeout=5).stdout.strip()
+        parent, _, command = out.partition(' ')
+        return (int(parent) if parent.strip().isdigit() else 0), command
+    try:
+        parent, command = row(pid)
+        if 'youtube_publish.py' not in command or 'wait' not in command:
+            return False   # the pid was reused by another program
+        shell = parent
+        if shell <= 1 or row(shell)[0] <= 1:
+            os.kill(pid, signal.SIGTERM)   # an orphan: its session is gone, nobody would act on what it hears
+            return False
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True   # cannot tell: keep the old behaviour
     return True
 
 

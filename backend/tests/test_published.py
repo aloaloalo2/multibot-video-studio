@@ -85,3 +85,23 @@ class CancelTest(unittest.TestCase):
         shutil.rmtree(store.PROJECTS_ROOT / ('b' * 24))
         self.assertEqual([row['project'] for row in published.queue()], ['a' * 24])
         self.assertEqual(len(store.read_json(published.queue_path(), [])), 1)
+
+
+class ListenerTest(unittest.TestCase):
+    """A waiting script whose session is gone, or a reused pid, is no listener (20 November 2026)."""
+
+    def run_ps(self, rows):
+        def fake(cmd, **kw):
+            pid = int(cmd[-1])
+            return subprocess.CompletedProcess(cmd, 0, stdout=rows.get(pid, ''), stderr='')
+        return patch.object(subprocess, 'run', side_effect=fake)
+
+    def test_alive_session_orphan_and_reused_pid(self):
+        wait = 'python3 VideoKey Studio/tools/youtube_publish.py wait'
+        with self.run_ps({10: f'20 {wait}', 20: '30 /bin/zsh -c ...'}):
+            self.assertTrue(published.waiting_script(10))
+        with self.run_ps({10: f'20 {wait}', 20: '1 /bin/zsh -c ...'}), patch('os.kill') as kill:
+            self.assertFalse(published.waiting_script(10))
+            kill.assert_called_once()
+        with self.run_ps({10: '20 /usr/bin/some-other-app'}):
+            self.assertFalse(published.waiting_script(10))
