@@ -193,7 +193,8 @@ def wait(poll: float = 5.0) -> str:
     # the studio sees a live listener by this file's pid (backend/published.listener)
     LISTENER.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}), encoding="utf-8")
     while True:
-        rows = read_json(QUEUE, [])
+        # an episode whose project was deleted while it waited is skipped (20 November 2026)
+        rows = [row for row in read_json(QUEUE, []) if (DATA / "projects" / str(row.get("project")) / "project.json").exists()]
         if rows:
             return rows[0]["project"]
         time.sleep(poll)

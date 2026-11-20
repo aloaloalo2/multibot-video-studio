@@ -76,8 +76,15 @@ def queue_path() -> Path:
 
 
 def queue() -> list:
+    """The episodes waiting for the publishing session. A project deleted while it waited leaves the queue by itself
+    (user, 20 November 2026: «я видалив проект а спинер… крутиться в черзі на публікацію»)."""
     rows = store.read_json(queue_path(), [])
-    return rows if isinstance(rows, list) else []
+    rows = rows if isinstance(rows, list) else []
+    alive = [row for row in rows if isinstance(row, dict) and row.get('project')
+             and (store.PROJECTS_ROOT / str(row['project']) / 'project.json').exists()]
+    if len(alive) != len(rows):
+        store.atomic_json(queue_path(), alive)
+    return alive
 
 
 def listener() -> bool:

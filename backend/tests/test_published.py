@@ -58,7 +58,9 @@ class CancelTest(unittest.TestCase):
         self.project = root / 'project'; self.project.mkdir()
         patches = [patch.object(store, 'project_dir', return_value=self.project),
                    patch.object(store, 'load_project', return_value={'id': 'a' * 24}),
-                   patch.object(store, 'DATA_ROOT', root)]
+                   patch.object(store, 'DATA_ROOT', root), patch.object(store, 'PROJECTS_ROOT', root / 'projects')]
+        for pid in ('a' * 24, 'b' * 24):
+            (root / 'projects' / pid).mkdir(parents=True); (root / 'projects' / pid / 'project.json').write_text('{}')
         for p in patches:
             p.start(); self.addCleanup(p.stop)
 
@@ -76,3 +78,10 @@ class CancelTest(unittest.TestCase):
         self.assertTrue(published.cancel(pid)['was_publishing'])
         self.assertTrue(store.read_json(self.project / 'publishing.json', {})['cancelled'])
         self.assertIsNone(published.publishing({'id': pid}))
+
+    def test_a_deleted_project_leaves_the_queue_by_itself(self):
+        import shutil
+        store.atomic_json(published.queue_path(), [{'project': 'a' * 24}, {'project': 'b' * 24}])
+        shutil.rmtree(store.PROJECTS_ROOT / ('b' * 24))
+        self.assertEqual([row['project'] for row in published.queue()], ['a' * 24])
+        self.assertEqual(len(store.read_json(published.queue_path(), [])), 1)
