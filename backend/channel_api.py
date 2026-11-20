@@ -200,6 +200,12 @@ def mutate(self, method, path, body, *, ensure_idle, choose_folder):
         return self.json_response({"style": style}, 201)
 
     match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/custom-styles/(custom-[0-9a-f]{10})", path)
+    if match and method == "POST":
+        try:
+            style = style_copy.tweak(*match.groups(), str((body or {}).get("tweak")), bool((body or {}).get("on")))
+        except style_copy.StyleCopyError as error:
+            raise store.StudioError(str(error), 409) from None
+        return self.json_response({"style": style})
     if match and method == "DELETE":
         try:
             style_copy.remove(*match.groups())
@@ -210,7 +216,9 @@ def mutate(self, method, path, body, *, ensure_idle, choose_folder):
     match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-cards", path)
     if match and method == "POST":
         try:
-            return self.json_response(style_lab.showcase(match.group(1), (body or {}).get("kind")))
+            fonts = (body or {}).get("fonts")
+            return self.json_response(style_lab.showcase(match.group(1), (body or {}).get("kind"),
+                                                         fonts if isinstance(fonts, list) else None))
         except style_lab.StyleLabError as error:
             raise store.StudioError(str(error), 409) from None
 

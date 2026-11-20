@@ -9,6 +9,7 @@
 //   fillAlpha: 0..1     fills become this transparent (chalk: outlines carry the drawing)
 //   shadow: { x, y, color }    a hard cast shadow under every filled shape (paper cut-out)
 //   lineScale: k        every line width times k; imageFilter: CSS filter for pictures (PNG props)
+//   solidOutline: true  only solid shapes get the outline: see-through ones (clouds, mist) stay soft, so lines never show through fills
 //   paper: { color, amount, mode }   a paper, board or canvas texture laid over the finished frame
 import { E } from './core.js';
 
@@ -48,13 +49,25 @@ function wobblyLine(g, x, y) {
   }
   O.lineTo.call(g, ...J(g, x, y)); track(g, x, y);
 }
-function sampled(g, pts) { for (const [x, y] of pts) wobblyLine(g, x, y); }
+// the tremor never outgrows the shape it shakes: an eye, a mouth or a brow a few pixels wide kept the full tremor and
+// came out crooked (user, 20 November 2026: «персонажі… криві, лиця їх криві» in a copied hand-drawn style); a shape
+// trembles by at most a tenth of its size, big lines and buildings keep the whole tremor
+const CAP = 0.1;
+function capped(g, size, draw) { const a = g.__amp; if (a) g.__amp = Math.min(a, size * CAP); draw(); g.__amp = a; }
+function sampled(g, pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  if (g.__lx !== undefined) { x0 = x1 = g.__lx; y0 = y1 = g.__ly; }
+  for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  capped(g, Math.max(x1 - x0, y1 - y0), () => { for (const [x, y] of pts) wobblyLine(g, x, y); });
+}
 function isBackground(g) {
   const b = g.__box; if (!b) return true; const m = g.getTransform();
   const w = Math.abs((b[2] - b[0]) * m.a) + Math.abs((b[3] - b[1]) * m.c), h = Math.abs((b[2] - b[0]) * m.b) + Math.abs((b[3] - b[1]) * m.d);
   return w * h > g.canvas.width * g.canvas.height * 0.45;
 }
 const additive = (g) => g.globalCompositeOperation === 'lighter' || g.globalCompositeOperation === 'screen';
+// how opaque the current fill colour is: 'rgba(r,g,b,a)' carries its own alpha, a hex or a gradient is solid
+const fillOpacity = (g) => { const v = FILL.get.call(g); return typeof v === 'string' && v.startsWith('rgba') ? +v.slice(v.lastIndexOf(',') + 1, -1) : 1; };
 
 export function installManner(manner) {
   if (!manner || M) return;
@@ -63,7 +76,7 @@ export function installManner(manner) {
   const fillDesc = Object.getOwnPropertyDescriptor(P, 'fillStyle'), strokeDesc = Object.getOwnPropertyDescriptor(P, 'strokeStyle'), widthDesc = Object.getOwnPropertyDescriptor(P, 'lineWidth');
 
   P.createLinearGradient = function (...a) { const g = O.createLinearGradient.apply(this, a); g.__stops = []; const add = g.addColorStop.bind(g); g.addColorStop = (o, c) => { g.__stops.push([o, c]); add(o, tone(c)); }; return g; };
-  P.createRadialGradient = function (...a) { const g = O.createRadialGradient.apply(this, a); g.__stops = []; const add = g.addColorStop.bind(g); g.addColorStop = (o, c) => { g.__stops.push([o, c]); add(o, tone(c)); }; return g; };
+  P.createRadialGradient = function (...a) { const g = O.createRadialGradient.apply(this, a); g.__stops = []; g.__radial = true; const add = g.addColorStop.bind(g); g.addColorStop = (o, c) => { g.__stops.push([o, c]); add(o, tone(c)); }; return g; };
   const style = (v) => (typeof v === 'string' ? tone(v) : v && v.__stops && M.flat ? tone(flatOf(v)) : v);
   Object.defineProperty(P, 'fillStyle', { configurable: true, get() { return fillDesc.get.call(this); }, set(v) { fillDesc.set.call(this, style(v)); } });
   Object.defineProperty(P, 'strokeStyle', { configurable: true, get() { return strokeDesc.get.call(this); }, set(v) { strokeDesc.set.call(this, style(v)); } });
@@ -71,7 +84,7 @@ export function installManner(manner) {
 
   P.beginPath = function () { this.__amp = amp(this); this.__box = null; this.__lx = undefined; return O.beginPath.call(this); };
   P.moveTo = function (x, y) { if (!this.__box) this.__box = [x, y, x, y]; O.moveTo.call(this, ...J(this, x, y)); track(this, x, y); };
-  P.lineTo = function (x, y) { if (!this.__box) this.__box = [x, y, x, y]; wobblyLine(this, x, y); };
+  P.lineTo = function (x, y) { if (!this.__box) this.__box = [x, y, x, y]; const l = this.__lx === undefined ? Infinity : Math.hypot(x - this.__lx, y - this.__ly); capped(this, l, () => wobblyLine(this, x, y)); };
   P.rect = function (x, y, w, h) { this.moveTo(x, y); this.lineTo(x + w, y); this.lineTo(x + w, y + h); this.lineTo(x, y + h); this.lineTo(x, y); };
   P.arc = function (x, y, r, a0, a1, ccw) {
     if (!this.__box) this.__box = [x - r, y - r, x + r, y + r]; else { track(this, x - r, y - r); track(this, x + r, y + r); }
@@ -79,7 +92,7 @@ export function installManner(manner) {
     let span = a1 - a0; if (!ccw && span < 0) span += Math.PI * 2; if (ccw && span > 0) span -= Math.PI * 2; span = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, span));
     const n = Math.max(8, Math.min(72, Math.ceil(Math.abs(span) * r / 14))), pts = [];
     for (let i = 0; i <= n; i++) { const a = a0 + span * i / n; pts.push([x + Math.cos(a) * r, y + Math.sin(a) * r]); }
-    if (this.__lx === undefined) { O.moveTo.call(this, ...J(this, ...pts[0])); track(this, ...pts[0]); }
+    if (this.__lx === undefined) capped(this, 2 * r, () => { O.moveTo.call(this, ...J(this, ...pts[0])); track(this, ...pts[0]); });
     sampled(this, pts);
   };
   P.ellipse = function (x, y, rx, ry, rot, a0, a1, ccw) {
@@ -88,7 +101,7 @@ export function installManner(manner) {
     let span = a1 - a0; if (!ccw && span < 0) span += Math.PI * 2; span = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, span));
     const n = Math.max(10, Math.min(72, Math.ceil(Math.abs(span) * Math.max(rx, ry) / 14))), c = Math.cos(rot), s = Math.sin(rot), pts = [];
     for (let i = 0; i <= n; i++) { const a = a0 + span * i / n, ex = Math.cos(a) * rx, ey = Math.sin(a) * ry; pts.push([x + ex * c - ey * s, y + ex * s + ey * c]); }
-    if (this.__lx === undefined) { O.moveTo.call(this, ...J(this, ...pts[0])); track(this, ...pts[0]); }
+    if (this.__lx === undefined) capped(this, 2 * Math.max(rx, ry), () => { O.moveTo.call(this, ...J(this, ...pts[0])); track(this, ...pts[0]); });
     sampled(this, pts);
   };
   P.arcTo = function (x1, y1, x2, y2, r) { if (!this.__amp) { track(this, x1, y1); return O.arcTo.call(this, x1, y1, x2, y2, r); } O.arcTo.call(this, ...J(this, x1, y1), ...J(this, x2, y2), r); track(this, x1, y1); };
@@ -110,7 +123,10 @@ export function installManner(manner) {
     if (shape && M.shadow) { this.save(); this.shadowColor = M.shadow.color; this.shadowOffsetX = M.shadow.x * E.PX; this.shadowOffsetY = M.shadow.y * E.PX; this.shadowBlur = (M.shadow.blur || 0) * E.PX; O.fill.apply(this, a); this.restore(); }
     else if (shape && M.fillAlpha != null) { this.save(); this.globalAlpha *= M.fillAlpha; O.fill.apply(this, a); this.restore(); }
     else O.fill.apply(this, a);
-    if (shape && M.outline && this.globalAlpha > 0.35) {
+    // light is never outlined: a glow, a lamp's pool or the sun's halo is a radial gradient or drawn additively, and an
+    // ink line round it drew wobbly rings over the picture (user, 20 November 2026: a copied style with glow and outline)
+    const light = additive(this) || FILL.get.call(this)?.__radial || fillOpacity(this) < 0.6;
+    if (shape && !light && M.outline && this.globalAlpha > 0.35 && (!M.solidOutline || this.globalAlpha * fillOpacity(this) >= 0.95)) {
       this.save(); const m = this.getTransform(), k = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
       strokeDesc.set.call(this, M.outline.color); widthDesc.set.call(this, M.outline.width * E.PX / k); this.lineJoin = 'round'; this.lineCap = 'round';
       this.shadowColor = 'transparent'; O.stroke.call(this); this.restore();

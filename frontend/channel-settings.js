@@ -154,8 +154,13 @@ function organizeChannelSettings(channel){
     field?.after(add);}
   const imageWishes=body.querySelector('.generated-image-preferences');
   if(imageWishes){const section=document.createElement('section');section.className='settings-section regular-only settings-image-wishes';section.innerHTML='<h3>Створені зображення</h3>';section.append(imageWishes);body.append(section);move('.settings-image-wishes','wishes',{fold:true,icon:'formats',title:'До створених зображень'});}
+  // the plate leads «Оформлення», open, the logo on the left and its place on the right (user, 20 November 2026:
+  // «Плашка на самому верху має бути… не скрита… по ліву сторону прев'ю, по праву настройки»)
+  // «Оформлення» in one order (user, 20 November 2026: «наведи тут порядок… базар»): the «Плашка» row, then the style's
+  // picture with the plate on it, the styles under it and «Налаштування стилю»
   move('.channel-look','look',{icon:'look'});
-  move('.logo-section','look',{fold:true,icon:'thumbnails',title:'Плашка'});
+  {const look=body.querySelector('.channel-look'),plate=body.querySelector('.logo-section');
+   if(look&&plate)look.before(plate);}   // the plate first, above the style (user, 20 November 2026)
   move('.settings-accents','look',{fold:true,icon:'accents'});
   const automation=document.createElement('div');automation.className='settings-voice-automation';
   automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label><label><input type="checkbox" id="settings-auto-opening" ${channel.settings?.auto_opening?'checked':''}><span><strong>Автовибір зачину</strong><small>DeepSeek обирає найкращий</small></span></label><label><input type="checkbox" id="settings-auto-export" ${channel.settings?.auto_export?'checked':''}><span><strong>Автоекспорт</strong><small>Після готових кадрів, з якістю каналу</small></span></label><label><input type="checkbox" id="settings-auto-publish" ${channel.settings?.auto_publish?'checked':''}><span><strong>Автопублікація</strong><small>Після експорту, на YouTube за розкладом</small></span></label>`;
@@ -304,15 +309,8 @@ function organizeChannelSettings(channel){
     // New async controls get their own baseline; unchanged loading is never an author edit.
     for(const field of body.querySelectorAll(fields))if(!field.disabled&&channelSettingsEditable(field)&&!baseline.has(field))baseline.set(field,channelSettingsFieldValue(field));
     for(const field of baseline.keys())if(!field.isConnected){baseline.delete(field);resets.delete(field);}
-    for(const [field,before] of baseline){
-      const anchor=channelSettingsResetAnchor(field);if(!anchor)continue;
-      if(!resets.has(field)){
-        const reset=document.createElement('button');reset.type='button';reset.className='settings-field-reset';reset.textContent='↺';reset.title='Повернути збережене значення';reset.setAttribute('aria-label',reset.title);
-        reset.addEventListener('click',()=>{field.value=before;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));});
-        anchor.after(reset);resets.set(field,reset);
-      }
-      resets.get(field).hidden=channelSettingsFieldValue(field)===before;
-    }
+    // no ↺ «Повернути збережене значення» beside the fields any more (user, 20 November 2026: «прибери взагалі, воно не
+    // потрібно»): it appeared and vanished while a slider moved, and the row jumped
     const dirty=ready&&channelSettingsDirty(baseline);
     const valid=weightsValid;
     body.querySelector('.settings-visual-formats').closest('details').classList.toggle('settings-invalid-weights',!valid);

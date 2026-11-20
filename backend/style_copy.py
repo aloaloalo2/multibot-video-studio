@@ -55,7 +55,11 @@ Ignore what it shows. Answer with one JSON object and nothing else, in exactly t
     "lineScale": 1,          // 0.5 to 2.5: line weight
     "grayscale": false,      // true when the picture has no colour
     "paper": null            // or { "color": "#rrggbb", "amount": 0 to 0.6 } when there is a paper, board or canvas texture
-  }
+  },
+  "figure": null             // or the build of the picture's people or characters, each 1 = the classic thin stick figure:
+                             // { "limb": 0.6 to 2.2 (arm and leg thickness), "torso": 0.7 to 2 (body thickness),
+                             //   "head": 0.8 to 1.4 (head size), "joints": 0 or 0.8 to 1.6 (round knees and elbows),
+                             //   "ends": 0 or 0.8 to 1.8 (round hands and feet) }; null when it shows no people
 }
 
 Colours: ui.card is a caption card background, ui.text and ui.cream must read on it, ui.accent is the brightest
@@ -93,6 +97,17 @@ BUILTIN = [{
 }]
 
 
+def full_ui(definition: dict) -> dict:
+    """The engine reads ui.blueprint, ui.bpBg and ui.good too (diagrams, the brain, compareBars); copied styles made
+    before 20 November 2026 lacked them, and every frame drawing one threw «Cannot read … 'startsWith'» (user: the
+    style card of «Печерне вугілля» stayed the same with PNG assets on and off: both were the error)."""
+    ui = definition.get("ui") if isinstance(definition.get("ui"), dict) else {}
+    accent = ui.get("accent") or "#ff6f61"
+    definition["ui"] = {**ui, "blueprint": ui.get("blueprint") or accent, "bpBg": ui.get("bpBg") or ui.get("card") or "#08103a",
+                        "good": ui.get("good") or "#5fd39a"}
+    return definition
+
+
 def load(cid: str) -> list[dict]:
     """The Studio's own styles, then the channel's copied ones."""
     store.get_channel_folder(cid)
@@ -101,7 +116,11 @@ def load(cid: str) -> list[dict]:
         styles = json.loads(path(cid).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return builtin
-    return builtin + ([style for style in styles if isinstance(style, dict) and STYLE_ID.fullmatch(str(style.get("id")))] if isinstance(styles, list) else [])
+    own = [style for style in styles if isinstance(style, dict) and STYLE_ID.fullmatch(str(style.get("id")))] if isinstance(styles, list) else []
+    for style in own:
+        if isinstance(style.get("def"), dict):
+            full_ui(style["def"])
+    return builtin + own
 
 
 def find(cid: str, sid: str) -> dict | None:
@@ -121,6 +140,71 @@ def remove(cid: str, sid: str) -> None:
     if not any(style["id"] == sid for style in styles):
         raise StyleCopyError("Такого стилю немає")
     save_all(cid, [style for style in styles if style["id"] != sid])
+
+
+# switches over what DeepSeek kept or dropped from a copied look (user, 20 November 2026: «glow… прибрав… можливо, я хочу
+# його додати», «градієнти… прибрав»): each one parks the copied value when switched off and brings it back when switched
+# on, or a moderate default when DeepSeek never had it
+TWEAKS = ("glow", "gradients", "grain", "paper", "outline", "wobble")
+PLAIN_MANNER = {"wobble": 0, "boil": 0, "flat": False, "glow": True, "lineScale": 1}
+
+
+def tweaks(definition: dict) -> dict:
+    m = {**PLAIN_MANNER, **(definition.get("manner") or {})}
+    grade = definition.get("grade") or {}
+    return {"glow": bool(m.get("glow")) and (grade.get("bloom") or 0) > 0, "gradients": not m.get("flat"),
+            "grain": (grade.get("grain") or 0) > 0, "paper": bool(m.get("paper")), "outline": bool(m.get("outline")),
+            "wobble": (m.get("wobble") or 0) > 0}
+
+
+def tweak(cid: str, sid: str, name: str, on: bool) -> dict:
+    if name not in TWEAKS:
+        raise StyleCopyError("Невідомий перемикач стилю")
+    styles = [style for style in load(cid) if not style.get("builtin")]
+    style = next((s for s in styles if s["id"] == sid), None)
+    if not style:
+        raise StyleCopyError("Такого стилю немає")
+    d = style["def"]
+    m = {**PLAIN_MANNER, **(d.get("manner") or {})}
+    grade = d.setdefault("grade", {})
+    parked = style.setdefault("parked", {})
+    ink = d.get("ink") or "#111111"
+    if name == "glow":
+        if on:
+            m["glow"] = True
+            grade["bloom"] = parked.pop("bloom", None) or 0.3
+        else:
+            if grade.get("bloom"):
+                parked["bloom"] = grade["bloom"]
+            m["glow"], grade["bloom"] = False, 0
+    elif name == "gradients":
+        m["flat"] = not on
+    elif name == "grain":
+        if on:
+            grade["grain"] = parked.pop("grain", None) or 0.05
+        else:
+            if grade.get("grain"):
+                parked["grain"] = grade["grain"]
+            grade["grain"] = 0
+    elif name in ("paper", "outline"):
+        default = {"color": (d.get("ui") or {}).get("cream") or "#f4efe4", "amount": 0.3} if name == "paper" else {"color": ink, "width": 2}
+        if on:
+            m[name] = parked.pop(name, None) or default
+        elif m.get(name):
+            parked[name] = m.pop(name)
+    elif name == "wobble":
+        if on:
+            m["wobble"], m["boil"] = parked.pop("wobble", None) or 1.5, parked.pop("boil", None) or 0
+        else:
+            if m.get("wobble"):
+                parked["wobble"], parked["boil"] = m["wobble"], m.get("boil", 0)
+            m["wobble"], m["boil"] = 0, 0
+    if m == PLAIN_MANNER:
+        d.pop("manner", None)
+    else:
+        d["manner"] = m
+    save_all(cid, styles)
+    return style
 
 
 def picture(data: str) -> str:
@@ -227,10 +311,21 @@ def style_def(answer: dict) -> dict:
     if manner.get("imageFilter"):
         grade["sat"] = 0
     ink = colour(answer.get("ink"), "#111111")
-    return {"name": label(answer.get("name"), "Copied Style"), "desc": label(answer.get("desc_uk"), "", 200),
+    # the characters' build from the picture's people (user, 20 November 2026: «стікмени… ширини ніг, рук… діпсік це
+    # змінює чи ні?»); bounded so a character never turns grotesque, and left out when it is the classic figure
+    f = answer.get("figure") if isinstance(answer.get("figure"), dict) else {}
+    figure = {"limb": number(f.get("limb"), 0.6, 2.2, 1), "torso": number(f.get("torso"), 0.7, 2, 1), "head": number(f.get("head"), 0.8, 1.4, 1)}
+    for key, top in (("joints", 1.6), ("ends", 1.8)):
+        value = number(f.get(key), 0, top, 0)
+        if value >= 0.5:
+            figure[key] = value
+    figure = {k: round(v, 2) for k, v in figure.items()}
+    classic = figure == {"limb": 1, "torso": 1, "head": 1}
+    return full_ui({"name": label(answer.get("name"), "Copied Style"), "desc": label(answer.get("desc_uk"), "", 200),
             "ink": ink, "inkFar": colour(pal.get("dark"), ink), "feature": colour(answer.get("feature"), "#f4efe6"),
             "rimWidth": number(answer.get("rimWidth"), 0, 6, 0), "ui": {k: colour(ui_in.get(k), ui_defaults[k]) for k in UI},
-            "grade": grade, "moods": {name: mood for name in MOODS}, **({} if plain else {"manner": manner})}
+            "grade": grade, "moods": {name: mood for name in MOODS}, **({} if plain else {"manner": manner}),
+            **({} if classic else {"figure": figure})})
 
 
 def create(cid: str, data: str, note: str = "") -> dict:

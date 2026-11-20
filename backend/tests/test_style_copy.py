@@ -83,5 +83,39 @@ class StyleCopyTest(unittest.TestCase):
             self.assertEqual([s["id"] for s in style_copy.load("c" * 16)], ["studio-dark"])
 
 
+class FullUiTest(unittest.TestCase):
+    def test_a_copied_style_carries_the_engine_colours_diagrams_need(self):
+        old = {"ui": {"card": "#3b281b", "accent": "#f2c56b"}}
+        ui = style_copy.full_ui(old)["ui"]
+        self.assertEqual((ui["blueprint"], ui["bpBg"]), ("#f2c56b", "#3b281b"))
+        self.assertTrue(ui["good"].startswith("#"))
+        self.assertIn("blueprint", style_copy.style_def({})["ui"])
+
+    def test_the_characters_build_comes_from_the_picture_within_bounds(self):
+        self.assertNotIn("figure", style_copy.style_def({"figure": None}))
+        figure = style_copy.style_def({"figure": {"limb": 5, "torso": 1.4, "head": 0.1, "joints": 1.2, "ends": 0.2}})["figure"]
+        self.assertEqual(figure, {"limb": 2.2, "torso": 1.4, "head": 0.8, "joints": 1.2})
+
+
+class TweakTest(unittest.TestCase):
+    def test_a_switch_parks_the_copied_value_and_brings_it_back(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(store, "DATA_ROOT", Path(folder)), \
+                patch.object(store, "get_channel_folder", lambda cid: None):
+            sid = "custom-0123456789"
+            definition = style_copy.style_def({"manner": {"flat": True, "glow": False, "wobble": 2}, "grade": {"grain": 0.08}})
+            style_copy.save_all("a" * 16, [{"id": sid, "name": "x", "desc": "", "def": definition}])
+            self.assertEqual(style_copy.tweaks(definition)["gradients"], False)
+            style = style_copy.tweak("a" * 16, sid, "gradients", True)
+            self.assertTrue(style_copy.tweaks(style["def"])["gradients"])
+            style = style_copy.tweak("a" * 16, sid, "grain", False)
+            self.assertEqual(style["def"]["grade"]["grain"], 0)
+            style = style_copy.tweak("a" * 16, sid, "grain", True)
+            self.assertEqual(style["def"]["grade"]["grain"], 0.08)   # DeepSeek's own value, not a default
+            style = style_copy.tweak("a" * 16, sid, "glow", True)
+            self.assertTrue(style_copy.tweaks(style["def"])["glow"])
+            with self.assertRaises(style_copy.StyleCopyError):
+                style_copy.tweak("a" * 16, sid, "colour", True)
+
+
 if __name__ == "__main__":
     unittest.main()

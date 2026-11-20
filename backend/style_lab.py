@@ -172,12 +172,30 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     channel's own style (one id with its definition) travels in the config, as it does in a film."""
     scene, moment = card_scene(root, kind)
     template = Path(__file__).with_name("style_card_info.js") if kind == "regular" and scene.name == "style-card-info" else None
+    # the café has no words and no picture props of its own: an overlay adds a title in the chosen font, and props when
+    # the card is drawn with assets
+    props = Path(__file__).with_name("style_card_cafe.js") if scene.name == "reaction-time" else None
     revision = hashlib.sha256(template.read_bytes()).hexdigest() if template else None
+    if props:
+        revision = (revision or "") + hashlib.sha256(props.read_bytes()).hexdigest()
     key_parts = ["all-fonts-full-frame-v3", scene.name, moment, font, assets, ids, stamp, definition]
     if revision:
         key_parts.append(revision)
     key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:20]
     cache = card_dir(key)
+    if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
+        return key
+    with KEY_GUARD:
+        lock = KEY_LOCKS.setdefault(key, threading.Lock())
+    with lock:
+        return _card_set(root, ids, key, cache, scene, moment, template, props, font, assets, definition)
+
+
+KEY_GUARD = threading.Lock()
+KEY_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _card_set(root, ids, key, cache, scene, moment, template, props, font, assets, definition) -> str:
     if all((cache / f"{sid}-0.jpg").exists() for sid in ids):
         return key
     folder = store.DATA_ROOT / "style-cards-lab" / key
@@ -189,6 +207,9 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
             if template and name == "scenes":
                 shutil.copytree(scene / name, folder / name)
                 shutil.copyfile(template, folder / "scenes/shots/01_info.js")
+            elif props and name == "scenes":
+                shutil.copytree(scene / name, folder / name)
+                shutil.copyfile(props, folder / "scenes/shots/zz_card_props.js")
             elif not (template and name == "assets"):
                 os.symlink(scene / name, folder / name)
     # Style samples always show the full frame, including shots that requested cinematic bars.
@@ -209,7 +230,16 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
                     shutil.copyfile(source, folder / "assets" / source.name)
                     names.append(name)
         (folder / "assets/index.json").write_text(json.dumps(names))
-    if not assets and not template:
+    if props:
+        (folder / "assets").mkdir(exist_ok=True)
+        names = []
+        for name in ("city_bicycle", "chalkboard", "cat_sitting", "cake") if assets else ():
+            source = root / "library/props" / f"{name}.png"
+            if source.is_file():
+                shutil.copyfile(source, folder / "assets" / source.name)
+                names.append(name)
+        (folder / "assets/index.json").write_text(json.dumps(names))
+    if not assets and not template and not props:
         (folder / "assets").mkdir()
         (folder / "assets" / "index.json").write_text("[]")
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
@@ -229,7 +259,7 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     return key
 
 
-def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "animated") -> dict:
+def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "animated", fonts=None) -> dict:
     """The style card for every gallery style, title font and assets choice. They do not depend on the channel (its
     logo is laid over in the page), so the whole set is drawn once for the Studio, a few renders at a time, and
     switching a font or the assets in the settings only swaps pictures."""
@@ -242,20 +272,24 @@ def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "anima
     kept = [{"id": sid, "def": None} for sid in dict.fromkeys(keep) if sid in known and sid not in ids]
     stamp = newest_mtime(scene / "scenes", scene / "story", scene / "assets", root / "engine")
     own = own or []
-    combos = [(font, assets) for font in TITLE_FONTS for assets in (True, False)]
+    # one font first (the one the page shows): a changed style or engine draws 17 fonts × 2 cards a style, minutes of
+    # work, and the page waited for all of them (user, 20 November 2026: «виключив світіння… включити назад не можу»)
+    fonts = [font for font in (fonts or TITLE_FONTS) if font in TITLE_FONTS] or list(TITLE_FONTS)
+    combos = [(font, assets) for font in fonts for assets in (True, False)]
     jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own + kept for combo in combos]
     run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None, kind)
-    with LOCK:
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            keys = dict(zip([(job[0]["id"] if job[0] else None, *job[1]) for job in jobs], pool.map(run, jobs)))
+    # each card has its own lock (card_set), so a quick one-font request is not queued behind a long full set
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        keys = dict(zip([(job[0]["id"] if job[0] else None, *job[1]) for job in jobs], pool.map(run, jobs)))
     result = {font: {("1" if assets else "0"): {sid: f"/api/{CARDS}/{keys[None, font, assets]}/{sid}-0.jpg" for sid in ids}
-                     for assets in (True, False)} for font in TITLE_FONTS}
+                     for assets in (True, False)} for font in fonts}
     for style in own + kept:
-        for font in TITLE_FONTS:
+        for font in fonts:
             for assets in (True, False):
                 result[font]["1" if assets else "0"][style["id"]] = f"/api/{CARDS}/{keys[style['id'], font, assets]}/{style['id']}-0.jpg"
     # the Studio's own styles (style_copy.BUILTIN) lead the gallery and cannot be deleted; a channel's copied ones close it
-    listed = lambda s: {"id": s["id"], "name": s["name"], "desc": s["desc"], **({} if s.get("builtin") else {"own": True})}
+    listed = lambda s: {"id": s["id"], "name": s["name"], "desc": s["desc"],
+                        **({} if s.get("builtin") else {"own": True, "tweaks": style_copy.tweaks(s["def"])})}
     return {"styles": [listed(s) for s in own if s.get("builtin")] + [known[sid] for sid in ids] + [known[s["id"]] for s in kept]
                   + [listed(s) for s in own if not s.get("builtin")],
             "cards": result, "keys": set(keys.values())}
@@ -303,7 +337,7 @@ def channel_kind(channel: dict) -> str:
     return "animated" if (channel.get("settings") or {}).get("channel_kind") == "animated" else "regular"
 
 
-def showcase(cid: str, kind: str | None = None) -> dict:
+def showcase(cid: str, kind: str | None = None, fonts=None) -> dict:
     """The style cards for a channel's settings, with the style its newest film uses now.
 
     A regular channel has no films of its own, yet its 2D-animation frames are Razgon scenes too: it borrows the
@@ -321,7 +355,7 @@ def showcase(cid: str, kind: str | None = None) -> dict:
         current = saved
     # the kind the settings page shows now (a switch not saved yet), otherwise the channel's saved one
     kind = kind if kind in {"regular", "animated"} else channel_kind(channel)
-    result = cards(root, style_copy.load(cid), keep=[sid for sid in (current, saved) if sid], kind=kind)
+    result = cards(root, style_copy.load(cid), keep=[sid for sid in (current, saved) if sid], kind=kind, fonts=fonts)
     result.pop("keys")
     return {"film_style": current, **result}
 

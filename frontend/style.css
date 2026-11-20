@@ -3083,3 +3083,188 @@ select option{background:#232327;color:#f1f1f2}
 .settings-publish .settings-publish-interval{display:flex;align-items:center;gap:8px;flex-direction:row;width:auto}
 .settings-publish .settings-publish-interval input{width:52px;flex:none;text-align:center;padding-left:4px;padding-right:4px}
 .settings-publish .settings-section>small{display:block;margin-top:8px}
+
+/* «Оформлення» made compact (user, 20 November 2026: «дуже багато блоків… компактніше, зрозуміліше і простіше»):
+   the plate on top with the logo on the left and its place on the right; the style as its picture on the left and the
+   gallery with font and switches on the right; no explainers and no «Показати на кадрах ролика» */
+.channel-settings-workspace .logo-section .logo-heading{margin-bottom:12px}
+.channel-settings-workspace .logo-section .logo-compact-body{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:18px;align-items:start}
+.channel-settings-workspace .logo-section .logo-file{display:flex;flex-direction:column;align-items:stretch;gap:8px}
+.channel-settings-workspace .logo-section .logo-tile-wrap{width:100%}
+.channel-settings-workspace .logo-section .logo-tile{width:100%;height:auto;aspect-ratio:16/10}
+.channel-settings-workspace .logo-section .logo-file-info{gap:4px}
+.channel-settings-workspace .logo-section .logo-file-info small{font-size:11px;line-height:1.35}
+.channel-settings-workspace .logo-section .logo-place{margin:0;padding:0;border:0;display:block}
+.channel-settings-workspace .logo-section .logo-place-controls{display:flex;flex-direction:column;gap:12px}
+.channel-settings-workspace .logo-section .logo-sliders{display:flex;flex-direction:column;gap:10px}
+.channel-settings-workspace .channel-look{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px 18px;align-items:start}
+.channel-settings-workspace .channel-look>h3{grid-column:1/-1;margin-bottom:0}
+.channel-settings-workspace .channel-look>.style-note,.channel-settings-workspace .style-caption details,
+.channel-settings-workspace #style-film-toggle{display:none!important}
+.channel-settings-workspace .channel-look>.logo-preview{margin:0}
+.channel-settings-workspace .channel-look .style-caption{margin:0 0 8px}
+.channel-settings-workspace .channel-look .style-strip{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.channel-settings-workspace .channel-look .style-thumb{font-size:10.5px;gap:3px}
+.channel-settings-workspace .channel-look .style-toolbar{gap:8px 14px;margin-top:10px}
+.channel-settings-workspace .channel-look .style-film{grid-column:1/-1}
+@media(max-width:640px){.channel-settings-workspace .logo-section .logo-compact-body,.channel-settings-workspace .channel-look{grid-template-columns:1fr}}
+.channel-settings-workspace .style-tweaks{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:10px;padding-top:10px;border-top:1px solid #34343a}
+.channel-settings-workspace .style-tweaks[hidden]{display:none}
+.channel-settings-workspace .style-tweaks .logo-toggle{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#d6d7dc;white-space:nowrap}
+/* no plate yet: the drop square with its hint beside it; with a plate: the logo on the left, its place on the right */
+.channel-settings-workspace .logo-section .logo-compact-body:not(:has(.has-logo)){grid-template-columns:1fr}
+.channel-settings-workspace .logo-section .logo-file:not(:has(.has-logo)){display:grid;grid-template-columns:190px minmax(0,1fr);align-items:center;gap:16px}
+.channel-settings-workspace .logo-section .logo-file:not(:has(.has-logo)) .logo-file-info{display:flex}
+/* smaller still (user, 20 November 2026: «Плашка завелике… стилі зробити менші разів в 2», «зараз у роликах… не треба») */
+.channel-settings-workspace .logo-section .logo-compact-body{grid-template-columns:minmax(0,120px) minmax(0,1fr)}
+.channel-settings-workspace .logo-section .logo-file:not(:has(.has-logo)){grid-template-columns:120px minmax(0,1fr)}
+.channel-settings-workspace .logo-section .logo-tile{aspect-ratio:16/9}
+.channel-settings-workspace .logo-section .logo-tile-empty svg{width:18px;height:18px}
+.channel-settings-workspace .channel-look .style-caption{display:none}
+.channel-settings-workspace .channel-look .style-strip{grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px 5px}
+.channel-settings-workspace .channel-look .style-thumb{font-size:9.5px;line-height:1.15}
+.channel-settings-workspace .channel-look .style-thumb img{border-radius:7px}
+.channel-settings-workspace .channel-look .style-add-box{border-radius:7px;font-size:16px}
+/* the style's fine settings in one fold, one tidy list (user, 20 November 2026: «Галочки розкидані… мають бути якось
+   розкриватися… Нема ніякої порядку») */
+.channel-settings-workspace .style-fine{margin-top:12px;border:1px solid #34343a;border-radius:11px;background:#1d1d21}
+.channel-settings-workspace .style-fine>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;cursor:pointer;list-style:none;font-size:13px;color:#e6e7ea}
+.channel-settings-workspace .style-fine>summary::-webkit-details-marker{display:none}
+.channel-settings-workspace .style-fine>summary .channel-settings-chevron{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}
+.channel-settings-workspace .style-fine[open]>summary .channel-settings-chevron{transform:rotate(90deg)}
+.channel-settings-workspace .style-fine .style-toolbar,.channel-settings-workspace .style-fine .style-tweaks{display:flex;flex-direction:column;align-items:stretch;gap:0;margin:0;padding:0 12px;border:0}
+.channel-settings-workspace .style-fine .style-tweaks[hidden]{display:none}
+.channel-settings-workspace .style-fine .style-toolbar>label,.channel-settings-workspace .style-fine .style-tweaks>label{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #2c2c31;font-size:12.5px;color:#d6d7dc;white-space:nowrap;margin:0}
+.channel-settings-workspace .style-fine .style-toolbar>label:first-child{flex-direction:row}
+.channel-settings-workspace .style-fine .style-toolbar>label.animated-only[hidden],.channel-settings-workspace .style-fine #style-film-toggle{display:none!important}
+.channel-settings-workspace .style-fine .style-tweaks{padding-bottom:4px}
+.channel-settings-workspace .style-fine .style-tweaks>label:first-child{border-top-color:#3a3a40}
+.modal-backdrop:not([data-channel-kind="animated"]) .channel-settings-workspace .style-fine .animated-only{display:none}
+.channel-settings-workspace .style-zoomable{cursor:zoom-in;touch-action:none;user-select:none}
+.channel-settings-workspace .style-zoomable.is-zoomed{cursor:grab}
+.channel-settings-workspace .style-zoomable.is-panning{cursor:grabbing}
+.channel-settings-workspace .style-zoomable.is-zoomed .logo-mark{opacity:0!important}
+.channel-settings-workspace .style-zoomable:after{content:'';position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;
+  background:rgba(12,12,14,.62) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1f1f2' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='m15 15 5 5M8 10.5h5M10.5 8v5'/%3E%3C/svg%3E") center/15px no-repeat;opacity:0;transition:opacity .15s;pointer-events:none}
+.channel-settings-workspace .style-zoomable:hover:after{opacity:1}
+.channel-settings-workspace .style-zoomable.is-zoomed:after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1f1f2' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='m15 15 5 5M8 10.5h5'/%3E%3C/svg%3E")}
+/* the plate's settings in two short rows beside the logo: the corner, then size, margin and visibility side by side */
+.channel-settings-workspace .logo-section .logo-place,.channel-settings-workspace .logo-section .logo-place-controls{width:100%;justify-self:stretch}
+.channel-settings-workspace .logo-section .logo-place-controls{display:flex!important;flex-direction:column;align-items:stretch;gap:10px}
+.channel-settings-workspace .logo-section .logo-place-row{justify-content:flex-start}
+.channel-settings-workspace .logo-section .logo-sliders{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.channel-settings-workspace .logo-section .logo-sliders label{min-width:0;font-size:11.5px}
+@media(max-width:640px){.channel-settings-workspace .logo-section .logo-sliders{grid-template-columns:1fr}}
+/* the plate, simpler still (user, 20 November 2026): no «Показувати», the logo in its own shape, sliders with from-to
+   marks and a value that keeps its width so nothing jumps while a slider moves */
+.channel-settings-workspace .logo-section #logo-switch{display:none!important}
+.channel-settings-workspace .logo-section .logo-tile.has-logo{aspect-ratio:auto;height:auto;background:none;border-color:transparent;padding:0}
+.channel-settings-workspace .logo-section .logo-tile.has-logo img{position:static;display:block;width:100%;height:auto;object-fit:contain;border-radius:8px}
+.channel-settings-workspace .logo-section .logo-slider output{min-width:46px;text-align:right;font-variant-numeric:tabular-nums}
+.channel-settings-workspace .logo-section .logo-range{display:flex;justify-content:space-between;margin-top:2px;padding-right:54px;font-size:10px;color:#6f717a}
+.channel-settings-workspace .logo-section .logo-feedback:empty{display:none}
+.channel-settings-workspace .settings-field-reset{display:none!important}
+/* the plate as one quiet row: the logo, then «Місце й розмір» that opens by itself (user, 20 November 2026: «щоб всі
+   настройки відкривалися окремо… на кучу, так негарно») */
+.channel-settings-workspace .logo-section .logo-compact-body:has(.has-logo){grid-template-columns:96px minmax(0,1fr);align-items:start;gap:14px}
+.channel-settings-workspace .logo-section .logo-place-fold{border:1px solid #34343a;border-radius:11px;background:#1d1d21}
+.channel-settings-workspace .logo-section .logo-compact-body:not(:has(.has-logo)) .logo-place-fold{display:none}
+.channel-settings-workspace .logo-section .logo-place-fold>summary{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;list-style:none;font-size:13px;color:#e6e7ea}
+.channel-settings-workspace .logo-section .logo-place-fold>summary::-webkit-details-marker{display:none}
+.channel-settings-workspace .logo-section .logo-place-fold>summary small{flex:1;text-align:right;font-size:11.5px;color:#8f919a}
+.channel-settings-workspace .logo-section .logo-place-fold>summary .channel-settings-chevron{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}
+.channel-settings-workspace .logo-section .logo-place-fold[open]>summary .channel-settings-chevron{transform:rotate(90deg)}
+.channel-settings-workspace .logo-section .logo-place-fold .logo-place{padding:4px 12px 12px}
+.channel-settings-workspace .logo-section .logo-heading{margin-bottom:8px}
+
+/* ===== «Оформлення», final order (user, 20 November 2026: «наведи тут порядок… базар дивиться негарно») =====
+   one column: the style picture, a row of styles, then equal rows that open */
+.channel-settings-workspace .channel-look{display:flex!important;flex-direction:column;gap:12px}
+.channel-settings-workspace .channel-look>h3{margin:0}
+.channel-settings-workspace .channel-look>.logo-preview{width:100%;margin:0}
+.channel-settings-workspace .channel-look>div:last-child{display:flex;flex-direction:column;gap:8px;min-width:0}
+.channel-settings-workspace .channel-look .style-strip{display:grid!important;grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:92px;gap:8px;overflow-x:auto;padding:2px 2px 6px;margin-bottom:4px;scrollbar-width:thin}
+.channel-settings-workspace .channel-look .style-thumb{font-size:10.5px}
+.channel-settings-workspace .logo-section{margin:0;padding:0;border:0;background:none}
+.channel-settings-workspace .logo-section .logo-heading{display:none!important}
+.channel-settings-workspace .look-row{border:1px solid #34343a;border-radius:11px;background:#1d1d21;margin:0}
+.channel-settings-workspace .look-row>summary{display:grid!important;grid-template-columns:40px auto minmax(0,1fr) 14px;align-items:center;gap:12px;padding:8px 12px;cursor:pointer;list-style:none;font-size:13px;color:#e6e7ea;min-height:44px}
+.channel-settings-workspace .look-row>summary::-webkit-details-marker{display:none}
+.channel-settings-workspace .look-row>summary strong{font-weight:600;font-size:13px}
+.channel-settings-workspace .look-row>summary small{text-align:right;font-size:11.5px;color:#8f919a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.channel-settings-workspace .look-row>summary .channel-settings-chevron{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}
+.channel-settings-workspace .look-row[open]>summary .channel-settings-chevron{transform:rotate(90deg)}
+.channel-settings-workspace .look-row-thumb{width:40px;height:26px;border-radius:5px;background:#2a2a30 repeating-conic-gradient(#33333a 0 25%,#2a2a30 0 50%) 0 0/8px 8px;display:grid;place-items:center;overflow:hidden}
+.channel-settings-workspace .look-row-thumb img{width:100%;height:100%;object-fit:contain}
+.channel-settings-workspace .look-row-icon{background:none}
+.channel-settings-workspace .look-row-icon svg{width:18px;height:18px;fill:none;stroke:#aeb0b7;stroke-width:1.7;stroke-linecap:round}
+.channel-settings-workspace .look-row-body{padding:6px 12px 12px;border-top:1px solid #2c2c31;display:flex;flex-direction:column;gap:12px}
+.channel-settings-workspace .logo-row .logo-file{display:grid!important;grid-template-columns:120px minmax(0,1fr)!important;align-items:center;gap:14px}
+.channel-settings-workspace .logo-row .logo-file-info{display:flex!important}
+.channel-settings-workspace .logo-row .logo-file-info strong{display:none}
+.channel-settings-workspace .logo-row .logo-place{padding:0!important}
+.channel-settings-workspace .style-fine.look-row{margin-top:0}
+.channel-settings-workspace .style-fine.look-row .style-toolbar,.channel-settings-workspace .style-fine.look-row .style-tweaks{padding:0 12px}
+.channel-settings-workspace .channel-look,.channel-settings-workspace .channel-look>*{min-width:0;max-width:100%}
+.channel-settings-workspace .channel-look>div:last-child{width:100%}
+.channel-settings-workspace .channel-look .style-strip{width:100%;max-width:100%}
+.channel-settings-workspace .logo-row #logo-replace{display:none!important}
+.channel-settings-workspace .logo-section{margin-bottom:14px!important}
+/* the plate, minimal (user, 20 November 2026): no focus ring on the row, no pixels line, no «Місце»; the four corners
+   as a 2×2 square beside the logo, the logo lined up with the sliders */
+.channel-settings-workspace .look-row>summary:focus,.channel-settings-workspace .look-row>summary:focus-visible{outline:none!important;box-shadow:none!important}
+.channel-settings-workspace .look-row:has(>summary:focus-visible){border-color:#4a4a52}
+.channel-settings-workspace .logo-row .look-row-body{padding:12px}
+.channel-settings-workspace .logo-row .logo-file{display:flex!important;align-items:center;gap:16px;margin:0}
+.channel-settings-workspace .logo-row .logo-tile-wrap{width:120px;flex:none;margin:0}
+.channel-settings-workspace .logo-row .logo-file:has(.has-logo) .logo-file-info{display:none!important}
+.channel-settings-workspace .logo-row .logo-file:not(:has(.has-logo)) .logo-position-grid{display:none}
+.channel-settings-workspace .logo-row .logo-position-grid{display:grid!important;grid-template-columns:repeat(2,30px);grid-auto-rows:30px;gap:6px}
+.channel-settings-workspace .logo-row .logo-place-controls{gap:0}
+.channel-settings-workspace .logo-row .logo-sliders{margin-top:4px}
+.channel-settings-workspace .logo-row .logo-position{width:30px;height:30px}
+.channel-settings-workspace .logo-section .logo-row .logo-file{flex-direction:row!important;justify-content:flex-start!important;align-items:center!important}
+.channel-settings-workspace .logo-row>summary small{visibility:hidden}
+/* the plate in one tidy row (user, 20 November 2026: «те більше, те менше, те ширше, те вужче. Чому так?»): the logo,
+   the 2×2 corners, then a short column of three equal sliders; a value shows only while its slider is dragged */
+.channel-settings-workspace .logo-row .look-row-body{display:grid!important;grid-template-columns:132px 66px minmax(0,1fr);gap:20px;align-items:center;padding:14px 16px}
+.channel-settings-workspace .logo-row .logo-file{display:contents!important}
+.channel-settings-workspace .logo-row .logo-tile-wrap{width:132px}
+.channel-settings-workspace .logo-row .logo-tile,.channel-settings-workspace .logo-row .logo-tile.has-logo{padding:0!important;border:0!important;background:none!important;width:100%;display:block}
+.channel-settings-workspace .logo-row .logo-tile.has-logo img{width:100%;height:auto;border-radius:8px;display:block}
+.channel-settings-workspace .logo-row .logo-file:not(:has(.has-logo)) .logo-tile{aspect-ratio:16/9;border:1px dashed #4a4a52!important}
+.channel-settings-workspace .logo-row .logo-place{grid-column:3;min-width:0}
+.channel-settings-workspace .logo-row .logo-place-controls{display:block!important}
+.channel-settings-workspace .logo-row .logo-sliders{display:flex!important;flex-direction:column;gap:12px;margin:0;max-width:340px}
+.channel-settings-workspace .logo-row .logo-slider{display:grid!important;grid-template-columns:118px minmax(0,1fr);align-items:center;gap:12px;margin:0;font-size:12px;color:#aeb0b7;position:relative}
+.channel-settings-workspace .logo-row .logo-slider>span{display:block!important;position:relative;min-width:0}
+.channel-settings-workspace .logo-row .logo-slider input{width:100%;margin:0}
+.channel-settings-workspace .logo-row .logo-slider output{position:absolute;right:0;top:-17px;min-width:0;font-size:11px;color:#f1f1f2;background:#2a2a30;border-radius:5px;padding:1px 6px;opacity:0;pointer-events:none;transition:opacity .12s}
+.channel-settings-workspace .logo-row .logo-slider:has(input:active) output,.channel-settings-workspace .logo-row .logo-slider:has(input:focus-visible) output{opacity:1}
+.channel-settings-workspace .logo-row .logo-range{display:none!important}
+@media(max-width:640px){.channel-settings-workspace .logo-row .look-row-body{grid-template-columns:132px 66px}.channel-settings-workspace .logo-row .logo-place{grid-column:1/-1}}
+/* three equal blocks of one height (the logo's 16:9 at 132 px = 74 px) with equal gaps: the logo, the 2×2 corners, the
+   sliders in a card of their own (user, 20 November 2026: «плашка вужча, квадрат вищий, розмір… ще вища») */
+.channel-settings-workspace .logo-row .look-row-body{grid-template-columns:132px 74px 300px!important;gap:16px!important;justify-content:start;align-items:stretch!important}
+.channel-settings-workspace .logo-row .logo-tile-wrap{height:74px;display:flex;align-items:center}
+.channel-settings-workspace .logo-row .logo-tile.has-logo img{height:74px;object-fit:contain;background:#141417}
+.channel-settings-workspace .logo-row .logo-position-grid{grid-template-columns:repeat(2,34px)!important;grid-auto-rows:34px!important;gap:6px!important;align-self:center}
+.channel-settings-workspace .logo-row .logo-position{width:34px!important;height:34px!important}
+.channel-settings-workspace .logo-row .logo-place{grid-column:3;height:74px;box-sizing:border-box;border:1px solid #34343a;border-radius:10px;background:#18181c;padding:6px 12px!important;display:flex!important;align-items:center}
+.channel-settings-workspace .logo-row .logo-place[hidden]{display:none!important}
+.channel-settings-workspace .logo-row .logo-place-controls{width:100%}
+.channel-settings-workspace .logo-row .logo-sliders{gap:2px!important;max-width:none}
+.channel-settings-workspace .logo-row .logo-slider{grid-template-columns:104px minmax(0,1fr)!important;gap:10px!important;font-size:11.5px;line-height:1;height:20px}
+.channel-settings-workspace .logo-row .logo-slider output{top:-15px}
+@media(max-width:640px){.channel-settings-workspace .logo-row .look-row-body{grid-template-columns:132px 74px!important}.channel-settings-workspace .logo-row .logo-place{grid-column:1/-1}}
+/* the logo fills its 132×74 box exactly (no grey bars), the corners sit in a card like the sliders' */
+.channel-settings-workspace .logo-row .logo-tile.has-logo img{width:132px!important;height:74px!important;max-width:none!important;max-height:none!important;object-fit:cover!important;background:none!important;border-radius:10px}
+.channel-settings-workspace .logo-row .logo-position-grid{box-sizing:border-box;width:74px;height:74px;border:1px solid #34343a;border-radius:10px;background:#18181c;padding:7px;grid-template-columns:repeat(2,26px)!important;grid-auto-rows:26px!important;gap:6px!important;align-content:center;justify-content:center}
+.channel-settings-workspace .logo-row .logo-position{width:26px!important;height:26px!important;border-radius:6px}
+.channel-settings-workspace .logo-row .logo-position:after{width:7px;height:4px}
+/* the sliders sit in the middle of their card: three 18 px rows and two 4 px gaps (62 px) in its 72 px, 5 px above and below */
+.channel-settings-workspace .logo-row .logo-place{padding:0 12px!important}
+.channel-settings-workspace .logo-row .logo-sliders{gap:4px!important;justify-content:center}
+.channel-settings-workspace .logo-row .logo-slider{height:18px!important}
+.channel-settings-workspace .logo-row .logo-slider input[type=range]{height:18px!important;min-height:0!important;margin:0!important;padding:0!important;display:block}
+.channel-settings-workspace .logo-row .logo-place{padding:0 16px!important}

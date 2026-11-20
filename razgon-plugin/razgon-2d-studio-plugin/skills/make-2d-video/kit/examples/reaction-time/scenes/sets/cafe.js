@@ -1,6 +1,6 @@
 // sets/cafe.js — street café at golden hour. Reusable by any shot: call cafe(g, t, cam, opts) then draw characters at depth 1.
 // Value structure: facade mostly in shadow, small warm windows + lamps are the bright accents, sky glows above.
-import { E, V, mood, layer, backdrop, rr, seg, circle, poly, linGrad, radGrad, glow, alpha, shade, mix } from '/engine/core.js';
+import { E, V, FONTS, mood, layer, backdrop, rr, seg, circle, poly, linGrad, radGrad, glow, alpha, shade, mix } from '/engine/core.js';
 import * as FX from '/engine/fx2d.js';
 
 export const cafeGround = () => E.H * V(0.82, 0.68);
@@ -31,8 +31,12 @@ export function cafe(g, t, cam, o = {}) {
     FX.door(g, { x: CX - 70, y: GY, w: 140, h: V(330, 380), color: wallDark, open: 0.3, light: M.practical });
     for (let x = left, k = 0; x < left + w; x += 56, k++) { g.fillStyle = k % 2 ? '#c9b8a4' : '#8f3328'; g.fillRect(x, ay - ah, 56, ah); g.beginPath(); g.arc(x + 28, ay, 28, 0, Math.PI); g.fill(); }
     g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(left, ay - ah, w, 12); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(left, ay + 28, w, 30);
-    rr(g, CX - 100, ay - ah - 66, 200, 50, 10); g.fillStyle = wallDark; g.fill();
-    g.fillStyle = M.practical; g.font = '700 28px Fredoka'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('CAFÉ', CX, ay - ah - 40);
+    // the sign is written in the channel's title font, large, so the style card shows the font a channel picks
+    rr(g, CX - 170, ay - ah - 92, 340, 80, 14); g.fillStyle = wallDark; g.fill();
+    g.fillStyle = mix(M.practical, "#fff4dc", 0.65); g.font = `700 54px "${FONTS.title}", Fredoka`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    // centred on the letters' own box, so any title font sits in the middle of the sign
+    { const m = g.measureText('CAFÉ'), w = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, h = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+      g.fillText('CAFÉ', CX - w / 2 + m.actualBoundingBoxLeft, ay - ah - 52 - h / 2 + m.actualBoundingBoxAscent); }
     for (const sx of [-1, 1]) { const lx = CX + sx * 130, ly = ay + 70; rr(g, lx - 8, ly, 16, 26, 4); g.fillStyle = '#ffe9c0'; g.fill(); glow(g, lx, ly + 12, 120, M.practical, 0.45); }
   });
   layer(g, cam, 0.9, (g) => {                                      // sidewalk
