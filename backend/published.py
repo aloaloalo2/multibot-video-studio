@@ -175,7 +175,11 @@ def enqueue(pid: str) -> dict:
     # turn (they would otherwise fight over the file server's port).
     working = listener() or in_progress()
     starting = store.DATA_ROOT / 'youtube-session-opened.json'
-    recent = time.time() - float((store.read_json(starting, {}) or {}).get('at') or 0) < STARTING_MINUTES * 60
+    # a session opened in the last minutes is still starting only while other episodes wait for it: with this one alone
+    # in the queue nothing is waiting for that session (it was cancelled or its episode deleted), so a new one opens
+    # (user, 20 November 2026: «нажав але не перекинуло в клод» after «Скасувати» and «Опублікувати» again)
+    others = len(rows) > 1
+    recent = others and time.time() - float((store.read_json(starting, {}) or {}).get('at') or 0) < STARTING_MINUTES * 60
     open_session = not working and not recent
     if open_session:
         store.atomic_json(starting, {'at': time.time()})
@@ -199,6 +203,8 @@ def cancel(pid: str) -> dict:
     state = store.read_json(marker, {}) or {}
     working = bool(state.get('at'))
     store.atomic_json(marker, {'cancelled': time.time(), **({'was': state} if state else {})})
+    if not queue():
+        (store.DATA_ROOT / 'youtube-session-opened.json').unlink(missing_ok=True)   # nothing waits for that session now
     return {'cancelled': True, 'was_queued': was_queued, 'was_publishing': working}
 
 

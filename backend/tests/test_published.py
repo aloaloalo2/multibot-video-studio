@@ -105,3 +105,26 @@ class ListenerTest(unittest.TestCase):
             kill.assert_called_once()
         with self.run_ps({10: '20 /usr/bin/some-other-app'}):
             self.assertFalse(published.waiting_script(10))
+
+
+class OpenSessionTest(unittest.TestCase):
+    """Cancelled and sent again within minutes: a new Claude session opens (20 November 2026)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        for pid in ('a' * 24, 'b' * 24):
+            (root / 'projects' / pid).mkdir(parents=True); (root / 'projects' / pid / 'project.json').write_text('{}')
+        patches = [patch.object(store, 'DATA_ROOT', root), patch.object(store, 'PROJECTS_ROOT', root / 'projects'),
+                   patch.object(store, 'project_dir', side_effect=lambda pid: root / 'projects' / pid),
+                   patch.object(store, 'load_project', side_effect=lambda pid: {'id': pid, 'channel_id': 'c'}),
+                   patch.object(published, 'listener', return_value=False),
+                   patch.object(published, 'open_claude', return_value=True)]
+        for p in patches:
+            p.start(); self.addCleanup(p.stop)
+
+    def test_a_lone_episode_opens_a_session_even_right_after_another(self):
+        self.assertTrue(published.enqueue('a' * 24)['open_session'])
+        published.cancel('a' * 24)
+        self.assertTrue(published.enqueue('a' * 24)['open_session'])
+        self.assertFalse(published.enqueue('b' * 24)['open_session'])   # two waiting: the one just opened takes both
