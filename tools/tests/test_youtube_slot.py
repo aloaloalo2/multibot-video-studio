@@ -41,5 +41,19 @@ class CancelTest(unittest.TestCase):
                 y.prepare(pid)
 
 
+class MonetizationTest(unittest.TestCase):
+    def test_done_asks_for_the_monetization_mark(self):
+        import json, tempfile
+        from unittest.mock import patch
+        folder, pid = Path(tempfile.mkdtemp()), "a" * 24
+        (folder / "projects" / pid).mkdir(parents=True)
+        (folder / "projects" / pid / "publishing.json").write_text(json.dumps({"at": 1, "endscreen": "ok"}))
+        with patch.object(y, "DATA", folder), patch.object(y.studio, "find_project", lambda ref: {"id": pid}):
+            self.assertEqual(y.main(["done", pid, "abcdefghijk", "2026-11-22 15:00", "VK-abcdefghijk"]), 1)
+            self.assertEqual(y.main(["monetization", pid, "ok"]), 0)
+            state = json.loads((folder / "projects" / pid / "publishing.json").read_text())
+            self.assertEqual(state["monetization"], "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

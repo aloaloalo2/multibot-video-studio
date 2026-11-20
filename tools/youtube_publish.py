@@ -11,6 +11,7 @@ into YouTube Studio's file inputs by a script.
     python3 tools/youtube_publish.py slot P 2026-11-20    # date and time of the next video after that day, by the channel's interval («none»: none yet)
     python3 tools/youtube_publish.py step P "що зроблено"   # marks a step; quiet for 15 min = «зупинилась» on the card
     python3 tools/youtube_publish.py failed P "причина"     # the card reads «Публікація зупинилась» with «Продовжити»
+    python3 tools/youtube_publish.py monetization P ok    # monetization switched on in the form (or failed "причина")
     python3 tools/youtube_publish.py stop                 # stops the file server
     python3 tools/youtube_publish.py channel P UC…        # remembers the YouTube channel id of P's studio channel
     python3 tools/youtube_publish.py done P VIDEO_ID "2026-11-24 15:00" VK-VIDEO_ID   # after __vk.verify: records it
@@ -236,10 +237,14 @@ def prepare(ref: str) -> dict:
             "must": [
                 "Перед цим випуском перечитай docs/YOUTUBE_PUBLISH.md заново: порядок змінився, твоя пам'ять про нього застаріла.",
                 "Публікуєш сам: клікаєш у Studio й перевіряєш кожен крок на скриншоті; скрипт лише для файлів відео й прев'ю.",
+                "Перед Studio відкрий cover_url в окремій вкладці вбудованого браузера, щоб він дозволив адресу сервера "
+                "файлів: інакше __vk.video і __vk.cover падають з ERR_BLOCKED_BY_CLIENT.",
                 (f"Плейлист обов'язковий: вибери «{channel['playlist']}» у списку плейлистів і перевір його назву в полі."
                  if channel.get("playlist") else
                  "Плейлист обов'язковий: відкрий список плейлистів і подивись сам, не роби висновків з минулих випусків. "
                  "Один є, то вибери його; кілька, то той, що за темою; потім youtube_publish.py playlist <id> \"НАЗВА\"."),
+                "Монетизація обов'язкова: у формі крок «Монетизация» → «Вкл.», далі вимоги рекламодавців: у самому низу "
+                "«нічого з переліченого» (мовою Studio, останній пункт) і надіслати; перевір на екрані, потім monetization P ok.",
                 "Кінцева заставка обов'язкова: щоразу став її у формі, крок «Дополнения», до розкладу. "
                 "Минулі невдачі не причина пропустити. endscreen failed лише після двох справжніх спроб у цьому випуску.",
             ]}
@@ -353,6 +358,19 @@ def main(argv=None) -> int:
             if args[0] == "failed":
                 record(project["id"], "failed")   # the attempt's time and cost, listed apart as a failed attempt
             print("ok")
+        elif args[:1] == ["monetization"] and len(args) in (3, 4) and args[2] in ("ok", "failed"):
+            # monetization on in every video (user, 20 November 2026: «монетизація… включена треба ставити
+            # обов'язково»): done asks for this mark like for the end screen
+            project = studio.find_project(args[1])
+            if cancelled(project["id"]):
+                print(CANCELLED)
+                return 3
+            file = DATA / "projects" / project["id"] / "publishing.json"
+            state = {**read_json(file, {}), "updated": time.time()}
+            state.setdefault("at", time.time())
+            state["monetization"] = args[2] if args[2] == "ok" else "failed: " + (args[3] if len(args) == 4 else "")
+            file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            print("ok")
         elif args[:1] == ["endscreen"] and len(args) in (3, 4) and args[2] in ("ok", "failed"):
             # the end screen and the playlist are part of every publication (user, 19 November 2026: «кінцеву
             # заставку теж не вибирається»): done asks for this mark, so no session skips them quietly
@@ -396,8 +414,12 @@ def main(argv=None) -> int:
             if not endscreen:
                 raise studio.Failure("Кінцева заставка не позначена: у формі до розкладу виконай await __vk.endScreen() і "
                                      "запиши endscreen P ok (або endscreen P failed \"причина\", якщо YouTube не дав її поставити).")
+            monetization = read_json(folder / "publishing.json", {}).get("monetization")
+            if not monetization:
+                raise studio.Failure("Монетизація не позначена: у формі крок «Монетизация» → «Вкл.» → «Готово», перевір на "
+                                     "екрані й запиши monetization P ok (або monetization P failed \"причина\").")
             mark = {"at": time.time(), "source": "youtube_publish", "video_id": args[2], "url": f"https://youtu.be/{args[2]}",
-                      "scheduled": args[3], "endscreen": endscreen}
+                      "scheduled": args[3], "endscreen": endscreen, "monetization": monetization}
             (folder / "published.json").write_text(json.dumps(mark, ensure_ascii=False), encoding="utf-8")
             mark["work"] = record(project["id"], "done")
             mark["blue_tag"] = tag_blue(project.get("episode_path"))   # the folder turns blue in Finder too
