@@ -47,3 +47,32 @@ class FinderInfoColourTest(PublishedTest):
         info = bytearray(32); info[9] = 4 << 1   # Finder's colour 4 (blue) in the FinderInfo flags
         subprocess.run(['xattr', '-wx', 'com.apple.FinderInfo', info.hex(), str(self.folder)], check=True)
         self.assertTrue(published.check({'id': 'p', 'episode_path': str(self.folder)})['at'])
+
+
+class CancelTest(unittest.TestCase):
+    """«Скасувати» takes an episode out of the queue and marks a running one (20 November 2026)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.project = root / 'project'; self.project.mkdir()
+        patches = [patch.object(store, 'project_dir', return_value=self.project),
+                   patch.object(store, 'load_project', return_value={'id': 'a' * 24}),
+                   patch.object(store, 'DATA_ROOT', root)]
+        for p in patches:
+            p.start(); self.addCleanup(p.stop)
+
+    def test_a_queued_episode_leaves_the_queue_and_the_card_is_free_again(self):
+        pid = 'a' * 24
+        store.atomic_json(published.queue_path(), [{'project': pid}, {'project': 'b' * 24}])
+        result = published.cancel(pid)
+        self.assertTrue(result['was_queued'])
+        self.assertEqual([row['project'] for row in published.queue()], ['b' * 24])
+        self.assertIsNone(published.publishing({'id': pid}))
+
+    def test_a_running_publication_is_marked_for_the_session(self):
+        pid = 'a' * 24
+        store.atomic_json(self.project / 'publishing.json', {'at': 1, 'step': 'Відео у формі'})
+        self.assertTrue(published.cancel(pid)['was_publishing'])
+        self.assertTrue(store.read_json(self.project / 'publishing.json', {})['cancelled'])
+        self.assertIsNone(published.publishing({'id': pid}))

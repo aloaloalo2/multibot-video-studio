@@ -25,5 +25,21 @@ class SlotTest(unittest.TestCase):
         self.assertEqual(y.interval({"channel": {"settings": {"publish_interval_days": 4}}}), 4)
 
 
+class CancelTest(unittest.TestCase):
+    def test_a_cancelled_episode_is_refused_at_every_step(self):
+        import json, tempfile
+        from unittest.mock import patch
+        folder, pid = Path(tempfile.mkdtemp()), "a" * 24
+        (folder / "projects" / pid).mkdir(parents=True)
+        (folder / "projects" / pid / "publishing.json").write_text(json.dumps({"cancelled": 1}))
+        with patch.object(y, "DATA", folder), patch.object(y, "QUEUE", folder / "q.json"), \
+                patch.object(y.studio, "find_project", lambda ref: {"id": pid}):
+            self.assertEqual(y.main(["step", pid, "Розклад"]), 3)
+            self.assertEqual(y.main(["endscreen", pid, "ok"]), 3)
+            self.assertEqual(y.main(["done", pid, "abcdefghijk", "2026-11-21 15:00", "VK-abcdefghijk"]), 3)
+            with self.assertRaises(y.studio.Failure):
+                y.prepare(pid)
+
+
 if __name__ == "__main__":
     unittest.main()

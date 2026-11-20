@@ -155,6 +155,21 @@ def enqueue(pid: str) -> dict:
 STALE_MINUTES = 15   # a publishing session that marks no step for this long has stopped (a lost connection, a refusal)
 
 
+def cancel(pid: str) -> dict:
+    """«Скасувати» on a card waiting or being published (user, 20 November 2026: «нажав випадково… щоб я міг відмінити
+    в студії»): the episode leaves the queue; a session already at work finds the mark at its next step
+    (tools/youtube_publish.py step/endscreen/done) and stops without scheduling the video."""
+    store.load_project(pid)
+    rows = queue()
+    was_queued = any(row.get('project') == pid for row in rows)
+    store.atomic_json(queue_path(), [row for row in rows if row.get('project') != pid])
+    marker = store.project_dir(pid) / 'publishing.json'
+    state = store.read_json(marker, {}) or {}
+    working = bool(state.get('at'))
+    store.atomic_json(marker, {'cancelled': time.time(), **({'was': state} if state else {})})
+    return {'cancelled': True, 'was_queued': was_queued, 'was_publishing': working}
+
+
 def publishing(item: dict) -> str | None:
     """'queued' while the episode waits for the publishing session; 'publishing' while tools/youtube_publish.py marks its
     steps; 'stopped' when the session said it failed or went quiet (user, 19 November 2026: «публікація зупинилась… я б

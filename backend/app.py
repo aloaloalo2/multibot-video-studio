@@ -1934,6 +1934,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/youtube-publish", path)
         if match and method == "POST":
             return self.json_response(published.enqueue(match.group(1)))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/youtube-publish/cancel", path)
+        if match and method == "POST":
+            return self.json_response(published.cancel(match.group(1)))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
         if match and method == "POST":
             limit = body.get("codex_limit") if isinstance(body, dict) else None

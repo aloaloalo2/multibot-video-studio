@@ -199,8 +199,19 @@ def wait(poll: float = 5.0) -> str:
         time.sleep(poll)
 
 
+def cancelled(pid: str) -> bool:
+    """The author pressed «Скасувати» on the card (backend/published.cancel): the session stops this episode."""
+    return bool(read_json(DATA / "projects" / pid / "publishing.json", {}).get("cancelled"))
+
+
+CANCELLED = ("Автор скасував публікацію цього випуску в студії. Зупинись: не плануй і не публікуй його. Якщо відео вже "
+             "завантажене, лиши його чернеткою, скажи автору й переходь до wait.")
+
+
 def prepare(ref: str) -> dict:
     project = studio.find_project(ref)
+    if cancelled(project["id"]) and not any(row.get("project") == project["id"] for row in read_json(QUEUE, [])):
+        raise studio.Failure(CANCELLED)
     folder = Path(project["episode_path"])
     data = metadata(folder)
     mp4, png = video(project), cover(project)
@@ -330,6 +341,9 @@ def main(argv=None) -> int:
             # the session marks each step («Відео у формі», «Розклад 21.11 15:00»); a card whose session goes quiet
             # for 15 minutes or says «failed» reads «Публікація зупинилась» with «Продовжити» (backend/published.py)
             project = studio.find_project(args[1])
+            if cancelled(project["id"]):
+                print(CANCELLED)
+                return 3
             file = DATA / "projects" / project["id"] / "publishing.json"
             state = {**read_json(file, {}), "updated": time.time()}
             state.setdefault("at", time.time())
@@ -342,6 +356,9 @@ def main(argv=None) -> int:
             # the end screen and the playlist are part of every publication (user, 19 November 2026: «кінцеву
             # заставку теж не вибирається»): done asks for this mark, so no session skips them quietly
             project = studio.find_project(args[1])
+            if cancelled(project["id"]):
+                print(CANCELLED)
+                return 3
             file = DATA / "projects" / project["id"] / "publishing.json"
             state = {**read_json(file, {}), "updated": time.time()}
             state.setdefault("at", time.time())
@@ -370,6 +387,9 @@ def main(argv=None) -> int:
                 raise studio.Failure("Спершу перевір у «Контенті»: await __vk.verify(VIDEO_ID) має дати ok і proof; "
                                      "тоді done P VIDEO_ID \"дата час\" PROOF. Чернетку не позначай опублікованою.")
             project = studio.find_project(args[1])
+            if cancelled(project["id"]):
+                print(CANCELLED + " Якщо ролик уже встиг стати запланованим, скажи це автору: він вирішить, видаляти його чи ні.")
+                return 3
             folder = DATA / "projects" / project["id"]
             endscreen = read_json(folder / "publishing.json", {}).get("endscreen")
             if not endscreen:

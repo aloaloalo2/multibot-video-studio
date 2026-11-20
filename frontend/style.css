@@ -3274,3 +3274,7 @@ select option{background:#232327;color:#f1f1f2}
 .modal-actions .trend-idea-words{display:flex;align-items:center;gap:8px;margin:0 auto 0 0;font-size:12px;color:#b6b8c1;white-space:nowrap}
 .modal-actions .trend-idea-words[hidden]{display:none}
 .modal-actions .trend-idea-words input{width:86px;margin:0;padding:7px 10px}
+/* «Скасувати» beside a waiting or running publication */
+.project-publish-cancel{display:inline-grid;place-items:center;width:20px;height:20px;margin-left:4px;border-radius:50%;color:#9a9ca4;cursor:pointer;vertical-align:middle;transition:background-color .12s,color .12s}
+.project-publish-cancel svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.project-publish-cancel:hover,.project-publish-cancel:focus-visible{background:#3a3a42;color:#f1f1f2;outline:none}

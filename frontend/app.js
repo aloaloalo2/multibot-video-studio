@@ -446,6 +446,16 @@ async function openYoutubePublish(project){
   }catch(error){status(error.message,true);}
 }
 
+// «Скасувати» beside «У черзі на публікацію» or «Публікація» (user, 20 November 2026: «нажав випадково… щоб я міг
+// відмінити в студії»): the episode leaves the queue, a session at work stops at its next step
+async function cancelYoutubePublish(project){
+  try{
+    const result=await api(`/api/projects/${encodeURIComponent(project.id)}/youtube-publish/cancel`,'POST',{});
+    await refreshProjects().catch(()=>{});
+    status(result.was_publishing?'Публікацію скасовано. Сесія зупиниться на наступному кроці, завантажене відео лишиться чернеткою.':'Публікацію скасовано.');
+  }catch(error){status(error.message,true);}
+}
+
 const overviewProjectRequests=new Map();
 async function refreshProjects(){
   const channelId=state.channel?.id;if(!channelId)return;
@@ -608,7 +618,7 @@ function completionMark(project){
   const publish=stage==='export'&&!published?(project.publishing==='stopped'
     ?`<span class="project-publish-stopped" title="${esc(project.publishing_note||'Сесія публікації зупинилась')}">Публікація зупинилась</span><span class="project-publish" role="button" tabindex="0" title="Продовжити публікацію на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Продовжити</span></span>`
     :project.publishing
-    ?`<span class="project-publishing">${exportSpinner}<span>${project.publishing==='queued'?'У черзі на публікацію':'Публікація'}</span></span>`
+    ?`<span class="project-publishing">${exportSpinner}<span>${project.publishing==='queued'?'У черзі на публікацію':'Публікація'}</span></span><span class="project-publish-cancel" role="button" tabindex="0" title="Скасувати публікацію" aria-label="Скасувати публікацію"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8"/></svg></span>`
     :'<span class="project-publish" role="button" tabindex="0" title="Опублікувати на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Опублікувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
