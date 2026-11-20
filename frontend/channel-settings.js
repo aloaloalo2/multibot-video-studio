@@ -1,5 +1,6 @@
 // Keep the existing controls mounted while arranging them into a small settings workspace.
 const channelSettingsPaths={
+  publish:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/>',
   projects:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M8 13h3m-3 3h7"/>',
   script:'<path d="M5 3h10l4 4v14H5ZM14 3v5h5M8 12h8m-8 4h6"/>',
   look:'<path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.4 1.4 0 0 1 .8-2.6h2A4.2 4.2 0 0 0 21 10.5 8.5 8.5 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="6.7" r=".7"/><circle cx="15.5" cy="7.5" r=".7"/>',
@@ -240,9 +241,14 @@ function organizeChannelSettings(channel){
   panels.projects.append(fontGroup);
   // «Публікація»: what the card's «Опублікувати» follows; for now only the days between videos (user, 20 November 2026:
   // «єдину цифру в основне засунь… По дефолту завжди один день»)
-  const publishSection=document.createElement('section');publishSection.className='settings-section settings-publish';
-  publishSection.innerHTML=`<h3>Публікація</h3><label class="settings-publish-interval">Інтервал між роликами <input id="settings-publish-interval" type="number" min="1" max="30" step="1" value="${Number(channel.settings?.publish_interval_days)||1}"> дн.</label><small>Кнопка «Опублікувати» ставить новий ролик на стільки днів після останнього запланованого</small>`;
-  panels.projects.append(publishSection);
+  const days=Math.min(10,Math.max(1,Number(channel.settings?.publish_interval_days)||1));
+  const dayWord=n=>n===1?'день':n<5?'дні':'днів';
+  const publishGroup=document.createElement('details');publishGroup.className='channel-settings-group settings-publish';
+  publishGroup.innerHTML=`<summary>${channelSettingsIcon('publish')}<span><strong>Публікація</strong><small class="settings-choice-summary"></small></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body"><section class="settings-section"><label class="settings-publish-interval">Інтервал між роликами <input id="settings-publish-interval" type="number" min="1" max="10" step="1" value="${days}"><span class="settings-publish-unit"></span></label><small>Кнопка «Опублікувати» ставить новий ролик на стільки днів після останнього запланованого</small></section></div>`;
+  const intervalInput=publishGroup.querySelector('#settings-publish-interval');
+  const paintInterval=()=>{const n=Math.min(10,Math.max(1,Math.round(Number(intervalInput.value)||1)));publishGroup.querySelector('.settings-publish-unit').textContent=dayWord(n);publishGroup.querySelector('summary small').textContent=n===1?'Щодня':`Раз на ${n} ${dayWord(n)}`;};
+  intervalInput.addEventListener('input',paintInterval);paintInterval();
+  panels.projects.append(publishGroup);
 
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');

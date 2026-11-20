@@ -341,8 +341,8 @@ def validate_settings(value: dict) -> dict:
     if not isinstance(value.get("claude_effort", "high"), str) or value.get("claude_effort", "high") not in {"low", "medium", "high", "xhigh"}:
         raise StudioError("Невідомий рівень зусиль агента")
     interval = value.get("publish_interval_days", 1)
-    if isinstance(interval, bool) or not isinstance(interval, int) or not 1 <= interval <= 30:
-        raise StudioError("Інтервал публікації має бути від 1 до 30 днів")
+    if isinstance(interval, bool) or not isinstance(interval, int) or not 1 <= interval <= 10:
+        raise StudioError("Інтервал публікації має бути від 1 до 10 днів")
     if not isinstance(value.get("director_model", DEFAULT_DIRECTOR_MODEL), str) or value.get("director_model", DEFAULT_DIRECTOR_MODEL) not in DIRECTOR_MODELS:
         raise StudioError("Невідома модель режисера")
     if "sound" in value:

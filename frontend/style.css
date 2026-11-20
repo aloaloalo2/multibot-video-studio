@@ -3078,7 +3078,8 @@ select option{background:#232327;color:#f1f1f2}
 .overview-projects .trend-card .trend-details{flex:1 1 auto}
 /* a trend card has one corner button: its title keeps only that one's place */
 .overview-projects .trend-card>h2{padding-right:34px}
-/* «Публікація» in the channel's «Основне»: one compact row, the days beside their label (user, 20 November 2026) */
-.settings-publish .settings-publish-interval{display:flex;align-items:center;gap:8px;flex-direction:row}
-.settings-publish .settings-publish-interval input{width:64px;flex:none;text-align:center}
-.settings-publish small{display:block;margin-top:6px}
+/* «Публікація» in the channel's «Основне»: folds like «Оформлення», a small field with its unit beside it (user,
+   20 November 2026: «зроби це поле… менше… днів, щоб воно біля поля було») */
+.settings-publish .settings-publish-interval{display:flex;align-items:center;gap:8px;flex-direction:row;width:auto}
+.settings-publish .settings-publish-interval input{width:52px;flex:none;text-align:center;padding-left:4px;padding-right:4px}
+.settings-publish .settings-section>small{display:block;margin-top:8px}
