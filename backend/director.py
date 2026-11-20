@@ -308,9 +308,72 @@ def activity_path(pid: str, kind: str) -> Path:
     return store.project_dir(pid) / f"{kind}-activity.json"
 
 
+# one more try in the same session; a second drop in a row stops the run with «Продовжити», which starts a fresh, short
+# session from the saved work (user, 19 November 2026: each retry of a grown session cost about $5 and dropped again)
+LOST_RETRIES = 1
+LOST_WAIT = 20     # seconds before the first retry, more each time
+LOST_PROMPT = ("Попередня відповідь обірвалась через втрату з'єднання з сервером, а не через твою помилку. "
+               "Продовж те саме завдання з місця, де зупинився: перевір, що вже збережено на диску й у студії, "
+               "не переробляй готове й доведи завдання до кінця.")
+
+
+LOST_NOTE = ("З'єднання з Claude обірвалось двічі поспіль посеред відповіді. Готове збережено; натисніть «Продовжити», "
+             "і робота піде в новій короткій сесії.")
+
+
+def lost(answer: dict) -> bool:
+    """The run stopped because the connection to Claude dropped mid-stream (19 November 2026: three of four frame
+    sessions of Karl's «Voyager 1» ended «API Error: Connection lost mid-response» and the whole film read failed)."""
+    return (answer.get("terminal_reason") == "api_error" and (answer.get("api_error") == "connection_failed"
+            or "connection lost" in str(answer.get("result") or "").casefold()))
+
+
+def run_json(command: list, prompt: str, cwd, timeout: float, keep=None):
+    """A one-answer Claude run (`--output-format json`): a dropped connection asks the same question again, up to
+    LOST_RETRIES times in a row (user, 19 November 2026: «у всіх випадках»). keep(stdout, answer) is called for every
+    answer, a lost one too, so each paid answer is recorded. Returns the last process and its answer."""
+    import model_json
+    for attempt in range(LOST_RETRIES + 1):
+        done = subprocess.run(command, input=prompt, cwd=cwd, text=True, capture_output=True, timeout=timeout)
+        answer = {}
+        for line in reversed((done.stdout or "").strip().splitlines()):   # the envelope is the last JSON object line
+            try:
+                answer = model_json.loads(line, kinds=(dict,))
+                break
+            except ValueError:
+                continue
+        if keep:
+            keep(done.stdout or "", answer)
+        if attempt == LOST_RETRIES or not ((done.returncode or answer.get("is_error")) and lost(answer)):
+            return done, answer
+        time.sleep(LOST_WAIT * (attempt + 1))
+    return done, answer
+
+
 @job_timing.measure('service')
 def claude(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
            effort: str = EFFORT, model: str = MODEL, env: dict | None = None) -> tuple[int, dict]:
+    """Run Claude Code on a brief; a dropped connection resumes the same session up to LOST_RETRIES times in a row,
+    each answer's cost counted. Returns the exit code and the final result event."""
+    started = time.monotonic()
+    code, answer = _claude_once(cli, prompt, log, activity, timeout, resume, effort, model, env)
+    for attempt in range(1, LOST_RETRIES + 1):
+        session = answer.get("session_id")
+        left = timeout - (time.monotonic() - started) - LOST_WAIT * attempt
+        if not ((code or answer.get("is_error")) and lost(answer) and session) or left <= 60 or str(activity) in CANCELLED:
+            break
+        time.sleep(LOST_WAIT * attempt)
+        if str(activity) in CANCELLED:
+            break
+        import production_sessions
+        more_code, more = _claude_once(cli, LOST_PROMPT, log.with_name(f"{log.stem}-resend{attempt}{log.suffix}"), activity,
+                                       int(left), session, effort, model, env)
+        code, answer = more_code, production_sessions.merge_answers(answer, more)
+    return code, answer
+
+
+def _claude_once(cli: Path, prompt: str, log: Path, activity: Path, timeout: int, resume: str | None = None,
+                 effort: str = EFFORT, model: str = MODEL, env: dict | None = None) -> tuple[int, dict]:
     """Run Claude Code on a brief, streaming its events: the log keeps them all, the activity feed the readable ones.
     Returns the exit code and the final result event (cost, usage, the agent's last message)."""
     if model not in store.DIRECTOR_MODELS:
@@ -414,6 +477,9 @@ def limit_stop(answer: dict) -> str | None:
     text = str(answer.get("result") or "")
     if AUTH_LOST.search(text) or answer.get("api_error") in {"authentication_failed", "authentication_error"}:
         return AUTH_NOTE
+    if lost(answer):
+        # stopped like a limit: the card offers «Продовжити», and it goes on in a fresh session
+        return LOST_NOTE
     if answer.get("api_error") != "usage_limit_reached" and not re.search(r"hit your \w+ limit", text):
         return None
     reset = re.search(r"resets (\d{1,2})(?::(\d{2}))?\s*([ap]m)", text, re.I)

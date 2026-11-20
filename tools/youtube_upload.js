@@ -112,7 +112,9 @@
       const chips = [...box.querySelectorAll('ytcp-chip')].map(c => text(c));
       return { ok: list.every(tag => chips.some(c => c.toLowerCase() === tag.toLowerCase())), chips };
     },
-    // the playlist with exactly this name; none of that name: { ok: false, playlists } (skip it then)
+    // the playlist of this name (case, spaces and the list's extra words such as its visibility do not matter); an
+    // empty name takes the channel's only playlist; several and no name: { ok: false, playlists } to choose from
+    // (user, 19 November 2026: «не вибирається плейлист»)
     async playlist(name) {
       const field = await until(() => document.querySelector('ytcp-video-metadata-playlists'));
       if (!field) return { ok: false, error: 'no playlist field' };
@@ -120,14 +122,19 @@
       (field.querySelector('ytcp-text-dropdown-trigger') || field).click();
       const dialog = await until(() => { const d = document.querySelector('ytcp-playlist-dialog'); return shown(d?.querySelector('ytcp-checkbox-lit')) && d; }, 8000);
       if (!dialog) return { ok: false, error: 'the playlist list did not open' };
-      const boxes = [...dialog.querySelectorAll('ytcp-checkbox-lit')];
-      const label = box => text(box.closest('li,label,div'));
-      const box = boxes.find(b => label(b) === name.trim());
-      if (box && box.getAttribute('aria-checked') !== 'true' && box.querySelector('[aria-checked]')?.getAttribute('aria-checked') !== 'true') box.click();
+      const fold = value => String(value || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+      const boxes = [...dialog.querySelectorAll('ytcp-checkbox-lit')].filter(shown);
+      const label = box => text(box.closest('li') || box.closest('label') || box.parentElement);
+      const want = fold(name);
+      const box = !want ? (boxes.length === 1 ? boxes[0] : null)
+        : boxes.find(b => fold(label(b)) === want) || boxes.find(b => fold(label(b)).startsWith(want)) || boxes.find(b => fold(label(b)).includes(want));
+      const checked = b => b.hasAttribute('checked') || b.getAttribute('aria-checked') === 'true' || b.querySelector('[aria-checked]')?.getAttribute('aria-checked') === 'true';
+      if (box && !checked(box)) box.click();
       await sleep(400);
+      const picked = box ? checked(box) : false;
       dialog.querySelector('ytcp-button.done-button')?.click();
       await sleep(900);
-      return { ok: !!box, playlists: boxes.map(label).slice(0, 20), field: text(field) };
+      return { ok: picked, chosen: box ? label(box) : null, playlists: boxes.map(label).slice(0, 20), field: text(field) };
     },
     // A/B test of the titles: the first is the title itself, the others go to the next fields; saved with the dialog
     async abTitles(titles) {

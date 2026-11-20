@@ -245,11 +245,18 @@ def start_project(pid, body):
             if not (project.get('voice_script') or {}).get('text'):
                 raise store.StudioError('Спершу збережіть сценарій')
             if script_editing.latest(pid).get('status') == 'done':
-                return public(data)
-            if not data.get('author_session'):
+                # the self-review itself is finished and only its metadata failed: «Продовжити саморедактуру» goes on
+                # with the metadata (from the saved answer when it passes, free) instead of answering the same error
+                # (user, 19 November 2026: «кнопка … не працює»)
+                if episode_metadata.exists(project):
+                    return public(data)
+                data.update(editing_status='done')
+                action = 'metadata'
+            if action == 'editing' and not data.get('author_session'):
                 raise store.StudioError('Немає збереженої сесії автора для саморедактури. Історичний звіт залишено без змін.',409)
-            data.update(editing_retry=True, completed=False)
-            return launch(cid, data, action, body.get('request_id'))
+            if action == 'editing':
+                data.update(editing_retry=True, completed=False)
+                return launch(cid, data, action, body.get('request_id'))
         if action == 'metadata':
             editorial = script_editing.latest(pid)
             if editorial and editorial.get('status') != 'done':
@@ -561,18 +568,23 @@ def refused(answer):
 def lost(answer):
     """The answer stopped because the connection to Claude dropped mid-stream, not because of Opus or the studio
     (19 November 2026: a self-review of 2 486 words lost its connection twice, «Opus не завершив відповідь»)."""
-    return answer.get('terminal_reason') == 'api_error' and 'connection lost' in str(answer.get('result') or '').casefold()
+    import director
+    return director.lost(answer)   # one rule for every Claude run of the studio
 
 
-LOST_RETRIES = 4   # a dropped connection may happen several times in one episode (user, 19 November 2026)
+LOST_RETRIES = 1   # one more try where it dropped; then a fresh short session, and two drops there stop (19 November 2026)
 LOST_WAIT = 20     # seconds before the first retry, more each time
 
 
+FRESH = ("Попередня сесія, у якій ти писав цей сценарій, кілька разів обірвалась через втрату з'єднання, тому це нова "
+         "сесія. Ти автор цього сценарію; усе потрібне для завдання є нижче, включно з повним текстом. Виконай завдання "
+         "повністю, у потрібному форматі.\n\n")
 RESEND = ("Попередня відповідь обірвалась через втрату з'єднання. Надішли відповідь на попереднє завдання повністю ще раз, "
           "у тому самому форматі, нічого не скорочуючи й без пояснень про обрив.")
 
 
-def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script', _retried=False, _lost=0):
+def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd=None, cost_category='script', _retried=False, _lost=0,
+         _original=None, _fresh=False):
     # Pure writing: no tools, no old conversation, no access to paid production commands.
     effort = session['effort'] if session else store.channel_effort({'channel_id': cid})
     if getattr(writing_jobs.LOCAL, 'job', None) is not None:
@@ -588,6 +600,7 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
         options['previous_session_cost']=baseline
     # no tools in this session: Opus once wrote a whole script inside a pretended «<invoke name="Bash">… cat <<EOF» call to
     # count its words, and the answer could not be read (17 November 2026, Karl Brenners, $0.72)
+    base = prompt if _original is None else _original   # the step's own task, sent whole to a fresh session
     prompt += NO_TOOLS
     try:
         code, answer = writing_jobs.run(cmd, prompt, root, identity, **options)
@@ -604,20 +617,28 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
             session.update(session_id=str(uuid.uuid4()), api_cost_usd=0)
         return opus(prompt, root, identity + '-again', cid, session=session, session_cwd=session_cwd,
                     cost_category=cost_category, _retried=True)
-    if (code or answer.get('is_error')) and lost(answer) and _lost < LOST_RETRIES:
-        # the same session from its cache, again after each drop (much cheaper than writing everything anew); the waits
-        # grow so a shaky network has time to settle
-        time.sleep(LOST_WAIT * (_lost + 1))
-        writing_jobs.check()
-        if session:
-            return opus(RESEND, root, f'{identity}-resend{_lost + 1}', cid, session=session, resume=True, session_cwd=session_cwd,
-                        cost_category=cost_category, _retried=_retried, _lost=_lost + 1)
-        return opus(prompt[:-len(NO_TOOLS)], root, f'{identity}-again{_lost + 1}', cid, session_cwd=session_cwd,
-                    cost_category=cost_category, _retried=_retried, _lost=_lost + 1)
+    if (code or answer.get('is_error')) and lost(answer):
+        # one more try where it dropped (a short session from its cache is cheap); two drops in a row move to a fresh
+        # session with the step's task alone: a grown session sent hundreds of thousands of tokens with every retry and
+        # kept dropping, about $5 each (TON 618, 19 November 2026); two drops in the fresh one stop with play on the card
+        if _lost < LOST_RETRIES:
+            time.sleep(LOST_WAIT * (_lost + 1))
+            writing_jobs.check()
+            if session:
+                return opus(RESEND, root, f'{identity}-resend{_lost + 1}', cid, session=session, resume=True, session_cwd=session_cwd,
+                            cost_category=cost_category, _retried=_retried, _lost=_lost + 1, _original=base, _fresh=_fresh)
+            return opus(base, root, f'{identity}-again{_lost + 1}', cid, session_cwd=session_cwd,
+                        cost_category=cost_category, _retried=_retried, _lost=_lost + 1, _original=base, _fresh=_fresh)
+        if session and not _fresh:
+            time.sleep(LOST_WAIT * 2)
+            writing_jobs.check()
+            session.update(session_id=str(uuid.uuid4()), api_cost_usd=0)   # later phases go on in the fresh session
+            return opus(FRESH + base, root, f'{identity}-fresh', cid, session=session, session_cwd=session_cwd,
+                        cost_category=cost_category, _retried=_retried, _original=FRESH + base, _fresh=True)
     if code or answer.get('is_error'):
         if lost(answer):
-            raise RuntimeError(f"З'єднання з Claude обривалось {LOST_RETRIES + 1} разів поспіль посеред відповіді. "
-                               'Готові результати збережені. Спробуйте ще раз трохи згодом.')
+            raise RuntimeError("З'єднання з Claude обривалось посеред відповіді і в старій, і в новій сесії. "
+                               'Готові результати збережені. Натисніть «Продовжити», коли зв\'язок стабілізується.')
         if refused(answer):
             # Opus's own safety filter stopped a normal script (15 November 2026, a French space episode,
             # «[reasoning_extraction]»); the message says so itself and a new session usually passes

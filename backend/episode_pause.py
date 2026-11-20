@@ -85,8 +85,27 @@ def stopped_revision(pid: str) -> dict | None:
     return revision
 
 
+def stopped_writing(pid: str) -> dict | None:
+    """An Opus step that stopped by itself (a dropped connection, a limit): the card offers play for it, and play starts
+    that step again (user, 19 November 2026: «на проекті немає типу кнопки продовжити» after a self-review lost its
+    connection five times)."""
+    import episode_ideas
+    if pid in episode_ideas.ACTIVE:
+        return None
+    data = store.read_json(store.project_dir(pid) / "episode-draft.json", {}) or {}
+    stage = data.get("stage")
+    if data.get("status") != "failed" or stage not in WRITING or data.get("completed"):
+        return None
+    if stage == "editing" and not (data.get("author_session") or data.get("manual_revision")):
+        return None   # a self-review with no author session cannot go on
+    if stage == "script" and not data.get("opening"):
+        return None
+    return {"stage": stage, "index": data.get("selected_index")}
+
+
 def resumable(pid: str) -> bool:
-    return paused(pid) is not None or stopped_narration(pid) is not None or stopped_revision(pid) is not None
+    return (paused(pid) is not None or stopped_narration(pid) is not None or stopped_revision(pid) is not None
+            or stopped_writing(pid) is not None)
 
 
 def label(pid: str) -> str | None:
@@ -99,7 +118,9 @@ def label(pid: str) -> str | None:
     stopped = (data or {}).get("stopped") or ({"narration": {"revision": revision["id"]}} if revision else
                                              {"narration": {}} if stopped_narration(pid) else {})
     if not stopped:
-        return None
+        writing = stopped_writing(pid)
+        # stopped by itself, not by the author's pause: «зупинилась», with play beside it
+        return WRITING_STOPPED.get(writing["stage"]) if writing else None
     if "narration" in stopped and (stopped["narration"] or {}).get("revision"):
         job = store.read_json(project_narration.root(pid) / "revision-job.json", {}) or {}
         total = int(job.get("total") or 0)
@@ -205,6 +226,8 @@ def running(pid: str) -> dict:
 
 WRITING = {"openings": "Зачини на паузі", "script": "Сценарій на паузі", "editing": "Саморедактура на паузі",
            "metadata": "Метадані на паузі"}
+WRITING_STOPPED = {"openings": "Зачини зупинились", "script": "Сценарій зупинився", "editing": "Саморедактура зупинилась",
+                   "metadata": "Метадані зупинились"}
 PARTS = {"narration", "director", "retime", "production", "languages", "writing"}
 
 
@@ -300,8 +323,11 @@ def resume(pid: str, parts=None) -> dict:
         if data is None:
             revision = stopped_revision(pid)
             job = None if revision else stopped_narration(pid)
+            writing = None if (revision or job) else stopped_writing(pid)
             if revision:
                 data = {"stopped": {"narration": {"revision": revision["id"]}}, "pending": {}}
+            elif writing:
+                data = {"stopped": {"writing": writing}, "pending": {}}
             elif job is None:
                 raise store.StudioError("Випуск не на паузі", 409)
             else:

@@ -38,8 +38,7 @@ function performanceMergeCost(a,b){
   return {...a,recorded:!!(a.recorded||b.recorded),providers,tokens};
 }
 function performanceRows(data){
-  // Time comes from the saved runs, so a busy older backend shows the same honest split: finished, running and paused
-  // runs are useful time, failed and interrupted attempts are listed apart.
+  // Time comes from the saved runs: every run counts, failed attempts included, and each row says how much failed.
   const groups=new Map(),costs=new Map();
   for(const row of data.processes||[]){const key=performanceWorkflow(row.workflow);if(key)costs.set(key,performanceMergeCost(costs.get(key),row.cost));}
   for(const run of data.runs||[]){
@@ -50,7 +49,10 @@ function performanceRows(data){
     // the waiting in a queue comes first: the work starts after it
     const queue=Math.max(0,Number(run.stages?.queue?.ms)||0),start=Number(run.started_at)*1000+queue;
     const span=Number.isFinite(start)?[start,start+spent]:[NaN,spent];
-    if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost.push(span);row.lost_runs++;}else row.active.push(span);
+    // every minute the spinner turned is time the author waited, a failed attempt too (user, 19 November 2026: «все, що
+    // крутився спінер, це робота, яку я очікував»): it counts, and the row only says how much of it went to failed attempts
+    row.active.push(span);
+    if(performanceLost.has(run.status)&&!performanceKeepsWork.has(workflow)){row.lost.push(span);row.lost_runs++;}
     row.running||=run.status==='running';groups.set(workflow,row);
   }
   for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);row.spans=row.active;delete row.active;delete row.lost;}
@@ -98,7 +100,7 @@ function performanceMarkup(data){
   const rows=performanceRows(data);
   if(!rows.length)return '<p class="muted">Ще немає основних процесів тривалістю понад секунду.</p>';
   const money=value=>`$${value.toFixed(value>0&&value<.01?4:2)}`;
-  const attempts=row=>row.lost_runs?`<small class="performance-lost">${row.active_ms>1000?'ще ':''}${esc(performanceTime(row.lost_ms))} у ${row.lost_runs===1?'невдалій спробі':row.lost_runs+' невдалих спробах'}</small>`:'';
+  const attempts=row=>row.lost_runs?`<small class="performance-lost">з них ${esc(performanceTime(row.lost_ms))} у ${row.lost_runs===1?'невдалій спробі':row.lost_runs+' невдалих спробах'}</small>`:'';
   const line=row=>{const cost=performanceCost(row.cost);return `<div class="performance-row" role="row" data-id="${esc(row.id)}"><span class="performance-name" role="cell">${performanceIcon(row.workflow)}<span class="performance-label"><strong>${esc(row.label||performanceWorkflows[row.workflow])}${row.running?' <em>триває</em>':''}</strong>${performanceParallel.has(row.workflow)?'<small class="performance-parallel">паралельно, не входить у «Разом»</small>':''}${attempts(row)}</span></span><span class="performance-duration" role="cell">${row.active_ms>1000?esc(performanceTime(row.active_ms)):'—'}</span><span class="performance-cost" role="cell" title="${esc(cost.title)}">${esc(cost.label)}</span></div>`;};
   const main=rows.filter(row=>row.active_ms>=120000||row.cost_only),small=rows.filter(row=>row.active_ms<120000&&!row.cost_only);
   let total=0,approximate=false,unknown=false;
@@ -110,7 +112,7 @@ function performanceMarkup(data){
   return `<div class="performance-table" role="table" aria-label="Час і витрати за процесами">${main.map(line).join('')}</div>`
     +(small.length?`<details class="performance-small"><summary><span>Інше</span><span class="performance-duration">${esc(performanceTime(smallTime))}</span></summary><div class="performance-table" role="table" aria-label="Короткі процеси">${small.map(line).join('')}</div></details>`:'')
     +`<div class="performance-total"><strong>Разом</strong><span class="performance-duration">${esc(performanceTime(time))}</span><span class="performance-cost">${approximate?'≈ ':''}${money(total)}${unknown?'+':''}</span></div>`
-    +(lost>1000?`<p class="performance-note muted">Невдалі спроби: ще ${esc(performanceTime(lost))}, у підсумок не входять.</p>`:'');
+    +'';
 }
 function updatePerformanceButton(){const button=$('project-performance');if(button)button.hidden=!state.project;}
 function openPerformance(){

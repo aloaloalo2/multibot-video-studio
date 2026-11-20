@@ -96,7 +96,8 @@ def validate(value, title):
     hashtags = tags_line.split()
     sentences = [x for x in re.split(r'(?<=[.!?…])\s+', text.strip()) if x.strip()]
     # 2-3 sentences of the person who made the video, then one line of hashtags (the author, 17 November 2026)
-    if (len(parts) != 2 or not 1 <= len(sentences) <= 4 or len(text.split()) > 80 or re.search(r'https?://|#', text)
+    # 120 words: three French or Spanish sentences run past 80 (19 November 2026, an 87-word description was refused)
+    if (len(parts) != 2 or not 1 <= len(sentences) <= 4 or len(text.split()) > 120 or re.search(r'https?://|#', text)
             or not 2 <= len(hashtags) <= 5 or not all(re.fullmatch(r'#[^\s#]{2,40}', h) for h in hashtags)):
         raise ValueError('Потрібен короткий опис на 2-3 речення і рядок хештегів під ним. Сценарій збережено.')
     # 4 to 15 one-word tags, the niche first (the author, 18 November 2026)

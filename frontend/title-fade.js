@@ -10,9 +10,10 @@
     const badge=button.querySelector(':scope > .trend-language');
     const text=[...button.childNodes].filter(n=>n!==badge).map(n=>n.textContent).join('');
     const key=(badge?badge.textContent:'')+'|'+text+'|'+button.clientWidth;
-    if(button._laid===key)return;
-    const node=document.createTextNode(text);
-    button.replaceChildren(...(badge?[badge]:[]),node);
+    if(button._laid===key&&button.querySelector(':scope > .title-head'))return;   // the app may put the bare text back
+    // the words sit in a span, so only they light up on hover, not the empty room beside a short title
+    const node=document.createTextNode(text),head=document.createElement('span');head.className='title-head';head.append(node);
+    button.replaceChildren(...(badge?[badge]:[]),head);
     const line=parseFloat(getComputedStyle(button).lineHeight)||20;
     if(button.scrollHeight>line*2+2){
       const range=document.createRange(),top=button.getBoundingClientRect().top;

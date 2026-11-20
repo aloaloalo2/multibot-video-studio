@@ -907,8 +907,17 @@ def studio_work_status(exports):
         except (OSError, ValueError, store.StudioError):
             return False
         return any(isinstance(job, dict) and job.get('status') == 'running' and (job.get('started_at') or 0) > since for job in jobs)
+    # only the work the pause stopped is hidden; another part that runs meanwhile shows as it is (user, 19 November 2026:
+    # «озвучка на паузі, але план створюється… краще показати те, що створюється»)
+    parts = {'озвучення сценарію': 'narration', 'режисура': 'director', 'створення кадрів': 'production', 'мови': 'languages',
+             'створення зачинів': 'writing', 'створення сценарію': 'writing', 'створення метаданих': 'writing',
+             'редактура сценарію': 'writing'}
+    def held(activity):
+        stopped = (episode_pause.paused(activity['project_id']) or {}).get('stopped') or {}
+        part = parts.get(activity.get('kind'))
+        return not stopped or part is None or part in stopped or (part == 'director' and 'retime' in stopped)
     if paused:
-        result['activities'] = [a for a in result['activities'] if a.get('project_id') not in paused or started_after_pause(a)]
+        result['activities'] = [a for a in result['activities'] if a.get('project_id') not in paused or started_after_pause(a) or not held(a)]
         result['active_channels'] = sorted(set(result.get('exporting_channels', [])) | {a.get('channel_id') for a in result['activities'] if a.get('channel_id')})
     # A live frame worker must block an update even when its project metadata
     # is temporarily unreadable or its final receipt was already written.

@@ -238,6 +238,11 @@ function organizeChannelSettings(channel){
   fontGroup.innerHTML=`<summary>${channelSettingsIcon('script')}<span><strong>Шрифти монтажу</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
   fontSection.querySelector('h3').hidden=true;fontGroup.lastElementChild.append(fontSection);
   panels.projects.append(fontGroup);
+  // «Публікація»: what the card's «Опублікувати» follows; for now only the days between videos (user, 20 November 2026:
+  // «єдину цифру в основне засунь… По дефолту завжди один день»)
+  const publishSection=document.createElement('section');publishSection.className='settings-section settings-publish';
+  publishSection.innerHTML=`<h3>Публікація</h3><label class="settings-publish-interval">Інтервал між роликами <input id="settings-publish-interval" type="number" min="1" max="30" step="1" value="${Number(channel.settings?.publish_interval_days)||1}"> дн.</label><small>Кнопка «Опублікувати» ставить новий ролик на стільки днів після останнього запланованого</small>`;
+  panels.projects.append(publishSection);
 
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');

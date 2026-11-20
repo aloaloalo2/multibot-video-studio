@@ -63,6 +63,18 @@ class EpisodePauseTest(unittest.TestCase):
         self.assertEqual((body["action"], body["index"]), ("script", 2))
         self.assertIsNone(episode_pause.paused("p"))
 
+    def test_a_self_review_that_stopped_by_itself_offers_play_and_starts_again(self):
+        import episode_ideas
+        episode_pause.store.atomic_json(self.dir / "episode-draft.json", {"stage": "editing", "status": "failed",
+                                        "author_session": {"session_id": "s"}, "selected_index": -1})
+        with patch.object(episode_ideas, "ACTIVE", {}):
+            self.assertTrue(episode_pause.resumable("p"))
+            self.assertEqual(episode_pause.label("p"), "Саморедактура зупинилась")
+            with patch.object(episode_ideas, "start_project") as start, \
+                 patch.object(episode_pause.store, "load_project", return_value={"id": "p"}):
+                episode_pause.resume("p")
+        self.assertEqual(start.call_args[0][1]["action"], "editing")
+
     def test_the_plan_page_pauses_and_resumes_the_voice_and_the_director_each_alone(self):
         import director
         import project_narration

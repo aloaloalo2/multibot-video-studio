@@ -8,7 +8,7 @@ into YouTube Studio's file inputs by a script.
 
     python3 tools/youtube_publish.py wait                 # waits for the card's «Опублікувати» and prints the project id
     python3 tools/youtube_publish.py prepare P            # the export, cover and metadata; starts the local file server
-    python3 tools/youtube_publish.py slot 2026-11-20      # date and time of the next video after that day («none»: none yet)
+    python3 tools/youtube_publish.py slot P 2026-11-20    # date and time of the next video after that day, by the channel's interval («none»: none yet)
     python3 tools/youtube_publish.py step P "що зроблено"   # marks a step; quiet for 15 min = «зупинилась» on the card
     python3 tools/youtube_publish.py failed P "причина"     # the card reads «Публікація зупинилась» with «Продовжити»
     python3 tools/youtube_publish.py stop                 # stops the file server
@@ -129,14 +129,21 @@ def serve(files: dict) -> str:
     return f"http://127.0.0.1:{PORT}"
 
 
-def slot(last: str, now=None) -> dict:
-    """When the next video of a channel goes out: the day after the last scheduled (or, with none scheduled, the last
+def interval(project: dict) -> int:
+    """Days between a channel's videos, from «Публікація» in the channel's settings: 1 by default (user, 20 November
+    2026: «якщо на 20 число є якийсь ролик, і там стоїть інтервал 2 дня… на 22 треба опублікувати»)."""
+    value = (project.get("channel") or {}).get("settings", {}).get("publish_interval_days", 1)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else 1
+
+
+def slot(last: str, now=None, days: int = 1) -> dict:
+    """When the next video of a channel goes out: `days` (the channel's interval) after the last scheduled (or, with none scheduled, the last
     published) video, but never before today; 15:00, or on today the next quarter hour at least 30 minutes ahead within
     13:00-18:00, else the next day at 15:00 (user, 19 November 2026: «якщо останній ролик був опублікований вчора… і
     нових… запланованих немає, то публікуємо… на сьогодні»)."""
     from datetime import date, datetime, timedelta
     now = now or datetime.now()
-    day = now.date() if last in ("", "none") else max(date.fromisoformat(last) + timedelta(days=1), now.date())
+    day = now.date() if last in ("", "none") else max(date.fromisoformat(last) + timedelta(days=days), now.date())
     if day == now.date():
         soonest = now + timedelta(minutes=30)
         soonest = soonest.replace(second=0, microsecond=0) + timedelta(minutes=(15 - soonest.minute % 15) % 15)
@@ -149,6 +156,26 @@ def slot(last: str, now=None) -> dict:
 
 QUEUE = DATA / "youtube-queue.json"   # «Опублікувати» on a card puts the episode here (backend/published.enqueue)
 LISTENER = DATA / "youtube-listener.json"
+
+
+def tag_blue(folder: str | None) -> bool:
+    """Finder's blue tag on the episode folder once the video is on YouTube (user, 19 November 2026: «головне, щоб
+    папка відмічалася голубим»); the folder's other tags stay. Colour 4 is blue in any system language."""
+    import plistlib
+    import subprocess
+    if not folder or not Path(folder).is_dir():
+        return False
+    attr = "com.apple.metadata:_kMDItemUserTags"
+    try:
+        raw = subprocess.run(["xattr", "-px", attr, folder], capture_output=True, text=True, timeout=5)
+        tags = plistlib.loads(bytes.fromhex(raw.stdout.replace(" ", "").replace("\n", ""))) if raw.returncode == 0 and raw.stdout.strip() else []
+    except Exception:
+        tags = []
+    if any(str(t).endswith("\n4") for t in tags):
+        return True
+    data = plistlib.dumps([*tags, "Синий\n4"], fmt=plistlib.FMT_BINARY).hex()
+    done = subprocess.run(["xattr", "-wx", attr, data, folder], capture_output=True, timeout=5)
+    return done.returncode == 0
 
 
 def take(pid: str) -> None:
@@ -184,10 +211,23 @@ def prepare(ref: str) -> dict:
     channel = channels().get(project["channel_id"], {})
     return {"project": project["id"], "studio_channel": project["channel"].get("name"),
             "youtube_channel_id": channel.get("youtube_id"), "playlist": channel.get("playlist"),
+            "publish_interval_days": interval(project),
             "video": str(mp4), "video_name": mp4.name, "video_mb": round(mp4.stat().st_size / 1e6),
             "video_url": f"{base}/{video_name}", "cover_url": f"{base}/{cover_name}" if png else None,
             "upload_script": str(HERE / "youtube_upload.js"),
-            **data, "published": read_json(DATA / "projects" / project["id"] / "published.json", None)}
+            **data, "published": read_json(DATA / "projects" / project["id"] / "published.json", None),
+            # read with every episode: a session that lives for days keeps an older guide in mind (19 November 2026: the
+            # publishing session went on saying «плейлістів немає» and «заставка не ставиться» after both were fixed)
+            "must": [
+                "Перед цим випуском перечитай docs/YOUTUBE_PUBLISH.md заново: порядок змінився, твоя пам'ять про нього застаріла.",
+                "Публікуєш сам: клікаєш у Studio й перевіряєш кожен крок на скриншоті; скрипт лише для файлів відео й прев'ю.",
+                (f"Плейлист обов'язковий: вибери «{channel['playlist']}» у списку плейлистів і перевір його назву в полі."
+                 if channel.get("playlist") else
+                 "Плейлист обов'язковий: відкрий список плейлистів і подивись сам, не роби висновків з минулих випусків. "
+                 "Один є, то вибери його; кілька, то той, що за темою; потім youtube_publish.py playlist <id> \"НАЗВА\"."),
+                "Кінцева заставка обов'язкова: щоразу став її у формі, крок «Дополнения», до розкладу. "
+                "Минулі невдачі не причина пропустити. endscreen failed лише після двох справжніх спроб у цьому випуску.",
+            ]}
 
 
 # $ per million tokens, as backend/spend_report.PRICE (Opus 5.5, the 1-hour cache)
@@ -278,6 +318,9 @@ def main(argv=None) -> int:
             print(wait())
         elif args[:1] == ["slot"] and len(args) == 2:
             print(json.dumps(slot(args[1])))
+        elif args[:1] == ["slot"] and len(args) == 3:
+            # slot P DATE: the channel's own interval between videos
+            print(json.dumps(slot(args[2], days=interval(studio.find_project(args[1])))))
         elif args[:1] == ["queue"]:
             print(json.dumps(read_json(QUEUE, []), ensure_ascii=False))
         elif args[:1] in (["step"], ["failed"]) and len(args) == 3:
@@ -292,6 +335,16 @@ def main(argv=None) -> int:
             if args[0] == "failed":
                 record(project["id"], "failed")   # the attempt's time and cost, listed apart as a failed attempt
             print("ok")
+        elif args[:1] == ["endscreen"] and len(args) in (3, 4) and args[2] in ("ok", "failed"):
+            # the end screen and the playlist are part of every publication (user, 19 November 2026: «кінцеву
+            # заставку теж не вибирається»): done asks for this mark, so no session skips them quietly
+            project = studio.find_project(args[1])
+            file = DATA / "projects" / project["id"] / "publishing.json"
+            state = {**read_json(file, {}), "updated": time.time()}
+            state.setdefault("at", time.time())
+            state["endscreen"] = args[2] if args[2] == "ok" else "failed: " + (args[3] if len(args) == 4 else "")
+            file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            print("ok")
         elif args[:1] == ["stop"]:
             print("Сервер файлів зупинено" if stop() else "Сервер файлів не працював")
         elif args[:1] == ["channel"] and len(args) == 3 and re.fullmatch(r"UC[\w-]{22}", args[2]):
@@ -301,16 +354,29 @@ def main(argv=None) -> int:
                                             "name": project["channel"].get("name")}
             CHANNELS.write_text(json.dumps(saved, ensure_ascii=False, indent=1), encoding="utf-8")
             print(f"{project['channel'].get('name')}: {args[2]}")
+        elif args[:1] == ["playlist"] and len(args) == 3:
+            # the channel's playlist, remembered for its next publications (prepare gives it then)
+            project = studio.find_project(args[1])
+            saved = read_json(CHANNELS, {})
+            saved[project["channel_id"]] = {**saved.get(project["channel_id"], {}), "playlist": args[2].strip(),
+                                            "name": project["channel"].get("name")}
+            CHANNELS.write_text(json.dumps(saved, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"{project['channel'].get('name')}: плейлист «{args[2].strip()}»")
         elif args[:1] == ["done"] and len(args) in (4, 5):
             if len(args) != 5 or args[4] != "VK-" + args[2]:
                 raise studio.Failure("Спершу перевір у «Контенті»: await __vk.verify(VIDEO_ID) має дати ok і proof; "
                                      "тоді done P VIDEO_ID \"дата час\" PROOF. Чернетку не позначай опублікованою.")
             project = studio.find_project(args[1])
-            mark = {"at": time.time(), "source": "youtube_publish", "video_id": args[2], "url": f"https://youtu.be/{args[2]}",
-                      "scheduled": args[3]}
             folder = DATA / "projects" / project["id"]
+            endscreen = read_json(folder / "publishing.json", {}).get("endscreen")
+            if not endscreen:
+                raise studio.Failure("Кінцева заставка не позначена: у формі до розкладу виконай await __vk.endScreen() і "
+                                     "запиши endscreen P ok (або endscreen P failed \"причина\", якщо YouTube не дав її поставити).")
+            mark = {"at": time.time(), "source": "youtube_publish", "video_id": args[2], "url": f"https://youtu.be/{args[2]}",
+                      "scheduled": args[3], "endscreen": endscreen}
             (folder / "published.json").write_text(json.dumps(mark, ensure_ascii=False), encoding="utf-8")
             mark["work"] = record(project["id"], "done")
+            mark["blue_tag"] = tag_blue(project.get("episode_path"))   # the folder turns blue in Finder too
             (folder / "publishing.json").unlink(missing_ok=True)
             print(json.dumps(mark, ensure_ascii=False))
         else:

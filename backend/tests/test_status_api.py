@@ -67,6 +67,17 @@ class StatusAPITest(unittest.TestCase):
         self.assertEqual(result['activities'],[])
         self.assertEqual(result['busy'][0],'мови: x')   # a restart still waits for it
 
+    def test_the_director_working_beside_a_paused_voice_shows_on_the_card(self):
+        # 19 November 2026: «озвучка на паузі, але план створюється… краще показати те, що створюється»
+        pid=self.project['id']
+        busy={'busy':['режисура: x'],'active_channels':[self.cid],'activities':[
+            {'project_id':pid,'channel_id':self.cid,'kind':'режисура','status':'running'},
+            {'project_id':pid,'channel_id':self.cid,'kind':'озвучення сценарію','status':'running'}]}
+        with patch.object(app.agent_view,'studio_status',return_value=busy), patch.object(app.episode_pause,'paused',return_value={'stopped':{'narration':{}}}):
+            result=app.studio_work_status([])
+        self.assertEqual([a['kind'] for a in result['activities']],['режисура'])
+        self.assertEqual(result['active_channels'],[self.cid])
+
     def test_a_language_voice_started_after_the_pause_shows_on_the_card(self):
         # 18 November 2026: CORBIN voiced Russian while its episode held yesterday's pause, and the card showed nothing
         pid=self.project['id']

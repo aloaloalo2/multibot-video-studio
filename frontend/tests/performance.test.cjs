@@ -112,7 +112,8 @@ test('a failed frame run keeps its time as work and the longest process leads',(
     {workflow:'translation',elapsed_ms:60000,status:'failed'},
   ]});
   assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>[row.workflow,row.active_ms,row.lost_ms]))),
-    [['production',1068000,0],['script',120000,0],['translation',0,60000]]);
+    // every spinner minute counts, a failed attempt too; the row still says how much failed (19 November 2026)
+    [['production',1068000,0],['script',120000,0],['translation',60000,60000]]);
 });
 test('languages voiced side by side count their clock time once',()=>{
   // CORBIN, 15 November 2026: pl and ru from 20:10 to 20:28 and uk and es from 07:46 to 07:49 read as 42 min

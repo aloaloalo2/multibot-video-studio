@@ -213,9 +213,9 @@ def describe(cid, ref):
                    '--safe-mode', '--setting-sources', '', '--tools', 'Read', '--allowedTools', f'Read({image})',
                    '--disallowedTools', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Agent', 'Task',
                    '--add-dir', str(root), '--output-format', 'json', '-p']
-        done = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=DESCRIBE_TIMEOUT, cwd=str(root))
         import model_json
-        answer = (model_json.loads(done.stdout or '{}', kinds=(dict,)) or {}).get('result') or ''
+        _, envelope = director.run_json(command, prompt, str(root), DESCRIBE_TIMEOUT)   # a dropped connection asks again
+        answer = envelope.get('result') or ''
         try:
             (root / 'thumbnail-description-answer.txt').write_text(answer, encoding='utf-8')   # kept for a later reading
         except OSError:

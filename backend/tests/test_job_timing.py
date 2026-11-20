@@ -287,3 +287,12 @@ class JobTimingTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PausedRunTest(unittest.TestCase):
+    def test_a_run_the_authors_pause_stopped_counts_as_work(self):
+        with patch.object(job_timing, 'paused_by_author', return_value=True):
+            status = 'failed'
+            if job_timing.terminal(status) in {'failed', 'cancelled', 'unknown'} and job_timing.paused_by_author('p'):
+                status = 'paused'
+        self.assertEqual(job_timing.terminal(status), 'stopped')

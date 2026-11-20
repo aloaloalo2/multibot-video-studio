@@ -457,21 +457,17 @@ def write_prompt(text: str, cwd: Path, work: Path, effort: str = PROMPT_EFFORT) 
     # session's settings and tool list cost 57 000–84 000 cache-written tokens a prompt (17 November 2026 audit)
     command = [str(cli), "--model", director.MODEL, "--effort", effort, "--strict-mcp-config", "--tools", "Read",
                "--allowedTools", "Read", "--setting-sources", "", "--add-dir", str(work), "--output-format", "json", "-p"]
-    result = subprocess.run(command, input=text, cwd=cwd, text=True, capture_output=True, timeout=PROMPT_TIMEOUT)
-    try:   # the paid answer is kept whatever happens next (it was lost when its reading failed)
-        (work / "Відповідь Claude на промпт.txt").write_text(result.stdout or "", encoding="utf-8")
-    except OSError:
-        pass
     import model_json
-    answer = {}
-    for line in reversed((result.stdout or "").strip().splitlines()):   # the envelope is the last JSON object line
-        try:
-            answer = model_json.loads(line, kinds=(dict,))
-            break
-        except ValueError:
-            continue
     import project_costs
-    project_costs.record_at(work.parent, 'claude_code', answer.get('total_cost_usd'))
+
+    def keep(stdout, answer):
+        try:   # the paid answer is kept whatever happens next (it was lost when its reading failed)
+            (work / "Відповідь Claude на промпт.txt").write_text(stdout, encoding="utf-8")
+        except OSError:
+            pass
+        project_costs.record_at(work.parent, 'claude_code', answer.get('total_cost_usd'))
+    # a dropped connection asks again (director.run_json)
+    result, answer = director.run_json(command, text, cwd, PROMPT_TIMEOUT, keep)
     if director.limit_stop(answer):
         stop = director.limit_stop(answer)
         raise RuntimeError(stop if stop == director.AUTH_NOTE else stop + " Прев'ю можна згенерувати, коли ліміт оновиться.")

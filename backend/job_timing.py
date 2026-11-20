@@ -37,6 +37,14 @@ LOCK = threading.RLock()
 ACTIVE = {}
 
 
+def paused_by_author(pid):
+    try:
+        import episode_pause
+        return episode_pause.paused(pid) is not None
+    except Exception:
+        return False
+
+
 def terminal(value):
     if value in {'done', 'complete', 'success'}:
         return 'complete'
@@ -268,6 +276,10 @@ def track(workflow, *, project, job=None):
                 raise
             finally:
                 try:
+                    if terminal(status) in {'failed', 'cancelled', 'unknown'} and paused_by_author(pid):
+                        # the author's pause stopped it: its time was work, not a failed attempt (user, 19 November 2026:
+                        # «режисер складав план… я зупинив, а потім продовжив, і воно порахувало це як невдало»)
+                        status = 'paused'
                     trace.finish(status)
                 finally:
                     CURRENT.reset(token)
