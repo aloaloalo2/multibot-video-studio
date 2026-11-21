@@ -21,6 +21,7 @@ function createProjectCard(project){
     // the blue «Опублікувати» beside the export check opens the publication task, not the episode
     if(event.target.closest('.project-publish-cancel')){event.stopPropagation();cancelYoutubePublish(current());return;}
     if(event.target.closest('.project-publish')){event.stopPropagation();openYoutubePublish(current());return;}
+    if(event.target.closest('.project-export-go')){event.stopPropagation();startCardExport(current());return;}
     const latest=current(),count=latest.scene_count??latest.scenes?.length??0;
     selectProject(latest.id,{view:directMontage(latest)||count?'editor':'plan'}).catch(error=>status(error.message,true));
   });

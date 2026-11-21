@@ -413,9 +413,12 @@ def save_job(job: dict) -> None:
             completion_notices.record(job)
         except (OSError, ValueError, store.StudioError) as error:
             print(f'Completion notice not saved: {error}', flush=True)
+        if job.get("status") == "done":
+            auto_pipeline.kick()   # the channel's «Автопублікація» takes the finished export now
 
 
 import episode_automation
+import auto_pipeline
 episode_automation.JOB_CALLBACKS = (save_job, load_job)
 
 
@@ -1463,6 +1466,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/projects":
             completion_notices.index_exports(JOBS_ROOT)
             projects = store.list_projects((query.get("channel") or [None])[0])
+            auto_settings = {}
             for item in projects:
                 item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
                 receipts = store.read_json(completion_notices.path(item['id']), {}) or {}
@@ -1474,6 +1478,13 @@ class Handler(BaseHTTPRequestHandler):
                 item['publishing'] = published.publishing(item)   # tools/youtube_publish.py prepare is at work
                 if item['publishing'] == 'stopped':
                     item['publishing_note'] = published.stopped_note(item['id'])
+                # the step the channel's automation is about to do: the card shows it coming, not a button to press
+                try:
+                    if item.get('channel_id') not in auto_settings:
+                        auto_settings[item.get('channel_id')] = store.read_channel_settings(store.get_channel_folder(item['channel_id']), {}) or {}
+                    item['auto_due'] = auto_pipeline.listed(item, project, auto_settings[item.get('channel_id')])
+                except (store.StudioError, OSError, KeyError, ValueError):
+                    item['auto_due'] = None
                 item['episode_paused'] = episode_pause.resumable(item['id'])
                 item['episode_pause_label'] = episode_pause.label(item['id']) if item['episode_paused'] else None
                 if (item.get('production_request') or {}).get('status') in {'requested', 'in_progress'} and item['id'] not in production.ACTIVE:
@@ -2099,6 +2110,12 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             project = store.load_project(match.group(1))
             bitrate = body.get("video_bitrate")
+            if body.get("channel_quality") is True and bitrate is None:
+                # the card's «Експортувати»: the quality the channel chose, as «Автоекспорт» exports
+                settings = store.read_channel_settings(store.get_channel_folder(project["channel_id"]), {}) or {}
+                quality = settings.get("video_quality") if settings.get("video_quality") in store.VIDEO_QUALITIES else "standard"
+                bitrate = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
+                                               int(project.get("fps") or 25))[store.VIDEO_QUALITIES.index(quality)]
             return self.json_response({"job": start_export(project, body.get("confirm_export") is True,
                                                            int(bitrate) if isinstance(bitrate, (int, float)) else None)}, 202)
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})/cancel", path)

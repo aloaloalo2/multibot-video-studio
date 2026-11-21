@@ -19,6 +19,50 @@ import store
 
 EVERY = 60
 STATE = "auto-pipeline.json"
+# a finished frame run or export wakes the loop at once (user, 21 November 2026: «кадри, галочка висить там 10 секунд, і
+# тоді починається експорт»; «висить кнопка опублікувати… а потім… запускається»): the next step starts within a second
+WAKE = threading.Event()
+
+
+def kick() -> None:
+    WAKE.set()
+
+
+def _saved_since(cid: str, flag: str) -> float | None:
+    """The moment the channel's box was seen on, without writing it (for the project list)."""
+    row = (store.read_json(store.DATA_ROOT / STATE, {}) or {}).get(cid) or {}
+    return row.get(flag)
+
+
+def due(project: dict, settings: dict, exported: float, since: dict) -> str | None:
+    """«export» or «publish» when the channel's automation is about to do that step for this episode, else None. The
+    card shows that step as coming instead of a button the author might press meanwhile. `since` holds the moments the
+    boxes went on ({"auto_export": t, "auto_publish": t}, None when off)."""
+    import published
+    pid = project["id"]
+    folder = store.project_dir(pid)
+    request = project.get("production_request") or {}
+    finished = float(request.get("finished_at") or 0)
+    export_since, publish_since = since.get("auto_export"), since.get("auto_publish")
+    if (export_since is not None and request.get("status") == "done" and (request.get("quality") or {}).get("passed") is not False
+            and finished > export_since and exported < finished
+            and (store.read_json(folder / "auto-export.json", {}) or {}).get("request") != request.get("id")):
+        return "export"
+    mark = store.read_json(published.path(pid), {}) or {}
+    if (publish_since is not None and exported > publish_since and not mark.get("at")
+            and published.publishing({"id": pid, "published": mark}) is None
+            and float((store.read_json(folder / "auto-publish.json", {}) or {}).get("export_at") or 0) < exported):
+        return "publish"
+    return None
+
+
+def listed(item: dict, project: dict, settings: dict) -> str | None:
+    """due() for the project list, reading the switch-on moments without writing them."""
+    cid = item.get("channel_id")
+    since = {flag: (_saved_since(cid, flag) if settings.get(flag) is True else None) for flag in ("auto_export", "auto_publish")}
+    if since["auto_export"] is None and since["auto_publish"] is None:
+        return None
+    return due(project, settings, float(item.get("last_export_at") or 0), since)
 
 
 def _since(cid: str, flag: str, on: bool) -> float | None:
@@ -105,5 +149,6 @@ def start(start_export, active_export) -> None:
             except Exception:
                 import traceback
                 traceback.print_exc()
-            time.sleep(EVERY)
+            WAKE.wait(EVERY)
+            WAKE.clear()
     threading.Thread(target=loop, name="auto-pipeline", daemon=True).start()

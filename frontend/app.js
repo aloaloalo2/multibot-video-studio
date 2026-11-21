@@ -620,6 +620,13 @@ function completionMark(project){
     :project.publishing
     ?`<span class="project-publishing">${exportSpinner}<span>${project.publishing==='queued'?'У черзі на публікацію':'Публікація'}</span></span><span class="project-publish-cancel" role="button" tabindex="0" title="Скасувати публікацію" aria-label="Скасувати публікацію"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8"/></svg></span>`
     :'<span class="project-publish" role="button" tabindex="0" title="Опублікувати на YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span>Опублікувати</span></span>'):'';
+  // a step the channel's automation takes now shows as coming, never as a button to press meanwhile (user, 21 November
+  // 2026: «висить кнопка опублікувати… а потім… автоматично… запускається… вводить в оману»)
+  const autoPublish=stage==='export'&&!published&&!project.publishing&&project.auto_due==='publish';
+  const coming=(text)=>`<span class="project-auto-next">${exportSpinner}<span>${text}</span></span>`;
+  // «Кадри ✓» with a green «Експортувати» beside it, like «Опублікувати» after the export (user, 21 November 2026)
+  const exportGo=stage==='frames'?(project.auto_due==='export'?coming('Експорт починається')
+    :'<span class="project-export-go" role="button" tabindex="0" title="Експортувати MP4 з якістю каналу"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg><span>Експортувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
   // on YouTube: the card says the day the video goes out, «24 листопада», not when it was exported (user, 19 November 2026)
@@ -630,7 +637,7 @@ function completionMark(project){
     :project.published?.at?''
     :when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
   // the release date stands after the blue «published» check (user, 19 November 2026)
-  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}${published?'':'<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>'}${published}${outDate?age:''}</span>${publish}`;   // the blue check replaces the export's (user, 19 November 2026)
+  return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}${published?'':'<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>'}${published}${outDate?age:''}</span>${autoPublish?coming('Публікація починається'):publish}${exportGo}`;   // the blue check replaces the export's (user, 19 November 2026)
 }
 async function markProjectSeen(id){
   const project=state.projects.find(item=>item.id===id),notice=project?.completion_notice;
@@ -724,6 +731,13 @@ function exportStopControl(jobId,onDone){
   });
   return button;
 }
+// the card's «Експортувати»: the export with the channel's quality, its progress on the card as any export's
+async function startCardExport(project){
+  if(!project)return;
+  try{const result=await api(`/api/projects/${encodeURIComponent(project.id)}/export`,'POST',{confirm_export:true,channel_quality:true});
+    if(result.job)state.projectExports.set(project.id,result.job);updateOverviewExports();pollOverviewExports(true);}
+  catch(error){status(error.message,true);}
+}
 function exportQueueLabel(job){return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
@@ -780,6 +794,11 @@ setInterval(()=>{
   // (user, 19 November 2026: «між ними треба обновити сторінку»)
   if(channelPublishing.has(state.channel.id)||state.projects.some(project=>['requested','in_progress'].includes(project.production_request?.status)||['queued','publishing'].includes(project.publishing)))refreshProjects().catch(()=>{});
 },8000);
+// a step the automation is about to take: the card is read every 2 s until the export or the publication shows up
+setInterval(()=>{
+  if(state.project || !state.channel || document.hidden || !state.projects.some(project=>project.auto_due))return;
+  refreshProjects().then(()=>pollOverviewExports(true)).catch(()=>{});
+},2000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollOverviewExports();if(!state.project&&state.channel)refreshProjects().catch(()=>{});}});
 
 function scenes() {return Array.isArray(state.project?.scenes) ? [...state.project.scenes].sort((a,b)=>seconds(a.start)-seconds(b.start)) : [];}

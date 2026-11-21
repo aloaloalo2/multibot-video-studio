@@ -53,6 +53,9 @@ def set_request(pid: str, **fields) -> dict:
         # project changed under it at every start and end of a run
         store.save_project(project)
         store.atomic_json(store.project_dir(pid) / "production-request.json", request)
+    if fields.get("status") == "done":
+        import auto_pipeline
+        auto_pipeline.kick()   # the channel's «Автоекспорт» starts now, not at the next minute
     return request
 
 

@@ -3290,3 +3290,10 @@ select option{background:#232327;color:#f1f1f2}
 @media(max-width:480px){.narration-choices.narration-switch{width:100%}.narration-choices.narration-switch>button{flex:1 1 0;padding:8px 6px!important;font-size:11.5px}}
 .narration-choices.narration-switch>button>span{font-size:12.5px!important;font-weight:600;line-height:1.2;letter-spacing:0;margin:0;padding:0;transform:none!important;color:inherit;width:auto;max-width:none}
 .narration-choices.narration-switch{width:100%!important;box-sizing:border-box}.narration-choices.narration-switch>button{width:auto!important;max-width:none!important;min-width:0!important;flex:1 1 0!important;flex-direction:row!important;align-items:center!important;justify-content:center!important}
+
+/* «Експортувати» beside «Кадри ✓», green as the export's check (user, 21 November 2026) */
+.project-export-go{white-space:nowrap;display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:3px 9px 3px 7px;border-radius:999px;background:var(--ui-accent);color:#0b1210;font-size:11.5px;font-weight:600;cursor:pointer;line-height:1.2;transition:filter .15s,box-shadow .2s}
+.project-export-go:hover,.project-export-go:focus-visible{filter:brightness(1.1);box-shadow:0 0 10px color-mix(in srgb,var(--ui-accent) 70%,transparent);outline:none}
+.project-export-go svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.project-card.exporting .project-export-go{display:none}
+.project-auto-next{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:var(--ui-accent);font-size:11.5px;font-weight:600;white-space:nowrap}
