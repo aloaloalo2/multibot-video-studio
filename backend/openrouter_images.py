@@ -54,8 +54,28 @@ def refusal(code: int, detail: str) -> str:
         return ("Вичерпано денний ліміт ключа OpenRouter." + spent + when +
                 " Його можна підняти в налаштуваннях ключа на openrouter.ai/settings/keys; цей ключ тратять і переклади.")
     if code == 402:
-        return "На балансі OpenRouter закінчились кошти. Поповніть баланс на openrouter.ai."
+        # 402 also comes while money is left: a request whose possible cost is more than the balance still free, as
+        # when several sheets are drawn at once (21 November 2026: about $2.75 left, sheets failed side by side and
+        # went through one by one); OpenRouter's own words and the balance say which
+        left = balance()
+        return ("OpenRouter відмовив (402): на балансі замало вільних коштів для цього запиту" +
+                (f", лишилося ${left:.2f}" if left is not None else "") +
+                ". Поповніть баланс на openrouter.ai або малюйте аркуші по одному." +
+                (f" Відповідь OpenRouter: {detail[:200]}" if detail else ""))
     return f"OpenRouter відповів {code}: {detail[:300]}"
+
+
+def balance() -> float | None:
+    """Dollars left on the OpenRouter account (GET /api/v1/credits), None when it cannot be read."""
+    import json as _json
+    import urllib.request as _request
+    try:
+        key = credentials.vault().read(credentials.service_name("openrouter"))
+        call = _request.Request("https://openrouter.ai/api/v1/credits", headers={"Authorization": "Bearer " + key})
+        data = _json.load(_request.urlopen(call, timeout=10)).get("data") or {}
+        return float(data["total_credits"]) - float(data["total_usage"])
+    except Exception:
+        return None
 
 
 def path(pid: str):

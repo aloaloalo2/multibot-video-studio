@@ -809,7 +809,7 @@ def codex_limit_note(reset: str | None, no_funds: bool = False) -> str:
     ставиться обробка кадрів… не хочу, щоб створювались кадри… без PNG»)."""
     reset = re.sub(r"[^0-9A-Za-zА-Яа-яІіЇїЄєҐґ:.,\s-]", "", str(reset or ""))[:60].strip()
     return ("Закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") +
-            (". На балансі OpenRouter теж немає коштів, тож малювати замість Codex нічим" if no_funds else "") +
+            (". На балансі OpenRouter замало вільних коштів, щоб малювати замість Codex" if no_funds else "") +
             ". Готові кадри збережені; натисніть «Продовжити», коли ліміт оновиться" +
             (" або поповніть OpenRouter" if no_funds else "") + ".")
 

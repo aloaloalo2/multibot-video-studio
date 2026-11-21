@@ -63,7 +63,7 @@ def stop_for_limit(text: str, reset: str | None = None, no_funds: bool = False) 
         except Exception:
             pass
     sys.stderr.write("CODEX_LIMIT: закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") + ". " +
-                     ("На балансі OpenRouter теж немає коштів. " if no_funds else "") +
+                     ("На балансі OpenRouter замало вільних коштів. " if no_funds else "") +
                      ("Студія поставила створення кадрів на паузу. " if paused else "") +
                      "Зупинись: більше нічого не роби й не заміняй картинки стоком чи кодом.\n")
     sys.exit(75)
@@ -189,7 +189,7 @@ def draw_openrouter(a, prompt: Path, out: Path, finish, strong: bool = False) ->
                 reset = json.loads(limit_marker().read_text()).get("reset") or ""
             except (OSError, ValueError, AttributeError):
                 reset = ""
-            finish("limit", "CODEX_LIMIT: закінчився ліміт Codex, а на балансі OpenRouter немає коштів")
+            finish("limit", "CODEX_LIMIT: закінчився ліміт Codex, а на балансі OpenRouter замало вільних коштів")
             stop_for_limit("", reset=reset, no_funds=True)
         finish("failed", str(error)[-300:])
         sys.exit(f"OpenRouter не намалював {out.name}: {error}")
