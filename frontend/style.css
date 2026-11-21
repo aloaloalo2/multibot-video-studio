@@ -3279,3 +3279,14 @@ select option{background:#232327;color:#f1f1f2}
 .project-publish-cancel svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 .project-publish-cancel:hover,.project-publish-cancel:focus-visible{background:#3a3a42;color:#f1f1f2;outline:none}
 .episode-voice-block.open .narration-download svg{transform:none}   /* only the arrow turns when the list opens */
+
+/* «Озвучити сценарій / Завантажити озвучку» as one oval switch (user, 21 November 2026), the look of .episode-entry-options */
+.narration-choices.narration-switch{display:flex!important;width:max-content;max-width:100%;margin:14px auto!important;gap:3px!important;padding:5px;background:#191a1e;border:1px solid #34363d;border-radius:999px;box-shadow:inset 0 1px 2px #0003;grid-template-columns:none}
+.narration-choices.narration-switch>button{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:0 0 auto;min-height:0!important;height:auto!important;padding:9px 16px!important;border:0!important;border-radius:999px!important;background:transparent!important;color:#a4a6af;font-size:12.5px;font-weight:600;box-shadow:none!important;opacity:1!important;white-space:nowrap;transition:background .15s,color .15s}
+.narration-choices.narration-switch>button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+.narration-choices.narration-switch>button:hover{color:#fff;background:#303138!important}
+.narration-choices.narration-switch>button[aria-pressed=true]{background:#41444e!important;color:#f4f4f6;box-shadow:0 1px 4px #0003,inset 0 1px 0 #ffffff0a!important}
+.narration-choices.narration-switch>button:before,.narration-choices.narration-switch>button:after{display:none!important}
+@media(max-width:480px){.narration-choices.narration-switch{width:100%}.narration-choices.narration-switch>button{flex:1 1 0;padding:8px 6px!important;font-size:11.5px}}
+.narration-choices.narration-switch>button>span{font-size:12.5px!important;font-weight:600;line-height:1.2;letter-spacing:0;margin:0;padding:0;transform:none!important;color:inherit;width:auto;max-width:none}
+.narration-choices.narration-switch{width:100%!important;box-sizing:border-box}.narration-choices.narration-switch>button{width:auto!important;max-width:none!important;min-width:0!important;flex:1 1 0!important;flex-direction:row!important;align-items:center!important;justify-content:center!important}

@@ -102,7 +102,10 @@ function narrationInitialMode(data,profile,script=''){
 }
 function narrationChoices(panel,ready,restore=true){
   const choices=document.createElement('div');choices.className='narration-choices';
-  choices.innerHTML=`<button type="button" class="secondary narration-from-text"><span class="narration-choice-art narration-service-marks" aria-hidden="true">${['elevenlabs','heygen','fishaudio'].map(key=>`<span title="${{elevenlabs:'ElevenLabs',heygen:'HeyGen',fishaudio:'Fish Audio'}[key]}">${projectCostIcons[key]}</span>`).join('')}</span><span class="narration-choice-copy"><strong>Озвучити сценарій</strong><small>Створити голос із тексту</small></span></button><button type="button" class="secondary narration-from-file"><span class="narration-choice-art" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21V4m-6 6 6-6 6 6M5 21v7h22v-7"/></svg></span><span class="narration-choice-copy"><strong>Завантажити озвучку</strong><small>Готове аудіо або відео</small></span></button>`;
+  // one oval switch of two choices, like «Власна назва / Ідеї / Клонувати ідею» of a new episode (user, 21 November 2026:
+  // «перемикач… в один овал… як в айфона… вибір між двома»)
+  choices.classList.add('narration-switch');choices.setAttribute('role','group');choices.setAttribute('aria-label','Звідки озвучка');
+  choices.innerHTML=`<button type="button" class="narration-from-text"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Озвучити сценарій</span></button><button type="button" class="narration-from-file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg><span>Завантажити озвучку</span></button>`;
   const buttons=choices.querySelectorAll('button'),pid=state.project.id;let selectionVersion=0;
   function showSelection(index){
     choices.classList.add('has-selection');

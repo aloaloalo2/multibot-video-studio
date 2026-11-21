@@ -420,6 +420,12 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
     fields = {}
     started = None
     try:
+        # a voice recorded as a video of the host gives the host frames themselves, before the agent starts
+        try:
+            import host_from_voice
+            host_from_voice.place(pid)
+        except Exception as error:   # the agent still makes those frames its usual way
+            print(f"[production] host frames from the voice video: {error}", flush=True)
         with store.LOCK:
             project = store.load_project(pid)
             request = project["production_request"]
