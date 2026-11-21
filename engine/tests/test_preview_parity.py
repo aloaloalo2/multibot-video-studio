@@ -78,6 +78,23 @@ console.log(JSON.stringify(types.map(type=>raws.map(raw=>{
                 for name, a, b in zip(("dx", "dy", "scale", "opacity", "blur"), exported, expected):
                     self.assertAlmostEqual(a, b, places=6, msg=f"{type_} {name} at {raw}")
 
+    def test_letters_of_a_narrow_caption_sit_where_the_export_puts_them(self):
+        """Frame 49 of Antropov's episode, 21 November 2026: a «letters_up» caption 46% of the frame wide drew its
+        letters on top of each other in the preview; a letter's x is a share of the clip's own box in both."""
+        from unittest import mock
+        words = [{"text": "опух", "x": .2, "y": .5, "start": 0.0}, {"text": "глаз", "x": .7, "y": .5, "start": .4}]
+        clip = {"text_words": words, "width": .46, "font_size": 70, "font_family": "Golos", "font_weight": 700,
+                "word_entrance": {"type": "letters_up", "duration": .22, "distance": 14}}
+        fake = type("Font", (), {"getlength": lambda self, text: 30.0 * len(text), "set_variation_by_axes": lambda self, v: None,
+                                 "get_variation_axes": lambda self: []})()
+        with mock.patch.object(render.ImageFont, "truetype", return_value=fake):
+            exported = [round(u["x"], 6) for u in render.timed_text_units(clip, 1920)]
+        script = f"const clip={json.dumps(clip, ensure_ascii=False)};" + r"""
+const state={project:{width:1920}};
+const document={createElement:()=>({getContext:()=>({set font(v){},measureText:t=>({width:30*Array.from(t).length})})})};
+console.log(JSON.stringify(timedTextUnits(clip).map(u=>Math.round(u.x*1e6)/1e6)));"""
+        self.assertEqual(preview_js.run(["timedTextUnits"], script), exported)
+
     def test_a_picture_takes_the_same_share_of_its_box(self):
         cases = [(90, 160, 1920, 1080), (1600, 900, 1920, 1080), (4000, 1000, 800, 800), (300, 300, 400, 200)]
         preview = preview_js.run(["containedBox"], f"console.log(JSON.stringify({json.dumps(cases)}.map(c=>containedBox(...c))))")

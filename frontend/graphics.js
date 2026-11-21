@@ -65,7 +65,10 @@ function renderProjectTypography(){
 function timedTextUnits(clip){
   if(!clip.word_entrance?.type.startsWith('letters_'))return clip.text_words;
   const canvas=document.createElement('canvas'),context=canvas.getContext('2d'),size=Number(clip.font_size || 54);context.font=`${clip.font_weight || 400} ${size}px ${JSON.stringify(clip.font_family || 'Golos')}`;
-  const units=[];for(let i=0;i<clip.text_words.length;i++){const word=clip.text_words[i],chars=Array.from(word.text),width=context.measureText(word.text).width,left=word.x-width/Number(state.project.width)/2,spread=Math.min(.24,Math.max(.04,Number(word.end ?? clip.text_words[i+1]?.start ?? word.start+.25)-word.start)*.7);let prefix='';for(let j=0;j<chars.length;j++){const before=context.measureText(prefix).width;prefix+=chars[j];const after=context.measureText(prefix).width;units.push({...word,text:chars[j],x:left+(before+after)/2/Number(state.project.width),width:(after-before+12)/Number(state.project.width),start:word.start+spread*j/Math.max(1,chars.length-1)});}}return units;
+  // a word's x is a share of the text clip's own box, as in the export (engine/render.py timed_text_units): measured
+  // against the whole frame, the letters of a caption half the frame wide sat twice too close (21 November 2026, frame 49)
+  const box=Number(state.project.width)*Number(clip.width ?? 1);
+  const units=[];for(let i=0;i<clip.text_words.length;i++){const word=clip.text_words[i],chars=Array.from(word.text),width=context.measureText(word.text).width,left=word.x-width/box/2,spread=Math.min(.24,Math.max(.04,Number(word.end ?? clip.text_words[i+1]?.start ?? word.start+.25)-word.start)*.7);let prefix='';for(let j=0;j<chars.length;j++){const before=context.measureText(prefix).width;prefix+=chars[j];const after=context.measureText(prefix).width;units.push({...word,text:chars[j],x:left+(before+after)/2/box,width:(after-before+12)/box,start:word.start+spread*j/Math.max(1,chars.length-1)});}}return units;
 }
 function applyWordEntrance(element,start,clip,time,frameWidth){
   const effect=clip.word_entrance;if(!effect){element.style.opacity=time+1e-7>=start?'1':'0';element.style.transform='translate(-50%,-50%)';return;}
