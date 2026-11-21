@@ -38,7 +38,14 @@ document.addEventListener('click',event=>{if(transitionSuppressClick){transition
 function transitionEndpoint(ref){if(ref?.startsWith('group:')){const group=sceneGroups().find(g=>g.id===ref.slice(6));return group?groupMembers(group):[];}if(ref?.startsWith('clip:'))return universalClips().filter(c=>c.id===ref.slice(5));return [];}
 function transitionInfo(clip){
   const token=state.project?.id+':'+state.project?.revision;
-  if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();for(const join of state.project?.join_transitions || []){for(const c of transitionEndpoint(join.to_ref))joinCache.set(c.id,{...(joinCache.get(c.id)||{}),incoming:join});for(const c of transitionEndpoint(join.from_ref))if(Math.abs(Number(c.start)+Number(c.duration)-join.seam)<.05)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),outgoing:join});}}
+  // a dissolve fades only the side on top, the side under it stays whole, as the export (backend/joins.py transport;
+  // user, 21 November 2026: «переходи… в чорноту, а потім різко появляється наступний кадр»)
+  if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();const level=new Map();(typeof layers==='function'?layers():[]).forEach((layer,i)=>(layer.clips||[]).forEach(c=>level.set(c.id,i)));
+    for(const join of state.project?.join_transitions || []){
+      const ins=transitionEndpoint(join.to_ref),outs=transitionEndpoint(join.from_ref),lv=list=>list.map(c=>level.get(c.id)).filter(v=>v!==undefined);
+      const a=lv(outs),b=lv(ins),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.min(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.min(...a));
+      for(const c of ins)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),incoming:{...join,under:inUnder}});
+      for(const c of outs)if(Math.abs(Number(c.start)+Number(c.duration)-join.seam)<.05)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),outgoing:{...join,under:outUnder}});}}
   return joinCache.get(clip.id) || {};
 }
 function visualFrameTime(time){const fps=Number(state.project?.fps||25);return Math.floor(Number(time)*fps+.5+1e-8)/fps;}
@@ -56,14 +63,14 @@ function transitionValues(clip,local,values){
     if(graphicTransitionPresets[type]){
       const config=graphicTransitionPresets[type];
       if(config.kind==='cinematic'){
-        values.opacity*=incoming?p:1-p;
+        if(!join.under)values.opacity*=incoming?p:1-p;
       }else values.opacity*=incoming?(p>=.5?1:0):(p<.5?1:0);
       continue;
     }
     // a CapCut transition plays its drawn video over the seam (capcut.js); until it is ready the preview dissolves
-    if(type==='crossfade'||type.startsWith('capcut_t'))values.opacity*=incoming?p:1-p;
+    if((type==='crossfade'||type.startsWith('capcut_t'))&&!join.under)values.opacity*=incoming?p:1-p;
     if(type.startsWith('slide_')){if(type==='slide_left')values.x+=incoming?progress:-progress;if(type==='slide_right')values.x+=incoming?-progress:progress;if(type==='slide_up')values.y+=incoming?progress:-progress;if(type==='slide_down')values.y+=incoming?-progress:progress;}
-    if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;values.opacity*=incoming?p:1-p;}
+    if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;if(!join.under)values.opacity*=incoming?p:1-p;}
   }
   return values;
 }

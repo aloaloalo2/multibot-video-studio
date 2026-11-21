@@ -52,20 +52,25 @@ def transport(project,layers):
     protected_text_ids=set()
     overlay_ids={cid for group in project.get('scene_groups',[]) if group.get('role')=='overlay' for cid in group['clip_ids']}
     brand_index=next((i for i,layer in enumerate(layers) if any(c['id'] in overlay_ids for c in layer['clips'])),len(layers))
+    level={c['id']:i for i,layer in enumerate(layers) for c in layer['clips']}
     for join in project.get('join_transitions',[]):
         _,_,outgoing,incoming=boundary(project,join['from_ref'],join['to_ref'])
         effect={key:join[key] for key in ('type','duration','seam')}
+        # a dissolve fades only the side on top; the side under it stays whole (user, 21 November 2026: «переходи, які в
+        # чорноту переходить, а потім різко появляється наступний кадр»): both fading over black left the middle at 75%
+        out_levels=[level[c['id']] for c in outgoing if c['id'] in level];in_levels=[level[c['id']] for c in incoming if c['id'] in level]
+        out_under=bool(out_levels and in_levels and max(out_levels)<min(in_levels));in_under=bool(out_levels and in_levels and max(in_levels)<min(out_levels))
         capcut=join['type'] in CAPCUT
         for source in incoming:
             if source['id'] not in rendered or capcut:continue
             if source.get('kind')=='text' and source.get('text_role')=='full_frame':
                 protected_text_ids.add(source['id'])
-            else:rendered[source['id']]['join_in']=effect
+            else:rendered[source['id']]['join_in']={**effect,'under':in_under}
         for source in outgoing:
             if source['id'] not in rendered or abs(source['start']+source['duration']-join['seam'])>.05:continue
             clip=rendered[source['id']]
             # a CapCut transition draws both sides itself (engine/capcut_fx.py): the outgoing clip only goes on under it
-            if not capcut:clip['join_out']=effect
+            if not capcut:clip['join_out']={**effect,'under':out_under}
             old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
             points=clip.get('keyframes',[])
             if points:

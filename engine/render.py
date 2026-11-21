@@ -678,14 +678,14 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             if mode in transition_graphics.PRESETS:
                 if transition_graphics.PRESETS[mode].get('kind') == 'cinematic':
                     ap=easing_expr(f'(T+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
-                    alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
+                    if not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'   # the side under stays whole
                     continue
                 switch=seam+length*.5;gate=f'gte(T+{offset:.6f}\\,{switch:.6f})' if incoming else f'lt(T+{offset:.6f}\\,{switch:.6f})'
                 alpha_expr=f'({alpha_expr})*({gate})'
                 continue
             p=easing_expr(f'(t+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
             ap=easing_expr(f'(T+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
-            if mode=='crossfade':alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
+            if mode=='crossfade' and not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
             if mode.startswith('slide_'):
                 q=f'(1-({p}))' if incoming else p
                 sign=1 if mode in ('slide_left','slide_up') and incoming or mode in ('slide_right','slide_down') and not incoming else -1
@@ -694,7 +694,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             if mode.startswith('zoom_'):
                 group_scale=f'(.88+.12*({p}))' if incoming and mode=='zoom_in' else f'(1+.12*({p}))' if not incoming and mode=='zoom_in' else f'(1.12-.12*({p}))' if incoming else f'(1-.12*({p}))'
                 x_expr=f'{width}/2+(({x_expr})-{width}/2)*({group_scale})';y_expr=f'{height}/2+(({y_expr})-{height}/2)*({group_scale})';scale_expr=f'({scale_expr})*({group_scale})'
-                alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
+                if not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
         fade_in = number(layer.get("fade_in", 0), "fade in")
         fade_out = number(layer.get("fade_out", 0), "fade out")
         slide_in = number(layer.get("slide_in", 0), "slide in")
@@ -736,7 +736,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
                     position=t+float(layer.get('global_offset',0));seam=float(join['seam']);length=float(join['duration'])
                     if mode in transition_graphics.PRESETS and transition_graphics.PRESETS[mode].get('kind')!='cinematic':
                         value*=float(position>=seam+length*.5) if incoming else float(position<seam+length*.5)
-                    elif mode in transition_graphics.PRESETS or mode=='crossfade' or mode.startswith('zoom_'):
+                    elif (mode in transition_graphics.PRESETS or mode=='crossfade' or mode.startswith('zoom_')) and not join.get('under'):
                         p=easing_value((position-seam)/length,'ease_in_out')
                         value*=p if incoming else 1-p
                 if fade_in:value*=easing_value((t+elapsed)/fade_in,easing)

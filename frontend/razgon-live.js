@@ -152,8 +152,10 @@
     place(frame, inClip, t - Number(inClip.start));
     place(frameOut, outClip, t - Number(outClip.start));
     // the outgoing player lies on top and fades by itself: the incoming one under it stays opaque, or the middle of a
-    // dissolve showed both half through over black, darker than either frame
+    // dissolve showed both half through over black, darker than either frame (whichever side the montage keeps on top)
     frame.style.opacity = '';
+    const type = join.type, fades = type === 'crossfade' || type.startsWith('zoom_') || type.startsWith('capcut_t') || graphicTransitionPresets[type]?.kind === 'cinematic';
+    if (fades) frameOut.style.opacity = String(Math.max(0, 1 - easedProgress((t - span.seam) / span.duration, 'ease_in_out')));
     frameOut.style.visibility = 'visible';   // '' would fall back to the stylesheet's hidden
     outPost(outgoing.sourceEnd - 1 / fps);
   }

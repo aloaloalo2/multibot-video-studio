@@ -208,10 +208,10 @@ def alpha_for(layer,points,elapsed,clip_len,easing,t,lag,speeds,frame):
         offset=float(layer.get('global_offset',0));seam=float(join['seam']);length=float(join['duration']);mode=join['type'];incoming=side=='in'
         if mode in render.transition_graphics.PRESETS:
             if render.transition_graphics.PRESETS[mode].get('kind')=='cinematic':
-                p=ease((t+offset-seam)/length,'ease_in_out');alpha*=p if incoming else 1-p
+                if not join.get('under'):p=ease((t+offset-seam)/length,'ease_in_out');alpha*=p if incoming else 1-p
             else:
                 switch=seam+length*.5;alpha*=float(t+offset>=switch) if incoming else float(t+offset<switch)
-        elif mode=='crossfade' or mode.startswith('zoom_'):
+        elif (mode=='crossfade' or mode.startswith('zoom_')) and not join.get('under'):
             p=ease((t+offset-seam)/length,'ease_in_out');alpha*=p if incoming else 1-p
     if layer.get('fade_in'):alpha*=ease((t+elapsed)/float(layer['fade_in']),easing)
     if layer.get('fade_out'):alpha*=ease((clip_len-t-elapsed)/float(layer['fade_out']),easing)
