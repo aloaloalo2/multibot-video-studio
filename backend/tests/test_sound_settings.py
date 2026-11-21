@@ -125,7 +125,8 @@ class SoundSettingsTest(unittest.TestCase):
             soundtrack.place(ctx, {'music': True, 'cues': [{'name': 'lock_in', 't': 2}, {'name': 'whoosh', 't': 4}]})
             self.assertEqual(len(ctx.actions), 1)
             action = ctx.actions[0]['payload']
-            self.assertEqual((action['kind'], action['start']), ('audio', 2))
+            # the loudest moment of the sound lands on its time (21 November 2026), so the clip starts a little before it
+            self.assertEqual(action['kind'], 'audio'); self.assertTrue(1.5 <= action['start'] <= 2)
             self.assertNotIn('group_id', action)
             ctx.project['tracks'][0]['clips'].append(action)
             ctx.actions.clear()
@@ -143,7 +144,7 @@ class SoundSettingsTest(unittest.TestCase):
              patch.object(sound, 'saved_for_project', return_value=choice):
             soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             clips = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
-            self.assertEqual([c['start'] for c in clips], [5, 10])
+            self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(clips, [5, 10])))   # peak on the transition's middle
             self.assertIn('tr_air', clips[0]['title'])
             self.assertIn('tr_camera', clips[1]['title'])
             ctx.project['tracks'][0]['clips'] += [dict(c, id=f'fx-{i}') for i, c in enumerate(clips)]

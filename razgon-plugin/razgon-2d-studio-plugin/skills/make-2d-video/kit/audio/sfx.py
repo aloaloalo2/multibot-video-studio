@@ -414,19 +414,32 @@ def glint(dur=0.8, seed=52, pitch=1.0, **_):
 # бути довші, ніж 4 секунди»): each sound, synthesized or a file, is brought to the same loudness of its loudest 400 ms
 # (RMS after a 120 Hz high-pass, close to how loud a short sound feels), peaks under -1 dBFS, at most MAX_SECONDS long.
 MAX_SECONDS = 4.0
-TARGET_DB = -18.0
+TARGET_DB = -16.0   # LUFS of the loudest 400 ms
 
 
 def loudness(x):
-    mono = x.mean(axis=1) if x.ndim == 2 else x
-    y = hp(mono.astype(np.float32), 120)
-    # a sound shorter than the window is measured over its own length: padded with silence, a 0.1 s click read 10 dB
-    # quieter than it sounds and was pushed into the peak limit
-    win, hop = min(secs(0.4), len(y)), secs(0.05)
-    best = 0.0
-    for a in range(0, len(y) - win + 1, hop):
-        best = max(best, float(np.mean(y[a:a + win].astype(np.float64) ** 2)))
-    return 10 * np.log10(best + 1e-12)
+    """How loud the sound is to the ear: K-weighted (ITU BS.1770, the measure of broadcast loudness) mean square of its
+    loudest 400 ms, the sum of both channels (user, 21 November 2026: «то голосніше, то тихіше»; a 120 Hz high-pass alone
+    let a bass impact sound 9 dB louder than a click at the same number)."""
+    from scipy import signal as _signal
+    x = as_stereo(np.asarray(x, dtype=np.float32)).astype(np.float64)
+    y = _signal.lfilter([1.53512485958697, -2.69169618940638, 1.19839281085285], [1, -1.69065929318241, 0.73248077421585], x, axis=0)
+    y = _signal.lfilter([1.0, -2.0, 1.0], [1, -1.99004745483398, 0.99007225036621], y, axis=0)
+    power = (y ** 2).sum(axis=1)
+    win, hop = secs(0.4), secs(0.05)
+    if len(power) < win:   # a short sound sits in the window with silence around it, as the ear hears it
+        power = np.concatenate([power, np.zeros(win - len(power))])
+    sums = np.convolve(power, np.ones(win), "valid")[::hop] / win
+    return -0.691 + 10 * np.log10(float(sums.max()) + 1e-12)
+
+
+def peak_time(x):
+    """Seconds from the start to the middle of the loudest 50 ms: where a whoosh hits, to line it up with its moment."""
+    x = as_stereo(np.asarray(x, dtype=np.float32))
+    power = (x.astype(np.float64) ** 2).sum(axis=1)
+    win = max(1, secs(0.05))
+    energy = np.convolve(power, np.ones(win), "same")
+    return float(np.argmax(energy)) / SR
 
 
 def level(x):
@@ -435,11 +448,11 @@ def level(x):
     if len(x) > secs(MAX_SECONDS):
         x = x[: secs(MAX_SECONDS)]
         f = secs(0.25); x[-f:] *= (np.linspace(1, 0, f) ** 2)[:, None]
-    # a click is mostly peak: it may go up to 6 dB past its peak limit, the peaks rounded by a soft limiter, so it stands
+    # a click is mostly peak: it may go up to 9 dB past its peak limit, the peaks rounded by a soft limiter, so it stands
     # as loud as a whoosh instead of 7 dB under it
     ceiling = db(-1.0)
     peak = float(np.abs(x).max()) or 1.0
-    gain = min(db(TARGET_DB - loudness(x)), ceiling / peak * db(6.0))
+    gain = min(db(TARGET_DB - loudness(x)), ceiling / peak * db(9.0))
     x *= gain
     if float(np.abs(x).max()) > ceiling:
         x = ceiling * np.tanh(x / ceiling)

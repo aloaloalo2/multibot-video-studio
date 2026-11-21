@@ -35,6 +35,22 @@ SFX_PREFIX = PREFIX + 'SFX · '
 SFX_VOLUME = .25
 
 
+_PEAKS = {}
+
+
+def _peak(path) -> float:
+    """Seconds from a sound file's start to its loudest 50 ms (kit audio/sfx.py peak_time), measured once a file."""
+    key = str(path)
+    if key not in _PEAKS:
+        import subprocess
+        import numpy as np
+        raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', key, '-f', 'f32le', '-ac', '2', '-ar', '48000', '-'],
+                             capture_output=True).stdout
+        samples = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2) if raw else np.zeros((1, 2), np.float32)
+        _PEAKS[key] = sound_settings.audio_module('sfx').peak_time(samples)
+    return _PEAKS[key]
+
+
 def full_take(module, name: str, seed: int = 7):
     """A synthesized effect whole and at the common SFX loudness (kit audio/sfx.py take: never cut short, at most 4 s;
     user, 21 November 2026: «ніколи не обрізай ті звукові ефекти», «нема норми звуків по громкості»)."""
@@ -128,11 +144,11 @@ def place(ctx, spec, *, transition=False):
         row = library.get(cue['name'])
         if row:
             source = Path(row['name'])
-            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v2.wav')
+            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v3.wav')
             if not path.exists():
                 shutil.copy2(sfx_library.leveled(row), path)   # levelled and at most 4 s, like the synthesized ones
         else:
-            path = folder / f'sfx-v3-{cue["name"]}.wav'
+            path = folder / f'sfx-v4-{cue["name"]}.wav'
             with sound_settings.LOCK:
                 if not path.exists():
                     module.write_wav(str(path), full_take(module, cue['name'])[0])
@@ -145,7 +161,11 @@ def place(ctx, spec, *, transition=False):
                 for clip in layer['clips']:
                     if clip.get('title') == PREFIX + cue['name'] + ' ' + key:
                         ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': clip['id']}})
-        add(path, title, cue['t'], max(.1, min(length, total - cue['t'])), min(1.5, SFX_VOLUME * 10 ** ((cue.get('gain', -8) + 8) / 20)))
+        # the loudest moment of the sound lands on its event (user, 21 November 2026: «переходи часто не в момент
+        # переходів»): on a seam, the middle of the transition; on any other cue, the cue's own time
+        hit = cue['t'] + (cue['dur'] / 2 if transition else 0) - _peak(path)
+        start = round(max(0.0, min(hit, total - .1)), 3)
+        add(path, title, start, max(.1, min(length, total - start)), min(1.5, SFX_VOLUME * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 

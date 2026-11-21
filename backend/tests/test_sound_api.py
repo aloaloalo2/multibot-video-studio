@@ -77,7 +77,7 @@ class SoundApiTest(unittest.TestCase):
             saved = store.load_project(pid)
             self.assertEqual(saved['revision'], before + 1)
             audio = [c for layer in saved['tracks'] for c in layer['clips'] if c['kind'] == 'audio']
-            self.assertEqual([c['start'] for c in audio], [5, 10])
+            self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(audio, [5, 10])))   # peak on the transition's middle
             self.assertEqual(len(saved['scene_groups']), 3)
             self.assertIn('tr_air', audio[0]['title']); self.assertIn('tr_camera', audio[1]['title'])
             # Replacing the entrance to frame 3 must preserve frame 2 and its sound.

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent / 'data/sfx-library/mixkit-20261112'
 # an 11.7 s clock, a 65 s bass drone and an 11 s tension rise. Their files stay on disk, unused.
 EXCLUDED = {'938', '1999', '1992', '946', '472', '2894', '2357', '1059', '685', '786'}
 MAX_SECONDS = 4.0
-LEVELED = 'sfx-library-v1'
+LEVELED = 'sfx-library-v2'
 
 
 def catalog():
@@ -23,7 +23,7 @@ def catalog():
         return []
     rows = json.loads(path.read_text(encoding='utf-8'))
     return [{**r, 'name': str(ROOT / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
-             'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=2'}
+             'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
             for r in rows if (ROOT / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
 
 

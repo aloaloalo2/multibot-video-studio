@@ -180,11 +180,11 @@ def filter_story(story, config):
 
 
 def catalog():
-    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=4'} for key, label, names in CATEGORIES]
+    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=5'} for key, label, names in CATEGORIES]
 
 
 def transition_catalog():
-    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=4'} for key, label in TRANSITIONS]
+    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=5'} for key, label in TRANSITIONS]
 
 
 def audio_module(name):
@@ -210,7 +210,7 @@ def preview(category, *, transition=False):
     if row is None:
         raise store.StudioError('Звук не знайдено', 404)
     # v3: the whole sound, as the film lays it (user, 21 November 2026: «навіть в настройках каналу… звуки якісь обрізані»)
-    path = store.DATA_ROOT / 'cache' / 'sound-previews-v4' / (('transition-' if transition else '') + category + '.wav')
+    path = store.DATA_ROOT / 'cache' / 'sound-previews-v5' / (('transition-' if transition else '') + category + '.wav')
     with LOCK:
         if not path.is_file():
             path.parent.mkdir(parents=True, exist_ok=True)
