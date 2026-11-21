@@ -23,12 +23,12 @@ class SoundApiTest(unittest.TestCase):
 
     def test_channel_choices_round_trip_and_control_native_sound_generation(self):
         cid = store.channel_id(self.channel)
-        sound = {'music': {'enabled': True, 'generate': False}, 'effects': {'enabled': True, 'categories': ['notification']}}
+        sound = {'music': {'enabled': True, 'generate': False}, 'effects': {'enabled': True, 'categories': ['lock'], 'version': 2}}
         code, result = self.request('/api/channels/' + cid, 'PATCH', {'settings': {'sound': sound}})
         self.assertEqual(code, 200, result)
         self.assertEqual(result['channel']['settings']['sound'], sound_settings.normalize(sound))
         code, data = self.request('/api/sound-effects')
-        self.assertEqual((code, len(data['categories'])), (200, 15))
+        self.assertEqual((code, len(data['categories'])), (200, 20))
         self.assertEqual(len(data['transitions']), 15)
         project = store.create_project(cid, 'Sound fixture')
         pid, layer = project['id'], project['tracks'][0]['id']
@@ -36,14 +36,14 @@ class SoundApiTest(unittest.TestCase):
             'layer_id': layer, 'kind': 'animation', 'content_type': 'shape', 'duration': 6}})
         self.assertEqual(code, 200, result)
         code, result = self.request(f'/api/projects/{pid}/ops', 'POST', {'ops': [{'op': 'soundtrack', 'music': True,
-                                    'cues': [{'name': 'ding', 't': 1}, {'name': 'whoosh', 't': 2}]}]})
+                                    'cues': [{'name': 'lock_in', 't': 1}, {'name': 'whoosh', 't': 2}]}]})
         self.assertEqual(code, 200, result)
         saved = store.load_project(pid)
         audio = [c for layer in saved['tracks'] for c in layer['clips'] if c['kind'] == 'audio']
         self.assertEqual(len(audio), 1)
-        self.assertIn('ding', audio[0]['title'])
+        self.assertIn('lock_in', audio[0]['title'])
         before = saved['revision']
-        code, result = self.request(f'/api/projects/{pid}/ops', 'POST', {'ops': [{'op': 'soundtrack', 'cues': [{'name': 'ding', 't': 1}]}]})
+        code, result = self.request(f'/api/projects/{pid}/ops', 'POST', {'ops': [{'op': 'soundtrack', 'cues': [{'name': 'lock_in', 't': 1}]}]})
         self.assertEqual(code, 200, result)
         self.assertEqual(store.load_project(pid)['revision'], before)
         code, result = self.request('/api/channels/' + cid, 'PATCH', {'settings': {'sound': {'effects': {'categories': ['bad']}}}})

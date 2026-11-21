@@ -30,36 +30,16 @@ def music_volume(path) -> float:
 PREFIX = 'Звук ролика · '
 TRANSITION_PREFIX = 'Звук переходу · '
 SFX_PREFIX = PREFIX + 'SFX · '
+# every effect file is levelled to the same loudness of its loudest 400 ms (−18 dB); at this volume it sits about 14 dB
+# under the voice's −16 LUFS, the same for a click, a whoosh and an impact
+SFX_VOLUME = .25
 
 
 def full_take(module, name: str, seed: int = 7):
-    """A synthesized effect at its whole natural length, never cut (user, 21 November 2026: «ніколи не обрізай ті звукові
-    ефекти… звук ішов і обрізаний»): the studio drew every effect 0.7 s long, so an impact of 2.5 s or a stinger of 3 s
-    stopped dead. It is drawn at its own length from the library. A sound that only decays (an impact, a stinger) is drawn
-    longer while its last 30 ms still sound, when the longer take begins the same; a sound whose shape follows its length
-    (a riser, a counter) keeps its own length. Either way the last part fades out instead of stopping."""
-    import numpy as np
-
-    def loud_tail(samples, rate):
-        peak = float(np.abs(samples).max()) or 1.0
-        tail = samples[-max(1, int(.03 * rate)):]
-        return 20 * np.log10(float(np.sqrt(np.mean(tail.astype(np.float64) ** 2))) / peak + 1e-12) > -45
-
-    dur = float(module.LIB.get(name, {}).get('dur') or .7)
-    samples = np.array(module.make(name, dur=dur, seed=seed), dtype=np.float32)
-    rate = round(len(samples) / dur)
-    for _ in range(3):
-        if not loud_tail(samples, rate):
-            break
-        longer = np.array(module.make(name, dur=dur * 1.6, seed=seed), dtype=np.float32)
-        head = len(samples) - int(.05 * rate)
-        if head <= 0 or not np.allclose(longer[:head], samples[:head], atol=1e-4):
-            break   # the shape stretches with the length: keep the sound as it is meant
-        samples, dur = longer, dur * 1.6
-    fade = min(len(samples), int((.12 if loud_tail(samples, rate) else .02) * rate))
-    ramp = np.linspace(1, 0, fade, dtype=np.float32) ** 2
-    samples[-fade:] *= ramp.reshape(-1, *([1] * (samples.ndim - 1)))
-    return samples, len(samples) / rate
+    """A synthesized effect whole and at the common SFX loudness (kit audio/sfx.py take: never cut short, at most 4 s;
+    user, 21 November 2026: «ніколи не обрізай ті звукові ефекти», «нема норми звуків по громкості»)."""
+    samples = module.take(name, seed=seed)
+    return samples, len(samples) / module.SR
 
 
 def place(ctx, spec, *, transition=False):
@@ -75,9 +55,11 @@ def place(ctx, spec, *, transition=False):
     if not math.isfinite(total) or not .1 <= total <= 36000:
         raise ValueError('Спочатку додайте озвучку або кадри з тривалістю')
     allowed = set(sound_settings.transition_names(sound) if transition else sound_settings.allowed_names(sound))
-    library = {row['name']: row for row in sfx_library.catalog()} if store.project_animated(ctx.project) and not transition else {}
+    # the downloaded SFX belong to every project now, one SFX list with the synthesized ones (21 November 2026)
+    library = {row['name']: row for row in sfx_library.catalog()} if not transition else {}
     allowed.update(sfx_library.allowed(sound) if library else [])
-    known = set(library) | {name for _, _, names in sound_settings.CATEGORIES for name in names} | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
+    # any effect of the kit stays known, so cues written with a sound that left the list still lay
+    known = set(library) | set(sound_settings.audio_module('sfx').LIB) | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
     events = []
     for cue in cues:
         if not isinstance(cue, dict) or cue.get('name') not in known:
@@ -146,11 +128,11 @@ def place(ctx, spec, *, transition=False):
         row = library.get(cue['name'])
         if row:
             source = Path(row['name'])
-            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '.wav')
+            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v2.wav')
             if not path.exists():
-                shutil.copy2(source, path)
+                shutil.copy2(sfx_library.leveled(row), path)   # levelled and at most 4 s, like the synthesized ones
         else:
-            path = folder / f'sfx-v2-{cue["name"]}.wav'
+            path = folder / f'sfx-v3-{cue["name"]}.wav'
             with sound_settings.LOCK:
                 if not path.exists():
                     module.write_wav(str(path), full_take(module, cue['name'])[0])
@@ -163,7 +145,7 @@ def place(ctx, spec, *, transition=False):
                 for clip in layer['clips']:
                     if clip.get('title') == PREFIX + cue['name'] + ' ' + key:
                         ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': clip['id']}})
-        add(path, title, cue['t'], max(.1, min(length, total - cue['t'])), min(1.5, .12 * 10 ** ((cue.get('gain', -8) + 8) / 20)))
+        add(path, title, cue['t'], max(.1, min(length, total - cue['t'])), min(1.5, SFX_VOLUME * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 

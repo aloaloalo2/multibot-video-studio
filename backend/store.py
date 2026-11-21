@@ -434,6 +434,18 @@ def validate_settings(value: dict) -> dict:
     return value
 
 
+def _shown_sound(settings: dict) -> dict:
+    """The channel's sound as the settings page shows it: a choice saved with the SFX list before 21 November 2026 reads
+    in today's names (sound_settings.normalize), so the page ticks the same sounds the studio uses. The file stays as it is."""
+    if not isinstance(settings.get("sound"), dict):
+        return settings
+    import sound_settings
+    try:
+        return {**settings, "sound": sound_settings.normalize(settings["sound"])}
+    except ValueError:
+        return settings
+
+
 def channel_record(folder: Path) -> dict:
     # The name shown in the Studio can differ from the folder: the folder path is the channel's id, so it never moves.
     settings = read_channel_settings(folder, {})
@@ -445,7 +457,7 @@ def channel_record(folder: Path) -> dict:
         icon_url = None
     import channel_hero
     return {"hero_reference": channel_hero.info(channel_id(folder)), "icon_url": icon_url, "id": channel_id(folder), "name": unicodedata.normalize("NFC", name), "folder_name": unicodedata.normalize("NFC", folder.name),
-            "path": str(folder), "settings": settings}
+            "path": str(folder), "settings": _shown_sound(settings)}
 
 
 def channel_director_model(project: dict) -> str:

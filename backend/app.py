@@ -1434,8 +1434,8 @@ class Handler(BaseHTTPRequestHandler):
             row = next((r for r in sfx_library.catalog() if r['mixkit_id'] == library_match.group(1)), None)
             if row is None:
                 raise store.StudioError('Звук не знайдено', 404)
-            return self.serve_media(Path(row['name']), cache=True)
-        sound_match = re.fullmatch(r"/api/sound-effects/([a-z]+)\.wav", path)
+            return self.serve_media(sfx_library.leveled(row), cache=True)
+        sound_match = re.fullmatch(r"/api/sound-effects/([a-z_]+)\.wav", path)
         if sound_match:
             import sound_settings
             return self.serve_media(sound_settings.preview(sound_match.group(1)), cache=True)

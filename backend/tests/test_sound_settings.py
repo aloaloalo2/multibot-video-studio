@@ -54,13 +54,13 @@ class SoundSettingsTest(unittest.TestCase):
             with self.subTest(transitions=transitions), self.assertRaises(ValueError):
                 sound.normalize({'transitions': transitions})
 
-    def test_catalogue_has_15_editing_choices_without_ambience_and_rejects_invalid_choices(self):
+    def test_catalogue_has_20_motion_choices_without_ambience_and_rejects_invalid_choices(self):
         library = sound.audio_module('sfx').LIB
         names = [name for _, _, group in sound.CATEGORIES for name in group]
-        self.assertEqual(len(sound.catalog()), 15)
+        self.assertEqual(len(sound.catalog()), 20)
         self.assertLessEqual(set(names), set(library))
-        self.assertTrue({"flash", "whoosh", "swish", "blip"}.issubset(names))
-        self.assertTrue(set(names).isdisjoint({"city", "wind", "rain", "footstep", "applause"}))
+        self.assertTrue({"flash", "whoosh", "swish", "ratchet", "spin", "swoosh_in", "scramble"}.issubset(names))
+        self.assertTrue(set(names).isdisjoint({"city", "wind", "rain", "footstep", "applause", "ding", "powerup"}))
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(sound.allowed_names(sound.normalize()), names)
         for value in [{'music': {'enabled': 'false'}}, {'effects': {'categories': ['missing']}},
@@ -70,13 +70,13 @@ class SoundSettingsTest(unittest.TestCase):
 
     def test_filtering_keeps_saved_cues_and_the_existing_music_file_untouched(self):
         config = {'music': {'file': 'input/music.mp3', 'seed': 3}}
-        story = {'sfx': [{'name': 'ding'}, {'name': 'whoosh'}], 'shots': [
+        story = {'sfx': [{'name': 'lock_in'}, {'name': 'whoosh'}], 'shots': [
             {'sfx': [{'name': 'pop'}], 'amb': {'name': 'wind'}}, {'amb': None}]}
         original = copy.deepcopy(story)
         self.assertEqual(sound.apply_config(config, None), config)
-        applied = sound.apply_config(config, {'music': {'generate': False}, 'effects': {'categories': ['notification']}})
+        applied = sound.apply_config(config, {'music': {'generate': False}, 'effects': {'categories': ['lock'], 'version': 2}})
         result = sound.filter_story(story, applied)
-        self.assertEqual(result['sfx'], [{'name': 'ding'}])
+        self.assertEqual(result['sfx'], [{'name': 'lock_in'}])
         self.assertEqual(result['shots'][0], {'sfx': []})
         self.assertEqual(story, original)
         self.assertEqual(applied['music']['file'], 'input/music.mp3')
@@ -107,13 +107,13 @@ class SoundSettingsTest(unittest.TestCase):
     def test_mixer_does_not_generate_music_when_only_existing_music_is_allowed(self):
         import numpy as np
         mix = sound.audio_module('mix')
-        story = {'duration': 4, 'shots': [{'start': 0, 'end': 4, 'sfx': [{'at': 1, 'name': 'ding'}, {'at': 2, 'name': 'whoosh'}], 'amb': {'name': 'wind'}}]}
-        config = sound.apply_config({}, {'music': {'generate': False}, 'effects': {'categories': ['notification']}})
+        story = {'duration': 4, 'shots': [{'start': 0, 'end': 4, 'sfx': [{'at': 1, 'name': 'lock_in'}, {'at': 2, 'name': 'whoosh'}], 'amb': {'name': 'wind'}}]}
+        config = sound.apply_config({}, {'music': {'generate': False}, 'effects': {'categories': ['lock'], 'version': 2}})
         with patch.object(mix.MUSIC, 'render_score', side_effect=AssertionError('Music generation disabled')), \
              patch.object(mix.SFX, 'make', wraps=mix.SFX.make) as make:
             parts = list(mix.beds('/unused', config, story, 4 * mix.SR, -16, np.zeros(4 * mix.SR)))
             self.assertTrue(parts)
-            self.assertEqual([call.args[0] for call in make.call_args_list], ['ding'])
+            self.assertEqual({call.args[0] for call in make.call_args_list}, {'lock_in'})
         config['sfx']['enabled'] = False
         self.assertEqual(list(mix.beds('/unused', config, story, 1, -16, np.zeros(1))), [])
 
@@ -121,15 +121,15 @@ class SoundSettingsTest(unittest.TestCase):
         ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'start': 0, 'duration': 10, 'title': 'Озвучка'}]}]}, plan=None,
                               actions=[], report=[], asset_for=lambda p: p.name)
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
-             patch.object(sound, 'for_project', return_value=sound.normalize({'music': {'enabled': False}, 'effects': {'categories': ['notification']}})):
-            soundtrack.place(ctx, {'music': True, 'cues': [{'name': 'ding', 't': 2}, {'name': 'whoosh', 't': 4}]})
+             patch.object(sound, 'for_project', return_value=sound.normalize({'music': {'enabled': False}, 'effects': {'categories': ['lock'], 'version': 2}})):
+            soundtrack.place(ctx, {'music': True, 'cues': [{'name': 'lock_in', 't': 2}, {'name': 'whoosh', 't': 4}]})
             self.assertEqual(len(ctx.actions), 1)
             action = ctx.actions[0]['payload']
             self.assertEqual((action['kind'], action['start']), ('audio', 2))
             self.assertNotIn('group_id', action)
             ctx.project['tracks'][0]['clips'].append(action)
             ctx.actions.clear()
-            soundtrack.place(ctx, {'music': True, 'cues': [{'name': 'ding', 't': 2}]})
+            soundtrack.place(ctx, {'music': True, 'cues': [{'name': 'lock_in', 't': 2}]})
             self.assertEqual(ctx.actions, [])
 
     def test_transition_sounds_vary_follow_real_joins_and_disappear_with_a_cut(self):

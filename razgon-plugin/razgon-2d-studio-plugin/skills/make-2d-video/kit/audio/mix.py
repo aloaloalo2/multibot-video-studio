@@ -150,8 +150,11 @@ def beds(P, cfg, story, n, v_rms, env, music=True, sfx=True):
                 if at >= w1 or k in done: continue
                 if k not in sounds:
                     nm = c["name"]
-                    if re.search(r"\.(wav|mp3|ogg|flac|m4a)$", nm, re.I): sounds[k] = load_any(os.path.join(P, nm))
-                    else: sounds[k] = SFX.make(nm, dur=c.get("dur"), seed=c.get("seed"), pitch=c.get("pitch"))
+                    # every effect whole and at one loudness, at most 4 s (user, 21 November 2026): a cue's dur no
+                    # longer cuts it; a kit without take()/level() (an older working copy) keeps the old way
+                    if re.search(r"\.(wav|mp3|ogg|flac|m4a)$", nm, re.I):
+                        sounds[k] = load_any(os.path.join(P, nm)); sounds[k] = SFX.level(sounds[k]) if hasattr(SFX, "level") else sounds[k]
+                    else: sounds[k] = SFX.take(nm, seed=c.get("seed"), pitch=c.get("pitch")) if hasattr(SFX, "take") else SFX.make(nm, dur=c.get("dur"), seed=c.get("seed"), pitch=c.get("pitch"))
                 place(hits, sounds[k], at - w0, db(c.get("gain", -8)))
             # a loop or a sound that ends before the next window is not needed again
             for k in [k for k, x in loops.items() if secs(beds_of[k]["start"]) + len(x) <= w1]: del loops[k]

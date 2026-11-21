@@ -97,7 +97,7 @@ class SoundHandoffTest(unittest.TestCase):
         self.save_sound({'music': {'enabled': False}, 'effects': {'enabled': False}, 'library': {'enabled': False}})
         text = sound_settings.instructions(self.project)
         self.assertNotIn('"op": "soundtrack"', text)
-        self.save_sound({'music': {'enabled': True, 'generate': False}, 'effects': {'categories': ['tick']}})
+        self.save_sound({'music': {'enabled': True, 'generate': False}, 'effects': {'categories': ['tick'], 'version': 2}})
         text = sound_settings.instructions(self.project)
         example = json.loads(text.split('операцію soundtrack: ', 1)[1].split('. Постав події', 1)[0])
         self.assertFalse(example['music'])

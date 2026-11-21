@@ -6,20 +6,17 @@ function channelSoundMarkup(){
       <small id="sound-music-note"></small></div>
       <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Фонова музика"><span class="channel-music-styles-title">Фонова музика</span><small class="channel-music-styles-note">Музика змінюється разом із настроєм розповіді; вибір задає, якими інструментами вона звучить. «М’який фон» і «Глибокий фон» без дзвінких нот.</small><div class="channel-sound-categories"></div></div>
     </div>
-    <details class="channel-sound-group"><summary><span>Ефекти акцентів</span><small id="sound-effect-count"></small></summary>
-      <label class="check"><input id="sound-effects" type="checkbox">Використовувати для акцентів</label>
+    <details class="channel-sound-group channel-sound-sfx"><summary><span>SFX</span><small id="sound-sfx-count"></small></summary>
+      <label class="check"><input id="sound-sfx" type="checkbox">Використовувати SFX</label>
+      <input id="sound-effects" type="checkbox" hidden><input id="sound-library" type="checkbox" hidden><small id="sound-effect-count" hidden></small><small id="sound-library-count" hidden></small>
+      <p class="channel-sound-note">Одна добірка для акцентів і анімацій: звуки моушн-дизайну на появу, обертання, кліки, накручування тексту. Кожен звук звучить цілим, до 4 с, гучність вирівняна.</p>
       <div id="sound-categories" class="channel-sound-categories"></div>
-      <p class="channel-sound-note">Поява елементів, числа, підписи та інші акценти всередині кадру.</p>
+      <div id="animation-sfx-library" class="channel-sound-categories"></div>
     </details>
     <details class="channel-sound-group regular-only"><summary><span>Звуки переходів</span><small id="sound-transition-count"></small></summary>
       <label class="check"><input id="sound-transitions" type="checkbox" disabled>Використовувати на стиках</label>
       <div id="transition-categories" class="channel-sound-categories"></div>
       <p class="channel-sound-note">Режисер обирає доречні переходи й чергує позначені звуки. М’які склейки переважно залишаються тихими.</p>
-    </details>
-    <details class="channel-sound-group"><summary><span>SFX для анімацій</span><small id="sound-library-count"></small></summary>
-      <label class="check"><input id="sound-library" type="checkbox" disabled>Використовувати SFX</label>
-      <p class="channel-sound-note">Ці звуки використовуються в нових анімаціях і показуються окремими кліпами на доріжці SFX. Дозволені для YouTube з монетизацією.</p>
-      <div id="animation-sfx-library" class="channel-sound-categories"></div>
     </details>
   </section>`;
 }
@@ -56,9 +53,17 @@ function bindChannelSound(saved){
       group.list.hidden=!group.toggle.checked;
       group.count.textContent=!group.toggle.checked?'Вимкнено':inputs.length?`Обрано: ${selected.length}`:'';
       root.soundValue[group.key].enabled=group.toggle.checked;
+      if(group.key==='effects')root.soundValue.effects.version=2;   // today's SFX list: an unticked new sound stays unticked
       if(inputs.length)root.soundValue[group.key][group.field]=[...selected.map(i=>i.value),...(group.unavailableChoices||[])];
     }
+    const sfxInputs=[...root.querySelectorAll('#sound-categories input,#animation-sfx-library input')];
+    root.querySelector('#sound-sfx-count').textContent=!root.querySelector('#sound-sfx').checked?'Вимкнено':sfxInputs.length?`Обрано: ${sfxInputs.filter(i=>i.checked).length}`:'';
   }
+  // one SFX switch for the synthesized sounds and the files (user, 21 November 2026: «ефекти акцентів це те саме, що SFX
+  // для анімації… розділяти не потрібно»)
+  const sfxToggle=root.querySelector('#sound-sfx'),effectsToggle=root.querySelector('#sound-effects'),libraryToggle=root.querySelector('#sound-library');
+  sfxToggle.checked=effectsToggle.checked||libraryToggle.checked;
+  sfxToggle.addEventListener('change',()=>{effectsToggle.checked=sfxToggle.checked;if(!libraryToggle.disabled)libraryToggle.checked=sfxToggle.checked;update();});
   for(const control of [music,generate,...groups.map(g=>g.toggle)])control.addEventListener('change',update);
   update();
   api('/api/sound-effects').then(data=>{
@@ -106,7 +111,7 @@ function bindChannelSound(saved){
         const play=document.createElement('button');play.type='button';play.className='sound-preview';play.setAttribute('aria-label',`Прослухати: ${row.label}`);play.setAttribute('aria-pressed','false');play.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
         play.addEventListener('click',async()=>{
           const wasPlaying=play.classList.contains('playing');stop();if(wasPlaying)return;
-          const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=group.key==='library' ? .3 : .65;sample=audio;
+          const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=.6;   // every SFX is levelled to one loudness, so one player volumesample=audio;
           audio.hidden=true;item.append(audio);
           audio.onended=audio.onerror=()=>{if(sample===audio)stop();audio.remove();};
           play.classList.add('playing');play.setAttribute('aria-pressed','true');

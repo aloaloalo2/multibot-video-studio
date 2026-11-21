@@ -12,23 +12,36 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT_AUDIO = ROOT / 'razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/audio'
+# One SFX list for accents and animations, motion-design sounds first (user, 21 November 2026: «ефекти акцентів це те
+# саме, що SFX для анімації… не мультяшні… щось появляється, щось крутиться, щелчки… накручування… тріщотка… вух має
+# бути різні варіанти»). The cartoon and musical ones (a bell ding, a power-up, a freeze swell) left the list.
 CATEGORIES = (
+    ('appear', 'Поява елемента', ('appear',)),
+    ('swoosh_in', 'Наліт', ('swoosh_in',)),
+    ('swoosh_out', 'Відліт', ('swoosh_out',)),
     ('whoosh', 'М’який помах', ('whoosh',)),
     ('swish', 'Швидкий помах', ('swish',)),
-    ('appearance', 'Поява елемента', ('pop',)),
-    ('switch', 'Перемикання елемента', ('blip',)),
+    ('spin', 'Обертання', ('spin',)),
+    ('slide', 'Ковзання', ('slide',)),
+    ('ratchet', 'Тріскачка, накручування', ('ratchet',)),
+    ('scramble', 'Перебір символів тексту', ('scramble',)),
+    ('typing', 'Друк тексту', ('typing',)),
+    ('click', 'Клік', ('ui_click', 'double_click')),
     ('tick', 'Клацання', ('tick',)),
+    ('lock', 'Фіксація на місці', ('lock_in',)),
     ('counter', 'Підрахунок чисел', ('counter',)),
-    ('notification', 'Сповіщення', ('ding',)),
-    ('sparkle', 'Сяйво', ('shimmer',)),
+    ('rise', 'Коротке наростання', ('rise_short',)),
     ('movement', 'Короткий удар', ('hit',)),
-    ('impact', 'Глибокий акцент', ('impact', 'stinger')),
-    ('tension', 'Наростання', ('riser',)),
-    ('freeze', 'Стоп-кадр', ('freeze', 'slowmo')),
+    ('impact', 'Глибокий акцент', ('impact',)),
+    ('glint', 'Відблиск', ('glint',)),
     ('digital', 'Цифровий збій', ('glitch',)),
-    ('devices', 'Затвор камери', ('flash',)),
-    ('ambience', 'Звуковий підйом', ('powerup',)),
+    ('devices', 'Спалах і затвор', ('flash',)),
 )
+# A channel saved before this list (no "version"): its choices carry over by meaning, and the new motion sounds are on.
+EFFECTS_VERSION = 2
+OLD_CATEGORIES = {'appearance': 'appear', 'switch': 'click', 'sparkle': 'glint', 'tension': 'rise',
+                  'notification': None, 'freeze': None, 'ambience': None}
+NEW_IN_V2 = ('swoosh_in', 'swoosh_out', 'spin', 'slide', 'ratchet', 'scramble', 'typing', 'lock')
 TRANSITIONS = (
     ('air', 'Повітряний whoosh'), ('silk', 'М’який шовковий'), ('whip', 'Різкий whip'),
     ('camera', 'Затвор камери'), ('snap', 'Сухий snap'), ('sweep', 'Висхідний sweep'),
@@ -63,7 +76,7 @@ def normalize(value=None):
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
         part = value.get(key, {})
-        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories'} if key == 'effects' else {'style'})):
+        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories', 'version'} if key == 'effects' else {'style'})):
             raise ValueError('Невірні налаштування ' + key)
         result[key] = {}
         for flag, default in flags.items():
@@ -75,10 +88,24 @@ def normalize(value=None):
     if style not in MUSIC_STYLES:
         raise ValueError('Невідомий стиль музики')
     result['music']['style'] = style
-    categories = value.get('effects', {}).get('categories', [row[0] for row in CATEGORIES])
-    if not isinstance(categories, list) or any(not isinstance(key, str) or key not in IDS for key in categories) or len(set(categories)) != len(categories):
+    effects = value.get('effects', {})
+    categories = effects.get('categories', [row[0] for row in CATEGORIES])
+    if not isinstance(categories, list) or len(set(categories)) != len(categories):
+        raise ValueError('Невідома або повторена категорія звуку')
+    if any(isinstance(key, str) and key in OLD_CATEGORIES for key in categories) or (effects.get('version') != EFFECTS_VERSION and 'categories' in effects):
+        # a choice from the list before 21 November 2026: the same choice by meaning; a channel saved then gets the new
+        # motion sounds on as well
+        carried = [OLD_CATEGORIES.get(key, key) for key in categories if isinstance(key, str)]
+        carried = [key for key in carried if key is not None]
+        if effects.get('version') != EFFECTS_VERSION and carried:   # an empty choice stays empty
+            carried += [key for key in NEW_IN_V2 if key not in carried]
+        if any(key not in IDS for key in carried):
+            raise ValueError('Невідома або повторена категорія звуку')
+        categories = [row[0] for row in CATEGORIES if row[0] in set(carried)]
+    if any(not isinstance(key, str) or key not in IDS for key in categories):
         raise ValueError('Невідома або повторена категорія звуку')
     result['effects']['categories'] = list(categories)
+    result['effects']['version'] = EFFECTS_VERSION
     transition = value.get('transitions', {})
     if not isinstance(transition, dict) or set(transition) - {'enabled', 'styles'}:
         raise ValueError('Невірні налаштування звуків переходів')
@@ -133,8 +160,8 @@ def apply_config(config, value, *, animated=False):
         return result
     sound = normalize(value)
     result['music'] = {**(result.get('music') or {}), **sound['music']}
-    library = sfx_library.allowed(sound) if animated else []
-    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or bool(library) or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + (library if animated else transition_names(sound))}
+    library = sfx_library.allowed(sound)   # one SFX list in every project (21 November 2026)
+    result['sfx'] = {**(result.get('sfx') or {}), 'enabled': sound['effects']['enabled'] or bool(library) or (sound['transitions']['enabled'] and not animated), 'allowed_names': allowed_names(sound) + library + ([] if animated else transition_names(sound))}
     return result
 
 
@@ -153,11 +180,11 @@ def filter_story(story, config):
 
 
 def catalog():
-    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=3'} for key, label, names in CATEGORIES]
+    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=4'} for key, label, names in CATEGORIES]
 
 
 def transition_catalog():
-    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=3'} for key, label in TRANSITIONS]
+    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=4'} for key, label in TRANSITIONS]
 
 
 def audio_module(name):
@@ -183,18 +210,13 @@ def preview(category, *, transition=False):
     if row is None:
         raise store.StudioError('Звук не знайдено', 404)
     # v3: the whole sound, as the film lays it (user, 21 November 2026: «навіть в настройках каналу… звуки якісь обрізані»)
-    path = store.DATA_ROOT / 'cache' / 'sound-previews-v3' / (('transition-' if transition else '') + category + '.wav')
+    path = store.DATA_ROOT / 'cache' / 'sound-previews-v4' / (('transition-' if transition else '') + category + '.wav')
     with LOCK:
         if not path.is_file():
             path.parent.mkdir(parents=True, exist_ok=True)
             module = audio_module('sfx')
-            import soundtrack
-            samples = soundtrack.full_take(module, row[2][0])[0]
-            # One consistent, moderate preview level. No service call.
-            import numpy as np
-            peak = float(np.abs(samples).max(initial=0))
-            samples *= .22 / max(peak, .22)
-            module.write_wav(str(path), samples)
+            # the whole sound at the common SFX loudness, as the film lays it; every preview sounds equally loud
+            module.write_wav(str(path), module.take(row[2][0]))
     return path
 
 
@@ -231,11 +253,15 @@ def instructions(project, *, scoped=False, include_workflow=True):
              'Використовуй лише вже додану музику. Нову музику не генеруй.\n')
     import store
     animated = store.project_animated(project)
-    downloaded = sfx_library.instructions(sound) if animated else ''
+    downloaded = sfx_library.instructions(sound)
     names = allowed_names(sound)
-    text += downloaded or ('Дозволені короткі монтажні ефекти: ' + ', '.join(names) + '. Використовуй їх для акцентів і появи елементів усередині кадру. Зберігай чіткість голосу.\n' if names else
-             'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n')
-    if animated and 'library' in sound and not downloaded:
+    # one SFX list for accents and animations: the synthesized motion sounds and the author's files together
+    text += ('SFX (одна добірка для акцентів і анімацій): ' + ', '.join(names) + '. Це звуки моушн-дизайну під видиму подію: '
+             'поява (appear, swoosh_in), відліт (swoosh_out), обертання (spin), ковзання (slide), накручування й перебір тексту '
+             '(ratchet, scramble, typing), кліки й фіксація (ui_click, double_click, tick, lock_in), числа (counter), удари. '
+             'Чергуй варіанти, не мультяшно, кожен звук цілий (до 4 с), гучність студія вирівнює сама; голос лишається чітким.\n'
+             if names else '') + (downloaded or ('' if names else 'Звукові ефекти й атмосферу вимкнено. Не додавай їх.\n'))
+    if 'library' in sound and not downloaded and not names:
         text += 'У добірці SFX для анімацій немає дозволених доступних звуків. Файли цієї добірки не додавай.\n'
     transitions = [] if animated else transition_names(sound)
     text += ('Окремі звуки переходів: ' + ', '.join(transitions) + '. Обирай лише доречні стики, чергуй типи. Більшість м’яких склейок залишай тихими.\n' if transitions else 'Звуки переходів вимкнено. Монтажні акценти мають окремий вибір.\n')
@@ -246,7 +272,7 @@ def instructions(project, *, scoped=False, include_workflow=True):
     if not animated:
         text += 'Операція transitions озвучує вибрані доречні стики. Для авторського вибору передай sound_frames з номерами вхідних кадрів; порожній список лишає всі переходи тихими. Операція transition_sounds оновлює тільки звук на існуючих стиках. Не дублюй ці події окремими cues.\n'
     create_music = music['enabled'] and music['generate']
-    cues = sfx_library.allowed(sound) if downloaded else names
+    cues = names + (sfx_library.allowed(sound) if downloaded else [])
     if not create_music and not cues:
         return text + 'Нову музику й акценти всередині кадру створювати не потрібно. Окрему доріжку для них не генеруй.\n'
     example = json.dumps({'op': 'soundtrack', 'music': create_music, 'mood': 'calm',

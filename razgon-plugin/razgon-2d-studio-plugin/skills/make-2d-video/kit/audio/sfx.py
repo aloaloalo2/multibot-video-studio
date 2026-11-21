@@ -12,7 +12,7 @@ import argparse, os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from dsp import (SR, secs, t_axis, noise, lp, hp, bp, sweep_filter, env_adsr, expdec, sine, osc, stereo, as_stereo,
-                 reverb, delay, fade, normalize, midi_hz, rng, write_wav)
+                 reverb, delay, fade, normalize, midi_hz, rng, write_wav, db)
 
 LIB = {}
 def sfx(desc, dur=1.0):
@@ -289,6 +289,183 @@ def buzz(dur=1.5, seed=35, **_):
 
 from transition_sfx import LIB as TRANSITION_LIBRARY
 LIB.update(TRANSITION_LIBRARY)
+
+
+# ---- motion-design sounds (user, 21 November 2026: «в більшості… не мультяшні… такі звуки, які використовують для моушн
+# дизайна. Тобто щось появляється, щось крутиться, щелчки… накручування… текст перекручується… як тріщотка… вух має бути
+# різні варіанти»): short, dry, close to the screen, no melody.
+
+def _click(n, seed, f=3200, tau=0.004, body=0.0):
+    x = bp(noise(n, seed), f * 0.6, min(f * 1.8, 20000)) * expdec(n, tau)
+    if body:
+        x += sine(f / 8, n) * expdec(n, tau * 4) * body
+    return x
+
+
+@sfx("soft UI click, a button or an element snapping into place", 0.12)
+def ui_click(dur=0.12, seed=40, pitch=1.0, **_):
+    n = secs(dur); x = _click(n, seed, 3800 * pitch, 0.003, 0.35)
+    return normalize(fade(stereo(x, 0, 0.1), 0, 0.01), -2)
+
+
+@sfx("double mechanical click, a toggle or a selection", 0.22)
+def double_click(dur=0.22, seed=41, pitch=1.0, **_):
+    n = secs(dur); x = np.zeros(n, np.float32); m = secs(0.05)
+    for i, at in enumerate((0.0, 0.085)):
+        a = secs(at); x[a:a + m] += _click(m, seed + i, (3300 if i else 4200) * pitch, 0.004, 0.3)[: n - a]
+    return normalize(fade(stereo(x, 0, 0.15), 0, 0.01), -2)
+
+
+@sfx("ratchet: fast clicks slowing down, text or a dial winding into place", 0.9)
+def ratchet(dur=0.9, seed=42, pitch=1.0, **_):
+    n = secs(dur); x = np.zeros(n, np.float32); r = rng(seed); m = secs(0.03); at = 0.0; gap = 0.022
+    while at < dur - 0.04:
+        a = secs(at); x[a:a + m] += _click(m, int(r.integers(0, 1 << 30)), (2600 + 900 * r.random()) * pitch, 0.003, 0.15)[: n - a]
+        at += gap; gap *= 1.07
+    return normalize(fade(stereo(x, 0, 0.25), 0.002, 0.03), -2)
+
+
+@sfx("text scramble: rapid digital ticks of changing pitch, letters shuffling", 0.7)
+def scramble(dur=0.7, seed=43, pitch=1.0, **_):
+    n = secs(dur); x = np.zeros(n, np.float32); r = rng(seed); m = secs(0.018); at = 0.0
+    while at < dur - 0.03:
+        a = secs(at); f = float(r.choice([1800, 2400, 3000, 3600, 4200])) * pitch
+        x[a:a + m] += (sine(f, m) * 0.5 + bp(noise(m, int(r.integers(0, 1 << 30))), f * 0.8, f * 1.3) * 0.6) * expdec(m, 0.006)
+        at += 0.032 + 0.012 * r.random()
+    x *= np.linspace(1, 0.55, n) ** 0.5
+    return normalize(fade(stereo(x, 0, 0.35), 0.002, 0.04), -3)
+
+
+@sfx("keyboard typing burst, text being typed", 0.8)
+def typing(dur=0.8, seed=44, **_):
+    n = secs(dur); x = np.zeros(n, np.float32); r = rng(seed); m = secs(0.04); at = 0.0
+    while at < dur - 0.05:
+        a = secs(at); x[a:a + m] += _click(m, int(r.integers(0, 1 << 30)), 1700 + 1400 * r.random(), 0.006, 0.5)[: n - a] * (0.6 + 0.4 * r.random())
+        at += 0.06 + 0.07 * r.random()
+    return normalize(fade(stereo(x, 0, 0.2), 0.002, 0.03), -3)
+
+
+@sfx("spin: an element rotating once, airy flutter with a pitch turn", 0.8)
+def spin(dur=0.8, seed=45, pitch=1.0, **_):
+    n = secs(dur); u = np.linspace(0, 1, n)
+    y = sweep_filter(noise(n, seed), 700 * pitch, 2600 * pitch, q=2.2, curve=1.0)
+    rate = 9 + 10 * u                                   # the flutter speeds up as it turns
+    flutter = 0.55 + 0.45 * np.sin(2 * np.pi * np.cumsum(rate) / SR)
+    y = y * flutter * np.sin(np.pi * u) ** 1.3
+    return normalize(fade(stereo(y, 0, 0.7), 0.005, 0.03), -2)
+
+
+@sfx("swoosh in: air rising into the frame, an element arriving", 0.55)
+def swoosh_in(dur=0.55, seed=46, pitch=1.0, **_):
+    n = secs(dur); u = np.linspace(0, 1, n)
+    y = sweep_filter(noise(n, seed), 250 * pitch, 4200 * pitch, q=1.4, curve=1.3) * u ** 1.8 * (1 - u) ** 0.25
+    return normalize(fade(stereo(y, 0, 0.6), 0.005, 0.04), -2)
+
+
+@sfx("swoosh out: air falling away, an element leaving", 0.55)
+def swoosh_out(dur=0.55, seed=47, pitch=1.0, **_):
+    n = secs(dur); u = np.linspace(0, 1, n)
+    y = sweep_filter(noise(n, seed), 4000 * pitch, 260 * pitch, q=1.4, curve=0.7) * (1 - u) ** 1.6 * u ** 0.2
+    return normalize(fade(stereo(y, 0, 0.6), 0.004, 0.04), -2)
+
+
+@sfx("soft appear: a dry pop with a breath of air, an element appearing", 0.3)
+def appear(dur=0.3, seed=48, pitch=1.0, **_):
+    n = secs(dur); t = t_axis(n)
+    x = sine(260 * pitch * (1 + 0.6 * np.exp(-t / 0.015)), n) * expdec(n, 0.045) * 0.8
+    x += bp(noise(n, seed), 1500 * pitch, 7000 * pitch) * expdec(n, 0.02) * 0.45
+    return normalize(fade(stereo(x, 0, 0.2), 0.001, 0.03), -2)
+
+
+@sfx("lock in: a click with a low thud, something fixing into place", 0.35)
+def lock_in(dur=0.35, seed=49, pitch=1.0, **_):
+    n = secs(dur); x = _click(n, seed, 3000 * pitch, 0.004, 0.0) + _thump(n, 140 * pitch, 60 * pitch, 0.07, 0.2, seed) * 0.7
+    return normalize(fade(stereo(x, 0, 0.15), 0, 0.03), -2)
+
+
+@sfx("slide: a soft friction glide, a panel or text sliding", 0.6)
+def slide(dur=0.6, seed=50, pitch=1.0, **_):
+    n = secs(dur); u = np.linspace(0, 1, n)
+    y = bp(noise(n, seed, "pink"), 500 * pitch, 3500 * pitch) * np.sin(np.pi * u) ** 0.9 * (0.8 + 0.2 * np.sin(2 * np.pi * 23 * u))
+    return normalize(fade(stereo(y, 0, 0.4), 0.01, 0.05), -3)
+
+
+@sfx("short riser into a reveal (about a second), ends on a soft tap", 1.1)
+def rise_short(dur=1.1, seed=51, pitch=1.0, **_):
+    n = secs(dur); u = np.linspace(0, 1, n)
+    y = sweep_filter(noise(n, seed), 400 * pitch, 6000 * pitch, q=2.0, curve=1.6) * u ** 2.2 * 0.8
+    y += sine(110 * pitch * (1 + u), n) * u ** 3 * 0.25
+    tap = secs(0.08); y[-tap:] += _click(tap, seed + 1, 2600, 0.01, 0.4) * 0.8
+    return normalize(fade(stereo(y, 0, 0.5), 0.02, 0.02), -2)
+
+
+@sfx("glassy sparkle, brief and quiet, a highlight or a shine", 0.8)
+def glint(dur=0.8, seed=52, pitch=1.0, **_):
+    n = secs(dur); x = np.zeros(n, np.float32); r = rng(seed)
+    for i in range(5):
+        a = secs(0.03 * i + 0.01 * r.random()); m = n - a
+        f = float(r.choice([3136, 3520, 3951, 4699, 5274])) * pitch
+        x[a:] += sine(f, m) * expdec(m, 0.12) * 0.25
+    x += hp(noise(n, seed), 6000) * expdec(n, 0.05) * 0.15
+    return normalize(fade(stereo(x, 0, 0.6), 0.002, 0.08), -4)
+
+
+# ---- one level and one length for every effect (user, 21 November 2026: «нема норми звуків по громкості… не мають
+# бути довші, ніж 4 секунди»): each sound, synthesized or a file, is brought to the same loudness of its loudest 400 ms
+# (RMS after a 120 Hz high-pass, close to how loud a short sound feels), peaks under -1 dBFS, at most MAX_SECONDS long.
+MAX_SECONDS = 4.0
+TARGET_DB = -18.0
+
+
+def loudness(x):
+    mono = x.mean(axis=1) if x.ndim == 2 else x
+    y = hp(mono.astype(np.float32), 120)
+    # a sound shorter than the window is measured over its own length: padded with silence, a 0.1 s click read 10 dB
+    # quieter than it sounds and was pushed into the peak limit
+    win, hop = min(secs(0.4), len(y)), secs(0.05)
+    best = 0.0
+    for a in range(0, len(y) - win + 1, hop):
+        best = max(best, float(np.mean(y[a:a + win].astype(np.float64) ** 2)))
+    return 10 * np.log10(best + 1e-12)
+
+
+def level(x):
+    """The sound at the common loudness, its peaks under -1 dBFS, cut to MAX_SECONDS with a 0.25 s fade if longer."""
+    x = as_stereo(np.asarray(x, dtype=np.float32)).copy()
+    if len(x) > secs(MAX_SECONDS):
+        x = x[: secs(MAX_SECONDS)]
+        f = secs(0.25); x[-f:] *= (np.linspace(1, 0, f) ** 2)[:, None]
+    # a click is mostly peak: it may go up to 6 dB past its peak limit, the peaks rounded by a soft limiter, so it stands
+    # as loud as a whoosh instead of 7 dB under it
+    ceiling = db(-1.0)
+    peak = float(np.abs(x).max()) or 1.0
+    gain = min(db(TARGET_DB - loudness(x)), ceiling / peak * db(6.0))
+    x *= gain
+    if float(np.abs(x).max()) > ceiling:
+        x = ceiling * np.tanh(x / ceiling)
+    return x.astype(np.float32)
+
+
+def take(name, seed=None, pitch=None):
+    """An effect whole (never cut short), levelled: drawn at its own length, longer while a decaying sound still sounds at
+    its end (when the longer take begins the same; a riser keeps its length), the last part faded, then level()."""
+    def loud_tail(x):
+        peak = float(np.abs(x).max()) or 1.0
+        tail = x[-max(1, secs(0.03)):]
+        return 20 * np.log10(float(np.sqrt(np.mean(tail.astype(np.float64) ** 2))) / peak + 1e-12) > -45
+    dur = float(LIB[name]["dur"])
+    x = make(name, dur=dur, seed=seed, pitch=pitch)
+    for _ in range(3):
+        if not loud_tail(x) or dur * 1.6 > MAX_SECONDS + 1:
+            break
+        longer = make(name, dur=dur * 1.6, seed=seed, pitch=pitch)
+        head = len(x) - secs(0.05)
+        if head <= 0 or not np.allclose(longer[:head], x[:head], atol=1e-4):
+            break
+        x, dur = longer, dur * 1.6
+    f = min(len(x), secs(0.12 if loud_tail(x) else 0.02))
+    x = x.copy(); x[-f:] *= (np.linspace(1, 0, f) ** 2)[:, None]
+    return level(x)
 
 
 def make(name, **kw):

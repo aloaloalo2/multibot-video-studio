@@ -9,14 +9,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent / 'data/sfx-library/mixkit-20261112'
 
 
+# Music and cartoon sounds left the SFX list (user, 21 November 2026: «SFX не може бути музикою… в більшості це має бути
+# не мультяшні звуки»): a success chime, two coins, a wrong-answer buzz, a sad trombone, a comedy boing, a bubble pop,
+# an 11.7 s clock, a 65 s bass drone and an 11 s tension rise. Their files stay on disk, unused.
+EXCLUDED = {'938', '1999', '1992', '946', '472', '2894', '2357', '1059', '685', '786'}
+MAX_SECONDS = 4.0
+LEVELED = 'sfx-library-v1'
+
+
 def catalog():
     path = ROOT / 'catalog.json'
     if not path.is_file():
         return []
     rows = json.loads(path.read_text(encoding='utf-8'))
-    return [{**r, 'name': str(ROOT / (r['mixkit_id'] + '.wav')),
-             'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav'}
-            for r in rows if (ROOT / (r['mixkit_id'] + '.wav')).is_file()]
+    return [{**r, 'name': str(ROOT / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
+             'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=2'}
+            for r in rows if (ROOT / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
+
+
+def leveled(row) -> Path:
+    """The file at the common SFX loudness and at most 4 s (kit audio/sfx.py level), made once and kept in the cache."""
+    import subprocess
+    import numpy as np
+    import sound_settings
+    import store
+    out = store.DATA_ROOT / 'cache' / LEVELED / (row['mixkit_id'] + '.wav')
+    if not out.is_file():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', row['name'], '-f', 'f32le', '-ac', '2', '-ar', '48000', '-'],
+                             capture_output=True, check=True).stdout
+        module = sound_settings.audio_module('sfx')
+        samples = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2)
+        pending = out.with_suffix('.pending.wav')
+        module.write_wav(str(pending), module.level(samples))
+        pending.replace(out)
+    return out
 
 
 def allowed(sound):
@@ -28,8 +55,10 @@ def allowed(sound):
         return [row['name'] for row in catalog() if ids is None or row['mixkit_id'] in ids]
     if not sound['effects']['enabled']:
         return []
+    import sound_settings
     categories = set(sound['effects']['categories'])
-    return [row['name'] for row in catalog() if row['category'] in categories]
+    # the files keep the category names of the list before 21 November 2026
+    return [row['name'] for row in catalog() if sound_settings.OLD_CATEGORIES.get(row['category'], row['category']) in categories]
 
 
 def find(name):
@@ -43,7 +72,7 @@ def instructions(sound):
     return ('\nАВТОРСЬКА ДОБІРКА SFX. Для нових анімацій використовуй саме ці завантажені файли. '
             'У cue.name записуй повний шлях із каталогу. Обирай доречні звуки під видимі події: '
             'поява тексту, рух, результат, жарт, напруга. Не озвучуй кожен рух; голос має лишатися чітким. '
-            'Короткі ефекти використовуй із природною тривалістю, довгі за потреби обрізай через dur, максимум 6 с. '
+            'Кожен ефект звучить цілим, своєю природною довжиною (до 4 с), dur його не обрізає; гучність студія вирівнює сама. '
             'Студія розміщує кожну подію окремим редагованим аудіокліпом на доріжці SFX. '
             'Не зводь цю добірку з музикою чи голосом і не дублюй її в amb. '
             'Для нових анімацій amb залишай порожнім: у цій добірці немає фонової атмосфери. '
@@ -78,7 +107,7 @@ def place(studio, pid, story):
         at = float(cue['t'])
         if not all(math.isfinite(v) for v in (at, duration, gain)) or at < 0 or duration <= 0:
             raise ValueError('Невірна подія SFX')
-        events.append({'name': cue['name'], 't': at, 'dur': max(.1, min(6, duration)), 'gain': gain})
+        events.append({'name': cue['name'], 't': at, 'dur': max(.1, min(MAX_SECONDS, duration)), 'gain': gain})
     for offset in range(0, len(events), 200):
         project = studio.project(pid)
         studio.call('POST', f'/api/projects/{pid}/ops', {
