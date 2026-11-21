@@ -44,8 +44,10 @@ class EpisodeRestartTest(unittest.TestCase):
     def test_restart_backs_everything_up_and_leaves_an_empty_episode(self):
         project = episode_restart.restart(PID)
         self.assertEqual(project["tracks"], [{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}])
-        for key in ("plan_source", "voice_script", "production_request", "scene_groups"):
+        for key in ("plan_source", "production_request", "scene_groups"):
             self.assertNotIn(key, project)
+        # the written script stays in its field: only the voice, the plan and the montage go (21 November 2026)
+        self.assertEqual(project["voice_script"]["text"], "Hello.")
         self.assertEqual((project["id"], project["episode_path"], project["assets"], project["revision"], project["duration"]),
                          (PID, str(self.episode), [{"id": "voice"}], 8, 0.0))
         backup = next((self.folder / "restarts").iterdir())

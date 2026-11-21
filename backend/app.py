@@ -1725,7 +1725,13 @@ class Handler(BaseHTTPRequestHandler):
             import media_delivery
             project, asset = media_delivery.resolve(*match.groups())
             # the voice plays its copy at the standard level once it is made (audio_level.leveled)
-            return self.serve_media(audio_level.voice_file(project, match.group(2), Path(asset["path"])))
+            file = audio_level.voice_file(project, match.group(2), Path(asset["path"]))
+            # ?download=1 saves it under the episode's name (user, 21 November 2026: «озвучка… хочу її скачати»)
+            download = None
+            if query.get("download"):
+                stem = re.sub(r'[\\/:*?"<>|]+', " ", str(project.get("name") or "Озвучка")).strip() or "Озвучка"
+                download = f"Озвучка - {stem}{file.suffix}"
+            return self.serve_media(file, download=download)
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)
         if match:
             return self.json_response({"job": load_job(match.group(1))})

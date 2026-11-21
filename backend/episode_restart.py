@@ -9,6 +9,7 @@ stay where they are.
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 import time
 from pathlib import Path
@@ -22,6 +23,22 @@ import store
 KEEP = ("id", "name", "channel_id", "channel_name", "episode_path", "created_at", "schema_version", "width", "height",
         "fps", "assets", "settings", "plan_weights")
 STOP_WAIT = 15
+
+
+def kept_script(project: dict, folder: Path, plan) -> str:
+    """The script the episode stands on now, read the way the page fills its field (frontend/plan.js,
+    narrationScriptValue): the voice's own script when it is newer than the one saved in the project, else the saved
+    one, else the plan's."""
+    saved = project.get("voice_script") if isinstance(project.get("voice_script"), dict) else {}
+    job = store.read_json(folder / "narration" / "job.json", {}) or {}
+    plan_script = ""
+    if plan is not None and Path(plan).exists():
+        plan_script = (store.read_json(Path(plan), {}) or {}).get("script") or ""
+    if isinstance(job.get("script"), str) and float(job.get("started_at") or 0) > float(saved.get("saved_at") or 0):
+        text = job["script"]
+    else:
+        text = saved.get("text") or plan_script or job.get("script") or ""
+    return text.strip() if isinstance(text, str) else ""
 
 
 def stop_runs(pid: str) -> None:
@@ -70,6 +87,7 @@ def restart(pid: str) -> dict:
             plan = store.project_plan_file(project)
         except store.StudioError:
             plan = None
+        script = kept_script(project, folder, plan)
         files = [folder / "narration" / "job.json", folder / "narration" / "cancel", folder / "production-request.json", plan, episode / "План видео.json", episode / "Запит на створення.json", folder / "analysis-state.json", folder / "source-timing.json", folder / "episode-pause.json",
                  store.history_folder(pid), director.state_path(pid), folder / "director.log",
                  director.activity_path(pid, "director"), director.activity_path(pid, "production"),
@@ -83,6 +101,11 @@ def restart(pid: str) -> dict:
             moved[target.name] = str(path)
         store.atomic_json(backup / "restore.json", {"restarted_at": time.time(), "files": moved})
         fresh = {key: project[key] for key in KEEP if key in project}
+        if script:
+            # the script is the step before the voice: «Почати заново» takes the voice, the plan and the montage and
+            # leaves the written script in its field (user, 21 November 2026: «озвучку видаляю, і сценарій хай залишиться»)
+            fresh["voice_script"] = {"text": script, "sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+                                     "saved_at": time.time()}
         fresh.update(revision=project.get("revision", 0) + 1, layer_mode="item", duration=0.0, scenes=[], restarted_at=time.time(),
                      tracks=[{"id": "layer-1", "name": "Шар 1", "type": "universal", "z_index": 0, "clips": []}])
         store.save_project(fresh)

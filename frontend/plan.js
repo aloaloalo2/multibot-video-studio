@@ -222,7 +222,11 @@ function appendReadyNarration(panel,pid,job,info,refresh){
   const setOpen=open=>{body.hidden=!open;block.classList.toggle('open',open);toggle.setAttribute('aria-expanded',String(open));toggle.title=toggle.ariaLabel=open?'Згорнути':'Прослухати й налаштувати';if(!open)body.querySelector('audio')?.pause();};
   toggle.onclick=event=>{event.stopPropagation();setOpen(body.hidden);};setOpen(false);
   block.querySelector('.episode-voice').addEventListener('click',event=>{if(!event.target.closest('button'))setOpen(body.hidden);});
-  tools.append(toggle);if(typeof restartButton==='function')tools.append(restartButton(pid));
+  // the ready voice as a file (user, 21 November 2026: «хочу її скачати… додати цю кнопочку»)
+  const save=document.createElement('a');save.className='episode-voice-toggle narration-download';save.href=`/api/projects/${pid}/assets/${job.asset_id}/file?download=1`;
+  save.title=save.ariaLabel='Завантажити озвучку';save.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>';
+  save.addEventListener('click',event=>event.stopPropagation());
+  tools.append(save,toggle);if(typeof restartButton==='function')tools.append(restartButton(pid));
   const copy=videoCreationCopy(),plan=document.createElement('button');plan.type='button';plan.className='secondary narration-plan-action';plan.innerHTML=createVideoIcon+`<span>${copy.label}</span>`;
   plan.onclick=async()=>{plan.disabled=true;try{await startVideoCreation(pid,{asset_id:job.asset_id,script:job.script});await selectProject(pid,{view:'plan'});}catch(error){note(error.message);plan.disabled=false;}};
   ready.querySelector('.narration-settings').onclick=()=>openNarrationSpeed(pid,job,ready,refresh);

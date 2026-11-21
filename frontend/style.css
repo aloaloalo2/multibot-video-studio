@@ -3278,3 +3278,4 @@ select option{background:#232327;color:#f1f1f2}
 .project-publish-cancel{display:inline-grid;place-items:center;width:20px;height:20px;margin-left:4px;border-radius:50%;color:#9a9ca4;cursor:pointer;vertical-align:middle;transition:background-color .12s,color .12s}
 .project-publish-cancel svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 .project-publish-cancel:hover,.project-publish-cancel:focus-visible{background:#3a3a42;color:#f1f1f2;outline:none}
+.episode-voice-block.open .narration-download svg{transform:none}   /* only the arrow turns when the list opens */
