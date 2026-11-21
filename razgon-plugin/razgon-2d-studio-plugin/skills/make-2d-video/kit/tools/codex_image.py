@@ -47,12 +47,14 @@ def reset_time(text: str) -> str:
     return ""
 
 
-def stop_for_limit(text: str) -> None:
-    reset = reset_time(text)
+def stop_for_limit(text: str, reset: str | None = None, no_funds: bool = False) -> None:
+    """Codex's limit is out (and, with no_funds, OpenRouter has no money to draw instead): the studio pauses the frames
+    until the limit comes back, the agent stops."""
+    reset = reset_time(text) if reset is None else reset
     project, studio = os.environ.get("VIDEOKEY_PROJECT_ID"), os.environ.get("VIDEOKEY_STUDIO_URL")
     paused = False
     if project and studio:
-        body = json.dumps({"codex_limit": {"reset": reset}}).encode()
+        body = json.dumps({"codex_limit": {"reset": reset, **({"openrouter": "no_funds"} if no_funds else {})}}).encode()
         request = urllib.request.Request(f"{studio}/api/projects/{project}/production-pause", body,
                                          {"Content-Type": "application/json"}, method="POST")
         try:
@@ -61,6 +63,7 @@ def stop_for_limit(text: str) -> None:
         except Exception:
             pass
     sys.stderr.write("CODEX_LIMIT: закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") + ". " +
+                     ("На балансі OpenRouter теж немає коштів. " if no_funds else "") +
                      ("Студія поставила створення кадрів на паузу. " if paused else "") +
                      "Зупинись: більше нічого не роби й не заміняй картинки стоком чи кодом.\n")
     sys.exit(75)
@@ -178,6 +181,16 @@ def draw_openrouter(a, prompt: Path, out: Path, finish, strong: bool = False) ->
                                         transparent=bool(TRANSPARENT.search(text)), detail=strong or bool(getattr(a, "detail", False)))
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
+        # drawing instead of Codex, whose limit is out, and OpenRouter has no money either: nothing can draw until the
+        # limit comes back, so the studio pauses (21 November 2026: Antropov's frames 48, 55, 59 were left empty and the
+        # run read «не вдалися» with a list of frame reviews instead of the reason)
+        if strong and re.search(r"кошт|402|insufficient|credit", str(error), re.I):
+            try:
+                reset = json.loads(limit_marker().read_text()).get("reset") or ""
+            except (OSError, ValueError, AttributeError):
+                reset = ""
+            finish("limit", "CODEX_LIMIT: закінчився ліміт Codex, а на балансі OpenRouter немає коштів")
+            stop_for_limit("", reset=reset, no_funds=True)
         finish("failed", str(error)[-300:])
         sys.exit(f"OpenRouter не намалював {out.name}: {error}")
     out.with_suffix(".log.txt").write_text(f"OpenRouter {result.get('model')}: ${result.get('cost')}\n", encoding="utf-8")

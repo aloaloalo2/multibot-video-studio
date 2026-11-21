@@ -1946,7 +1946,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/production-pause", path)
         if match and method == "POST":
             limit = body.get("codex_limit") if isinstance(body, dict) else None
-            note = production.codex_limit_note(limit.get("reset")) if isinstance(limit, dict) else None
+            note = production.codex_limit_note(limit.get("reset"), limit.get("openrouter") == "no_funds") if isinstance(limit, dict) else None
             part = body.get("part") if isinstance(body, dict) and body.get("part") in episode_pause.PARTS else None
             if note is None and part and part != "production":
                 episode_pause.pause(match.group(1), {part})   # the plan page's own button: only that work

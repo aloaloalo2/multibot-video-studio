@@ -70,6 +70,23 @@ def drawn(pid: str, count: int, numbers=None) -> bool:
     return all(number in made and f"Razgon · кадр {number:03d}" in blocks for number in wanted)
 
 
+def missing_note(pid: str, request: dict) -> str:
+    """The frames of the request not on the timeline, said first (21 November 2026: Antropov's run read «не вдалися»
+    with a list of frame reviews, while the real cause was three pictures Codex could not draw)."""
+    try:
+        project = store.load_project(pid)
+        plan = store.load_project_plan(pid)
+        wanted = request.get('repair_frames') or list(range(1, int(request.get('frames') or 0) + 1))
+        made = set(store.made_frames(project, plan)) if not store.project_animated(project) else set(frame_progress.drawn(pid))
+        missing = [n for n in wanted if n not in made]
+    except (store.StudioError, OSError, ValueError, KeyError, TypeError):
+        return ''
+    if not missing:
+        return ''
+    return ('Не зроблені кадри ' + ', '.join(map(str, missing[:20])) + ('…' if len(missing) > 20 else '') +
+            '; решта стоїть на таймлайні. Натисніть «Продовжити», щоб доробити їх. ')
+
+
 # What the author checks first, so the agent checks it before it calls a frame done (user, 30 October 2026: long, wrongly
 # bent legs and bare triangles instead of props were handed in as finished frames).
 QUALITY = """5. Здача після перевірки композиції й дії. Перевір лише поточну партію до 5 кадрів або вибрані правки:
@@ -678,7 +695,11 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             if not review['passed']:
                 # A provider pause is the actionable cause; keep the local review
                 # details in quality without replacing the quota reset message.
-                fields['error'] = director.limit_stop(answer) or ' '.join(review['errors'])[:1600]
+                missing = missing_note(pid, request)
+                fields['error'] = director.limit_stop(answer) or (missing + ' '.join(review['errors']))[:1600]
+                if missing and not fields.get('limit'):
+                    # the made frames stay and the round «Продовжити» finishes the rest, as after a restart
+                    fields.update(paused=True, paused_by='incomplete')
     except subprocess.TimeoutExpired:
         try:
             made = drawn(pid, request["frames"], request.get('repair_frames'))
@@ -783,12 +804,14 @@ def resume(pid: str) -> dict:
     return fix(pid, notes, handoff=True)
 
 
-def codex_limit_note(reset: str | None) -> str:
+def codex_limit_note(reset: str | None, no_funds: bool = False) -> str:
     """The pause note when Codex ran out of its limit mid-production (user, 14 November 2026: «нехай просто… на паузу
     ставиться обробка кадрів… не хочу, щоб створювались кадри… без PNG»)."""
     reset = re.sub(r"[^0-9A-Za-zА-Яа-яІіЇїЄєҐґ:.,\s-]", "", str(reset or ""))[:60].strip()
     return ("Закінчився ліміт Codex" + (f", він оновиться {reset}" if reset else "") +
-            ". Готові кадри збережені; натисніть «Продовжити», коли ліміт оновиться.")
+            (". На балансі OpenRouter теж немає коштів, тож малювати замість Codex нічим" if no_funds else "") +
+            ". Готові кадри збережені; натисніть «Продовжити», коли ліміт оновиться" +
+            (" або поповніть OpenRouter" if no_funds else "") + ".")
 
 
 def pause(pid: str, note: str | None = None) -> dict:
