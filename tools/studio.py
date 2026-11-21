@@ -13,7 +13,7 @@ Read GET /api/projects/<id>/narration for available choices before choosing scri
     python3 tools/studio.py clear-accents P FRAME
     python3 tools/studio.py replace P (--clip ID | --frame N) FILE
     python3 tools/studio.py plan P [--frames 1-20] [--todo]   # the plan in one line a frame: time, format, idea, words, made
-    python3 tools/studio.py place P N (FILE | --text | --asset ID) [--motion zoom_in|zoom_out|none]   # a plan frame at its time
+    python3 tools/studio.py place P N (FILE | --text [--backdrop host|blur|grid] [--entrance E] | --asset ID) [--motion zoom_in|zoom_out|none]
     python3 tools/studio.py place P all-text               # every text frame not on the timeline yet, one undo step
     python3 tools/studio.py remove P N                     # a frame off the timeline with its group
     python3 tools/studio.py stock P N "query" [--video]    # a numbered sheet of Pixabay candidates for frame N
@@ -241,6 +241,8 @@ def _main(argv=None) -> int:
     place.add_argument("file", nargs="?")
     place.add_argument("--text", action="store_true", help="слова кадру текстом на весь екран")
     place.add_argument("--asset", help="id матеріалу, що вже є в проєкті")
+    place.add_argument("--backdrop", choices=["auto", "host", "blur", "grid"], help="основа текстового кадру: відео ведучого під чорним 59%%, розмита картинка або сітка з шумом; без вибору інша, ніж у попереднього текстового кадру")
+    place.add_argument("--entrance", help="поява слів текстового кадру: letters_fade, blur_up, up, pop, letters_up, grow, left, blur, letters_blur, down, fade, shrink, right")
     place.add_argument("--motion", choices=["zoom_in", "zoom_out", "pan_left", "pan_right", "none"], help="рух кадру вибирає агент; без нього кадр стоїть")
     place.add_argument("--dry-run", action="store_true")
     plan = commands.add_parser("plan", help="план кадрів коротко: час, формат, ідея, слова, чи кадр уже зроблено")
@@ -324,7 +326,7 @@ def _main(argv=None) -> int:
             return 0
         if args.command == "sentences":
             data = call("GET", f"/api/projects/{pid}/director-sentences")
-            print(f"Озвучка {clock(data['duration'])}, речень {len(data['sentences'])}. У кадрі до {data['max_sentences']} речень.")
+            print(f"Озвучка {clock(data['duration'])}, речень {len(data['sentences'])}. Кадр зазвичай 1–3 речення, а одна безперервна сцена завжди один кадр.")
             print(f"Формати каналу, частка тривалості фільму (допуск ±{data['tolerance']:g}):")
             for key, share in data["shares"].items():
                 print(f"  {key:<16} {share:>5.1f}%  {data['labels'][key]}: {data['hints'][key]}")
@@ -460,6 +462,10 @@ def _main(argv=None) -> int:
             spec = {"op": "place", "frame": int(args.frame)}
             if args.text:
                 spec["text"] = True
+                if args.backdrop:
+                    spec["backdrop"] = args.backdrop
+                if args.entrance:
+                    spec["entrance"] = args.entrance
             elif args.asset:
                 spec["asset_id"] = args.asset
             elif args.file:

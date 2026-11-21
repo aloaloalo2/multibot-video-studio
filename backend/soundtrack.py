@@ -29,6 +29,37 @@ def music_volume(path) -> float:
 
 PREFIX = 'Звук ролика · '
 TRANSITION_PREFIX = 'Звук переходу · '
+SFX_PREFIX = PREFIX + 'SFX · '
+
+
+def full_take(module, name: str, seed: int = 7):
+    """A synthesized effect at its whole natural length, never cut (user, 21 November 2026: «ніколи не обрізай ті звукові
+    ефекти… звук ішов і обрізаний»): the studio drew every effect 0.7 s long, so an impact of 2.5 s or a stinger of 3 s
+    stopped dead. It is drawn at its own length from the library. A sound that only decays (an impact, a stinger) is drawn
+    longer while its last 30 ms still sound, when the longer take begins the same; a sound whose shape follows its length
+    (a riser, a counter) keeps its own length. Either way the last part fades out instead of stopping."""
+    import numpy as np
+
+    def loud_tail(samples, rate):
+        peak = float(np.abs(samples).max()) or 1.0
+        tail = samples[-max(1, int(.03 * rate)):]
+        return 20 * np.log10(float(np.sqrt(np.mean(tail.astype(np.float64) ** 2))) / peak + 1e-12) > -45
+
+    dur = float(module.LIB.get(name, {}).get('dur') or .7)
+    samples = np.array(module.make(name, dur=dur, seed=seed), dtype=np.float32)
+    rate = round(len(samples) / dur)
+    for _ in range(3):
+        if not loud_tail(samples, rate):
+            break
+        longer = np.array(module.make(name, dur=dur * 1.6, seed=seed), dtype=np.float32)
+        head = len(samples) - int(.05 * rate)
+        if head <= 0 or not np.allclose(longer[:head], samples[:head], atol=1e-4):
+            break   # the shape stretches with the length: keep the sound as it is meant
+        samples, dur = longer, dur * 1.6
+    fade = min(len(samples), int((.12 if loud_tail(samples, rate) else .02) * rate))
+    ramp = np.linspace(1, 0, fade, dtype=np.float32) ** 2
+    samples[-fade:] *= ramp.reshape(-1, *([1] * (samples.ndim - 1)))
+    return samples, len(samples) / rate
 
 
 def place(ctx, spec, *, transition=False):
@@ -51,7 +82,7 @@ def place(ctx, spec, *, transition=False):
     for cue in cues:
         if not isinstance(cue, dict) or cue.get('name') not in known:
             raise ValueError('Невідомий звуковий ефект')
-        at, duration = float(cue.get('t', 0)), float(cue.get('dur', .7))
+        at, duration = float(cue.get('t', 0)), float(cue.get('dur', .7))   # dur is kept for old cues; the sound plays whole
         if not math.isfinite(at) or not math.isfinite(duration) or not 0 <= at <= total - .1 or not .1 <= duration <= 6:
             raise ValueError('Невірний час звукового ефекту')
         if cue['name'] in allowed:
@@ -119,12 +150,20 @@ def place(ctx, spec, *, transition=False):
             if not path.exists():
                 shutil.copy2(source, path)
         else:
-            path = folder / f'sfx-v1-{cue["name"]}-{cue["dur"]:.3f}.wav'
+            path = folder / f'sfx-v2-{cue["name"]}.wav'
             with sound_settings.LOCK:
                 if not path.exists():
-                    module.write_wav(str(path), module.make(cue['name'], dur=cue['dur'], seed=7))
-        title = (PREFIX + 'SFX · ' + row['label'] + ' ' + key) if row else (TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else PREFIX + cue['name'] + ' ' + key)
-        add(path, title, cue['t'], min(cue['dur'], row['duration_seconds']) if row else cue['dur'], min(1.5, .12 * 10 ** ((cue.get('gain', -8) + 8) / 20)))
+                    module.write_wav(str(path), full_take(module, cue['name'])[0])
+        # the whole file, never shorter: only the film's own end can stop it
+        length = float(row['duration_seconds']) if row else (store.media_duration(path) or cue['dur'])
+        title = (SFX_PREFIX + row['label'] + ' ' + key) if row else (TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else SFX_PREFIX + cue['name'] + ' ' + key)
+        if not row and not transition:
+            # the same cue laid before under its old name, cut to 0.7 s, goes: the whole one takes its place
+            for layer in ctx.project['tracks']:
+                for clip in layer['clips']:
+                    if clip.get('title') == PREFIX + cue['name'] + ' ' + key:
+                        ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': clip['id']}})
+        add(path, title, cue['t'], max(.1, min(length, total - cue['t'])), min(1.5, .12 * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 

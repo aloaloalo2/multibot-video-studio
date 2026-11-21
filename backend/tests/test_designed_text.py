@@ -14,7 +14,7 @@ class DesignedTextTest(unittest.TestCase):
         ctx = montage_ops.Context.__new__(montage_ops.Context)
         ctx.project = {"id": "p", "assets": assets, "tracks": [{"id": "layer-1"}], "font_family": "Golos"}
         ctx.W, ctx.H, ctx.frames, ctx.actions, ctx.groups, ctx.report, ctx.easing = 1920.0, 1080.0, frames, [], {}, [], "ease_in_out"
-        ctx._words = []
+        ctx._words, ctx.files = [], []
         return ctx
 
     def test_text_frame_gets_background_veil_and_timed_words(self):
@@ -24,13 +24,13 @@ class DesignedTextTest(unittest.TestCase):
         planned = {"number": 5, "sentences": ["Врачи признают такое неудобство."],
                    "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": 10.0, "end": 12.0}]}
         payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
-        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None)
+        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None, {"backdrop": "blur"})
         kinds = [a["payload"]["kind"] for a in ctx.actions]
         self.assertEqual(kinds, ["image", "animation"])
         self.assertGreater(ctx.actions[0]["payload"]["blur"], 10)
         self.assertEqual(len(payload["text_words"]), 4)
         self.assertLessEqual(payload["text_words"][0]["start"], .12)
-        self.assertIn(payload["word_entrance"]["type"], montage_ops.ENTRANCES)
+        self.assertIn(payload["word_entrance"]["type"], montage_ops.TEXT_ENTRANCES)
         self.assertEqual(set(ctx.groups.values()), {"Кадр 5"})
 
     def test_text_with_no_picture_yet_holds_the_frame_from_its_start(self):
@@ -38,12 +38,50 @@ class DesignedTextTest(unittest.TestCase):
         planned = {"number": 5, "sentences": ["Врачи признают такое неудобство."],
                    "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": 10.6, "end": 12.0}]}
         payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
-        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None)
+        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None, {"backdrop": "blur"})
         field = ctx.actions[0]["payload"]                         # a plain dark field from the frame's boundary
         self.assertEqual((field["kind"], field["start"], field["duration"]), ("animation", 10.0, 4.0))
         self.assertEqual(set(ctx.groups.values()), {"Кадр 5"})
         self.assertLessEqual(payload["text_words"][0]["start"], .15)              # the text itself still starts with its word
         self.assertGreaterEqual(payload["start"], 10.5)
+
+    def backdrop_of(self, ctx, number, spec=None, start=10.0):
+        planned = {"number": number, "sentences": ["Врачи признают такое неудобство."],
+                   "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": start + .5, "end": start + 2}]}
+        payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
+        montage_ops._designed_text(ctx, planned, number, payload, start, start + 4, None, spec)
+        return payload
+
+    def test_backdrops_differ_from_one_text_frame_to_the_next(self):
+        """User, 21 November 2026: «для текстових вставок не має бути шаблонності»: the host's video under black 59%,
+        a blurred picture, or a grid with noise; the next text frame takes another backdrop and another entrance."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            video = Path(root) / "host.mp4"
+            video.write_bytes(b"x")
+            assets = [{"id": "a1", "kind": "image", "path": "/nope/photo.png"}, {"id": "v", "kind": "video", "path": str(video)}]
+            frames = [{"number": n, "clips": [{"kind": "image", "asset_id": "a1", "width": 1, "height": 1}], "group": {"id": f"g{n}"}} for n in (4, 6, 8)]
+            ctx = self.ctx(assets, frames)
+            ctx.plan = {"timing": {"audio": {"asset_id": "v"}}}
+            with mock.patch.object(montage_ops.store, "media_duration", return_value=900.0), \
+                    mock.patch.object(montage_ops.store, "media_dir", return_value=Path(root)):
+                first = self.backdrop_of(ctx, 5, {"backdrop": "host"})
+                host = [a["payload"] for a in ctx.actions]
+                self.assertEqual([c["kind"] for c in host], ["video", "animation"])
+                self.assertEqual((host[0]["trim_start"], host[0]["volume"], host[1]["opacity"], host[1]["color"]), (10.0, 0, .59, "#000000"))
+                self.assertEqual((first["color"], first["word_entrance"]["type"]), ("#ffffff", "letters_fade"))
+                ctx.actions = []
+                second = self.backdrop_of(ctx, 7, start=20.0)
+                self.assertNotEqual(ctx.text_choices[7][0], "host")
+                self.assertNotEqual(second["word_entrance"]["type"], "letters_fade")
+                ctx.actions = []
+                self.backdrop_of(ctx, 9, {"backdrop": "grid"}, start=30.0)
+                grid = [a["payload"] for a in ctx.actions]
+                self.assertEqual([(c["kind"], c.get("content_type")) for c in grid], [("image", None), ("animation", "capcut_effect")])
+                self.assertIn(grid[1]["capcut_effect"], montage_ops.GRID_NOISES)
+                self.assertTrue((Path(root) / "text-backdrops" / "grid-1920x1080.png").is_file())
+        with self.assertRaises(montage_ops.OpError):
+            self.backdrop_of(self.ctx([], []), 3, {"backdrop": "rainbow"})
 
     def test_looks_turn_from_frame_to_frame(self):
         looks = {montage_ops.TEXT_LOOKS[n % len(montage_ops.TEXT_LOOKS)]["veil"] for n in range(5)}

@@ -450,7 +450,7 @@ def build_plan(script: str, settings: dict, channel_name: str, duration=None, hi
             if str(number) != str(key) or not 1 <= number <= len(sentences) or value not in LABELS:
                 raise ValueError("Невірна підказка для речення")
             normalized_hints[number] = value
-    groups = group_sentences(sentences, int(config["short_sentence_words"]), int(config["max_sentences_per_scene"]))
+    groups = group_sentences(sentences, int(config["short_sentence_words"]), int(SETTING_DEFAULTS["max_sentences_per_scene"]))
     timings = validate_sentence_timings(script, alignment, duration) if alignment is not None else None
     opening_split = False
     estimated_split = False

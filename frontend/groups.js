@@ -169,10 +169,10 @@ function compactSoundRows(entries){
     const clip=entry.clip,title=clip?.title||'';
     const family=clip?.kind==='audio'&&entry.layer.clips.every(c=>c.kind==='audio')
       ? /^(?:Звук ролика · )?(?:музика|музыка|music)(?:\s|$)/iu.test(title)?'music'
-        : /^Звук ролика · SFX · /u.test(title)?'sfx': /^Звук (?:ролика|переходу) · /u.test(title)?'effects':null : null;
+        : /^Звук (?:ролика|переходу) · /u.test(title)?'sfx':null : null;   // every effect, transition sounds too, is SFX (user, 21 November 2026)
     if(!family){rows.push(entry);continue;}
     let row=families.get(family);
-    if(!row){row={title:family==='music'?'Музика':family==='sfx'?'SFX':'Звук ролика',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
+    if(!row){row={title:family==='music'?'Музика':'SFX',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
     row.soundItems.push(entry);row.z=Math.max(row.z,entry.z);
   }
   for(const row of families.values())row.soundItems.sort((a,b)=>Number(a.clip.start)-Number(b.clip.start));

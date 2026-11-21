@@ -89,7 +89,7 @@ def sentences(pid: str) -> dict:
             "estimated": plan["timing"].get("status") == "script_estimate",
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "generated_image_style": settings.get("generated_image_style", ""),
-            "max_sentences": int(settings["max_sentences_per_scene"]), "tolerance": SHARE_TOLERANCE,
+            "tolerance": SHARE_TOLERANCE,
             "opening": {"format": first, "count": count} if first else None,
             "host_rules": {"first_frame": True, "last_frame": True, "no_consecutive": True, "even_distribution": True}
                 if settings.get("host_even_distribution") else None}
@@ -100,7 +100,9 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     project = store.load_project(pid)
     plan, settings = synced_plan(pid), channel_settings(project)
     texts, timings = voice(plan)
-    targets, limit = shares(settings), int(settings["max_sentences_per_scene"])
+    # no limit of sentences a frame (user, 21 November 2026: «це обмеження ми прибираємо взагалі»): a limit cut one
+    # continuous scene of the Jupiter film into two frames that jumped against each other
+    targets = shares(settings)
     labels = {key: planner.LABELS.get(key, key) for key in targets}
     if not isinstance(frames, list) or not frames:
         raise store.StudioError("Передайте кадри: список frames")
@@ -112,8 +114,6 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
             continue
         if numbers != list(range(expected, expected + len(numbers))):
             problems.append(f"Кадр {index}: речення мають іти підряд від {expected}, а тут {numbers}")
-        if len(numbers) > limit:
-            problems.append(f"Кадр {index}: {len(numbers)} речень, а в кадрі каналу можна до {limit}")
         kind = frame.get("format")
         if kind not in targets:
             problems.append(f"Кадр {index}: формату «{kind}» канал не використовує; можна: " + ", ".join(targets))

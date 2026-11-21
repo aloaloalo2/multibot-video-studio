@@ -20,7 +20,11 @@ def _source_video(project: dict, sha: str | None) -> str | None:
     (analysis_jobs), so the plan keeps only that sound's hash; the recognition's result names the video it came from."""
     if not sha:
         return None
-    for result in sorted((store.project_dir(project["id"]) / "analysis").glob("*/result.json"),
+    try:
+        folder = store.project_dir(project["id"]) / "analysis"
+    except store.StudioError:
+        return None
+    for result in sorted(folder.glob("*/result.json"),
                          key=lambda f: f.stat().st_mtime, reverse=True):
         try:
             report = json.loads(result.read_text(encoding="utf-8"))

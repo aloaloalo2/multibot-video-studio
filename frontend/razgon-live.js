@@ -17,6 +17,13 @@
   const frame = document.createElement('iframe');
   frame.id = 'razgon-live-frame'; frame.title = 'Razgon наживо'; frame.hidden = true;
   $('preview-content').append(frame);
+  // A seam between two Razgon frames: the outgoing frame's last moment in a second player over the incoming one, both
+  // moved by the seam's transition the way the preview moves any clip (user, 21 November 2026: «переходи… хотів би бачити
+  // все-таки онлайн, щоб було видно, що це за перехід»); one player alone shows only one moment, so the seam read as a cut
+  const frameOut = document.createElement('iframe');
+  frameOut.id = 'razgon-live-frame-out'; frameOut.title = 'Razgon наживо, попередній кадр'; frameOut.hidden = true;
+  frameOut.setAttribute('aria-hidden', 'true'); frameOut.tabIndex = -1;
+  $('preview-content').append(frameOut);
   // what went wrong, over the preview, instead of an empty frame (user, 2 November 2026: «всеодно сіре, хоча код є»)
   const note = document.createElement('div');
   note.className = 'razgon-live-note'; note.hidden = true;
@@ -32,7 +39,7 @@
     finally { button.disabled = false; }
   });
   const style = document.createElement('style');
-  style.textContent = '.razgon-live-note{position:absolute;inset:0;z-index:30;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;text-align:center;background:#0a0b0ccc}.razgon-live-note[hidden]{display:none}.razgon-live-note p{margin:0;max-width:520px;color:#e6e7ea;font-size:13.5px;line-height:1.5}' + '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
+  style.textContent = '.razgon-live-note{position:absolute;inset:0;z-index:30;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;text-align:center;background:#0a0b0ccc}.razgon-live-note[hidden]{display:none}.razgon-live-note p{margin:0;max-width:520px;color:#e6e7ea;font-size:13.5px;line-height:1.5}' + '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame,#razgon-live-frame-out{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none;transform-origin:50% 50%}#razgon-live-frame-out{visibility:hidden}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
   document.head.append(style);
 
   const info = () => state.project && live[state.project.id];
@@ -82,7 +89,10 @@
     toggle.setAttribute('aria-pressed', String(on));
     if (on && frame.dataset.src !== source()) { frame.src = source(); frame.dataset.src = frame.src; watchStart(state.project.id); }
     if (!on && frame.dataset.src) { frame.removeAttribute('src'); delete frame.dataset.src; }
-    frame.hidden = !on; if (!on) showNote('');
+    // the second player loads with the first, so a seam shows at once while playing
+    if (on && frameOut.dataset.src !== source()) { frameOut.src = source(); frameOut.dataset.src = frameOut.src; }
+    if (!on && frameOut.dataset.src) { frameOut.removeAttribute('src'); delete frameOut.dataset.src; }
+    frame.hidden = frameOut.hidden = !on; if (!on) showNote('');
   }
   toggle.addEventListener('click', () => { write(KEY, active() ? '0' : '1'); sync(); renderPreview(); });
   quality.addEventListener('change', () => { write(QKEY, quality.value); sync(); });
@@ -95,6 +105,49 @@
       start:Math.floor(f.start*fps+.5+1e-8)/fps,end:Math.floor(f.end*fps+.5+1e-8)/fps}));
     return own.length && own.length < frames.length ? own : null;
   };
+
+  // Every Razgon frame of the plan with its whole-frame edges, for the seams between two of them.
+  const allRazgon = () => {
+    const fps = state.project?.fps || 25;
+    return (state.plan?.frames || []).filter((f) => f.format === 'razgon_2d').map((f) => ({ ...f, sourceStart: f.start, sourceEnd: f.end,
+      start: Math.floor(f.start * fps + .5 + 1e-8) / fps, end: Math.floor(f.end * fps + .5 + 1e-8) / fps }));
+  };
+  const blockOf = (f) => {
+    const group = sceneGroups().find((g) => g.title === `Кадр ${f.number}`);
+    return group ? groupMembers(group).find((clip) => /^Razgon · кадр/.test(clip.title || '')) : null;
+  };
+  const place = (element, clip, local) => {
+    const base = { x: .5, y: .5, scale: 1, opacity: 1 };
+    const v = clip ? transitionValues(clip, local, { ...base }) : base;
+    element.style.transform = v.x === .5 && v.y === .5 && v.scale === 1 ? '' : `translate(${(v.x - .5) * 100}%, ${(v.y - .5) * 100}%) scale(${v.scale})`;
+    element.style.opacity = v.opacity >= 1 ? '' : String(Math.max(0, v.opacity));
+  };
+  // the second player draws the outgoing frame's last moment while that frame still plays, so its scene is loaded and
+  // drawn when the seam comes (posted only at the seam, the first 0.35 s showed its empty black field)
+  let outAt = null;
+  const outPost = (time) => { if (time === outAt || !frameOut.contentWindow) return; outAt = time; frameOut.contentWindow.postMessage({ razgon: 'seek', t: time }, '*'); };
+  frameOut.addEventListener('load', () => { outAt = null; });
+  // t inside the transition of a seam between two Razgon frames: the incoming frame in the first player, the outgoing
+  // one held at its last moment in the second, each moved by the transition; anything else: the first player as it is
+  function seam(t) {
+    const frames = t === null ? [] : allRazgon(), fps = state.project?.fps || 25;
+    const incoming = frames.find((f) => t >= f.start && t < f.end);
+    const outgoing = incoming && frames.find((f) => Math.abs(f.end - incoming.start) < 1 / fps / 2);
+    // warm up: the frame playing now ends in a seam with a transition into another Razgon frame
+    const ahead = incoming && frames.find((f) => Math.abs(f.start - incoming.end) < 1 / fps / 2);
+    const aheadClip = ahead && blockOf(incoming);
+    if (aheadClip && transitionInfo(aheadClip).outgoing) outPost(incoming.sourceEnd - 1 / fps);
+    const inClip = outgoing && blockOf(incoming), outClip = outgoing && blockOf(outgoing);
+    const join = outClip && transitionInfo(outClip).outgoing;
+    const span = join && joinFrames(join);
+    if (!span || t < span.seam || t >= span.seam + span.duration) {
+      frameOut.style.visibility = 'hidden'; place(frame, null, 0); return;
+    }
+    place(frame, inClip, t - Number(inClip.start));
+    place(frameOut, outClip, t - Number(outClip.start));
+    frameOut.style.visibility = 'visible';   // '' would fall back to the stylesheet's hidden
+    outPost(outgoing.sourceEnd - 1 / fps);
+  }
 
   // In live mode the rendered Razgon clips are not decoded at all: the iframe draws the picture under the studio's own
   // overlay layers (the channel plashka group), and the studio keeps time and sound.
@@ -114,6 +167,7 @@
     seekTime = sourceFrame ? Math.max(sourceFrame.sourceStart,Math.min(t,sourceFrame.sourceEnd-1/(state.project?.fps||25))) : null;
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
     content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden'; note.style.visibility = on ? '' : 'hidden';
+    seam(on && !fading ? t : null);
     if (!on) return baseUniversal.apply(this, args);
     const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
     const keep = new Set(sceneGroups().filter((group) => group.role === 'overlay').flatMap((group) => group.clip_ids)), all = layers;

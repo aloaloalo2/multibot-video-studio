@@ -280,7 +280,7 @@ function organizeChannelSettings(channel){
     text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
-    text(summaries.get('.settings-sentences'),`До ${value('settings-max-sentences')} речень на кадр`);
+    text(summaries.get('.settings-sentences'),`Коротке речення до ${value('settings-short')} слів`);
     // a filled wish shows a grey check by its title (user, 15 November 2026: «якщо є побажання то галочка нада сіра»)
     for(const [selector,id] of [['.settings-script-wishes','settings-script-wishes'],['.settings-thumbnail-wishes','settings-thumbnail-wishes'],
       ['.settings-image-wishes','settings-generated-image-style'],['.settings-agent-memory','channel-agent-memory']]){

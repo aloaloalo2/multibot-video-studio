@@ -11,7 +11,7 @@ test('sequential and overlapping effects share one row without changing original
   cues.push(entry('Звук переходу · 1 → 2 · tr_air',.2,'transition'));
   const input=[voice,music,...cues],before=JSON.stringify(input),rows=c.compactSoundRows(input);
   assert.equal(rows.length,3);assert.equal(rows[0],voice);
-  assert.equal(rows.find(r=>r.soundFamily==='effects').soundItems.length,31);
+  assert.equal(rows.find(r=>r.soundFamily==='sfx').soundItems.length,31);assert.equal(rows.find(r=>r.soundFamily==='sfx').title,'SFX');
   assert.equal(rows.find(r=>r.soundFamily==='music').soundItems[0],music);
   assert.equal(JSON.stringify(input),before); // grouping never edits, stretches, mixes, or rebuy audio
 });

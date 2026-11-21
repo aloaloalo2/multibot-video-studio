@@ -36,7 +36,7 @@ class DirectorPlanTest(unittest.TestCase):
         data = director_plan.sentences(PROJECT["id"])
         self.assertEqual([item["number"] for item in data["sentences"]], list(range(1, 9)))
         self.assertEqual(data["shares"], {"stock_photo": 50.0, "text": 50.0})
-        self.assertEqual(data["max_sentences"], 3)
+        self.assertNotIn("max_sentences", data)
 
     def test_karl_requires_first_host_and_no_adjacent_hosts(self):
         channel={**CHANNEL,"name":"Karl Brenners Werkstatt","settings":{**CHANNEL["settings"],"weights":{"host":50,"stock_photo":50}}}
@@ -55,7 +55,9 @@ class DirectorPlanTest(unittest.TestCase):
             result = director_plan.apply(PROJECT["id"], frames(*spec), dry_run=True)
             self.assertFalse(result["ok"])
             return " ".join(result["problems"])
-        self.assertIn("до 3", problems(([1, 2, 3, 4], "text"), ([5, 6, 7, 8], "stock_photo")))
+        # one continuous scene stays one frame however many sentences it has (21 November 2026): no limit is checked
+        long = director_plan.apply(PROJECT["id"], frames(([1, 2, 3, 4], "text"), ([5, 6, 7, 8], "stock_photo")), dry_run=True)
+        self.assertFalse([p for p in long.get("problems", []) if "речень, а в кадрі" in p])
         self.assertIn("підряд від 3", problems(([1, 2], "text"), ([4, 5, 6], "stock_photo"), ([7, 8], "text")))
         self.assertIn("не використовує", problems(([1, 2], "host"), ([3, 4, 5], "text"), ([6, 7, 8], "stock_photo")))
         self.assertIn("1–6", problems(([1, 2, 3], "text"), ([4, 5, 6], "stock_photo")))

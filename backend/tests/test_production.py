@@ -268,7 +268,7 @@ class ProductionTest(unittest.TestCase):
     def test_photo_channel_receives_its_brief_and_needs_visual_review_after_placement(self):
         self.animated = False
         text = production.photo_brief(self.project, REQUEST)
-        for part in ("кадри студії 1-3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "all-text", "plan", "undo", "без стикменів",
+        for part in ("кадри студії 1-3 з 73", "stock-pick", "codex_image.py", "studio.py\" place", "--backdrop host|blur|grid", "plan", "undo", "без стикменів",
                      "razgon_bridge.py", "Не запускай експорт"):
             self.assertIn(part, text)
         plan = {"frames": [{"number": n, "start": 2.0 * (n - 1), "end": 2.0 * n} for n in range(1, 4)]}
@@ -287,8 +287,10 @@ class ProductionTest(unittest.TestCase):
             self.project["tracks"][0]["clips"].append(picture(3))
             production.ACTIVE.add(self.project["id"])
             production.run(self.project["id"], Path("claude"))
-        self.assertEqual(self.project["production_request"]["status"], "failed")
-        self.assertIn("огляд", self.project["production_request"]["error"])
+        # every frame is on the timeline and only the look at the stills waits: the film is done, never «не вдалися»
+        # (user, 21 November 2026); the frames to look at stay in the record
+        self.assertEqual(self.project["production_request"]["status"], "done")
+        self.assertTrue(self.project["production_request"]["quality"]["look_later"])
         with patch.object(production.director, "executable", return_value=Path("claude")), patch.object(production.threading, "Thread") as thread:
             production.start(self.project["id"])
         thread.assert_called_once()                                                    # no longer only for animated channels

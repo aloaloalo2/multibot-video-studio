@@ -253,7 +253,6 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     scope = f'{numbers[0]}-{numbers[-1]}' if numbers == list(range(numbers[0], numbers[-1] + 1)) else ','.join(map(str,numbers))
     summary_scope = f'{numbers[0]}-{numbers[-1]}'
     transition_scope = ' --frames ' + ','.join(map(str,numbers)) if request.get('session_frames') else ''
-    text_target = 'N --text' if request.get('session_frames') else 'all-text'
     razgon_scope = ' --frames ' + ','.join(map(str,numbers)) if request.get('session_frames') else ''
     remarks = (f"Автор подивився кадри {scope} і просить виправити:\n{notes.strip()}\n\n"
                "Виправ потрібні кадри й перевір їх разом із сусідніми стиками.\n\n" if notes.strip() else "")
@@ -304,8 +303,16 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Підписи розташовуй над діаграмами й декором: для PNG із текстом передай foreground=true; нативний текст студія ставить зверху.
    Залиши для підписів окреме місце, перевір траєкторії руху та зону логотипа. Стовпчики не повинні проходити крізь текст.
    Перевір початок, середину, кінець, стики та моменти максимального зближення елементів. Цей формат не потребує проєкту Razgon.
-5. Текстові кадри (text): python3 "{tools}/studio.py" place {project['id']} {text_target} ставить слова текстового кадру на весь екран.
-   Працюй лише з номерами поточного завдання.
+5. Текстові кадри (text) будуй за задумом режисера в ідеї кадру: фон, його обробка, колір і місце тексту, поява слів.
+   Кожна текстова вставка своя, під цей момент, і не повторює попередню; візуальним стилем (кольори, шрифт, настрій) вона пасує до каналу й решти ролика,
+   побажання автора в правилах каналу йдуть першими. Основа: python3 "{tools}/studio.py" place {project['id']} N --text
+   [--backdrop host|blur|grid] [--entrance letters_fade|blur_up|up|pop|letters_up|grow|left|blur|letters_blur|down|fade|shrink|right]
+   ставить слова в такт голосу й одну з готових основ: host (відео ведучого з озвучки цієї ж секунди під чорним 59%),
+   blur (розмита картинка випуску під контрастною підкладкою), grid (чорне тло, сіра сітка, шум CapCut). Готові основи лише
+   заготовка: якщо задум інший, міняй і додавай будь-які шари групи «Кадр N» через POST /api/projects/{project['id']}/actions
+   (add_clip з group_id, update_clip, delete_clip; ефект CapCut як кліп kind animation, content_type capcut_effect діє на шари
+   під ним): інше відео чи картинка, колір, градієнт, візерунок, прозорість, розмір і місце тексту, word_entrance. Слова лишаються
+   в такт голосу. Перевір стоп-кадром, що текст читається. Працюй лише з номерами поточного завдання.
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
    python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
    python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>{razgon_scope}: блоки-код стануть лише на кадри формату razgon_2d.
@@ -319,8 +326,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Схвали надрукованою командою. Якщо є дефект, виправ кадр і відкрий актуальний аркуш для зміненого кадру.
 {accents_step(project, tools)}
 7. Переходи: щойно кадри партії стоять, до її візуального огляду, python3 "{tools}/studio.py" transitions {project['id']}{transition_scope} --share 0.7 ставить оформлені
-   переходи приблизно на 70% стиків за правилами каналу (у текстовий кадр зрізом, без двох однакових переходів, крім розчинення, поспіль).
-   Текстові кадри place … {text_target} сам оформлює: розмитий фон із картинки випуску, тон підкладки, поява слів у такт голосу.
+   переходи приблизно на 70% стиків за правилами каналу (кадр ведучого й текстовий з переходами з обох боків, без двох однакових переходів, крім розчинення, поспіль).
 
 Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
 Збережи план і налаштування каналу. Кадри поза переліком {scope} не змінюй. Не запускай експорт: його запускає автор.

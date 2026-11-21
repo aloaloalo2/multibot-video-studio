@@ -117,7 +117,7 @@ function renderUniversalTimeline(){
     lane.addEventListener('drop',event=>dropOnUniversalLane(event,lane));
     row.append(heading,lane);tracks.append(row);
   }
-  for(const entry of soundRows.sort((a,b)=>(a.soundFamily==='effects')-(b.soundFamily==='effects')))tracks.append(soundLane(entry));
+  for(const entry of soundRows.sort((a,b)=>(a.soundFamily==='sfx')-(b.soundFamily==='sfx')))tracks.append(soundLane(entry));
 }
 
 async function dropOnUniversalLane(event,lane){

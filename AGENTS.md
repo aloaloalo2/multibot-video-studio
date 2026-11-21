@@ -65,7 +65,7 @@ channel; a photo episode already cut on an older plan keeps it (`director.montag
 the director only plans the frames (`director.frames_brief`): `tools/studio.py sentences P` gives the numbered sentences
 with times and the channel's format shares, the director groups whole sentences by meaning, gives each frame a format
 and an idea, and `tools/studio.py frames P FILE [--dry-run]` hands them in. `backend/director_plan.py` checks every
-sentence once and in order, at most `max_sentences_per_scene` a frame, only the channel's formats, its opening format,
+sentence once and in order (no limit of sentences a frame since 21 November 2026), only the channel's formats, its opening format,
 at most five frames of one format in a row (Razgon scenes excepted) and each format's share within ±5 points of the
 channel's, and saves the frames as a director plan (`frame_source` stays `razgon-direction`, the marker of a director's
 frames; `visual` holds the idea and survives re-recognition). The plan page is described in «The plan page and the
@@ -1222,3 +1222,7 @@ The user: «сценарист має писати сценарій… з циф
 ## Recognition never compares the script's words or numbers (20 November 2026)
 
 The user: «не треба, щоб студія перевіряла фразу, цифри… вона може звучати по-різному». The script is the text; the voice gives only the time. `planner.validate_sentence_timings` checks only that every sentence has an ordered, non-overlapping interval inside the audio, and returns the script's own sentences; it never compares the heard or digit text with the script. The optional rehearing step (`speech_repair.repair_script`) never fails a recognition, and a recognition that does fail shows its real reason instead of the generic Whisper message. A German article before digits («ein 2. Mal») is not the number one in `number_text`. A whole German recognition failed on that on 20 November 2026. Test: `backend/tests/test_recognition_text_free.py`.
+
+## Text frames are composed for their moment (21 November 2026)
+
+The user: «для текстових вставок не має бути шаблонності… текстова вставка має бути підібрана під конкретну ситуацію», «не хочу обмежуватись цими 3 видами фону… це може робити агент», «по стилю, візуальному якось має бути». The director's idea of a text frame describes its whole composition (background, its treatment, text colour and place, how the words come in), different from the previous text frame and in the film's visual style; the channel's wishes come first. `place P N --text [--backdrop host|blur|grid] [--entrance E]` gives a base with the words timed to the voice: `host` (the voice video from the frame's own second under black at 59%, white typed words), `blur` (a blurred picture of the episode under a veil), `grid` (black field, grey grid, a CapCut noise clip that acts only on the layers under it); without a pick the studio takes a backdrop and an entrance the previous text frame did not have (`montage_ops._text_choice`). The frame agent then changes or adds any layer of the group «Кадр N» through the actions API. Channels with the dim look keep it unless a backdrop is asked for. Test: `backend/tests/test_designed_text.py`.

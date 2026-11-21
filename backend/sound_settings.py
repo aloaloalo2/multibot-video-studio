@@ -153,11 +153,11 @@ def filter_story(story, config):
 
 
 def catalog():
-    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=2'} for key, label, names in CATEGORIES]
+    return [{'id': key, 'label': label, 'names': list(names), 'preview_url': f'/api/sound-effects/{key}.wav?v=3'} for key, label, names in CATEGORIES]
 
 
 def transition_catalog():
-    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=1'} for key, label in TRANSITIONS]
+    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=3'} for key, label in TRANSITIONS]
 
 
 def audio_module(name):
@@ -182,12 +182,14 @@ def preview(category, *, transition=False):
     row = next((row for row in rows if row[0] == category), None)
     if row is None:
         raise store.StudioError('Звук не знайдено', 404)
-    path = store.DATA_ROOT / 'cache' / 'sound-previews-v2' / (('transition-' if transition else '') + category + '.wav')
+    # v3: the whole sound, as the film lays it (user, 21 November 2026: «навіть в настройках каналу… звуки якісь обрізані»)
+    path = store.DATA_ROOT / 'cache' / 'sound-previews-v3' / (('transition-' if transition else '') + category + '.wav')
     with LOCK:
         if not path.is_file():
             path.parent.mkdir(parents=True, exist_ok=True)
             module = audio_module('sfx')
-            samples = module.make(row[2][0], seed=7, **({} if transition else {'dur': 1.5}))
+            import soundtrack
+            samples = soundtrack.full_take(module, row[2][0])[0]
             # One consistent, moderate preview level. No service call.
             import numpy as np
             peak = float(np.abs(samples).max(initial=0))

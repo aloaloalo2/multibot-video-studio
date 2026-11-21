@@ -740,7 +740,7 @@ def place(ctx: Context, spec: dict) -> None:
         if not words.strip():
             raise OpError(f"У кадрі {number} немає слів для текстового кадру")
         payload.update(kind="text", text=words, text_role="full_frame", source_frame=number, source_text=" ".join(planned.get("sentences") or []))
-        _designed_text(ctx, planned, number, payload, start, end, have)
+        _designed_text(ctx, planned, number, payload, start, end, have, spec)
     else:
         if spec.get("asset_id"):
             asset = next((a for a in ctx.project.get("assets", []) if a.get("id") == spec["asset_id"]), None)
@@ -856,12 +856,94 @@ def _timed_tokens(ctx: Context, planned: dict) -> list[tuple[str, float]]:
         return out
 
 
-def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, start: float, end: float, have: dict | None) -> None:
-    dim = ctx.text_look == "dim"
+# The backdrops of a full-frame text (user, 21 November 2026: «для текстових вставок не має бути шаблонності… текстова
+# вставка має бути підібрана під конкретну ситуацію»): the host's own video under a black veil, a blurred picture of the
+# episode under a contrasting veil, or a black field with a grey grid and a CapCut noise over it. The director or the
+# frame agent picks one for the moment (spec "backdrop"); without a pick the studio takes one the previous text frame
+# did not have, among those the episode can give.
+TEXT_BACKDROPS = ("host", "blur", "grid")
+TEXT_ENTRANCES = ("letters_fade", "blur_up", "up", "pop", "letters_up", "grow", "left", "blur", "letters_blur", "down", "fade", "shrink", "right")
+GRID_NOISES = ("capcut_e13", "capcut_e01", "capcut_e04")   # Шум 2, Шум 1, Зернистість
+
+
+def _text_history(ctx: Context, number: int) -> tuple[str | None, str | None]:
+    """The backdrop and the word entrance of the nearest text frame before this one (placed earlier or in this batch)."""
+    chosen = getattr(ctx, "text_choices", {})
+    before = sorted([n for n in chosen if n < number] + [f["number"] for f in ctx.frames
+                     if f.get("number") is not None and f["number"] < number and _full_frame_text(f)])
+    if not before:
+        return None, None
+    last = before[-1]
+    if last in chosen:
+        return chosen[last]
+    frame = next(f for f in ctx.frames if f.get("number") == last)
+    titles = " ".join(c.get("title", "") for c in frame["clips"])
+    backdrop = "host" if "відео ведучого" in titles else "grid" if "сітка" in titles else "blur"
+    entrance = next(((c.get("word_entrance") or {}).get("type") for c in frame["clips"] if c.get("kind") == "text"), None)
+    return backdrop, entrance
+
+
+def _grid_picture(ctx: Context) -> Path:
+    """A black field with a grey grid, every fourth line a little brighter, darker at the edges; made once a size."""
+    W, H = int(ctx.W), int(ctx.H)
+    folder = store.media_dir(ctx.project) / "text-backdrops"
+    path = folder / f"grid-{W}x{H}.png"
+    if not path.is_file():
+        folder.mkdir(parents=True, exist_ok=True)
+        image = Image.new("RGB", (W, H), (9, 9, 11))
+        draw = ImageDraw.Draw(image)
+        step = max(24, round(H / 18))
+        for index, x in enumerate(range(W // 2 % step, W, step)):
+            draw.line([(x, 0), (x, H)], fill=(72, 72, 80) if (x - W // 2) // step % 4 == 0 else (44, 44, 50), width=1)
+        for y in range(H // 2 % step, H, step):
+            draw.line([(0, y), (W, y)], fill=(72, 72, 80) if (y - H // 2) // step % 4 == 0 else (44, 44, 50), width=1)
+        shade = Image.radial_gradient("L").resize((W, H))
+        image = Image.composite(Image.new("RGB", image.size, (3, 3, 4)), image, shade.point(lambda v: min(255, int(v * .9))))
+        image.save(path)
+    return path
+
+
+def _text_choice(ctx: Context, number: int, start: float, end: float, spec: dict) -> tuple[str, str, dict | None]:
+    """The backdrop and the entrance of this text frame, and the host video when the backdrop is the host."""
+    import host_from_voice
+    host = host_from_voice.voice_video(ctx.project, getattr(ctx, "plan", None))
+    if host:
+        length = store.media_duration(Path(host["path"])) or 0
+        if length and length < end - 1 / int(ctx.project.get("fps") or 25):
+            host = None
+    can = [b for b in TEXT_BACKDROPS if b != "host" or host]
+    if _text_background(ctx, number) is None:
+        can = [b for b in can if b != "blur"]
+    wanted = spec.get("backdrop")
+    if wanted not in (None, "auto") and wanted not in TEXT_BACKDROPS:
+        raise OpError("Фон тексту: host, blur, grid або auto")
+    previous, last_entrance = _text_history(ctx, number)
+    if wanted in can or wanted == "blur":   # blur with no picture yet holds a plain dark field
+        backdrop = wanted
+    else:
+        fresh = [b for b in can if b != previous] or can
+        backdrop = fresh[number % len(fresh)]
+    entrance = spec.get("entrance")
+    if entrance not in (None, "auto") and entrance not in TEXT_ENTRANCES:
+        raise OpError("Поява слів: " + ", ".join(TEXT_ENTRANCES))
+    if entrance in (None, "auto"):
+        # white words typed over the host (the author's example); any other entrance changes from text frame to text frame
+        pool = [e for e in TEXT_ENTRANCES if e != last_entrance]
+        entrance = "letters_fade" if backdrop == "host" and last_entrance != "letters_fade" else pool[(number * 7) % len(pool)]
+    ctx.text_choices = {**getattr(ctx, "text_choices", {}), number: (backdrop, entrance)}
+    return backdrop, entrance, host if backdrop == "host" else None
+
+
+def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, start: float, end: float, have: dict | None, spec: dict | None = None) -> None:
+    spec = spec or {}
+    # a channel with the dim look (Antropov) keeps it unless the director asks for a backdrop
+    dim = ctx.text_look == "dim" and spec.get("backdrop") in (None, "auto")
     look = (DIM_TEXT_LOOKS if dim else TEXT_LOOKS)[number % len(DIM_TEXT_LOOKS if dim else TEXT_LOOKS)]
     duration = end - start
     tokens = _timed_tokens(ctx, planned)
     background = _text_background(ctx, number)
+    backdrop, entrance, host = ("blur", look["entrance"], None) if dim else _text_choice(ctx, number, start, end, spec)
+    color = look["color"] if backdrop == "blur" else "#ffffff"
     if tokens and len(tokens) == len(payload["text"].split()):
         family = getattr(ctx, "text_font", None) or ctx.project.get("font_family") or "Golos"
         fps = int(ctx.project.get("fps") or 25)
@@ -873,10 +955,35 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
         # every word, the first too, waits for its own moment in the voice (AGENTS.md, 20 October 2026; user 8 November
         # 2026: «текст вже появився, хоча про нього ми ще не говорили»): no pulling the first word to the frame's start
         payload.update(width=box / ctx.W, height=760 / ctx.H, x=.5, y=.5, font_size=stub["font_size"], font_family=family, font_weight=700,
-                       text_words=stub["text_words"], word_entrance={"type": look["entrance"], "duration": .26, "distance": 16},
-                       color=look["color"], shadow={"color": look["glow"], "opacity": .55, "blur": 22, "x": 0, "y": 0} if dim else
+                       text_words=stub["text_words"], word_entrance={"type": entrance, "duration": .05 if entrance.startswith("letters_") else .26, "distance": 16},
+                       color=color, shadow={"color": look["glow"], "opacity": .55, "blur": 22, "x": 0, "y": 0} if dim else
                        None)
     group = {"group_id": have["group"]["id"]} if have else {}
+    layer = ctx.project["tracks"][0]["id"]
+    frame_title = f"Кадр {number}"
+    if backdrop == "host":
+        # the host speaking these very words, from the frame's own second, under black at 59% (the author's example)
+        titles = (f"K{number:03d} відео ведучого", f"K{number:03d} тінь")
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[0], "kind": "video",
+                            "asset_id": host["id"], "trim_start": start, "volume": 0, "scale": 1.0, "easing": ctx.easing,
+                            "keyframes": [{"time": 0.0, "scale": 1.0}, {"time": math.floor(duration * 1000) / 1000, "scale": 1.08}], **group}})
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[1], "kind": "animation",
+                            "content_type": "shape", "color": "#000000", "opacity": .59, "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+        if not have:
+            ctx.groups.update({title: frame_title for title in titles})
+        return
+    if backdrop == "grid":
+        # a black field with a grey grid drifting closer, and a noise of CapCut over it; the words stand above the noise
+        noise = GRID_NOISES[number % len(GRID_NOISES)]
+        titles = (f"K{number:03d} сітка", f"K{number:03d} шум")
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[0], "kind": "image",
+                            "asset_id": ctx.asset_for(_grid_picture(ctx)), "scale": 1.0, "easing": ctx.easing,
+                            "keyframes": [{"time": 0.0, "scale": 1.0}, {"time": math.floor(duration * 1000) / 1000, "scale": 1.07}], **group}})
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[1], "kind": "animation",
+                            "content_type": "capcut_effect", "capcut_effect": noise, "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+        if not have:
+            ctx.groups.update({title: frame_title for title in titles})
+        return
     if background is None:
         # Text frames are placed before the pictures are made, so the episode may have none yet. The words wait for the
         # voice, so without a background the frame was empty from its boundary to the first word, a hole on the ruler
