@@ -882,19 +882,25 @@ def start(pid: str, notes: str = "") -> None:
 START_GRACE = 30
 
 
+REVIEW_ONLY = ('Перевірка кадрів Razgon не підтверджена:', 'Потрібен огляд готової композиції кадрів Studio:')
+
+
 def bugs_to_fix(project: dict, request: dict, review: dict) -> dict | None:
-    """A review that failed only on frames the visual review marked as bugs: every frame is drawn and the film is done
-    (17 November 2026: 131 of 131 frames made, 9 with bugs, read as «Кадри 1–131 не вдалися»). The bugs were already
-    fixed twice in the run; they stay in `fix_later` for the record, the author is not asked to look at them. None for
-    any other failure."""
-    if review.get('passed') or not review.get('errors') or not all(
-            str(error).startswith('Перевірка кадрів Razgon не підтверджена:') for error in review['errors']):
+    """A review that failed only on the look at frames that are all drawn: the film is done (17 November 2026: 131 of
+    131 frames made, 9 with bugs, read as «Кадри 1–131 не вдалися»; 21 November 2026, the Jupiter film: frames whose
+    look a parallel session's change of shared files undid, and a stale render line, read «Кадри 1–71 не вдалися», and
+    the user: «всі кадри мають вдаватися… не може видавати проект, де кадри не вдались»). Bugs the look saw stay in
+    `fix_later`, frames still waiting for a look in `look_later`, both for the record; the author is not asked to look.
+    The caller checks the frames are drawn. None for any other failure."""
+    if review.get('passed') or not review.get('errors') or not all(str(error).startswith(REVIEW_ONLY) for error in review['errors']):
         return None
     frames = request.get('review_frames') or request.get('repair_frames') or list(range(1, int(request.get('frames') or 0) + 1))
     found = production_quality.bugs(project, frames)
-    if not found:
-        return None
-    return {**review, 'passed': True, 'fix_later': {str(n): note for n, note in sorted(found.items())}}
+    waiting = sorted({int(n) for error in review['errors'] for line in str(error).splitlines()
+                      if line.strip().startswith(('not reviewed:', 'changed frames needing fresh stills:', 'missing cached stills:'))
+                      or line.startswith(REVIEW_ONLY[1]) for n in re.findall(r'\d+', line.split(':', 1)[1])})
+    return {**review, 'passed': True, 'look_later': sorted(set(review.get('pending_review') or []) | set(waiting)),
+            'fix_later': {str(n): note for n, note in sorted(found.items())}}
 
 
 def settle(pid: str, project: dict | None = None) -> dict | None:
@@ -938,7 +944,7 @@ def review_only_failure(request: dict) -> bool:
     errors = (request.get('quality') or {}).get('errors') if isinstance(request.get('quality'), dict) else None
     return (request.get('status') == 'failed' and not request.get('paused') and not request.get('limit')
             and not request.get('review_settle_tried')
-            and bool(errors) and all(str(error).startswith(REVIEW_FAILURE) for error in errors))
+            and bool(errors) and all(str(error).startswith(REVIEW_ONLY) for error in errors))
 
 
 def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
@@ -953,10 +959,7 @@ def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
     except (store.StudioError, OSError, ValueError, KeyError):
         return request
     if not review.get('passed'):
-        if review.get('pending_review') and all(str(error).startswith(REVIEW_FAILURE) for error in review.get('errors') or []):
-            review = {**review, 'passed': True, 'look_later': review['pending_review']}
-        else:
-            review = bugs_to_fix(project, final, review) or review
+        review = bugs_to_fix(project, final, review) or review
     if not review.get('passed'):
         return set_request(pid, review_settle_tried=True)
     saved = set_request(pid, status='done', error=None, quality=review)

@@ -927,6 +927,12 @@ def _full_frame_text(frame: dict) -> bool:
         c.get("kind") == "text" and c.get("text_role") == "full_frame" for c in frame["clips"])
 
 
+def _host_or_text(frame: dict) -> bool:
+    """A host frame or a full-frame text: it always comes in and goes out with a transition (user, 21 November 2026:
+    «якщо це був диктор або ж текстова вставка, то у нас обох боків обов'язково має бути з переходами»)."""
+    return _full_frame_text(frame) or bool(frame.get("plan") and frame["plan"].get("format") == "host")
+
+
 def channel_transitions(project: dict) -> dict:
     """The channel's «Переходи» setting: {allowed, share}; empty when the channel chose nothing."""
     if not project.get("channel_id"):
@@ -939,8 +945,8 @@ def channel_transitions(project: dict) -> dict:
 
 
 def transitions(ctx: Context, spec: dict) -> None:
-    """About `share` of all seams between touching frames get a designed transition; the rest are cuts. Into a full-frame
-    text frame always a cut; the same transition other than a crossfade never twice in a row; a video going out needs
+    """About `share` of all seams between touching frames get a designed transition; the rest are cuts. Both seams of a
+    host frame and of a full-frame text frame always get one, beyond the share if need be; the same transition other than a crossfade never twice in a row; a video going out needs
     source frames for the transition's length. Existing transitions stay unless "replace" is true."""
     chosen = channel_transitions(ctx.project)
     share = float(spec["share"] if spec.get("share") is not None else chosen.get("share", .7))
@@ -968,9 +974,10 @@ def transitions(ctx: Context, spec: dict) -> None:
     designed = sum(1 for _, _, f, t in seams if keep and (f, t) in existing)
     target = round(share * len(seams))
     open_seams = [s for s in seams if not (keep and (s[2], s[3]) in existing)]
-    eligible = [s for s in open_seams if not _full_frame_text(s[1])]
-    wanted = max(0, min(len(eligible), target - designed))
-    chosen = set(id(s) for s in rnd.sample(eligible, wanted)) if wanted else set()
+    must = [s for s in open_seams if _host_or_text(s[0]) or _host_or_text(s[1])]
+    eligible = [s for s in open_seams if s not in must]
+    wanted = max(0, min(len(eligible), target - designed - len(must)))
+    chosen = set(id(s) for s in must) | (set(id(s) for s in rnd.sample(eligible, wanted)) if wanted else set())
     previous, added, cuts = None, 0, 0
     for seam in seams:
         a, b, left, right = seam
@@ -997,7 +1004,7 @@ def transitions(ctx: Context, spec: dict) -> None:
         previous, added = kind, added + 1
     soundtrack.transitions(ctx, spec)
     ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({round(100 * share)}%), було {designed}, додано {added}, прибрано {cuts}, "
-                      f"стане {designed + added}; у текстові кадри склейка")
+                      f"стане {designed + added}; кадри ведучого й текстові з переходами з обох боків")
 
 
 def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:

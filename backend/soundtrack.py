@@ -95,19 +95,20 @@ def place(ctx, spec, *, transition=False):
         mood = spec.get('mood', 'calm')
         if mood not in module.MOODS:
             raise ValueError('Невідомий настрій музики')
-        # Bounded memory and reusable material, even for an hour-long film.
+        # One piece over the whole film (user, 21 November 2026: «чому музика порізана… це ж має бути одна»): a new
+        # section about every minute, crossfaded inside the score with its own seed and a gently moving intensity, so it
+        # evolves instead of repeating one minute as 16 clips.
         count = max(1, math.ceil(total / 60.0))
-        length = max(4.0, total / count)
+        step = total / count
+        plan = [{'start': i * step, 'end': (i + 1) * step, 'mood': mood, 'intensity': (.28, .33, .30, .36)[i % 4]} for i in range(count)]
         style = sound['music'].get('style', 'whatif')
-        path = folder / (f'music-v1-{mood}-{length:.3f}.wav' if style == 'whatif' else f'music-v2-{style}-{mood}-{length:.3f}.wav')
+        path = folder / f'music-v3-{style}-{mood}-{total:.3f}.wav'
         with sound_settings.LOCK:
             if not path.exists():
-                samples = module.render_score([{'start': 0, 'end': length, 'mood': mood, 'intensity': .3}], length, seed=7, style=style)
-                module.write_wav(str(path), samples[:module.secs(length)])
-        volume = music_volume(path)
-        for index in range(count):
-            at = index * length
-            add(path, PREFIX + f'музика {index + 1}', at, min(length, total - at), volume)
+                samples = module.render_score(plan, total, seed=7, style=style)
+                module.write_wav(str(path), samples[:module.secs(total)])
+                del samples
+        add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
     module = sound_settings.audio_module('sfx') if any(c['name'] not in library for c in events) else None
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]

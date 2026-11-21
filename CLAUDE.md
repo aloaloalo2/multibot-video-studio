@@ -62,8 +62,8 @@ one project (`"Горбунов 23"`).
   the plan on the timeline at its time, in the group «Кадр 12»: a picture or a video, or the frame's words as a full-frame
   text. Both edges sit on whole video frames, a video shorter than its frame is refused, and the clip with its group is
   one undo step. The frame agent of the photo channels builds the film with it.
-- `python3 tools/studio.py transitions P [--share 0.7]` — about 70% designed seams by the channel rule (a cut into a
-  text frame, no transition other than a crossfade twice in a row, enough video for the transition); prints the planned
+- `python3 tools/studio.py transitions P [--share 0.7]` — about 70% designed seams by the channel rule (both seams of a host or
+  text frame always get one, no transition other than a crossfade twice in a row, enough video for the transition); prints the planned
   and actual counts. Existing transitions stay unless `--replace`.
 - `python3 tools/studio.py ops P ops.json` — several operations at once; `--dry-run` on any change shows the actions.
 - `python3 tools/studio.py export P` — the running export and the latest ones (starting one stays the user's button).

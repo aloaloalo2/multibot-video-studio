@@ -151,15 +151,18 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
         issues += [f"кадр {number}: {p}" for p in problems]
     seams = sum(1 for a, b in zip(frames, frames[1:]) if abs(a["end"] - b["start"]) <= tolerance)
     designed = len(project.get("join_transitions", []))
-    into_text = sum(1 for j in project.get("join_transitions", []) for f in frames
-                    if "group:" + f["group"]["id"] == j["to_ref"] and montage_ops._full_frame_text(f))
+    # a host or full-frame text frame comes in and goes out with a transition (user, 21 November 2026)
+    joined = {(j["from_ref"], j["to_ref"]) for j in project.get("join_transitions", [])}
+    bare = sum(1 for a, b in zip(frames, frames[1:]) if abs(a["end"] - b["start"]) <= tolerance
+               and (montage_ops._host_or_text(a) or montage_ops._host_or_text(b))
+               and ("group:" + a["group"]["id"], "group:" + b["group"]["id"]) not in joined)
     repeats = 0
     ordered = [joins_by_from.get("group:" + f["group"]["id"]) for f in frames]
     for a, b in zip(ordered, ordered[1:]):
         if a and b and a["type"] == b["type"] and a["type"] != "crossfade":
             repeats += 1
-    if into_text:
-        issues.append(f"переходів у текстові кадри: {into_text} (там має бути склейка)")
+    if bare:
+        issues.append(f"стиків біля кадрів ведучого чи тексту без переходу: {bare} (там завжди перехід)")
     if repeats:
         issues.append(f"однакових переходів поспіль (крім розчинення): {repeats}")
     clips = [c for t in project.get("tracks", []) for c in t.get("clips", [])]

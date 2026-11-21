@@ -240,8 +240,16 @@ class BugsToFixTest(unittest.TestCase):
         other = {"passed": False, "errors": ["Не знайдено сцени Razgon для перевірки."]}
         with patch.object(production.production_quality, "bugs", return_value={31: "x"}):
             self.assertIsNone(production.bugs_to_fix({}, {"frames": 3}, other))
+
+    def test_drawn_frames_only_waiting_for_a_look_are_done(self):
+        """The Jupiter film, 21 November 2026: a parallel session's change undid the look at frames 46-60 and a stale
+        render line hid them from pending_review; the film read «Кадри 1–71 не вдалися» though every frame was made."""
+        error = ("Перевірка кадрів Razgon не підтверджена: Frames reviewed ok: 0/13\n  not reviewed: 46, 47, 49\n"
+                 "  changed frames needing fresh stills: 46,47\n  RENDER ERROR  shot error: pin is not defined")
         with patch.object(production.production_quality, "bugs", return_value={}):
-            self.assertIsNone(production.bugs_to_fix({}, {"frames": 3}, {"passed": False, "errors": ["Перевірка кадрів Razgon не підтверджена: x"]}))
+            done = production.bugs_to_fix({}, {"frames": 71}, {"passed": False, "errors": [error, "Потрібен огляд готової композиції кадрів Studio: 1, 5"]})
+        self.assertTrue(done["passed"])
+        self.assertEqual(done["look_later"], [1, 5, 46, 47, 49])
 
     def test_a_full_disk_reads_as_a_full_disk(self):
         self.assertIn("закінчилось місце", production.DISK_FULL)

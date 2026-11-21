@@ -317,7 +317,7 @@ class AgentToolsTest(unittest.TestCase):
     def test_transitions_follow_the_channel_rules(self):
         project = self.project(frames=12)
         current = store.load_project(project["id"])
-        # frame 7 becomes a full-frame text frame: it must start with a cut
+        # frame 7 becomes a full-frame text frame: a transition on both its sides (user, 21 November 2026)
         text = {"type": "add_clip", "payload": {"layer_id": "layer-1", "title": "K007 текст", "kind": "text", "text": "Главное", "start": 24, "duration": 4,
                                                 "text_role": "full_frame", "source_text": "Главное", "group_id": next(g["id"] for g in current["scene_groups"] if g["title"] == "Кадр 7")}}
         store.apply_action(project["id"], "batch", {"actions": [text]})
@@ -327,7 +327,8 @@ class AgentToolsTest(unittest.TestCase):
         groups = {g["id"]: g["title"] for g in current["scene_groups"]}
         joins = {groups[j["from_ref"][6:]]: j for j in current["join_transitions"]}
         self.assertEqual(len(joins), round(.7 * 11))
-        self.assertNotIn("Кадр 6", joins)
+        self.assertIn("Кадр 6", joins)
+        self.assertIn("Кадр 7", joins)
         order = [joins.get(f"Кадр {n}") for n in range(1, 12)]
         self.assertFalse([a for a, b in zip(order, order[1:]) if a and b and a["type"] == b["type"] and a["type"] != "crossfade"])
         self.assertIn("стиків 11: план 8", result["report"][0])
