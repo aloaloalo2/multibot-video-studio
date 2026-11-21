@@ -124,9 +124,15 @@
   };
   // the second player draws the outgoing frame's last moment while that frame still plays, so its scene is loaded and
   // drawn when the seam comes (posted only at the seam, the first 0.35 s showed its empty black field)
-  let outAt = null;
-  const outPost = (time) => { if (time === outAt || !frameOut.contentWindow) return; outAt = time; frameOut.contentWindow.postMessage({ razgon: 'seek', t: time }, '*'); };
-  frameOut.addEventListener('load', () => { outAt = null; });
+  // a seek posted while the second player still loads is lost (the seam stayed black, 21 November 2026): the wanted
+  // moment is kept and posted again when that player says «ready»
+  let outAt = null, outWant = null, outReady = false;
+  const outPost = (time) => { outWant = time; if (!outReady || time === outAt || !frameOut.contentWindow) return; outAt = time; frameOut.contentWindow.postMessage({ razgon: 'seek', t: time }, '*'); };
+  frameOut.addEventListener('load', () => { outAt = null; outReady = false; });
+  addEventListener('message', (event) => {
+    if (event.source !== frameOut.contentWindow || event.data?.razgon !== 'ready') return;
+    outReady = true; outAt = null; if (outWant !== null) outPost(outWant);
+  });
   // t inside the transition of a seam between two Razgon frames: the incoming frame in the first player, the outgoing
   // one held at its last moment in the second, each moved by the transition; anything else: the first player as it is
   function seam(t) {
@@ -145,6 +151,9 @@
     }
     place(frame, inClip, t - Number(inClip.start));
     place(frameOut, outClip, t - Number(outClip.start));
+    // the outgoing player lies on top and fades by itself: the incoming one under it stays opaque, or the middle of a
+    // dissolve showed both half through over black, darker than either frame
+    frame.style.opacity = '';
     frameOut.style.visibility = 'visible';   // '' would fall back to the stylesheet's hidden
     outPost(outgoing.sourceEnd - 1 / fps);
   }
