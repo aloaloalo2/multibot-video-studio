@@ -90,7 +90,7 @@ class ThumbnailTest(unittest.TestCase):
         with patch.object(thumbnail_gen, "CODEX", Path(sys.executable)), patch.object(thumbnail_gen.threading, "Thread") as thread:
             job = thumbnail_gen.start(self.project["id"], "T", "S", writer="trending")
         # since 18 November 2026 every thumbnail goes one way: Claude writes the prompt, OpenRouter draws
-        self.assertEqual((job["writer"], job["drawer"], job["stage"]), ("claude", "openrouter", "prompt"))
+        self.assertEqual((job["writer"], job["drawer"], job["stage"]), ("claude", "codex", "prompt"))
         self.assertEqual(thread.call_args.kwargs["args"][4], "claude")
 
     def test_host_reference_and_opt_out_reach_each_thumbnail_writer_and_codex(self):
@@ -174,7 +174,18 @@ class ThumbnailTest(unittest.TestCase):
                     raw = path.read_bytes()
                     path.write_bytes(raw[:33] + png_chunk(b'caBX', b'c2pa.test') + raw[33:])
             return subprocess.CompletedProcess(command, 0 if picture else 1, "ok", "" if picture else "quota")
-        return patch.object(subprocess, "run", side_effect=run)
+        # OpenRouter stands in only when Codex gives no picture; a test never reaches the real service
+        self.openrouter_calls = []
+        def openrouter(pid, prompt, refs):
+            self.openrouter_calls.append(prompt)
+            if self.openrouter_picture:
+                buffer = __import__('io').BytesIO();Image.new("RGB", (16, 9), (0, 255, 0)).save(buffer, "PNG")
+                return {"png": buffer.getvalue(), "model": "test-model", "cost": 0.01}
+            raise store.StudioError("OpenRouter: no funds")
+        stack = __import__('contextlib').ExitStack()
+        stack.enter_context(patch.object(subprocess, "run", side_effect=run))
+        stack.enter_context(patch.object(__import__('openrouter_images'), "draw_thumbnail", side_effect=openrouter))
+        return stack
 
     def test_all_clone_writers_pass_the_authored_prompt_and_channel_wishes_to_a_fresh_drawing_session(self):
         Image.new('RGB', (64, 36)).save(self.studio / 'idea-reference.jpg')
@@ -292,6 +303,18 @@ class ThumbnailTest(unittest.TestCase):
         self.assertEqual((work/'Превью.png').read_bytes(), original)
         self.assertEqual((work/'Превью v1.png').read_bytes(), original)
         self.assertNotIn(b'caBX', (self.episode/'Превью.png').read_bytes())
+
+    openrouter_picture = False
+
+    def test_codex_without_a_picture_hands_the_drawing_to_openrouter(self):
+        # user, 22 November 2026: «кодекс в першу чергу… якшо не то опен роутер на замене»
+        thumbnail_gen.ACTIVE.add(self.project["id"])
+        self.openrouter_picture = True
+        with self.tools(picture=False):
+            thumbnail_gen.run(self.project["id"], "T", "S", "")
+        self.assertEqual(thumbnail_gen.state(self.project["id"])["status"], "done")
+        self.assertEqual(len(self.openrouter_calls), 1)
+        self.assertTrue(any(c[0][0] != "claude" for c in self.calls))   # Codex was asked first
 
     def test_a_run_without_a_picture_fails_and_changes_nothing(self):
         thumbnail_gen.ACTIVE.add(self.project["id"])

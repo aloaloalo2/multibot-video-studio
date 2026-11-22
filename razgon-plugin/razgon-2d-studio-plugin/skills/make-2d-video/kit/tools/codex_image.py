@@ -243,14 +243,9 @@ def draw(a) -> None:
     # an episode or channel on OpenRouter has every picture drawn there: transparent props, the host's sheets and
     # backgrounds alike (user, 17 November 2026: «я не роблю обмежень open роутеру… головне, щоб ролик вийшов класний»;
     # it had been for transparent PNGs only). A prompt without transparency is drawn on its own opaque background.
-    chosen = studio_provider()
-    # props_only: a regular episode, whose transparent props go there while its photos stay with Codex
-    if chosen.get("provider") == "openrouter" and (not chosen.get("props_only") or TRANSPARENT.search(prompt.read_text(encoding="utf-8"))):
-        def finish_or(status, error=""):
-            if a.watch:
-                job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
-        draw_openrouter(a, prompt, out, finish_or)
-        return
+    # Codex draws first and OpenRouter only stands in when Codex gives no picture, its limit or a failure (user,
+    # 22 November 2026: «превью и асети зараз через кодекс в першу чергу… якшо не то опен роутер на замене… бо зараз
+    # э лимити»); the episode's or channel's OpenRouter choice no longer sends the pictures there first
     def finish_or(status, error=""):
         if a.watch:
             job.write_text(json.dumps({"status": status, "error": error}, ensure_ascii=False), encoding="utf-8")
@@ -299,6 +294,10 @@ def draw(a) -> None:
             limit_marker().write_text(json.dumps({"at": time.time(), "reset": reset_time(stdout + stderr)}), encoding="utf-8")
         except OSError:
             pass
+        draw_openrouter(a, prompt, out, finish, strong=True)
+        return
+    if not out.is_file() and instead_of_codex():
+        # Codex failed without naming its limit: OpenRouter draws it all the same
         draw_openrouter(a, prompt, out, finish, strong=True)
         return
     if not out.is_file() and LIMIT.search(stdout + stderr):

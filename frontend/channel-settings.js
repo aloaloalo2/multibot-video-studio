@@ -63,7 +63,7 @@ function organizeChannelSettings(channel){
   const definitions=[
     ['projects','Основне','Для нових проєктів','Основне'],
     // the channel's host and voice in one place, under «Основне», before «Побажання» (user, 16 November 2026)
-    ['avatar','Аватар','Головний герой і озвучка'],
+    ['avatar','Аватар і голос','Головний герой і озвучка'],
     // every wish of the channel in one place, under «Основне» (user, 15 November 2026)
     ['wishes','Побажання','Сценарій, прев’ю, монтаж'],
     // every automatic step of an episode in one place, after «Побажання» (user, 19 November 2026)
@@ -211,11 +211,11 @@ function organizeChannelSettings(channel){
   // in the page so the saved value goes back unchanged, but nothing shows it
   {const logoSection=body.querySelector('.thumbnail-logo-section');if(logoSection){const keep=document.createElement('div');keep.hidden=true;keep.append(logoSection);body.append(keep);}}
   // «Головний герой» and «Побажання до прев’ю» are two blocks of their own, after «Оформлення» (user, 14 November 2026)
-  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Озвучка','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
+  for(const [key,label,icon,only] of [['script','Сценарій','script'],['voice','Голос','voice'],['look','Оформлення','look'],['thumbnails','Головний герой','hero','.hero-reference-section'],['thumbnails','Побажання до прев’ю','thumbnails']]){
     if(only==='.hero-reference-section'){
       // «Головний герой» is always open in «Аватар», a plain card with the picture on the left (user, 16 November 2026)
       const section=panels[key].querySelector(only);
-      if(section){section.classList.add('avatar-hero-card');section.dataset.mainSection='hero';const heading=section.querySelector('h3');if(heading){heading.hidden=false;heading.textContent='Головний герой';}panels.avatar.append(section);}
+      if(section){section.classList.add('avatar-hero-card');section.dataset.mainSection='hero';const heading=section.querySelector('h3');if(heading){heading.hidden=false;heading.textContent='Аватар';}panels.avatar.append(section);}
       continue;
     }
     const group=document.createElement('details');group.className='channel-settings-group';group.dataset.mainSection=only?(only==='.hero-reference-section'?'hero':'thumbnail-logo'):key;

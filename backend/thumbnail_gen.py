@@ -603,16 +603,32 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         store.atomic_json(job_path(pid), data)
         # Clone drawings run in a fresh, clean workspace with text and optional host identity only.
         with job_timing.span('service'):
-            if drawer == "openrouter":
+            # Codex draws first, OpenRouter only when Codex gives no picture (its limit or a failure) (user, 22 November
+            # 2026: «превью и асети зараз через кодекс в першу чергу… якшо не то опен роутер на замене»)
+            result = None
+            if CODEX.is_file():
+                try:
+                    if clone and not base:
+                        result = draw_clone_from_text(written, name, work, hero, logo_ref)
+                    else:
+                        command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
+                        for ref in refs: command += ["-i", str(ref)]
+                        result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
+                                                capture_output=True, timeout=TIMEOUT)
+                except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+                    result = subprocess.CompletedProcess([], 1, "", f"Codex: {error}")
+            if not _saved_picture(work / name):
+                codex_log = (result.stdout + result.stderr) if result else "Codex не знайдено"
+                data.update(drawer="openrouter");store.atomic_json(job_path(pid), data)
                 # a clone keeps the competitor's picture out of the drawing, as with Codex: the host and logo only
-                result = drawn_by_openrouter(pid, written, name, work, [hero, logo_ref] if clone and not base else refs)
-            elif clone and not base:
-                result = draw_clone_from_text(written, name, work, hero, logo_ref)
+                try:
+                    result = drawn_by_openrouter(pid, written, name, work, [hero, logo_ref] if clone and not base else refs)
+                except Exception as error:
+                    raise RuntimeError("Codex не намалював прев’ю (" + codex_log[-200:].strip() + "), OpenRouter теж: " + str(error)) from error
+                result = subprocess.CompletedProcess([], 0, "Codex:\n" + codex_log + "\n\nOpenRouter:\n" + (result.stdout or ""), result.stderr or "")
+                drawer = "openrouter"
             else:
-                command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
-                for ref in refs: command += ["-i", str(ref)]
-                result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
-                                        capture_output=True, timeout=TIMEOUT)
+                drawer = "codex"
         (work / f"Лог генерації v{number}.txt").write_text(result.stdout + result.stderr, encoding="utf-8")
         made = work / name
         try:
@@ -654,6 +670,15 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                 ACTIVE.discard(pid)
 
 
+def _saved_picture(path: Path) -> bool:
+    try:
+        with Image.open(path) as image:
+            image.verify()
+        return True
+    except (OSError, UnidentifiedImageError):
+        return False
+
+
 def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "claude", base: str | None = None, use_hero: bool | None = None, reference_id: str | None = None, channel_wishes: bool = False, drawer: str = "openrouter") -> dict:
     if writer in PROMPT_WRITERS:
         writer, drawer = "claude", "openrouter"
@@ -683,7 +708,7 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
     required = creation_min_frames(project)
     if not base and not clone and required and store.picture_count(project) < required:
         raise store.StudioError(f"Прев'ю можна створити, коли готові хоча б {required} кадри ролику: з них береться стиль", 409)
-    if (drawer == "codex" or writer == "trending") and not CODEX.is_file():
+    if writer == "trending" and not CODEX.is_file():
         raise store.StudioError("Не знайдено Codex у ChatGPT.app", 503)
     with LOCK:
         if pid in ACTIVE:
@@ -699,16 +724,8 @@ def start(pid: str, title: str, script: str, wishes: str = "", writer: str = "cl
                 number = 1 + max((item['number'] for item in versions(pid)), default=0)
                 base = f"Превью до v{number}.png"
                 shutil.copy2(source, keep_dir(pid) / base)
-        if base and drawer == "codex":
-            # a picture OpenRouter drew is edited by OpenRouter too (18 November 2026: «Внести правки» went to Codex,
-            # whose limit was out, on Jupiter's OpenRouter thumbnail)
-            try:
-                if json.loads((keep_dir(pid) / (Path(base).stem + ".json")).read_text()).get("drawer") == "openrouter":
-                    drawer = "openrouter"
-            except (OSError, ValueError):
-                pass
         data = {"status": "running", "stage": "drawing" if base or writer == "trending" and not clone else "prompt", "started_at": time.time(), "title": title, "wishes": wishes,
-                "writer": writer, "drawer": drawer, "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
+                "writer": writer, "drawer": "codex", "use_hero": use_hero, "reference_id": reference_id, **({"base": base} if base else {}),
                 **({"channel_wishes": True} if channel_wishes is True else {})}
         ACTIVE.add(pid)
         try:
