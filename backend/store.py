@@ -2134,6 +2134,12 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             group=next((g for g in project.get('scene_groups',[]) if g['id']==payload['group_id']),None)
             if not group:raise StudioError('Frame group not found',404)
             group['clip_ids'].append(clip['id'])
+        else:
+            # a clip the agent named for its frame («K020 градієнт») but forgot to group goes into that frame's group, not
+            # onto a loose row of its own (user, 22 November 2026: «це мало бути в кадрі все»)
+            named=re.match(r'K(\d{3}) ',str(clip.get('title') or ''))
+            group=named and next((g for g in project.get('scene_groups',[]) if g.get('title')==f"Кадр {int(named.group(1))}" and g.get('role','scene')=='scene'),None)
+            if group:group['clip_ids'].append(clip['id'])
     elif action == "move_clip":
         old_layer, clip = clip_by_id(project, str(payload["clip_id"]))
         target = layer_by_id(project, str(payload.get("to_layer_id", old_layer["id"])))

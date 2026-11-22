@@ -47,7 +47,7 @@ def reset_time(text: str) -> str:
     return ""
 
 
-def stop_for_limit(text: str, reset: str | None = None, no_funds: bool = False) -> None:
+def stop_for_limit(text: str, reset=None, no_funds: bool = False) -> None:
     """Codex's limit is out (and, with no_funds, OpenRouter has no money to draw instead): the studio pauses the frames
     until the limit comes back, the agent stops."""
     reset = reset_time(text) if reset is None else reset
@@ -142,7 +142,11 @@ def wait_for(outs) -> None:
         sys.exit("Codex не намалював: " + "; ".join(failed))
 
 
-TRANSPARENT = re.compile(r"transparen|alpha|прозор", re.I)
+# a picture asked on a transparent background (a PNG prop), not a picture that merely shows something see-through: «the
+# rib cage drawn semi-transparent» in a photo sheet sent it to the cheap prop model on a transparent ground (22 November
+# 2026: washed edges, garbled lettering, waxy faces on Antropov's sheets)
+TRANSPARENT = re.compile(r"transparent\s+(?:background|backdrop|png)|(?:background|backdrop)\s+(?:is\s+|fully\s+)*transparent"
+                         r"|alpha[\s-]*channel|прозор\w*\s+фон|фон\w*\s+прозор|без\s+фону|без\s+фона", re.I)
 
 
 def studio_backend():

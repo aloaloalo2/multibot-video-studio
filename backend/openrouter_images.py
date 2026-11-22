@@ -213,7 +213,9 @@ def draw(pid: str, prompt: str, aspect_ratio: str = "3:2", quality: str = "mediu
     # a face from a reference, or a picture the agent marks as detailed, goes to the stronger model; the rest to the cheap
     # one, which draws animation props well (user, 17 November 2026: «якщо щось треба намалювати якісно, деталізовано…
     # старшу модель… поки ця дешева справляється окей»)
-    model = FACE_MODEL if refs or detail else chosen.get("model") or DEFAULT_MODEL
+    # the cheap model only for transparent props: a photo, an infographic or anything with lettering on its own ground goes
+    # to the stronger one (22 November 2026: photo sheets from the mini model came with garbled lettering and waxy faces)
+    model = FACE_MODEL if refs or detail or not transparent else chosen.get("model") or DEFAULT_MODEL
     if model == DEFAULT_MODEL and aspect_ratio in {"16:9", "9:16"}:
         aspect_ratio = "3:2" if aspect_ratio == "16:9" else "2:3"   # the mini model draws only 1:1, 3:2 and 2:3
     body = {"model": model, "prompt": prompt.strip(), "background": "transparent" if transparent else "opaque", "aspect_ratio": aspect_ratio,
