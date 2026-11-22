@@ -1,0 +1,14 @@
+One wide 3:2 sheet with SIX separate objects on a FULLY TRANSPARENT background (real alpha channel, no backdrop, no floor, no cast shadow on the background). Layout: a 3 x 2 grid, every object centred in its own cell, wide empty transparent gaps between all objects, no object touches another or the sheet edge.
+
+Style: realistic photographic cut-outs, natural soft daylight, true colours, slightly muted, sharp detail, like a clean product photo of ordinary groceries. No text, no logos, no brand names anywhere.
+
+Top row, left to right:
+1. A small cluster of five Brussels sprouts.
+2. One whole yellow onion bulb with dry golden skin.
+3. One whole head of garlic with one separate clove beside it, touching it.
+Bottom row, left to right:
+4. A small bundle of three ripe golden wheat ears with short stems, standing upright.
+5. A small bundle of three ripe rye ears (longer, thinner, darker grey-brown with long awns), standing upright.
+6. One diet cereal snack bar in a plain matte light-green wrapper, slightly torn open at one end showing the oat bar inside. The wrapper is completely blank, no text.
+
+Each object is complete, nothing cut off.

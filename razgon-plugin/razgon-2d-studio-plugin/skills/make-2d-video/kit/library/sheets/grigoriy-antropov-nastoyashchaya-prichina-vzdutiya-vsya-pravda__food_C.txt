@@ -1,0 +1,14 @@
+One wide 3:2 sheet with SIX separate objects on a FULLY TRANSPARENT background (real alpha channel, no backdrop, no floor, no cast shadow on the background). Layout: a 3 x 2 grid, every object centred in its own cell, wide empty transparent gaps between all objects, no object touches another or the sheet edge.
+
+Style: realistic photographic cut-outs, natural soft daylight, true colours, slightly muted, sharp detail, like a clean product photo of ordinary groceries. No text, no logos, no brand names anywhere.
+
+Top row, left to right:
+1. One plain white plastic cup of natural yogurt with the foil lid peeled half open, a little white yogurt visible. The cup is blank, no print.
+2. Three ripe dark blue-purple plums with a light bloom, one with a short stem and leaf.
+3. A small heap of dried prunes (dark, wrinkled, glossy).
+Bottom row, left to right:
+4. Two ripe yellow-green pears with stems.
+5. Three ripe orange apricots, one cut in half showing the stone.
+6. One tall clear drinking glass full of fresh white milk.
+
+Each object is complete, nothing cut off, similar visual size.

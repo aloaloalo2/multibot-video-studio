@@ -1,0 +1,14 @@
+One wide 3:2 sheet with SIX separate food objects on a FULLY TRANSPARENT background (real alpha channel, no backdrop, no floor, no cast shadow on the background). Layout: a 3 x 2 grid, every object centred in its own cell, wide empty transparent gaps between all objects, no object touches another or the sheet edge.
+
+Style: realistic photographic cut-outs, natural soft daylight, true colours, slightly muted, sharp detail, like a clean product photo of ordinary groceries. No text, no labels, no plates, no bowls unless stated.
+
+Top row, left to right:
+1. A small heap of dry red kidney beans (about 40 beans) lying together.
+2. A small heap of shelled green peas (fresh, round, glossy).
+3. A small heap of brown-green dry lentils.
+Bottom row, left to right:
+4. A small heap of dry chickpeas (beige, round).
+5. One whole head of white cabbage with a couple of outer leaves.
+6. One fresh head of broccoli, florets on top, stem below.
+
+Each object is complete, nothing cut off, similar visual size so they can stand in a row.

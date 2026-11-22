@@ -1,0 +1,8 @@
+One wide 3:2 sheet with FOUR separate medical illustration objects on a FULLY TRANSPARENT background (real alpha channel, no backdrop, no shadow on the background). Layout: a 2 x 2 grid, each object centred in its own cell, wide empty transparent gaps, nothing touches another object or the sheet edge.
+
+Style: clean, accurate soft medical textbook illustration, gentle shading, soft pastel natural tissue colours (pink, salmon, cream), thin dark teal outline, calm and not gory. No text, no labels, no arrows, no numbers.
+
+Top left: The human intestines seen from the front, isolated: the coiled small intestine in the middle framed by the large intestine (ascending, transverse and descending colon with its pouches), with the short start of the rectum at the bottom. No other organs, no body.
+Top right: A straight horizontal segment of the small intestine cut lengthwise like a tube opened along its length, showing the inner wall covered with many fine finger-like villi, the pink outer wall and a thin layer of muscle. Wide shape (about 3:1).
+Bottom left: A short horizontal segment of the large intestine (colon) cut lengthwise, showing the smooth inner wall with folds and an empty roomy lumen inside. Wide shape (about 3:1).
+Bottom right: A loose cluster of about twelve gut bacteria as seen under a microscope: rod-shaped and round bacteria in soft green and teal tones, some with tiny flagella.

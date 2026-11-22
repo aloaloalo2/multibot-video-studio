@@ -1,6 +1,28 @@
 {
  "props": [
   {
+   "name": "apricots",
+   "sha256": "bc64f64973668b65a0569f2af9449861258799b7a9c9d89ac3341a3991cb34cf",
+   "description": "Three ripe orange apricots, one cut in half showing the stone.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
+  },
+  {
+   "name": "bacteria",
+   "sha256": "8f9bd9a8582d642cd596a5823edd996508fc9956b75ff8dc83bd68dfa13c326d",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.txt"
+  },
+  {
    "name": "baked_potato",
    "sha256": "c286e2acf611c6d2a9d9e8cc740029b91c89700203a5504609641ec6fe710f11",
    "description": "",
@@ -19,6 +41,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "beans",
+   "sha256": "2e778483a0e9d82b20100bd9ae3dbcbe51400403cd266a3ae3eb40b3792e14cf",
+   "description": "A small heap of dry red kidney beans (about 40 beans) lying together.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
+  },
+  {
    "name": "bouillon_cube",
    "sha256": "28b7904fbb34ed5f8900964cb5836f561b06230fcb1648062fc8c8a9815ba554",
    "description": "",
@@ -26,6 +59,28 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "broccoli",
+   "sha256": "ba0acb6180e5def172eecb743c75885fc5eaba0caa7a5bfbafe6506fe1be590f",
+   "description": "One fresh head of broccoli, florets on top, stem below.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
+  },
+  {
+   "name": "brussels",
+   "sha256": "30cfa52f7025baf7fe0c1b2e612d56d7b8c87b0c1a980542653ca284b979c024",
+   "description": "A small cluster of five Brussels sprouts.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
   },
   {
    "name": "brynza_brine",
@@ -46,6 +101,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "cabbage",
+   "sha256": "0e1c26a9c6816538c6134fc330b79d632f22ad8c5486eaf15440778acc8d9768",
+   "description": "One whole head of white cabbage with a couple of outer leaves.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
+  },
+  {
    "name": "cheese_curd",
    "sha256": "ada360c6d617e074dbebc0e7c771085a75cb15144692ff14c9328146a2aa953c",
    "description": "",
@@ -53,6 +119,17 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "chickpeas",
+   "sha256": "efd4a6e4840dc880c807272ab4aced52149c3087dd5fbecc4a2996cb608d5c7d",
+   "description": "A small heap of dry chickpeas (beige, round).",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
   },
   {
    "name": "china_map",
@@ -71,6 +148,17 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "colon",
+   "sha256": "61dff9f0edc0cba7d263b0cf37e064f0b4d1f13c4a29b121216322bcf85981cc",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.txt"
   },
   {
    "name": "crab_sticks",
@@ -100,6 +188,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "dietbar",
+   "sha256": "2085b03be3887f0eb6ad528f6ca574210746b49ac0a16f0c83f184629950faed",
+   "description": "One diet cereal snack bar in a plain matte light-green wrapper, slightly torn open at one end showing the oat bar inside. The wrapper is completely blank, no text.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
+  },
+  {
    "name": "dill",
    "sha256": "0a14e3727b04876c6baee6eecfb83ba6c82b5ed931751f1040db7d2b1a51fd48",
    "description": "",
@@ -118,6 +217,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "garlic",
+   "sha256": "505800a068bf547361117271cd071d4d8ae37530260647701ae8af6c74cb0628",
+   "description": "One whole head of garlic with one separate clove beside it, touching it.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
+  },
+  {
    "name": "head_section",
    "sha256": "2f2b4fb5d3445740b16c25b1578cb3496446cef94d895229375b5b09125e9648",
    "description": "",
@@ -125,6 +235,17 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "intestines",
+   "sha256": "e6540827459227879ab8f46c6938cd0cc36b5aa271309b9a1d809e556bec057a",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.txt"
   },
   {
    "name": "ketchup",
@@ -136,6 +257,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "lentils",
+   "sha256": "c63f8060ca77f952ab368db2ed1a1d31864549bfd653d15ae645c6ff7efef1b5",
+   "description": "A small heap of brown-green dry lentils.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
+  },
+  {
    "name": "mayo_pack",
    "sha256": "cfe3d92eb68961e69992e2617b151a82f42a5135bdf80388630298419a59ed73",
    "description": "",
@@ -143,6 +275,17 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "milk",
+   "sha256": "be18ed99fcdc2177ff7370233e500a5d8343e06370a4a363730ea26c618e97f7",
+   "description": "One tall clear drinking glass full of fresh white milk.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
   },
   {
    "name": "mineral_bottle",
@@ -154,6 +297,17 @@
    "added": "2026-11-11"
   },
   {
+   "name": "onion",
+   "sha256": "af7b77aae84a3f8725a835b3df7ee7de19f241ca92fdc966854a6b95e80d8baf",
+   "description": "One whole yellow onion bulb with dry golden skin.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
+  },
+  {
    "name": "parsley",
    "sha256": "364e99e914a02e94c6b664b3b0077346aa09e51bfcb5cdbafcd9d7d139bffea0",
    "description": "",
@@ -161,6 +315,28 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "pears",
+   "sha256": "c57e43db06d41be7a1d75541d222d6c596ddf96185f10946c8497765aa75b3dd",
+   "description": "Two ripe yellow-green pears with stems.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
+  },
+  {
+   "name": "peas",
+   "sha256": "6339e8cc56611916ef746964e99defc2e1e302fe6047fea6678d60e756f36017",
+   "description": "A small heap of shelled green peas (fresh, round, glossy).",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_A.txt"
   },
   {
    "name": "peppercorns",
@@ -188,6 +364,39 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "plums",
+   "sha256": "7afce8d12dc9b4d634d17c02646c5700d889813464fc2b1f93ba0703c46f584d",
+   "description": "Three ripe dark blue-purple plums with a light bloom, one with a short stem and leaf.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
+  },
+  {
+   "name": "prunes",
+   "sha256": "ef88537617511511d7df042b8dee86ff2f6efd0b6b7042d926da2c094f30fc9e",
+   "description": "A small heap of dried prunes (dark, wrinkled, glossy).",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
+  },
+  {
+   "name": "rye",
+   "sha256": "473ada3b226c11af2a9f192e358c6a701f54a3cb70d50441da835e454de739a2",
+   "description": "A small bundle of three ripe rye ears (longer, thinner, darker grey-brown with long awns), standing upright.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
   },
   {
    "name": "salo",
@@ -235,6 +444,26 @@
    "added": "2026-11-11"
   },
   {
+   "name": "small_gut",
+   "sha256": "66dd5b749cdf3fdb75025c146b68dca3cbfb50cae8b38c3eb6b4876478f2800d",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__gut_D.txt"
+  },
+  {
+   "name": "sofa_man",
+   "sha256": "0c891d21c4a6a3ea85ffc80e57adc86cd9071d6251c20f619d18a47c27c81179",
+   "description": "",
+   "projects": [
+    "props"
+   ],
+   "added": "2026-11-15"
+  },
+  {
    "name": "soup_packet",
    "sha256": "59abce97dac6bf5dd9120e29a8729063204037600c19c1f688e2b3e627e4d110",
    "description": "",
@@ -253,6 +482,15 @@
    "added": "2026-11-11"
   },
   {
+   "name": "spoon_beans",
+   "sha256": "0dc5dfe4c090cbf8b3b76d26d2116703051ada0e9f7ce175fa2e983b10d12ee1",
+   "description": "",
+   "projects": [
+    "props"
+   ],
+   "added": "2026-11-15"
+  },
+  {
    "name": "tongue",
    "sha256": "fd357506e6f01e77d5c85bbc8ac7bb058975d58e271ad0db2a154f944d9e4930",
    "description": "",
@@ -269,6 +507,55 @@
     "props"
    ],
    "added": "2026-11-11"
+  },
+  {
+   "name": "wheat",
+   "sha256": "a5155a5181b25a68e07ebbcae303c5ef97cfb204e903a6fecc86616e6d8a680c",
+   "description": "A small bundle of three ripe golden wheat ears with short stems, standing upright.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_B.txt"
+  },
+  {
+   "name": "woman_evening",
+   "sha256": "e0d77f792a96e728485e5f5dcc72212e6efdae12d8ffee08144119771fb5e5ed",
+   "description": "",
+   "projects": [
+    "props"
+   ],
+   "added": "2026-11-15"
+  },
+  {
+   "name": "woman_morning",
+   "sha256": "bce2dc57ea4a62bcce97ce0a07f8329c1b39890c71e82a26ec661f45817c583c",
+   "description": "",
+   "projects": [
+    "props"
+   ],
+   "added": "2026-11-15"
+  },
+  {
+   "name": "woman_noon",
+   "sha256": "5968dc0fd36d35d4edfe3e1a9c8328a1cffc725ee7b4ea61c66e3a2acb558b44",
+   "description": "",
+   "projects": [
+    "props"
+   ],
+   "added": "2026-11-15"
+  },
+  {
+   "name": "yogurt",
+   "sha256": "49f57bec7894ddf295fa394dccf09c25ed4e68e38e242c2555ff8f530895eb2c",
+   "description": "One plain white plastic cup of natural yogurt with the foil lid peeled half open, a little white yogurt visible. The cup is blank, no print.",
+   "projects": [
+    "grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda"
+   ],
+   "added": "2026-11-15",
+   "sheet": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.png",
+   "prompt": "sheets/grigoriy-antropov-nastoyashchaya-prichina-vzdutiya-vsya-pravda__food_C.txt"
   }
  ]
 }
