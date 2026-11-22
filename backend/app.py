@@ -1789,7 +1789,7 @@ class Handler(BaseHTTPRequestHandler):
         if match and method == "POST":
             import episode_ideas
             try:
-                return self.json_response(episode_ideas.idea_titles(match.group(1), (body or {}).get("idea")))
+                return self.json_response(episode_ideas.idea_titles(match.group(1), (body or {}).get("idea"), (body or {}).get("exclude") if isinstance((body or {}).get("exclude"), list) else None))
             except (ValueError, RuntimeError) as error:
                 raise store.StudioError(str(error), 400 if isinstance(error, ValueError) else 502) from None
         if path == "/api/channels" or path.startswith("/api/channels/"):

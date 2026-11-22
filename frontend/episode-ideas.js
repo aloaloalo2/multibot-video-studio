@@ -32,7 +32,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
   modal('Новий випуск',`<div class="episode-wizard"><div class="episode-name-field" id="episode-name-field">${episodeIcon('title')}<input id="new-project-name" aria-label="Ваша ідея випуску" maxlength="300" placeholder="Ваша ідея випуску"></div><div class="episode-own-titles" id="episode-own-titles" hidden></div><div class="episode-entry-tools" id="episode-entry-tools"><div class="episode-entry-options" id="episode-entry-options" role="group" aria-label="Спосіб створення"><button type="button" data-entry="title" aria-pressed="true">${episodeIcon('title')}<span>Власна ідея</span></button><button type="button" data-entry="topics" aria-pressed="false">${episodeIcon('topics')}<span>Ідеї</span></button><button type="button" data-entry="reference" aria-pressed="false">${episodeIcon('link')}<span>Клонувати ідею</span></button></div><button class="secondary" id="ideas-refresh" title="Оновити ідеї" aria-label="Оновити ідеї">${episodeIcon('refresh')}</button></div><div class="episode-reference" id="episode-reference" hidden><div class="episode-reference-input">${episodeIcon('link')}<input id="episode-reference-url" aria-label="Клонування ідеї" type="url" placeholder="Вставте посилання на YouTube" autocomplete="off"><button type="button" class="secondary" id="episode-reference-copy" disabled>${episodeIcon('magic')}<span>Клонувати</span></button></div><div id="episode-reference-status" role="status"></div></div><div id="episode-ideas"><p class="muted">Завантажуємо…</p></div></div>`,[
     // «Власна ідея» (user, 22 November 2026): «Створити» asks DeepSeek for five titles on the idea; the idea itself, word
     // for word, is the first choice, and a click on any title creates the episode with it
-    {label:'Створити',enabled:()=>connected()&&!!input.value.trim(),run:()=>ownIdeaTitles()}
+    {label:'Створити',enabled:()=>connected()&&!!input.value.trim(),run:()=>ownCreate()}
   ]);
   $('modal-backdrop').classList.add('episode-ideas-open');
   const root=$('episode-ideas'),input=$('new-project-name'),create=$('modal-actions').querySelector('button');
@@ -59,7 +59,7 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     entryButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.entry===entry)));
     $('episode-reference').hidden=entry!=='reference';
     if(ideasRefresh)ideasRefresh.hidden=entry!=='topics';
-    root.hidden=entry==='title'||entry==='reference'&&!reference;showCreate(entry==='title');if(ownTitles){ownTitles.hidden=entry!=='title'||!ownTitles.innerHTML;}input.hidden=entry!=='title';titleTranslator.refresh();
+    root.hidden=entry==='title'||entry==='reference'&&!reference;showCreate(entry==='title');if(ownTitles){ownTitles.hidden=entry!=='title'||!ownTitles.innerHTML;ownRefresh.hidden=entry!=='title'||ownStage==='idea';if(entry==='title'&&ownStage==='titles')create.hidden=true;}input.hidden=entry!=='title';titleTranslator.refresh();
     if(entry==='reference'){
       if(reference){input.value=entryTitles.reference||reference.title;input.hidden=false;drawReference();}
       $('episode-reference-url').focus();
@@ -67,27 +67,50 @@ async function openNewEpisodeWizard({projectId=null,draft=null}={}){
     else if(entry==='title')input.focus();
   }
   entryButtons.forEach(button=>button.onclick=()=>selectEntry(button.dataset.entry));
-  const ownTitles=$('episode-own-titles');let ownVersion=0;
+  // «Власна ідея» (user, 22 November 2026): «Створити» asks DeepSeek for five titles on the idea (the idea itself, word for
+  // word, first); a click on a title puts it into the field to edit, and «Створити випуск» then makes the episode; the
+  // round ↻ beside it brings five other titles on the same idea, as in «Ідеї»
+  const ownTitles=$('episode-own-titles');let ownVersion=0,ownShown=[],ownStage='idea',ownIdea='';
+  const ownRefresh=document.createElement('button');ownRefresh.type='button';ownRefresh.className='secondary episode-action episode-own-refresh';
+  ownRefresh.innerHTML=episodeIcon('refresh');ownRefresh.title='Інші заголовки на цю ідею';ownRefresh.setAttribute('aria-label','Інші заголовки на цю ідею');ownRefresh.hidden=true;
+  ownRefresh.onclick=()=>ownIdeaTitles(ownIdea);
+  create.before(ownRefresh);
+  function ownMode(stage){
+    ownStage=stage;ownRefresh.hidden=stage==='idea';
+    create.hidden=stage==='titles';
+    create.innerHTML=episodeIcon('add')+`<span>${stage==='picked'?'Створити випуск':'Створити'}</span>`;
+    create.disabled=!input.value.trim();
+  }
   async function createEpisode(name){
     try{const result=await api('/api/projects','POST',{channel_id:cid,name});
       if(!connected())return;closeModal();await selectProject(result.project.id,{view:'editor'});}
     catch(error){if(connected())status(error.message,true);}
   }
-  async function ownIdeaTitles(){
-    const idea=input.value.trim();if(!idea||!connected())return;
-    const version=++ownVersion;create.disabled=true;ownTitles.hidden=false;
+  function ownCreate(){
+    if(ownStage==='picked'){const name=input.value.trim();if(name){create.disabled=true;createEpisode(name);}return;}
+    ownIdeaTitles(input.value.trim());
+  }
+  async function ownIdeaTitles(idea){
+    if(!idea||!connected())return;
+    ownIdea=idea;const version=++ownVersion,exclude=ownShown.slice();create.disabled=ownRefresh.disabled=true;ownTitles.hidden=false;
     ownTitles.innerHTML=`<p class="muted episode-own-loading">${exportSpinner}<span>DeepSeek придумує заголовки…</span></p>`;
     try{
-      const data=await api(`/api/channels/${encodeURIComponent(cid)}/idea-titles`,'POST',{idea});
+      const data=await api(`/api/channels/${encodeURIComponent(cid)}/idea-titles`,'POST',{idea,exclude});
       if(!connected()||version!==ownVersion)return;
       const choices=[...(idea.length<=100?[{title:idea,uk:'',own:true}]:[]),...data.titles];
-      ownTitles.innerHTML=`<div class="episode-options episode-topic-options">${choices.map((row,i)=>`<button type="button" data-own-title="${i}">${episodeIcon(row.own?'title':'episode')}<span><strong>${esc(row.title)}</strong>${row.own?'<small>Ваша ідея дослівно</small>':row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>`;
-      ownTitles.querySelectorAll('[data-own-title]').forEach(button=>button.onclick=()=>{ownTitles.querySelectorAll('button').forEach(b=>b.disabled=true);createEpisode(choices[Number(button.dataset.ownTitle)].title);});
+      ownTitles.innerHTML=`<div class="episode-options episode-topic-options">${choices.map((row,i)=>`<button type="button" data-own-title="${i}" aria-pressed="false">${episodeIcon(row.own?'title':'episode')}<span><strong>${esc(row.title)}</strong>${!row.own&&row.uk?`<small>${esc(row.uk)}</small>`:''}</span></button>`).join('')}</div>`;
+      ownTitles.querySelectorAll('[data-own-title]').forEach(button=>button.onclick=()=>{
+        ownTitles.querySelectorAll('[data-own-title]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
+        input.value=choices[Number(button.dataset.ownTitle)].title;ownMode('picked');input.focus();
+      });
+      ownShown.push(...data.titles.map(row=>row.title));
+      if(ownStage!=='picked')ownMode('titles');
     }catch(error){if(connected()&&version===ownVersion)ownTitles.innerHTML=errorBox(error.message);}
-    finally{if(connected())create.disabled=!input.value.trim();}
+    finally{if(connected()){ownRefresh.disabled=false;create.disabled=!input.value.trim();}}
   }
   input.oninput=()=>{
-    if(entry==='title'&&!ownTitles.hidden){ownVersion++;ownTitles.hidden=true;ownTitles.innerHTML='';}
+    // typing over the list starts a new idea; editing a picked title keeps it (an emptied field starts over)
+    if(entry==='title'&&ownStage!=='idea'&&(ownStage==='titles'||!input.value.trim())){ownVersion++;ownTitles.hidden=true;ownTitles.innerHTML='';ownShown=[];ownMode('idea');}
     if(entry==='topics'&&!topicSelected)selectEntry('title');
     if(entry==='title')create.disabled=!input.value.trim();
   };

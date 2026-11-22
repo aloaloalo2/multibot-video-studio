@@ -3308,3 +3308,5 @@ select option{background:#232327;color:#f1f1f2}
 .episode-own-titles .episode-options button{justify-content:flex-start;text-align:left}
 .episode-own-titles .episode-options button>span{margin-right:auto;text-align:left}
 .episode-own-loading{display:flex;align-items:center;gap:8px}
+.episode-ideas-open .episode-action.episode-own-refresh{width:30px;height:30px;min-width:30px;padding:0;border-radius:50%;flex:none}
+.episode-ideas-open .episode-action.episode-own-refresh .episode-icon{width:16px;height:16px}

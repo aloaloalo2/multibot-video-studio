@@ -176,9 +176,20 @@ def draw_openrouter(a, prompt: Path, out: Path, finish, strong: bool = False) ->
         text = prompt.read_text(encoding="utf-8").strip()
         # a 2 × 2 sheet of photos is 16:9, as Codex draws it (sheet_2x2.py cuts it in four)
         wide = bool(re.search(r"16:9|2\s*[×x]\s*2", text))
-        result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, aspect_ratio="16:9" if wide else "3:2",
-                                        refs=[str(Path(ref).resolve()) for ref in a.ref],
-                                        transparent=bool(TRANSPARENT.search(text)), detail=strong or bool(getattr(a, "detail", False)))
+        # sheets are drawn side by side for speed (user, 22 November 2026: «ми ж для швидкості робимо»); OpenRouter holds
+        # each request's possible cost before it draws, so with little money left a sheet started beside others may be
+        # refused (402) although it draws alone: it waits for the others to finish and tries again, a few times
+        import random
+        for attempt in range(5):
+            try:
+                result = openrouter_images.draw(os.environ["VIDEOKEY_PROJECT_ID"], text, aspect_ratio="16:9" if wide else "3:2",
+                                                refs=[str(Path(ref).resolve()) for ref in a.ref],
+                                                transparent=bool(TRANSPARENT.search(text)), detail=strong or bool(getattr(a, "detail", False)))
+                break
+            except Exception as refused:
+                if attempt == 4 or not re.search(r"402", str(refused)):
+                    raise
+                time.sleep(15 + 15 * attempt + random.uniform(0, 10))
         out.write_bytes(base64.b64decode(result["png"]))
     except Exception as error:
         # drawing instead of Codex, whose limit is out, and OpenRouter has no money either: nothing can draw until the
@@ -189,7 +200,7 @@ def draw_openrouter(a, prompt: Path, out: Path, finish, strong: bool = False) ->
                 reset = json.loads(limit_marker().read_text()).get("reset") or ""
             except (OSError, ValueError, AttributeError):
                 reset = ""
-            finish("limit", "CODEX_LIMIT: закінчився ліміт Codex, а на балансі OpenRouter замало вільних коштів")
+            finish("limit", "CODEX_LIMIT: закінчився ліміт Codex, а OpenRouter відмовив: " + str(error)[-400:])
             stop_for_limit("", reset=reset, no_funds=True)
         finish("failed", str(error)[-300:])
         sys.exit(f"OpenRouter не намалював {out.name}: {error}")
