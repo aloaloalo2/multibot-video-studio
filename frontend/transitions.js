@@ -40,7 +40,7 @@ function transitionInfo(clip){
   const token=state.project?.id+':'+state.project?.revision;
   // a dissolve fades only the side on top, the side under it stays whole, as the export (backend/joins.py transport;
   // user, 21 November 2026: «переходи… в чорноту, а потім різко появляється наступний кадр»)
-  if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();const level=new Map();(typeof layers==='function'?layers():[]).forEach((layer,i)=>(layer.clips||[]).forEach(c=>level.set(c.id,i)));
+  if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();const level=new Map();(typeof layers==='function'?layers():[]).forEach((layer,i)=>(layer.clips||[]).forEach(c=>level.set(c.id,/^Razgon · кадр/.test(c.title||'')?-1:i)));   // the live Razgon player lies under the whole montage, so a seam with a Razgon frame fades the other side (22 November 2026: «між 5 і 6 нема переходу»)
     for(const join of state.project?.join_transitions || []){
       const ins=transitionEndpoint(join.to_ref),outs=transitionEndpoint(join.from_ref),lv=list=>list.map(c=>level.get(c.id)).filter(v=>v!==undefined);
       const a=lv(outs),b=lv(ins),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.min(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.min(...a));

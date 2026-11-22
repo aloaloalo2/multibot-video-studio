@@ -65,6 +65,22 @@ def _uncovered(project: dict, clip: dict) -> str | None:
     return None
 
 
+def _bare_portrait(project: dict, clip: dict, frame: dict) -> bool:
+    """A narrow picture (narrower than the frame) with no full-frame clip under it in its own frame."""
+    if clip.get("kind") != "image":
+        return False
+    try:
+        picture = montage_ops.Picture(project, clip)
+    except (store.StudioError, OSError, KeyError):
+        return False
+    if not picture.portrait:
+        return False
+    level = {c["id"]: i for i, track in enumerate(project.get("tracks", [])) for c in track.get("clips", [])}
+    mine = level.get(clip["id"], 0)
+    return not any(c is not clip and level.get(c["id"], 0) < mine and c.get("kind") in ("image", "video", "animation")
+                   and float(c.get("width", 1)) >= .99 and float(c.get("height", 1)) >= .99 for c in frame["clips"])
+
+
 def _solid_backing(clip: dict, picture: dict) -> bool:
     """A stationary opaque field must cover the whole picture interval and the whole canvas."""
     if (clip.get("kind") != "animation" or clip.get("content_type") != "shape"
@@ -139,6 +155,19 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
         uncovered = _uncovered(project, main) if main and not field else None
         if uncovered:
             problems.append(uncovered)
+        elif main and not field and _bare_portrait(project, main, frame):
+            # a vertical photo with nothing under it on the whole frame: its sides show the neighbour frame in every
+            # transition (22 November 2026: «під картинкою нема просто чорного фона»)
+            problems.append("вертикальне фото без тла: під ним нічого на весь кадр")
+        if fmt == "text":
+            # a text frame stands without words while the voice already speaks (22 November 2026: «36 кадр стоїть без
+            # тексту 2 секунди»): its first words should come in with the voice
+            shown = [float(c["start"]) + min((float(w.get("start", 0)) for w in c.get("text_words") or []), default=0.0)
+                     for c in frame["clips"] if c.get("kind") == "text" and str(c.get("text") or "").strip()]
+            timings = (plan_frame or {}).get("sentence_timings") or []
+            spoken = max(frame["start"], float(timings[0]["start"])) if timings else frame["start"]
+            if shown and min(shown) - spoken > 1.6:
+                problems.append(f"текстовий кадр без тексту {min(shown) - spoken:.1f} с, хоча голос уже говорить")
         join = joins_by_from.get("group:" + frame["group"]["id"])
         content = (f"{main.get('kind')} {_name(main, assets)} {_motion(main)}".strip() if main else
                    ", ".join(_name(c, assets) for c in frame["clips"][:2]))
