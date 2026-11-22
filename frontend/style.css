@@ -3297,3 +3297,14 @@ select option{background:#232327;color:#f1f1f2}
 .project-export-go svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .project-card.exporting .project-export-go{display:none}
 .project-auto-next{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:var(--ui-accent);font-size:11.5px;font-weight:600;white-space:nowrap}
+
+/* the host in a circle before «Використати ведучого», our four thumbnails beside «Адаптувати під мій стиль» (22 November 2026) */
+.thumb-hero-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none;margin:0 2px 0 0;border:1px solid #ffffff2e;vertical-align:middle}
+.trend-hero-avatar{display:inline-flex}
+.trend-hero-avatar:empty{display:none}
+.thumb-style-strip{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
+.thumb-style-strip img{width:44px;height:25px;object-fit:cover;border-radius:4px;border:1px solid #ffffff22;display:block}
+/* «Власна ідея»: the idea and DeepSeek's five titles, read from the left as the «Ідеї» list (22 November 2026) */
+.episode-own-titles .episode-options button{justify-content:flex-start;text-align:left}
+.episode-own-titles .episode-options button>span{margin-right:auto;text-align:left}
+.episode-own-loading{display:flex;align-items:center;gap:8px}

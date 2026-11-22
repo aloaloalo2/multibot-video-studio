@@ -102,7 +102,7 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   let generation,root,submit,titleTranslator,ready=false,sending=false,translating=false,wordsEdited=false,channelRead=0;
   const live=()=>root?.isConnected&&state.modalGeneration===generation&&state.navigation===navigation&&!$('modal-backdrop').hidden;
   const valid=()=>ready&&!sending&&!translating&&!!root?.querySelector('[name="channel"]').value&&!!root?.querySelector('[name="title"]').value.trim();
-  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag trend-language" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><figure class="trend-idea-video"><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><figcaption class="trend-title-original"></figcaption></figure><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span></label><label class="episode-word-count trend-idea-words">Сценарій <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
+  modal('Використати ідею',`<div class="trend-idea-form"><label>Канал<select name="channel" aria-label="Канал для ідеї">${selected?'':'<option value="" selected disabled>Оберіть канал</option>'}${channels.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="trend-idea-rest" ${selected?'':'hidden'}><label>Заголовок<span class="trend-title-row"><span class="trend-title-flag trend-language" title="Мова заголовка"></span><input name="title" aria-label="Заголовок випуску" type="text" maxlength="100" value="${esc(video.title)}"></span></label><figure class="trend-idea-video"><img class="trend-idea-preview" src="https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" alt="Прев’ю конкурента"><figcaption class="trend-title-original"></figcaption></figure><label class="trend-idea-check"><input name="use_thumbnail" type="checkbox" checked><span>Використовувати прев’ю конкурента</span></label><label class="trend-idea-check" data-hero-choice><input name="use_hero" type="checkbox" ${selected?.hero_reference?'checked':'disabled'}><span class="trend-hero-avatar"></span><span>Використати ведучого каналу на прев’ю</span></label><label class="trend-idea-check" data-wishes-choice hidden><input name="use_wishes" type="checkbox"><span>Адаптувати під мій стиль</span><span class="trend-style-strip"></span></label><label class="episode-word-count trend-idea-words">Сценарій <input name="words" aria-label="Обсяг сценарію" type="number" min="200" max="15000" step="1" value="2000"> слів</label></div><p class="trend-idea-feedback muted" role="status" hidden></p></div>`,[{
     label:'Створити відео',icon:'magic',primary:true,enabled:valid,run:async()=>{
       if(!live()||!valid())return;
       const cid=root.querySelector('[name="channel"]').value,title=root.querySelector('[name="title"]').value.trim();
@@ -164,6 +164,9 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
   words.oninput=()=>{wordsEdited=true;};
   const syncHero=()=>{
     const field=root.querySelector('[name="use_hero"]'),hasHero=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;
+    const heroUrl=channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference?.url;
+    root.querySelector('.trend-hero-avatar').innerHTML=heroAvatar(heroUrl);
+    styleThumbs(root.querySelector('[name="channel"]').value);
     field.disabled=sending||!hasHero||!root.querySelector('[name="use_thumbnail"]').checked;
     field.closest('label').hidden=!hasHero;   // a channel without a host shows no host choice at all
     if(!hasHero)field.checked=false;
@@ -174,6 +177,12 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
     wishes.closest('label').title='Ідея з прев’ю конкурента, а стиль з наших прев’ю й побажань каналу';
     wishes.disabled=sending;
   };
+  let styleFor=null;
+  // the channel's four thumbnails «Адаптувати під мій стиль» copies, read once a channel
+  function styleThumbs(cid){
+    if(!cid||cid===styleFor)return;styleFor=cid;const strip=root.querySelector('.trend-style-strip');strip.innerHTML='';
+    api(`/api/channels/${encodeURIComponent(cid)}/style-thumbnails`).then(data=>{if(live()&&styleFor===cid)strip.outerHTML=styleStrip(data.thumbnails).replace('thumb-style-strip','thumb-style-strip trend-style-strip')||'<span class="trend-style-strip"></span>';}).catch(()=>{});
+  }
   root.querySelector('[name="use_thumbnail"]').onchange=syncHero;
   syncHero();
   async function recommendation(){

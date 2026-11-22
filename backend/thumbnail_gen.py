@@ -174,6 +174,8 @@ def defaults(pid: str) -> dict:
             "creation_min_frames": creation_min_frames(project), "reference_selection": True, "clone_reference": clone,
             "versions": versions(pid), "writers": list(OFFERED_WRITERS), "image_editing": True,
             "hero_reference": channel_hero.info(project['channel_id']) if project.get('channel_id') else None,
+            # the four of our thumbnails «Адаптувати під мій стиль» copies, small beside the box
+            "style_thumbnails": [f"/api/projects/{other}/cover" for other in style_sources(project['channel_id'], project['id'])] if project.get('channel_id') else [],
             # the channel's logo for the gallery's «Логотип» button (thumbnail_logo.place); None when the channel has none
             "channel_logo": channel_branding.logo_info(project['channel_id']) if project.get('channel_id') else None,
             # the clone window offers the channel's own thumbnail wishes only when the channel has some (user, 15 November 2026)
@@ -223,21 +225,25 @@ def without_logo(pid: str, cover: Path) -> Path:
     return current or cover
 
 
-def own_thumbnails(project: dict, limit: int = 3) -> list[Path]:
-    """The channel's own recent thumbnails (the cover of its newest other episodes), then its approved ones in
-    «Еталон стилю»: what «Адаптувати під мій стиль» shows the prompt writer as our look."""
-    found = []
+STYLE_COUNT = 4   # the window shows these four small, the prompt writer sees the same four (user, 22 November 2026)
+
+
+def style_sources(cid: str, exclude: str | None = None, limit: int = STYLE_COUNT) -> list[str]:
+    """The ids of the channel's newest other episodes that have a thumbnail: «Адаптувати під мій стиль» copies their look."""
     try:
-        others = sorted((p for p in store.list_projects(project["channel_id"]) if p.get("id") != project["id"]),
+        others = sorted((p for p in store.list_projects(cid) if p.get("id") != exclude),
                         key=lambda p: float(p.get("updated_at") or p.get("created_at") or 0), reverse=True)
     except (store.StudioError, KeyError, OSError):
-        others = []
-    for other in others:
-        cover = keep_dir(other["id"]) / PREVIEW
-        if cover.is_file():
-            found.append(without_logo(other["id"], cover))
-        if len(found) >= limit:
-            return found
+        return []
+    return [other["id"] for other in others if (keep_dir(other["id"]) / PREVIEW).is_file()][:limit]
+
+
+def own_thumbnails(project: dict, limit: int = STYLE_COUNT) -> list[Path]:
+    """The channel's own recent thumbnails (the cover of its newest other episodes), then its approved ones in
+    «Еталон стилю»: what «Адаптувати під мій стиль» shows the prompt writer as our look."""
+    found = [without_logo(pid, keep_dir(pid) / PREVIEW) for pid in style_sources(project["channel_id"], project["id"], limit)]
+    if len(found) >= limit:
+        return found
     return (found + examples(Path(project["episode_path"]))[1])[:limit]
 
 
@@ -562,6 +568,10 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             prompt_refs = ([*refs, hero] if clone and hero else ([hero] if hero else []) + refs)
             if clone:
                 text = clone_brief(title, wishes, name, prompt_refs) + hero_rules
+                if channel_wishes and not channel_wishes_on:
+                    # the channel's thumbnail wishes hold for every clone too, not only with «мій стиль» (user,
+                    # 22 November 2026: «в будь-якому випадку ми маємо враховувати побажання канала для прев'ю»)
+                    text += "\nCHANNEL'S STANDING THUMBNAIL WISHES (always apply them to the new thumbnail):\n" + channel_wishes + "\n"
                 if writer == "trending":
                     written, answer = write_prompt_codex(text, work, prompt_refs, name)
                 else:
@@ -577,7 +587,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
         if clone and not base:
             # The reference belongs only to prompt analysis. The drawing session is intentionally source-free.
             note += "\n[Нова генерація з текстового промпту; картинка конкурента не передається генератору]\n"
-        elif not base and channel_wishes and channel_wishes not in written:
+        if not base and channel_wishes and channel_wishes not in written:
             preferences = "\nChannel thumbnail preferences (apply these; specific wishes for this thumbnail take priority):\n" + channel_wishes + "\n"
             written += preferences
             note += preferences

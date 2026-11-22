@@ -1389,6 +1389,11 @@ class Handler(BaseHTTPRequestHandler):
         performance = re.fullmatch(r'/api/projects/([0-9a-f]{24})/performance', path)
         if performance:
             return self.json_response(job_timing.overview(performance.group(1)))
+        # the four thumbnails «Адаптувати під мій стиль» copies, shown small beside the box
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/style-thumbnails", path)
+        if match:
+            store.get_channel_folder(match.group(1))
+            return self.json_response({"thumbnails": [f"/api/projects/{pid}/cover" for pid in thumbnail_gen.style_sources(match.group(1))]})
         if path == "/api/channels" or path.startswith("/api/channels/"):
             return channel_api.get(self, path, query, ensure_idle=channel_transfer_idle)
         reverb = re.fullmatch(r'/api/audio-effects/([a-z-]+)-v[1234]\.wav', path)
@@ -1779,6 +1784,14 @@ class Handler(BaseHTTPRequestHandler):
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)
         if draft and method == ('POST' if draft.group(2) else 'PATCH'):
             return self.json_response(script_drafts.restore(draft.group(1), body) if draft.group(2) else script_drafts.save(draft.group(1), body))
+        # «Власна ідея» of a new episode: five DeepSeek titles for the author's idea (22 November 2026)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/idea-titles", path)
+        if match and method == "POST":
+            import episode_ideas
+            try:
+                return self.json_response(episode_ideas.idea_titles(match.group(1), (body or {}).get("idea")))
+            except (ValueError, RuntimeError) as error:
+                raise store.StudioError(str(error), 400 if isinstance(error, ValueError) else 502) from None
         if path == "/api/channels" or path.startswith("/api/channels/"):
             return channel_api.mutate(self, method, path, body, ensure_idle=channel_transfer_idle, choose_folder=choose_local_folder)
         if path == '/api/space' and method == 'POST':

@@ -176,7 +176,7 @@ class ThumbnailTest(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0 if picture else 1, "ok", "" if picture else "quota")
         return patch.object(subprocess, "run", side_effect=run)
 
-    def test_all_clone_writers_pass_only_the_authored_prompt_to_a_fresh_drawing_session(self):
+    def test_all_clone_writers_pass_the_authored_prompt_and_channel_wishes_to_a_fresh_drawing_session(self):
         Image.new('RGB', (64, 36)).save(self.studio / 'idea-reference.jpg')
         store.atomic_json(self.studio / 'idea-reference.json', {'title': 'Source'})
         produced = 'An original scene with a new camera angle. Exact lettering: "5 МИНУТ". ' * 4
@@ -194,14 +194,16 @@ class ThumbnailTest(unittest.TestCase):
                 self.assertIn(produced.strip(), drawing['input'])
                 self.assertNotIn('-i', command)
                 self.assertNotIn('idea-reference.jpg', drawing['input'])
-                self.assertNotIn('UNRELATED CHANNEL WISH', drawing['input'])
+                # the channel's thumbnail wishes hold for every clone (user, 22 November 2026: «в будь-якому випадку ми
+                # маємо враховувати побажання канала для прев'ю»)
+                self.assertIn('UNRELATED CHANNEL WISH', drawing['input'])
                 self.assertNotIn('Unrelated script', drawing['input'])
                 self.assertNotEqual(drawing['cwd'], thumbnail_gen.keep_dir(self.project['id']))
                 self.assertEqual(self.draw_workspaces, [set()])
                 author = codex if writer == 'trending' else claude
                 self.assertIn('Transcribe EVERY visible thumbnail phrase verbatim', author.call_args.args[0])
                 self.assertIn('Change only the background to blue', author.call_args.args[0])
-                self.assertNotIn('UNRELATED CHANNEL WISH', author.call_args.args[0])
+                self.assertIn('UNRELATED CHANNEL WISH', author.call_args.args[0])   # the prompt writer applies them too
                 for image in thumbnail_gen.keep_dir(self.project['id']).glob('*.png'): image.unlink()
 
     def test_clone_host_opt_out_reaches_analysis_and_drawing_without_host_image(self):
