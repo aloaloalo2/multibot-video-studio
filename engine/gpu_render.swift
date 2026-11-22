@@ -7,7 +7,7 @@ import Metal
 struct Project: Decodable { let width: Int; let height: Int; let fps: Int32; let duration: Double; let scenes: [Scene] }
 struct Scene: Decodable { let start: Double; let end: Double; let color: String; let layers: [Layer] }
 struct Gradient: Decodable { let colors: [String]; let points: [[Double]]; let speed: Double?; let amplitude: Double?; let softness: Double? }
-struct Layer: Decodable { let kind: String; let source: String; let width: Double; let height: Double; let trim_start: Double; let first: Int; let frames: [[Double]]; let blur: Double?; let gradient: Gradient?; let alphaFrames: [Double]? }
+struct Layer: Decodable { let kind: String; let source: String; let width: Double; let height: Double; let trim_start: Double; let first: Int; let frames: [[Double]]; let blur: Double?; let gradient: Gradient?; let alphaFrames: [Double]?; let group: String?; let groupAlpha: [Double]? }
 
 func fail(_ message: String) -> Never { FileHandle.standardError.write(Data((message + "\n").utf8)); exit(1) }
 func color(_ hex: String) -> CIColor {
@@ -127,6 +127,10 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
         readers[index] = try SequentialVideo(layer.source,layer.trim_start,scene.end-scene.start,Double(project.fps))
     }
     let frameCount = Int(((scene.end-scene.start)*Double(project.fps)).rounded())
+    // A frame group fading in or out is composited first and faded as one picture, at its top layer's place
+    // (user, 22 November 2026: «перехід використовує групи, а не кожен слой»).
+    var groupTop: [String: Int] = [:]
+    for (index,layer) in scene.layers.enumerated() { if let g=layer.group { groupTop[g]=index } }
     for local in 0..<frameCount {
         autoreleasepool {
             while !input.isReadyForMoreMediaData {
@@ -137,7 +141,18 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
             var buffer: CVPixelBuffer?
             guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess, let buffer else { fail("Cannot allocate output frame") }
             var composite=CIImage(color:color(scene.color)).cropped(to:bounds)
+            var groups: [String: CIImage] = [:]
+            var groupFade: [String: Double] = [:]
+            func flush(_ index: Int) {
+                for (g,top) in groupTop where top==index {
+                    guard let picture=groups[g] else { continue }
+                    let fade=groupFade[g] ?? 1
+                    if fade<=0.000001 { continue }
+                    composite=(fade<0.999999 ? picture.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:fade)]) : picture).composited(over:composite)
+                }
+            }
             for (index,layer) in scene.layers.enumerated() {
+                defer { flush(index) }
                 let n=local-layer.first
                 if n<0 || n>=layer.frames.count { continue }
                 let f=layer.frames[n]; if f.count<4 { continue }
@@ -173,6 +188,11 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
                 image=image.transformed(by:CGAffineTransform(translationX:f[0],y:Double(project.height)-f[1]-drawHeight))
                 if layer.kind == "gradient" { image=image.cropped(to:CGRect(x:f[0],y:Double(project.height)-f[1]-drawHeight,width:drawWidth,height:drawHeight)) }
                 if alpha<0.999999 { image=image.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:alpha)]) }
+                if let g=layer.group {
+                    if groupFade[g]==nil, let values=layer.groupAlpha, !values.isEmpty { groupFade[g]=values[min(values.count-1,max(0,n))] }
+                    groups[g]=image.composited(over:groups[g] ?? CIImage.empty())
+                    continue
+                }
                 composite=image.composited(over:composite)
             }
             context.render(composite,to:buffer,bounds:bounds,colorSpace:deviceColorSpace)

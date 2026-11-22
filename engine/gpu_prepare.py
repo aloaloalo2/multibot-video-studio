@@ -202,9 +202,10 @@ def position(points,prop,default,maximum,t,normalized,easing):
 def alpha_for(layer,points,elapsed,clip_len,easing,t,lag,speeds,frame):
     alpha=render.scalar_value(points,'opacity',float(layer.get('opacity',1)),t+elapsed,easing)
     if lag:alpha*=float(layer['trail_strength']) if speeds[frame]>=180 else 0
+    grouped=render.group_sides(layer)   # their fade is the group's, applied to the group's picture (gpu_render.swift)
     for side in ('in','out'):
         join=layer.get('join_'+side)
-        if not join:continue
+        if not join or side in grouped:continue
         offset=float(layer.get('global_offset',0));seam=float(join['seam']);length=float(join['duration']);mode=join['type'];incoming=side=='in'
         if mode in render.transition_graphics.PRESETS:
             if render.transition_graphics.PRESETS[mode].get('kind')=='cinematic':
@@ -330,6 +331,8 @@ for idx,(begin,end,active) in enumerate(slices,1):
         factor=min(lw/sw,lh/sh) if not layer.get('stretch') else None
         dw=lw if factor is None else sw*factor;dh=lh if factor is None else sh*factor
         record={'kind':input_kind,'source':str(path),'width':dw,'height':dh,'trim_start':float(layer.get('trim_start',0)),'first':first,'frames':frames}
+        group=render.group_key(layer)
+        if group:record['group']=group;record['groupAlpha']=[round(render.group_alpha(layer,frame/fps),6) for frame in range(first,last)]
         if gradient:record['kind']='gradient';record['gradient']=gradient[0]
         elif input_kind=='video':
             # FFmpeg evaluates per-pixel opacity before rebasing the video

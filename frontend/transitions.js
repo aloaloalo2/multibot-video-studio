@@ -43,7 +43,7 @@ function transitionInfo(clip){
   if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();const level=new Map();(typeof layers==='function'?layers():[]).forEach((layer,i)=>(layer.clips||[]).forEach(c=>level.set(c.id,/^Razgon · кадр/.test(c.title||'')?-1:i)));   // the live Razgon player lies under the whole montage, so a seam with a Razgon frame fades the other side (22 November 2026: «між 5 і 6 нема переходу»)
     for(const join of state.project?.join_transitions || []){
       const ins=transitionEndpoint(join.to_ref),outs=transitionEndpoint(join.from_ref),lv=list=>list.map(c=>level.get(c.id)).filter(v=>v!==undefined);
-      const a=lv(outs),b=lv(ins),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.min(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.min(...a));
+      const a=lv(outs),b=lv(ins),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.max(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.max(...a));   // a fading group lies at its top layer's place (transitionGroup)
       for(const c of ins)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),incoming:{...join,under:inUnder}});
       for(const c of outs)if(Math.abs(Number(c.start)+Number(c.duration)-join.seam)<.05)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),outgoing:{...join,under:outUnder}});}}
   return joinCache.get(clip.id) || {};
@@ -54,8 +54,17 @@ function visualFrameTime(time){const fps=Number(state.project?.fps||25);return M
 function joinFrames(join){const fps=Number(state.project?.fps||25),seam=visualFrameTime(join.seam);return {seam,duration:Math.max(1/fps,visualFrameTime(Number(join.seam)+Number(join.duration))-seam)};}
 function clipRenderStart(clip){return visualFrameTime(clip.start);}
 function clipRenderEnd(clip){return visualFrameTime(Number(clip.start)+Number(clip.duration)+(transitionInfo(clip).outgoing?.duration || 0));}
-function transitionValues(clip,local,values){
-  const info=transitionInfo(clip),time=Number(clip.start)+local;
+// A frame group fades in or out as one picture, as the export (engine/render.py group_sides; user, 22 November 2026:
+// «перехід використовує групи, а не кожен слой»): fading each layer alone shows the group's lower layers through it.
+function transitionFades(type){const config=graphicTransitionPresets[type];return type==='crossfade'||type.startsWith('zoom_')||!!(config&&config.kind==='cinematic');}
+function groupedJoinSides(clip){const info=transitionInfo(clip);return [['in',info.incoming],['out',info.outgoing]].filter(([direction,join])=>join&&join.id&&!join.under&&transitionFades(join.type)&&!(direction==='in'&&clip.kind==='text'&&clip.text_role==='full_frame'));}
+function transitionGroup(clip,time){
+  let key='',alpha=1;
+  for(const [direction,join] of groupedJoinSides(clip)){const span=joinFrames(join);if(time<span.seam||time>=span.seam+span.duration)continue;const p=easedProgress((time-span.seam)/span.duration,'ease_in_out');key+=(key?'|':'')+join.id+':'+direction;alpha*=direction==='in'?p:1-p;}
+  return key?{key,alpha}:null;
+}
+function transitionValues(clip,local,values,grouped=false){
+  const info=transitionInfo(clip),time=Number(clip.start)+local,groupSides=grouped?new Set(groupedJoinSides(clip).map(([direction])=>direction)):new Set();
   // past its end an outgoing clip still moving keeps the speed of its last keyframe segment, one that stopped holds,
   // as the export (backend/joins.py transport)
   if(info.outgoing && local>Number(clip.duration))for(const prop of ['x','y','scale','opacity']){const points=keyframePoints(clip,prop,Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1)));if(!points.length)continue;const last=points.at(-1),before=points.at(-2) || last,span=last.time-before.time,moving=span>1e-9&&last.time>=Number(clip.duration)-.05;values[prop]=last.value+(moving?(last.value-before.value)/span:0)*(local-last.time);}
@@ -63,14 +72,14 @@ function transitionValues(clip,local,values){
     if(graphicTransitionPresets[type]){
       const config=graphicTransitionPresets[type];
       if(config.kind==='cinematic'){
-        if(!join.under)values.opacity*=incoming?p:1-p;
+        if(!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;
       }else values.opacity*=incoming?(p>=.5?1:0):(p<.5?1:0);
       continue;
     }
     // a CapCut transition plays its drawn video over the seam (capcut.js); until it is ready the preview dissolves
-    if((type==='crossfade'||type.startsWith('capcut_t'))&&!join.under)values.opacity*=incoming?p:1-p;
+    if((type==='crossfade'||type.startsWith('capcut_t'))&&!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;
     if(type.startsWith('slide_')){if(type==='slide_left')values.x+=incoming?progress:-progress;if(type==='slide_right')values.x+=incoming?-progress:progress;if(type==='slide_up')values.y+=incoming?progress:-progress;if(type==='slide_down')values.y+=incoming?-progress:progress;}
-    if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;if(!join.under)values.opacity*=incoming?p:1-p;}
+    if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;if(!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;}
   }
   return values;
 }

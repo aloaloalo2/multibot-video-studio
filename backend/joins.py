@@ -59,18 +59,22 @@ def transport(project,layers):
         # a dissolve fades only the side on top; the side under it stays whole (user, 21 November 2026: «переходи, які в
         # чорноту переходить, а потім різко появляється наступний кадр»): both fading over black left the middle at 75%
         out_levels=[level[c['id']] for c in outgoing if c['id'] in level];in_levels=[level[c['id']] for c in incoming if c['id'] in level]
-        out_under=bool(out_levels and in_levels and max(out_levels)<min(in_levels));in_under=bool(out_levels and in_levels and max(in_levels)<min(out_levels))
+        # a fading group is drawn at its top layer's place (engine/render.py group_key), so the group whose top layer is
+        # higher lies on top even when an accent of the other one sits above some of its layers
+        out_under=bool(out_levels and in_levels and max(out_levels)<max(in_levels));in_under=bool(out_levels and in_levels and max(in_levels)<max(out_levels))
         capcut=join['type'] in CAPCUT
         for source in incoming:
             if source['id'] not in rendered or capcut:continue
             if source.get('kind')=='text' and source.get('text_role')=='full_frame':
                 protected_text_ids.add(source['id'])
-            else:rendered[source['id']]['join_in']={**effect,'under':in_under}
+            # the frame group fades as one picture (user, 22 November 2026: «перехід використовує групи, а не кожен
+            # слой»): every clip of a side carries the same `group`, and the engine composites them before the fade
+            else:rendered[source['id']]['join_in']={**effect,'under':in_under,'group':f"{join.get('id','')}:in"}
         for source in outgoing:
             if source['id'] not in rendered or abs(source['start']+source['duration']-join['seam'])>.05:continue
             clip=rendered[source['id']]
             # a CapCut transition draws both sides itself (engine/capcut_fx.py): the outgoing clip only goes on under it
-            if not capcut:clip['join_out']={**effect,'under':out_under}
+            if not capcut:clip['join_out']={**effect,'under':out_under,'group':f"{join.get('id','')}:out"}
             old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
             points=clip.get('keyframes',[])
             if points:

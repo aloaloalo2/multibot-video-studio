@@ -180,7 +180,7 @@ function keyframeValue(clip,key,base,local){
   for(let i=1;i<known.length;i++)if(local<known[i].time){const a=known[i-1],b=known[i];return a.value+(b.value-a.value)*easedProgress((local-a.time)/(b.time-a.time),clip.easing);}
   return known.at(-1).value;
 }
-function animatedValues(clip,local){
+function animatedValues(clip,local,grouped=false){
   const base={x:Number(clip.x ?? .5),y:Number(clip.y ?? .5),scale:Number(clip.scale ?? 1),opacity:Number(clip.opacity ?? 1)};
   const values={...base};
   for(const key of ['x','y','scale','opacity'])values[key]=keyframeValue(clip,key,base[key],local);
@@ -205,7 +205,7 @@ function animatedValues(clip,local){
     if(clip.transition?.type==='crossfade')values.opacity*=easedProgress((length-local)/d,clip.easing);
     if(clip.transition?.type==='swipe')values.x-=1-easedProgress((length-local)/d,clip.easing);
   }
-  return transitionValues(clip,local,values);
+  return transitionValues(clip,local,values,grouped);
 }
 
 // Stretches of the video where no scene frame is placed; the export shows an empty screen there.
@@ -306,12 +306,26 @@ function renderUniversalPreview(){
       if(foreground)node.dataset.transitionForeground='true';else delete node.dataset.transitionForeground;
       if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node.querySelector('video');if(video&&!video.paused)video.pause();}
   }
+  // a frame group in a fade is drawn inside one box with the group's opacity (transitionGroup), each layer at full
+  // strength in it, so the layers under it do not show through the ones above
+  const groupBoxes=state.previewGroups||(state.previewGroups=new Map()),usedGroups=new Map();
+  for(const clip of prepared){
+    const node=state.previewNodes.get(clip.id);if(!node)continue;
+    const group=shown.has(clip.id)?transitionGroup(clip,now):null;
+    if(group){
+      let box=groupBoxes.get(group.key);
+      if(!box||!box.isConnected||box.parentNode!==composition){box?.remove();box=document.createElement('div');box.className='composition-group';Object.assign(box.style,{position:'absolute',inset:'0',pointerEvents:'none'});composition.append(box);groupBoxes.set(group.key,box);}
+      if(node.parentNode!==box)box.append(node);
+      const used=usedGroups.get(group.key)||{box,alpha:group.alpha,z:0};used.z=Math.max(used.z,Number(node.style.zIndex)||0);usedGroups.set(group.key,used);
+    }else if(node.parentNode!==composition)composition.append(node);
+  }
+  for(const [key,box] of groupBoxes){const used=usedGroups.get(key);if(!used){if(box.parentNode===composition)for(const child of [...box.children])composition.append(child);box.remove();groupBoxes.delete(key);continue;}box.style.zIndex=String(used.z);box.style.opacity=String(Math.max(0,Math.min(1,used.alpha)));}
   composition.hidden=!visible.length;placeholder.hidden=!!visible.length;
   if(!visible.length)placeholder.textContent=duration()?'На цій позиції немає візуального кліпу':'Додайте матеріал на шар';
   const frameWidth=composition.clientWidth;   // read once: a read after the style writes below forces a layout per clip
   for(const clip of visible){
     const wrapper=state.previewNodes.get(clip.id);if(!wrapper)continue;
-    const local=now-seconds(clip.start),values=animatedValues(clip,local);
+    const local=now-seconds(clip.start),values=animatedValues(clip,local,true);
     wrapper.style.left=(values.x*100)+'%';wrapper.style.top=(values.y*100)+'%';
     wrapper.style.width=(Number(clip.width ?? 1)*100)+'%';wrapper.style.height=(Number(clip.height ?? 1)*100)+'%';
     wrapper.style.opacity=String(Math.max(0,Math.min(1,values.opacity)));

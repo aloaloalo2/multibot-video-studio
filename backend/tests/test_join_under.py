@@ -32,6 +32,17 @@ class JoinUnderTest(unittest.TestCase):
         self.assertFalse(clips['a']['join_out']['under'])
         self.assertTrue(clips['b']['join_in']['under'])
 
+    def test_an_accent_above_the_other_frame_puts_its_group_on_top(self):
+        # frame 4 of the fennel film: its photo under frame 5, its caption above it (user, 22 November 2026: «перехід
+        # використовує групи, а не кожен слой»); the group fades at its top layer's place, so frame 4 fades out over 5
+        project = self.project(0, 1)
+        project['tracks'].append({'id': 'l2', 'clips': [{'id': 'caption', 'kind': 'text', 'start': 0, 'duration': 4}]})
+        project['scene_groups'][0]['clip_ids'].append('caption')
+        clips = self.rendered(project)
+        self.assertFalse(clips['a']['join_out']['under'])
+        self.assertTrue(clips['b']['join_in']['under'])
+        self.assertEqual(clips['a']['join_out']['group'], clips['caption']['join_out']['group'])
+
 
 if __name__ == '__main__':
     unittest.main()

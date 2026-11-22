@@ -307,6 +307,34 @@ def easing_value(progress: float, mode: str = "linear") -> float:
     raise ValueError('Unsupported motion easing')
 
 
+def join_fades(mode: str) -> bool:
+    """A transition that fades a side in or out (the others slide, zoom or switch at the middle)."""
+    preset = transition_graphics.PRESETS.get(mode)
+    return mode == 'crossfade' or mode.startswith('zoom_') or bool(preset and preset.get('kind') == 'cinematic')
+
+
+def group_sides(layer: dict) -> list[str]:
+    """The sides of a layer whose fade its frame group takes as one picture (user, 22 November 2026: «перехід
+    використовує групи, а не кожен слой»): fading each layer of a group alone shows the layers under it through it."""
+    return [side for side in ('in', 'out') if (join := layer.get('join_' + side)) and join.get('group')
+            and not join.get('under') and join_fades(join['type'])]
+
+
+def group_key(layer: dict) -> str | None:
+    sides = group_sides(layer)
+    return '|'.join(layer['join_' + side]['group'] for side in sides) or None
+
+
+def group_alpha(layer: dict, t: float) -> float:
+    """The group's fade at the slice time t: the same for every layer of the group."""
+    value = 1.0
+    for side in group_sides(layer):
+        join = layer['join_' + side]
+        p = easing_value((t + float(layer.get('global_offset', 0)) - float(join['seam'])) / float(join['duration']), 'ease_in_out')
+        value *= p if side == 'in' else 1 - p
+    return value
+
+
 def time_expr(points: list[dict], prop: str, default: float, maximum: int, clock: str = "t", normalize_float: bool = True, easing: str = "linear") -> str:
     pairs = []
     for point in points:
@@ -630,10 +658,36 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
     base_still_pad = f'tpad=stop_mode=clone:stop_duration={duration+1:.6f},' if base_cached else ''
     base = f"[0:v]{base_still_pad}fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,tpad=stop_mode=clone:stop_duration={duration:.6f},trim=duration={duration:.6f},setpts=PTS-STARTPTS,format=yuv420p[{current}]"
     filters.append(base)
+    # A frame group fading in or out is drawn on a clear canvas of its own and faded as one picture, at its top
+    # layer's place (user, 22 November 2026: «перехід використовує групи, а не кожен слой»).
+    group_top = {}
+    for layer_index, item in enumerate(prepared):
+        if group_key(item[1]):group_top[group_key(item[1])] = layer_index
+    canvases = {}
+    def flush_groups(layer_index):
+        nonlocal current
+        for key, top in group_top.items():
+            if top != layer_index or key not in canvases:continue
+            canvas, member = canvases[key]
+            target = f'colorchannelmixer@group_{layer_index}'
+            values = [group_alpha(member, frame / fps) for frame in range(max(1, math.ceil(duration * fps)))]
+            commands = [f'{max(0, frame / fps - 0.000001):.6f} {target} aa {value:.8f};'
+                        for frame, value in enumerate(values) if frame and abs(value - values[frame - 1]) > 1e-7]
+            chain = []
+            if commands:
+                command_path = work / f'scene-{index:04d}-group-{layer_index:03d}.txt'
+                command_path.write_text('\n'.join(commands), encoding='utf-8')
+                safe_path = str(command_path).replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'")
+                chain.append(f"sendcmd=f='{safe_path}'")
+            chain.append(f'{target}=aa={values[0]:.8f}')
+            filters.append(f"[{canvas}]{','.join(chain)}[gf{layer_index}]")
+            filters.append(f"[{current}][gf{layer_index}]overlay=x=0:y=0:eval=init[vg{layer_index}]")
+            current = f'vg{layer_index}'
     for layer_index, (input_index, layer, layer_width, layer_height, input_kind, still_cached) in enumerate(prepared):
         start = number(layer.get("start", 0), "layer start")
         end = min(duration, start + number(layer.get("duration", duration - start), "layer duration"))
         if end <= start:
+            flush_groups(layer_index)
             continue
         if layer.get("position_units") == "pixels":
             x = number(layer.get("x", 0), "layer x", -width * 8)
@@ -671,6 +725,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
                 past=time_expr(keyframes,prop,base,maximum,f'max(0\\,T+{elapsed:.6f}-.02)',normalize,easing)
                 differences.append(f'pow(({now})-({past})\\,2)')
             alpha_expr=f'({alpha_expr})*{layer["trail_strength"]:.6f}*gte(sqrt({"+".join(differences)})/.02\\,180)'
+        grouped=group_sides(layer)   # their fade is the frame group's, applied to the group's picture below
         for direction in ('in','out'):
             join=layer.get('join_'+direction)
             if not join:continue
@@ -678,14 +733,14 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             if mode in transition_graphics.PRESETS:
                 if transition_graphics.PRESETS[mode].get('kind') == 'cinematic':
                     ap=easing_expr(f'(T+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
-                    if not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'   # the side under stays whole
+                    if not join.get('under') and direction not in grouped:alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'   # the side under stays whole
                     continue
                 switch=seam+length*.5;gate=f'gte(T+{offset:.6f}\\,{switch:.6f})' if incoming else f'lt(T+{offset:.6f}\\,{switch:.6f})'
                 alpha_expr=f'({alpha_expr})*({gate})'
                 continue
             p=easing_expr(f'(t+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
             ap=easing_expr(f'(T+{offset:.6f}-{seam:.6f})/{length:.6f}','ease_in_out')
-            if mode=='crossfade' and not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
+            if mode=='crossfade' and not join.get('under') and direction not in grouped:alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
             if mode.startswith('slide_'):
                 q=f'(1-({p}))' if incoming else p
                 sign=1 if mode in ('slide_left','slide_up') and incoming or mode in ('slide_right','slide_down') and not incoming else -1
@@ -694,7 +749,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             if mode.startswith('zoom_'):
                 group_scale=f'(.88+.12*({p}))' if incoming and mode=='zoom_in' else f'(1+.12*({p}))' if not incoming and mode=='zoom_in' else f'(1.12-.12*({p}))' if incoming else f'(1-.12*({p}))'
                 x_expr=f'{width}/2+(({x_expr})-{width}/2)*({group_scale})';y_expr=f'{height}/2+(({y_expr})-{height}/2)*({group_scale})';scale_expr=f'({scale_expr})*({group_scale})'
-                if not join.get('under'):alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
+                if not join.get('under') and direction not in grouped:alpha_expr=f'({alpha_expr})*({ap if incoming else "1-("+ap+")"})'
         fade_in = number(layer.get("fade_in", 0), "fade in")
         fade_out = number(layer.get("fade_out", 0), "fade out")
         slide_in = number(layer.get("slide_in", 0), "slide in")
@@ -736,7 +791,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
                     position=t+float(layer.get('global_offset',0));seam=float(join['seam']);length=float(join['duration'])
                     if mode in transition_graphics.PRESETS and transition_graphics.PRESETS[mode].get('kind')!='cinematic':
                         value*=float(position>=seam+length*.5) if incoming else float(position<seam+length*.5)
-                    elif (mode in transition_graphics.PRESETS or mode=='crossfade' or mode.startswith('zoom_')) and not join.get('under'):
+                    elif (mode in transition_graphics.PRESETS or mode=='crossfade' or mode.startswith('zoom_')) and not join.get('under') and side not in grouped:
                         p=easing_value((position-seam)/length,'ease_in_out')
                         value*=p if incoming else 1-p
                 if fade_in:value*=easing_value((t+elapsed)/fade_in,easing)
@@ -766,8 +821,18 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
         overlay_filters.extend([f"tpad=stop_mode=clone:stop_duration={end:.6f}", f"trim=duration={end:.6f}", f"setpts=PTS-STARTPTS[{overlay_label}]"])
         filters.append(",".join(overlay_filters))
         next_label = f"v{layer_index + 1}"
-        filters.append(f"[{current}][{overlay_label}]overlay=x='{x_expr}':y='{y_expr}':eval=frame:enable='between(t\\,{start:.6f}\\,{end:.6f})'[{next_label}]")
-        current = next_label
+        key = group_key(layer)
+        if key:
+            if key not in canvases:
+                filters.append(f"color=c=black@0:s={width}x{height}:r={fps}:d={duration:.6f},format=rgba[gc{layer_index}]")
+                canvases[key] = (f'gc{layer_index}', layer)
+            canvas = canvases[key][0]
+            filters.append(f"[{canvas}][{overlay_label}]overlay=x='{x_expr}':y='{y_expr}':eval=frame:format=auto:enable='between(t\\,{start:.6f}\\,{end:.6f})',format=rgba[gc{layer_index}n]")
+            canvases[key] = (f'gc{layer_index}n', canvases[key][1])
+        else:
+            filters.append(f"[{current}][{overlay_label}]overlay=x='{x_expr}':y='{y_expr}':eval=frame:enable='between(t\\,{start:.6f}\\,{end:.6f})'[{next_label}]")
+            current = next_label
+        flush_groups(layer_index)
     hardware = hardware_export(width, height, fps)
     if hardware:
         # A single color range is essential when scene files are joined: the
