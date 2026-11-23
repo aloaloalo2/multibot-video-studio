@@ -787,7 +787,11 @@ LOCALIZATION_RULES = """Localization for the target language:
     changing certainty. Prefer concise, complete native phrasing and check meaning after each length edit.
 11. Keep the nouns and grammatical endings that native speech needs for dates, ages, quantities and measures.
     Do not shorten a date by omitting the word for year when the target language naturally requires it.
-    Apply each language's own conventions, not a word-for-word transfer of English date phrasing."""
+    Apply each language's own conventions, not a word-for-word transfer of English date phrasing.
+12. Use the words people actually say in everyday conversation in the target language. Avoid rare, bookish, archaic,
+    dialectal or overly purist words that native listeners seldom hear, even when a dictionary prefers them: in Ukrainian,
+    do not swap a common word for a rare 'more Ukrainian' coinage (author, 23 November 2026). When unsure, choose the
+    word an ordinary native speaker would use with a friend."""
 
 CONCISION_RULES = """Authorized concise adaptation:
 When a translated phrase is too long, remove redundant introductions, repetition, verbal padding and optional
