@@ -38,12 +38,24 @@ DEFAULTS.update(fish_voice_id='', eleven_voice_id='')
 # heygen_join_paragraphs lets a group run on past a paragraph break (user: «10» sentences a request; a paragraph holds
 # 5–6 of them, so without it a group stops at the paragraph's end)
 DEFAULTS.update(heygen_sentences=0, heygen_join_paragraphs=False)
+# ElevenLabs reads groups of sentences too, several requests at once (user, 23 November 2026: «для турбо… відправити
+# одразу там 20 речень за раз… щоб пришвидшити озвучку… одночасні запити, групи речень»). The price is the same: it
+# counts characters, not requests. v3/v4 models take 1800 characters a request (eleven_api), so a longer group is
+# halved until it fits.
+ELEVEN_SENTENCES_MAX = 20
+ELEVEN_SENTENCES_DEFAULT = 5
+ELEVEN_SLOTS = 3          # requests at once: the smaller plans allow three; a refusal for that waits and tries again
+DEFAULTS.update(eleven_sentences=0)
 SENTENCES_MAX = 10
 SENTENCES_FREE = 3
 
 
 def sentences_per_request(settings):
-    """How many sentences of a paragraph one HeyGen request reads; 1 for every other service and for Starfish."""
+    """How many sentences of a paragraph one request reads: HeyGen (not Starfish) and ElevenLabs by their setting, 1 for
+    the other services."""
+    if settings.get('provider') == 'elevenlabs':
+        chosen = settings.get('eleven_sentences') or 0
+        return chosen if type(chosen) is int and 1 <= chosen <= ELEVEN_SENTENCES_MAX else ELEVEN_SENTENCES_DEFAULT
     if settings.get('provider') != 'heygen' or settings.get('heygen_model') == 'starfish':
         return 1
     chosen = settings.get('heygen_sentences') or 0
@@ -53,7 +65,14 @@ def sentences_per_request(settings):
 
 
 def joins_paragraphs(settings):
-    return sentences_per_request(settings) > 1 and settings.get('heygen_join_paragraphs') is True
+    return settings.get('provider') == 'heygen' and sentences_per_request(settings) > 1 and settings.get('heygen_join_paragraphs') is True
+
+
+def group_chars(settings):
+    """The longest text one request may carry: ElevenLabs's own limit for its model, HeyGen's well inside its own."""
+    if settings.get('provider') == 'elevenlabs':
+        return 1800 if str(settings.get('model') or '').startswith(('eleven_v3', 'eleven_v4')) else 3000
+    return 3000
 NOISE_FILTER = 'highpass=f=60,afftdn=nr=8:nf=-25:gs=5,loudnorm=I=-18:TP=-3:LRA=11'
 LOCK = threading.RLock()
 ACTIVE = set()
@@ -121,6 +140,8 @@ def validated(raw):
         raise store.StudioError('Невідомі мова, модель або подача голосу')
     if type(data['heygen_sentences']) is not int or not 0 <= data['heygen_sentences'] <= SENTENCES_MAX:
         raise store.StudioError(f'Речень за один запит HeyGen: від 1 до {SENTENCES_MAX}')
+    if type(data['eleven_sentences']) is not int or not 0 <= data['eleven_sentences'] <= ELEVEN_SENTENCES_MAX:
+        raise store.StudioError(f'Речень за один запит ElevenLabs: від 1 до {ELEVEN_SENTENCES_MAX}')
     if type(data['heygen_join_paragraphs']) is not bool:raise store.StudioError('Склеювання абзаців має бути увімкнене або вимкнене')
     if data['heygen_model'] not in heygen_voice.MODELS or not isinstance(data['heygen_voice_id'],str) or (data['heygen_voice_id'] and not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}',data['heygen_voice_id'])):raise store.StudioError('Невірна модель або голос HeyGen')
     speed=data['speed']

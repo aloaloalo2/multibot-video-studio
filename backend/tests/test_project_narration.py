@@ -16,14 +16,14 @@ class NarrationTests(unittest.TestCase):
                 project={'id':'0'*24,'channel_id':'1'*16}
                 with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'snapshot',return_value={'settings':settings,'reference':None}),patch.object(lab,'reference',side_effect=AssertionError('Local reference must not be read')),patch.object(lab,'estimate',return_value={'amount':0}),patch.object(lab.eleven_api,'balance',return_value={}),patch.object(lab,'fish_synthesis') as fish,patch.object(lab,'synthesis') as eleven,patch.object(lab.heygen_voice,'synthesize') as heygen:
                     _,ref,entries,quote=narration.spec(project,'First complete sentence. Second complete sentence.')
-                    # HeyGen Turbo Free reads both sentences of the paragraph in one request (lab.sentences_per_request)
-                    self.assertTrue(ref['sha256']);self.assertEqual(len(entries),1 if provider=='heygen' else 2)
+                    # HeyGen Turbo Free and ElevenLabs read both sentences of the paragraph in one request (lab.sentences_per_request)
+                    self.assertTrue(ref['sha256']);self.assertEqual(len(entries),2 if provider=='fishaudio' else 1)
                     self.assertEqual(quote['provider'],provider);self.assertEqual(quote['estimated_usd'],0)
                     fish.assert_not_called();eleven.assert_not_called();heygen.assert_not_called()
 
     def test_cache_changes_only_edited_phrase(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp);settings=lab.validated({'text':'Some sample text.'})
+            path=Path(tmp);settings=lab.validated({'text':'Some sample text.','eleven_sentences':1})   # a request a sentence
             profile={'settings':settings,'reference':{'sha256':'voice'}}
             project={'id':'0'*24,'channel_id':'1'*16}
             with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'snapshot',return_value=profile),patch.object(lab.eleven_api,'balance',return_value={'credit_usd_rate':.00022}):
@@ -75,10 +75,32 @@ class NarrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);project={'id':'0'*24,'channel_id':'1'*16};settings=lab.validated({})
             entries=[{'key':'a','text':'First.'},{'key':'b','text':'Second.'}]
-            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=[b'audio',RuntimeError('provider failed')]) as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
+            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=lambda secret,voice,params:(_ for _ in ()).throw(RuntimeError('provider failed')) if 'Second' in params['text'] else b'audio') as synth,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project):
                 narration.run(project,'First. Second.',settings,{'sha256':'ref'},[{**e,'cached':False} for e in entries],{'status':'running'})
                 self.assertEqual(synth.call_count,2)
                 self.assertTrue((path/'narration'/'a.mp3').is_file())
                 self.assertEqual(narration.snapshot(project['id'])['job']['status'],'failed')
+
+    def test_eleven_runs_requests_at_once_and_waits_out_a_busy_refusal(self):
+        # user, 23 November 2026: «одночасні запити, групи речень»; a 429 for too many at once is not billed
+        import threading,time as clock
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp);project={'id':'0'*24,'channel_id':'1'*16};settings=lab.validated({'eleven_sentences':1})
+            entries=[{'key':k,'text':t} for k,t in [('a','One.'),('b','Two.'),('c','Three.'),('d','Four.')]]
+            live=[0];peak=[0];busy=[True];guard=threading.Lock()
+            def synth(secret,voice,params):
+                with guard:
+                    if params['text']=='Two.' and busy[0]:
+                        busy[0]=False;raise RuntimeError('ElevenLabs: помилка 429. Забагато одночасних запитів')
+                    live[0]+=1;peak[0]=max(peak[0],live[0])
+                threading.Event().wait(.05)   # time.sleep is patched for the retry wait
+                with guard:live[0]-=1
+                return b'audio'
+            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'folder',return_value=path),patch.object(lab,'prepared_source',return_value=path/'ref.mp3'),patch.object(lab,'clone',return_value=('secret','voice')),patch.object(lab,'synthesis',side_effect=synth) as call,patch.object(store,'media_duration',return_value=1),patch.object(store,'load_project',return_value=project),patch.object(narration.time,'sleep'),patch.object(narration.languages,'run'),patch.object(narration.narration_ending,'import_audio',return_value={'id':'x','duration':1}),patch('episode_automation.after_voice'):
+                narration.run(project,'One. Two. Three. Four.',settings,{'sha256':'ref'},[{**e,'cached':False} for e in entries],{'status':'running'})
+                self.assertEqual(call.call_count,5)                       # the refused one asked again
+                self.assertGreater(peak[0],1)                             # several requests at once
+                self.assertLessEqual(peak[0],lab.ELEVEN_SLOTS)
+                for key in 'abcd':self.assertTrue((path/'narration'/(key+'.mp3')).is_file())
 
 if __name__=='__main__':unittest.main()

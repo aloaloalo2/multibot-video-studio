@@ -41,7 +41,9 @@ class UnitsTest(unittest.TestCase):
         long = ' '.join(['Word number %d is here.' % i for i in range(3)])
         wide = ' '.join(('A' + 'b' * 1190 + ' end %d.' % i) for i in range(3))
         self.assertEqual([u['sentences'] for u in narration.units(long, 3)], [3])
-        self.assertEqual([u['sentences'] for u in narration.units(wide, 3)], [1, 1, 1])   # 1800 characters together
+        # a group over the request's limit is halved, not broken into single sentences (23 November 2026)
+        self.assertEqual([u['sentences'] for u in narration.units(wide, 3)], [2, 1])     # 3000 for HeyGen
+        self.assertEqual([u['sentences'] for u in narration.units(wide, 3, limit=1800)], [1, 1, 1])   # ElevenLabs v4
         cut = narration.units('Short one here. ' + 'x' * 2000 + '.', 3)
         self.assertEqual([u['sentences'] for u in cut], [1, 0, 0])
 
@@ -56,7 +58,14 @@ class SettingTest(unittest.TestCase):
         self.assertEqual(lab.sentences_per_request({**paid, 'heygen_sentences': 4}), 4)
         self.assertEqual(lab.sentences_per_request({**free, 'heygen_sentences': 1}), 1)
         self.assertEqual(lab.sentences_per_request({**free, 'heygen_model': 'starfish', 'heygen_sentences': 5}), 1)
-        self.assertEqual(lab.sentences_per_request(lab.validated({'provider': 'elevenlabs', 'heygen_sentences': 5})), 1)
+        # ElevenLabs reads its own groups, 5 sentences by default, up to 20 (user, 23 November 2026)
+        eleven = lab.validated({'provider': 'elevenlabs', 'heygen_sentences': 9})
+        self.assertEqual(lab.sentences_per_request(eleven), lab.ELEVEN_SENTENCES_DEFAULT)
+        self.assertEqual(lab.sentences_per_request({**eleven, 'eleven_sentences': 20}), 20)
+        self.assertEqual(lab.group_chars({**eleven, 'model': 'eleven_v4_turbo'}), 1800)
+        self.assertFalse(lab.joins_paragraphs({**eleven, 'heygen_join_paragraphs': True}))
+        with self.assertRaises(Exception):
+            lab.validated({'provider': 'elevenlabs', 'eleven_sentences': 21})
 
     def test_the_setting_is_one_to_five(self):
         self.assertEqual(lab.validated({'heygen_sentences': 5})['heygen_sentences'], 5)

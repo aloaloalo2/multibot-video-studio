@@ -1,5 +1,6 @@
 """Original narration with immutable phrase cache and explicit paid starts."""
 import math
+import re
 import shutil
 import planner
 import script_timing
@@ -64,7 +65,16 @@ def phrases(text):
 GROUP_CHARS = 3000   # a group of sentences stays well inside one request (HeyGen takes up to 10 000 characters)
 
 
-def units(text, group=1, join=False):
+def _fit(texts, limit):
+    """Sizes the group `texts` falls into so each part stays within `limit` characters: halved, as even as they come,
+    until every part fits (a lone sentence always fits: sentences over 1800 are cut before)."""
+    if len(texts) <= 1 or len(' '.join(texts)) <= limit:
+        return [len(texts)]
+    half = (len(texts) + 1) // 2
+    return _fit(texts[:half], limit) + _fit(texts[half:], limit)
+
+
+def units(text, group=1, join=False, limit=GROUP_CHARS):
     """What each request reads: up to `group` neighbouring sentences of one paragraph, joined by a space, the groups of
     a paragraph as even as they come (5 sentences by 3 are 3 and 2). A paragraph break starts a new request, so its
     pause stays, unless `join` lets groups run on across paragraphs. `sentences` is how many sentences of the script a unit holds: 0 for a part of a cut sentence."""
@@ -81,11 +91,10 @@ def units(text, group=1, join=False):
             for index in range(count):
                 part = run[start:start + base + (index < extra)]
                 start += len(part)
-                joined = ' '.join(part)
-                if len(part) > 1 and len(joined) > GROUP_CHARS:
-                    result.extend({'text': sentence, 'sentences': 1} for sentence in part)
-                else:
-                    result.append({'text': joined, 'sentences': len(part)})
+                at = 0
+                for size in _fit(part, limit):
+                    piece = part[at:at + size];at += size
+                    result.append({'text': ' '.join(piece), 'sentences': len(piece)})
             run.clear()
         for sentence in planner.split_sentences(line):
             if len(sentence) > 1800:   # very long sentences respect provider request limits
@@ -103,7 +112,7 @@ def _even(count, group):
     return [base + (index < extra) for index in range(parts)]
 
 
-def _spans(sentences, start, end, group, join):
+def _spans(sentences, start, end, group, join, limit=GROUP_CHARS):
     """(start, count) of the groups over sentences[start:end], each sentence a (paragraph, text) pair."""
     spans, at = [], start
     while at < end:
@@ -112,27 +121,24 @@ def _spans(sentences, start, end, group, join):
             stop += 1
         for size in _even(stop - at, group):
             texts = [text for _, text in sentences[at:at + size]]
-            if size > 1 and len(' '.join(texts)) > GROUP_CHARS:
-                spans.extend((at + k, 1) for k in range(size))
-            else:
-                spans.append((at, size))
-            at += size
+            for piece in _fit(texts, limit):
+                spans.append((at, piece));at += piece
     return spans
 
 
-def reusing_units(text, group, join, made):
+def reusing_units(text, group, join, made, limit=GROUP_CHARS):
     """units(), but a take already voiced for the same sentences is used again, whatever grouping made it: the
     sentences between such takes are grouped anew (user, 18 November 2026: «нажав продовжити озвучку і почалось
     заново?» after the paragraphs were joined mid-narration and none of the six paragraph takes matched the new groups)."""
-    fresh = units(text, group, join)
+    fresh = units(text, group, join, limit)
     if any(unit['sentences'] == 0 for unit in fresh):
         return fresh   # a sentence cut for its length: the plain grouping
     sentences = [(line, sentence) for line, row in enumerate(text.strip().splitlines()) for sentence in planner.split_sentences(row)]
     joined = lambda start, count: ' '.join(sentence for _, sentence in sentences[start:start + count])
     done = {}
-    for size in range(1, lab.SENTENCES_MAX + 1):
+    for size in range(1, max(lab.SENTENCES_MAX, lab.ELEVEN_SENTENCES_MAX) + 1):
         for together in (False, True):
-            for start, count in _spans(sentences, 0, len(sentences), size, together):
+            for start, count in _spans(sentences, 0, len(sentences), size, together, limit):
                 if count > done.get(start, 0) and made(joined(start, count)):
                     done[start] = count
     if not done:
@@ -140,7 +146,7 @@ def reusing_units(text, group, join, made):
     result, at, pending = [], 0, None
     def flush(stop):
         if pending is not None:
-            result.extend({'text': joined(a, c), 'sentences': c} for a, c in _spans(sentences, pending, stop, group, join))
+            result.extend({'text': joined(a, c), 'sentences': c} for a, c in _spans(sentences, pending, stop, group, join, limit))
     while at < len(sentences):
         if at in done:
             flush(at); pending = None
@@ -159,7 +165,7 @@ def spec(project, text):
     def made(part):
         params={**settings,'text':part}
         return (root(project['id'])/(lab.fingerprint(params,ref)+'.mp3')).is_file() or lab.original_path(params,ref).is_file() if ref else False
-    parts=reusing_units(text,lab.sentences_per_request(settings),lab.joins_paragraphs(settings),made)
+    parts=reusing_units(text,lab.sentences_per_request(settings),lab.joins_paragraphs(settings),made,lab.group_chars(settings))
     if settings['provider']=='heygen' and settings['heygen_model']=='starfish' and settings.get('heygen_starfish_ssml') and ('<' in text or '&' in text):
         if len(text)>5000:raise store.StudioError('Для сценарію SSML Starfish допускається до 5000 символів. Для довгого сценарію виберіть звичайний текст')
         parts=[{'text':text,'sentences':0}]
@@ -408,21 +414,31 @@ def run(project,text,settings,ref,entries,job):
         heygen_voice.STOP.check=stop_check
         # phrases already made count from the start: a narration that goes on after a stop reads 68%, not 0%
         made=sum(1 for x in entries if x['cached']);job['completed']=made;store.atomic_json(folder/'job.json',job)
-        if settings['provider']=='heygen' and len(entries)>1:
-            # HeyGen takes heygen_voice.SLOTS phrases at once; the same cache, order and receipts as one by one
+        if settings['provider'] in ('heygen','elevenlabs') and len(entries)>1:
+            # HeyGen takes heygen_voice.SLOTS phrases at once, ElevenLabs lab.ELEVEN_SLOTS (user, 23 November 2026:
+            # «одночасні запити»); the same cache, order and receipts as one by one
             from concurrent.futures import ThreadPoolExecutor
             done=threading.Lock();count=[made]
             def one(entry):
                 heygen_voice.STOP.check=stop_check
                 try:
                     if (folder/'cancel').exists():raise Cancelled()
-                    phrase_audio(project,settings,ref,entry,secret,voice)
+                    for attempt in range(6):
+                        try:
+                            phrase_audio(project,settings,ref,entry,secret,voice);break
+                        except RuntimeError as busy:
+                            # ElevenLabs refuses a request over the plan's number at once (429): nothing was billed,
+                            # it waits for the others and tries again
+                            if settings['provider']!='elevenlabs' or attempt==5 or not re.search(r'помилка 429',str(busy)):raise
+                            for _ in range(5*(attempt+1)):
+                                if (folder/'cancel').exists():raise Cancelled()
+                                time.sleep(1)
                     if entry['cached']:return
                     with done:
                         count[0]+=1;job['completed']=count[0];store.atomic_json(folder/'job.json',job)
                 finally:
                     heygen_voice.STOP.check=None
-            pool=ThreadPoolExecutor(max_workers=heygen_voice.SLOTS)
+            pool=ThreadPoolExecutor(max_workers=heygen_voice.SLOTS if settings['provider']=='heygen' else lab.ELEVEN_SLOTS)
             try:
                 for future in [pool.submit(job_timing.carry(one),entry) for entry in entries]:
                     future.result()

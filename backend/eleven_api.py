@@ -428,6 +428,9 @@ def settings(mid: str) -> dict:
     return out
 
 
+BUSY = __import__("re").compile(r"concurren|rate.?limit|too.?many|\b429\b|system.?busy", __import__("re").I)
+
+
 @job_timing.measure('service')
 def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str, voice_settings=None) -> bytes:
     """Turbo uses the documented Text to Dialogue WebSocket, with one registered voice."""
@@ -448,6 +451,9 @@ def streamed_dialogue(secret: str, voice_id: str, text: str, mid: str, voice_set
                 msg = json.loads(socket.recv(timeout=max(0.1, deadline - time.monotonic())))
                 if msg.get("error"):
                     # The server may echo input. Keep credentials out of errors and logs.
+                    if not audio and BUSY.search(str(msg.get("error")) + " " + str(msg.get("message") or "")):
+                        # too many requests at once: nothing was made or billed, the narration waits and tries again
+                        raise RuntimeError("ElevenLabs: помилка 429. Забагато одночасних запитів")
                     raise RuntimeError("ElevenLabs відхилив потокове озвучення. Перевірте доступ до моделі й баланс.")
                 if msg.get("audio"):
                     audio.append(base64.b64decode(msg["audio"], validate=True))
