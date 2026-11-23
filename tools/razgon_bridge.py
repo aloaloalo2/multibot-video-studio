@@ -896,7 +896,6 @@ def slots(args) -> None:
 
 # ---------------------------------------------------------------- music and effects without a render
 LOGO_TITLE = "Логотип каналу"
-RENDER_WAIT = 1800   # seconds `sound` waits for Razgon renders to finish before it mixes anyway
 
 
 def plate_layer(project: dict, track: dict) -> bool:
@@ -906,42 +905,8 @@ def plate_layer(project: dict, track: dict) -> bool:
     return bool(clips) and all(c["id"] in overlay or c.get("title") in {OVERLAY_TITLE, LOGO_TITLE} or c.get("channel_logo") for c in clips)
 
 
-def renders_running() -> int:
-    """Razgon renders (render.mjs) running on this Mac now: an export, a push or a check sheet. A render whose parent is
-    gone (adopted by launchd, ppid 1) is the leftover of a cancelled or crashed export and works for nobody: one such
-    render hung for 17 hours and held every film's music back for half an hour (user, 15 November 2026: «а чого для
-    космоса нема музики? постійно з цим баги є»)."""
-    found = subprocess.run(["pgrep", "-f", "render.mjs"], capture_output=True, text=True).stdout.split()
-    alive = 0
-    for item in found:
-        if not item.isdigit() or int(item) == os.getpid():
-            continue
-        parent = subprocess.run(["ps", "-o", "ppid=", "-p", item], capture_output=True, text=True).stdout.strip()
-        if parent and parent != "1":
-            alive += 1
-    return alive
-
-
-MIX_BYTES = 3 * 1024 ** 3   # what mixing a whole film's music and effects takes for a minute or two
-
-
-def mix_fits() -> bool:
-    use = memory()
-    return use is None or use[0] + MIX_BYTES <= RAM_LIMIT * use[1]
-
-
-def wait_for_renders(limit: float = RENDER_WAIT) -> None:
-    """A whole film's music and effects take a few GB of RAM for a minute or two. While Razgon renders (each Chromium about
-    2 GB, the export fills the RAM up to RAM_LIMIT) the mix waits, so the two do not drive the Mac into swap together;
-    after `limit` seconds it goes on anyway."""
-    until, told = time.monotonic() + limit, False
-    # only while the memory is really short: with room for the mix there is nothing to wait for (user, 15 November
-    # 2026: «а для чого чекати? це ж просто музика»)
-    while renders_running() and not mix_fits() and time.monotonic() < until:
-        if not told:
-            print("Чекаю, поки закінчиться рендер Razgon, щоб не забрати в нього пам'ять", flush=True)
-            told = True
-        time.sleep(10)
+# The mix no longer waits for Razgon renders (user, 23 November 2026: «не варто чекати… для чого чекати?»): it runs
+# at once, beside an export, for the minute or two it takes, even when the Mac goes into swap for that time.
 
 
 def encode_bed(wav: Path, duration: float) -> Path:
@@ -1035,7 +1000,6 @@ def sound(args) -> None:
     if made.get("digest") == inputs and current and current.get("asset_id") == made.get("asset_id"):
         print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
         return
-    wait_for_renders()
     wav = render_bed(razgon)
     if wav is None:
         project = studio.project(pid)

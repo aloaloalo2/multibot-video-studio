@@ -638,8 +638,8 @@ sound files and cues outside the film (the mix would stop at the export), WARN f
 more than one per 8 s, cues within 0.3 s of each other and ambience on fewer than half the shots.
 
 `python3 tools/razgon_bridge.py sound --razgon <project>` lays the sound without a video render: the project check, a
-film Razgon draws whole (a mixed episode is refused), the plan unchanged since prepare, a wait while any `render.mjs`
-runs (up to `RENDER_WAIT`, then on anyway), `render_bed` (Razgon's mix without the voice), AAC 192 kbit/s M4A of the
+film Razgon draws whole (a mixed episode is refused), the plan unchanged since prepare (no wait for a running `render.mjs` since 23 November 2026: «для чого чекати?»; the
+mix runs beside an export), `render_bed` (Razgon's mix without the voice), AAC 192 kbit/s M4A of the
 film's exact length (`build/studio/music_sfx.m4a`), then the M4A is imported and laid as the one `BED_TITLE` clip on its own layer right under
 the channel plate and logo (`plate_layer`), the old clip and its layer removed; a 409 from an edit meanwhile is met
 with a fresh project, a bed equal to the one on the timeline (the same M4A bytes) is left, and `/tidy` prunes the
