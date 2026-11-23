@@ -306,6 +306,15 @@ class ThumbnailTest(unittest.TestCase):
 
     openrouter_picture = False
 
+    def test_own_style_clone_keeps_the_idea_but_not_the_competitors_layout(self):
+        # user, 23 November 2026: «склонувало один в один майже прев'ю… кольори такі самі і дизайн, але не повністю
+        # композицію… кожна прев'ю була унікальна»
+        mine = thumbnail_gen.clone_brief("T", "", "v1.png", [], own_style=True)
+        self.assertIn("Do NOT reproduce its composition", mine)
+        self.assertIn("unique", mine)
+        self.assertLess(mine.index("Keep the same topic"), mine.index("OUR STYLE OVERRIDES"))   # said last, it wins
+        self.assertNotIn("OUR STYLE OVERRIDES", thumbnail_gen.clone_brief("T", "", "v1.png", []))
+
     def test_codex_without_a_picture_hands_the_drawing_to_openrouter(self):
         # user, 22 November 2026: «кодекс в першу чергу… якшо не то опен роутер на замене»
         thumbnail_gen.ACTIVE.add(self.project["id"])

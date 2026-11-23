@@ -250,8 +250,9 @@ def own_thumbnails(project: dict, limit: int = STYLE_COUNT) -> list[Path]:
 MY_STYLE = ("ADAPT TO OUR CHANNEL'S OWN STYLE (the author's choice «Адаптувати під мій стиль»). From the competitor's thumbnail take "
             "only the idea: the concept, the situation, the emotion, what the viewer is promised and the meaning of its lettering. "
             "Everything visual follows our channel instead: drawing style, how characters look, palette, lighting, typography, "
-            "text treatment and composition habits, as in the attached examples of our own thumbnails ({files}) and the channel's "
-            "standing wishes below. The image generator sees only your text, so describe our style fully and concretely.")
+            "text treatment and composition, as in the attached examples of our own thumbnails ({files}) and the channel's "
+            "standing wishes below; the competitor's layout is not kept. The image generator sees only your text, so describe "
+            "our style fully and concretely.")
 
 
 def pictures(project: dict) -> list[dict]:
@@ -360,13 +361,28 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) 
 Відповідай тільки самим промптом англійською, без вступу, пояснень і лапок навколо. Не пиши, куди зберегти файл: це додасть студія."""
 
 
-def clone_brief(title: str, wishes: str, name: str, refs: list[Path]) -> str:
+OWN_STYLE_OVERRIDE = (
+    "\nOUR STYLE OVERRIDES THE SOURCE'S LOOK AND LAYOUT (the author chose «Адаптувати під мій стиль»; user, 23 November 2026: "
+    "«склонувало один в один майже прев'ю… адаптувати під мій стиль мається на увазі використовувати кольори такі самі і дизайн, "
+    "але не повністю композицію»). This takes priority over the rules above about keeping the source's central visual: "
+    "from the competitor keep only the idea, the subject and the meaning of its lettering. Do NOT reproduce its composition: "
+    "build a new layout the way our own thumbnails are built (where the title sits, how big it is, where the subject and the "
+    "host stand, how the background is used), with a different camera angle, framing and placement of every element. "
+    "Colours, palette, lighting, typography, lettering treatment, badges, rendering style and overall design come from our "
+    "thumbnails and the channel's wishes, never from the competitor. A viewer who saw both pictures side by side must not "
+    "take ours for a copy: only the topic and the promise are shared. Our own thumbnails show the style, not a layout to "
+    "repeat: make this one unique, with a scene and arrangement different from each of our examples as well (user, "
+    "23 November 2026: «старатися, щоб кожна прев'ю була унікальна»).\n")
+
+
+def clone_brief(title: str, wishes: str, name: str, refs: list[Path], own_style: bool = False) -> str:
     """One isolated reference-adaptation contract for all prompt writers, without new-idea rules."""
     import idea_reference
     images = '\n'.join(str(path) for path in refs)
     return ("Write the English image-generation prompt for an original image built from the reference idea. "
             "Inspect the attached images (use Read for these local image files if available):\n" + images + "\n\n"
             + idea_reference.thumbnail_rules(title, name)
+            + (OWN_STYLE_OVERRIDE if own_style else "")
             + "\nAUTHOR'S EXPLICIT CHANGES FOR THIS CLONE ONLY:\n" + (wishes.strip() or 'None. Keep its idea and wording; create original visuals.')
             # the lettering speaks the new video's language: a French channel cloning a Russian thumbnail kept «МЛРД СОЛНЦ»
             # (user, 15 November 2026: «створював для французького каналу і превью на ру вийшло»)
@@ -567,7 +583,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             # Each writer sees the same clone-only rules and source image. New ideas retain their own brief.
             prompt_refs = ([*refs, hero] if clone and hero else ([hero] if hero else []) + refs)
             if clone:
-                text = clone_brief(title, wishes, name, prompt_refs) + hero_rules
+                text = clone_brief(title, wishes, name, prompt_refs, own_style=channel_wishes_on) + hero_rules
                 if channel_wishes and not channel_wishes_on:
                     # the channel's thumbnail wishes hold for every clone too, not only with «мій стиль» (user,
                     # 22 November 2026: «в будь-якому випадку ми маємо враховувати побажання канала для прев'ю»)
