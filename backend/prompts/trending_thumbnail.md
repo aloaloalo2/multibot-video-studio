@@ -45,8 +45,11 @@ Preserve recognisable character design and the channel's visual identity.
 ## 6. Title and image synergy
 
 Let the image and title contribute complementary information. If lettering helps,
-use one or two large, readable words or a concise verdict that adds a strong
-teaser. Keep the focal subject readable around the text. Consider the video's
+use two to five large, readable words with a concrete, surprising fact, number or
+contradiction from the video that anyone understands from the picture alone,
+without having seen the video or knowing its context ("47 YEARS ON THE ROAD",
+not a riddle such as "ONLY HALFWAY" that makes sense only after watching; the
+author, 23 November 2026). Take numbers and facts only from the narration. Keep the focal subject readable around the text. Consider the video's
 leading keyword, person or brand when choosing the visual concept. The supplied
 video title is fixed; preserve it in the project.
 
