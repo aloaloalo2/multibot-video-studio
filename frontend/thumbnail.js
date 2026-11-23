@@ -52,6 +52,24 @@ async function openThumbnail(project){
     $('modal-title').after($('thumb-mode-switch'));
   }
   else delete $('modal-backdrop').dataset.thumbnailMode;
+  // the episode's thumbnails are one click away, to the right of «Нове прев’ю» / «Клонувати прев’ю» (user, 23 November 2026:
+  // «з правої сторони окремо галерея прев'ю»); not inside the gallery itself
+  const inGallery=state.view==='thumb'&&state.project?.id===project.id;
+  // the head keeps what the window put there until the next window: an earlier gallery button stayed and the next one
+  // came beside it, pushing the close button onto a second line (user, 23 November 2026)
+  document.querySelectorAll('.modal-head .thumb-gallery-open').forEach(node=>node.remove());
+  document.querySelectorAll('.modal-head .thumb-mode-row').forEach(row=>{row.querySelector('.thumb-mode-switch')?.remove();row.remove();});
+  const body=$('modal-body'),previous=body.channelSettingsCleanup;
+  body.channelSettingsCleanup=()=>{previous?.();document.querySelectorAll('.modal-head .thumb-gallery-open,.modal-head .thumb-mode-row').forEach(node=>node.remove());};
+  if((data.versions||[]).length&&!inGallery){
+    const gallery=document.createElement('button');gallery.type='button';gallery.className='thumb-gallery-open';
+    gallery.title='Галерея прев’ю';gallery.setAttribute('aria-label','Галерея прев’ю');
+    gallery.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+    gallery.addEventListener('click',()=>{closeModal();selectProject(project.id,{view:'thumb'}).catch(error=>status(error.message,true));});
+    const switcher=$('thumb-mode-switch');
+    if(switcher&&switcher.isConnected){const row=document.createElement('div');row.className='thumb-mode-row';switcher.replaceWith(row);row.append(switcher,gallery);}
+    else $('modal-title').after(gallery);
+  }
   showThumbnailState(project.id);
   if(thumbnailBusy(project.id))pollThumbnail(project.id);
 }
@@ -299,7 +317,7 @@ function renderThumbView(){
 async function buildThumbView(section,project){
   const id=project.id;section.dataset.project=id;
   section.innerHTML=`<div class="thumb-view thumb-studio">
-    <header class="thumb-studio-head"><h1>Галерея прев’ю</h1><button type="button" class="icon-button thumb-view-create" title="Створити нове прев’ю" aria-label="Створити нове прев’ю"><span class="thumb-create-mark">${thumbnailIcon}<b>+</b></span><span>Нове прев’ю</span></button></header>
+    <header class="thumb-studio-head"><h1>Галерея прев’ю</h1><button type="button" class="outline thumb-view-create" title="Створити нове прев’ю" aria-label="Створити нове прев’ю">${thumbnailIcon}<span>Нове прев’ю</span></button></header>
     <div class="thumb-workspace" hidden><div class="thumb-hero"><div class="thumb-view-frame" data-project-id="${esc(id)}"></div>
       <div class="thumb-preview-meta"><span class="thumb-preview-language"></span><button type="button" class="secondary thumb-set-cover" hidden>Зробити обкладинкою</button></div></div>
     <form class="thumb-compose"><header><h2>Змінити це прев’ю</h2><button type="button" class="icon-button thumb-edit-close" aria-label="Закрити перегляд">×</button></header><div class="thumb-compose-target"><img alt=""><small></small></div>
