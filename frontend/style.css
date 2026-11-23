@@ -2850,8 +2850,11 @@ select option{background:#232327;color:#f1f1f2}
 #channel-sidebar .sidebar-bottom button.sidebar-round.ai-limits{border-color:transparent;border-radius:10px;padding:0}
 .ai-battery{position:relative;display:inline-flex;align-items:center;justify-content:center;width:31px;height:15px;margin-right:3px;border-radius:5px;background:#55585f;overflow:visible}
 .ai-battery:after{content:"";position:absolute;right:-3.5px;top:50%;width:2.5px;height:5px;transform:translateY(-50%);border-radius:0 2px 2px 0;background:#55585f}
-.ai-battery-fill{position:absolute;left:0;top:0;bottom:0;width:calc(100% * var(--level,0));border-radius:5px 0 0 5px;background:#c9ccd4}
-.ai-battery[data-tone=mid] .ai-battery-fill{background:#f0b429}.ai-battery[data-tone=low] .ai-battery-fill{background:#ff6b6b}
+/* the charge is the body's own background, cut by its rounded corners: a separate fill a pixel or two wide kept its 5px
+   radius and stuck out past the body's left edge at 5% (user, 23 November 2026: «червоний край… за батарейкою») */
+.ai-battery{--fill:#c9ccd4;background:linear-gradient(90deg,var(--fill) calc(100% * var(--level,0)),#55585f 0)}
+.ai-battery-fill{display:none}
+.ai-battery[data-tone=mid]{--fill:#f0b429}.ai-battery[data-tone=low]{--fill:#ff6b6b}
 .ai-limits-pct{position:relative;font-size:10px;font-weight:600;line-height:1;color:#141417;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
 .ai-battery[data-tone=none] .ai-limits-pct{color:#c9ccd4}
 .ai-limits-panel{position:fixed;z-index:60;width:320px;padding:14px 16px 12px;background:#18181b;border:1px solid var(--ui-outline-border);border-radius:var(--ui-radius-panel);box-shadow:0 14px 40px #0009;color:#e8eaf0}
