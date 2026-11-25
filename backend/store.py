@@ -646,15 +646,69 @@ def project_created_at(project: dict, folder: Path) -> int:
     return round(getattr(stat, "st_birthtime", stat.st_mtime) * 1000)
 
 
+def _file_key(stat) -> tuple:
+    return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+
+
+def _video_stamp(project: dict) -> tuple:
+    """What joins.anchor reads besides the project: the length of each video a clip plays (joins._video_spare)."""
+    paths = {asset.get("id"): asset.get("path") for asset in project.get("assets", []) if isinstance(asset, dict)}
+    stamps = set()
+    for track in project.get("tracks", []):
+        for clip in track.get("clips", []):
+            path = paths.get(clip.get("asset_id")) if clip.get("kind") == "video" else None
+            if path:
+                try:
+                    stamps.add((path, *_file_key(os.stat(path))[:2]))
+                except OSError:
+                    stamps.add((path, None, None))
+    return tuple(sorted(stamps, key=str))
+
+
+# The transitions' leads of the last read of each project (joins.anchor: 0.3 s on a film of 500 clips and 100 seams,
+# asked by every read of the project). A lead depends only on the file, the channel logo bound into it and the videos'
+# lengths, so the same version of the three gets the same leads back.
+_ANCHORS: dict[str, tuple[tuple, list]] = {}
+
+
+def _anchor_key(file_key: tuple, project: dict) -> tuple:
+    return (file_key, project.get("branding_version"), _video_stamp(project))
+
+
+def _remember_anchors(pid: str, key: tuple, project: dict) -> None:
+    _ANCHORS[pid] = (key, [(join.get("lead"), join.get("anchor")) for join in project.get("join_transitions", [])])
+
+
 def load_project(pid: str) -> dict:
-    data = read_json(project_path(pid))
+    path = project_path(pid)
+    try:
+        file_key = _file_key(path.stat())
+    except OSError:
+        file_key = None
+    data = read_json(path)
     if not isinstance(data, dict):
         raise StudioError("Пошкоджено файл проєкту", 500)
     if data.get("deleted_at"):
         raise StudioError("Проєкт видалено зі списку", 404)
-    data["created_at"] = project_created_at(data, project_dir(pid))
+    data["created_at"] = project_created_at(data, path.parent)
     import logo_layer, joins
-    return joins.anchor(logo_layer.bind(upgrade_legacy_project(data)))
+    project = logo_layer.bind(upgrade_legacy_project(data))
+    if file_key is None or not project.get("join_transitions"):
+        return joins.anchor(project)
+    key = _anchor_key(file_key, project)
+    hit = _ANCHORS.get(pid)
+    leads = hit[1] if hit and hit[0] == key else None
+    if leads is None or len(leads) != len(project.get("join_transitions", [])):
+        joins.anchor(project)
+        _remember_anchors(pid, key, project)
+        return project
+    for join, (lead, end) in zip(project["join_transitions"], leads):
+        join["lead"] = lead
+        if end is None:
+            join.pop("anchor", None)
+        else:
+            join["anchor"] = end
+    return project
 
 
 def item_layers(project: dict) -> dict:
@@ -699,10 +753,23 @@ def upgrade_legacy_project(project: dict) -> dict:
     return item_layers(project)
 
 
-def save_project(project: dict) -> None:
+def save_project(project: dict) -> tuple | None:
+    """Write project.json; returns the written file's key (mtime, size, inode), taken from the new file before it
+    replaces the old one, so a cache keyed on it can never describe somebody else's write."""
+    path = project_path(project["id"])
     if "created_at" not in project:
-        project["created_at"] = project_created_at(read_json(project_path(project["id"]), {}), project_dir(project["id"]))
-    atomic_json(project_path(project["id"]), project)
+        project["created_at"] = project_created_at(read_json(path, {}), path.parent)
+    # compact: indent=2 makes json use its pure-Python encoder, 0.1-0.3 s for a film of 500 clips against 7 ms
+    text = json.dumps(project, ensure_ascii=False, separators=(",", ":"))
+    tmp = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        key = _file_key(tmp.stat())
+        os.replace(str(tmp), str(path))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return key
 
 
 def owned_razgon_project(project: dict) -> Path | None:
@@ -1666,14 +1733,15 @@ def media_kind(path: Path) -> str | None:
 
 
 def media_duration(path: Path) -> float | None:
-    ffprobe = shutil.which("ffprobe")
-    if not ffprobe:
-        return None
     try:
         stat = path.stat()
         key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
         if key in _DURATION_CACHE:
             return _DURATION_CACHE[key]
+        # looked up only when ffprobe must run: shutil.which walks PATH, 0.7 ms a call, 150 calls a read of a long film
+        ffprobe = shutil.which("ffprobe")
+        if not ffprobe:
+            return None
         # kept on disk too: after a restart the first read of a project asked ffprobe again for each of its videos,
         # 2 s before the episode opened (25 November 2026)
         global _DURATIONS_LOADED
@@ -1853,7 +1921,8 @@ def relocate_media(pid: str, expected_revision: int | None = None) -> dict:
 
 def asset_record(path: Path, project_id: str, source="local") -> dict:
     resolved = path.resolve()
-    asset = {"id": hashlib.sha256(str(resolved).encode()).hexdigest()[:20], "name": path.name, "kind": media_kind(path), "path": str(resolved), "source": source, "url": f"/api/projects/{project_id}/assets/{hashlib.sha256(str(resolved).encode()).hexdigest()[:20]}/file"}
+    aid = hashlib.sha256(str(resolved).encode()).hexdigest()[:20]
+    asset = {"id": aid, "name": path.name, "kind": media_kind(path), "path": str(resolved), "source": source, "url": f"/api/projects/{project_id}/assets/{aid}/file"}
     if asset["kind"] == "audio":
         duration = media_duration(resolved)
         if duration:
@@ -2102,6 +2171,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             # a video with no frames left for the transition holds its last picture through it (joins.held_source)
             joins.set_transition(project,payload)
         except (ValueError,TypeError,KeyError) as error:raise StudioError(str(error))
+        if getattr(_EDIT,'joins',None) is not None:_EDIT.joins=True   # its lead, as the next read would give it
         return True
     if action=='reorder_stack':
         groups=project.get('scene_groups',[])
@@ -2140,7 +2210,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
                 background = frame_background(tracks[index]['id'], start, end)
                 apply_universal_action(project, 'add_clip', {**background, 'group_id': group['id']})
         recompute_universal_duration(project)
-        joins.reconcile(project)
+        _reconcile_joins(project)
         return True
     supported = {"add_layer", "add_capcut_effect", "remove_layer", "move_layer", "update_layer", "add_clip", "move_clip", "trim_clip", "split_clip", "replace_clip_asset", "set_clip_volume", "set_transition", "delete_clip", "update_clip"}
     if action not in supported or action == "set_transition" and "clip_id" not in payload:
@@ -2465,9 +2535,33 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         if ('font_size' in changes or 'font_family' in changes) and 'text_words' not in changes:
             typography.reflow(project,clip,project.get('font_family',clip.get('font_family','Golos')))
     reconcile_scene_groups(project)
-    joins.reconcile(project)
+    _reconcile_joins(project)
     recompute_universal_duration(project)
     return True
+
+
+# Inside apply_action: None outside an edit; False/True whether an action of the edit changed what joins.anchor reads.
+_EDIT = threading.local()
+
+
+def _reconcile_joins(project: dict) -> None:
+    """joins.reconcile, with the leads (joins.anchor, the slow half) left to the end of an apply_action: no action of an
+    edit reads a lead, and the edit anchors once before it saves."""
+    import joins
+    if getattr(_EDIT, "joins", None) is None:
+        joins.reconcile(project)
+        return
+    valid = []
+    for join in project.get("join_transitions", []):
+        try:
+            seam, maximum, _, _ = joins.boundary(project, join["from_ref"], join["to_ref"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        if join["duration"] <= maximum:
+            valid.append({**join, "seam": seam})
+    if "join_transitions" in project:
+        project["join_transitions"] = valid
+    _EDIT.joins = True
 
 
 def apply_text_binding(project,clip,source):
@@ -2522,14 +2616,15 @@ def history_entries(pid: str, side: str) -> list[Path]:
     return sorted((path for path in folder.iterdir() if path.suffix == ".json" and path.stem.isdigit()), key=lambda path: int(path.stem))
 
 
-def push_history(pid: str, side: str, snapshot: dict) -> None:
+def push_history(pid: str, side: str, snapshot) -> None:
+    """One undo or redo step; `snapshot` is the project or its JSON text already made."""
     entries = history_entries(pid, side)
     index = int(entries[-1].stem) + 1 if entries else 0
     folder = history_folder(pid) / side
     folder.mkdir(parents=True, exist_ok=True)
     tmp = folder / f".{index}.tmp-{uuid.uuid4().hex}"
     try:
-        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp.write_text(snapshot if isinstance(snapshot, str) else json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         os.replace(str(tmp), str(folder / f"{index}.json"))
     finally:
         if tmp.exists():
@@ -2632,190 +2727,52 @@ def apply_action(pid: str, action: str, payload: dict, expected_revision: int | 
             previous["revision"] = project.get("revision", 0) + 1
             save_project(previous)
             return previous
-        previous = copy.deepcopy(project)
+        # the step before the edit, as the text its undo file holds (a deep copy and a second encoding cost 30 ms more)
+        previous = json.dumps(project, ensure_ascii=False, separators=(",", ":"))
         if not isinstance(payload, dict):
             raise StudioError("Параметри дії мають бути об'єктом")
         if project.get("schema_version") == 2 and (action in {"add_scene", "add_track_clip", "remove_track_clip", "trim_scene", "move_scene", "split_scene", "replace_scene_asset", "add_text", "delete_scene", "duplicate_scene"} or action == "set_transition" and "clip_id" not in payload):
             raise StudioError("Оновіть редактор: ця дія належить старому формату проєкту")
-        if action == "batch":
-            edits = payload.get("actions")
-            if not isinstance(edits, list) or not 1 <= len(edits) <= 1800:
-                raise StudioError("Invalid batch size")
-            for edit in edits:
-                if not isinstance(edit, dict) or not apply_universal_action(project, edit.get("type"), edit.get("payload", {})):
-                    raise StudioError("Unsupported batch action")
-        elif action == "set_plan_mode":
-            mode = payload.get('mode')
-            if mode not in {'director', 'direct'}:
-                raise StudioError('Невірний режим плану')
-            if mode == 'direct' and project_animated(project):
-                raise StudioError('Анімаційний ролик робиться тільки з планом кадрів: режисер ділить озвучку на кадри, агент малює їх кодом.', 409)
-            import director, production
-            if pid in director.ACTIVE or pid in production.ACTIVE:
-                raise StudioError('Спочатку призупиніть створення кадрів або режисуру', 409)
-            project['plan_mode'] = mode
-        elif action == "rename_project":
-            project["name"] = validated_name(payload.get("name"))
-        elif project.get("schema_version") == 2 and apply_universal_action(project, action, payload):
-            pass
-        elif action == "add_scene":
-            duration = float(payload.get("duration", 5))
-            if not math.isfinite(duration) or not 0.1 <= duration <= 36000:
-                raise StudioError("Невірна тривалість кадру")
-            aid = payload.get("asset_id")
-            asset = resolve_asset(project, aid) if aid else None
-            if asset and asset["kind"] not in {"video", "image"}:
-                raise StudioError("Для кадру потрібне фото або відео")
-            if asset and asset["kind"] == "video":
-                available = media_duration(Path(asset["path"]))
-                if available:
-                    if available < .1:
-                        raise StudioError("Відеофайл надто короткий")
-                    duration = min(duration, available)
-            kind = asset["kind"] if asset else str(payload.get("type", "color"))
-            if kind not in {"video", "image", "text", "color"} or (kind in {"video", "image"} and not asset):
-                raise StudioError("Виберіть матеріал для кадру")
-            title = str(payload.get("title") or (asset["name"] if asset else "Новий кадр")).strip()[:120]
-            scene = {"id": uuid.uuid4().hex[:12], "start": 0.0, "duration": round(duration, 3), "trim_start": 0.0, "title": title, "type": kind, "asset_id": asset["id"] if asset else None, "transition": {"type": "cut", "duration": 0.0}, "volume": 1.0, "layers": []}
-            if asset:
-                scene["source"] = asset["path"]
-            if kind == "text":
-                scene["text"] = str(payload.get("text", title))
-            index = int(payload.get("to_index", len(project["scenes"])))
-            if not 0 <= index <= len(project["scenes"]):
-                raise StudioError("Невірне місце кадру")
-            project["scenes"].insert(index, scene)
-            recompute_timeline(project)
-        elif action == "add_track_clip":
-            track_id = str(payload["track_id"])
-            track = next((item for item in project["tracks"] if item.get("id") == track_id and item.get("type") in {"voice", "music", "sfx"}), None)
-            if track is None:
-                raise StudioError("Звукову доріжку не знайдено", 404)
-            asset = resolve_asset(project, payload["asset_id"])
-            if asset["kind"] != "audio":
-                raise StudioError("Для звукової доріжки потрібен аудіофайл")
-            start = float(payload.get("start", 0))
-            duration = float(payload.get("duration", 0))
-            volume = float(payload.get("volume", 1))
-            if not all(math.isfinite(value) for value in (start, duration, volume)) or start < 0 or duration <= 0 or duration > 36000 or not 0 <= volume <= 1.5:
-                raise StudioError("Невірні параметри звукового фрагмента")
-            available = media_duration(Path(asset["path"]))
-            if available and duration > available + .05:
-                raise StudioError("Звуковий фрагмент довший за вибраний файл")
-            track["clips"].append({"id": uuid.uuid4().hex[:12], "asset_id": asset["id"], "start": round(start, 3), "duration": round(duration, 3), "volume": round(volume, 3), "trim_start": 0.0})
-        elif action == "remove_track_clip":
-            clip_id = str(payload["clip_id"])
-            clip = next((clip for track in project["tracks"] for clip in track.get("clips", []) if clip.get("id") == clip_id), None)
-            if clip is None:
-                raise StudioError("Звуковий фрагмент не знайдено", 404)
-            for track in project["tracks"]:
-                track["clips"] = [item for item in track.get("clips", []) if item.get("id") != clip_id]
-        elif action == "trim_scene":
-            scene = scene_by_id(project, payload["scene_id"])
-            start = float(payload.get("start", scene.get("trim_start", 0)))
-            duration = float(payload.get("duration", scene["duration"]))
-            if start < 0 or duration <= 0 or duration > 36000:
-                raise StudioError("Невірні межі обрізання")
-            if scene.get("type") == "video" and scene.get("asset_id"):
-                asset = resolve_asset(project, scene["asset_id"])
-                available = media_duration(Path(asset["path"]))
-                if available and start + duration > available + .05:
-                    raise StudioError("Обрізання виходить за кінець відеофайлу")
-            scene["trim_start"] = round(start, 3)
-            scene["duration"] = round(duration, 3)
-            recompute_timeline(project)
-        elif action == "move_scene":
-            scenes = project["scenes"]
-            scene = scene_by_id(project, payload["scene_id"])
-            index = int(payload["to_index"])
-            if not 0 <= index < len(scenes):
-                raise StudioError("Невірне місце кадру")
-            scenes.remove(scene)
-            scenes.insert(index, scene)
-            recompute_timeline(project)
-        elif action == "split_scene":
-            scene = scene_by_id(project, payload["scene_id"])
-            at = float(payload["at"])
-            if scene["start"] < at < scene["start"] + scene["duration"]:
-                offset = at - scene["start"]
-            else:
-                offset = at
-            if not 0 < offset < scene["duration"]:
-                raise StudioError("Місце поділу має бути всередині кадру")
-            second = copy.deepcopy(scene)
-            second["id"] = uuid.uuid4().hex[:12]
-            second["trim_start"] = round(float(scene.get("trim_start", 0)) + offset, 3)
-            second["duration"] = round(scene["duration"] - offset, 3)
-            second["title"] = scene.get("title", "Кадр") + " (продовження)"
-            scene["duration"] = round(offset, 3)
-            project["scenes"].insert(project["scenes"].index(scene) + 1, second)
-            recompute_timeline(project)
-        elif action == "replace_scene_asset":
-            scene = scene_by_id(project, payload["scene_id"])
-            asset = resolve_asset(project, payload["asset_id"])
-            if asset["kind"] not in {"video", "image"}:
-                raise StudioError("Аудіо не можна вставити замість кадру")
-            scene["asset_id"] = asset["id"]
-            scene["type"] = asset["kind"]
-            scene["source"] = asset["path"]
-            scene["trim_start"] = 0.0
-            if asset["kind"] == "video":
-                available = media_duration(Path(asset["path"]))
-                if available:
-                    if available < .1:
-                        raise StudioError("Відеофайл надто короткий")
-                    scene["duration"] = round(min(float(scene["duration"]), available), 3)
-                    recompute_timeline(project)
-        elif action == "set_transition":
-            scene = scene_by_id(project, payload["scene_id"])
-            transition = str(payload.get("transition_type", "cut"))
-            if transition not in {"cut", "crossfade", "swipe"}:
-                raise StudioError("Невідомий перехід")
-            duration = float(payload.get("duration", 0 if transition == "cut" else 0.3))
-            if duration < 0 or duration > min(5, scene["duration"]):
-                raise StudioError("Невірна тривалість переходу")
-            scene["transition"] = {"type": transition, "duration": round(duration, 3)}
-        elif action == "set_clip_volume":
-            value = float(payload["volume"])
-            if not 0 <= value <= 1.5:
-                raise StudioError("Гучність має бути від 0 до 1.5")
-            found = False
-            for track in project["tracks"]:
-                for clip in track.get("clips", []):
-                    if clip.get("id") == payload["clip_id"]:
-                        clip["volume"] = value
-                        found = True
-            for scene in project["scenes"]:
-                if scene["id"] == payload["clip_id"]:
-                    scene["volume"] = value
-                    found = True
-            if not found:
-                raise StudioError("Звуковий фрагмент не знайдено", 404)
-        elif action == "add_text":
-            start = float(payload["start"])
-            duration = float(payload["duration"])
-            text = str(payload["text"]).strip()
-            if start < 0 or duration <= 0 or start + duration > project["duration"] + 0.01 or not 1 <= len(text) <= 300:
-                raise StudioError("Невірний текстовий фрагмент")
-            track = next(item for item in project["tracks"] if item["type"] == "text")
-            track["clips"].append({"id": uuid.uuid4().hex[:12], "start": round(start, 3), "duration": round(duration, 3), "text": text})
-        elif action == "delete_scene":
-            scene = scene_by_id(project, payload["scene_id"])
-            project["scenes"].remove(scene)
-            recompute_timeline(project)
-        elif action == "duplicate_scene":
-            scene = scene_by_id(project, payload["scene_id"])
-            duplicate = copy.deepcopy(scene)
-            duplicate["id"] = uuid.uuid4().hex[:12]
-            project["scenes"].insert(project["scenes"].index(scene) + 1, duplicate)
-            recompute_timeline(project)
-        else:
-            raise StudioError("Дію ще не підтримано: " + str(action))
+        _EDIT.joins = False
+        try:
+            _apply_edit(pid, project, action, payload)
+            if _EDIT.joins:
+                # the leads of the transitions once for the whole edit: a batch of 20 clip moves anchored 20 times
+                import joins
+                joins.anchor(project)
+        finally:
+            reconciled, _EDIT.joins = _EDIT.joins, None
         project["revision"] = project.get("revision", 0) + 1
         push_history(pid, "past", previous)
         clear_history(pid, "future")
-        save_project(project)
+        key = save_project(project)
+        if reconciled and key:
+            _remember_anchors(pid, _anchor_key(key, project), project)
         return project
+
+
+def _apply_edit(pid: str, project: dict, action: str, payload: dict) -> None:
+    if action == "batch":
+        edits = payload.get("actions")
+        if not isinstance(edits, list) or not 1 <= len(edits) <= 1800:
+            raise StudioError("Invalid batch size")
+        for edit in edits:
+            if not isinstance(edit, dict) or not apply_universal_action(project, edit.get("type"), edit.get("payload", {})):
+                raise StudioError("Unsupported batch action")
+    elif action == "set_plan_mode":
+        mode = payload.get('mode')
+        if mode not in {'director', 'direct'}:
+            raise StudioError('Невірний режим плану')
+        if mode == 'direct' and project_animated(project):
+            raise StudioError('Анімаційний ролик робиться тільки з планом кадрів: режисер ділить озвучку на кадри, агент малює їх кодом.', 409)
+        import director, production
+        if pid in director.ACTIVE or pid in production.ACTIVE:
+            raise StudioError('Спочатку призупиніть створення кадрів або режисуру', 409)
+        project['plan_mode'] = mode
+    elif action == "rename_project":
+        project["name"] = validated_name(payload.get("name"))
+    elif not apply_universal_action(project, action, payload):
+        raise StudioError("Дію ще не підтримано: " + str(action))
 
 
 def request_production(pid: str, frames) -> dict:
