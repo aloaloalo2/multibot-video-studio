@@ -86,8 +86,9 @@ class DesignedTextTest(unittest.TestCase):
             self.backdrop_of(self.ctx([], []), 3, {"backdrop": "rainbow"})
 
     def test_looks_turn_from_frame_to_frame(self):
-        looks = {montage_ops.TEXT_LOOKS[n % len(montage_ops.TEXT_LOOKS)]["veil"] for n in range(5)}
-        self.assertGreaterEqual(len(looks), 4)
+        # the looks are the channel's own (channel_design), never one shared list of the studio
+        looks = [montage_ops.channel_design.text_look({"id": "p"}, n)["veil"] for n in range(5)]
+        self.assertTrue(all(a != b for a, b in zip(looks, looks[1:])))
 
 
 if __name__ == "__main__":

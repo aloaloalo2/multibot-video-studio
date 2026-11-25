@@ -1,6 +1,11 @@
 """Reflow speech-bound words when a project changes its font."""
+import threading
+from functools import lru_cache
+
 from PIL import ImageFont
+
 from font_catalog import font_path
+
 # a short word that leans on the next one never ends a line: prepositions, conjunctions, particles, articles
 WEAK={*'а в во и й к ко о об обо с со у я на не ни но по за из от до для без под над при про что как это же ли бы то так уже ещё еще его её ее их который которая которое которые которых чтобы когда где если'.split(),
       *'і й та чи що як це ж би вже ще її з зі із від для без під над при про після через між який яка яке які котрий щоб коли де якщо'.split(),
@@ -49,26 +54,66 @@ def breaks(texts,sizes,gap,limit):
     return sorted(cuts)
 
 
-def reflow(project,clip,family):
- words=clip.get('text_words');clip['font_family']=family
- if not words:return
- width=float(project.get('width',1920))*float(clip.get('width',1));height=float(project.get('height',1080))*float(clip.get('height',1))
- left=min(w['x']-w['width']/2 for w in words);right=max(w['x']+w['width']/2 for w in words);center=(left+right)/2
- ys=sorted({round(w['y'],5) for w in words});middle=(ys[0]+ys[-1])/2;span=.78 if clip.get('text_role')=='full_frame' else .76 if center>.4 and center<.6 else .35
- size=int(clip.get('font_size',54))
- while True:
-  font=ImageFont.truetype(str(font_path(family,clip.get('font_weight',400))),size)
-  try:font.set_variation_by_axes([float(clip.get('font_weight',400)) if b'Weight' in a['name'] else a['default'] for a in font.get_variation_axes()])
-  except (OSError,AttributeError):pass
-  gap=font.getlength(' ');sizes=[font.getlength(w['text']) for w in words]
-  cuts=breaks([w['text'] for w in words],sizes,gap,width*span)
-  rows=[list(zip(words[a:b],sizes[a:b])) for a,b in zip([0]+cuts,cuts+[len(words)])]
-  lengths=[sum(sizes[a:b])+gap*(b-a-1) for a,b in zip([0]+cuts,cuts+[len(words)])]
-  if len(rows)*size*1.45<=height*.76 or size<=24:break
-  size-=2
- top=middle*height-(len(rows)-1)*size*1.45/2;result=[]
- for index,row in enumerate(rows):
-  x=center*width-lengths[index]/2
-  for word,length in row:
-   result.append({**word,'x':round((x+length/2)/width,6),'y':round((top+index*size*1.45)/height,6),'width':round((length+12)/width,6),'height':round(size*1.4/height,6)});x+=length+gap
- clip['text_words']=result;clip['font_size']=size
+_LOCK = threading.Lock()   # one FreeType face is shared by the server's threads
+
+
+@lru_cache(maxsize=64)
+def _font(path: str, size: int, weight: float):
+    font = ImageFont.truetype(path, size)
+    try:
+        font.set_variation_by_axes([weight if b'Weight' in a['name'] else a['default'] for a in font.get_variation_axes()])
+    except (OSError, AttributeError):
+        pass
+    return font
+
+
+@lru_cache(maxsize=20000)
+def _length(path: str, size: int, weight: float, text: str) -> float:
+    """A word's width in this font: montage_ops narrows a label's box step by step, each step reflowing the same words."""
+    with _LOCK:
+        return _font(path, size, weight).getlength(text)
+
+
+@lru_cache(maxsize=4096)
+def _breaks(texts: tuple, sizes: tuple, gap: float, limit: float) -> tuple:
+    """breaks() once per words, sizes and width: the narrowing box asks the same line breaks again and again."""
+    return tuple(breaks(list(texts), list(sizes), gap, limit))
+
+
+def reflow(project, clip, family):
+    words = clip.get('text_words')
+    clip['font_family'] = family
+    if not words:
+        return
+    width = float(project.get('width', 1920)) * float(clip.get('width', 1))
+    height = float(project.get('height', 1080)) * float(clip.get('height', 1))
+    left = min(w['x'] - w['width'] / 2 for w in words)
+    right = max(w['x'] + w['width'] / 2 for w in words)
+    center = (left + right) / 2
+    ys = sorted({round(w['y'], 5) for w in words})
+    middle = (ys[0] + ys[-1]) / 2
+    span = .78 if clip.get('text_role') == 'full_frame' else .76 if center > .4 and center < .6 else .35
+    size = int(clip.get('font_size', 54))
+    weight = float(clip.get('font_weight', 400))
+    path = str(font_path(family, clip.get('font_weight', 400)))
+    texts = tuple(w['text'] for w in words)
+    while True:
+        gap = _length(path, size, weight, ' ')
+        sizes = [_length(path, size, weight, text) for text in texts]
+        cuts = list(_breaks(texts, tuple(sizes), gap, width * span))
+        bounds = list(zip([0] + cuts, cuts + [len(words)]))
+        rows = [list(zip(words[a:b], sizes[a:b])) for a, b in bounds]
+        lengths = [sum(sizes[a:b]) + gap * (b - a - 1) for a, b in bounds]
+        if len(rows) * size * 1.45 <= height * .76 or size <= 24:
+            break
+        size -= 2
+    top = middle * height - (len(rows) - 1) * size * 1.45 / 2
+    result = []
+    for index, row in enumerate(rows):
+        x = center * width - lengths[index] / 2
+        for word, length in row:
+            result.append({**word, 'x': round((x + length / 2) / width, 6), 'y': round((top + index * size * 1.45) / height, 6),
+                           'width': round((length + 12) / width, 6), 'height': round(size * 1.4 / height, 6)})
+            x += length + gap
+    clip['text_words'] = result
+    clip['font_size'] = size

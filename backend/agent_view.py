@@ -45,15 +45,22 @@ def _clock(seconds: float) -> str:
     return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
 
 
-def _uncovered(project: dict, clip: dict) -> str | None:
+def _picture(project: dict, clip: dict):
+    """The clip as the export draws it, or None when its file cannot be read."""
+    if clip.get("kind") != "image":
+        return None
+    try:
+        return montage_ops.Picture(project, clip)
+    except (store.StudioError, OSError, KeyError):
+        return None
+
+
+def _uncovered(project: dict, clip: dict, picture=None) -> str | None:
     """A full-frame landscape photo that leaves a strip of the frame empty at its start, middle or end."""
     if clip.get("kind") != "image" or float(clip.get("width", 1)) < .999 or float(clip.get("height", 1)) < .999:
         return None
-    try:
-        picture = montage_ops.Picture(project, clip)
-    except (store.StudioError, OSError, KeyError):
-        return None
-    if picture.portrait:
+    picture = picture or _picture(project, clip)
+    if picture is None or picture.portrait:
         return None
     for moment in (0.0, picture.duration / 2, picture.duration - 1e-3):
         x, y, s = picture.state(moment)
@@ -65,17 +72,15 @@ def _uncovered(project: dict, clip: dict) -> str | None:
     return None
 
 
-def _bare_portrait(project: dict, clip: dict, frame: dict) -> bool:
+def _bare_portrait(project: dict, clip: dict, frame: dict, picture=None, level: dict | None = None) -> bool:
     """A narrow picture (narrower than the frame) with no full-frame clip under it in its own frame."""
     if clip.get("kind") != "image":
         return False
-    try:
-        picture = montage_ops.Picture(project, clip)
-    except (store.StudioError, OSError, KeyError):
+    picture = picture or _picture(project, clip)
+    if picture is None or not picture.portrait:
         return False
-    if not picture.portrait:
-        return False
-    level = {c["id"]: i for i, track in enumerate(project.get("tracks", [])) for c in track.get("clips", [])}
+    if level is None:
+        level = {c["id"]: i for i, track in enumerate(project.get("tracks", [])) for c in track.get("clips", [])}
     mine = level.get(clip["id"], 0)
     return not any(c is not clip and level.get(c["id"], 0) < mine and c.get("kind") in ("image", "video", "animation")
                    and float(c.get("width", 1)) >= .99 and float(c.get("height", 1)) >= .99 for c in frame["clips"])
@@ -103,14 +108,23 @@ def _solid_backing(clip: dict, picture: dict) -> bool:
 def project_summary(project: dict, readiness: dict | None = None, plan: dict | None = None) -> dict:
     """{"head": [...lines], "frames": [{"n", "line", "issues"}], "issues": [...]} — the text an agent reads."""
     if plan is None:
-        try:
-            plan = store.load_project_plan(project["id"])
-        except (store.StudioError, OSError, ValueError):
-            plan = None
+        plan = montage_ops.project_plan(project)
     fps = float(project.get("fps", 30))
     tolerance = 1 / fps + 1e-3
     assets = {a["id"]: a for a in project.get("assets", [])}
     frames = montage_ops.frame_groups(project, plan)
+    level = {c["id"]: i for i, track in enumerate(project.get("tracks", [])) for c in track.get("clips", [])}
+    resolved: dict[str, dict | None] = {}   # asset id -> its file (one asset often stands in several clips)
+    lengths: dict[str, float | None] = {}
+
+    def resolve(aid: str) -> dict | None:
+        if aid not in resolved:
+            try:
+                resolved[aid] = store.resolve_asset(project, aid)
+            except store.StudioError:
+                resolved[aid] = None
+        return resolved[aid]
+
     joins_by_from = {j["from_ref"]: j for j in project.get("join_transitions", [])}
     issues, rows = [], []
     formats = Counter()
@@ -133,13 +147,14 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
         accents = Counter()
         for clip in frame["clips"]:
             if clip.get("asset_id"):
-                try:
-                    asset = store.resolve_asset(project, clip["asset_id"])
-                except store.StudioError:
+                asset = resolve(clip["asset_id"])
+                if asset is None:
                     problems.append(f"немає файлу «{clip.get('title')}»")
                     continue
                 if clip.get("kind") == "video":
-                    available = store.media_duration(Path(asset["path"]))
+                    if asset["path"] not in lengths:
+                        lengths[asset["path"]] = store.media_duration(Path(asset["path"]))
+                    available = lengths[asset["path"]]
                     # a transition going out past the video's end holds its last picture (joins.held_source): only a
                     # video shorter than its own frame is a problem
                     if available and float(clip.get("trim_start", 0)) + float(clip["duration"]) > available + .04:
@@ -152,10 +167,11 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
             if montage_ops.is_accent(clip) and not montage_ops.is_entrance(clip):
                 accents[str(clip.get("title", "")).split()[-1]] += 1
         field = main and any(_solid_backing(c, main) for c in frame["clips"] if c is not main)
-        uncovered = _uncovered(project, main) if main and not field else None
+        picture = _picture(project, main) if main and not field else None
+        uncovered = _uncovered(project, main, picture) if picture else None
         if uncovered:
             problems.append(uncovered)
-        elif main and not field and _bare_portrait(project, main, frame):
+        elif picture and _bare_portrait(project, main, frame, picture, level):
             # a vertical photo with nothing under it on the whole frame: its sides show the neighbour frame in every
             # transition (22 November 2026: «під картинкою нема просто чорного фона»)
             problems.append("вертикальне фото без тла: під ним нічого на весь кадр")
