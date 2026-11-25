@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -60,13 +61,17 @@ def scan(project: dict, frames=None) -> dict | None:
     return json.loads(out.read_text(encoding="utf-8"))
 
 
+HAND_LINE = .8   # seconds a hand takes to write one line the scan saw come in
+HAND_GAP = 1.7   # lines closer than this are one stretch of writing
+
+
 def mark_hands(project: dict, events: list) -> list:
     """A text written in a shot whose code draws a hand, a pen or chalk is marked `hand`: it sounds like a pencil, any
     other written text like a keyboard (user, 25 November 2026: «коли текстові вставки… звук клавіатури а коли рука на
     екрані шось пише то звук олівця»)."""
     import soundtrack
     link = store.razgon_link(project)
-    if not link or not any(e.get("kind") == "write" for e in events if isinstance(e, dict)):
+    if not link or not any(e.get("kind") in ("write", "text") for e in events if isinstance(e, dict)):
         return events
     razgon = Path(link["project"])
     try:
@@ -74,19 +79,35 @@ def mark_hands(project: dict, events: list) -> list:
     except (OSError, ValueError):
         return events
     shots, hands = data if isinstance(data, list) else data.get("shots", []), {}
-    for shot in shots:
+    # a shot is drawn by the scene file that registers it (registerShot('f023s01', …) lives in f023.js)
+    for path in sorted((razgon / "scenes").rglob("*.js")):
         try:
-            code = (razgon / "scenes" / "shots" / f"{shot['id']}.js").read_text(encoding="utf-8")
-        except (OSError, KeyError):
+            code = path.read_text(encoding="utf-8")
+        except OSError:
             continue
-        hands[shot["id"]] = bool(soundtrack.HAND.search(code))
-    for event in events:
-        if isinstance(event, dict) and event.get("kind") == "write":
-            t = float(event.get("t", 0))
-            shot = next((s for s in shots if float(s.get("start", 0)) <= t < float(s.get("end", 0))), None)
-            if shot and hands.get(shot.get("id")):
-                event["hand"] = True
-    return events
+        drawn = soundtrack.HAND.search(code)
+        for ident in re.findall(r"registerShot\(\s*['\"]([^'\"]+)['\"]", code):
+            hands[ident] = hands.get(ident, False) or bool(drawn)
+    out, run = [], None
+    for event in sorted((e for e in events if isinstance(e, dict)), key=lambda e: float(e.get("t", 0))):
+        t = float(event.get("t", 0))
+        shot = next((s for s in shots if float(s.get("start", 0)) <= t < float(s.get("end", 0))), None)
+        if not (shot and hands.get(shot.get("id")) and event.get("kind") in ("write", "text")):
+            out.append(event)
+            continue
+        # where a hand writes, every line that comes in is written by it (Andromeda 23: a hand with a pen fills a
+        # catalogue line by line, the scan sees lines appear): lines close together are one stretch of writing
+        end = min(float(shot["end"]), t + float(event.get("dur") or HAND_LINE))
+        if run and run["shot"] == shot["id"] and t - run["end"] <= HAND_GAP:
+            run["end"] = max(run["end"], end)
+            continue
+        run = {"kind": "write", "hand": True, "t": t, "end": end, "shot": shot["id"]}
+        out.append(run)
+    for event in out:
+        if event.get("hand"):
+            event["dur"] = round(event.pop("end") - event["t"], 3)
+            event.pop("shot", None)
+    return out
 
 
 def run(pid: str, frames=None) -> str:
