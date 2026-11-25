@@ -232,7 +232,7 @@ class ProductionTest(unittest.TestCase):
     def test_brief_names_the_frames_and_the_limits(self):
         text = production.brief(self.project, REQUEST)
         for part in ("кадри студії 1-3 з 73", "slots --razgon <проєкт> --frames 1,2,3", "codex_image.py", '"assets": false',
-                     "Не роби фінальний MP4", "«Експорт MP4»"):
+                     "Повний MP4 робить студія", "«Експорт MP4»"):
             self.assertIn(part, text)
         self.assertNotIn("push --razgon", text)                                        # the agent renders no frames
 

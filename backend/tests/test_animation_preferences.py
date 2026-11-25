@@ -43,7 +43,8 @@ class AnimationPreferencesTest(unittest.TestCase):
                             text=pref.instructions({'channel_id':'test','project_kind':kind},planning=planning)
                             self.assertIn('композиційний центр',text)
                             self.assertIn('Спокійний показ для читання допустимий',text)
-                            self.assertIn('Повторно перевіряй тільки змінені',text)
+                            # the director only plans; checking belongs to the frame agent
+                            (self.assertNotIn if planning else self.assertIn)('Повторно перевіряй тільки змінені',text)
                             self.assertEqual('Стікмени, дудли й мультяшні ведучі заборонені' in text,kind=='regular')
 
     def test_universal_brief_does_not_require_pointless_continuous_motion(self):

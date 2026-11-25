@@ -31,19 +31,31 @@ NOT_FRAMES = re.compile(
     r'слово «душа»|кликбейт|собственный браузер|google flow|цель при создании|без слышимого звука|'
     r'объединение коротких фраз|смысловое объединение|восьмисекундное вступление|сверка каждой расшифровки|'
     r'ориентиры индивидуального стиля|план кадрів тільки після|кроки випуску й одна команда|место на диске|'
-    r'ещё не определено|медичні стилі', re.I)
+    r'ещё не определено|медичні стилі|одна пауза на випуск|план кадрів зі сценарію паралельно|'
+    # replaced by later rules: the director sets every move, `place` without --motion stays still (8 November 2026)
+    r'непрерывный зум каждой фотографии', re.I)
+# Grouping sentences into frames is the director's work: the planning brief keeps these, the frame sessions do not.
+PLANNING = re.compile(r'объединение коротких фраз|смысловое объединение', re.I)
+# «Прямое указание пользователя только для Алексея Горбунова и Валентина Чичваркина: …» names its channels in the first
+# sentence of the body, not in the heading.
+FOR_WHOM = re.compile(r'^[^:\n]{0,200}?\b(?:только|тільки|лише)?\s*для\s+([^:\n]{0,160})', re.I)
 # Rules written for named channels go only to those channels.
-NAMED = {'алексе': 'горбунов', 'горбунов': 'горбунов', 'валентин': 'чичвар', 'чичвар': 'чичвар',
+NAMED = {'алексе': 'горбунов', 'олекс': 'горбунов', 'горбунов': 'горбунов', 'валентин': 'чичвар', 'чичвар': 'чичвар',
          'карл': 'karl', 'karl': 'karl', 'антропов': 'антропов', 'ветров': 'ветров'}
 PHOTO_ONLY = re.compile(r'фото|красивый текст по озвучке|кадрирован|изображения из интернета|последовательная дорожка|инфографик|картинок на одном', re.I)
 
 
-def for_frames(heading, channel, animated):
-    """Whether a standing rule section belongs in the brief of the frame agent of this channel."""
-    if NOT_FRAMES.search(heading):
+def for_frames(heading, channel, animated, body='', planning=False):
+    """Whether a standing rule section belongs in the brief of the frame agent (or, with planning, the director)."""
+    if NOT_FRAMES.search(heading) and not (planning and PLANNING.search(heading)):
         return False
     low, name = heading.lower(), channel.lower()
     named = {target for key, target in NAMED.items() if key in low}
+    if not named:
+        first = next((line for line in body.splitlines()[1:] if line.strip()), '')
+        whom = FOR_WHOM.match(first)
+        if whom and not re.search(r'всех|всіх|усіх', whom.group(1), re.I):
+            named = {target for key, target in NAMED.items() if key in whom.group(1).lower()}
     if named and not any(target in name for target in named):
         return False
     return not (animated and PHOTO_ONLY.search(heading))
@@ -62,16 +74,19 @@ def sections(text, *, production=False):
     return '\n\n'.join(p for p in kept if p)
 
 
-def rules(project, *, production=False):
+def rules(project, *, production=False, planning=False):
+    """The standing rules of this stage: the frame sessions (production) and the director (planning) get the sections
+    that govern their work, without the other stages', other channels' and replaced ones."""
     channel = Path(project['episode_path']).parent
     sources = [store.YOUTUBE_ROOT / 'AGENTS.md', store.channel_rules_source(channel)]
     seen, blocks = set(), []
     animated = store.project_animated(project)
+    staged = production or planning
     for path in sources:
-        text = sections(author_rules._read(path), production=production)
-        if production:
+        text = sections(author_rules._read(path), production=staged)
+        if staged:
             text = '\n\n'.join(part.strip() for part in re.split(r'(?m)^(?=#{1,3} )', text)
-                                 if part.strip() and for_frames(part.splitlines()[0], channel.name, animated))
+                                 if part.strip() and for_frames(part.splitlines()[0], channel.name, animated, part, planning))
         for paragraph in re.split(r'\n\s*\n', text):
             key = paragraph.strip()
             if key and key not in seen:
@@ -93,6 +108,8 @@ COMMANDS = '''
 Використовуй абсолютні шляхи в лапках. Файли змінюй через Write/Edit; для довшої логіки
 збережи короткий Python-скрипт через Write і виконай його однією командою python3.
 Текст читай через Read з offset/limit. Не повторюй відхилену складну shell-команду.
+Код студії (backend/*.py, tools/*.py) для довідки не читай: команди, ops і шари описані тут; якщо команда відмовила,
+її повідомлення каже, що виправити.
 Це зберігає звичайні перевірки дозволів; не змінюй дозволи CLI.
 '''
 

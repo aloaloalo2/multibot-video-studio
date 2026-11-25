@@ -51,9 +51,25 @@ class DirectorTest(unittest.TestCase):
                 patch.object(store, "get_channel_folder", return_value=Path("/channels/Test")), \
                 patch.object(author_rules, "claude_memory", return_value="Нотатки автора") as memory:
             text = director.channel_memory(PROJECT)
-        memory.assert_called_once_with("Test", limit=20000, montage_only=True)
+        memory.assert_called_once_with("Test", limit=10 ** 7, montage_only=True)
         self.assertIn("Поточні правила каналу", text)
         self.assertIn("Нотатки автора", text)
+
+    def test_frame_notes_leave_out_other_stages_and_channels_and_fit_whole(self):
+        notes = "\n\n".join([
+            "[accent-animation-rules]\nАкценти на фото мають активну анімацію.\n\n**Why:** користувач.\n\nПов'язано з [[every-frame-moves]].",
+            "[youtube-publish-schedule]\nПублікуємо у вбудованому браузері.",
+            "[russian-scripts-yo]\nУ російському тексті для озвучки «ё».",
+            "[vertical-phone-photos]\nДля Karl Brenners Werkstatt, Олексія Горбунова й Валентина Чичваркина кадри живі.",
+            "[studio-place-quirks]\nПастки у випуску «Алексей Горбунов/24»: шлях із project.json."])
+        text = director.frame_notes(notes, "Космос PRO")
+        self.assertIn("[accent-animation-rules]", text)
+        self.assertIn("**Why:** користувач.", text)
+        self.assertNotIn("[[every-frame-moves]]", text)
+        self.assertIn("[studio-place-quirks]", text)   # an incident place is not an addressee
+        for gone in ("youtube-publish-schedule", "russian-scripts-yo", "vertical-phone-photos"):
+            self.assertNotIn(gone, text)
+        self.assertIn("[vertical-phone-photos]", director.frame_notes(notes, "Алексей Горбунов"))
 
     def test_brief_names_the_episode_steps_and_the_limits(self):
         text = director.brief(PROJECT)

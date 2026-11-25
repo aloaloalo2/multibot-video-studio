@@ -93,5 +93,24 @@ class FrameBriefFilterTest(unittest.TestCase):
         self.assertFalse(mc.for_frames('## Шесть PNG на одном листе для Алексея и Валентина', 'What If', True))
         self.assertTrue(mc.for_frames('## Шесть PNG на одном листе для Алексея и Валентина', 'Алексей Горбунов', False))
         self.assertFalse(mc.for_frames('## Непрерывный зум каждой фотографии на 20%', 'КОСМОС', True))
-        self.assertTrue(mc.for_frames('## Непрерывный зум каждой фотографии на 20%', 'Karl Brenners Werkstatt', False))
+        # replaced for every channel: the director sets each move, `place` without --motion stays still (8 November 2026)
+        self.assertFalse(mc.for_frames('## Непрерывный зум каждой фотографии на 20%', 'Karl Brenners Werkstatt', False))
         self.assertTrue(mc.for_frames('## Центральный текст в такт голосу', 'КОСМОС', True))
+
+
+class StageFilterTest(unittest.TestCase):
+    def test_channels_named_in_the_first_sentence_keep_their_rule(self):
+        import montage_context as mc
+        part = ('## Боковое движение фото, 22 октября 2026 года\n\nПоследнее прямое указание пользователя только для Алексея '
+                'Горбунова и Валентина Чичваркина: большинство фотографий плавно движется.')
+        self.assertTrue(mc.for_frames(part.splitlines()[0], 'Алексей Горбунов', False, part))
+        self.assertFalse(mc.for_frames(part.splitlines()[0], 'Космос PRO', False, part))
+        general = '## Быстрое производство\n\nПрямое уточнение пользователя для всех каналов: ускорять производство.'
+        self.assertTrue(mc.for_frames(general.splitlines()[0], 'Космос PRO', False, general))
+
+    def test_grouping_sentences_stays_with_the_director_only(self):
+        import montage_context as mc
+        heading = '## Объединение коротких фраз в один кадр, 17 октября 2026 года'
+        self.assertFalse(mc.for_frames(heading, 'Karl Brenners Werkstatt', False))
+        self.assertTrue(mc.for_frames(heading, 'Karl Brenners Werkstatt', False, planning=True))
+
