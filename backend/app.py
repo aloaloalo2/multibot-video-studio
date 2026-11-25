@@ -112,7 +112,8 @@ def restart_after_update():
 
 BUSY_WORDS = {"режисура": "режисер", "створення кадрів": "агент кадрів", "музика й ефекти": "збирання музики й ефектів",
               "прев'ю": "агент прев’ю", "агент студії": "агент студії",
-              "розпізнавання озвучки": "розпізнавання озвучки", "експорт": "експорт"}
+              "розпізнавання озвучки": "розпізнавання озвучки", "експорт": "експорт",
+              "перенесення службових файлів після запуску": "перенесення файлів після запуску"}
 
 
 def busy_words(busy: list[str]) -> str:
@@ -863,9 +864,28 @@ def cleanup_blocked(pid):
     return space.busy(pid)
 
 
+def listed(pid: str) -> dict:
+    """A project's own fields as saved, read once per version of its file (store.listed_project): for a status that
+    needs only a field or two. Read only; raises as store.load_project does for a missing or deleted project."""
+    try:
+        data = store.listed_project(store.project_path(pid))
+    except FileNotFoundError:
+        data = None
+    if not isinstance(data, dict):
+        raise store.StudioError("Пошкоджено файл проєкту", 500)
+    if data.get("deleted_at"):
+        raise store.StudioError("Проєкт видалено зі списку", 404)
+    return data
+
+
 def project_jobs(pid: str) -> dict:
     """{what: status} of the work that runs for one project besides its export."""
-    request = store.load_project(pid).get("production_request")
+    # only the saved request is needed here, not the whole read; a project unreadable for a moment still reports the
+    # rest of its work, so a restart keeps waiting for it
+    try:
+        request = listed(pid).get("production_request")
+    except (store.StudioError, OSError, ValueError):
+        request = None
     def status(read):
         try:
             return (read() or {}).get("status")
@@ -915,7 +935,7 @@ def channel_task_outcome(task):
         data = episode_ideas.read_project(pid) if pid else episode_ideas.read(cid)
         return 'cancelled' if data.get('cancelled') else data.get('status')
     if kind == 'створення кадрів':
-        request = store.load_project(pid).get('production_request') or {}
+        request = listed(pid).get('production_request') or {}
         if request.get('paused') and (request.get('paused_by') == 'user' or
                                       request.get('paused_by') is None and str(request.get('error') or '').startswith('Призупинено на ваше прохання')):
             return 'paused_by_user'
@@ -1006,6 +1026,8 @@ def studio_work_status(exports):
             # the director's run makes the film's kit after the plan: the card reads «Підготовка» then
             item['stage'] = ('retime' if item['project_id'] in director.RETIMING and item['project_id'] not in director.ACTIVE
                              else (director.state(item['project_id']) or {}).get('stage'))
+    if STARTUP_STATE.get('current') == 'migrate_at_start':   # project files are moved right after a start
+        result['busy'].append('перенесення службових файлів після запуску')
     if trending_videos.busy():
         result['busy'].append('оновлення добірки конкурентів')
     if title_translation.busy():
@@ -1493,7 +1515,8 @@ class Handler(BaseHTTPRequestHandler):
             project = dict(value["project"])
             if (project.get("production_request") or {}).get("status") in {"requested", "in_progress"}:
                 # no «Створюємо кадри» for a run that no longer exists
-                request = production.settle(project["id"])
+                # the project just read is the one settle would read again (0.25 s on a long episode)
+                request = production.settle(project["id"], project)
                 if request and request.get("status") != project["production_request"].get("status"):
                     project = dict(store.load_project(project["id"]))
             project.update(store.history_state(project["id"]))
@@ -1736,7 +1759,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(narration_revision.snapshot(revision.group(1)))
         narration = re.fullmatch(r'/api/projects/([0-9a-f]{24})/narration', path)
         if narration:
-            store.load_project(narration.group(1))
+            listed(narration.group(1))
             return self.json_response(project_narration.snapshot(narration.group(1)))
         edit_match=re.fullmatch(r'/api/projects/([0-9a-f]{24})/production-edits',path)
         if edit_match:
@@ -1847,7 +1870,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'project':project})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/exports", path)
         if match:
-            store.load_project(match.group(1))
+            listed(match.group(1))
             return self.json_response({"active": active_export(match.group(1)), "jobs": recent_exports(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/summary", path)
         if match:
@@ -1939,7 +1962,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/thumbnail", path)
         if match:
             if (query.get('compact') or [''])[0]=='1':
-                store.load_project(match.group(1))
+                listed(match.group(1))
                 return self.json_response({'compact':True,'job':status_views.job(thumbnail_gen.state(match.group(1))),
                                            'thumbnail_jobs':languages.thumbnail_status(match.group(1))})
             return self.json_response({**thumbnail_gen.defaults(match.group(1)), **languages.thumbnail_gallery(match.group(1))})
@@ -2005,7 +2028,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/costs", path)
         if match:
             pid = match.group(1)
-            store.load_project(pid)
+            listed(pid)
             # Card hover is entirely local; balance refresh retains the conversion basis separately.
             balance = store.read_json(store.DATA_ROOT/'eleven-credit-usd.json', {}) or {}
             data = project_costs.summary(pid, credit_rate=balance.get('credit_usd_rate'))
@@ -2022,11 +2045,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(data)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/activity/(director|production)", path)
         if match:
-            store.load_project(match.group(1))
+            listed(match.group(1))
             return self.json_response({"activity": store.read_json(director.activity_path(*match.groups()), [])})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/director", path)
         if match:
-            store.load_project(match.group(1))
+            listed(match.group(1))
             return self.json_response({"director": director.state(match.group(1))})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/number-fixes", path)
         if match:
@@ -2154,7 +2177,7 @@ class Handler(BaseHTTPRequestHandler):
 
         match = re.fullmatch(r'/api/projects/([0-9a-f]{24})/completion/seen', path)
         if match and method == 'POST':
-            store.load_project(match.group(1))
+            listed(match.group(1))
             completion_notices.seen(match.group(1), body.get('through'))
             return self.json_response({'seen': True})
         if method=='POST' and path=='/api/studio/restart/prepare':
@@ -2176,7 +2199,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'status': 'restarting'}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/tidy", path)
         if match and method == "POST":
-            store.load_project(match.group(1))
+            listed(match.group(1))
             threading.Thread(target=tidy_project, args=(match.group(1),), daemon=True).start()
             return self.json_response({"started": True}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/razgon-link", path)
@@ -2427,7 +2450,7 @@ class Handler(BaseHTTPRequestHandler):
             frames = body.get("frames")
             if frames is not None and (not isinstance(frames, list) or not all(type(n) is int for n in frames)):
                 raise store.StudioError("frames: список номерів кадрів", 400)
-            store.load_project(match.group(1))
+            listed(match.group(1))
             return self.json_response({"started": event_sounds.start(match.group(1), set(frames) if frames else None)}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frame-review", path)
         if match and method == "POST":
@@ -2654,6 +2677,64 @@ def production_edits_loop():
             traceback.print_exc()
 
 
+def migrate_at_start() -> None:
+    for cid, result in technical_files.migrate_channels().items():
+        if isinstance(result, dict) and result.get("error"):
+            print(f"Channel configuration migration of {cid}: {result['error']}", flush=True)
+    for pid, result in technical_files.migrate_all().items():
+        if isinstance(result, dict) and result.get("error"):
+            print(f"Technical file migration of {pid}: {result['error']}", flush=True)
+
+
+def start_automation() -> None:
+    import youtube_dates   # release dates of episodes marked published by Finder's blue tag, from the channels' feeds
+    youtube_dates.start()
+    # «Автоекспорт» and «Автопублікація» of the channels that switched them on, once the projects are migrated
+    auto_pipeline.start(lambda project, confirmation, bitrate: start_export(project, confirmation, bitrate), active_export)
+
+
+def start_edits_queue() -> None:
+    # the author's queued frame edits start only on migrated projects, after an interrupted run was settled
+    threading.Thread(target=production_edits_loop, daemon=True).start()
+
+
+def keep_sounds() -> None:
+    # every episode's sound gets a copy in the studio, so it still plays after the episode folder is deleted
+    import keep
+    keep.keep_all()
+
+
+# in this order: the projects are migrated before anything else reads or changes them; a run cut by the restart is
+# settled and hidden projects come back before the slower housekeeping
+STARTUP_TASKS = (
+    migrate_at_start,
+    production.reset_interrupted,
+    start_edits_queue,
+    store.restore_hidden_projects,   # projects an earlier version hid when their episode folder was gone
+    start_automation,
+    director.resume_retimes,
+    razgon_kit_at_start,
+    topics.update_all,
+    keep_sounds,
+    spend_report.backfill_all,       # a run that ended while an older version ran still gets its spend report
+    language_mix.refresh_all,        # language soundtracks saved before the music and effects are mixed again
+    style_lab.warm,
+    warm_project_cache,              # replaced Razgon renders are pruned, every project read once
+)
+STARTUP_STATE = {"done": False, "current": None}
+
+
+def run_startup(tasks) -> None:
+    """Each start-up task once, in order; one that fails is written to the log and the next one runs."""
+    for task in tasks:
+        STARTUP_STATE["current"] = getattr(task, "__name__", str(task))
+        try:
+            task()
+        except Exception:
+            traceback.print_exc()
+    STARTUP_STATE.update(done=True, current=None)
+
+
 def main():
     parser = argparse.ArgumentParser(description="VideoKey Studio local server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -2672,36 +2753,16 @@ def main():
         faulthandler.register(signal.SIGUSR1, file=main.threads_file, all_threads=True)
     except (OSError, AttributeError, ValueError):
         pass
+    # every project read of this server is kept per version of its files (backend/project_reads.py)
+    import project_reads
+    project_reads.install()
     server = StudioHTTPServer((args.host, args.port), Handler)
-    for cid, result in technical_files.migrate_channels().items():
-        if isinstance(result, dict) and result.get("error"):
-            print(f"Channel configuration migration of {cid}: {result['error']}", flush=True)
-    for pid, result in technical_files.migrate_all().items():
-        if isinstance(result, dict) and result.get("error"):
-            print(f"Technical file migration of {pid}: {result['error']}", flush=True)
     threading.Thread(target=update_loop, daemon=True).start()
-    import youtube_dates   # release dates of episodes marked published by Finder's blue tag, from the channels' feeds
-    youtube_dates.start()
-    import auto_pipeline   # «Автоекспорт» and «Автопублікація» of the channels that switched them on
-    auto_pipeline.start(lambda project, confirmation, bitrate: start_export(project, confirmation, bitrate), active_export)
-    # Checking every plan takes seconds on long episodes; do it before the first page asks for the project list.
-    threading.Thread(target=warm_project_cache, daemon=True).start()
-    threading.Thread(target=style_lab.warm, daemon=True).start()
-    threading.Thread(target=production.reset_interrupted, daemon=True).start()
-    threading.Thread(target=production_edits_loop,daemon=True).start()
     threading.Thread(target=tidy_loop, daemon=True).start()
-    threading.Thread(target=razgon_kit_at_start, daemon=True).start()
-    threading.Thread(target=director.resume_retimes, daemon=True).start()
-    # projects an earlier version hid when their episode folder was gone come back to the list
-    threading.Thread(target=store.restore_hidden_projects, daemon=True).start()
-    # every episode's sound gets a copy in the studio, so it still plays after the episode folder is deleted
-    import keep
-    threading.Thread(target=keep.keep_all, daemon=True).start()
-    threading.Thread(target=topics.update_all, daemon=True).start()
-    # a run that ended while an older version was running (or the studio was down) still gets its spend report
-    threading.Thread(target=spend_report.backfill_all, daemon=True).start()
-    # language soundtracks saved before the timeline got its music and effects are mixed again (local, free)
-    threading.Thread(target=language_mix.refresh_all, daemon=True).start()
+    # the start-up work runs in the background, one task after another, so the server answers at once and the first
+    # pages do not wait behind a dozen threads holding the interpreter (the migrations alone took 8-12 s before the
+    # server answered its first request, 25 November 2026)
+    threading.Thread(target=run_startup, args=(STARTUP_TASKS,), name="startup", daemon=True).start()
     print(f"VideoKey Studio ready at http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
