@@ -3398,3 +3398,6 @@ select option{background:#232327;color:#f1f1f2}
 .thumb-choices .thumb-hero-choice input[type=checkbox]{width:16px!important;min-width:16px;height:16px!important;flex:none}
 .thumb-choices .thumb-hero-avatar{width:28px;height:28px;border-radius:50%;flex:none;object-fit:cover}
 .thumb-choices .thumb-style-strip{margin-left:auto;display:inline-flex;gap:4px}
+
+/* SFX source headings in the channel's sound settings: the studio's own set, then CapCut's trending sounds */
+.channel-sound-source{grid-column:1/-1;margin:10px 0 2px;font-size:12px;color:var(--muted,#999da8);text-transform:none}

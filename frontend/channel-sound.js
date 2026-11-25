@@ -100,7 +100,13 @@ function bindChannelSound(saved){
         const present=new Set(rows.map(row=>row.mixkit_id));
         group.unavailableChoices=(saved?.library?.ids||[]).filter(id=>!present.has(id));
       }
+      let lastSource=null;
       for(const row of rows){
+        // CapCut's trending sounds get their own heading under the studio's own SFX (25 November 2026)
+        if(group.key==='library'&&row.source_group&&row.source_group!==lastSource){
+          if(lastSource!==null||row.source_group==='capcut'){const head=document.createElement('div');head.className='channel-sound-source';head.textContent=row.source_group==='capcut'?'CapCut · У тренді':'Добірка студії';group.list.append(head);}
+          lastSource=row.source_group;
+        }
         const item=document.createElement('div');item.className='channel-sound-category';
         const label=document.createElement('label');label.className='check';
         const input=document.createElement('input');input.type='checkbox';input.value=group.key==='library'?row.mixkit_id:row.id;
@@ -111,7 +117,7 @@ function bindChannelSound(saved){
         const play=document.createElement('button');play.type='button';play.className='sound-preview';play.setAttribute('aria-label',`Прослухати: ${row.label}`);play.setAttribute('aria-pressed','false');play.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
         play.addEventListener('click',async()=>{
           const wasPlaying=play.classList.contains('playing');stop();if(wasPlaying)return;
-          const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=.6;   // every SFX is levelled to one loudness, so one player volumesample=audio;
+          const audio=document.createElement('audio');audio.src=row.preview_url;audio.volume=.6;sample=audio;   // every SFX is levelled to one loudness, so one player volume
           audio.hidden=true;item.append(audio);
           audio.onended=audio.onerror=()=>{if(sample===audio)stop();audio.remove();};
           play.classList.add('playing');play.setAttribute('aria-pressed','true');

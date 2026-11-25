@@ -17,14 +17,24 @@ MAX_SECONDS = 4.0
 LEVELED = 'sfx-library-v2'
 
 
+# CapCut's «Sound effects → Trending» list as of 25 November 2026 (user: «в CapCut є Sound Effects трендінг… всі їх скачай
+# в SFX, постав в нашу студію»): the 86 that CapCut marks for commercial use and that last at most 4.0 s (the studio levels SFX to 4 s at most), so none is cut.
+# A row keeps its CapCut id in `mixkit_id`, the key every SFX choice and route already uses.
+CAPCUT = 'capcut-trending-20261125'   # beside ROOT
+
+
 def catalog():
-    path = ROOT / 'catalog.json'
-    if not path.is_file():
-        return []
-    rows = json.loads(path.read_text(encoding='utf-8'))
-    return [{**r, 'name': str(ROOT / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
-             'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
-            for r in rows if (ROOT / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
+    found = []
+    for root in (ROOT, ROOT.parent / CAPCUT):
+        path = root / 'catalog.json'
+        if not path.is_file():
+            continue
+        rows = json.loads(path.read_text(encoding='utf-8'))
+        found += [{**r, 'name': str(root / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
+                   'source_group': 'capcut' if 'capcut_id' in r else 'mixkit',
+                   'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
+                  for r in rows if (root / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
+    return found
 
 
 def leveled(row) -> Path:

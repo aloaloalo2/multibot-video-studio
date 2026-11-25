@@ -145,3 +145,22 @@ class LibraryApiTest(LibraryTest):
             body['ops'][0]['cues'][0]['t'] = 3
             self.request(f'/api/projects/{pid}/ops', 'POST', body)
             self.assertEqual(store.load_project(pid)['revision'], revision)
+
+
+class CapcutTrendingTest(unittest.TestCase):
+    """CapCut's trending sounds sit beside the studio's own set, whole and at most 4 s (25 November 2026)."""
+
+    def test_both_sources_are_listed_and_capcut_rows_are_marked(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            own, capcut = base / 'mixkit', base / sfx_library.CAPCUT
+            own.mkdir(); capcut.mkdir()
+            (own / 'catalog.json').write_text(json.dumps([{'mixkit_id': '1', 'label': 'a', 'category': 'whoosh', 'duration_seconds': 1}]))
+            (capcut / 'catalog.json').write_text(json.dumps([{'mixkit_id': '7380059209545746473', 'capcut_id': '7380059209545746473',
+                                                              'label': 'Клік мишки', 'category': 'click', 'duration_seconds': 0.74}]))
+            (own / '1.wav').write_bytes(b'x'); (capcut / '7380059209545746473.wav').write_bytes(b'x')
+            with patch.object(sfx_library, 'ROOT', own):
+                rows = sfx_library.catalog()
+        self.assertEqual([r['source_group'] for r in rows], ['mixkit', 'capcut'])
+        self.assertTrue(rows[1]['preview_url'].startswith('/api/sfx-library/7380059209545746473.wav'))
