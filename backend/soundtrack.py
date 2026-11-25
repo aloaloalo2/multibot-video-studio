@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -40,20 +39,78 @@ SFX_PREFIX = PREFIX + 'SFX · '
 SFX_VOLUME = .07   # universal projects, the author's level (25 November 2026: «краще на 6% сфх для універсальних проектів… або 7»); it was .25, then .14
 
 
-_PEAKS = {}
+_PEAKS: dict = {}
+_PEAKS_LOADED = False
+PEAKS_FILE = 'sfx-peaks-v1.json'   # in store.DATA_ROOT / 'cache', kept between starts of the studio
 
 
 def _peak(path) -> float:
-    """Seconds from a sound file's start to its loudest 50 ms (kit audio/sfx.py peak_time), measured once a file."""
-    key = str(path)
-    if key not in _PEAKS:
-        import subprocess
-        import numpy as np
-        raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', key, '-f', 'f32le', '-ac', '2', '-ar', '48000', '-'],
-                             capture_output=True).stdout
-        samples = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2) if raw else np.zeros((1, 2), np.float32)
-        _PEAKS[key] = sound_settings.audio_module('sfx').peak_time(samples)
-    return _PEAKS[key]
+    """Seconds from a sound file's start to its loudest 50 ms (kit audio/sfx.py peak_time), measured once a file version
+    and kept on disk: every start of the studio decoded every effect of every project again before (25 November 2026)."""
+    global _PEAKS_LOADED
+    path = Path(path)
+    try:
+        stat = path.stat()
+        key = f'{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}'
+    except OSError:
+        key = None
+    cache = store.DATA_ROOT / 'cache' / PEAKS_FILE
+    with sound_settings.LOCK:
+        if not _PEAKS_LOADED:
+            _PEAKS.update(store.read_json(cache, {}) or {})
+            _PEAKS_LOADED = True
+        if key in _PEAKS:
+            return _PEAKS[key]
+    import numpy as np
+    raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(path), '-f', 'f32le', '-ac', '2', '-ar', '48000', '-'],
+                         capture_output=True).stdout
+    samples = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2) if raw else np.zeros((1, 2), np.float32)
+    peak = peak_time(samples)
+    if key and raw:
+        with sound_settings.LOCK:
+            _PEAKS[key] = peak
+            try:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                store.atomic_json(cache, _PEAKS)
+            except OSError:
+                pass
+    return peak
+
+
+def peak_time(samples) -> float:
+    """The kit's audio/sfx.py peak_time without importing the kit (its scipy took 4 s at the first sound pass): seconds
+    from the start to the middle of the loudest 50 ms of 48 kHz stereo samples."""
+    import numpy as np
+    power = (np.asarray(samples, dtype=np.float32).astype(np.float64) ** 2).sum(axis=1)
+    return float(np.argmax(np.convolve(power, np.ones(2400), 'same'))) / 48000
+
+
+_DIGESTS: dict = {}
+
+
+def _digest(path: Path) -> str:
+    """The first 12 hex of a library file's SHA-256, read once a file version (it was read whole for every cue)."""
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in _DIGESTS:
+        _DIGESTS[key] = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return _DIGESTS[key]
+
+
+def _library_copy(folder: Path, row) -> tuple[Path, Path]:
+    """(the project's file of a library effect, the shared levelled file it is a copy of). The project keeps its own file
+    (the timeline plays only files of the project), as an APFS clone of the levelled one: no second copy on the disk."""
+    path = folder / ('mixkit-' + row['mixkit_id'] + '-' + _digest(Path(row['name'])) + '-v4.wav')
+    shared = sfx_library.leveled_path(row)
+    if path.exists():
+        return path, shared if shared.is_file() else path
+    shared = sfx_library.leveled(row)
+    if not path.exists():
+        part = path.with_name(path.stem + '.part.wav')
+        part.unlink(missing_ok=True)
+        store.clone_or_copy(shared, part)
+        part.replace(path)
+    return path, shared
 
 
 def full_take(module, name: str, seed: int = 7):
@@ -80,10 +137,11 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
     library = {row['name']: row for row in sfx_library.catalog()} if not transition else sound_settings.capcut_transitions()
     allowed.update(sfx_library.allowed(sound) if library and not transition else [])
     # any effect of the kit stays known, so cues written with a sound that left the list still lay
-    known = set(library) | set(sound_settings.audio_module('sfx').LIB) | {'tr_' + key for key, _ in sound_settings.TRANSITIONS} | set(sound_settings.capcut_transitions())
+    known = set(library) | {'tr_' + key for key, _ in sound_settings.TRANSITIONS} | set(sound_settings.capcut_transitions())
+    is_known = lambda name: name in known or isinstance(name, str) and name in sound_settings.audio_module('sfx').LIB
     events = []
     for cue in cues:
-        if not isinstance(cue, dict) or cue.get('name') not in known:
+        if not isinstance(cue, dict) or not is_known(cue.get('name')):
             raise ValueError('Невідомий звуковий ефект')
         at, duration = float(cue.get('t', 0)), float(cue.get('dur', .7))   # dur is kept for old cues; the sound plays whole
         if not math.isfinite(at) or not math.isfinite(duration) or not 0 <= at <= total - .1 or not .1 <= duration <= 6:
@@ -91,7 +149,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
         # the studio's own passes (typing, pencil, appearances) check the channel's choice themselves and may take any
         # sound of a kind the channel allows: every pencil that writes, not only the one ticked (user, 25 November 2026:
         # «щоб не один звук там брався, що пише, а там різні звуки»)
-        if cue['name'] in allowed or transition and cue.get('required') and cue['name'] in known \
+        if cue['name'] in allowed or transition and cue.get('required') and is_known(cue['name']) \
                 or (typing or drawing or appear) and cue['name'] in library:
             gain = float(cue.get('gain', -8))
             if not math.isfinite(gain) or not -60 <= gain <= 6:
@@ -101,7 +159,11 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
                            **({'from_start': True} if appear and cue.get('from_start') else {}),
                            **({'hit': min(float(cue['hit']), total - .05)} if transition and isinstance(cue.get('hit'), (int, float)) else {})})
     use_music = music and sound['music']['enabled'] and sound['music']['generate']
-    existing = {c.get('title', '') for layer in ctx.project['tracks'] for c in layer['clips']}
+    by_title = {}
+    for layer in ctx.project['tracks']:
+        for c in layer['clips']:
+            by_title.setdefault(c.get('title', ''), c)
+    existing = set(by_title)
     existing.update(a['payload'].get('title', '') for a in ctx.actions if a['type'] == 'add_clip')
     if any(c.get('kind') == 'audio' and ('муз' in c.get('title', '').lower() or 'music' in c.get('title', '').lower())
            for layer in ctx.project['tracks'] for c in layer['clips']):
@@ -117,7 +179,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
 
     def add(path, title, start, duration, volume):
         if title in existing:
-            old = next((c for layer in ctx.project['tracks'] for c in layer['clips'] if c.get('title') == title), None)
+            old = by_title.get(title)
             if not (transition or typing or drawing or appear) or old is None or (abs(float(old['start']) - start) < .001 and abs(float(old['duration']) - duration) < .001):
                 # music laid before the measured level gets the measured one on the next pass
                 if old is not None and title.startswith(PREFIX + 'музика') and abs(float(old.get('volume', 1)) - volume) > .005:
@@ -158,19 +220,16 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
                     wav.unlink(missing_ok=True)
                     path.with_suffix('.pending.flac').unlink(missing_ok=True)
         add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
-    module = sound_settings.audio_module('sfx') if any(c['name'] not in library for c in events) else None
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]
         row = library.get(cue['name'])
         if row:
-            source = Path(row['name'])
-            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v4.wav')
-            if not path.exists():
-                shutil.copy2(sfx_library.leveled(row), path)   # levelled and at most 4 s, like the synthesized ones
+            path, measured = _library_copy(folder, row)   # levelled and at most 4 s, like the synthesized ones
         else:
-            path = folder / f'sfx-v5-{cue["name"]}.wav'
+            path = measured = folder / f'sfx-v5-{cue["name"]}.wav'
             with sound_settings.LOCK:
                 if not path.exists():
+                    module = sound_settings.audio_module('sfx')
                     module.write_wav(str(path), full_take(module, cue['name'])[0])
         # the whole file, never shorter: only the film's own end can stop it
         length = float(row['duration_seconds']) if row else (store.media_duration(path) or cue['dur'])
@@ -188,7 +247,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
         # the loudest moment of the sound lands on its event (user, 21 November 2026: «переходи часто не в момент
         # переходів»): on a seam, the middle of the transition; on any other cue, the cue's own time
         # typing has no single peak: it starts with the first letter
-        hit = cue['t'] if typing or drawing or cue.get('from_start') else (cue['hit'] if 'hit' in cue else cue['t'] + (cue['dur'] / 2 if transition else 0)) - _peak(path)
+        hit = cue['t'] if typing or drawing or cue.get('from_start') else (cue['hit'] if 'hit' in cue else cue['t'] + (cue['dur'] / 2 if transition else 0)) - _peak(measured)
         start = round(max(0.0, min(hit, total - .1)), 3)
         add(path, title, start, max(.1, min(length, total - start)), min(1.5, SFX_VOLUME * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
@@ -281,21 +340,6 @@ def transitions(ctx, spec=None):
 
 
 TYPING_GAIN = -12   # the keys sit under the voice, quieter than an accent
-TYPED_ENTRANCES = ('letters_fade', 'letters_up', 'letters_blur')
-
-
-def typing_sound(ctx):
-    """The channel's typing sound when its SFX allow one: the longest typing file of the library, else the synthesized one."""
-    sound = sound_settings.for_project(ctx.project)
-    if not sound['effects']['enabled'] and 'library' not in sound:
-        return None
-    rows = [r for r in sfx_library.catalog() if r['name'] in set(sfx_library.allowed(sound))
-            and sound_settings.OLD_CATEGORIES.get(r['category'], r['category']) == 'typing']
-    if rows:
-        return max(rows, key=lambda r: (float(r['duration_seconds']), r['mixkit_id']))['name'], float(max(float(r['duration_seconds']) for r in rows))
-    if 'typing' in sound_settings.allowed_names(sound):
-        return 'typing', full_take(sound_settings.audio_module('sfx'), 'typing')[1]
-    return None
 
 
 WORD_GAP = 1.0      # seconds between two words that end one run of writing and start another
@@ -449,16 +493,6 @@ def typing_pool(ctx) -> list:
     return []
 
 
-def writing_sound(ctx):
-    """The channel's pencil that writes (its label says it writes, else its longest pencil sound), or None."""
-    sounds = drawing_sounds(ctx)
-    if not sounds:
-        return None
-    writes = [(n, d) for n, d in sounds if 'пише' in ((sfx_library.find(n) or {}).get('label') or '').lower()
-              or 'writ' in ((sfx_library.find(n) or {}).get('original_title') or '').lower()]
-    return max(writes or sounds, key=lambda s: (s[1], s[0]))
-
-
 DRAWN = {"стрілка", "коло", "риска"}   # accents that are drawn on screen: an arrow grows, a ring is traced, a line is drawn
 
 
@@ -604,18 +638,23 @@ def appear(ctx, spec=None):
         # an agent's own effect inside a Razgon frame whose loudest moment falls on no event of the picture was guessed:
         # it goes (user, 25 November 2026: «щоб все відповідало дійсно тому, що треба»); one on a real event stays
         moments = [float(e.get('t', 0)) for e in raw if isinstance(e, dict)]
+        rows = {r['mixkit_id']: r for r in sfx_library.catalog()}
         for layer in ctx.project['tracks']:
             for clip in layer['clips']:
                 if clip.get('kind') != 'audio' or not str(clip.get('title', '')).startswith(SFX_PREFIX):
                     continue
                 try:
                     path = store.resolve_asset(ctx.project, clip['asset_id'])['path']
-                    peak = float(clip['start']) + _peak(path)
                 except (store.StudioError, OSError, KeyError, ValueError):
                     continue
                 # only sounds of appearing: an impact or a move is a physical event the scan does not see
-                row = next((r for r in sfx_library.catalog() if 'mixkit-' + r['mixkit_id'] + '-' in Path(path).name), None)
+                found = re.search(r'mixkit-(\d+)-', Path(path).name)
+                row = rows.get(found.group(1)) if found else None
                 if row is None or _kind(row) not in TEXT_KINDS + PICTURE_KINDS[:3] + ('drawing', 'typing', None):
+                    continue
+                try:
+                    peak = float(clip['start']) + _peak(path)
+                except (OSError, ValueError):
                     continue
                 if any(b[1] <= peak <= b[2] for b in blocks) and not any(abs(peak - m) <= .5 for m in moments):
                     ctx.actions.append({'type': 'delete_clip', 'payload': {'clip_id': clip['id']}})

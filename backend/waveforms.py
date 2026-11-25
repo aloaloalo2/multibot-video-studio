@@ -15,6 +15,8 @@ def minmax(block):
     if sys.byteorder!='little':samples.byteswap()
     return (min(samples),max(samples)) if samples else (0,0)
 
+PER_SECOND=1000
+
 def read_peaks(source, cache_dir, bins=8000):
     source=Path(source);stat=source.stat()
     key=hashlib.sha256((str(source)+str(stat.st_size)+str(stat.st_mtime_ns)+str(bins)).encode()).hexdigest()
@@ -35,7 +37,9 @@ def read_peaks(source, cache_dir, bins=8000):
                 raise store.StudioError('Не вдалося прочитати звук цього файлу для хвилі',422) from None
             audio=wave.open(str(path),'rb')
         with audio:
-            count=audio.getnframes();rate=audio.getframerate();size=max(1,math.ceil(count/bins));peaks=[]
+            # at most PER_SECOND points a second: a 4 s effect gave 8000 points of 6 samples each (130 KB a clip, 3 MB for the
+            # effects of one episode) while the timeline draws at most two a pixel (25 November 2026)
+            count=audio.getnframes();rate=audio.getframerate();size=max(1,math.ceil(count/bins),math.ceil(rate/PER_SECOND));peaks=[]
             while True:
                 block=audio.readframes(size)
                 if not block:break
