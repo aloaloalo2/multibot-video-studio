@@ -63,15 +63,23 @@ class HandWritingTest(unittest.TestCase):
             (root / "story").mkdir()
             (root / "scenes" / "shots").mkdir(parents=True)
             (root / "story" / "shots.json").write_text(json.dumps({"shots": [{"id": "f001s01", "start": 0, "end": 5}, {"id": "f002s01", "start": 5, "end": 9}]}))
-            (root / "scenes" / "shots" / "f001s01.js").write_text("kText(g, 'Title', 1, 1)")
-            (root / "scenes" / "shots" / "f002s01.js").write_text("drawHand(g, pencil.x, pencil.y); kText(g, 'Note', 1, 1)")
-            events = [{"t": 1, "kind": "write", "dur": 1}, {"t": 6, "kind": "write", "dur": 1}, {"t": 7, "kind": "text"}]
+            (root / "scenes" / "shots" / "f001.js").write_text("registerShot('f001s01', {draw(g){ kText(g, 'Title', 1, 1) }})")
+            # Andromeda 23: a hand with a pen writes a catalogue (user, 25 November 2026: «олівець підійде тут»)
+            (root / "scenes" / "shots" / "f002.js").write_text("registerShot('f002s01', {draw(g){ /* the hand with a pen writes the note */ img(g, A.hand_pen); kText(g, 'Note', 1, 1) }})")
+            events = [{"t": 1, "kind": "write", "dur": 1}, {"t": 2, "kind": "picture"}, {"t": 5.4, "kind": "text"},
+                      {"t": 6.2, "kind": "text"}, {"t": 7.0, "kind": "text"}, {"t": 8.9, "kind": "picture"}]
             with patch.object(store, "razgon_link", return_value={"project": str(root)}):
                 marked = event_sounds.mark_hands({}, events)
-        self.assertEqual([e.get("hand") for e in marked], [None, True, None])
+        # the lines the hand writes become one stretch of pencil, from the first line to the end of the last
+        self.assertEqual([(e["kind"], e.get("hand")) for e in marked],
+                         [("write", None), ("picture", None), ("write", True), ("picture", None)])
+        self.assertAlmostEqual(marked[2]["dur"], 7.0 + event_sounds.HAND_LINE - 5.4)
 
     def test_typing_pass_takes_keys_for_texts_and_a_pencil_only_for_a_hand(self):
         import soundtrack
-        self.assertTrue(soundtrack.HAND.search("const hand = drawHand()"))
-        self.assertTrue(soundtrack.HAND.search("chalk.write"))
-        self.assertFalse(soundtrack.HAND.search("handler(); kText('Андромеда')"))
+        self.assertTrue(soundtrack.HAND.search("// the hand with a dip pen writes the next rows"))
+        self.assertTrue(soundtrack.HAND.search("chalk.write(g, 'x')"))
+        self.assertTrue(soundtrack.HAND.search("// рука олівцем пише формулу"))
+        # a hand alone, a map marker, an «open» or «expensive» are no pen writing
+        self.assertFalse(soundtrack.HAND.search("const hand = {x: Math.sin(t)}; cam.x += hand.x"))
+        self.assertFalse(soundtrack.HAND.search("handler(); open(); expensive(); a marker rides it"))
