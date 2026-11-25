@@ -11,7 +11,7 @@ function universalSelection(){for(const layer of layers()){const clip=(layer.cli
 function activeLayer(){return layers().find(layer=>layer.id===state.activeLayer) || layers()[layers().length-1];}
 function clipKindLabel(kind){return {video:'Відео',image:'Фото',audio:'Аудіо',text:'Текст',animation:'Анімація'}[kind] || 'Кліп';}
 function clipLabel(clip){return clip.title || clip.text || assetById(clip.asset_id)?.name || ({video:'Відео',image:'Фото',audio:'Звук',text:'Текст',animation:'Анімація'}[clip.kind] || 'Кліп');}
-function clipIsMuted(clip){return layers().find(layer=>layer.clips.some(c=>c.id===clip.id))?.muted===true;}
+function clipIsMuted(clip){return memoForProject('mutedClips',()=>new Set((state.project?.tracks || []).filter(track=>track.type==='universal'&&track.muted===true).flatMap(track=>(track.clips || []).map(c=>c.id)))).has(clip.id);}
 // The eye of a picture row: switched off, its pictures leave the preview and the export and stay on the timeline. A row
 // of frame groups (each frame on layers of its own) switches all its layers at once, in one undo step.
 function addLayerEyeControl(heading,target,name){
@@ -170,10 +170,16 @@ function legacyAdjacent(clip){
 // One property's keyframes as the export reads them (engine/render.py scalar_value): a first keyframe later than 0
 // starts from the clip's own value at 0, a keyframe at 0 wins over that value (the preview used to show the clip's
 // own value on the first frame), and the value holds after the last keyframe.
+// The points are worked out once per clip object and property (a new project answer brings new clip objects); the caller
+// only reads them. A clip without keyframes needs no lookup at all.
 function keyframePoints(clip,key,base){
-  const known=(clip.keyframes || []).filter(point=>key in point&&Number.isFinite(Number(point[key]))).map(point=>({time:Number(point.time),value:Number(point[key])})).sort((a,b)=>a.time-b.time);
+  if(!clip.keyframes?.length)return [];
+  const cache=keyframePoints.cache||(keyframePoints.cache=new WeakMap());
+  let own=cache.get(clip);if(!own||own.source!==clip.keyframes)cache.set(clip,own={source:clip.keyframes});
+  const slot=key+':'+base;if(own[slot])return own[slot];
+  const known=clip.keyframes.filter(point=>key in point&&Number.isFinite(Number(point[key]))).map(point=>({time:Number(point.time),value:Number(point[key])})).sort((a,b)=>a.time-b.time);
   if(known.length&&known[0].time>1e-9)known.unshift({time:0,value:base});
-  return known;
+  return own[slot]=known;
 }
 function keyframeValue(clip,key,base,local){
   const known=keyframePoints(clip,key,base);
@@ -239,6 +245,17 @@ function renderTimelineGaps(){
   }
 }
 
+// What a preview node is made from: a node made from other things is built again. Kept per clip object, so the long
+// text_words and code of a clip are not turned into a string on every screen refresh.
+function previewSourceSignature(clip,url){
+  const cache=previewSourceSignature.cache||(previewSourceSignature.cache=new WeakMap());
+  let own=cache.get(clip);
+  if(!own)cache.set(clip,own=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type,clip.code,clip.code_assets]));
+  return own+'|'+url;
+}
+// The channel's plate and logo (overlay groups): the preview and the transition layers keep them on top.
+function previewBrandIds(){return memoForProject('previewBrandIds',()=>new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids)));}
+function removePreviewNode(node){node.querySelectorAll('video').forEach(video=>{video.pause();video.removeAttribute('src');video.load();});node._trails?.forEach(trail=>trail.node.remove());node.remove();}
 function renderUniversalPreview(){
   const composition=$('preview-composition'),placeholder=$('preview-placeholder');
   $('preview-video').pause();$('preview-video').hidden=true;$('preview-image').hidden=true;$('preview-overlay').style.display='none';
@@ -263,16 +280,14 @@ function renderUniversalPreview(){
     if(now>=start-1.5&&now<end)prepared.push(clip);
   }
   const needed=new Set(prepared.map(clip=>clip.id)),shown=new Set(visible.map(clip=>clip.id));
-  const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));
+  const brandIds=previewBrandIds();
   const foregroundZ=Math.max(0,...prepared.filter(clip=>!brandIds.has(clip.id)).map(clip=>order.get(clip.id)*4))+2;
-  for(const [id,node] of state.previewNodes)if(!needed.has(id)){
-    node.querySelectorAll('video').forEach(video=>video.pause());node._trails?.forEach(trail=>trail.node.remove());node.remove();state.previewNodes.delete(id);
-  }
+  for(const [id,node] of state.previewNodes)if(!needed.has(id)){removePreviewNode(node);state.previewNodes.delete(id);}
   for(const clip of prepared){
       const asset=assetById(clip.asset_id),url=asset?.preview_url || asset?.media_url || asset?.url;
-      const sourceSignature=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,url,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type,clip.code,clip.code_assets]);
+      const sourceSignature=previewSourceSignature(clip,url);
       let existing=state.previewNodes.get(clip.id);
-      if(existing&&existing._sourceSignature!==sourceSignature){existing.querySelectorAll('video').forEach(video=>video.pause());existing._trails?.forEach(trail=>trail.node.remove());existing.remove();state.previewNodes.delete(clip.id);existing=null;}
+      if(existing&&existing._sourceSignature!==sourceSignature){removePreviewNode(existing);state.previewNodes.delete(clip.id);existing=null;}
       if(!existing){
       const wrapper=document.createElement('div');wrapper.className='composition-clip';wrapper.dataset.clipId=clip.id;
       wrapper._sourceSignature=sourceSignature;
@@ -301,6 +316,10 @@ function renderUniversalPreview(){
         element.addEventListener('error',missing,{once:true});
         if(url){element.src=url;if(element.tagName==='IMG')element.decode().catch(()=>{});}else missing();
       }
+      // the parts the frame loop touches, found once instead of by a selector on every screen refresh
+      wrapper._image=element.tagName==='IMG'?element:null;wrapper._video=element.tagName==='VIDEO'?element:null;
+      wrapper._loop=element.querySelector?.('video.capcut-loop')||null;wrapper._text=mediaKind==='text'?element:null;
+      wrapper._gradient=mediaKind==='gradient'?element:null;wrapper._code=mediaKind==='code'?element:null;
       wrapper.append(element);composition.append(wrapper);state.previewNodes.set(clip.id,wrapper);
       }
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;
@@ -309,12 +328,12 @@ function renderUniversalPreview(){
       // an effect is there from its frame's first moment: its loop is laid out and running, unseen, before the frame
       // comes, instead of starting to load when the frame is already on screen (user, 25 November 2026: «ефект… появляється
       // десь через мікросекунди… має від початку до кінця бути»)
-      if(clip.content_type==='capcut_effect'&&node.hidden){const loop=node.querySelector('video.capcut-loop');node.hidden=false;node.style.visibility='hidden';
+      if(clip.content_type==='capcut_effect'&&node.hidden){const loop=node._loop;node.hidden=false;node.style.visibility='hidden';
         if(loop){if(state.playing){if(loop.paused)loop.play().catch(()=>{});}else if(loop.readyState>=1&&loop.currentTime>.05)loop.currentTime=0;}}
       else if(clip.content_type==='capcut_effect')node.style.visibility='';
-      const image=node.querySelector('img');if(image)image.fetchPriority=node.hidden?'low':'high';
+      if(node._image)node._image.fetchPriority=node.hidden?'low':'high';
       if(foreground)node.dataset.transitionForeground='true';else delete node.dataset.transitionForeground;
-      if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node.querySelector('video');if(video&&!video.paused)video.pause();}
+      if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node._video||node._loop;if(video&&!video.paused)video.pause();}
   }
   // a frame group in a fade is drawn inside one box with the group's opacity (transitionGroup), each layer at full
   // strength in it, so the layers under it do not show through the ones above
@@ -340,22 +359,27 @@ function renderUniversalPreview(){
     // a pixel: left/top moved by whole pixels, so a slow drift stood still and then jumped a pixel, a jerky zoom (user,
     // 25 November 2026: «рвана анімація приближення… немає такої якості, плавності»; Antropov's frame 38)
     const baseX=Number(clip.x ?? .5),baseY=Number(clip.y ?? .5),moving=(clip.keyframes||[]).length>0||values.x!==baseX||values.y!==baseY;
-    wrapper.style.left=(baseX*100)+'%';wrapper.style.top=(baseY*100)+'%';
-    wrapper.style.width=(Number(clip.width ?? 1)*100)+'%';wrapper.style.height=(Number(clip.height ?? 1)*100)+'%';
+    // what does not move with time is written when the clip, the frame's size or the picture's own size changed, not on every
+    // screen refresh (each write is a style recalculation of the node)
+    const text=wrapper._text,image=wrapper._image,look=frameWidth+'|'+(image?image.naturalWidth+'x'+image.complete:'');
+    if(wrapper._styledClip!==clip||wrapper._styledLook!==look){
+      wrapper._styledClip=clip;wrapper._styledLook=look;
+      wrapper.style.left=(baseX*100)+'%';wrapper.style.top=(baseY*100)+'%';
+      wrapper.style.width=(Number(clip.width ?? 1)*100)+'%';wrapper.style.height=(Number(clip.height ?? 1)*100)+'%';
+      if(text && clip.font_size){text.style.fontSize=(Number(clip.font_size)*frameWidth/Number(state.project.width))+'px';text.style.textShadow='none';if(!clip.text_words?.length)text.style.whiteSpace='pre-wrap';}
+      applyGraphicStyle(wrapper,clip,frameWidth);
+    }
     wrapper.style.opacity=String(Math.max(0,Math.min(1,values.opacity)));
     wrapper.style.transform=moving?`translate(-50%, -50%) translate3d(${((values.x-baseX)*frameWidth).toFixed(3)}px, ${((values.y-baseY)*frameHeight).toFixed(3)}px, 0) scale(${Math.max(.05,values.scale)})`
       :`translate(-50%, -50%) scale(${Math.max(.05,values.scale)})`;
-    const text=wrapper.querySelector('.composition-text');
-    if(text && clip.font_size){text.style.fontSize=(Number(clip.font_size)*frameWidth/Number(state.project.width))+'px';text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);text.style.textShadow='none';if(!clip.text_words?.length)text.style.whiteSpace='pre-wrap';}
     if(text && clip.text_words?.length)for(const word of text.children)applyWordEntrance(word,Number(word.dataset.wordStart),clip,local,frameWidth);
-    applyGraphicStyle(wrapper,clip,frameWidth);
-    renderMotionTrails(wrapper,clip,local,composition);
-    const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
-    const codeCanvas=wrapper.querySelector('.composition-code');
+    renderMotionTrails(wrapper,clip,local,frameWidth,frameHeight);
+    const gradientCanvas=wrapper._gradient;if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
+    const codeCanvas=wrapper._code;
     if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.min(Math.max(0,local),Math.max(0,(Number(clip.duration)||0)-1/(Number(state.project?.fps)||25))),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip)});
       if(error!==codeCanvas._error){codeCanvas._error=error;wrapper.dataset.codeError=error||'';if(error)console.warn('Моушн-код «'+(clip.title||'')+'»: '+error);}}
     if(clip.content_type==='capcut_effect')syncCapcutEffect(wrapper,clip,local);
-    const video=wrapper.querySelector('video:not(.capcut-loop)');
+    const video=wrapper._video;
     // past the end of its file (a transition going out of the host's HeyGen clip) the video holds its last frame paused:
     // play() on an ended video starts it from the top, and the seek back made the host blink (user, 25 November 2026)
     if(video&&Number.isFinite(video.duration)&&seconds(clip.trim_start)+local>=video.duration-.05){

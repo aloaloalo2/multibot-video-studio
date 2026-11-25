@@ -1,5 +1,5 @@
 function applyGraphicStyle(wrapper,clip,frameWidth){
-  const k=frameWidth/Number(state.project.width),image=wrapper.querySelector('img'),shape=wrapper.querySelector('.composition-shape'),text=wrapper.querySelector('.composition-text');
+  const k=frameWidth/Number(state.project.width),image=wrapper._image!==undefined?wrapper._image:wrapper.querySelector('img'),shape=wrapper.querySelector('.composition-shape'),text=wrapper._text!==undefined?wrapper._text:wrapper.querySelector('.composition-text');
   const effect=clip.visual_effect&&typeof visualEffectPresets!=='undefined'?visualEffectPresets[clip.visual_effect]||{}:{};
   // a rounded mask without its own radius gets 8 px, as in the export (engine/raster_effects.py decorate); it rounds the
   // picture itself, which the export fits into its box first (engine/render.py contained)
@@ -28,12 +28,14 @@ function containedBox(naturalWidth,naturalHeight,boxWidth,boxHeight){
 
 // the trail stands at the clip's place and moves by the transform in fractions of a pixel, as the clip itself
 // (user, 25 November 2026: «рвану анімацію… прибери… мені треба в всіх проектах… плавну анімацію»)
-function renderMotionTrails(wrapper,clip,local,composition){
-  const enabled=Number(clip.motion_blur || 0)>0 && wrapper.querySelector('img');
+// frameWidth and frameHeight are the composition's size, read once by the caller: read here after the style writes they
+// forced a layout for every trail of every frame
+function renderMotionTrails(wrapper,clip,local,frameWidth,frameHeight){
+  const enabled=Number(clip.motion_blur || 0)>0 && (wrapper._image!==undefined?wrapper._image:wrapper.querySelector('img'));
   if(!enabled)return;
   if(!wrapper._trails){wrapper._trails=[.18,.10].map(opacity=>{const node=wrapper.cloneNode(true);node.removeAttribute('data-clip-id');node.classList.add('motion-trail');node.style.pointerEvents='none';wrapper.before(node);return {node,opacity};});}
   const now=animatedValues(clip,local),dt=.5/Number(state.project.fps || 25),past=animatedValues(clip,Math.max(0,local-dt)),speed=Math.hypot((now.x-past.x)*state.project.width,(now.y-past.y)*state.project.height)/dt;
-  wrapper._trails.forEach(({node,opacity},index)=>{const values=animatedValues(clip,Math.max(0,local-dt*(index+1)/2));node.hidden=wrapper.hidden;node.style.cssText=wrapper.style.cssText;const bx=Number(clip.x ?? .5),by=Number(clip.y ?? .5);node.style.left=bx*100+'%';node.style.top=by*100+'%';node.style.transform=`translate(-50%,-50%) translate3d(${((values.x-bx)*composition.clientWidth).toFixed(3)}px,${((values.y-by)*composition.clientHeight).toFixed(3)}px,0) scale(${values.scale})`;node.style.opacity=String(speed>180?values.opacity*opacity*clip.motion_blur:0);node.style.filter='blur('+(.6*composition.clientWidth/state.project.width)+'px)';});
+  wrapper._trails.forEach(({node,opacity},index)=>{const values=animatedValues(clip,Math.max(0,local-dt*(index+1)/2));node.hidden=wrapper.hidden;node.style.cssText=wrapper.style.cssText;const bx=Number(clip.x ?? .5),by=Number(clip.y ?? .5);node.style.left=bx*100+'%';node.style.top=by*100+'%';node.style.transform=`translate(-50%,-50%) translate3d(${((values.x-bx)*frameWidth).toFixed(3)}px,${((values.y-by)*frameHeight).toFixed(3)}px,0) scale(${values.scale})`;node.style.opacity=String(speed>180?values.opacity*opacity*clip.motion_blur:0);node.style.filter='blur('+(.6*frameWidth/state.project.width)+'px)';});
 }
 
 function studioFontOptionsHtml(){
@@ -73,7 +75,12 @@ function timedTextUnits(clip){
   const units=[];for(let i=0;i<clip.text_words.length;i++){const word=clip.text_words[i],chars=Array.from(word.text),width=context.measureText(word.text).width,left=word.x-width/box/2,spread=Math.min(.24,Math.max(.04,Number(word.end ?? clip.text_words[i+1]?.start ?? word.start+.25)-word.start)*.7);let prefix='';for(let j=0;j<chars.length;j++){const before=context.measureText(prefix).width;prefix+=chars[j];const after=context.measureText(prefix).width;units.push({...word,text:chars[j],x:left+(before+after)/2/box,width:(after-before+12)/box,start:word.start+spread*j/Math.max(1,chars.length-1)});}}return units;
 }
 function applyWordEntrance(element,start,clip,time,frameWidth){
-  const effect=clip.word_entrance;if(!effect){element.style.opacity=time+1e-7>=start?'1':'0';element.style.transform='translate(-50%,-50%)';return;}
+  // a word before its entrance or past it stands still: written once, not on every screen refresh (a caption of letters
+  // is hundreds of spans)
+  const effect=clip.word_entrance,settled=time+1e-7<start?'before':!effect||time>=start+effect.duration?'after':'';
+  const key=settled&&settled+'|'+frameWidth+'|'+(effect?effect.type+effect.duration+'|'+effect.distance:'');
+  if(key&&element._entrance===key)return;element._entrance=key;
+  if(!effect){element.style.opacity=time+1e-7>=start?'1':'0';element.style.transform='translate(-50%,-50%)';return;}
   const raw=Math.max(0,Math.min(1,(time-start)/effect.duration)),p=easedProgress(raw,'ease_out'),distance=effect.distance*frameWidth/Number(state.project.width),mode=effect.type.replace('letters_','');let x=0,y=0,scale=1,opacity=p;
   if(mode==='up'||mode==='blur_up')y=distance*(1-p);if(mode==='down')y=-distance*(1-p);if(mode==='left')x=-distance*(1-p);if(mode==='right')x=distance*(1-p);
   if(effect.type==='grow')scale=.88+.12*p;if(effect.type==='shrink')scale=1.1-.1*p;
