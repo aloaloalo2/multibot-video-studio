@@ -175,7 +175,8 @@ class NativeEffects(unittest.TestCase):
    def delayed(scene,project_file,output,work,width,height,fps,index):
     if index==1:time.sleep(1)
     return original(scene,project_file,output,work,width,height,fps,index)
-   with patch.object(native_render,'render_scene',side_effect=delayed),patch.object(native_render,'emit',side_effect=lambda stage,**fields:events.append((stage,fields))):
+   # a scene restored from the scene cache would skip the delay
+   with patch.dict(os.environ,{'MULTIBOT_CPU_SCENE_CACHE':'0'}),patch.object(native_render,'render_scene',side_effect=delayed),patch.object(native_render,'emit',side_effect=lambda stage,**fields:events.append((stage,fields))):
     native_render.render(manifest,out)
    finished=[data for stage,data in events if stage=='scene_done']
    self.assertEqual([item['scene'] for item in finished],[2,1])
