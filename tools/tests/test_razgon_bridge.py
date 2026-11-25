@@ -286,7 +286,7 @@ class SoundTest(unittest.TestCase):
         self.studio = SoundStudio(project, {"script_sha256": "s1", "timing": {"audio": {"sha256": "v1"}}})
         self.tone = 440
 
-    def bed(self, razgon):
+    def bed(self, razgon, inputs=None):
         """A short WAV in place of Razgon's mix (render_bed is checked against the kit's mix below)."""
         path = razgon / "build" / "studio" / "music_sfx.wav"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={self.tone}:duration=4:sample_rate=48000",
@@ -330,7 +330,7 @@ class SoundTest(unittest.TestCase):
         self.run_sound()
         before = {clip["id"] for _, track in enumerate(self.studio.data["tracks"]) for clip in track["clips"]
                   if clip.get("title") != razgon_bridge.BED_TITLE}
-        self.bed = lambda razgon: None
+        self.bed = lambda razgon, inputs=None: None
         (self.razgon / "config.json").write_text(json.dumps({"fps": 25, "music": {"enabled": False}, "sfx": {"enabled": False}}))
         self.run_sound()
         self.assertEqual(self.beds(), [])
@@ -354,7 +354,7 @@ class SoundTest(unittest.TestCase):
         # 17 November 2026: after the frames the music was made again for ten minutes with nothing in it changed
         made = []
         bed = self.bed
-        self.bed = lambda razgon: made.append(1) or bed(razgon)
+        self.bed = lambda razgon, inputs=None: made.append(1) or bed(razgon)
         self.run_sound()
         self.assertEqual(len(made), 1)
         output = self.run_sound()
@@ -489,7 +489,7 @@ class MixedTailTest(unittest.TestCase):
                 order.append(("tail", source.stem))
                 target.write_bytes(b"held")
 
-            def render(_razgon, todo, _fps, _workers, _jobs, done):
+            def render(_razgon, todo, _fps, _workers, _jobs, done, **_):
                 for frame in todo:
                     razgon_bridge.frame_clip(razgon, frame["number"]).write_bytes(b"clip")
                     order.append(("drawn", frame["number"]))
@@ -511,3 +511,75 @@ class MixedTailTest(unittest.TestCase):
             self.assertTrue(all(path.endswith("_tail.mp4") for path in last["clips"].values()))
             self.assertEqual(sorted(stem for kind, stem in order if kind == "tail"), ["frame_001", "frame_002", "frame_003"])
             self.assertEqual([n for kind, n in order if kind == "drawn"], [1, 3])   # the cached frame 2 is not drawn again
+
+
+class BridgeSpeedTest(unittest.TestCase):
+    """25 November 2026: the same answers with fewer reads, probes and Studio revisions."""
+
+    def test_words_by_bisection_equal_the_scan(self):
+        import random
+        rng = random.Random(4)
+        t, words = 0.0, []
+        for _ in range(400):
+            a = t + rng.random() * .3; b = a + rng.random() * .6; t = b
+            words.append({"text": "w", "start": a, "end": b})
+        spoken = razgon_bridge.words_between(words)
+        unsorted = razgon_bridge.words_between(list(reversed(words)))
+        for _ in range(300):
+            a = rng.random() * t; b = a + rng.random() * 20
+            scan = [w for w in words if float(w["end"]) > a and float(w["start"]) < b]
+            self.assertEqual(spoken(a, b), scan)
+            self.assertEqual(unsorted(a, b), list(reversed(scan)))
+
+    def test_seams_off_the_video_frame_are_reported(self):
+        link = {"fps": 25, "frames": [{"number": 79, "start": 817.07, "end": 835.29}, {"number": 80, "start": 835.29, "end": 851.123}]}
+        story = {"shots": [{"id": "f079s01", "start": 817.07, "end": 835.29}, {"id": "f080s01", "start": 835.29, "end": 851.123}]}
+        self.assertEqual(razgon_bridge.seam_drift(link, story), [("f080s01", 835.29, 835.28)])
+        story["shots"][1]["start"] = story["shots"][0]["end"] = 835.28
+        self.assertEqual(razgon_bridge.seam_drift(link, story), [])
+
+    def test_a_stamped_clip_is_fresh_without_ffprobe_and_counted_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            razgon = Path(folder)
+            frame = {"number": 1, "start": 0.0, "end": 2.0}
+            clip = razgon_bridge.frame_clip(razgon, 1); clip.parent.mkdir(parents=True); clip.write_bytes(b"clip")
+            razgon_bridge.write_json(clip.with_suffix(".json"), razgon_bridge.frame_stamp(25, frame, "pic"))   # an older stamp
+            with patch.object(razgon_bridge, "_probe_frames", return_value=50) as probe:
+                self.assertEqual(razgon_bridge.fresh_clip(razgon, frame, 25, "pic"), clip)
+                self.assertEqual(razgon_bridge.fresh_clip(razgon, frame, 25, "pic"), clip)   # the stamp now knows the clip
+                self.assertEqual(razgon_bridge.video_frame_count(clip), 50)
+                self.assertEqual(probe.call_count, 1)
+                self.assertIsNone(razgon_bridge.fresh_clip(razgon, frame, 25, "other picture"))
+                clip.write_bytes(b"another clip")
+                razgon_bridge.fresh_clip(razgon, frame, 25, "pic")
+                self.assertEqual(probe.call_count, 2)                                       # a changed clip is counted again
+
+    def test_hashes_are_shared_with_the_next_process_and_unchanged_json_is_not_rewritten(self):
+        with tempfile.TemporaryDirectory() as folder:
+            razgon = Path(folder); voice = razgon / "voice.flac"; voice.write_bytes(b"voice")
+            with razgon_bridge.remembered_hashes(razgon):
+                first = razgon_bridge.content_hash(voice)
+            razgon_bridge._HASHES.clear()
+            with razgon_bridge.remembered_hashes(razgon), patch.object(Path, "open", side_effect=AssertionError("read again")):
+                self.assertEqual(razgon_bridge.content_hash(voice), first)
+            target = razgon / "a.json"
+            razgon_bridge.write_json(target, {"x": 1}); os.utime(target, ns=(1, 1))
+            razgon_bridge.write_json(target, {"x": 1})
+            self.assertEqual(target.stat().st_mtime_ns, 1)
+            razgon_bridge.write_json(target, {"x": 2})
+            self.assertEqual(json.loads(target.read_text()), {"x": 2})
+
+    def test_moved_blocks_and_the_voice_go_in_one_batch_then_one_grouping(self):
+        link = {"project_id": "p", "fps": 25, "duration": 8.0,
+                "frames": [{"number": 1, "start": 0.0, "end": 4.0}, {"number": 2, "start": 4.0, "end": 8.0}]}
+        moved = {"id": "old2", "kind": "animation", "title": "Razgon · кадр 002", "start": 5.0, "duration": 3.0}
+        project = {"id": "p", "tracks": [{"id": "t1", "clips": [moved]}], "scene_groups": []}
+        studio = FakeStudio(project)
+        calls = []
+        batch = studio.batch
+        studio.batch = lambda project, actions: calls.append([a["type"] for a in actions]) or batch(project, actions)
+        voice = [{"type": "add_clip", "payload": {"layer_id": "t1", "kind": "audio", "asset_id": "v", "start": 0, "duration": 8.0, "title": "Озвучка"}}]
+        razgon_bridge.ensure_frame_slots(studio, Path("/tmp/razgon"), link, project, before=voice)
+        self.assertEqual(calls, [["add_clip", "add_clip", "add_clip", "delete_clip"], ["group_clips", "group_clips"]])
+        blocks = sorted((c["title"], c["start"]) for c in project["tracks"][0]["clips"] if c["title"].startswith("Razgon"))
+        self.assertEqual(blocks, [("Razgon · кадр 001", 0.0), ("Razgon · кадр 002", 4.0)])

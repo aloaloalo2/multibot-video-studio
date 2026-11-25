@@ -156,8 +156,10 @@ def _start(pid: str, restart: bool) -> dict:
         with open(info["project"] / "build" / "live.log", "ab") as log:
             process = subprocess.Popen([node, "tools/live.mjs", "--project", str(info["project"]), "--port", str(info["port"])],
                          cwd=info["root"], stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
-        for _ in range(40):
-            time.sleep(0.15)
+        # Node answers in about 1.9 s (Andromeda, 25 November 2026): asked every 50 ms the page opens as soon as it does,
+        # within the same 6 s as before
+        for _ in range(120):
+            time.sleep(0.05)
             health = _health(info['port'])
             if _owns(health, info):
                 _remember(info)
