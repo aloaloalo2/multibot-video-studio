@@ -158,10 +158,6 @@ def assign_formats(times: list[tuple[float, float]], config: dict, hints: dict[i
     return result
 
 
-def speech_text(text, locale=None):
-    return number_text.comparison_tokens(text, locale)
-
-
 def validate_sentence_timings(script, timings, duration):
     if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("Для таймінгів потрібна виміряна тривалість аудіо")

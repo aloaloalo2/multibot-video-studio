@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from fractions import Fraction
+from functools import lru_cache
 
 WORD = re.compile(r"[^\W\d_]+(?:['’ʼ][^\W\d_]+)*", re.UNICODE)
 TOKEN = re.compile(r"(?:(?<!\w)[+-])?\d+(?:[.,]\d+)?(?:/\d+)?(?:-\d+(?:[.,]\d+)?)?(?:st|nd|rd|th|-(?:го|му|ми|й|я|е|ю|м|х|а|у))?|[^\W\d_]+", re.UNICODE)
@@ -11,6 +12,7 @@ CARDINAL = {}
 SCALE = {}
 
 
+@lru_cache(maxsize=65536)   # words repeat: the comparison folds each one many times
 def fold(value):
     return unicodedata.normalize("NFKC", value).casefold().replace("ё", "е").replace("’", "'").replace("ʼ", "'").replace("–", "-")
 
@@ -145,15 +147,24 @@ def english_ordinal(text,matches,i):
     return text[matches[i].end():matches[i].end()+1]=="," and not text[:matches[i].start()].strip(" \"'“‘(")[-1:].isalnum()
 
 
+# Explicit half-unit compounds retain their physical meaning.
+HALVES={"полминуты":"минуты","полчаса":"часа","полгода":"года","полугода":"года","полграмма":"грамма","полкилограмма":"килограмма","поллитра":"литра","полстакана":"стакана"}
+# «четвертью миллиона», «половину тысячи»: a fraction of a scale is one whole number, 250000 or 500.
+FRACTION_FORMS={"половина":2,"половины":2,"половину":2,"половиной":2,"четверть":4,"четверти":4,"четвертью":4,"чверть":4,"чверті":4}
+MULTIPLE={"вдвое":2,"втрое":3,"вчетверо":4,"впятеро":5,"удвічі":2,"вдвічі":2,"утричі":3,"втричі":3}
+
+
 def replacements(text,locale=None):
-    locale=locale or detect_locale(text)
+    return list(_replacements(text,locale or detect_locale(text)))
+
+
+@lru_cache(maxsize=16384)   # a sentence is read for its tokens and again for its digit text
+def _replacements(text,locale):
     matches=list(WORD.finditer(text));result=[];i=0
     while i<len(matches):
         start=i;word=fold(matches[i].group());j=i;group=0;total=0;last=None;seen=False;suffix=None
-        # Explicit half-unit compounds retain their physical meaning.
-        halves={"полминуты":"минуты","полчаса":"часа","полгода":"года","полугода":"года","полграмма":"грамма","полкилограмма":"килограмма","поллитра":"литра","полстакана":"стакана"}
-        if word in halves:
-            result.append((matches[i].start(),matches[i].end(),written(Fraction(1,2),locale)+" "+halves[word]));i+=1;continue
+        if word in HALVES:
+            result.append((matches[i].start(),matches[i].end(),written(Fraction(1,2),locale)+" "+HALVES[word]));i+=1;continue
         if locale == "ru" and word == "сотни" and i and fold(matches[i-1].group()) in {"до","около","почти"}:
             result.append((matches[i].start(),matches[i].end(),"100"));i+=1;continue
         if word in {"полтора","полторы","полутора","півтора","півтори"}:
@@ -192,17 +203,14 @@ def replacements(text,locale=None):
                 and fold(matches[i+2].group()) in {"тот","та","то","те","того","той","тому","тем","том","тех","теми","ту","ті","тієї","тим","тих"}
                 and fold(matches[i+3].group()) in {"же","ж"}):
             i+=1;continue
-        # «четвертью миллиона», «половину тысячи»: a fraction of a scale is one whole number, 250000 or 500.
-        fraction_forms={"половина":2,"половины":2,"половину":2,"половиной":2,"четверть":4,"четверти":4,"четвертью":4,"чверть":4,"чверті":4}
-        if (locale in {"ru","uk"} and word in fraction_forms and i+1<len(matches)
+        if (locale in {"ru","uk"} and word in FRACTION_FORMS and i+1<len(matches)
                 and text[matches[i].end():matches[i+1].start()].isspace()
                 and fold(matches[i+1].group()) in SCALE):
-            whole=Fraction(SCALE[fold(matches[i+1].group())],fraction_forms[word])
+            whole=Fraction(SCALE[fold(matches[i+1].group())],FRACTION_FORMS[word])
             if whole.denominator==1:
                 result.append((matches[i].start(),matches[i+1].end(),str(whole.numerator)));i+=2;continue
-        multiple={"вдвое":2,"втрое":3,"вчетверо":4,"впятеро":5,"удвічі":2,"вдвічі":2,"утричі":3,"втричі":3}
-        if word in multiple:
-            result.append((matches[i].start(),matches[i].end(),("у " if locale=="uk" else "в ")+str(multiple[word])+(" рази" if locale=="uk" else " раза")));i+=1;continue
+        if word in MULTIPLE:
+            result.append((matches[i].start(),matches[i].end(),("у " if locale=="uk" else "в ")+str(MULTIPLE[word])+(" рази" if locale=="uk" else " раза")));i+=1;continue
         while j<len(matches):
             current=fold(matches[j].group())
             separator=text[matches[j-1].end():matches[j].start()] if j>start else ""
@@ -295,7 +303,7 @@ def replacements(text,locale=None):
             result.append((begin,end,str(int(number))+suffix if suffix else written(number,locale)))
             i=j
         else:i+=1
-    return result
+    return tuple(result)
 
 
 def to_digits(text,locale=None):
@@ -304,12 +312,22 @@ def to_digits(text,locale=None):
     return text
 
 
+_MARK = {}
+
+
+def _is_mark(char):
+    mark = _MARK.get(char)
+    if mark is None:
+        mark = _MARK[char] = unicodedata.category(char).startswith('M')
+    return mark
+
+
 def folded_offsets(text):
     """Normalize text while retaining each character's original source interval."""
     parts, offsets, start = [], [], 0
     while start < len(text):
         end = start + 1
-        while end < len(text) and unicodedata.category(text[end]).startswith('M'):
+        while end < len(text) and _is_mark(text[end]):
             end += 1
         normalized = fold(text[start:end])
         parts.append(normalized)
@@ -320,6 +338,11 @@ def folded_offsets(text):
 
 def word_spans(text,locale=None):
     """Normalized number tokens with spans in the original string, for ASR timing."""
+    return list(_word_spans(text,locale))
+
+
+@lru_cache(maxsize=32768)   # the order check asks for every heard word alone, and words repeat
+def _word_spans(text,locale):
     changes=replacements(text,locale);segments=[];cursor=0
     for start,end,value in changes:
         if start>cursor:segments.append((text[cursor:start],cursor,None))
@@ -345,7 +368,7 @@ def word_spans(text,locale=None):
             joined.append((previous[0]+'-'+value,previous[1],end))
         else:
             joined.append(item)
-    return joined
+    return tuple(joined)
 
 
 def comparison_tokens(text,locale=None):

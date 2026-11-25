@@ -146,16 +146,16 @@ class NumberTextTest(unittest.TestCase):
                 self.assertEqual(number_text.to_digits(source), expected)
 
     def test_exact_values_not_ambiguous_ranges(self):
-        self.assertEqual(planner.speech_text("одной десятой"),planner.speech_text("0.1"))
-        self.assertEqual(planner.speech_text("две четверти"),planner.speech_text("0,5"))
-        self.assertNotEqual(planner.speech_text("две трети"),planner.speech_text("2-3"))
-        self.assertNotEqual(planner.speech_text("восемь"),planner.speech_text("9"))
+        self.assertEqual(number_text.comparison_tokens("одной десятой"),number_text.comparison_tokens("0.1"))
+        self.assertEqual(number_text.comparison_tokens("две четверти"),number_text.comparison_tokens("0,5"))
+        self.assertNotEqual(number_text.comparison_tokens("две трети"),number_text.comparison_tokens("2-3"))
+        self.assertNotEqual(number_text.comparison_tokens("восемь"),number_text.comparison_tokens("9"))
 
     def test_written_numeric_range_survives_synced_plan(self):
         script = "Для начала хватает пяти-восьми повторений."
-        self.assertEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5-8"))
-        self.assertNotEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5/8"))
-        self.assertNotEqual(planner.speech_text("пяти-восьми"), planner.speech_text("5 8"))
+        self.assertEqual(number_text.comparison_tokens("пяти-восьми"), number_text.comparison_tokens("5-8"))
+        self.assertNotEqual(number_text.comparison_tokens("пяти-восьми"), number_text.comparison_tokens("5/8"))
+        self.assertNotEqual(number_text.comparison_tokens("пяти-восьми"), number_text.comparison_tokens("5 8"))
         span = number_text.word_spans("пяти-восьми")[0]
         self.assertEqual(span, ("5-8", 0, len("пяти-восьми")))
         words = [{"text": value, "start": i * .5, "end": i * .5 + .4, "probability": .99}

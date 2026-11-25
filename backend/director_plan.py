@@ -93,10 +93,6 @@ def opening(settings: dict) -> list:
     return result
 
 
-def opening_text(rules: list, labels: dict) -> str:
-    return ", ".join(f"кадр {number} «{labels.get(kind, kind)}»" for number, kind in enumerate(rules, 1) if kind)
-
-
 def voice(plan: dict) -> tuple[list[str], list[dict]]:
     return ([text for frame in plan["frames"] for text in frame["sentences"]],
             [item for frame in plan["frames"] for item in frame["sentence_timings"]])

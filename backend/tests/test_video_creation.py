@@ -216,9 +216,17 @@ class CreationTests(unittest.TestCase):
         for key in ['source','audio','script_sha256']:
             changed={**report,key:{'sha256':'different'} if key!='script_sha256' else 'different'}
             with self.subTest(changed=key):
+                (self.root/'analysis'/analysis_jobs.ASR_CACHE).unlink(missing_ok=True)
                 calls,result=self.run_cached_analysis(changed)
                 self.assertEqual(calls,1)
                 self.assertEqual(result['engine']['engine'],'fresh')
+        # Whisper's own words of the same prepared audio serve the next run with another script
+        with patch.object(analysis_jobs.speech,'MODEL_NAME',None):   # the fixture engine names no model
+            calls,result=self.run_cached_analysis({**report,'script_sha256':'other'})
+            self.assertEqual(calls,1)
+            calls,result=self.run_cached_analysis({**report,'script_sha256':'other'})
+        self.assertEqual(calls,0)
+        self.assertEqual((result['engine']['engine'],result['engine']['cached_from']),('fresh','next'))
 
     def test_status_shows_each_stage_and_a_visible_failure(self):
         pid=self.project['id'];store.atomic_json(self.root/'analysis-state.json',{'job_id':'j','create_video':True})
