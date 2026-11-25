@@ -197,6 +197,9 @@ function langOpenScriptPicker(id){
   document.body.append(dialog);dialog.showModal();inputs[0]?.focus();
 }
 
+// the 2-second poll repaints these cards: replace their markup only when it changed (true when it did)
+function langScriptPaint(element,html){if(element._langHtml===html)return false;element.innerHTML=html;element._langHtml=html;return true;}
+
 function langPaintScriptJobs(){
   document.querySelectorAll('#project-langs [data-script-code]').forEach(button=>{
     const item=langData?.items.find(entry=>entry.code===button.dataset.scriptCode);if(!item)return;
@@ -205,7 +208,7 @@ function langPaintScriptJobs(){
     for(const kind of ['working','attention','ready','empty'])button.classList.toggle(kind,status.kind===kind);
     button.querySelector('.lang-script-status-label').textContent=status.label;
     button.querySelector('.lang-script-status-label').hidden=status.kind==='ready';
-    button.querySelector('.lang-script-metrics').innerHTML=`${langScriptCharacters(item)}<span class="lang-script-job-detail"></span>`;
+    langScriptPaint(button.querySelector('.lang-script-metrics'),`${langScriptCharacters(item)}<span class="lang-script-job-detail"></span>`);
     const detail=button.querySelector('.lang-script-job-detail');
     detail.textContent=status.compact||'';detail.hidden=status.kind!=='working';
     button.querySelector('.lang-script-complete').hidden=status.kind!=='ready';
@@ -218,10 +221,10 @@ function langPaintScriptJobs(){
   });
   document.querySelectorAll('#project-langs [data-script-controls]').forEach(controls=>{
     const job=langScriptJob(controls.dataset.scriptControls);
-    controls.innerHTML=job?.status==='running'?langCancelButton(job):'';
+    if(!langScriptPaint(controls,job?.status==='running'?langCancelButton(job):''))return;
     const cancel=controls.querySelector('button');
     if(cancel){cancel.title=cancel.disabled?'Скасовуємо переклад':'Скасувати переклад';cancel.setAttribute('aria-label',cancel.title);cancel.textContent='×';
-      cancel.addEventListener('click',event=>langCancel(state.project.id,job.slot,event.currentTarget));}
+      cancel.onclick=event=>langCancel(state.project.id,job.slot,event.currentTarget);}
   });
   langScriptDialog?.sync();
 }

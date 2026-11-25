@@ -54,13 +54,14 @@ def signature(payload: dict) -> str:
 
 
 def root(cid: str) -> Path:
-    store.get_channel_folder(cid)
+    import languages
+    languages.view_memo(("channel-folder", cid), lambda: store.get_channel_folder(cid))
     return store.DATA_ROOT/'language-defaults'/cid
 
 
 def selection(pid: str) -> tuple[dict,dict]:
     import languages
-    project=store.load_project(pid);data=languages.narration_settings(pid)
+    project=languages.project_for(pid);data=languages.narration_settings(pid)
     codes=[code for code in languages.LANGUAGES if code in data.get('languages',{})]
     settings=languages.narration_choices(pid)
     settings['fish_styles'][settings['fish_engine']]=settings['fish_style']
@@ -177,7 +178,7 @@ def save(pid: str, code: str | None = None) -> dict:
 def refresh_unvoiced(pid: str, code: str | None = None) -> None:
     """Advance inherited settings independently for each language before display or synthesis."""
     import languages
-    project=store.load_project(pid)
+    project=languages.project_for(pid)
     with LOCK,languages.LOCK:
         data=languages.load_state(pid)
         if not data.get('languages'):return

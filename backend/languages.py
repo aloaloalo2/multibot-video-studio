@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import fcntl
+import functools
 import json
 import math
 import os
@@ -149,6 +150,55 @@ class Stop(Exception):
     pass
 
 
+_VIEW = threading.local()
+
+
+@contextmanager
+def project_reads():
+    """Within one read-only view, load each project once: `store.load_project` re-anchors every join of the
+    timeline (0.3 s on a long film) and the overview asked for it about twenty times."""
+    previous = getattr(_VIEW, "projects", None)
+    _VIEW.projects = previous if previous is not None else {}
+    try:
+        yield
+    finally:
+        _VIEW.projects = previous
+
+
+def view_memo(key, compute):
+    """Reuse a value within the current read-only view (`project_reads`); outside one, compute it.
+    `key` may be a function, so a key that stats files costs nothing outside a view."""
+    memo = getattr(_VIEW, "projects", None)
+    if memo is None:
+        return compute()
+    key = key() if callable(key) else key
+    if key not in memo:
+        memo[key] = compute()
+    return memo[key]
+
+
+def _stamp(path: Path):
+    try:
+        stat = path.stat()
+        return stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return None
+
+
+def project_for(pid: str) -> dict:
+    memo = getattr(_VIEW, "projects", None)
+    if memo is None:
+        return store.load_project(pid)
+    try:
+        stat = store.project_path(pid).stat()
+        stamp = (pid, stat.st_mtime_ns, stat.st_size)
+    except (OSError, store.StudioError):
+        stamp = (pid, None)
+    if stamp not in memo:
+        memo[stamp] = store.load_project(pid)
+    return memo[stamp]
+
+
 def lang_name(code: str) -> str:
     return LANGUAGES[code][1]
 
@@ -225,18 +275,25 @@ def voice_file(project: dict, audio: dict, plan: dict | None = None) -> Path | N
     знайдено озвучку випуску»): the plan's asset; the recording the studio levels to 100% (`audio_gain`), as timings
     attached by a path name the voice by an id made before the project had the file; a file path in the timings; the
     longest sound clip on the timeline that starts the film and is not music."""
-    import audio_level
-    try:
-        gains = project.get("audio_gain") or audio_level.voice_gains(project, plan)
-    except (OSError, ValueError, store.StudioError):
-        gains = {}
-    ids = [audio.get("asset_id"), *gains]
-    clips = sorted((clip for track in project.get("tracks", []) for clip in track.get("clips", [])
-                    if clip.get("kind") == "audio" and float(clip.get("start") or 0) < 1
-                    and "музик" not in (clip.get("title") or "").lower() and "music" not in (clip.get("title") or "").lower()),
-                   key=lambda clip: -float(clip.get("duration") or 0))
-    ids += [clip.get("asset_id") for clip in clips]
-    for aid in dict.fromkeys(item for item in ids if item):
+    def candidates():
+        # Lazily, in the same order: the plan's asset usually resolves at once, and measuring every
+        # sound clip's gain (`voice_gains`) took seconds on a film with hundreds of effects.
+        yield audio.get("asset_id")
+        import audio_level
+        try:
+            yield from project.get("audio_gain") or audio_level.voice_gains(project, plan)
+        except (OSError, ValueError, store.StudioError):
+            pass
+        clips = sorted((clip for track in project.get("tracks", []) for clip in track.get("clips", [])
+                        if clip.get("kind") == "audio" and float(clip.get("start") or 0) < 1
+                        and "музик" not in (clip.get("title") or "").lower() and "music" not in (clip.get("title") or "").lower()),
+                       key=lambda clip: -float(clip.get("duration") or 0))
+        yield from (clip.get("asset_id") for clip in clips)
+    tried = set()
+    for aid in candidates():
+        if not aid or aid in tried:
+            continue
+        tried.add(aid)
         try:
             path = Path(store.resolve_asset(project, aid)["path"])
         except (store.StudioError, KeyError, OSError):
@@ -319,7 +376,12 @@ def eleven_engine(pid: str, code: str | None = None) -> str:
 
 def narration_settings(pid: str, code: str | None = None) -> dict:
     """Resolve absent choices from channel defaults without replacing explicit episode choices."""
-    saved=language_defaults.settings(store.load_project(pid)['channel_id'],code)
+    found = view_memo(lambda: ("narration", pid, code, _stamp(state_path(pid))), lambda: _narration_settings(pid, code))
+    return {**found, "fish_styles": dict(found["fish_styles"])}
+
+
+def _narration_settings(pid: str, code: str | None = None) -> dict:
+    saved=language_defaults.settings(project_for(pid)['channel_id'],code)
     data=load_state(pid)
     if code:
         data={**data,**((data.get('languages') or {}).get(code,{}).get('narration') or {})}
@@ -455,8 +517,8 @@ def cost_breakdown(pid,code):
 
 def voice_options(pid: str) -> dict:
     """Montage switcher metadata only: no provider catalogue, prices or full scripts."""
-    with store.read_snapshot():
-        project=store.load_project(pid)
+    with store.read_snapshot(), project_reads():
+        project=project_for(pid)
         data=load_state(pid)
         items=[]
         for code,item in (data.get('languages') or {}).items():
@@ -470,13 +532,14 @@ def voice_options(pid: str) -> dict:
 
 
 def overview(pid: str, *, compact=False) -> dict:
-    language_defaults.refresh_unvoiced(pid)
-    with store.read_snapshot(), eleven_api.nonblocking_metadata(compact):
-        return _overview(pid, compact=compact)
+    with project_reads():
+        language_defaults.refresh_unvoiced(pid)
+        with store.read_snapshot(), eleven_api.nonblocking_metadata(compact):
+            return _overview(pid, compact=compact)
 
 
 def _overview(pid: str, *, compact=False) -> dict:
-    project = store.load_project(pid)
+    project = project_for(pid)
     data = load_state(pid)
     src = source(project)
     source_language=original_language(pid,project,src['script'])
@@ -510,6 +573,8 @@ def _overview(pid: str, *, compact=False) -> dict:
         if compact:
             voice.pop('review', None)
         comparison_segments=synced_segments(pid,code) or []
+        item_files=files(pid,code,project)
+        remote=remote_voice_ids(pid,code)
         comparison_lines=line_texts(pid,code) if comparison_segments else []
         comparison_units=([unit['source'] for unit in comparison_segments]
                           if comparison_segments and len(comparison_segments)==len(comparison_lines) else None)
@@ -527,8 +592,9 @@ def _overview(pid: str, *, compact=False) -> dict:
                       "translated_model": item.get("translated_model") or (DEEPSEEK_TRANSLATION_MODEL if item.get("translated_at") else None),
                       "translate_cost": item.get("translate_cost"),
                       "translation_repair_model": item.get("translation_repair_model"),
-                      "translation_length_approval": item.get("translation_length_approval")
-                          if (item.get('translation_length_approval') or {}).get('text_hash')==text_hash(pid,code) else None,
+                      # the tab never shows the per-phrase approval list (about 2 KB a language on every poll)
+                      **({} if compact else {"translation_length_approval": item.get("translation_length_approval")
+                          if (item.get('translation_length_approval') or {}).get('text_hash')==text_hash(pid,code) else None}),
                       "language_check": translation_check(pid, code, text),
                       "voice_language_check": voice_language_check(pid, code),
                       "flag_country":THUMBNAIL_FLAGS.get(code),
@@ -540,18 +606,18 @@ def _overview(pid: str, *, compact=False) -> dict:
                       "sample_prices": {key:{count:option['price'] for count,option in options.items()} for key,options in samples.items()},
                       "sample_options": samples,
                       "sample": (item.get('samples') or {}).get(voice_key(pid,item_provider,code)),
-                      "files": files(pid, code, project), "voice": voice,
+                      "files": item_files, "voice": voice,
                       "voice_current": voice_current(pid, code, item.get("voice") or {}),
                       "voice_matches_text": voice_matches_text(pid,code,item.get('voice') or {}),
-                      "saved_mix": language_mix.status(project, code, item.get("saved_mix")) if files(pid, code, project)["voice"] else {"state": "missing"},
-                      "lines": len(synced_segments(pid, code) or []),
+                      "saved_mix": language_mix.status(project, code, item.get("saved_mix")) if item_files["voice"] else {"state": "missing"},
+                      "lines": len(comparison_segments),
                       "passage": passage(text) if text else "",
                       "own_voice": ({**({"text": own["text"]} if not compact else {}), "filename": own["filename"], "duration": own["duration"], "heard": own["heard"], "stamp": own["stamp"]} if (own := own_voice(pid, code)) else None),
                       "channel_voice": ({"filename": shared["filename"], "duration": shared["duration"], "heard": shared["heard"], "stamp": shared["stamp"]}
                                         if not item.get("use_original_voice") and (shared := channel_voice(project.get("channel_id"), code)) else None),
                       "voice_key": voice_key(pid, item_provider, code),
-                      "remote_voice_ids":remote_voice_ids(pid,code),
-                      "fish_model": bool(remote_voice_ids(pid,code).get("fishaudio") or (voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
+                      "remote_voice_ids":remote,
+                      "fish_model": bool(remote.get("fishaudio") or (voice_for(pid, code) or {}).get("fish_model")), "sample_provider": item.get("sample_provider"),
                       "folder": str(episode_dir(project, code) or "")})
     configured = {item["id"]: item["configured"] for item in credentials.providers()}
     source_display=numeric_comparison.source_comparison_chars(src['script'],source_language,
@@ -591,7 +657,8 @@ def cover(project: dict) -> Path | None:
 def key(service: str) -> str:
     if service=='heygen':return heygen_voice.key()
     try:
-        return credentials.vault().read(credentials.service_name(service))
+        # one Keychain read a service per view: the overview hashed the key for every sample and estimate
+        return view_memo(("key", service), lambda: credentials.vault().read(credentials.service_name(service)))
     except RuntimeError:
         name = {"openrouter": "OpenRouter", **{k: v["name"] for k, v in PROVIDERS.items()}}[service]
         raise RuntimeError(f"Додайте ключ {name} у налаштуваннях студії («Ключі сервісів»)") from None
@@ -1663,6 +1730,15 @@ def read_example(folder: Path, stem: str, source: str) -> dict | None:
     audio, said = folder / f"{stem}.mp3", folder / f"{stem}.txt"
     if not (audio.is_file() and said.is_file()):
         return None
+    # the overview asks for the same example about thirty times a language (voice keys, estimates, samples)
+    found = view_memo(lambda: ("example", str(folder), stem, source,
+                               *(_stamp(path) for path in (audio, said, folder / f"{stem}.json", folder / f"{stem}-normalized.mp3"))),
+                      lambda: _read_example(folder, stem, source))
+    return dict(found) if found else None
+
+
+def _read_example(folder: Path, stem: str, source: str) -> dict | None:
+    audio, said = folder / f"{stem}.mp3", folder / f"{stem}.txt"
     audio, meta = prepared_example(audio, folder / f"{stem}.json")
     stamp = audio.stat().st_mtime_ns
     return {"path": audio, "text": said.read_text(encoding="utf-8").strip(), "duration": store.media_duration(audio),
@@ -1698,7 +1774,7 @@ def voice_for(pid: str, code: str | None, original: bool = True) -> dict | None:
     if own:
         return own
     try:
-        cid = store.load_project(pid).get("channel_id")
+        cid = project_for(pid).get("channel_id")
     except store.StudioError:
         cid = None
     return channel_voice(cid, code) or (original_example(pid) if original else None)
@@ -1997,7 +2073,7 @@ def remote_voice_ids(pid,code):
     data=load_state(pid);item=(data.get('languages') or {}).get(code) or {}
     if item.get('use_original_voice') or own_voice(pid,code):return {}
     if 'voice_ids' in item:return item['voice_ids'] or {}
-    try:return language_defaults.remote_ids(store.load_project(pid)['channel_id'],code)
+    try:return language_defaults.remote_ids(project_for(pid)['channel_id'],code)
     except store.StudioError:return {}
 
 
@@ -2189,7 +2265,7 @@ def voice_cache_context(pid: str, code: str, provider: str) -> tuple[dict,set[st
     aliases={voice_key(pid,provider,code)}
     if provider=='elevenlabs' and example:
         # A copied reference keeps the same clone even when its filesystem timestamp changes.
-        project=store.load_project(pid)
+        project=project_for(pid)
         try:account=hashlib.sha256(key(provider).encode()).hexdigest()
         except RuntimeError:account=None
         registry=store.read_json(store.DATA_ROOT/'voice-clones/elevenlabs.json',{}) or {}
@@ -2213,19 +2289,14 @@ def drop_samples(work: Path) -> None:
 SAMPLE_SENTENCES = (3, 5, 10, 20)
 
 
+@functools.lru_cache(maxsize=128)
 def sample_text(text: str, sentences: int | None = None) -> str:
     """The sample's words: the first `sentences` sentences when the author chose how many (user, 2 November 2026: «тест
     вибирати, скільки речень тестити»), else about a minute of them."""
     if sentences:
         found = [part.strip() for part in re.split(r"(?<=[.!?…])\s+|\n+", text.strip()) if part.strip()]
         return " ".join(found[:sentences])
-    sentences = re.split(r"(?<=[.!?…])\s+", text.strip())
-    out = ""
-    for sentence in sentences:
-        if out and len(out) + len(sentence) > SAMPLE_CHARS:
-            break
-        out = (out + " " + sentence).strip()
-    return out[: SAMPLE_CHARS * 2]
+    return sample_text_at(text, SAMPLE_CHARS)[: SAMPLE_CHARS * 2]
 
 
 def sample_pieces(pid: str, code: str, text: str, sentences: int | None, cached: dict | None = None) -> list[str]:
@@ -2378,56 +2449,6 @@ def archive_voice_parts(work: Path) -> None:
             shutil.move(str(path), str(history / path.name))
         else:
             shutil.copy2(path, history / path.name)
-
-
-def prepare_unvoiced(pid,code,texts,segments,targets,job):
-    """Legacy explicit text proposal helper. Never call from a saved narration workflow."""
-    items=[{'id':i,'source':segments[i]['source'],'translation':texts[i],'target_chars':limit,
-            'min_chars':math.ceil(numeric_comparison.comparison_chars(texts[i])*.6),'max_chars':max(limit,numeric_comparison.comparison_chars(texts[i]))}
-           for i,limit in targets.items()]
-    with translation_trace(pid,code,job,min(targets)):
-        messages=[{'role':'system','content':translator(code)+
-            '\nPrepare these NOT YET VOICED lines for measured narration timing. Keep every fact, named entity, '
-            'number, comparison, negation, uncertainty and intent. Use compact natural wording without adding '
-            'information or summarizing. Do not change numbers or remove details to meet a length. '
-            'Each output must remain a full grammatical line within min_chars and max_chars. '
-            'target_chars is a suggested allowance: a dense line may borrow unused characters from another line, '
-            f'but all {len(items)} output values combined MUST total at most {sum(targets.values())} letters, excluding spaces, digits and punctuation. '
-            'Do not move facts between ids. If impossible return {}. '
-            'Return only a JSON object mapping each requested id to its new translation.'},
-            {'role':'user','content':json.dumps(items,ensure_ascii=False)}]
-        for attempt in range(3):
-            answer,cost=ask(messages,6000)
-            job['adaptation_cost_usd']=round(job.get('adaptation_cost_usd',0)+cost,6)
-            revised=line_answers(answer,list(targets))
-            issues=narration_pacing.edit_issues(texts,targets,revised)
-            if not issues:break
-            # Only draft text is retried. No voice call happens until length,
-            # target language and the separate source-meaning audit all pass.
-            messages.extend([{'role':'assistant','content':answer},
-                {'role':'user','content':'Local character counts rejected this draft: '+json.dumps(issues)+
-                 '. Rewrite the requested lines to fit this exact block budget, keeping ALL original facts and '
-                 'natural wording. Count only letters, excluding spaces, digits and punctuation. Do not repeat an over-budget draft unchanged. '
-                 'Return the complete JSON object with all requested ids, or {} if a faithful fit is impossible.'}])
-        narration_pacing.validate_edits(texts,targets,revised)
-        language_quality.require(code,list(revised.values()))
-        if any(UNSPOKEN.search(t) for t in revised.values()):
-            raise RuntimeError('У підготовлених фразах залишилися непідготовлені числа. Озвучення зупинено без повторів.')
-        check,cost=ask([{'role':'system','content':target_rule(code)+
-            '\nAudit compact narration against the ORIGINAL source and the existing translation. '
-            'Check ALL facts, quantities, names, dates, negations, qualifications and complete meaning. '
-            'For each id return true only if the compact version is faithful and natural. '
-            'Return JSON {"ok":true,"ids":[all checked ids]} only if every line passes; otherwise {"ok":false}.'},
-            {'role':'user','content':json.dumps([{**item,'compact':revised[item['id']]} for item in items],ensure_ascii=False)}],1500)
-        job['adaptation_cost_usd']=round(job.get('adaptation_cost_usd',0)+cost,6)
-        try:verified=json.loads(check)
-        except ValueError:verified={}
-        checked=verified.get('ids',[])
-        if (verified.get('ok') is not True or not isinstance(checked,list)
-                or any(type(i) is not int for i in checked) or len(checked)!=len(targets)
-                or set(checked)!=set(targets)):
-            raise RuntimeError('Компактні фрази не пройшли перевірку змісту. Готові записи збережені; нові не оплачені.')
-    return revised
 
 
 def fixed_price(provider,engine):
@@ -2864,11 +2885,21 @@ def translation_check(pid: str, code: str, text: str | None = None) -> dict:
     path = work_dir(pid, code) / 'text.txt'
     if text is None:
         text = path.read_text(encoding='utf-8') if path.is_file() else ''
-    return cached_language_check(pid, code, text, store.read_json(segments_path(pid, code), []) or [])
+    segments = segments_path(pid, code)
+    return view_memo(lambda: ("text-check", pid, code, text, _stamp(segments)),
+                     lambda: cached_language_check(pid, code, text, store.read_json(segments, []) or []))
 
 
 def voice_language_check(pid: str, code: str) -> dict:
     """Check the actual paid-take text, even after an author corrects text.txt."""
+    def key():
+        parts = work_dir(pid, code) / 'parts'
+        return ("voice-check", pid, code, *(_stamp(path) for path in (parts/'manifest.json', parts/'request.json',
+                                                                       work_dir(pid, code)/'text.txt', segments_path(pid, code))))
+    return view_memo(key, lambda: _voice_language_check(pid, code))
+
+
+def _voice_language_check(pid: str, code: str) -> dict:
     parts = work_dir(pid, code) / 'parts'
     manifest = store.read_json(parts/'manifest.json', []) or []
     if isinstance(manifest, list) and manifest:
@@ -2883,7 +2914,7 @@ def voice_language_check(pid: str, code: str) -> dict:
 
 def thumbnail_options(pid: str) -> dict:
     import channel_hero
-    cid=store.load_project(pid)['channel_id']
+    cid=project_for(pid)['channel_id']
     saved=store.read_json(store.DATA_ROOT/'language-thumbnail-options'/f'{cid}.json',{}) or {}
     hero=channel_hero.info(cid)
     return {"add_flag":saved.get('add_flag') is True, **({'hero_reference':hero} if hero else {})}

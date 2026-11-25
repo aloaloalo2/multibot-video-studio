@@ -466,7 +466,7 @@ function langPaintVoiceTiles(){
     card.dataset.status=status.kind;card.classList.toggle('duration-issue',!!status.durationIssue);button.disabled=status.kind==='blocked'||(status.kind==='action'&&status.blocked);
     const icon=status.kind==='working'?exportSpinner:status.kind==='attention'||status.review?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 8v6m0 3v1"/></svg>':status.kind==='ready'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>':langMagicVoiceIcon;
     const score=status.kind==='ready'?langVoiceScores.get(langVoiceScoreKey(state.project?.id,item)):null;
-    button.innerHTML=`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'||status.durationIssue?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'||status.durationIssue?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`;
+    langPaint(button,`<span class="lang-voice-tile-heading">${langWaveIcon}<span>Озвучка перекладу</span></span>${status.kind==='ready'||status.durationIssue?'':`<span class="lang-voice-tile-icon">${icon}</span>`}<span class="lang-voice-tile-state">${status.kind==='ready'||status.durationIssue?icon:''}<strong>${esc(status.label)}</strong></span>${score?`<span class="lang-voice-tile-score" title="Оцінка збігу таймінгів фраз із оригіналом">${score.percent.toLocaleString('uk-UA',{maximumFractionDigits:1})}% <small>синхронності</small></span>`:''}${status.detail&&status.kind!=='ready'?`<small>${esc(status.detail)}</small>`:''}${status.kind==='working'?`<progress max="100" value="${status.progress}"></progress>`:''}`);
     const existing=card.querySelector('.lang-summary-player');
     if((status.kind==='ready'||status.durationIssue)&&!existing){
       const box=document.createElement('div');box.className='lang-summary-player lang-own has-voice';
@@ -667,7 +667,7 @@ async function langCancel(id,slot,button){
     if(state.project?.id!==id)return;
     if(data.jobs){langData.jobs=data.jobs;langData.job=data.job;}
     showLangJob();
-  }catch(error){langAsked.delete(key);if(button){button.disabled=false;button.textContent='Скасувати';}if(state.project?.id===id)langNote(button,error.message,true);}
+  }catch(error){langAsked.delete(key);if(button){button.disabled=false;button.textContent='Скасувати';if(button.parentElement)button.parentElement._langHtml=null;}if(state.project?.id===id)langNote(button,error.message,true);}
 }
 
 async function langStart(id,kind,code,extra={}){
@@ -709,18 +709,21 @@ function langPaintVoiceSetups(){
     const sample=box.querySelector('.lang-inline-sample');if(sample){sample.hidden=full;if(full)sample.querySelector('audio')?.pause();}
     const progress=box.querySelector('.lang-setup-job');
     progress.hidden=!job||!['running','failed'].includes(job.status);
-    if(progress.hidden){progress.replaceChildren();return;}
+    if(progress.hidden){langPaint(progress,'');return;}
     if(job.status==='running'){
       const stopping=langStopping(job);
-      progress.innerHTML=`<span>${esc(job.stage||'Починаємо…')}</span><progress max="100" value="${job.progress||0}"></progress><button type="button" class="lang-icon lang-cancel" title="Скасувати" aria-label="Скасувати"${stopping?' disabled':''}>×</button>`;
+      langPaint(progress,`<span>${esc(job.stage||'Починаємо…')}</span><progress max="100" value="${job.progress||0}"></progress><button type="button" class="lang-icon lang-cancel" title="Скасувати" aria-label="Скасувати"${stopping?' disabled':''}>×</button>`);
       progress.querySelector('button').onclick=event=>langCancel(id,job.slot,event.currentTarget);
     }else{
-      progress.innerHTML='<button type="button" class="lang-setup-review">Перевірити озвучку</button>';
+      langPaint(progress,'<button type="button" class="lang-setup-review">Перевірити озвучку</button>');
       const review=progress.querySelector('button');review.title=job.error||'';
       review.onclick=()=>langOpenVoiceResult(id,code);
     }
   });
 }
+
+// the poll repaints job lines every 2 s: only markup that changed is replaced, so a hovered or focused cancel stays put
+function langPaint(element,html){if(element._langHtml!==html){element.innerHTML=html;element._langHtml=html;}return element;}
 
 function showLangJob(){
   if(typeof paintLanguageTabBusy==='function')paintLanguageTabBusy();
@@ -758,14 +761,14 @@ function showLangJob(){
       step.classList.toggle('is-working',busy);
       const slot=job?.slot || (job?`${job.code}|${langGroupOf(job.kind)}`:'');
       if(!busy&&job)langAsked.delete(langCancelKey(state.project?.id,job));
-      if(box.hidden){box.innerHTML='';return;}
+      if(box.hidden){langPaint(box,'');return;}
       // the poll redraws this line every 2 s: a cancel already asked for stays shown
       const stopping=langStopping(job);
-      box.innerHTML=busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${stopping?' disabled':''}>${stopping?'Скасовуємо…':'Скасувати'}</button>`
+      langPaint(box,busy?`${typeof exportSpinner==='string'?exportSpinner:''}<span>${esc(job.stage || '')}</span><progress max="100" value="${job.progress || 0}"></progress><button type="button" class="secondary lang-cancel"${stopping?' disabled':''}>${stopping?'Скасовуємо…':'Скасувати'}</button>`
         :job.status==='cancelled'?`<span>${job.voice_ready?'Озвучка готова. Збереження файлу з музикою й ефектами скасовано.':job.kind==='translate'?'Переклад призупинено. Готові частини збережено для продовження.':'Скасовано. Готові записи фраз збережено.'}</span>`
-        :`<span>Не вдалося: ${esc(job.error || '')}</span>`;
+        :`<span>Не вдалося: ${esc(job.error || '')}</span>`);
       const cancel=box.querySelector('.lang-cancel');
-      cancel?.addEventListener('click',()=>langCancel(state.project.id,slot,cancel));
+      if(cancel)cancel.onclick=()=>langCancel(state.project.id,slot,cancel);
     });
   }
   // the «after» window of the language being redrawn says so in place of its wand
@@ -779,7 +782,7 @@ function showLangJob(){
   document.querySelectorAll('#project-langs .lang-thumbnail-tile[data-code]').forEach(tile=>{
     const busy=langThumbnailPending.has(`${state.project?.id}:${tile.dataset.code}`)||langRunning(tile.dataset.code,'thumbnail');tile.classList.toggle('is-working',busy);tile.setAttribute('aria-busy',String(busy));tile.querySelector('.lang-thumbnail-image').disabled=busy;
     const status=tile.querySelector('.lang-thumbnail-status');status.hidden=tile.classList.contains('has-picture')&&!busy;
-    status.innerHTML=busy?'<i class="export-spinner" aria-hidden="true"></i><small>Створюємо прев’ю…</small>':`${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати</small>`;
+    langPaint(status,busy?'<i class="export-spinner" aria-hidden="true"></i><small>Створюємо прев’ю…</small>':`${typeof thumbnailIcon==='string'?thumbnailIcon:''}<small>Згенерувати</small>`);
     const redo=tile.querySelector('.lang-thumbnail-redo');if(redo)redo.disabled=busy;
   });
   document.querySelectorAll('.lang-language-remove').forEach(button=>button.disabled=langRunning(button.dataset.code));

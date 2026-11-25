@@ -1337,11 +1337,10 @@ class LanguagesTest(unittest.TestCase):
             spoken.append(text);shutil.copy2(audio,target)
         with patch.object(languages,'source',return_value={'duration':total}),patch.object(languages,'speak',side_effect=speak), \
                 patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'announce_model'), \
-                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced') as prepare, \
+                patch.object(languages,'progress'), \
                 patch.object(languages,'ask',side_effect=AssertionError('No text model during narration')), \
                 patch.object(languages,'copy_out'):
             languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':False},segments)
-            prepare.assert_not_called()
         self.assertEqual(spoken,texts)
         self.assertEqual((work/'text.txt').read_text(),saved)
         self.assertFalse((work/'text-pacing.tmp').exists())
@@ -1351,20 +1350,6 @@ class LanguagesTest(unittest.TestCase):
         self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=x['speed']<=languages.dubbing_fit.MAX_SPEED for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)
         self.assertTrue(languages.voice_matches_text(self.pid,code,languages.load_state(self.pid)['languages'][code]['voice']))
-
-    def test_pacing_requires_meaning_check_before_any_new_speech(self):
-        texts=['The weather affects everyone who visits the park during the course of the afternoon.']
-        compact='The weather affects everyone visiting the park in the afternoon.'
-        segments=[{'source':texts[0]}]
-        for verdict in ({'ok':False},{'ok':True,'ids':[]},{'ok':True,'ids':[0]}):
-            with patch.object(languages,'ask',side_effect=[(json.dumps({'0':compact}),.001),(json.dumps(verdict),.001)]), \
-                    patch.object(languages,'speak') as speak:
-                if verdict=={'ok':True,'ids':[0]}:
-                    self.assertEqual(languages.prepare_unvoiced(self.pid,'en',texts,segments,{0:70},{}),{0:compact})
-                else:
-                    with self.assertRaisesRegex(RuntimeError,'перевірку змісту'):
-                        languages.prepare_unvoiced(self.pid,'en',texts,segments,{0:70},{})
-                speak.assert_not_called()
 
     def test_reviewed_repair_keeps_text_without_buying_cached_takes_again(self):
         code='en';work=languages.work_dir(self.pid,code);work.mkdir(parents=True)
@@ -1380,14 +1365,14 @@ class LanguagesTest(unittest.TestCase):
         with patch.object(languages,'source',return_value={'duration':total,'script':'\n'.join(texts)}), \
                 patch.object(languages,'speak',side_effect=speak) as speech, \
                 patch.object(languages,'voice_id',return_value={'id':'existing'}),patch.object(languages,'announce_model'), \
-                patch.object(languages,'progress'),patch.object(languages,'prepare_unvoiced') as prepare, \
+                patch.object(languages,'progress'), \
+                patch.object(languages,'ask',side_effect=AssertionError('No text model during narration')), \
                 patch.object(languages,'copy_out'):
             languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':True},segments)
             self.assertEqual(speech.call_count,8)
             self.assertEqual(languages.line_texts(self.pid,code),texts)
             languages.whole_synced(self.pid,code,'elevenlabs',{'preserve_text':True},segments)
             self.assertEqual(speech.call_count,8)
-            prepare.assert_not_called()
         manifest=store.read_json(work/'parts/manifest.json')
         self.assertTrue(all(languages.dubbing_fit.MIN_SPEED<=x['speed']<=languages.dubbing_fit.MAX_SPEED and x['reused'] for x in manifest))
         self.assertLessEqual(manifest[-1]['end'],total)

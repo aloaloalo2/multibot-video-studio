@@ -235,17 +235,24 @@ def paired_forms(source: str, translated: str, source_language: str, target_lang
             (render(translated, selected_target), tuple(selected_target), available))
 
 
+@lru_cache(maxsize=4096)
 def comparison_chars(text: str) -> int:
     """Count Unicode letters only; numeric matching happens before this step.
 
     Apostrophe-like modifier letters are punctuation in narration. Never use
     this linguistic length metric for provider billing or API payload limits.
+    Cached: the «Мови» overview counts the same whole scripts on every poll.
     """
     return sum(unicodedata.category(char).startswith('L') and char not in '\u02bc\u02bb' for char in text)
 
 
 def source_comparison_chars(text, language, units=None):
     """Stable source letter basis independent of the selected target language."""
+    return _source_comparison_chars(text, language, tuple(units) if units is not None else None)
+
+
+@lru_cache(maxsize=64)
+def _source_comparison_chars(text, language, units):
     def reduced(value):
         _,spans,ready=normalized(value,language)
         if not ready:return 0
