@@ -178,6 +178,39 @@ def start(project, asset_id, save_job, load_job, script=None, create_video=False
     return job
 
 
+ASR_CACHE = "asr-cache.json"   # audio sha256 → the job whose raw Whisper words it keeps (asr.json)
+
+
+def keep_words(pid, job_id, audio_hash, words, engine):
+    """Keep Whisper's own words of this audio, before any repair, so the same file is never recognised twice
+    (another script, a restart, a second click). Best effort: a failed write only means a later new recognition."""
+    if engine.get("model") != speech.MODEL_NAME:
+        return   # only the studio's own Whisper model is kept
+    try:   # never fails the recognition it serves
+        folder = store.project_dir(pid) / "analysis"
+        store.atomic_json(folder / job_id / "asr.json", {"audio_sha256": audio_hash, "model": engine.get("model"),
+                                                          "engine": engine, "words": words})
+        with store.LOCK:
+            index = store.read_json(folder / ASR_CACHE, {}) or {}
+            index[audio_hash] = job_id
+            store.atomic_json(folder / ASR_CACHE, index)
+    except Exception:
+        pass
+
+
+def cached_words(pid, audio_hash):
+    """(words, engine) Whisper gave for exactly this audio with the current model, or None."""
+    try:
+        folder = store.project_dir(pid) / "analysis"
+        job_id = (store.read_json(folder / ASR_CACHE, {}) or {}).get(audio_hash)
+        data = store.read_json(folder / str(job_id) / "asr.json", {}) if isinstance(job_id, str) and job_id.isalnum() else {}
+    except (OSError, ValueError, TypeError, store.StudioError):
+        return None
+    if data.get("audio_sha256") != audio_hash or data.get("model") != speech.MODEL_NAME or not data.get("words"):
+        return None
+    return [dict(word) for word in data["words"]], {**(data.get("engine") or {}), "cached_from": job_id}
+
+
 @job_timing.track('analysis', project='job', job='job')
 def worker(job, script, save_job):
     def progress(value, stage="recognizing"):
@@ -232,11 +265,16 @@ def worker(job, script, save_job):
             previous=store.read_json(store.project_dir(project['id'])/'analysis'/job.get('reuse_report_id','unused')/'result.json',{}) or {}
             reusable=(previous.get('source',{}).get('sha256')==original_hash and previous.get('audio',{}).get('sha256')==audio_hash
                       and isinstance(script,str) and hashlib.sha256(script.encode()).hexdigest() in {previous.get('script_sha256'),previous.get('studio_script_sha256')} and previous.get('words'))
+            voice = speech.Voice(path)   # decoded once for Whisper and every repair below
+            heard_before = None if reusable else cached_words(project['id'], audio_hash)
             if reusable:
                 words,engine=list(previous['words']),dict(previous.get('engine') or {})
+            elif heard_before:
+                words, engine = heard_before
             else:
                 try:
-                    words, engine = speech.transcribe(path, duration, progress)
+                    words, engine = speech.transcribe(voice, duration, progress)
+                    keep_words(project['id'], job['id'], audio_hash, words, engine)
                 except RuntimeError as error:
                     if not sequence or sequence.get('version') != 2 or not sequence.get('sentence_timings'):
                         raise
@@ -247,9 +285,9 @@ def worker(job, script, save_job):
             if report:
                 engine.update(repaired_holes=0, repaired_script_phrases=0)
             else:
-                words, engine["repaired_holes"] = speech_repair.repair(path, words, engine.get("language"))
+                words, engine["repaired_holes"] = speech_repair.repair(voice, words, engine.get("language"))
                 if script:
-                    words,engine['repaired_script_phrases']=speech_repair.repair_script(path,script,words,engine.get('language'),duration=duration,sequence_verified=bool(sequence),order_only=True)
+                    words,engine['repaired_script_phrases']=speech_repair.repair_script(voice,script,words,engine.get('language'),duration=duration,sequence_verified=bool(sequence),order_only=True)
             if script is None:
                 # No script from the author: the recognised voice becomes the script of the episode.
                 script = speech.transcript_script(words)

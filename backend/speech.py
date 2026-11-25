@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import job_timing
+import copy
 import difflib
 import math
 import os
 import platform
+import shutil
+import subprocess
 import sys
 import threading
 import types
@@ -79,6 +82,7 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
     def heard_span(b0, b1):
         return float(words[source_indexes[b0]]["start"]), float(words[source_end_indexes[b1 - 1]]["end"])
 
+    range_ends = [end for _, end in ranges]
     matcher = difflib.SequenceMatcher(None, reference, heard, autojunk=False)
     mapping, differences, affected, numeric_differences = {}, [], set(), set()
     times, estimated = [None] * len(reference), [False] * len(reference)
@@ -95,9 +99,16 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
         if kind == "equal":
             mapping.update({a: b for a, b in zip(range(a0, a1), range(b0, b1))})
             continue
-        related = [index for index, (start, end) in enumerate(ranges) if a0 < end and a1 > start]
+        # sentences whose tokens overlap [a0, a1); ranges are consecutive, so the first one ending after a0 leads them
+        first = min(bisect.bisect_right(range_ends, a0), len(ranges) - 1) if ranges else 0
+        related = []
+        for index in range(first, len(ranges)):
+            if ranges[index][0] >= a1:
+                break
+            if a0 < ranges[index][1] and a1 > ranges[index][0]:
+                related.append(index)
         if not related and ranges:
-            related = [next((index for index, (_, end) in enumerate(ranges) if a0 < end), len(ranges) - 1)]
+            related = [first]
         affected.update(related)
         expected_numbers = [token for token in reference[a0:a1] if re.search(r'\d', token)]
         heard_numbers = [token for token in heard[b0:b1] if re.search(r'\d', token)]
@@ -160,14 +171,19 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
                         "matched_words": len(matched), "words": end - start,
                         "word_match_percent": round(len(matched) / (end - start) * 100, 1) if end > start else 0,
                         "recognition_confidence": round(confidence, 4), "issues": issues})
+    # Each written word takes the time of the tokens it holds (one token per word, several for «2025-го» and the like).
+    tokens_of = [[] for _ in chunks]
+    for a, owners in enumerate(token_chunks):
+        for k in owners:
+            tokens_of[k].append(a)
     script_words = []
     for k, chunk in enumerate(chunks):
-        owned = [times[a] for a, owners in enumerate(token_chunks) if k in owners and times[a]]
+        owned = [times[a] for a in tokens_of[k] if times[a]]
         if owned:
             script_words.append({"text": chunk["text"], "sentence": chunk["sentence"], "start": round(min(t[0] for t in owned), 3),
                                  "end": round(max(t[1] for t in owned), 3),
                                  "word_index": k,
-                                 "estimated": any(estimated[a] for a, owners in enumerate(token_chunks) if k in owners)})
+                                 "estimated": any(estimated[a] for a in tokens_of[k])})
     percent = round(len(mapping) / len(reference) * 100, 1) if reference else 0
     blocking = blocking_issues(sequence_verified, order_only=order_only)
     # Original narration needs evidence that each sentence is present in order.
@@ -185,19 +201,60 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
             "phrases": phrases, "differences": differences, "timings": timings, "aligned_words": script_words}
 
 
+_MLX_PATHS = {}
+SAMPLE_RATE = 16000
+
+
 def mlx_model_path(model=MODEL_NAME):
-    """Local MLX snapshot for Apple Silicon, or None to use the CPU engine."""
+    """Local MLX snapshot for Apple Silicon, or None to use the CPU engine. Looked up once per model: the repairs ask
+    for it before every short piece."""
+    if model in _MLX_PATHS:
+        return _MLX_PATHS[model]
     if sys.platform != "darwin" or platform.machine() != "arm64" or model not in MLX_REPOS:
         return None
     try:
         import mlx_whisper  # noqa: F401
         from huggingface_hub import snapshot_download
-        return snapshot_download(MLX_REPOS[model], local_files_only=True)
+        _MLX_PATHS[model] = snapshot_download(MLX_REPOS[model], local_files_only=True)
     except Exception:
         return None
+    return _MLX_PATHS[model]
 
 
-def transcribe_mlx(model_path, path, duration, progress, language=None):
+class Voice:
+    """An audio file decoded once to 16 kHz mono, the input both engines read; pieces are slices of it, so the repairs
+    recognise them again without another FFmpeg run each."""
+
+    def __init__(self, path, samples=None, offset=0.0):
+        self.path, self._samples, self.offset = path, samples, offset
+
+    @property
+    def samples(self):
+        if self._samples is None:
+            import numpy as np
+            ffmpeg = shutil.which("ffmpeg")
+            if not ffmpeg:
+                raise RuntimeError("Для розпізнавання потрібен FFmpeg")
+            run = subprocess.run([ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "0", "-i", str(self.path),
+                                  "-f", "s16le", "-ac", "1", "-acodec", "pcm_s16le", "-ar", str(SAMPLE_RATE), "-"],
+                                 capture_output=True, timeout=1800)
+            if run.returncode:
+                raise RuntimeError("Не вдалося прочитати аудіо для розпізнавання")
+            self._samples = np.frombuffer(run.stdout, np.int16).flatten().astype(np.float32) / 32768.0
+        return self._samples
+
+    def piece(self, start, end):
+        """The audio between two moments of this voice, or None when it holds nothing."""
+        a, b = max(0, int(round(start * SAMPLE_RATE))), int(round(end * SAMPLE_RATE))
+        part = self.samples[a:b]
+        return Voice(self.path, part, start) if len(part) else None
+
+
+def _input(audio):
+    return audio.samples if isinstance(audio, Voice) else str(audio)
+
+
+def transcribe_mlx(model_path, audio, duration, progress, language=None):
     import mlx_whisper
     module = sys.modules["mlx_whisper.transcribe"]  # the package re-exports a function under the same name
 
@@ -219,7 +276,7 @@ def transcribe_mlx(model_path, path, duration, progress, language=None):
         original = module.tqdm
         module.tqdm = types.SimpleNamespace(tqdm=Progress)
         try:
-            result = mlx_whisper.transcribe(str(path), path_or_hf_repo=model_path, language=language, verbose=None,
+            result = mlx_whisper.transcribe(_input(audio), path_or_hf_repo=model_path, language=language, verbose=None,
                                             word_timestamps=True, condition_on_previous_text=False)
         finally:
             module.tqdm = original
@@ -233,11 +290,12 @@ def transcribe_mlx(model_path, path, duration, progress, language=None):
 
 
 @job_timing.measure('recognition')
-def transcribe(path, duration, progress, language=None):
+def transcribe(audio, duration, progress, language=None):
+    """Words of a file path or a decoded Voice (or a piece of one), with their times in that audio."""
     global _MODEL
     model_path = mlx_model_path()
     if model_path:
-        return transcribe_mlx(model_path, path, duration, progress, language)
+        return transcribe_mlx(model_path, audio, duration, progress, language)
     try:
         from faster_whisper import WhisperModel
         with MODEL_LOCK:
@@ -245,7 +303,7 @@ def transcribe(path, duration, progress, language=None):
                 _MODEL = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", cpu_threads=CPU_THREADS, local_files_only=True)
     except (ImportError, OSError, RuntimeError, ValueError) as error:
         raise RuntimeError("Локальний Whisper або його модель недоступні. Перевірте встановлення моделі small") from error
-    segments, info = _MODEL.transcribe(str(path), language=language, word_timestamps=True, vad_filter=True,
+    segments, info = _MODEL.transcribe(_input(audio), language=language, word_timestamps=True, vad_filter=True,
                                        beam_size=5, condition_on_previous_text=False)
     words = []
     for segment in segments:
@@ -260,8 +318,20 @@ def transcribe(path, duration, progress, language=None):
 
 # A voice said out of order or with a piece said twice goes to review with a note of where (speech_order.py); the
 # comparison above walks script and voice side by side and cannot see either on its own. Nothing is cut or moved.
+_LAST_COMPARISON = [None, None]   # key, report: the worker compares the words the repairs settled on once more
+_COMPARISON_LOCK = threading.Lock()
+
+
 @job_timing.measure('verification')
 def compare_script(script, words, duration, sequence_verified=False, *, order_only=False):
-    return speech_order.mark(script, words,
-                             _compare_in_order(script, words, duration, sequence_verified, order_only=order_only),
-                             blocking_issues(sequence_verified, order_only=order_only))
+    key = (script, duration, bool(sequence_verified), bool(order_only),
+           tuple((w.get("text"), w.get("start"), w.get("end"), w.get("probability")) for w in words))
+    with _COMPARISON_LOCK:
+        if _LAST_COMPARISON[0] == key:
+            return copy.deepcopy(_LAST_COMPARISON[1])
+    report = speech_order.mark(script, words,
+                               _compare_in_order(script, words, duration, sequence_verified, order_only=order_only),
+                               blocking_issues(sequence_verified, order_only=order_only))
+    with _COMPARISON_LOCK:
+        _LAST_COMPARISON[:] = [key, copy.deepcopy(report)]
+    return report

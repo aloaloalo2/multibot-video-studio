@@ -59,7 +59,7 @@ class ScriptPhraseRepairTest(unittest.TestCase):
 
     def rehear(self, words):
         bounds = []
-        def cut(audio, start, end, target):
+        def cut(audio, start, end, *_):
             bounds[:] = [start, end]
             return True
         def transcribe(*args):
