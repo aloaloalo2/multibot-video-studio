@@ -24,6 +24,12 @@ Read GET /api/projects/<id>/narration for available choices before choosing scri
     python3 tools/studio.py sentences P                     # the director: numbered sentences of the voice, the channel's formats
     python3 tools/studio.py frames P FILE.json [--dry-run]  # the director: check and save the frame plan
     python3 tools/studio.py numbers P [FILE.json] [--dry-run]  # sentences whose numbers became digits; manual writing
+    python3 tools/studio.py work P                          # current frames, scene files and unfinished work in one list
+    python3 tools/studio.py review P --frames 1-5 [--approve TICKET]   # a sheet of up to five made frames to look at
+    python3 tools/studio.py effect P FRAME capcut_eNN|none [--strength S]
+    python3 tools/studio.py motion-code P FRAME FILE.js [--replace]   # Canvas 2D code over a frame, checked at once
+    python3 tools/studio.py event-sounds P [--frames 12-20] # sounds on what comes on screen in the Razgon frames
+    python3 tools/studio.py spend P [--all]                 # where the director's and frame agent's runs spent the limits
 
 P is a project id or words that find one project ("Горбунов 23"). Points and sizes are pixels of the project frame as
 it looks at the frame's middle moment (as `still P fN` shows it), or with --space photo fractions of the picture.
@@ -84,9 +90,9 @@ def clock(seconds: float) -> str:
     return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
 
 
-def find_project(ref: str) -> dict:
+def find_project(ref: str, channels: dict | None = None) -> dict:
     """A project by id, or the one project whose channel name, episode folder and title hold all the words of `ref`."""
-    channels = {c["id"]: c for c in call("GET", "/api/channels")["channels"]}
+    channels = channels or {c["id"]: c for c in call("GET", "/api/channels")["channels"]}
     projects = call("GET", "/api/projects")["projects"]
     if re.fullmatch(r"[0-9a-f]{24}", ref):
         found = [p for p in projects if p["id"] == ref]
@@ -98,6 +104,16 @@ def find_project(ref: str) -> dict:
         lines = [f"  {p['id']}  {channels.get(p['channel_id'], {}).get('name', '')} / {Path(p.get('episode_path') or '').name}" for p in found[:20]]
         raise Failure((f"Знайдено {len(found)} проєктів за «{ref}», уточніть:\n" + "\n".join(lines)) if found else f"Проєкт «{ref}» не знайдено")
     return {**found[0], "channel": channels.get(found[0]["channel_id"], {})}
+
+
+def refresh(project: dict) -> dict:
+    """The same project read again (its revision moves with every change). Only its channel's list is asked: the full
+    list builds every card of the studio and took 4–5 s on a busy Mac, the project itself is about 450 KB."""
+    rows = call("GET", "/api/projects?" + urllib.parse.urlencode({"channel": project["channel_id"]}))["projects"]
+    found = next((p for p in rows if p["id"] == project["id"]), None)
+    if found is None:
+        raise Failure(f"Проєкт {project['id']} не знайдено")
+    return {**project, **found}
 
 
 def point(text: str | None):
@@ -147,7 +163,7 @@ def run_ops(project: dict, ops: list, dry: bool) -> None:
         except Failure as error:
             if not str(error).startswith("409: Проєкт змінився") or attempt == 3:
                 raise
-            project["revision"] = call("GET", f"/api/projects/{project['id']}").get("revision")
+            project["revision"] = refresh(project).get("revision")
     for line in result.get("report", []):
         print(line)
     if dry:
@@ -343,12 +359,17 @@ def _main(argv=None) -> int:
                 if all(w in fold(text) for w in words):
                     print(f"{p['id']}  {channels.get(p['channel_id'], '')} / {Path(p.get('episode_path') or '').name}  ({p.get('plan_stage') or 'без плану'})")
             return 0
-        project = find_project(args.project)
+        if args.command in TIMELINE_COMMANDS and re.fullmatch(r"[0-9a-f]{24}", args.project):
+            # an id takes the lock at once; the project is read once, inside it, so its revision is the current one
+            LOCK_HELD.enter_context(timeline_lock(args.project))
+            project = find_project(args.project)
+        else:
+            project = find_project(args.project)
+            if args.command in TIMELINE_COMMANDS:
+                # held until this command exits; the project is read again inside, so its revision is the current one
+                LOCK_HELD.enter_context(timeline_lock(project["id"]))
+                project = refresh(project)
         pid = project["id"]
-        if args.command in TIMELINE_COMMANDS:
-            # held until this command exits; the project is read again inside, so its revision is the current one
-            LOCK_HELD.enter_context(timeline_lock(pid))
-            project = find_project(pid)
         if args.command == "summary":
             query = urllib.parse.urlencode({key: value for key, value in (("frames", args.frames), ("issues", "1" if args.issues else None),
                                                                            ("format", None if args.json else "text")) if value})
@@ -560,7 +581,7 @@ def _main(argv=None) -> int:
             return 0
         if args.command == "stock-pick":
             asset = call("POST", f"/api/projects/{pid}/assets/from-pixabay", {"kind": "video" if args.video else "image", "pixabay_id": args.id})["asset"]
-            project = find_project(pid)   # the download raised the revision
+            project = refresh(project)   # the download raised the revision
             spec = {"op": "place", "frame": args.frame, "asset_id": asset["id"]}
             if args.motion:
                 spec["motion"] = args.motion

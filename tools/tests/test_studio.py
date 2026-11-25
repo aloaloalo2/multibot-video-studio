@@ -3,6 +3,7 @@ import io
 import json
 import sys
 import unittest
+import urllib.parse
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
@@ -32,6 +33,9 @@ class FakeStudio:
             return CHANNELS
         if path == "/api/projects":
             return PROJECTS
+        if path.startswith("/api/projects?channel="):   # studio.refresh: the project's own channel only
+            channel = urllib.parse.parse_qs(path.partition("?")[2])["channel"][0]
+            return {"projects": [p for p in PROJECTS["projects"] if p["channel_id"] == channel]}
         if "/summary" in path:
             data = {"fps": 25, "frames": [{"n": 12, "start": 10.0, "end": 14.0, "line": "", "issues": []}], "head": ["h"], "issues": []}
             return "h\n" if raw and "format=text" in path else data
@@ -71,6 +75,16 @@ class StudioToolTest(unittest.TestCase):
             self.assertIn("Знайдено 2", str(many.exception))
             with self.assertRaises(studio.Failure):
                 studio.find_project("Ветров")
+
+    def test_a_timeline_command_reads_the_full_list_once(self):
+        # the full list builds every card of the studio (4–5 s on a busy Mac): an id is read once inside the lock, words
+        # once to find the project and again only from its channel's list
+        _, _, _, sent = self.run_tool("remove", "a" * 24, "12")
+        self.assertEqual([path for _, path, _ in sent if path.startswith("/api/projects?") or path == "/api/projects"], ["/api/projects"])
+        _, _, _, sent = self.run_tool("remove", "горбунов 23", "12")
+        self.assertEqual([path for _, path, _ in sent if path.startswith("/api/projects?") or path == "/api/projects"],
+                         ["/api/projects", "/api/projects?channel=" + "c" * 16])
+        self.assertEqual(sent[-1][2]["expected_revision"], 7)
 
     def test_moments_from_seconds_minutes_or_a_frame(self):
         with patch.object(studio, "call", FakeStudio()):
