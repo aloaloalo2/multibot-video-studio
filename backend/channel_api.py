@@ -47,7 +47,19 @@ def get(self, path, query, *, ensure_idle):
         return self.json_response(channel_translation_voices.describe(cid,code,settings,(query.get('text') or [None])[0]))
     match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/competitors', path)
     if match:
-        return self.json_response({'competitors': channel_competitors.read(match.group(1))})
+        return self.json_response(channel_competitors.public(match.group(1), channel_competitors.read(match.group(1))))
+    match = re.fullmatch(r'/api/channels/([0-9a-f]{16})/competitors/(UC[A-Za-z0-9_-]{22})/icon', path)
+    if match:
+        raw = channel_competitors.icon(*match.groups())
+        if raw is None: raise store.StudioError('Немає логотипа конкурента', 404)
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('Cache-Control', 'private, max-age=31536000, immutable')   # the link carries the picture's hash
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(raw)
+        return
 
     transfer = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-(export|backups)', path)
     if transfer:
@@ -160,9 +172,9 @@ def mutate(self, method, path, body, *, ensure_idle, choose_folder):
     if match:
         cid, identity = match.groups()
         if method == 'POST' and not identity:
-            return self.json_response(channel_competitors.add(cid, body.get('url')))
+            return self.json_response(channel_competitors.public(cid, channel_competitors.add(cid, body.get('url'))['competitors']))
         if method == 'DELETE' and identity:
-            return self.json_response(channel_competitors.remove(cid, identity))
+            return self.json_response(channel_competitors.public(cid, channel_competitors.remove(cid, identity)['competitors']))
         raise store.StudioError('Невідомий запит', 404)
 
     backup = re.fullmatch(r'/api/channels/([0-9a-f]{16})/settings-backups/([0-9a-f]{32})(/restore)?', path)

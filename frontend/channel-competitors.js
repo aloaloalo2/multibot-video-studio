@@ -21,7 +21,7 @@ function bindChannelCompetitors(channel){
   function render(){
     if(!root.isConnected)return;
     list.innerHTML=items.map(item=>{
-      const image=typeof item.icon_url==='string'&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon_url)?`<img src="${item.icon_url}" alt="" width="36" height="36">`:'<span class="competitor-avatar-placeholder" aria-hidden="true">▶</span>';
+      const image=typeof item.icon_url==='string'&&(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon_url)||/^\/api\/channels\/[0-9a-f]{16}\/competitors\/UC[A-Za-z0-9_-]{22}\/icon\?v=[0-9a-f]{12}$/.test(item.icon_url))?`<img src="${item.icon_url}" alt="" width="36" height="36" loading="lazy" decoding="async">`:'<span class="competitor-avatar-placeholder" aria-hidden="true">▶</span>';
       const url=/^https:\/\/www\.youtube\.com\/channel\/UC[A-Za-z0-9_-]{22}$/.test(item.url)?item.url:'#';
       const address=competitorAddress(item);
       return `<div class="competitor-row">${image}<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><strong title="${esc(item.name)}">${esc(item.name)}</strong><small title="${esc(address.title)}">${esc(address.label)}</small></a><button type="button" class="icon-button competitor-remove" data-id="${esc(item.id)}" title="Видалити конкурента" aria-label="Видалити ${esc(item.name)}" ${busy?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`;
@@ -41,5 +41,7 @@ function bindChannelCompetitors(channel){
   }
   form.onsubmit=event=>{event.preventDefault();const url=input.value.trim();if(url)mutate('POST',endpoint,{url});};
   add.disabled=true;input.disabled=true;
-  api(endpoint).then(result=>{if(!root.isConnected)return;items=result.competitors||[];feedback.textContent=items.length?'':'Додайте перший канал конкурента';render();}).catch(error=>{if(root.isConnected)feedback.textContent=error.message;}).finally(()=>{if(root.isConnected){add.disabled=false;input.disabled=false;}});
+  // the list loads when its panel is first shown: its 77 pictures are not needed on every opening of the settings
+  const load=()=>api(endpoint).then(result=>{if(!root.isConnected)return;items=result.competitors||[];feedback.textContent=items.length?'':'Додайте перший канал конкурента';render();}).catch(error=>{if(root.isConnected)feedback.textContent=error.message;}).finally(()=>{if(root.isConnected){add.disabled=false;input.disabled=false;}});
+  if(!panel.hidden)load();else panel.addEventListener('settings-panel-shown',load,{once:true});
 }

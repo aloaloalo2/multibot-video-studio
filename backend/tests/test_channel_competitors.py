@@ -67,8 +67,17 @@ class CompetitorHTTPTests(unittest.TestCase):
         with patch.object(competitors,'inspect',return_value=row):
             code,data=self.request(endpoint,'POST',{'url':'https://youtube.com/@Example'})
         self.assertEqual(code,200)
-        self.assertEqual(data['competitors'],[row])
+        # the page gets the picture as a cached link, the file keeps it inline
+        icon=data['competitors'][0]['icon_url']
+        self.assertRegex(icon,r'^/api/channels/'+self.cid+'/competitors/'+IDENTITY+r'/icon\?v=[0-9a-f]{12}$')
+        self.assertEqual(data['competitors'],[{**row,'icon_url':icon}])
+        self.assertEqual(competitors.read(self.cid),[row])
         self.assertEqual(self.request(endpoint),(200,data))
+        import urllib.request
+        with urllib.request.urlopen(self.base_url+icon) as response:
+            self.assertEqual((response.headers['Content-Type'],response.read()),('image/png',b'a'))
+            self.assertIn('immutable',response.headers['Cache-Control'])
+        self.assertEqual(self.request(endpoint+'/UC'+'b'*22+'/icon')[0],404)
         code,data=self.request(endpoint+'/'+IDENTITY,'DELETE')
         self.assertEqual((code,data),(200,{'competitors':[]}))
         self.assertEqual(self.request('/api/channels/'+'0'*16+'/competitors')[0],404)
