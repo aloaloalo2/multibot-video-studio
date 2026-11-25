@@ -11,7 +11,6 @@ const brandingDefaults={enabled:true,position:'top-right',size:12,margin:3,opaci
 // backend/thumbnail_logo.py: the channel's logo on its thumbnails, in a corner laid by the studio or placed by Codex
 const thumbnailLogoDefaults={enabled:false,position:'auto',size:14};
 const thumbnailLogoPlaces=[['auto','Де краще за композицією (малює Codex)'],['top-left','Угорі ліворуч'],['top-right','Угорі праворуч'],['bottom-left','Унизу ліворуч']];   // never bottom right: YouTube shows the video's length there
-const titleFonts=["Montserrat", "Nunito", "Roboto", "Open Sans", "Noto Sans", "Noto Serif", "Oswald", "Roboto Condensed", "Ubuntu", "Rubik", "Manrope", "Exo 2", "Comfortaa", "PT Sans", "PT Serif", "Russo One", "Unbounded"];
 // Ukrainian names for the template Razgon styles; a style the Studio does not know keeps its own name and description.
 const styleNames={neon:['Неоновий нуар','Глибокий чорний, рожево-бірюзовий контур, світні вивіски, сильне сяйво.'],
   neonblack:['Чорний неон','Майже чорні об’єкти та фон, графітові тіні й неонове сяйво.'],
@@ -60,13 +59,15 @@ function brandingSections(channel,projectDefaults=''){
     <section class="settings-section thumbnail-logo-section"><div class="logo-heading"><h3>Логотип на прев’ю</h3><label class="logo-switch"><input id="thumbnail-logo-enabled" type="checkbox" role="switch" ${thumbLogo.enabled?'checked':''}><span aria-hidden="true"></span>Додавати</label></div>
       <p id="thumbnail-logo-note">Нові прев’ю каналу виходять із плашкою каналу. У кутку її кладе студія точно як файл, а за композицією її розміщує сам Codex.</p>
       <div class="thumbnail-logo-controls" id="thumbnail-logo-controls"><label>Місце<select id="thumbnail-logo-position">${thumbnailLogoPlaces.map(([value,label])=>`<option value="${value}" ${thumbLogo.position===value?'selected':''}>${label}</option>`).join('')}</select></label>${slider('thumbnail-logo-size','Розмір',5,30,thumbLogo.size,'%')}</div></section>
-    <section class="settings-section channel-look"><h3><span class="regular-only">Стиль 2D-анімації Razgon</span><span class="animated-only">Стиль анімації</span></h3>
+    <section class="settings-section channel-look">
       <p class="regular-only style-note">Як виглядають кадри 2D-анімації Razgon у звичайних роликах каналу.</p>
-      <div class="logo-preview" id="logo-preview"><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
+      <div class="channel-typeface"><span id="channel-font-label">Шрифт каналу</span><select id="style-title-font" hidden>${studioFontOptionsHtml()}</select>
+        <details class="channel-font-picker"><summary aria-labelledby="channel-font-label channel-font-current"><span id="channel-font-current"></span><span aria-hidden="true">⌄</span></summary><div class="channel-font-menu" role="listbox" aria-labelledby="channel-font-label"></div></details></div>
+      <div class="logo-preview" id="logo-preview"><canvas id="style-card-text" width="1920" height="1080" aria-hidden="true" hidden></canvas><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
         <details class="style-fine look-row"><summary><span class="look-row-thumb look-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span><strong>Налаштування стилю</strong><small id="style-fine-summary"></small><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary>
-        <div class="style-toolbar"><label>Шрифт<select id="style-title-font">${titleFonts.map(font=>`<option style="font-family:'${esc(font)}'" value="${esc(font)}" ${(titleFonts.includes(animation.title_font)?animation.title_font:'Nunito')===font?'selected':''}>${font}</option>`).join('')}</select></label>
+        <div class="style-toolbar">
           <label class="logo-toggle" title="PNG предмети для кодової анімації та Razgon, в універсальних і анімаційних проєктах. З бібліотеки або Codex; вимкнено: малювання кодом."><input id="style-assets" type="checkbox" ${animation.assets!==false?'checked':''}> PNG асети</label>
           <label class="logo-toggle animated-only" title="Дозволяти стікменів у нових анімаційних кадрах."><input id="style-stickmen" type="checkbox" ${animation.allow_stickmen!==false?'checked':''}> Стікмени</label>
           <button id="style-film-toggle" class="secondary animated-only" type="button" aria-expanded="false">Показати на кадрах ролика</button></div>
@@ -122,14 +123,49 @@ function bindBranding(channel){
   });
   const settings=channel.settings || {},logo={...brandingDefaults,...(settings.logo || {})},animation=settings.animation || {};
   const frame=$('logo-preview'),image=$('logo-preview-image'),tileImage=$('logo-tile-image'),feedback=$('logo-feedback'),strip=$('style-strip'),film=$('style-film'),stage=$('style-stage-state');
+  const cardCanvas=$('style-card-text'),cardDrawing=cardCanvas.getContext('2d');
+  let cardLabels={};
+  const paintCardText=()=>{
+    const font=$('style-title-font').value;
+    const labels=cardLabels[$('style-assets').checked?'1':'0']?.[chosen];
+    cardCanvas.hidden=!labels?.length;
+    cardDrawing.clearRect(0,0,cardCanvas.width,cardCanvas.height);
+    for(const {str,x,y,options:o,matrix,opacity} of labels||[]){
+      const size=o.size??48;
+      cardDrawing.save();
+      cardDrawing.setTransform(...matrix);
+      cardDrawing.globalAlpha=opacity*(o.alpha??1);
+      cardDrawing.font=`${o.italic?'italic ':''}${o.weight??700} ${size}px ${JSON.stringify(font)}, sans-serif`;
+      cardDrawing.textBaseline=o.base||'middle';
+      cardDrawing.textAlign=o.align||'center';
+      if('letterSpacing' in cardDrawing)cardDrawing.letterSpacing=`${o.spacing??0}px`;
+      if(o.pill){
+        const width=cardDrawing.measureText(str).width+40;
+        cardDrawing.beginPath();cardDrawing.roundRect(x-width/2,y-1-size*.95,width,size*1.9,size*.95);
+        cardDrawing.fillStyle=o.pill.fill;cardDrawing.fill();
+        cardDrawing.lineWidth=2;cardDrawing.strokeStyle=o.pill.stroke;cardDrawing.stroke();
+      }
+      if(o.glow){cardDrawing.shadowBlur=o.glow;cardDrawing.shadowColor=o.glowColor;}
+      cardDrawing.fillStyle=o.color||'white';
+      if(o.maxWidth)cardDrawing.fillText(str,x,y,o.maxWidth);
+      else cardDrawing.fillText(str,x,y);
+      cardDrawing.restore();
+    }
+  };
+  const refreshCardTypeface=()=>{
+    const font=$('style-title-font').value;
+    paintCardText();
+    Promise.all([400,700,900].map(weight=>document.fonts.load(`${weight} 40px ${JSON.stringify(font)}`)))
+      .then(()=>{if(cardCanvas.isConnected&&$('style-title-font').value===font)paintCardText();}).catch(()=>{});
+  };
   // a magnifier on the style picture (user, 20 November 2026: «лупа… нажимаю, і воно збільшується в те місце… ще раз
   // нажимаю, вертається назад»): a click zooms 2.5 times into the point clicked, the next click goes back
   frame.classList.add('style-zoomable');frame.title='Натисніть, щоб збільшити';
   // zoomed, the picture moves under a hand (user, 20 November 2026: «рука, щоб посовувати могла»): a drag pans it, a
   // click without a drag goes back
   const ZOOM=2.5;let pan=null;
-  const zoomTo=(x,y)=>{frame.style.backgroundSize=`${ZOOM*100}%`;frame.style.backgroundPosition=`${x.toFixed(2)}% ${y.toFixed(2)}%`;frame.dataset.x=x;frame.dataset.y=y;};
-  const unzoom=()=>{frame.classList.remove('is-zoomed','is-panning');frame.style.backgroundSize='';frame.style.backgroundPosition='';frame.title='Натисніть, щоб збільшити';};
+  const zoomTo=(x,y)=>{frame.style.backgroundSize=`${ZOOM*100}%`;frame.style.backgroundPosition=`${x.toFixed(2)}% ${y.toFixed(2)}%`;cardCanvas.style.transformOrigin=frame.style.backgroundPosition;cardCanvas.style.transform=`scale(${ZOOM})`;frame.dataset.x=x;frame.dataset.y=y;};
+  const unzoom=()=>{frame.classList.remove('is-zoomed','is-panning');frame.style.backgroundSize='';frame.style.backgroundPosition='';cardCanvas.style.transform='';frame.title='Натисніть, щоб збільшити';};
   frame.addEventListener('pointerdown',event=>{
     if(!frame.style.backgroundImage||event.button!==0)return;
     pan={x:event.clientX,y:event.clientY,moved:false,fx:Number(frame.dataset.x||50),fy:Number(frame.dataset.y||50)};
@@ -187,9 +223,14 @@ function bindBranding(channel){
     $('thumbnail-logo-note').textContent=present?'Нові прев’ю каналу виходять із плашкою каналу. У кутку її кладе студія точно як файл, а за композицією її розміщує сам Codex.':'Спочатку додайте плашку каналу вище: її й буде видно на прев’ю.';
   };
   const load=()=>{tileImage.onload=()=>{present=true;draw();};tileImage.onerror=()=>{present=false;draw();};tileImage.src=logoUrl();image.src=logoUrl();};
-  // Every card (style x title font x assets) is drawn ahead of time, so switching a font or the assets only swaps pictures.
+  // Cards for the selected font include both asset settings.
   let busy=false;
-  const card=id=>cards?.[$('style-title-font').value]?.[$('style-assets').checked?'1':'0']?.[id] || '';
+  const card=id=>{
+    const font=$('style-title-font').value;
+    const variant=$('style-assets').checked?'1':'0';
+    return cards?.[font]?.[variant]?.[id] || cards?.[animation.title_font]?.[variant]?.[id] ||
+      Object.values(cards||{}).find(entry=>entry?.[variant]?.[id])?.[variant]?.[id] || '';
+  };
   // The logo sits on the style card of the chosen Razgon style: an animated channel's films and a regular channel's 2D-animation frames.
   const backdrop=()=>{
     const style=styles?.find(item=>item.id===chosen);
@@ -198,13 +239,15 @@ function bindBranding(channel){
       if(!selection){selection=document.createElement('input');selection.type='hidden';selection.id='settings-animation-style';selection.value=chosen;strip.after(selection);}
       else if(selection.value!==chosen){selection.value=chosen;selection.dispatchEvent(new Event('input',{bubbles:true}));}
     }
-    frame.style.backgroundImage=style?`url("${card(style.id)}")`:'';
+    const preview=style&&card(style.id);
+    frame.style.backgroundImage=preview?`url("${preview}")`:'';
     // the zoom stays when the font or the style changes: the author is looking at that spot (user, 20 November 2026)
-    frame.dataset.card=style?card(style.id):'';
+    frame.dataset.card=preview||'';
+    paintCardText();
     if(style){const [title,text]=named(style);$('style-caption').innerHTML=`<strong>${esc(title)}</strong>${style.id===filmStyle?'<span class="style-badge">Зараз у роликах</span>':''}<details class="settings-inline-help"><summary aria-label="Про вибраний стиль">ⓘ</summary><span>${esc(text)}</span></details>`;}
     else if(!styles)$('style-caption').innerHTML='<strong>Завантажуємо стилі…</strong>';
     tweakBar(style);
-    {const fine=$('style-fine-summary');if(fine)fine.textContent=[$('style-title-font').value,$('style-assets').checked?'PNG-асети':''].filter(Boolean).join(' · ');}
+    {const fine=$('style-fine-summary');if(fine)fine.textContent=$('style-assets').checked?'PNG-асети':'';}
   };
   // A copied style's switches: what DeepSeek kept or dropped can be turned on or off (user, 20 November 2026: «glow…
   // прибрав… можливо, я хочу його додати», «градієнти… прибрав»); each change redraws the style's cards
@@ -271,26 +314,73 @@ function bindBranding(channel){
       await loadStyles(false);
     }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
   });
+  const fontSelect=$('style-title-font'),fontCurrent=$('channel-font-current');
+  const fontPicker=fontCurrent.closest('details'),fontMenu=fontPicker.querySelector('.channel-font-menu');
+  const fontTrigger=fontPicker.querySelector('summary');
+  const savedFont=(kind()==='animated'&&!channel.settings?.typography?.unified?animation.title_font:null)
+    ||channel.settings?.typography?.font_family||animation.title_font;
+  fontSelect.value=[...fontSelect.options].some(option=>option.value===savedFont)?savedFont:'Golos';
+  for(const group of fontSelect.children){
+    const label=document.createElement('div');
+    label.className='channel-font-category';label.textContent=group.label;fontMenu.append(label);
+    for(const option of group.children){
+      const row=document.createElement('button');
+      row.type='button';row.setAttribute('role','option');row.dataset.font=option.value;
+      row.textContent=option.textContent;row.style.fontFamily=JSON.stringify(option.value)+', sans-serif';
+      row.addEventListener('click',()=>{
+        const changed=fontSelect.value!==option.value;
+        fontSelect.value=option.value;
+        if(changed)fontSelect.dispatchEvent(new Event('change',{bubbles:true}));
+        fontPicker.open=false;fontTrigger.focus();
+      });
+      fontMenu.append(row);
+    }
+  }
+  const fontRows=[...fontMenu.querySelectorAll('button')];
+  const showFont=()=>{
+    const value=fontSelect.value;
+    fontCurrent.textContent=fontSelect.selectedOptions[0]?.textContent||value;
+    fontCurrent.style.fontFamily=JSON.stringify(value)+', sans-serif';
+    for(const row of fontRows)row.setAttribute('aria-selected',String(row.dataset.font===value));
+  };
+  fontPicker.addEventListener('toggle',()=>{
+    if(!fontPicker.open)return;
+    const current=fontRows.find(row=>row.dataset.font===fontSelect.value);
+    current?.focus({preventScroll:true});
+    if(current)fontMenu.scrollTop=Math.max(0,current.offsetTop-fontMenu.clientHeight/2);
+  });
+  fontPicker.addEventListener('focusout',event=>{
+    if(event.relatedTarget&&!fontPicker.contains(event.relatedTarget))fontPicker.open=false;
+  });
+  fontPicker.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&fontPicker.open){event.stopPropagation();fontPicker.open=false;fontTrigger.focus();return;}
+    const row=fontRows.indexOf(event.target);
+    if(row<0||!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    const index=event.key==='Home'?0:event.key==='End'?fontRows.length-1:Math.max(0,Math.min(fontRows.length-1,row+(event.key==='ArrowDown'?1:-1)));
+    fontRows[index].focus();
+  });
+  showFont();
   const textStyle=()=>({title_font:$('style-title-font').value,assets:$('style-assets').checked});
   const swap=()=>{for(const thumb of strip.querySelectorAll('.style-thumb[data-style]'))thumb.querySelector('img').src=card(thumb.dataset.style);backdrop();};
   const loadStyles=async(announce=true)=>{
     const mine=++request;if(announce)stage.textContent='Готуємо стилі. Студія малює їх один раз, далі вони відкриваються одразу...';
     try{
       // a regular channel's cards are an infographic, an animated one's show characters: the kind chosen on the page now
-      const asked=kind();loadedKind=asked;
-      // the font the page shows first, the other fonts behind it: a changed style no longer locks the page for minutes
+      const asked=kind();
+      if(loadedKind!==asked){cards=null;cardLabels={};}
+      loadedKind=asked;
+      // Load cards for the selected font when it is first used.
       const font=$('style-title-font').value;
-      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{kind:asked,fonts:[font]});
+      const fonts=font==='Nunito'?[font]:[font,'Nunito'];
+      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{kind:asked,fonts});
       if(mine!==request||!strip.isConnected)return;
-      styles=data.styles;cards=data.cards;filmStyle=data.film_style;
-      api(`/api/channels/${encodeURIComponent(channel.id)}/style-cards`,'POST',{kind:asked}).then(all=>{
-        if(mine!==request||!strip.isConnected)return;
-        cards={...all.cards,...cards};swap();
-      }).catch(()=>{});
+      styles=data.styles;cards={...cards,...data.cards};cardLabels=data.labels||{};filmStyle=data.film_style;
       // A channel without a saved style shows the one its films are drawn in: the latest film's, otherwise Razgon's own
       // default «Кіно-сутінки» (razgon_bridge.py prepare takes dusk when the channel names none), never «не вибрано».
       if(!styles.some(style=>style.id===chosen))chosen=[filmStyle,razgonDefaultStyle].find(id=>styles.some(style=>style.id===id)) || styles[0]?.id || null;
       stage.textContent='';renderStrip();
+      if(Object.keys(cardLabels).length)refreshCardTypeface();
     }catch(error){
       if(mine!==request||!strip.isConnected)return;
       // the stage line shows only on an animated channel: the caption says why there are no cards on both
@@ -315,7 +405,13 @@ function bindBranding(channel){
     event.currentTarget.textContent=film.hidden?'Показати на кадрах ролика':'Сховати кадри ролика';
     if(!film.hidden)loadFilm();
   });
-  $('style-title-font').addEventListener('change',()=>{if(cards&&!cards[$('style-title-font').value])loadStyles(false);else swap();if(!film.hidden)loadFilm();});
+  fontSelect.addEventListener('change',()=>{
+    showFont();
+    if(Object.keys(cardLabels).length)refreshCardTypeface();
+    else if(!cards?.[fontSelect.value])loadStyles(false);
+    else swap();
+    if(!film.hidden)loadFilm();
+  });
   $('style-assets').addEventListener('change',()=>{swap();if(!film.hidden)loadFilm();});
   for(const button of document.querySelectorAll('.logo-position'))button.addEventListener('click',()=>{logo.position=button.dataset.position;document.querySelectorAll('.logo-position').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));draw();});
   for(const id of ['logo-size','logo-margin','logo-opacity','logo-enabled','thumbnail-logo-enabled','thumbnail-logo-size'])$(id).addEventListener('input',draw);

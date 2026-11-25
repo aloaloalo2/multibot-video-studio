@@ -43,6 +43,18 @@ class ReferenceImportTest(unittest.TestCase):
             self.assertTrue((reference.folder('a' * 16, VIDEO) / 'thumbnail.jpg').is_file())
             with self.assertRaises(store.StudioError): reference.read('b' * 16, VIDEO)
 
+    def test_video_with_embedding_off_uses_the_known_title_and_still_gets_its_picture(self):
+        import urllib.error
+        with tempfile.TemporaryDirectory() as temp, patch.object(store, 'DATA_ROOT', Path(temp)), \
+             patch.object(store, 'get_channel_folder', return_value=Path(temp)):
+            picture = io.BytesIO(); Image.new('RGB', (32, 18)).save(picture, format='JPEG')
+            denied = urllib.error.HTTPError('https://www.youtube.com/oembed', 401, 'Unauthorized', {}, None)
+            with patch.object(reference, 'download', side_effect=[denied, picture.getvalue()]):
+                data = reference.inspect('a' * 16, 'https://youtu.be/' + VIDEO, known={'title': 'Known title', 'author': 'Doctor'})
+            self.assertEqual((data['title'], data['author']), ('Known title', 'Doctor'))
+            with patch.object(reference, 'download', side_effect=[denied]), self.assertRaises(store.StudioError):
+                reference.inspect('b' * 16, 'https://youtu.be/' + VIDEO)   # no known title: still an error
+
     def test_empty_metadata_or_invalid_image_creates_no_ready_reference(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(store, 'DATA_ROOT', Path(temp)), \
              patch.object(store, 'get_channel_folder', return_value=Path(temp)):

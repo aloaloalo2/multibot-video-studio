@@ -12,7 +12,7 @@ async function initServiceKeys(){
     if($('service-key-list')!==list)return;
     list.replaceChildren();
     // Pexels and Unsplash are not used by the studio yet: they show only when a key was saved before
-    for(const provider of (result.providers || []).filter(item=>!['pexels','unsplash'].includes(item.id)||item.configured===true)){
+    for(const provider of (result.providers || []).filter(item=>!['pixabay','pexels','unsplash'].includes(item.id))){
       const row=document.createElement('div');row.className='service-key-panel';
       const header=document.createElement('div');header.className='service-key-row';
       const name=document.createElement('strong');name.textContent=provider.name;

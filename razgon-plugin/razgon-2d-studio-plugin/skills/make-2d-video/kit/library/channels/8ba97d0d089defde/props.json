@@ -1,0 +1,274 @@
+{
+ "props": [
+  {
+   "name": "blood_tube",
+   "sha256": "267bb9475ed6acdf533988d7ecfffb09c97eb4ec6a2d2e5fc55364be2850e603",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "body_cell",
+   "sha256": "292e0eb98d4c51b47b5b002b05241a7ab57037adebb1aa3cce6612eb3744b8d7",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "bread_slice",
+   "sha256": "74a4c77c2d11efca5b01693a3aed409216df79002ca68f2aaf88358966ef72fb",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "bread_slice-2",
+   "sha256": "ed6e4facd2c9932005c62e33f369a75b7f68fb80936f42c9803e7b3ea7e48406",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "bun",
+   "sha256": "4a7a8f12d95e8a6c714635fbee4bc08253aeeeaef75c95f4eb1db7ca99dc6b13",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "butter_block",
+   "sha256": "7bf0925601ae0ceb6f9a31f79ea6e432c5c9def65072c636a2ff078e53d45a69",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "coffee_cup",
+   "sha256": "f810a738ecdc5cbe0a08fd562ed697e26d6826d264b79227fbca47519f164d7f",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "egg",
+   "sha256": "0d0c93a46bad9a1f0cd31e477b959ba262ac1664450fc315384b52bd298c4130",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "eggs_plate",
+   "sha256": "5238cfb1ad113a3152288734e38ce0b53b128abe15439b4e95158a405e1fa8ae",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "fatty_plate",
+   "sha256": "2a4170bce458df9161d27b430f620fe23c44269624f5feaafe90d8b6d314beeb",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "honey_dipper",
+   "sha256": "10baa824c7992b5de2bf88095d8e33bb5101365d020cfe84aeb92e3ed8f1636c",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "jam_jar",
+   "sha256": "134e0501556a60a1d91e03127566da988a78646090860e0acee1c6f5b928505d",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "liver",
+   "sha256": "3848a79cc7e3bb45d0d29f65f2ff9d69157ea8b59b296484d8a13b40e362990b",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "pan_eggs",
+   "sha256": "2cd7ce0db2708995d677f72a7e08a691132dfa4941cd233b89f70452001ad323",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "pancreas",
+   "sha256": "daeafbfd7b84a37748527fb647f588dce2428f5ffd6602f8aeeb3bb4be8f3c1d",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "raisins",
+   "sha256": "c730886312133d9d5fbf45414d06361981bd4cb8ebf196a2dc63e460b94e5658",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "salmon_fillet",
+   "sha256": "b6bd5c32bb5c91e4deb2479b54e8e936f9229bccd201df64a73055dfb79cbd70",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "skeletal_muscle",
+   "sha256": "97546557724c55dd65d49b0507c8ba9b51218e4e28ddbdfefea78c1ba2658cf9",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "sleeper_bed",
+   "sha256": "1ffe0e7db22b69c6c81181da7e45dc3e168e9093bc36fa6e12c32124433ae17f",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "sour_cream_jar",
+   "sha256": "3257f6a5dc892afc8be6beff35b00e60b3f22dc0b336abc1c9dd41c3fcf59545",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "tablespoon_butter",
+   "sha256": "25b4e637ac179f0a36aafcb479343f592629982665519f5a0d83dcd6686e09bd",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "teaspoon_butter",
+   "sha256": "ab68021dbc233c74fcc97ad99cdbb232de540dd41df4b0fc5f96ec56a17ab4a9",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "thigh_muscle_thick",
+   "sha256": "ee2221a59fc310452cf2976201677066063d35e39e32ce114d0a557c7239464d",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "thigh_muscle_thin",
+   "sha256": "2c8d0516c793c249bcd5d3161e9b6a293a3529de1e5a3da7abfac166259de57c",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "torso_fat",
+   "sha256": "55f10f1fcc592b847a5c35638b3b6d9ae1db0c7a3faf54ee60ad01d44e2caf24",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "tvorog_bowl",
+   "sha256": "61523438f6f948b4a19aab2e39f76bb80ae186f9f8865a2a5dc3df1337dc8c5b",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "tvorog_pack_fat",
+   "sha256": "3084fc03c52325876ced05fc5d33ab76a8a8adf41b3522d15300b68ffe42e84a",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "tvorog_pack_lowfat",
+   "sha256": "dcbb7321185dbb015a524986daf53d1855fb0429e4303427c0c6f601253869c1",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "visceral_fat_organs",
+   "sha256": "e326feba5537ecb6dc7151676e5e713d50c2dd43932d43eabf4c4f5820e2db8a",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  },
+  {
+   "name": "yolk_shell",
+   "sha256": "b291d5c63329aa213981e398987eb8d2a982cf3a2db21e166006ce7e410c4d06",
+   "description": "",
+   "projects": [
+    "grigoriy-antropov-top-10-produktov-dlya-zavtraka-chtoby-ubrat-zhivot"
+   ],
+   "added": "2026-11-23"
+  }
+ ]
+}

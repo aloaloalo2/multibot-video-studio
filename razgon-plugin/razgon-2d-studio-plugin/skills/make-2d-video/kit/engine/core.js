@@ -218,7 +218,16 @@ export function textOn(g, quad, str, u, v, o = {}) {
   text(g, str, 0, 0, { align: 'left', ...o }); g.restore();
 }
 
+export function captureStyleCardText(g, str, x, y, options = {}) {
+  if (!globalThis.STYLE_CARD_LABELS) return false;
+  const {a,b,c,d,e,f} = g.getTransform(), sx = 1920/g.canvas.width, sy = 1080/g.canvas.height;
+  globalThis.STYLE_CARD_LABELS.push({str:String(str),x,y,options,
+    matrix:[a*sx,b*sy,c*sx,d*sy,e*sx,f*sy],opacity:g.globalAlpha});
+  return true;
+}
+
 export function text(g, str, x, y, o = {}) {
+  if (captureStyleCardText(g, str, x, y, o)) return;
   const { font = FONTS.title, weight = 700, color = '#fff', align = 'center', base = 'middle', glow: gl = 0, glowColor = 'rgba(255,140,60,.8)', spacing = 0, alpha: a = 1, stroke = 0, strokeColor = '#000', italic = false, maxWidth = 0, contrast = false } = o;
   let size = o.size ?? 48;
   // maxWidth: shrink the font until the line fits its container (a notebook page, a card, the frame) — text never overflows

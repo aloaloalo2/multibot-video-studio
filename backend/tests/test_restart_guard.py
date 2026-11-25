@@ -17,6 +17,23 @@ class RestartGuardTest(unittest.TestCase):
             with self.assertRaises(store.StudioError):app.prepare_local_restart()
         self.assertFalse(app.UPDATE_RESTARTING)
 
+    def test_settings_button_runs_standard_restart_script_once_and_reports_failure(self):
+        with patch.object(app,'LOCAL_RESTART_PROCESS',None),patch.object(app,'LOCAL_RESTART_ERROR',None), \
+             patch.object(app,'check_local_restart') as check,patch.object(app.subprocess,'Popen') as launch:
+            process=launch.return_value
+            process.poll.return_value=None
+            self.assertEqual(app.begin_local_restart()['boot'],app.UPDATE_BOOT)
+            self.assertTrue(app.local_restart_status()['restarting'])
+            app.begin_local_restart()
+            check.assert_called_once()
+            launch.assert_called_once()
+            self.assertEqual(Path(launch.call_args.args[0][-1]).name,'studio_restart.py')
+            self.assertTrue(launch.call_args.kwargs['start_new_session'])
+            process.poll.return_value=1
+            process.returncode=1
+            process.communicate.return_value=(None,'Зараз працює режисер.')
+            self.assertEqual(app.local_restart_status(),{'boot':app.UPDATE_BOOT,'restarting':False,'error':'Зараз працює режисер.'})
+
     def test_preparation_closes_the_gate_before_another_request_can_start(self):
         with patch.object(app,'IN_FLIGHT',1),patch.object(app.agent_view,'studio_status',return_value={'busy':[]}),patch.object(app.threading,'Timer'):
             self.assertTrue(app.prepare_local_restart()['prepared'])

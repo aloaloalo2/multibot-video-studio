@@ -13,11 +13,32 @@ let main, mg, bufA, bufB, bufT, bufC, glCanvas, grainTiles = [], three = null;
 const errors = (window.ERRORS = []);
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
+async function loadChannelFonts() {
+  const response = await fetch('/studio-fonts/catalog.json');
+  if (!response.ok) return [];
+  const catalog = await response.json();
+  const loaded = [];
+  for (const name of new Set(Object.values(FONTS))) {
+    const family = catalog.find(entry => entry.family === name);
+    const files = family ? [[family.regular, '400'], [family.bold, '700']]
+      : ['Golos', 'Literata'].includes(name) ? [[name.toLowerCase() + '.ttf', '100 900']] : [];
+    if (!files.length) continue;
+    try {
+      const faces = await Promise.all(files.map(([file, weight]) =>
+        new FontFace(name, `url(/studio-fonts/${file})`, {weight}).load()));
+      for (const face of faces) document.fonts.add(face);
+      loaded.push(name);
+    } catch (error) { console.warn('Channel font load failed', name, error); }
+  }
+  return loaded;
+}
+
 async function loadFonts() {
+  const channelFonts = E.cfg.studioFonts ? await loadChannelFonts().catch(() => []) : [];
   // Bundled, glyph-verified families work offline in all Studio languages.
   try {
     const families = await (await fetch('/engine/fonts/manifest.json')).json();
-    for (const family of families.filter(f => Object.values(FONTS).includes(f.name))) {
+    for (const family of families.filter(f => Object.values(FONTS).includes(f.name) && !channelFonts.includes(f.name))) {
       for (const face of family.faces) {
         const font = new FontFace(family.name, `url(/engine/fonts/${face.file})`, {weight:'100 900',unicodeRange:face.range});
         await font.load();document.fonts.add(font);
@@ -37,7 +58,7 @@ async function loadFonts() {
     // Cyrillic for Ukrainian and Russian text: Nunito's letters, and the fallback of every font that has none (core.js text)
     ['Nunito', '800', 'nunito/files/nunito-cyrillic-800-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116'],
     ['Nunito', '900', 'nunito/files/nunito-cyrillic-900-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116']];
-  for (const [fam, w, file, style, range] of F) { try { const ff = new FontFace(fam, `url(/node_modules/@fontsource/${file})`, { weight: w, style: style || 'normal', ...(range ? { unicodeRange: range } : {}) }); await ff.load(); document.fonts.add(ff); } catch (e) { console.log('font missing', fam, w); } }
+  for (const [fam, w, file, style, range] of F) { if (channelFonts.includes(fam)) continue; try { const ff = new FontFace(fam, `url(/node_modules/@fontsource/${file})`, { weight: w, style: style || 'normal', ...(range ? { unicodeRange: range } : {}) }); await ff.load(); document.fonts.add(ff); } catch (e) { console.log('font missing', fam, w); } }
 }
 async function boot() {
   const cfg = await (await fetch(`${PROJ}/config.json`)).json();

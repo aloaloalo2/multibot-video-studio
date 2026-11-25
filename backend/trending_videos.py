@@ -314,7 +314,7 @@ def use_idea(body):
     if source is None:
         raise store.StudioError('Відео вже немає у збереженій добірці. Оновіть сторінку.', 404)
     if use_thumbnail:
-        source = idea_reference.inspect(cid, source['url'])
+        source = idea_reference.inspect(cid, source['url'], known={'title': source['title'], 'author': source['author']})
     with ideas.LOCK:
         # Another tab may have created the same idea while the reference was loading.
         if store.read_json(receipt, {}).get('project_id'):

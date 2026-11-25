@@ -72,6 +72,16 @@ class GroupTest(unittest.TestCase):
         store.apply_universal_action(p,'delete_group',dict(group_id=group['id']))
         self.assertEqual([c['id'] for t in p['tracks'] for c in t['clips']],['voice'])
         self.assertFalse(p['scene_groups'])
+    def test_new_scene_background_sits_below_its_clips_and_moves_with_them(self):
+        p=self.project()
+        store.apply_universal_action(p,'group_clips',dict(clip_ids=['a','b'],title='Кадр',default_background=True))
+        group=p['scene_groups'][0]
+        background=p['tracks'][0]['clips'][0]
+        self.assertEqual((background['color'],background['opacity'],background['start'],background['duration']),
+                         ('#000000',1,1,4))
+        self.assertIn(background['id'],group['clip_ids'])
+        store.apply_universal_action(p,'move_group',dict(group_id=group['id'],start=3))
+        self.assertEqual(background['start'],3)
     def test_waveform_uses_real_amplitude_and_invalidates_changed_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);source=root/'voice.wav'

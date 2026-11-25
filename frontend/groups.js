@@ -84,7 +84,7 @@ function toggleClipSelection(id){
 
 function createSelectedGroup(){
   const clipIds=[...(state.multiSelection || [])];if(clipIds.length<2)return;
-  modal('Згрупувати кадр','<label>Назва кадру<input id="new-frame-name" value="Новий кадр" maxlength="120"></label>',[{label:'Згрупувати',primary:true,run:async()=>{try{await action('group_clips',{clip_ids:clipIds,title:$('new-frame-name').value},'Кадр згруповано.');state.multiSelection=[];state.compactTimeline=true;closeModal();renderTimeline();}catch(error){status(error.message,true);}}}]);
+  modal('Згрупувати кадр','<label>Назва кадру<input id="new-frame-name" value="Новий кадр" maxlength="120"></label>',[{label:'Згрупувати',primary:true,run:async()=>{try{await action('group_clips',{clip_ids:clipIds,title:$('new-frame-name').value,default_background:true},'Кадр згруповано.');state.multiSelection=[];state.compactTimeline=true;closeModal();renderTimeline();}catch(error){status(error.message,true);}}}]);
 }
 
 function selectFrameGroup(group){clearTransitionSelection();state.selectedStack=null;state.selected=null;state.selectedGroup=group.id;state.multiSelection=[];renderGroupingControls();for(const node of document.querySelectorAll('[data-group-id]'))node.classList.toggle('selected',node.dataset.groupId===group.id);renderInspector();renderPreview();}

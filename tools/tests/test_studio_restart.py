@@ -26,6 +26,13 @@ class StudioRestartTest(unittest.TestCase):
              patch.object(restart,'stop') as stop,self.assertRaisesRegex(SystemExit,'не папка'):restart.main()
         stop.assert_not_called()
 
+    def test_restart_preserves_listener_when_health_cannot_be_checked(self):
+        with patch.object(sys,'argv',['studio_restart.py']),patch.object(restart,'alive',return_value=False), \
+             patch.object(restart,'listener',return_value=123),patch.object(restart,'stop') as stop:
+            with self.assertRaisesRegex(SystemExit,'Перезапуск не виконано'):
+                restart.main()
+        stop.assert_not_called()
+
     def test_stop_waits_for_the_old_process_to_exit_after_it_closes_its_listener(self):
         with patch.object(restart.os,'kill',side_effect=[None,None,ProcessLookupError()]) as kill, \
              patch.object(restart,'listener',return_value=None),patch.object(restart.time,'sleep') as sleep:

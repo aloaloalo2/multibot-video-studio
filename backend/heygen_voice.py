@@ -232,14 +232,14 @@ def note_limit(path,body,error,seconds):
     except OSError:pass
 
 
-def _call(path,body=None,*,idempotency_key=None):
+def _call(path,body=None,*,idempotency_key=None,timeout=90):
     data=json.dumps(body).encode() if body is not None else None
     headers={'X-Api-Key':key(),'Content-Type':'application/json'}
     if idempotency_key:headers['Idempotency-Key']=idempotency_key
     request=urllib.request.Request(API+path,data=data,headers=headers)
     try:
         # a shorter wait for one answer: a stop is heard at the latest after it (was 240 s)
-        with urllib.request.urlopen(request,timeout=90) as response:return json.load(response)
+        with urllib.request.urlopen(request,timeout=timeout) as response:return json.load(response)
     except urllib.error.HTTPError as error:
         if error.code in GATEWAY:raise Gateway(error.code) from None
         if error.code==429:

@@ -88,6 +88,7 @@ function organizeChannelSettings(channel){
       if(!active)panel.querySelectorAll('audio,video').forEach(media=>media.pause());
     }
     try{sessionStorage.setItem(preferenceKey,key);}catch{}
+    if(key==='avatar'||key==='projects')heygenAvatars.loadSelectedPortrait();
     if(sectionKey){const group=body.querySelector('[data-main-section="'+sectionKey+'"]');if(group){group.open=true;group.scrollIntoView({block:'nearest'});}}
     if(focus)tabs[key].focus();
   }
@@ -98,6 +99,26 @@ function organizeChannelSettings(channel){
     const panel=document.createElement('section');panel.className='channel-settings-panel';panel.id=`channel-settings-panel-${key}`;panel.dataset.settingsPanel=key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);
     const heading=document.createElement('header');heading.className='channel-settings-panel-head';heading.innerHTML=`<h3>${label}</h3>`;panel.append(heading);panels[key]=panel;content.append(panel);
   }
+  const avatarIcon=tabs.avatar.firstElementChild;
+  let avatarUrl, avatarPhoto;
+  function refreshAvatar(){
+    const url=channel.hero_reference?.url;
+    if(url===avatarUrl)return;
+    avatarUrl=url;
+    avatarPhoto?.replaceWith(avatarIcon);
+    avatarPhoto=null;
+    if(!url)return;
+
+    const photo=document.createElement('img');
+    avatarPhoto=photo;
+    photo.className='channel-settings-icon channel-settings-avatar';
+    photo.alt='';
+    photo.addEventListener('load',()=>{
+      if(avatarPhoto===photo)avatarIcon.replaceWith(photo);
+    },{once:true});
+    photo.src=url;
+  }
+  refreshAvatar();
   nav.addEventListener('keydown',event=>{
     const keys=definitions.map(item=>item[0]),index=keys.findIndex(key=>tabs[key]===event.target);
     if(index<0)return;
@@ -128,11 +149,13 @@ function organizeChannelSettings(channel){
     button.addEventListener('click',()=>select(key,true));quick.append(button);
   }
   quick.hidden=true;panels.projects.append(quick);   // «Озвучка» and «Оформлення» showed twice (user, 15 November 2026): their blocks below carry the summary now
-  move('.settings-visual-formats','projects',{fold:true,icon:'formats',title:'Формати кадрів'});
+  const formatsGroup=move('.settings-visual-formats','projects',{fold:true,icon:'formats',title:'План кадрів'});
+  directorGroup.before(formatsGroup);
   const strip=document.createElement('div');strip.className='settings-format-preview';strip.setAttribute('aria-hidden','true');
   summaries.get('.settings-visual-formats')?.after(strip);
   move('.settings-output','advanced',{fold:true,icon:'output'});
-  move('.settings-opening','advanced',{fold:true,icon:'opening'});
+  const openingGroup=move('.settings-opening','projects',{fold:true,icon:'opening'});
+  formatsGroup.after(openingGroup);
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
   move('.settings-script-wishes','wishes',{fold:true,icon:'script',title:'Сценаристу'});
   move('.settings-thumbnail-wishes','wishes',{fold:true,icon:'thumbnails',title:'До прев’ю'});
@@ -161,7 +184,6 @@ function organizeChannelSettings(channel){
   move('.channel-look','look',{icon:'look'});
   {const look=body.querySelector('.channel-look'),plate=body.querySelector('.logo-section');
    if(look&&plate)look.before(plate);}   // the plate first, above the style (user, 20 November 2026)
-  move('.settings-accents','look',{fold:true,icon:'accents'});
   const automation=document.createElement('div');automation.className='settings-voice-automation';
   automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label><label><input type="checkbox" id="settings-auto-opening" ${channel.settings?.auto_opening?'checked':''}><span><strong>Автовибір зачину</strong><small>DeepSeek обирає найкращий</small></span></label><label><input type="checkbox" id="settings-auto-export" ${channel.settings?.auto_export?'checked':''}><span><strong>Автоекспорт</strong><small>Після готових кадрів, з якістю каналу</small></span></label><label><input type="checkbox" id="settings-auto-publish" ${channel.settings?.auto_publish?'checked':''}><span><strong>Автопублікація</strong><small>Після експорту, на YouTube за розкладом</small></span></label>`;
   const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);quick.after(directorGroup);panels.automation.append(automation);
@@ -227,23 +249,10 @@ function organizeChannelSettings(channel){
     (key==='voice'||only==='.hero-reference-section'?panels.avatar:panels.projects).append(group);if(!only)tabs[key].remove();
   }
   {const hero=panels.avatar.querySelector('[data-main-section=hero]');if(hero)panels.avatar.insertBefore(hero,panels.avatar.querySelector('details,section:not(.avatar-hero-card)'));}   // «Головний герой» first, then «Озвучка»
-  const fontSection=document.createElement('section');fontSection.className='settings-section settings-montage-fonts';
-  fontSection.innerHTML=`<h3>${channelSettingsIcon('script')}Шрифти монтажу</h3><div class="settings-two-column"><label>Основний текст<select id="settings-text-font">${studioFontOptionsHtml()}</select></label><label>Акценти й підписи<select id="settings-accent-font">${studioFontOptionsHtml()}</select></label></div><small>Текстові вставки, підписи й плашки</small>`;
-  fontSection.querySelector('#settings-text-font').value=channel.settings?.typography?.font_family||'Golos';
-  fontSection.querySelector('#settings-accent-font').value=channel.settings?.typography?.accent_font_family||channel.settings?.typography?.font_family||'Golos';
-  // a sample under each choice, drawn in the chosen font (user, 16 November 2026: «щоб я бачив шрифт, як він виглядає»)
-  for(const [id,sample,weight] of [['settings-text-font','Головна думка кадру · 2026',700],['settings-accent-font','Підпис до кадру · 37%',600]]){
-    const select=fontSection.querySelector('#'+id),preview=document.createElement('span');
-    preview.className='settings-font-preview';preview.textContent=sample;preview.style.fontWeight=weight;
-    const paint=()=>{preview.style.fontFamily=`${JSON.stringify(select.value)}, sans-serif`;preview.title=select.value;};
-    select.addEventListener('change',paint);select.after(preview);paint();
-  }
+  const heygenAvatars=channelHeyGenAvatars(channel);
+  panels.avatar.append(heygenAvatars);
   if(typeof channelTransitionSection==='function')panels.projects.append(channelTransitionSection(channel));
-  // «Шрифти монтажу» folds like every other block (user, 14 November 2026)
-  const fontGroup=document.createElement('details');fontGroup.className='channel-settings-group settings-fonts-group regular-only';   // Razgon draws an animated film's text itself (user, 15 November 2026)
-  fontGroup.innerHTML=`<summary>${channelSettingsIcon('script')}<span><strong>Шрифти монтажу</strong></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary><div class="channel-settings-group-body channel-main-group"></div>`;
-  fontSection.querySelector('h3').hidden=true;fontGroup.lastElementChild.append(fontSection);
-  panels.projects.append(fontGroup);
+  move('.settings-accents','projects',{fold:true,icon:'accents'});
   // «Публікація»: what the card's «Опублікувати» follows; for now only the days between videos (user, 20 November 2026:
   // «єдину цифру в основне засунь… По дефолту завжди один день»)
   const days=Math.min(10,Math.max(1,Number(channel.settings?.publish_interval_days)||1));
@@ -267,16 +276,26 @@ function organizeChannelSettings(channel){
   const text=(selector,value)=>{const el=typeof selector==='string'?body.querySelector(selector):selector;if(el&&el.textContent!==value)el.textContent=value;};
   const selected=id=>{const el=$(id);return el?.selectedOptions?.[0]?.textContent||'';};
   const value=id=>$(id)?.value||'';
-  const fields='input:not([type=file]),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button.style-thumb[data-style]';
+  const fields='input:not([type=file]),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button[data-weight-auto],button.style-thumb[data-style]';
   const baseline=new Map(),resets=new Map();let ready=false,weightsValid=true,scheduled=false;
   const save=$('modal-actions').querySelector('.primary');
   const hint=document.createElement('button');hint.type='button';hint.className='settings-save-hint';hint.disabled=true;hint.addEventListener('click',()=>{select('projects');const field=body.querySelector('[data-weight]');const group=field.closest('details');group.open=true;field.scrollIntoView({block:'nearest'});field.focus();});$('modal-actions').prepend(hint);
   function refresh(){
     if(!workspace.isConnected)return;
+    const hostIcon=body.querySelector('[data-weight="host"]')?.closest('.weight-row')?.querySelector('.weight-format-icon');
+    if(hostIcon){
+      const url=heygenAvatars.avatarPreview();
+      const old=hostIcon.querySelector('img.heygen-weight-photo');
+      if(old?.src!==url){
+        old?.remove();
+        if(url){const photo=document.createElement('img');photo.className='heygen-weight-photo';photo.alt='';photo.referrerPolicy='no-referrer';photo.addEventListener('error',()=>photo.remove(),{once:true});photo.src=url;hostIcon.append(photo);}
+      }
+    }
+    refreshAvatar();
     const weights=[...body.querySelectorAll('[data-weight]')].map(input=>({label:input.getAttribute('aria-label').replace(', відсотків',''),amount:Number(input.value)}));
     text(summaries.get('.settings-visual-formats'),channelSettingsSummary(weights)||'Оберіть формати');
     strip.replaceChildren(...[...$('settings-bar').children].map(el=>{const part=el.cloneNode(false);part.title=el.title;return part;}));
-    const wishes=body.querySelector('.generated-image-preferences')?.closest('.channel-settings-group');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0);
+    const wishes=body.querySelector('.generated-image-preferences')?.closest('.channel-settings-group');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0||body.querySelector('[data-weight-auto=generated_photo]')?.getAttribute('aria-pressed')==='true');
     text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
@@ -322,6 +341,7 @@ function organizeChannelSettings(channel){
   let refreshFrame;
   const schedule=()=>{if(!scheduled){scheduled=true;refreshFrame=requestAnimationFrame(()=>{scheduled=false;refresh();});}};
   body.addEventListener('input',schedule);body.addEventListener('change',schedule);body.addEventListener('click',schedule);
+  heygenAvatars.addEventListener('heygen-avatar-preview',schedule);
   const observer=new MutationObserver(records=>{
     if(!workspace.isConnected){observer.disconnect();return;}
     if(records.some(record=>(record.type==='attributes'&&(record.attributeName!=='style'||record.target.id==='logo-preview'))||[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches(fields)||node.querySelector(fields)))||record.target.closest?.('#style-caption,.voice-lab-reference-player,#style-strip')))schedule();
@@ -329,7 +349,7 @@ function organizeChannelSettings(channel){
   observer.observe(body,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','aria-checked','aria-pressed','src','style']});
   body.channelSettingsCleanup=()=>{observer.disconnect();cancelAnimationFrame(refreshFrame);body.removeEventListener('input',schedule);body.removeEventListener('change',schedule);body.removeEventListener('click',schedule);body.channelSettingsCleanup=null;};
   let previous='projects';try{previous=sessionStorage.getItem(preferenceKey)||previous;}catch{}select(previous);
-  return {select,refresh:schedule,setValidity(value){weightsValid=value;schedule();},ready(){baseline.clear();refresh();ready=true;refresh();},reveal(element){
+  return {select,heygenAvatar:heygenAvatars.avatarSelection,refresh:schedule,setValidity(value){weightsValid=value;schedule();},ready(){baseline.clear();refresh();ready=true;refresh();},reveal(element){
     const panel=element?.closest('.channel-settings-panel');if(!panel)return;
     select(panel.dataset.settingsPanel);
     for(let parent=element.parentElement;parent&&parent!==panel;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;

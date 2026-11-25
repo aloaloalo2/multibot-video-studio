@@ -21,6 +21,7 @@ from pathlib import Path
 import planner
 import number_text
 import display_text
+import font_catalog
 import graphics
 import joins
 import typography
@@ -335,6 +336,13 @@ def capcut_effects() -> dict:
     return json.loads((APP_ROOT / "frontend" / "capcut-catalog.json").read_text(encoding="utf-8"))["effects"]
 
 
+def _valid_heygen_identity(value, optional=()):
+    if not isinstance(value, dict) or set(value).difference(optional) != {'id', 'name'}:
+        return False
+    return (isinstance(value['id'], str) and re.fullmatch(r'[A-Za-z0-9_-]{1,200}', value['id']) is not None
+            and isinstance(value['name'], str) and 1 <= len(value['name'].strip()) <= 200)
+
+
 def validate_settings(value: dict) -> dict:
     if not isinstance(value, dict):
         raise StudioError("Налаштування мають бути об'єктом")
@@ -352,6 +360,12 @@ def validate_settings(value: dict) -> dict:
     name = value.get("display_name")
     if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 80):
         raise StudioError("Назва каналу має містити від 1 до 80 символів")
+    avatar = value.get('heygen_avatar')
+    if avatar is not None:
+        if not _valid_heygen_identity(avatar, optional=('look',)):
+            raise StudioError('Невірно вибраний аватар HeyGen.')
+        if 'look' in avatar and not _valid_heygen_identity(avatar['look']):
+            raise StudioError('Невірно вибраний образ HeyGen.')
     if value.get("plan_mode", "director") not in {"director", "direct"}:
         raise StudioError("Невідомий режим створення ролика")
     if "transitions" in value:
@@ -388,6 +402,9 @@ def validate_settings(value: dict) -> dict:
         if type(value.get(flag, False)) is not bool:
             raise StudioError("Автоматичні дії мають бути увімкнені або вимкнені")
     weights = value.get("weights")
+    auto_formats = value.get('weights_auto', [])
+    if not isinstance(auto_formats, list) or any(not isinstance(key, str) for key in auto_formats) or len(auto_formats) != len(set(auto_formats)) or any(key not in {'generated_video', 'generated_photo', 'animation', 'razgon_2d', 'text', 'host'} for key in auto_formats):
+        raise StudioError('Невірні автоматичні формати кадрів.')
     if not isinstance(weights, dict) or not weights:
         raise StudioError("Задайте частки форматів")
     allowed = {"stock_video", "generated_video", "stock_photo", "generated_photo", "animation", "razgon_2d", "text", "host"}
@@ -544,6 +561,12 @@ def update_channel_settings(cid: str, patch: dict) -> dict:
         raise StudioError("Налаштування мають бути об'єктом")
     next_value = copy.deepcopy(current)
     next_value.update(patch)
+    if "typography" in patch and isinstance(next_value['typography'], dict) and next_value['typography'].get('unified') is True:
+        family = next_value['typography'].get('font_family')
+        if not isinstance(family, str) or family not in font_catalog.FONT_FAMILIES:
+            raise StudioError("Невідомий шрифт каналу")
+        next_value['typography'] = {**next_value['typography'], 'accent_font_family': family}
+        next_value['animation'] = {**(next_value.get('animation') or {}), 'title_font': family}
     if 'sound' in patch:
         import sound_settings
         try: next_value['sound'] = sound_settings.merge(current.get('sound'), patch['sound'])
@@ -810,7 +833,8 @@ def made_frames(project: dict, plan: dict | None) -> list[int]:
         return sorted(set(frame_progress.drawn(project["id"])))
     # clips sorted by start with the furthest end so far: a frame looks only at the clips that can cover its middle
     # (a film of 500 frames and 3000 clips was 70 ms a project on every read of the list)
-    clips = sorted(film_clips(project), key=lambda clip: float(clip["start"]))
+    clips = sorted((clip for clip in film_clips(project) if not clip.get("frame_background")),
+                   key=lambda clip: float(clip["start"]))
     starts = [float(clip["start"]) for clip in clips]
     reach, furthest = [], float("-inf")
     for clip in clips:
@@ -1937,6 +1961,12 @@ def import_asset_stream(project: dict, stream, size: int, filename: str) -> dict
 
 
 
+def frame_background(layer_id: str, start: float, end: float, *, title: str = 'Чорний фон') -> dict:
+    return {'layer_id': layer_id, 'kind': 'animation', 'content_type': 'shape', 'title': title,
+            'start': start, 'duration': end - start, 'color': '#000000', 'opacity': 1,
+            'x': .5, 'y': .5, 'width': 1, 'height': 1, 'frame_background': True}
+
+
 def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
     if action=='set_layer_mute':
         if not isinstance(payload.get('muted'),bool):raise StudioError('Invalid mute state')
@@ -1994,6 +2024,19 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         return True
     if action in {'group_clips','ungroup_clips','update_group','move_group','delete_group'}:
         apply_group_action(project,action,payload)
+        if action == 'group_clips' and payload.get('default_background') is True:
+            group = project['scene_groups'][-1]
+            members = set(group['clip_ids'])
+            tracks = project['tracks']
+            visuals = [(index, clip) for index, track in enumerate(tracks) for clip in track['clips']
+                       if clip['id'] in members and clip['kind'] != 'audio']
+            if group['role'] == 'scene' and visuals and not any(c.get('frame_background') for _, c in visuals):
+                start = min(clip['start'] for _, clip in visuals)
+                end = max(clip['start'] + clip['duration'] for _, clip in visuals)
+                index = visuals[0][0]
+                apply_universal_action(project, 'add_layer', {'name': 'Чорний фон', 'to_index': index})
+                background = frame_background(tracks[index]['id'], start, end)
+                apply_universal_action(project, 'add_clip', {**background, 'group_id': group['id']})
         recompute_universal_duration(project)
         joins.reconcile(project)
         return True
@@ -2101,6 +2144,8 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         default_color = "#ffffff" if kind == "text" or kind == "animation" and content_type == "text" else "#f0b429" if kind == "animation" else "#101114"
         clip = {"id": uuid.uuid4().hex[:12], "kind": kind, "asset_id": asset["id"] if asset else None, "start": round(start, 3), "duration": round(duration, 3), "trim_start": 0.0, "volume": finite_float(payload.get("volume", 0 if kind == "video" else 1), 0, 1.5, "Невірна гучність"), "title": title, "text": text, "content_type": content_type, "color": str(payload.get("color", default_color)), "transition": {"type": "cut", "duration": 0.0}, "x": finite_float(payload.get("x", .5), -2, 2), "y": finite_float(payload.get("y", .5), -2, 2), "width": finite_float(payload.get("width", 1), .01, 4), "height": finite_float(payload.get("height", 1), .01, 4), "scale": finite_float(payload.get("scale", 1), .05, 8), "opacity": finite_float(payload.get("opacity", 1), 0, 1), "preset": preset, "preset_duration": preset_duration, "keyframes": validated_keyframes(payload.get("keyframes", []), duration)}
         clip["trim_start"] = trim_start
+        if kind == "animation" and content_type == "shape" and payload.get("frame_background") is True:
+            clip["frame_background"] = True
         if content_type == "capcut_effect":
             clip["capcut_effect"] = payload["capcut_effect"]
         if payload.get("accent_motion") in ("still", "fade"):
@@ -2115,6 +2160,8 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         except (ValueError,TypeError) as error:raise StudioError(str(error))
         if (kind=='text' or content_type=='text') and project.get('font_family'):
             clip['font_family']=project['font_family']
+        elif style_defaults.get('unified') is True:
+            clip['font_family'] = style_defaults['font_family']
         # a clip glued to a photo takes the photo's motion curve (montage_ops), any other the project's
         clip["easing"] = payload["easing"] if payload.get("easing") in {"linear", "ease_in", "ease_out", "ease_in_out"} else project.get("settings", {}).get("motion_easing", "ease_in_out")
         if "font_size" in payload:
@@ -2657,6 +2704,10 @@ def request_production(pid: str, frames) -> dict:
         # made frames (drawn as code, or on the timeline) are not asked for again: that would only start the agent
         # over the same frames
         made = set(made_frames(project, plan))
+        host_frames = [frame for frame in plan['frames'][:count] if frame.get('format') == 'host' and frame.get('number') not in made]
+        if host_frames:
+            import heygen_frames
+            heygen_frames.validate(project, plan)
         if set(range(1, count + 1)) <= made:
             raise StudioError(f"Кадри 1–{count} уже створені: їх видно в «Монтажі». Готовий ролик збирає «Експорт MP4».", 409)
         # the first frame the agent makes: frames already made before it are not part of this request's progress

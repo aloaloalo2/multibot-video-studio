@@ -265,6 +265,8 @@ def prepare(args) -> None:
     selected = args.style or animation.get('style')
     styles = studio.call('GET', f"/api/channels/{channel['id']}/custom-styles").get('styles', []) if channel and str(selected).startswith(('custom-', 'studio-')) else []
     config = channel_style(config, animation, args.style, styles)
+    if ((channel.get("settings") or {}).get("typography") or {}).get("unified") is True:
+        config["studioFonts"] = True
     config.update({"aspect": "9:16" if height > width else "16:9", "resolution": RESOLUTIONS.get(min(width, height), "1080p"),
                    "fps": fps, "script": "input/script.txt", "duration": round(duration, 3)})
     if voice_dst:
@@ -838,7 +840,7 @@ def drawn_frames(link: dict) -> list[dict]:
 
 def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict, reset: frozenset = frozenset()) -> dict:
     """Put every Studio frame on the timeline as a numbered "Кадр N" block before any render. The block is a Studio code
-    clip (an invisible shape, no media file): live mode, which only keeps overlay and audio clips, draws the Razgon film
+    clip (a black full-frame shape, no media file): live mode draws the Razgon film
     over it; the Studio export renders the blocks. The frames in `reset` go back from a rendered clip to a block, so a
     changed scene is drawn live and rendered again by the export (a clip it rendered before stays in build/studio and
     is reused while the scene is unchanged)."""
@@ -868,7 +870,7 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
     for f in frames:
         first, last = frame_index(f["start"], fps), frame_index(f["end"], fps)
         actions.append({"type": "add_clip", "payload": {"layer_id": base_layer, "kind": "animation", "content_type": "shape", "start": first / fps,
-                                                        "duration": (last - first) / fps, "title": FRAME_TITLE.format(f["number"]), "opacity": 0, "color": "#101114"}})
+                                                        "duration": (last - first) / fps, "title": FRAME_TITLE.format(f["number"]), "opacity": 1, "color": "#000000"}})
     project = studio.batch(project, actions)
     grouped = {cid for group in project.get("scene_groups", []) for cid in group["clip_ids"]}
     groups = [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": f"Кадр {int(m.group(1))}"}}

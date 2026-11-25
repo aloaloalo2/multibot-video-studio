@@ -745,7 +745,7 @@ function renderMakeStatus(button,id,request,done,total){
     if(request.repair_frames?.length&&['Створює кадри','Кадри створені'].includes(action))action='Вносить правки';
     const preparing=request.stage==='kit';   // one session makes the film's heroes, props and helpers first (user, 15 November 2026)
     const role=step?.who==='razgon'?'Режисер':teamRoles[step?.who]?.[0] || (step?'Агент':'Режисер');
-    const text=preparing?'Підготовка':`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
+    const text=request.stage==='heygen'?'Створюємо HeyGen відео':preparing?'Підготовка':`${role} · ${action[0].toLocaleLowerCase('uk')}${action.slice(1)}`;
     const age=Math.max(0,Date.now()/1000-(Number(step?.t)||run));
     const idle=age>=120?`Без нових дій ${Math.floor(age/60)} хв`:'';
     const count=preparing?'':request.repair_frames?.length?(request.repair_frames.length>3?`${request.repair_frames.length} кадрів`:`${request.repair_frames.length===1?'Кадр':'Кадри'} ${request.repair_frames.join(', ')}`):`${done} з ${total}`;

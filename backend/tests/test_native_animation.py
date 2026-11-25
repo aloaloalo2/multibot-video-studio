@@ -29,6 +29,7 @@ class NativeAnimationTest(unittest.TestCase):
         self.assertEqual(len(ctx.actions),3)
         background,circle,text=[a['payload'] for a in ctx.actions]
         self.assertEqual((background['start'],background['duration']),(10.04,6.0))
+        self.assertEqual((background['color'],background['opacity']),('#000000',1))
         self.assertEqual(text['start'],11.04)
         self.assertEqual(circle['keyframes'],spec['clips'][0]['keyframes'])
         self.assertEqual(set(ctx.groups.values()),{'Кадр 3'})
@@ -37,6 +38,13 @@ class NativeAnimationTest(unittest.TestCase):
         project={**ctx.project,'tracks':[{'clips':[dict(a['payload'],id=str(i)) for i,a in enumerate(ctx.actions)]}]}
         with patch.object(store,'project_animated',return_value=False):
             self.assertEqual(store.made_frames(project,plan),[3])
+
+    def test_custom_background_sits_above_the_black_base(self):
+        ctx=self.context()
+        native_animation.place(ctx,{**self.spec(),'background':'#15304a'})
+        black,design,_,_=[a['payload'] for a in ctx.actions]
+        self.assertEqual((black['color'],design['color']),('#000000','#15304a'))
+        self.assertEqual((black['start'],black['duration']),(design['start'],design['duration']))
 
     def test_repair_reuses_group_and_removes_only_its_old_layers_after_adding_new(self):
         ctx=self.context()

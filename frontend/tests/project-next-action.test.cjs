@@ -84,3 +84,15 @@ test('a ready provider quote retains the local narration action and header dispa
   context.model.narrationEnabled=false;local.disabled=true;
   await testContext.runProjectNextAction();assert.equal(starts,1);
 });
+test('HeyGen estimate uses presenter duration and skips video narration',()=>{
+  c.state={channels:[{id:'c',settings:{weights:{host:10}}}]};
+  c.directMontage=()=>false;
+  c.madeSet=()=>new Set();
+  c.document={querySelector:()=>null};
+  const project={channel_id:'c',assets:[{id:'a',kind:'audio',duration:600}]};
+  const plan={timing:{status:'audio_synced',audio:{asset_id:'a',duration:600}},frames:[{format:'host',start:0,end:60},{format:'text',start:60,end:600}]};
+  assert.equal(c.heygenVideoEstimate(project,plan,{}),'HeyGen ≈ $0.60–$0.99');
+  assert.equal(c.heygenVideoEstimate(project,plan,{report:{source:{kind:'video'}}}),'');
+  c.madeSet=()=>new Set([0]);
+  assert.equal(c.heygenVideoEstimate(project,plan,{}),'');
+});

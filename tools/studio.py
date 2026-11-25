@@ -329,9 +329,12 @@ def _main(argv=None) -> int:
             print(f"Озвучка {clock(data['duration'])}, речень {len(data['sentences'])}. Кадр зазвичай 1–3 речення, а одна безперервна сцена завжди один кадр.")
             print(f"Формати каналу, частка тривалості фільму (допуск ±{data['tolerance']:g}):")
             for key, share in data["shares"].items():
-                print(f"  {key:<16} {share:>5.1f}%  {data['labels'][key]}: {data['hints'][key]}")
+                amount = 'Авто' if key in data.get('auto_formats', []) else f'{share:.1f}%'
+                print(f"  {key:<16} {amount:>6}  {data['labels'][key]}: {data['hints'][key]}")
             if data.get("opening"):
                 print(f"Перші {data['opening']['count']} кадр(и): {data['opening']['format']}")
+            if data.get('host_rules'):
+                print('HeyGen відео: перший і останній кадри, не два підряд, рівномірно протягом ролика; переважно короткі завершені фрази.')
             for item in data["sentences"]:
                 print(f"{item['number']:>4} [{clock(item['start'])}–{clock(item['end'])}] {item['text']}")
             return 0
@@ -342,7 +345,7 @@ def _main(argv=None) -> int:
             for problem in data.get("problems", []):
                 print("! " + problem)
             if data.get("shares"):
-                print("Частки: " + ", ".join(f"{key} {data['shares'][key]:.1f}% (канал {data['targets'][key]:.1f}%)" for key in data["targets"]))
+                print("Частки: " + ", ".join(f"{key} {data['shares'][key]:.1f}% (канал " + ('Авто' if key in data.get('auto_formats', []) else f"{data['targets'][key]:.1f}%") + ")" for key in data["targets"]))
             if not data["ok"]:
                 return 1
             print(f"Перевірка пройшла: {data['frames']} кадрів" if args.dry_run else f"План кадрів записано в студію: {data['frames']} кадрів")

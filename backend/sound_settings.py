@@ -43,13 +43,10 @@ OLD_CATEGORIES = {'appearance': 'appear', 'switch': 'click', 'sparkle': 'glint',
                   'notification': None, 'freeze': None, 'ambience': None}
 NEW_IN_V2 = ('swoosh_in', 'swoosh_out', 'spin', 'slide', 'ratchet', 'scramble', 'typing', 'lock')
 TRANSITIONS = (
-    ('air', 'Повітряний whoosh'), ('silk', 'М’який шовковий'), ('whip', 'Різкий whip'),
-    ('camera', 'Затвор камери'), ('snap', 'Сухий snap'), ('sweep', 'Висхідний sweep'),
-    ('down', 'Низхідний swoosh'), ('rise', 'Коротке наростання'), ('reverse', 'Зворотний вдих'),
-    ('bass', 'Басовий поштовх'), ('glitch', 'Цифровий glitch'), ('pixel', 'Піксельний перехід'),
-    ('neon', 'Неоновий перелив'), ('warp', 'Об’ємний warp'), ('shimmer', 'Кришталеве сяйво'),
+    ('air', 'Повітряний whoosh'), ('silk', 'М’який шовковий'), ('snap', 'Сухий snap'),
 )
 TRANSITION_IDS = {row[0] for row in TRANSITIONS}
+RETIRED_TRANSITION_IDS = {'whip', 'camera', 'sweep', 'down', 'rise', 'reverse', 'bass', 'glitch', 'pixel', 'neon', 'warp', 'shimmer'}
 # The channel's music style (kit audio/music.py STYLES); «whatif» is the original score (user, 17 November 2026: «в
 # настройках хочу, щоб музику я міг вибрати… для What If ці звуки нравляться… для інших каналів… космічний стиль»).
 MUSIC_STYLES = (('whatif', 'What If'), ('soft', 'М’який фон'), ('deep', 'Глибокий фон'), ('space', 'Космос'), ('piano', 'Піаніно'),
@@ -111,9 +108,9 @@ def normalize(value=None):
         raise ValueError('Невірні налаштування звуків переходів')
     enabled = transition.get('enabled', False)
     styles = transition.get('styles', [row[0] for row in TRANSITIONS])
-    if type(enabled) is not bool or not isinstance(styles, list) or any(not isinstance(k, str) or k not in TRANSITION_IDS for k in styles) or len(set(styles)) != len(styles):
+    if type(enabled) is not bool or not isinstance(styles, list) or any(not isinstance(k, str) or k not in TRANSITION_IDS | RETIRED_TRANSITION_IDS for k in styles) or len(set(styles)) != len(styles):
         raise ValueError('Невідомий звук переходу або некоректний вибір')
-    result['transitions'] = {'enabled': enabled, 'styles': list(styles)}
+    result['transitions'] = {'enabled': enabled, 'styles': [key for key in styles if key in TRANSITION_IDS]}
     if 'library' in value:
         library = value['library']
         if not isinstance(library, dict) or set(library) - {'enabled', 'ids'} or type(library.get('enabled', True)) is not bool:

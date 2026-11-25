@@ -29,7 +29,7 @@ class SoundApiTest(unittest.TestCase):
         self.assertEqual(result['channel']['settings']['sound'], sound_settings.normalize(sound))
         code, data = self.request('/api/sound-effects')
         self.assertEqual((code, len(data['categories'])), (200, 20))
-        self.assertEqual(len(data['transitions']), 15)
+        self.assertEqual(len(data['transitions']), 3)
         project = store.create_project(cid, 'Sound fixture')
         pid, layer = project['id'], project['tracks'][0]['id']
         code, result = self.request(f'/api/projects/{pid}/actions', 'POST', {'type': 'add_clip', 'payload': {
@@ -53,17 +53,17 @@ class SoundApiTest(unittest.TestCase):
     def test_accent_updates_keep_the_separate_transition_choices(self):
         cid = store.channel_id(self.channel)
         code, result = self.request('/api/channels/' + cid, 'PATCH', {'settings': {'sound': {
-            'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['camera', 'air']}}}})
+            'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['snap', 'air']}}}})
         self.assertEqual(code, 200, result)
         code, result = self.request('/api/channels/' + cid, 'PATCH', {'settings': {'sound': {'effects': {'enabled': True}}}})
         self.assertEqual(code, 200, result)
         saved = result['channel']['settings']['sound']
-        self.assertEqual(saved['transitions'], {'enabled': True, 'styles': ['camera', 'air']})
+        self.assertEqual(saved['transitions'], {'enabled': True, 'styles': ['snap', 'air']})
         self.assertTrue(saved['effects']['enabled'])
 
     def test_transitions_get_varied_allowed_sound_in_the_same_undo_step(self):
         cid = store.channel_id(self.channel)
-        store.update_channel_settings(cid, {'sound': {'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'camera']}}})
+        store.update_channel_settings(cid, {'sound': {'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'snap']}}})
         project = store.create_project(cid, 'Transition sound fixture')
         pid = project['id']
         plan = {'frames': [{'number': n, 'format': 'animation', 'start': (n - 1) * 5, 'end': n * 5} for n in range(1, 4)]}
@@ -79,7 +79,7 @@ class SoundApiTest(unittest.TestCase):
             audio = [c for layer in saved['tracks'] for c in layer['clips'] if c['kind'] == 'audio']
             self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(audio, [5, 10])))   # peak on the transition's middle
             self.assertEqual(len(saved['scene_groups']), 3)
-            self.assertIn('tr_air', audio[0]['title']); self.assertIn('tr_camera', audio[1]['title'])
+            self.assertIn('tr_air', audio[0]['title']); self.assertIn('tr_snap', audio[1]['title'])
             # Replacing the entrance to frame 3 must preserve frame 2 and its sound.
             op={'op':'transitions','frames':[3],'replace':True,'share':0}
             code,result=self.request(f'/api/projects/{pid}/ops','POST',{'ops':[op]})

@@ -203,10 +203,10 @@ def transitions(ctx, spec=None):
             if b['number'] not in wanted_frames: continue
         elif kind == 'crossfade' or len(events) >= limit or (events and b['start'] - events[-1]['t'] < 8):
             continue
-        preferred = (['tr_warp', 'tr_bass', 'tr_rise', 'tr_reverse'] if 'zoom' in kind else
-                     ['tr_air', 'tr_whip', 'tr_sweep', 'tr_down', 'tr_silk'] if 'slide' in kind else
-                     ['tr_silk', 'tr_shimmer', 'tr_air'] if kind == 'crossfade' else
-                     ['tr_neon', 'tr_glitch', 'tr_pixel', 'tr_camera', 'tr_snap'])
+        preferred = (['tr_air', 'tr_silk', 'tr_snap'] if 'zoom' in kind else
+                     ['tr_air', 'tr_silk', 'tr_snap'] if 'slide' in kind else
+                     ['tr_silk', 'tr_air', 'tr_snap'] if kind == 'crossfade' else
+                     ['tr_snap', 'tr_air', 'tr_silk'])
         choices = [name for name in preferred if name in pool] or pool
         different = [name for name in choices if name != previous] or [name for name in pool if name != previous]
         choices = different or choices

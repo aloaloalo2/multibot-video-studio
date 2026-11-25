@@ -40,6 +40,33 @@ const projectNextIcons={
   export:'<path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/>',
 };
 let delegatedWorkflowTarget=null,projectNextBusy=false;
+function heygenVideoEstimate(project, plan, analysis){
+  if(directMontage())return '';
+  const channel=state.channels.find(item=>item.id===project.channel_id);
+  const weights=project.plan_weights||channel?.settings?.weights||{};
+  const share=Number(weights.host)||0;
+  const autoHost=!project.plan_weights&&channel?.settings?.weights_auto?.includes('host');
+  if(share<=0&&!autoHost)return '';
+  const source=analysis?.report?.source;
+  const audio=plan?.timing?.audio||{};
+  const asset=project.assets?.find(item=>item.id===(source?.asset_id||audio.asset_id));
+  const drop=document.querySelector('.voice-drop.has-file');
+  if(drop?.dataset.mediaKind==='video'||!drop&&(source?.kind==='video'||asset?.kind==='video'))return '';
+  const frames=!drop&&plan?.timing?.status==='audio_synced'?plan.frames||[]:[];
+  if(!frames.length&&autoHost)return 'HeyGen · ціна після плану';
+  let seconds=0;
+  if(frames.length){
+    const made=madeSet(frames);
+    seconds=frames.reduce((sum,frame,index)=>sum+(frame.format==='host'&&!made.has(index)?Math.max(0,Number(frame.end)-Number(frame.start)):0),0);
+  }else{
+    const player=document.querySelector('.narration-ready audio');
+    const duration=Number(drop?.dataset.mediaDuration||audio.duration||asset?.duration||player?.duration)||0;
+    seconds=duration*share/100;
+  }
+  if(!seconds)return '';
+  const low=seconds*.60/60,high=seconds*.99/60;
+  return `HeyGen ≈ $${low.toFixed(2)}–$${high.toFixed(2)}`;
+}
 function projectNextContext(){
   const project=state.project,root=$('editor-production');
   if(!project||!root)return null;
@@ -82,7 +109,8 @@ function updateProjectNextAction(){
   // the openings are on the page to be picked: no button saying so (user, 16 November 2026: «и так ясно що обрати зачин нада»)
   if(decision.hidden){box.hidden=true;delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   const key=['hook','openings'].includes(decision.kind)?'hook':['narrate','file'].includes(decision.kind)?'narrate':['create','frames','upload'].includes(decision.kind)?'create':decision.kind==='export'?'export':'script';
-  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>`;
+  const estimate=['create','frames','upload'].includes(decision.kind)&&typeof heygenVideoEstimate==='function'?heygenVideoEstimate(state.project,state.plan,state.analysis):'';
+  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>${estimate?`<small title="Орієнтовно за Avatar III, залежно від типу аватара">${esc(estimate)}</small>`:''}`;
   if(button.innerHTML!==markup)button.innerHTML=markup;
   button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=true;   // the sliders live on the channel's settings button now (user, 16 November 2026)
   settings.dataset.section=decision.settings||'';
@@ -124,5 +152,6 @@ if(typeof document!=='undefined'){
     const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;updateProjectNextAction();});};
     new MutationObserver(schedule).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden','class','aria-pressed','data-voice-state']});
     root.addEventListener('input',schedule);
+    root.addEventListener('durationchange',schedule,true);
   }
 }

@@ -54,6 +54,21 @@ class JoinTest(unittest.TestCase):
         layers=[dict(clips=[{**c,'type':c['kind']} for c in t['clips']]) for t in p['tracks']];joins.transport(p,layers)
         self.assertEqual(p['tracks'],before);self.assertEqual(layers[0]['clips'][0]['duration'],1.3);self.assertIn('join_in',layers[1]['clips'][0])
         joins.set_transition(p,dict(from_ref='group:a',to_ref='group:b',type='cut',duration=.3));self.assertFalse(p['join_transitions'])
+    def test_black_backing_and_visual_share_the_same_group_transition(self):
+        p = self.project()
+        for index, group in enumerate(p['scene_groups']):
+            clip_id = group['id'] + '-background'
+            group['clip_ids'].append(clip_id)
+            p['tracks'].insert(index * 2, {'id': clip_id, 'clips': [
+                {'id': clip_id, 'kind': 'animation', 'content_type': 'shape', 'color': '#000000',
+                 'start': index, 'duration': 1, 'opacity': 1}]})
+        joins.set_transition(p, dict(from_ref='group:a', to_ref='group:b', type='crossfade', duration=.3))
+        layers = [dict(z=i, clips=copy.deepcopy(track['clips'])) for i, track in enumerate(p['tracks'])]
+        joins.transport(p, layers)
+        outgoing_bg, outgoing, incoming_bg, incoming = [layer['clips'][0] for layer in layers]
+        self.assertEqual(outgoing_bg['join_out'], outgoing['join_out'])
+        self.assertEqual(incoming_bg['join_in'], incoming['join_in'])
+        self.assertEqual(outgoing_bg['duration'], outgoing['duration'])
     def test_broken_edge_is_removed_when_a_frame_moves(self):
         p=self.project();joins.set_transition(p,dict(from_ref='group:a',to_ref='group:b',type='zoom_in',duration=.3));p['tracks'][1]['clips'][0]['start']=3;joins.reconcile(p);self.assertFalse(p['join_transitions'])
 

@@ -36,11 +36,13 @@ class DesignedTextTest(unittest.TestCase):
     def test_text_with_no_picture_yet_holds_the_frame_from_its_start(self):
         ctx = self.ctx([], [])
         planned = {"number": 5, "sentences": ["Врачи признают такое неудобство."],
+                   "start": 10.0, "end": 14.0, "format": "text",
                    "sentence_timings": [{"number": 1, "text": "Врачи признают такое неудобство.", "start": 10.6, "end": 12.0}]}
-        payload = {"kind": "text", "text": "Врачи признают такое неудобство."}
-        montage_ops._designed_text(ctx, planned, 5, payload, 10.0, 14.0, None, {"backdrop": "blur"})
-        field = ctx.actions[0]["payload"]                         # a plain dark field from the frame's boundary
+        ctx.plan = {"frames": [planned]}
+        montage_ops.place(ctx, {"frame": 5, "text": True, "backdrop": "blur"})
+        field, payload = (action["payload"] for action in ctx.actions)
         self.assertEqual((field["kind"], field["start"], field["duration"]), ("animation", 10.0, 4.0))
+        self.assertEqual((field["color"], field["opacity"], field["width"], field["height"]), ("#000000", 1, 1, 1))
         self.assertEqual(set(ctx.groups.values()), {"Кадр 5"})
         self.assertLessEqual(payload["text_words"][0]["start"], .15)              # the text itself still starts with its word
         self.assertGreaterEqual(payload["start"], 10.5)
@@ -111,8 +113,9 @@ class FrameMotionTest(unittest.TestCase):
 
     def test_vertical_photo_moves_on_its_blurred_copy(self):
         actions = self.place("generated_photo", .75, motion="zoom_in")
-        self.assertEqual(len(actions), 2)
-        background, photo = (a["payload"] for a in actions)
+        self.assertEqual(len(actions), 3)
+        backing, background, photo = (a["payload"] for a in actions)
+        self.assertEqual((backing["color"], backing["opacity"], backing["start"], backing["duration"]), ("#000000", 1, 10.0, 6.0))
         self.assertGreater(background["blur"], 10)
         self.assertNotIn("keyframes", background)   # the copy behind stands still
         self.assertGreaterEqual(abs(photo["keyframes"][0]["scale"] - photo["keyframes"][1]["scale"]), .1)

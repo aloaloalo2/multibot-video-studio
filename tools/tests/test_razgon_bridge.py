@@ -114,6 +114,7 @@ class FrameSlotsTest(unittest.TestCase):
         self.assertEqual(kinds, {"Razgon · кадр 001": "video", "Razgon · кадр 002": "animation"})
         block = next(clip for clip in project["tracks"][0]["clips"] if clip["kind"] == "animation")
         self.assertEqual((block["start"], block["duration"], block["content_type"]), (4.0, 6.0, "shape"))
+        self.assertEqual((block["color"], block["opacity"]), ("#000000", 1))
 
     def test_scoped_slots_preserve_other_frames_and_do_not_create_future_blocks(self):
         link = {"project_id":"p", "fps":25, "duration":12,

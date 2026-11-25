@@ -1,7 +1,7 @@
 // The style card of a regular channel (backend/style_lab.py card_scene): an explainer infographic with no characters.
 // A carrot, a brain and an eye joined by glowing arrows, labels and a title; every colour comes from the style
 // (mood, ui), so the same board shows each style's palette, light and texture.
-import { E, V, S, registerShot, mood, backdrop, seg, circle, rr, poly, glow, alpha, text, FONTS, linGrad, radGrad, shade, mix } from '/engine/core.js';
+import { E, V, S, registerShot, mood, backdrop, seg, circle, rr, poly, glow, alpha, text, FONTS, linGrad, radGrad, shade, mix, captureStyleCardText } from '/engine/core.js';
 import { brainGlyph } from '/engine/scenekit.js';
 
 const props = {};
@@ -58,6 +58,7 @@ function link(g, a, b, k, color, str) {
   const ang = Math.atan2(b[1] - my, b[0] - mx), s = w * 3.4;
   poly(g, [b, [b[0] - Math.cos(ang - 0.45) * s, b[1] - Math.sin(ang - 0.45) * s], [b[0] - Math.cos(ang + 0.45) * s, b[1] - Math.sin(ang + 0.45) * s]], color);
   const lx = (a[0] + 2 * mx + b[0]) / 4, ly = (a[1] + 2 * my + b[1]) / 4, ui = S().ui, size = V(26, 30);
+  if (captureStyleCardText(g, str, lx, ly + 1, {size,color,weight:900,spacing:1.5,pill:{fill:ui.card,stroke:alpha(color,0.7)}})) return;
   g.save(); g.font = `900 ${size}px "${FONTS.ui}", "Nunito", sans-serif`; const tw = g.measureText(str).width; g.restore();
   rr(g, lx - tw / 2 - 20, ly - size * 0.95, tw + 40, size * 1.9, size * 0.95); g.fillStyle = ui.card; g.fill(); g.strokeStyle = alpha(color, 0.7); g.lineWidth = 2; g.stroke();
   text(g, str, lx, ly + 1, { size, color, font: FONTS.ui, weight: 900, spacing: 1.5 });
@@ -87,5 +88,5 @@ registerShot('s001', { draw(g, t) {
   caption(g, 'МОРКВА', 'бета-каротин', C[0], cy + r * 1.95);
   caption(g, 'МОЗОК', 'перетворює сигнал', B[0], cy + r * 1.95);
   caption(g, 'ОЧІ', 'бачать у темряві', Y[0], cy + r * 1.95);
-  text(g, 'ЯК МОРКВА ДОПОМАГАЄ ЗОРУ', E.W / 2, E.H * 0.14, { size: V(62, 64), color: ui.cream, font: FONTS.title, weight: 700, glow: 18, glowColor: alpha(ui.accent, 0.45), spacing: 1 });
+  text(g, 'ЯК МОРКВА ДОПОМАГАЄ ЗОРУ', E.W / 2, E.H * 0.14, { size: V(62, 64), color: ui.cream, font: FONTS.title, weight: 700, glow: 18, glowColor: alpha(ui.accent, 0.45), spacing: 1, maxWidth:E.W*.82 });
 } });

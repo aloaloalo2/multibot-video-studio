@@ -379,6 +379,13 @@ function renderVoiceStart(panel){
     if(busy || !next)return;
     if(!/^(audio|video)\//.test(next.type) && !/\.(mp3|wav|m4a|aac|flac|ogg|opus|aif|aiff|mp4|mov|mkv|webm)$/i.test(next.name)){status('Потрібен аудіо- або відеофайл з озвучкою.',true);return;}
     file=next;fileLabel.hidden=false;fileLabel.textContent=next.name;drop.classList.add('has-file');start.disabled=false;
+    delete drop.dataset.mediaDuration;
+    const isVideo=next.type.startsWith('video/')||/\.(mp4|mov|mkv|webm)$/i.test(next.name);
+    drop.dataset.mediaKind=isVideo?'video':'audio';
+    const media=document.createElement(isVideo?'video':'audio'),url=URL.createObjectURL(next);
+    media.preload='metadata';
+    const finish=()=>{URL.revokeObjectURL(url);if(file===next&&Number.isFinite(media.duration)){drop.dataset.mediaDuration=String(media.duration);drop.dispatchEvent(new Event('input',{bubbles:true}));}};
+    media.addEventListener('loadedmetadata',finish,{once:true});media.addEventListener('error',()=>URL.revokeObjectURL(url),{once:true});media.src=url;
   }
   input.addEventListener('change',()=>choose(input.files[0]));
   for(const name of ['dragenter','dragover'])drop.addEventListener(name,event=>{event.preventDefault();drop.classList.add('is-over');});

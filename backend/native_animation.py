@@ -30,13 +30,12 @@ def place(ctx, spec: dict) -> None:
     snap = lambda t: math.floor(float(t) * fps + .5 + 1e-8) / fps
     start, end = snap(frame['start']), snap(frame['end'])
     duration = round(end - start, 6)
-    background = str(spec.get('background') or '#101114')
+    background = str(spec.get('background') or '#000000')
     try:
-        ImageColor.getrgb(background)
+        rgb = ImageColor.getrgb(background)
     except ValueError:
         raise store.StudioError('Невірний колір фону анімації', 400) from None
-    prepared = [{'kind': 'animation', 'content_type': 'shape', 'color': background, 'start': 0,
-                 'duration': duration, 'title': 'фон', 'width': 1, 'height': 1}]
+    prepared = []
     for part in parts:
         if not isinstance(part, dict):
             raise store.StudioError('Невірний шар анімації', 400)
@@ -75,6 +74,9 @@ def place(ctx, spec: dict) -> None:
         part.update(start=local, duration=length)
         store.validated_keyframes(part.get('keyframes', []), length)
         if content == 'text':
+            default_font = getattr(ctx, 'accent_font' if part.get('text_role') in ('accent', 'label') else 'text_font', None)
+            if default_font and (getattr(ctx, 'unified_font', False) or not part.get('font_family')):
+                part['font_family'] = default_font
             validate_label(part, ctx.project, number, fps)
         prepared.append(part)
     # The generated backing colour alone never counts as a completed animation frame.
@@ -82,15 +84,20 @@ def place(ctx, spec: dict) -> None:
     for index in range(max(1, round(duration * fps))):
         moment = index / fps
         if not any(float(p['start']) <= moment < float(p['start']) + float(p['duration']) - 1e-8
-                   and visible_opacity(p, moment - float(p['start'])) > .001 for p in prepared[1:]):
+                   and visible_opacity(p, moment - float(p['start'])) > .001 for p in prepared):
             raise store.StudioError(f'Кадр {number}: на {moment:.2f} с лишається тільки фон. Основний візуал має покривати весь кадр.', 400)
     # Text and explicitly marked label images stay above chart bars and decorative shapes.
-    prepared = [prepared[0]] + sorted(prepared[1:], key=lambda p: p.pop('_foreground', False))
+    prepared.sort(key=lambda p: p.pop('_foreground', False))
+    layer_id = ctx.project['tracks'][0]['id']
+    backing = store.frame_background(layer_id, 0, duration, title='чорний фон')
+    backgrounds = [backing]
+    if rgb not in ((0, 0, 0), (0, 0, 0, 255)):
+        backgrounds.append({**backing, 'color': background, 'title': 'фон', 'frame_background': False})
     # Add new layers before removing the old ones to preserve the scene group and its transitions.
-    for index, part in enumerate(prepared):
+    for index, part in enumerate(backgrounds + prepared):
         local = float(part.pop('start')); length = float(part.pop('duration'))
         title = f"K{number:03d} анімація {index} {part.pop('title', 'шар')}"
-        payload = {**part, 'title': title, 'layer_id': ctx.project['tracks'][0]['id'],
+        payload = {**part, 'title': title, 'layer_id': layer_id,
                    'start': round(start + local, 3), 'duration': round(length, 3),
                    'easing': part.get('easing', 'linear')}
         if existing:

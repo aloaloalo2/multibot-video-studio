@@ -1342,17 +1342,19 @@ async function action(type,payload,message,options={}) {
 
 function openChannelSettings(channel) {
   const original=channel.settings || {};const weights=original.weights || {};
-  const allKeys=['stock_video','generated_video','stock_photo','generated_photo','animation','razgon_2d','host','text'];
-  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створені зображення','animation':'Кодова анімація','razgon_2d':'2D-анімація Razgon','host':'Ведучий','text':'Текстові тези'};
-  const allColors=['#ffbe0b','#00c8f8','#ad85ff','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
+  const allKeys=['generated_video','generated_photo','animation','razgon_2d','host','text'];
+  const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створені зображення','animation':'Кодова анімація','razgon_2d':'2D-анімація Razgon','host':'HeyGen відео','text':'Текстові тези'};
+  const allColors=['#00c8f8','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
   const shown=allKeys.map((key,index)=>index);
   const keys=shown.map(index=>allKeys[index]),colors=shown.map(index=>allColors[index]);
-  const sources=state.channels.filter(item=>item.id!==channel.id);
   let values=Object.fromEntries(keys.map(key=>[key,Number(weights[key] ?? 0)]));
+  values.generated_video+=Number(weights.stock_video||0);
+  values.generated_photo+=Number(weights.stock_photo||0);
+  const autoFormats=new Set(Array.isArray(original.weights_auto)?original.weights_auto.filter(key=>keys.includes(key)):[]);
   const projectDefaults=`<div class="settings-workflow"><label for="settings-plan-mode"><h4>План кадрів</h4></label><select id="settings-plan-mode"><option value="director" ${original.plan_mode!=='direct'?'selected':''}>З планом кадрів</option><option value="direct" ${original.plan_mode==='direct'?'selected':''}>Без плану</option></select><p id="settings-plan-mode-note"></p></div>`;
   const body=`${brandingSections(channel,projectDefaults)}<p id="settings-purpose" class="settings-purpose regular-only">Режисер ділить озвучку на кадри за цими частками форматів, а агент кадрів і студія беруть з цих налаштувань формат відео, акценти й початок ролика.</p>
 
-    <section class="settings-section regular-only settings-visual-formats"><div class="visual-formats-heading"><h3>Візуальні формати</h3><button id="settings-import-toggle" class="icon-button" type="button" aria-label="Імпортувати пропорції з каналу" title="Імпортувати пропорції" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg></button></div><div id="settings-import-picker" hidden><select id="settings-source-channel" aria-label="Канал для імпорту" ${sources.length?'':'disabled'}><option value="">Оберіть канал</option>${sources.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select><button id="settings-import" type="button" hidden disabled>Імпортувати</button></div><p id="settings-import-feedback" role="status" aria-live="polite"></p><p id="settings-weights-purpose">Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.</p><div id="settings-weights" class="weights-grid"></div><label class="generated-image-preferences">Створені зображення · побажання<textarea id="settings-generated-image-style" rows="3" maxlength="4000" placeholder="Наприклад: наукові ілюстрації, рентген, інфографіка; великі об’єкти та мінімум деталей">${esc(original.generated_image_style || '')}</textarea></label><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
+    <section class="settings-section regular-only settings-visual-formats"><div class="visual-formats-heading"><h3>Візуальні формати</h3></div><p id="settings-weights-purpose">Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.</p><div id="settings-weights" class="weights-grid"></div><label class="generated-image-preferences">Створені зображення · побажання<textarea id="settings-generated-image-style" rows="3" maxlength="4000" placeholder="Наприклад: наукові ілюстрації, рентген, інфографіка; великі об’єкти та мінімум деталей">${esc(original.generated_image_style || '')}</textarea></label><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
     <section class="settings-section regular-only planned-only settings-opening"><h3>Початок ролика</h3><label>Формат початкових кадрів<select id="settings-first-format"><option value="auto" ${!original.first_clip_format || original.first_clip_format==='auto'?'selected':''}>Автоматично, з пріоритетом відео</option><option value="video" ${original.first_clip_format==='video'?'selected':''}>Відео за пропорціями</option>${keys.map(key=>`<option value="${key}" ${original.first_clip_format===key?'selected':''}>${names[key]}</option>`).join('')}</select></label><label>Кількість початкових кадрів вибраного формату<input id="settings-first-count" type="number" min="1" max="30" step="1" value="${Number(original.first_clip_count ?? 1)}"></label><label>Тривалість першого кадру, с<input id="settings-first" type="number" min="0" max="60" step="0.1" value="${Number(original.first_clip_seconds ?? 0)}"></label><p>Автоматично на початку обирається відео з додатною часткою. Якщо відео вимкнене, обирається інший доступний формат. Кількість застосовується до вибраного формату. 0 секунд означає тривалість за загальним планом.</p></section>
     <section class="settings-section regular-only planned-only settings-sentences"><h3>Розбиття сценарію</h3><div class="settings-two-column"><label>Коротке речення, до слів<input id="settings-short" type="number" min="1" max="15" step="1" value="${Number(original.short_sentence_words ?? 5)}"></label></div></section>
     <section class="settings-section settings-output"><h3>Формат відео</h3><div class="settings-three-column"><label>Роздільність<select id="settings-video-size">${[['1280x720','HD · 1280×720'],['1920x1080','Full HD · 1920×1080'],['2560x1440','2K · 2560×1440'],['3840x2160','4K · 3840×2160']].map(([value,label])=>`<option value="${value}" ${value===(original.video_size||'1920x1080')?'selected':''}>${label}</option>`).join('')}</select></label><label>Кадрів за секунду<select id="settings-video-fps">${[24,25,30,50,60].map(value=>`<option value="${value}" ${value===Number(original.video_fps||25)?'selected':''}>${value}</option>`).join('')}</select></label><label>Якість (бітрейт)<select id="settings-video-quality">${[['standard','Стандартна'],['high','Висока'],['max','Найвища']].map(([value,label])=>`<option value="${value}" ${value===(original.video_quality||'standard')?'selected':''}>${label}</option>`).join('')}</select></label></div><p id="settings-video-note">Для нових проєктів. Якість можна змінити під час експорту.</p></section>
@@ -1363,7 +1365,9 @@ function openChannelSettings(channel) {
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('settings-text-font').value,accent_font_family:$('settings-accent-font').value},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,auto_export:!!$('settings-auto-export')?.checked,auto_publish:!!$('settings-auto-publish')?.checked,publish_interval_days:Math.min(10,Math.max(1,Math.round(Number($('settings-publish-interval')?.value)||1))),director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('style-title-font').value,accent_font_family:$('style-title-font').value,unified:true},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,auto_export:!!$('settings-auto-export')?.checked,auto_publish:!!$('settings-auto-publish')?.checked,publish_interval_days:Math.min(10,Math.max(1,Math.round(Number($('settings-publish-interval')?.value)||1))),director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:Number($('settings-first').value),first_clip_format:$('settings-first-format').value,first_clip_count:Number($('settings-first-count').value),short_sentence_words:Number($('settings-short').value),accents:$('settings-accents').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+      settings.heygen_avatar=settingsLayout.heygenAvatar();
+      settings.weights_auto=keys.filter(key=>autoFormats.has(key));
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
       const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
@@ -1414,39 +1418,38 @@ function openChannelSettings(channel) {
     $('settings-video-note').textContent='Для нових проєктів. Якість можна змінити під час експорту.'+(big||!fast?' Увага: швидкий експорт на відеокарті Mac працює до Full HD і 30 кадрів/с, тож такий ролик експортуватиметься в кілька разів довше.':'');};
   for(const id of ['settings-video-size','settings-video-fps'])$(id).addEventListener('change',videoNote);videoNote();
   const box=$('settings-weights');
-  keys.forEach((key,index)=>{const row=document.createElement('label');row.className='weight-row';row.innerHTML=`<span class="weight-format-icon" style="color:${colors[index]}" aria-hidden="true">${channelFormatIcon(key)}</span><span class="weight-name">${names[key]}${key==='generated_photo'?'<small title="Фото, інфографіка, схеми, рентген та інші стилі зображень">Codex · будь-який стиль</small>':key==='animation'?'<small>Код · схеми, фігури, текст, асети</small>':''}</span><span class="weight-input"><input type="number" min="0" max="100" step="1" value="${Number.isFinite(values[key])?values[key]:0}" data-weight="${key}" aria-label="${names[key]}, відсотків"><span>%</span></span>`;row.querySelector('input').addEventListener('input',event=>{values[key]=event.target.value===''?NaN:Number(event.target.value);drawSummary();});box.append(row);});
-  $('settings-import-toggle').addEventListener('click',()=>{const picker=$('settings-import-picker');picker.hidden=!picker.hidden;$('settings-import-toggle').setAttribute('aria-expanded',String(!picker.hidden));if(!picker.hidden)$('settings-source-channel').focus();});
-  $('settings-source-channel').addEventListener('change',event=>{$('settings-import').disabled=!event.target.value;if(event.target.value)$('settings-import').click();});
-  $('settings-import').addEventListener('click',async()=>{
-    const sourceId=$('settings-source-channel').value,button=$('settings-import'),feedback=$('settings-import-feedback');
-    if(!sourceId)return;
-    button.disabled=true;
-    try{
-      const data=await api('/api/channels');
-      if($('settings-weights')!==box)return;
-      const source=(data.channels || []).find(item=>item.id===sourceId);
-      if(!source)throw new Error('Канал для імпорту недоступний.');
-      const sourceWeights=source.settings?.weights || {};
-      const imported=Object.fromEntries(keys.map(key=>[key,Number(sourceWeights[key] ?? 0)]));
-      if(Object.keys(sourceWeights).some(key=>!keys.includes(key)) || !validWeights(imported))throw new Error('Перевірте пропорції вихідного каналу: потрібні цілі відсотки із сумою 100%.');
-      values=imported;
-      $('settings-import-picker').hidden=true;$('settings-import-toggle').setAttribute('aria-expanded','false');
-      box.querySelectorAll('input').forEach(input=>{input.value=values[input.dataset.weight];});
+  keys.forEach((key,index)=>{
+    const row=document.createElement('div');row.className='weight-row';
+    row.innerHTML=`<span class="weight-format-icon" style="color:${colors[index]}" aria-hidden="true">${channelFormatIcon(key)}</span><span class="weight-name">${names[key]}${key==='generated_photo'?'<small>Codex · будь-який стиль</small>':key==='animation'?'<small>Код · схеми, фігури, текст, асети</small>':''}</span><div class="weight-controls"><span class="weight-input"><input type="number" min="0" max="100" step="1" value="${Number.isFinite(values[key])?values[key]:0}" data-weight="${key}" aria-label="${names[key]}, відсотків"><span aria-hidden="true">%</span></span><button type="button" class="weight-auto" data-weight-auto="${key}" aria-pressed="${autoFormats.has(key)}" aria-label="Авто, ${names[key]}">Авто</button></div>`;
+    const input=row.querySelector('input'),auto=row.querySelector('button');
+    input.addEventListener('input',event=>{values[key]=event.target.value===''?NaN:Number(event.target.value);drawSummary();});
+    auto.addEventListener('click',()=>{
+      if(autoFormats.has(key))autoFormats.delete(key);else autoFormats.add(key);
+      auto.setAttribute('aria-pressed',String(autoFormats.has(key)));
       drawSummary();
-      feedback.textContent=`Пропорції з «${source.name}». Збережіть зміни.`;
-      feedback.classList.remove('invalid');
-    }catch(error){if($('settings-weights')===box){feedback.textContent=error.message;feedback.classList.add('invalid');}}
-    finally{if($('settings-weights')===box)button.disabled=!$('settings-source-channel').value;}
+    });
+    box.append(row);
   });
   $('normalize-weights').addEventListener('click',()=>{try{values=normalizeWeights(values,keys);box.querySelectorAll('input').forEach(input=>{input.value=values[input.dataset.weight];});drawSummary();}catch(error){$('settings-feedback').textContent=error.message;$('settings-feedback').classList.add('invalid');}});
   function validWeights(current=values){return keys.every(key=>Number.isInteger(current[key])&&current[key]>=0&&current[key]<=100)&&keys.reduce((total,key)=>total+current[key],0)===100;}
   function drawSummary(){
+    const automatic=keys.filter(key=>autoFormats.has(key));
+    const fixed=keys.filter(key=>!autoFormats.has(key));
+    const fixedSum=fixed.reduce((sum,key)=>sum+values[key],0);
+    if(automatic.length&&fixed.every(key=>Number.isInteger(values[key])&&values[key]>=0&&values[key]<=100)&&fixedSum<=100){
+      const remaining=100-fixedSum,each=Math.floor(remaining/automatic.length),extra=remaining%automatic.length;
+      automatic.forEach((key,index)=>{values[key]=each+(index<extra?1:0);});
+    }
+    box.querySelectorAll('[data-weight]').forEach(input=>{
+      const automatic=autoFormats.has(input.dataset.weight);input.readOnly=automatic;
+      if(automatic)input.value=values[input.dataset.weight];
+    });
     const finite=keys.every(key=>Number.isInteger(values[key])&&values[key]>=0&&values[key]<=100);
     const sum=finite?keys.reduce((total,key)=>total+values[key],0):NaN,valid=validWeights();
     $('settings-total').textContent=Number.isFinite(sum)?`Разом ${sum}% із 100%`:'Перевірте відсотки';
     $('settings-total').classList.toggle('invalid',!valid);$('settings-feedback').classList.toggle('invalid',!valid);
     // «Привести до 100%» is only offered while the shares do not add up to 100% (user, 1 November 2026)
-    $('normalize-weights').hidden=valid || !finite || sum===0;   // at 0% there is nothing to scale
+    $('normalize-weights').hidden=valid || !finite || sum===0 || autoFormats.size>0;   // at 0% there is nothing to scale
     $('settings-feedback').textContent=!finite?'Укажіть ціле число від 0 до 100 для кожного формату.':sum===100?'':sum===0?'Зараз усі частки 0%. Впишіть, скільки відсотків ролика займає кожен формат.':sum<100?`Не вистачає ${100-sum}%.`:`Забагато на ${sum-100}%.`;
     const bar=$('settings-bar'),legend=$('settings-legend');bar.replaceChildren();legend.replaceChildren();
     const scale=Math.max(100,keys.reduce((total,key)=>total+(Number.isFinite(values[key])&&values[key]>0?values[key]:0),0));
@@ -1492,7 +1495,7 @@ async function openStudioSettings(){
 // 18 November 2026: «в настройки… щоб вручну оновити самому»; on another Mac the top button never appeared and nothing
 // said why). The check asks GitHub now; «Оновити зараз» is the top button's own action (updates.js).
 function studioUpdateMarkup(){
-  return `<section class="settings-section" id="studio-update-section"><h3>Оновлення студії</h3><p id="studio-update-state" class="extension-state">Перевіряю…</p><div class="claude-login-buttons"><button id="studio-update-check" class="secondary" type="button">Перевірити оновлення</button><button id="studio-update-now" class="primary" type="button" hidden>Оновити зараз</button></div></section>`;
+  return `<section class="settings-section" id="studio-update-section"><h3>Оновлення студії</h3><p id="studio-update-state" class="extension-state">Перевіряю…</p><div class="claude-login-buttons"><button id="studio-update-check" class="secondary" type="button">Перевірити оновлення</button><button id="studio-update-now" class="primary" type="button" hidden>Оновити зараз</button><button id="studio-restart-now" class="secondary" type="button">Перезапустити студію</button></div><p id="studio-restart-state" class="extension-state" role="status" hidden></p></section>`;
 }
 function studioUpdateText(data){
   const when=v=>v?.date?new Date(v.date).toLocaleString('uk-UA',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}):'';
@@ -1514,6 +1517,29 @@ async function fillStudioUpdate(){
     now.hidden=!['available','update_failed'].includes(data.status)||!!data.queued;};
   check.onclick=async()=>{check.disabled=true;box.textContent='Питаю GitHub…';try{paint(await api('/api/update/check','POST',{}));}catch(error){box.textContent=error.message;}finally{check.disabled=false;}};
   now.onclick=async()=>{now.disabled=true;box.textContent='Запускаю оновлення…';try{await applyStudioUpdate();box.textContent=updateQueued?'Оновлення чекає, поки закінчиться робота над випусками. Студія оновиться сама.':'Студія оновлюється. Сторінка перезавантажиться сама.';now.hidden=true;}finally{now.disabled=false;}};
+  const restart=$('studio-restart-now'),restartState=$('studio-restart-state');
+  restart.onclick=async()=>{
+    restart.disabled=true;restartState.hidden=false;restartState.textContent='Перевіряю, чи можна перезапустити студію…';
+    try{
+      const {boot}=await api('/api/studio/restart','POST',{});
+      restartState.textContent='Студія перезапускається…';
+      const deadline=Date.now()+45000;
+      while(Date.now()<deadline){
+        await new Promise(resolve=>setTimeout(resolve,800));
+        const data=await fetch('/api/studio/restart',{cache:'no-store',signal:AbortSignal.timeout(2500)})
+          .then(response=>response.ok?response.json():null).catch(()=>null);
+        if(!data)continue;
+        if(data.boot!==boot){location.reload();return;}
+        if(!data.restarting&&data.error)throw new Error(data.error);
+      }
+      throw new Error('Студія не підтвердила перезапуск. Перевірте, чи вона відкривається.');
+    }catch(error){
+      restartState.textContent=error.httpStatus===404
+        ?'Поточна версія сервера ще не підтримує цю кнопку. Перший перезапуск зробіть через studio_restart.py.'
+        :error.message;
+      restart.disabled=false;
+    }
+  };
   check.onclick();
 }
 

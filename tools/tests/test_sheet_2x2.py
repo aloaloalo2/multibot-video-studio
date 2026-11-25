@@ -20,13 +20,14 @@ class SheetTest(unittest.TestCase):
             boxes = [(20, 20, 780, 430), (830, 15, 1580, 440), (300, 470, 560, 880), (830, 475, 1585, 885)]
             colours = [(200, 40, 40), (40, 200, 40), (40, 40, 200), (90, 90, 90)]
             for box, colour in zip(boxes, colours):
-                d.rectangle(box, fill=colour)
+                # This light rim lies outside the white-gap tolerance.
+                d.rectangle(box, fill=colour, outline=(230, 230, 230), width=5)
             im.save(sheet)
             subprocess.run([sys.executable, str(TOOL), str(sheet), "--out-dir", tmp, "--names", "a,b,c,-"],
                            check=True, capture_output=True)
             for name, box, colour in zip("abc", boxes, colours):
                 out = Image.open(Path(tmp, name + ".png")).convert("RGB")
-                self.assertEqual(out.size, (box[2] - box[0] + 1, box[3] - box[1] + 1))
+                self.assertEqual(out.size, (box[2] - box[0] + 1 - 10, box[3] - box[1] + 1 - 10))
                 self.assertEqual(out.getpixel((0, 0)), colour)
                 self.assertEqual(out.getpixel((out.width - 1, out.height - 1)), colour)
             self.assertFalse(Path(tmp, "-.png").exists())

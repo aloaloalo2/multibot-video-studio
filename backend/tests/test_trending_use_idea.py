@@ -67,7 +67,7 @@ class TrendingUseIdeaTests(unittest.TestCase):
         with patch.object(reference,'inspect',return_value=self.source) as inspect:
             code,data=self.request('/api/trending-videos/use','POST',{**self.body,'use_thumbnail':True})
             self.assertEqual(code,202,data)
-            inspect.assert_called_once_with(self.cid,self.source['url'])
+            inspect.assert_called_once_with(self.cid,self.source['url'],known={'title':self.source['title'],'author':self.source['author']})
         pid=data['project_id']
         self.assertEqual(ideas.read_project(pid)['clone_reference'],self.source)
         self.assertEqual(reference.for_project(pid)[0],self.source)
@@ -113,7 +113,7 @@ class TrendingUseIdeaTests(unittest.TestCase):
     def test_two_tabs_cannot_create_the_same_source_while_loading_reference(self):
         from concurrent.futures import ThreadPoolExecutor
         barrier=threading.Barrier(2)
-        def inspect(*args):
+        def inspect(*args,**kwargs):
             barrier.wait(timeout=5)
             return self.source
         def create(index):

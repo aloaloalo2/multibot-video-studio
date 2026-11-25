@@ -446,6 +446,7 @@ class Context:
         # accent one (user, 16 November 2026: «перевір, чи воно дійсно його використовує»). A font set on the project
         # itself still wins, as before.
         fonts = channel.get("typography") or {}
+        self.unified_font = fonts.get("unified") is True
         self.text_font = project.get("font_family") or fonts.get("font_family") or "Golos"
         self.accent_font = project.get("font_family") or fonts.get("accent_font_family") or fonts.get("font_family") or "Montserrat"
 
@@ -634,7 +635,9 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
     if style not in STYLES:
         raise OpError("Стиль підпису: plain, card, tag, yellow або white")
     color, card, shadow = STYLES[style]
-    family, weight = spec.get("font_family") or getattr(ctx, "accent_font", None) or ctx.project.get("font_family") or "Montserrat", int(spec.get("font_weight", 700))
+    requested_font = None if getattr(ctx, "unified_font", False) else spec.get("font_family")
+    family = requested_font or getattr(ctx, "accent_font", None) or ctx.project.get("font_family") or "Montserrat"
+    weight = int(spec.get("font_weight", 700))
     centre = _point(ctx, picture, spec, "at", mid)
     width, height, size = float(spec.get("width", 520)), float(spec.get("height", 320)), int(spec.get("font_size", 44))
     box, stub = _text_layout(ctx, words, width, height, size, family, weight, start)
@@ -725,6 +728,8 @@ def place(ctx: Context, spec: dict) -> None:
         raise OpError(f"Кадру {number} немає в плані", 404)
     if planned.get('format') == 'animation':
         raise OpError('Кодову анімацію додайте шарами через op: animation. Відео рендериться лише під час експорту.', 400)
+    if FRAME_CLIP.format(number) in ctx.groups:
+        raise OpError(f"Кадр {number} повторюється в одному запиті")
     have = next((f for f in ctx.frames if f["number"] == number), None)
     if have and (main_picture(ctx.project, have) or _full_frame_text(have) and any(c.get("kind") == "text" for c in have["clips"])):
         raise OpError(f"Кадр {number} уже стоїть на таймлайні: замініть його картинку через replace")
@@ -733,6 +738,7 @@ def place(ctx: Context, spec: dict) -> None:
     fps = int(ctx.project.get("fps") or 25)
     first, last = (math.floor(float(planned[key]) * fps + .5 + 1e-8) for key in ("start", "end"))   # render.frame_index
     start, end = first / fps, last / fps
+    first_action = len(ctx.actions)
     payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": end - start,
                "title": FRAME_CLIP.format(number)}
     if spec.get("text"):
@@ -794,6 +800,9 @@ def place(ctx: Context, spec: dict) -> None:
     if have:
         payload["group_id"] = have["group"]["id"]
     else:
+        backdrop = store.frame_background(payload["layer_id"], start, end, title=f"K{number:03d} чорний фон")
+        ctx.actions.insert(first_action, {"type": "add_clip", "payload": backdrop})
+        ctx.groups[backdrop["title"]] = f"Кадр {number}"
         ctx.groups[FRAME_CLIP.format(number)] = f"Кадр {number}"
     ctx.actions.append({"type": "add_clip", "payload": payload})
     ctx.report.append(f"кадр {number}: {'текст' if spec.get('text') else payload['kind']} {start:.2f}–{end:.2f} с")
@@ -985,15 +994,15 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
             ctx.groups.update({title: frame_title for title in titles})
         return
     if background is None:
+        if not have:
+            return
         # Text frames are placed before the pictures are made, so the episode may have none yet. The words wait for the
         # voice, so without a background the frame was empty from its boundary to the first word, a hole on the ruler
         # and in the export (user, 15 November 2026: «чому інколи виникають пусті місця»). A plain dark field holds it.
         title_bg = f"K{number:03d} фон"
         ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration,
                                                              "title": title_bg, "kind": "animation", "content_type": "shape",
-                                                             "color": "#0b0b0e", "x": .5, "y": .5, "width": 1, "height": 1, **group}})
-        if not have:
-            ctx.groups[title_bg] = f"Кадр {number}"
+                                                             "color": "#000000", "x": .5, "y": .5, "width": 1, "height": 1, **group}})
         return
     title_bg, title_veil = f"K{number:03d} фон", f"K{number:03d} тінь"
     zoom = look["zoom"]

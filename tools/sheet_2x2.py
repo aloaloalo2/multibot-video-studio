@@ -2,9 +2,9 @@
 """Cuts one generated 16:9 sheet into its four pictures (a 2 × 2 grid) — the studio's default way to make pictures.
 
 Codex draws four pictures on one 16:9 sheet: cheaper and faster than four separate requests (user, 14 November 2026).
-The sheet is cut along its real gaps near the middle (a light or transparent band), not at a fixed half, and each
-picture is trimmed of the gap colour at its edges, so no white line stays on a side. A picture drawn in a vertical
-cell keeps its own shape. Order: top left, top right, bottom left, bottom right.
+The sheet is cut along its real gaps near the middle (a light or transparent band). After trimming the gap colour,
+the script removes another 5 pixels from all four edges of each picture to clear thin borders.
+Order: top left, top right, bottom left, bottom right.
 
   python3 tools/sheet_2x2.py SHEET.png OUT1.png OUT2.png OUT3.png OUT4.png
   python3 tools/sheet_2x2.py SHEET.png --out-dir "кадри" --names кадр_012,кадр_013,кадр_014,кадр_015
@@ -18,6 +18,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+
+EDGE_INSET = 5
 
 
 def _gap_mask(rgba: np.ndarray, tolerance: int) -> np.ndarray:
@@ -74,10 +76,13 @@ def cut(sheet: Path, tolerance: int = 18) -> list[Image.Image]:
         if box is None:
             raise SystemExit(f"{sheet.name}: an empty cell at {left},{top}")
         a, b, c, d = box
-        piece = image.crop((left + a, top + b, left + c, top + d))
-        if piece.width < w * .1 or piece.height < h * .2:
-            raise SystemExit(f"{sheet.name}: a cell came out {piece.width}×{piece.height}; is this a 2×2 sheet?")
-        out.append(piece)
+        width, height = c - a, d - b
+        if width < w * .1 or height < h * .2:
+            raise SystemExit(f"{sheet.name}: a cell came out {width}×{height}; is this a 2×2 sheet?")
+        if min(width, height) <= 2 * EDGE_INSET:
+            raise SystemExit(f"{sheet.name}: a {width}×{height} cell is too small to trim {EDGE_INSET} pixels per edge")
+        out.append(image.crop((left + a + EDGE_INSET, top + b + EDGE_INSET,
+                               left + c - EDGE_INSET, top + d - EDGE_INSET)))
     return out
 
 

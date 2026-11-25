@@ -75,7 +75,9 @@ def read(cid, ref):
     return data
 
 
-def inspect(cid, url):
+def inspect(cid, url, known=None):
+    """`known` is the title and author the caller already has (a competitor video from the trending list): a video
+    whose embedding is off answers oEmbed with 401, and its title is not worth losing the whole idea over."""
     ref = video_id(url)
     root = folder(cid, ref)
     with LOCK:
@@ -86,7 +88,12 @@ def inspect(cid, url):
         canonical = 'https://www.youtube.com/watch?v=' + ref
         endpoint = 'https://www.youtube.com/oembed?' + urllib.parse.urlencode({'url': canonical, 'format': 'json'})
         try:
-            metadata = json.loads(download(endpoint, 128 * 1024))
+            try:
+                metadata = json.loads(download(endpoint, 128 * 1024))
+            except urllib.error.HTTPError as error:
+                if error.code not in {401, 403, 404} or not (known or {}).get('title'):
+                    raise
+                metadata = {'title': known['title'], 'author_name': known.get('author') or ''}
             if not isinstance(metadata, dict):
                 raise ValueError('metadata')
             title = metadata.get('title')

@@ -43,9 +43,10 @@ def channel_settings(project: dict) -> dict:
     settings = dict(channel.get("settings") or {})
     if project.get("plan_weights") is not None:
         settings["weights"] = project["plan_weights"]
+        settings.pop('weights_auto', None)
     result = planner.effective_settings(settings)
     # a host frame on any channel (user, 5 November 2026): first and last frame, never two in a row, spread evenly
-    if float((result.get("weights") or {}).get("host", 0) or 0) > 0:
+    if float((result.get("weights") or {}).get("host", 0) or 0) > 0 or 'host' in result.get('weights_auto', []):
         result["host_even_distribution"] = True
     return result
 
@@ -53,6 +54,8 @@ def channel_settings(project: dict) -> dict:
 def shares(settings: dict) -> dict[str, float]:
     """The channel's formats with their share of the film in percent."""
     weights = {key: float(value) for key, value in settings["weights"].items() if float(value or 0) > 0}
+    for key in settings.get('weights_auto', []):
+        weights.setdefault(key, 0.0)
     total = sum(weights.values())
     if not total:
         raise store.StudioError("У налаштуваннях каналу немає жодного формату з часткою")
@@ -61,7 +64,7 @@ def shares(settings: dict) -> dict[str, float]:
 
 def opening(settings: dict) -> tuple[str | None, int]:
     """The format the channel's first frames must have, if it names one, and how many frames."""
-    if settings.get("host_even_distribution") and float(settings.get("weights", {}).get("host", 0)) > 0:
+    if settings.get("host_even_distribution"):
         return "host", 1
     chosen = settings.get("first_clip_format", "auto")
     if chosen == "video":
@@ -90,6 +93,7 @@ def sentences(pid: str) -> dict:
             "labels": {key: planner.LABELS.get(key, key) for key in targets}, "hints": {key: HINTS.get(key, "") for key in targets},
             "generated_image_style": settings.get("generated_image_style", ""),
             "tolerance": SHARE_TOLERANCE,
+            "auto_formats": settings.get('weights_auto', []),
             "opening": {"format": first, "count": count} if first else None,
             "host_rules": {"first_frame": True, "last_frame": True, "no_consecutive": True, "even_distribution": True}
                 if settings.get("host_even_distribution") else None}
@@ -157,9 +161,10 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     covered = sum(seconds.values()) or 1
     actual = {key: round(100 * value / covered, 1) for key, value in seconds.items()}
     for key, target in targets.items():
-        if abs(actual[key] - target) > SHARE_TOLERANCE:
+        if key not in settings.get('weights_auto', []) and abs(actual[key] - target) > SHARE_TOLERANCE:
             problems.append(f"«{labels[key]}»: {actual[key]:.1f}% тривалості замість {target:.1f}% (допуск ±{SHARE_TOLERANCE:g})")
-    result = {"ok": not problems, "problems": problems, "frames": len(groups), "shares": actual, "targets": targets}
+    result = {"ok": not problems, "problems": problems, "frames": len(groups), "shares": actual, "targets": targets,
+              "auto_formats": settings.get('weights_auto', [])}
     if problems or dry_run:
         return result
     made = []

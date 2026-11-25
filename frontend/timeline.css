@@ -13,6 +13,7 @@
 .timeline-panel{margin:0 10px 6px;width:calc(100% - 20px);min-width:0;height:clamp(242px,32vh,330px);min-height:242px;border:1px solid #303034;border-radius:10px;}
 .editor-open .workspace{padding-bottom:0;}
 .editor-open .workspace>.panel{border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0;}
+.editor-open .workspace>.preview-panel{border:0;}
 .editor-open .workspace.animation-workspace.fitted-preview>.preview-panel{align-self:end;}
 .editor-open .workspace>.panel,.editor-open .timeline-panel{background:#0f0f10;}
 .stack-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

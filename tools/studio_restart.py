@@ -149,8 +149,9 @@ def main():
         sys.exit("Перезапуск обірве це. Дочекайтеся завершення або запустіть з --force, якщо користувач погодив.")
 
     old = listener()
+    if old and not running:
+        sys.exit('Порт студії зайнятий, але перевірити роботу сервера не вдалося. Перезапуск не виконано.')
     if old and args.stop_only:
-        if not running:sys.exit('Порт студії зайнятий іншою програмою. Її залишено без змін.')
         if listener_root(old)!=APP.resolve():sys.exit('Запущено іншу копію студії. Її залишено без змін.')
     if old and running and not args.force:
         if not prepare():

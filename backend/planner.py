@@ -18,8 +18,11 @@ SETTING_DEFAULTS = {
 
 def effective_settings(settings: dict) -> dict:
     # Retired opening fields must never influence a new plan.
-    return {**{key: settings.get(key, value) for key, value in SETTING_DEFAULTS.items()},
-            "weights": copy.deepcopy(settings.get("weights", {}))}
+    result = {**{key: settings.get(key, value) for key, value in SETTING_DEFAULTS.items()},
+              "weights": copy.deepcopy(settings.get("weights", {}))}
+    if settings.get('weights_auto'):
+        result['weights_auto'] = sorted(settings['weights_auto'])
+    return result
 
 
 def settings_signature(settings: dict) -> str:

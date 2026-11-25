@@ -313,7 +313,8 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
    Використовуй шари студії, add_clip та keyframes через API або tools/studio.py ops. Усі елементи мають час свого кадру,
    читабельні підписи й осмислену анімацію за постановкою режисера. Читабельна спокійна фаза дозволена.
-   Збережи композицію як JSON для tools/studio.py ops: op="animation", frame=N, background="#101114", clips=[...].
+   Збережи композицію як JSON для tools/studio.py ops: op="animation", frame=N, clips=[...]. Студія додає чорну основу,
+   а для кольорового оформлення можна передати background.
    clips містить шари kind="animation" (content_type="shape", "gradient", "image") чи kind="text" з keyframes.
    start у шарі відносний до початку кадру, duration у секундах, x/y/width/height у частках кадру; PNG-асет передай як path.
    Для правок використовуй ту саму композицію з replace=true: змінюються тільки шари вибраного кадру, сусідні кадри зберігаються.
@@ -483,6 +484,11 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
         def cancelled():
             current = store.load_project(pid).get('production_request') or {}
             return director.stop_asked(pid,'production') or current.get('paused') or current.get('id') != request['id']
+        if not request.get('repair_frames') and not request.get('repair_film'):
+            import heygen_frames
+            set_request(pid, stage='heygen')
+            heygen_frames.make(pid, request)
+            set_request(pid, stage=None)
         reviews = threading.local()   # two sessions verify side by side: each reads back its own review
         def verify(numbers):
             nonlocal last_review

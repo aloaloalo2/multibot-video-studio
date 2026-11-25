@@ -16,6 +16,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { serveStudioFont } from './studio-fonts.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const args = {}; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i].startsWith('--')) { const k = a[i].slice(2); const v = a[i + 1] && !a[i + 1].startsWith('--') ? a[++i] : true; args[k] = v; } } }
@@ -27,6 +28,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 function listScenes(dir, base) { let out = []; if (!fs.existsSync(dir)) return out; for (const f of fs.readdirSync(dir).sort()) { const p = path.join(dir, f); if (fs.statSync(p).isDirectory()) out = out.concat(listScenes(p, `${base}/${f}`)); else if (f.endsWith('.js') && !f.startsWith('_')) out.push(`${base}/${f}`); } return out; }
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
+  if (serveStudioFont(url, res)) return;
   if (url === '/__manifest') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(listScenes(path.join(PROJECT, 'scenes'), '/project/scenes'))); }
   const p = url.startsWith('/project/') ? path.join(PROJECT, url.slice(9)) : path.join(ROOT, url);
   if (!(p.startsWith(ROOT) || p.startsWith(PROJECT)) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); return res.end(); }
@@ -58,7 +60,8 @@ async function openPlayer(browser, style) {
   const [w, h] = await page.evaluate('window.OUT'); await page.setViewportSize({ width: w, height: h });
   return page;
 }
-const shot = (page, f) => page.evaluate(i => window.renderFrame(i), f).then(() => page.screenshot({ type: FORMAT, ...(FORMAT === 'jpeg' ? { quality: 94 } : {}) }));
+const capture = page => page.screenshot({ type: FORMAT, ...(FORMAT === 'jpeg' ? { quality: 94 } : {}) });
+const shot = (page, f) => page.evaluate(i => window.renderFrame(i), f).then(() => capture(page));
 const fmtT = s => `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
 
 async function renderVideo() {
@@ -107,7 +110,22 @@ async function renderStills() {
     let targets;
     if (args.sheet) targets = (await page.evaluate('window.SHOT_LIST')).map(s => ({ t: s.start + (s.end - s.start) * 0.45, label: `${s.id}  ${s.start.toFixed(1)}s${s.ok ? '' : '  (MISSING)'}` }));
     else targets = String(args.stills || args.at || '1').split(',').map(Number).map(t => ({ t, label: `${t}s` }));
-    for (const tg of targets) { const img = await shot(page, Math.round(tg.t * fps)); const name = `${st ? st + '_' : ''}${tg.label.split(' ')[0].replace(/[^\w.]/g, '')}_${tg.t.toFixed(2)}.${FORMAT}`; fs.writeFileSync(path.join(dir, name), img); all.push({ img, label: `${st ? `[${st}] ` : ''}${tg.label}`, st }); }
+    for (const tg of targets) {
+      const frame = Math.round(tg.t * fps);
+      const stem = `${st ? st + '_' : ''}${tg.label.split(' ')[0].replace(/[^\w.]/g, '')}_${tg.t.toFixed(2)}`;
+      let img;
+      if (CFG.styleCardText) {
+        const labels = await page.evaluate(i => {
+          window.STYLE_CARD_LABELS = [];
+          try { window.renderFrame(i); return window.STYLE_CARD_LABELS; }
+          finally { delete window.STYLE_CARD_LABELS; }
+        }, frame);
+        img = await capture(page);
+        fs.writeFileSync(path.join(dir, stem + '.json'), JSON.stringify(labels));
+      } else img = await shot(page, frame);
+      fs.writeFileSync(path.join(dir, stem + '.' + FORMAT), img);
+      all.push({ img, label: `${st ? `[${st}] ` : ''}${tg.label}`, st });
+    }
     (await page.evaluate('window.ERRORS')).forEach(e => console.log('  shot error:', e)); await page.close();
   }
   if (args.styles) { const n = all.length / styles.length; await contactSheet(browser, all, path.join(dir, 'style_grid.png'), n, 420); }

@@ -91,6 +91,8 @@ EXPORT_RUNNING = None
 UPDATE_MANAGER = updater.Updater(APP_ROOT)
 UPDATE_BOOT = uuid.uuid4().hex
 UPDATE_RESTARTING = False
+LOCAL_RESTART_PROCESS = None
+LOCAL_RESTART_ERROR = None
 # Changes run side by side; the mutex only guards this count and the restart flag, so a slow still, picker or upload
 # no longer holds every other edit (the export's cancel button among them). An update waits until the count is its own.
 IN_FLIGHT = 0
@@ -119,22 +121,57 @@ def busy_words(busy: list[str]) -> str:
     return "Зараз працює " + " і ".join(names[:2])
 
 
+def check_local_restart():
+    """Check restart blockers while holding UPDATE_MUTEX."""
+    if UPDATE_RESTARTING:raise store.StudioError('Студія вже готується до перезапуску.',409)
+    if IN_FLIGHT>1:raise store.StudioError('Студія зараз зберігає зміни. Дочекайтеся завершення.',409)
+    if channel_voice_lab.ACTIVE:raise store.StudioError('Генерується зразок голосу. Дочекайтеся завершення.',409)
+    with JOBS_LOCK:exports=[dict(x['job']) for x in ACTIVE_EXPORTS.values()]
+    busy=studio_work_status(exports)['busy']
+    if busy:raise store.StudioError(busy_words(busy)+'. Перезапуск доступний після завершення.',409)
+
+
 def prepare_local_restart():
     """Close the mutation gate atomically with the final busy check."""
     global UPDATE_RESTARTING
     with UPDATE_MUTEX:
-        if UPDATE_RESTARTING:raise store.StudioError('Студія вже готується до перезапуску.',409)
-        if IN_FLIGHT>1:raise store.StudioError('Студія зараз зберігає зміни. Дочекайтеся завершення.',409)
-        if channel_voice_lab.ACTIVE:raise store.StudioError('Генерується зразок голосу. Дочекайтеся завершення.',409)
-        with JOBS_LOCK:exports=[dict(x['job']) for x in ACTIVE_EXPORTS.values()]
-        busy=studio_work_status(exports)['busy']
-        if busy:raise store.StudioError('Перезапуск перерве поточну роботу. '+busy_words(busy),409)
+        check_local_restart()
         UPDATE_RESTARTING=True
         def expire():
             global UPDATE_RESTARTING
             with UPDATE_MUTEX:UPDATE_RESTARTING=False
         timer=threading.Timer(30,expire);timer.daemon=True;timer.start()
         return {'prepared':True,'pid':os.getpid()}
+
+
+def local_restart_status():
+    global LOCAL_RESTART_PROCESS, LOCAL_RESTART_ERROR
+    with UPDATE_MUTEX:
+        process = LOCAL_RESTART_PROCESS
+        if process is not None and process.poll() is not None:
+            _, detail = process.communicate()
+            LOCAL_RESTART_PROCESS = None
+            if process.returncode:
+                LOCAL_RESTART_ERROR = detail.strip() or 'Перезапуск студії не вдався.'
+        return {'boot': UPDATE_BOOT, 'restarting': LOCAL_RESTART_PROCESS is not None, 'error': LOCAL_RESTART_ERROR}
+
+
+def begin_local_restart():
+    global LOCAL_RESTART_PROCESS, LOCAL_RESTART_ERROR
+    with UPDATE_MUTEX:
+        if LOCAL_RESTART_PROCESS is not None and LOCAL_RESTART_PROCESS.poll() is None:
+            return {'boot': UPDATE_BOOT}
+        check_local_restart()
+        try:
+            LOCAL_RESTART_PROCESS = subprocess.Popen(
+                [sys.executable, str(APP_ROOT / 'tools' / 'studio_restart.py')],
+                cwd=APP_ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, text=True, start_new_session=True,
+            )
+        except OSError:
+            raise store.StudioError('Не вдалося запустити перезапуск студії.',500) from None
+        LOCAL_RESTART_ERROR = None
+        return {'boot': UPDATE_BOOT}
 
 
 def begin_update():
@@ -1423,6 +1460,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(production_edits.overview(edit_match.group(1)))
         if path == '/api/update':
             return self.json_response({**UPDATE_MANAGER.public_state(), 'boot': UPDATE_BOOT, 'restarting': UPDATE_RESTARTING, 'queued': UPDATE_QUEUED})
+        if path == '/api/studio/restart':
+            return self.json_response(local_restart_status())
         if path in {"/api/health", "/health"}:
             return self.json_response({"service": "multibot-video-studio", "status": "ok", "api_version": 2, "project_schema": 2, "layer_mode": "item", "plan_workflow": "audio_required", "manual_project_openings": True, "topic_premise_novelty": True, "trending_videos": True, "trending_use_idea": True, "export_queue": True, "create_video": True})
         draft_match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/episode-draft", path)
@@ -1822,6 +1861,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'seen': True})
         if method=='POST' and path=='/api/studio/restart/prepare':
             return self.json_response(prepare_local_restart())
+        if method=='POST' and path=='/api/studio/restart':
+            return self.json_response(begin_local_restart(),202)
         if method == 'POST' and path == '/api/update/check':
             # «Перевірити оновлення» in the studio's settings: ask GitHub now, not at the next two-minute round
             UPDATE_MANAGER.refresh()

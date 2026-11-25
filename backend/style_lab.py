@@ -11,6 +11,7 @@ import hashlib, json, os, re, shutil, subprocess, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import font_catalog
 import store
 import style_copy
 
@@ -101,7 +102,7 @@ def validate(animation) -> None:
         raise StyleLabError("Невідомий спосіб малювання картинок")
     if "allow_stickmen" in animation and not isinstance(animation["allow_stickmen"], bool):
         raise StyleLabError("Невірний перемикач стікменів")
-    if "title_font" in animation and animation["title_font"] not in TITLE_FONTS + LEGACY_FONTS:
+    if "title_font" in animation and animation["title_font"] not in (*TITLE_FONTS, *LEGACY_FONTS, *font_catalog.FONT_FAMILIES):
         raise StyleLabError("Невідомий шрифт заголовків")
     if "accent" in animation and not (isinstance(animation["accent"], str) and HEX.fullmatch(animation["accent"])):
         raise StyleLabError("Колір акценту має бути у форматі #RRGGBB")
@@ -119,6 +120,8 @@ def razgon_text(animation: dict | None) -> dict:
     extra = {}
     if animation.get("title_font"):
         extra["fonts"] = {key: animation["title_font"] for key in ("title", "ui", "serif")}
+        if animation["title_font"] in font_catalog.FONT_FAMILIES:
+            extra["studioFonts"] = True
     if animation.get("accent"):
         extra["ui"] = {"accent": animation["accent"]}
     return extra
@@ -175,10 +178,12 @@ def card_set(root: Path, ids: list[str], stamp: int, font: str, assets: bool, de
     # the café has no words and no picture props of its own: an overlay adds a title in the chosen font, and props when
     # the card is drawn with assets
     props = Path(__file__).with_name("style_card_cafe.js") if scene.name == "reaction-time" else None
+    if template or props:
+        font = "Nunito"
     revision = hashlib.sha256(template.read_bytes()).hexdigest() if template else None
     if props:
         revision = (revision or "") + hashlib.sha256(props.read_bytes()).hexdigest()
-    key_parts = ["all-fonts-full-frame-v3", scene.name, moment, font, assets, ids, stamp, definition]
+    key_parts = ["live-card-text-v1", scene.name, moment, font, assets, ids, stamp, definition]
     if revision:
         key_parts.append(revision)
     key = hashlib.sha256(json.dumps(key_parts, sort_keys=True).encode()).hexdigest()[:20]
@@ -245,6 +250,8 @@ def _card_set(root, ids, key, cache, scene, moment, template, props, font, asset
     config = json.loads((scene / "config.json").read_text(encoding="utf-8"))
     config["bars"] = "none"
     config["fonts"] = {key: font for key in ("title", "ui", "serif")}
+    config["studioFonts"] = font in font_catalog.FONT_FAMILIES
+    config["styleCardText"] = bool(template or props)
     config["assets"] = assets
     if definition:
         config.update(style=ids[0], styleDef=definition)
@@ -253,7 +260,11 @@ def _card_set(root, ids, key, cache, scene, moment, template, props, font, asset
         out = render_stills(root, folder, ids, [moment])
         cache.mkdir(parents=True, exist_ok=True)
         for sid in ids:
-            shutil.copyfile(still(out, sid, moment), cache / f"{sid}-0.jpg")
+            card = still(out, sid, moment)
+            labels = card.with_suffix(".json")
+            if labels.is_file():
+                shutil.copyfile(labels, cache / f"{sid}-0.json")
+            shutil.copyfile(card, cache / f"{sid}-0.jpg")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return key
@@ -274,7 +285,8 @@ def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "anima
     own = own or []
     # one font first (the one the page shows): a changed style or engine draws 17 fonts × 2 cards a style, minutes of
     # work, and the page waited for all of them (user, 20 November 2026: «виключив світіння… включити назад не можу»)
-    fonts = [font for font in (fonts or TITLE_FONTS) if font in TITLE_FONTS] or list(TITLE_FONTS)
+    available_fonts = font_catalog.FONT_FAMILIES.union(TITLE_FONTS)
+    fonts = [font for font in (fonts or TITLE_FONTS) if isinstance(font, str) and font in available_fonts] or list(TITLE_FONTS)
     combos = [(font, assets) for font in fonts for assets in (True, False)]
     jobs = [(None, combo) for combo in combos] + [(style, combo) for style in own + kept for combo in combos]
     run = lambda job: card_set(root, [job[0]["id"]] if job[0] else ids, stamp, *job[1], job[0]["def"] if job[0] else None, kind)
@@ -287,12 +299,19 @@ def cards(root: Path, own: list[dict] | None = None, keep=(), kind: str = "anima
         for font in fonts:
             for assets in (True, False):
                 result[font]["1" if assets else "0"][style["id"]] = f"/api/{CARDS}/{keys[style['id'], font, assets]}/{style['id']}-0.jpg"
+    labels = {}
+    for variant, pictures in result[fonts[0]].items():
+        for sid, url in pictures.items():
+            key = url.split("/")[-2]
+            layer = store.read_json(card_dir(key) / f"{sid}-0.json", None)
+            if isinstance(layer, list):
+                labels.setdefault(variant, {})[sid] = layer
     # the Studio's own styles (style_copy.BUILTIN) lead the gallery and cannot be deleted; a channel's copied ones close it
     listed = lambda s: {"id": s["id"], "name": s["name"], "desc": s["desc"],
                         **({} if s.get("builtin") else {"own": True, "tweaks": style_copy.tweaks(s["def"])})}
     return {"styles": [listed(s) for s in own if s.get("builtin")] + [known[sid] for sid in ids] + [known[s["id"]] for s in kept]
                   + [listed(s) for s in own if not s.get("builtin")],
-            "cards": result, "keys": set(keys.values())}
+            "cards": result, "labels": labels, "keys": set(keys.values())}
 
 
 def prune_cards(keep: set[str]) -> None:

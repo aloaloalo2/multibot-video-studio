@@ -9,6 +9,7 @@ import channel_hero
 import channel_transfer
 import channel_voice_lab
 import channel_translation_voices
+import heygen_avatars
 import json
 import languages
 import store
@@ -17,6 +18,17 @@ import style_lab
 
 
 def get(self, path, query, *, ensure_idle):
+    avatar_gallery = re.fullmatch(r'/api/channels/([0-9a-f]{16})/heygen-avatars(/selected)?', path)
+    if avatar_gallery:
+        cid, selected = avatar_gallery.groups()
+        folder = store.get_channel_folder(cid)
+        if selected:
+            avatar = store.read_channel_settings(folder, {}).get('heygen_avatar')
+            group_id = avatar.get('id') if isinstance(avatar, dict) else None
+            return self.json_response({'avatar': heygen_avatars.group(group_id) if group_id else None})
+        group_id = (query.get('group_id') or [None])[0]
+        token = (query.get('token') or [None])[0]
+        return self.json_response(heygen_avatars.page(group_id, token))
     sample=re.fullmatch(r'/api/channels/([0-9a-f]{16})/voices/([a-z]{2})/sample(/file)?',path)
     if sample:
         cid,code,file=sample.groups()

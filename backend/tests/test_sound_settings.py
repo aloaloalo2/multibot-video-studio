@@ -30,15 +30,15 @@ class SoundSettingsTest(unittest.TestCase):
             with self.subTest(library=library), self.assertRaises(ValueError):
                 sound.normalize({'library': library})
 
-    def test_transition_choices_are_separate_and_have_15_distinct_decodable_designs(self):
+    def test_transition_choices_are_separate_and_have_3_distinct_decodable_designs(self):
         import numpy as np
         import hashlib
         module = sound.audio_module('sfx')
-        choice = sound.normalize({'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'camera']}})
+        choice = sound.normalize({'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'snap']}})
         self.assertEqual(sound.allowed_names(choice), [])
-        self.assertEqual(sound.transition_names(choice), ['tr_air', 'tr_camera'])
+        self.assertEqual(sound.transition_names(choice), ['tr_air', 'tr_snap'])
         self.assertFalse(sound.normalize({'effects': {'categories': ['whoosh']}})['transitions']['enabled'])
-        self.assertEqual(sound.apply_config({}, choice)['sfx']['allowed_names'], ['tr_air', 'tr_camera'])
+        self.assertEqual(sound.apply_config({}, choice)['sfx']['allowed_names'], ['tr_air', 'tr_snap'])
         self.assertEqual(sound.apply_config({}, choice, animated=True)['sfx']['allowed_names'], [])
         self.assertFalse(sound.apply_config({}, choice, animated=True)['sfx']['enabled'])
         hashes = set()
@@ -49,7 +49,8 @@ class SoundSettingsTest(unittest.TestCase):
             self.assertGreater(float(np.sqrt(np.mean(data ** 2))), .001)
             self.assertLessEqual(float(np.abs(data).max()), .95)
             hashes.add(hashlib.sha256(data.tobytes()).hexdigest())
-        self.assertEqual(len(hashes), 15)
+        self.assertEqual(len(hashes), 3)
+        self.assertEqual(sound.normalize({'transitions': {'enabled': True, 'styles': ['air', 'camera', 'snap']}})['transitions']['styles'], ['air', 'snap'])
         for transitions in [{'enabled': 'true'}, {'styles': ['missing']}, {'styles': ['air', 'air']}]:
             with self.subTest(transitions=transitions), self.assertRaises(ValueError):
                 sound.normalize({'transitions': transitions})
@@ -139,14 +140,14 @@ class SoundSettingsTest(unittest.TestCase):
                  {'from_ref': 'group:2', 'to_ref': 'group:3', 'type': 'slide_left', 'duration': .35}]
         ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 15}]}],
                                        'join_transitions': joins}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
-        choice = {'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'camera']}}
+        choice = {'effects': {'enabled': False}, 'transitions': {'enabled': True, 'styles': ['air', 'snap']}}
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
              patch.object(sound, 'saved_for_project', return_value=choice):
             soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             clips = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
             self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(clips, [5, 10])))   # peak on the transition's middle
             self.assertIn('tr_air', clips[0]['title'])
-            self.assertIn('tr_camera', clips[1]['title'])
+            self.assertIn('tr_snap', clips[1]['title'])
             ctx.project['tracks'][0]['clips'] += [dict(c, id=f'fx-{i}') for i, c in enumerate(clips)]
             ctx.actions.clear(); soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual(ctx.actions, [])

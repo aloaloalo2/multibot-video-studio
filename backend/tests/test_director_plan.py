@@ -50,6 +50,20 @@ class DirectorPlanTest(unittest.TestCase):
         with self.assertRaises(store.StudioError):
             director_plan.sentences(PROJECT["id"])
 
+    def test_automatic_formats_are_chosen_freely_while_fixed_share_is_checked(self):
+        channel = {'id': PROJECT['channel_id'], 'settings': {
+            'weights': {'text': 50, 'generated_photo': 25, 'animation': 25},
+            'weights_auto': ['generated_photo', 'animation']}}
+        with patch.object(store, 'list_channels', return_value=[channel]):
+            info = director_plan.sentences(PROJECT['id'])
+            self.assertEqual(info['auto_formats'], ['animation', 'generated_photo'])
+            good = frames(([1, 2], 'text'), ([3, 4], 'generated_photo'),
+                          ([5, 6], 'text'), ([7, 8], 'generated_photo'))
+            self.assertTrue(director_plan.apply(PROJECT['id'], good, dry_run=True)['ok'])
+            wrong = frames(([1, 2], 'text'), ([3, 4, 5, 6], 'generated_photo'),
+                           ([7, 8], 'animation'))
+            self.assertFalse(director_plan.apply(PROJECT['id'], wrong, dry_run=True)['ok'])
+
     def test_frames_are_checked_before_they_are_saved(self):
         def problems(*spec):
             result = director_plan.apply(PROJECT["id"], frames(*spec), dry_run=True)
