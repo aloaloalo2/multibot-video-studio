@@ -243,12 +243,16 @@ def run(pid,ctx,job):
                        '-ar',str(rate),'-ac',str(channels),'-c:a','pcm_s16le',str(raw_original)],'підготувати оригінал для темпу')
         replacements=[];raw_replacements=[];rows=store.read_json(narration.root(pid)/'phrases.json',[])
 
-        for count,slot in enumerate(ctx['slots'],1):
+        entries=[{'text':slot['text'],'key':lab.fingerprint({**settings,'text':slot['text']},ref),'sentences':slot['sentences']} for slot in ctx['slots']]
+        # the changed sentences are voiced first, side by side within the provider's limits (narration.voice_all), and
+        # only then fitted one by one: the fitting is local and quick, the voicing was the slow part of a long revision
+        job.update(stage='synthesizing',completed=0);store.atomic_json(path(pid),job)
+        def progress(entry):
+            job['completed']+=1;store.atomic_json(path(pid),job)
+        takes=narration.voice_all(ctx['project'],settings,ref,[{**entry,'cached':False} for entry in entries],secret,voice,narration.root(pid),stop_check,progress)
+        for slot,entry,audio in zip(ctx['slots'],entries,takes):
             i=slot['row']
-            job.update(stage='synthesizing',current_sentence=slot['first']+1);store.atomic_json(path(pid),job)
             if (narration.root(pid)/'cancel').exists():raise narration.Cancelled()
-            params={**settings,'text':slot['text']};entry={'text':slot['text'],'key':lab.fingerprint(params,ref),'sentences':slot['sentences']}
-            audio=narration.phrase_audio(ctx['project'],settings,ref,entry,secret,voice)
             span=ctx['timings'][i];raw_chunk=folder/f'{i}-raw.wav'
             fit(audio,raw_chunk,span['end']-span['start'],rate,channels)
             raw_replacements.append((span['start'],span['end'],raw_chunk))
@@ -261,7 +265,6 @@ def run(pid,ctx,job):
             span=ctx['timings'][i];chunk=folder/f'{i}.wav'
             fit(audio,chunk,span['end']-span['start'],rate,channels)
             replacements.append((span['start'],span['end'],chunk));rows[i]=entry
-            job['completed']=count;store.atomic_json(path(pid),job)
         job['stage']='assembling';store.atomic_json(path(pid),job)
         splice(raw_original,folder/'raw-patched.wav',raw_replacements)
         raw_output=folder/'speed-original.mp3'

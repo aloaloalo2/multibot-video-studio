@@ -392,6 +392,46 @@ def phrase_audio(project,settings,ref,entry,secret=None,voice=None):
         pending.replace(target)
     return target
 
+def voice_all(project,settings,ref,entries,secret,voice,folder,stop_check,progress):
+    """Voices every entry into the project's phrase cache, in the script's order of starts. HeyGen takes
+    heygen_voice.workers(model) phrases at once, ElevenLabs lab.ELEVEN_SLOTS (user, 23 November 2026: «одночасні
+    запити»); the same cache, order and receipts as one by one. `progress(entry)` hears each finished entry, under a
+    lock, and a stop or an error sends none of the phrases not started yet. Returns each entry's take, in order."""
+    import heygen_voice
+    workers=(heygen_voice.workers(settings.get('heygen_model')) if settings['provider']=='heygen' else
+             lab.ELEVEN_SLOTS if settings['provider']=='elevenlabs' else 1)
+    done=threading.Lock();takes={}
+    def one(index,entry):
+        heygen_voice.STOP.check=stop_check
+        try:
+            if (folder/'cancel').exists():raise Cancelled()
+            for attempt in range(6):
+                try:
+                    takes[index]=phrase_audio(project,settings,ref,entry,secret,voice);break
+                except RuntimeError as busy:
+                    # ElevenLabs refuses a request over the plan's number at once (429): nothing was billed,
+                    # it waits for the others and tries again
+                    if settings['provider']!='elevenlabs' or attempt==5 or not re.search(r'помилка 429',str(busy)):raise
+                    for _ in range(5*(attempt+1)):
+                        if (folder/'cancel').exists():raise Cancelled()
+                        time.sleep(1)
+            with done:progress(entry)
+        finally:
+            heygen_voice.STOP.check=None
+    if workers<=1 or len(entries)<=1:
+        for index,entry in enumerate(entries):one(index,entry)
+        heygen_voice.STOP.check=stop_check
+        return [takes[index] for index in range(len(entries))]
+    from concurrent.futures import ThreadPoolExecutor
+    pool=ThreadPoolExecutor(max_workers=workers)
+    try:
+        for future in [pool.submit(job_timing.carry(one),index,entry) for index,entry in enumerate(entries)]:
+            future.result()
+    finally:   # a stop or an error: the phrases not started yet are not sent
+        pool.shutdown(wait=True,cancel_futures=True)
+    return [takes[index] for index in range(len(entries))]
+
+
 @job_timing.track('narration', project='project', job='job')
 def run(project,text,settings,ref,entries,job):
     pid=project['id'];cid=project['channel_id'];folder=None
@@ -414,42 +454,11 @@ def run(project,text,settings,ref,entries,job):
         heygen_voice.STOP.check=stop_check
         # phrases already made count from the start: a narration that goes on after a stop reads 68%, not 0%
         made=sum(1 for x in entries if x['cached']);job['completed']=made;store.atomic_json(folder/'job.json',job)
-        if settings['provider'] in ('heygen','elevenlabs') and len(entries)>1:
-            # HeyGen takes heygen_voice.SLOTS phrases at once, ElevenLabs lab.ELEVEN_SLOTS (user, 23 November 2026:
-            # «одночасні запити»); the same cache, order and receipts as one by one
-            from concurrent.futures import ThreadPoolExecutor
-            done=threading.Lock();count=[made]
-            def one(entry):
-                heygen_voice.STOP.check=stop_check
-                try:
-                    if (folder/'cancel').exists():raise Cancelled()
-                    for attempt in range(6):
-                        try:
-                            phrase_audio(project,settings,ref,entry,secret,voice);break
-                        except RuntimeError as busy:
-                            # ElevenLabs refuses a request over the plan's number at once (429): nothing was billed,
-                            # it waits for the others and tries again
-                            if settings['provider']!='elevenlabs' or attempt==5 or not re.search(r'помилка 429',str(busy)):raise
-                            for _ in range(5*(attempt+1)):
-                                if (folder/'cancel').exists():raise Cancelled()
-                                time.sleep(1)
-                    if entry['cached']:return
-                    with done:
-                        count[0]+=1;job['completed']=count[0];store.atomic_json(folder/'job.json',job)
-                finally:
-                    heygen_voice.STOP.check=None
-            pool=ThreadPoolExecutor(max_workers=heygen_voice.SLOTS if settings['provider']=='heygen' else lab.ELEVEN_SLOTS)
-            try:
-                for future in [pool.submit(job_timing.carry(one),entry) for entry in entries]:
-                    future.result()
-            finally:   # a stop or an error: the phrases not started yet are not sent
-                pool.shutdown(wait=True,cancel_futures=True)
-        else:
-            for entry in entries:
-                if (folder/'cancel').exists():raise Cancelled()
-                phrase_audio(project,settings,ref,entry,secret,voice)
-                if entry['cached']:continue
-                made+=1;job['completed']=made;store.atomic_json(folder/'job.json',job)
+        def progress(entry):
+            nonlocal made
+            if entry['cached']:return
+            made+=1;job['completed']=made;store.atomic_json(folder/'job.json',job)
+        voice_all(project,settings,ref,entries,secret,voice,folder,stop_check,progress)
         if (folder/'cancel').exists():raise Cancelled()
         with job_timing.span('saving'):
             listing=folder/'concat.txt';listing.write_text('\n'.join("file '"+x['key']+".mp3'" for x in entries))

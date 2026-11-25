@@ -21,6 +21,10 @@ SLOT_WAIT=600   # longest wait in the queue for HeyGen before a phrase gives up 
 
 
 FREE_MODEL='heygen-voice-1-turbo-free'
+# Paid models are not queued, so their phrases go to HeyGen several at a time; the shared minute (speech_turn) keeps
+# every narration together under HeyGen's 30 requests a minute. One at a time a paid phrase took about 2 s of HeyGen and
+# the rest of its turn waiting for the download and the cache write (25 November 2026 audit).
+PAID_SLOTS=4
 
 
 def queued(model):
@@ -28,6 +32,12 @@ def queued(model):
     one phrase and one narration at a time. A paid model is voiced at once, beside the others (user, 18 November 2026:
     «фрі ми… стаємо в чергу хайген. А турбо… не потрібно ставити в чергу»)."""
     return (model or DEFAULT_MODEL)==FREE_MODEL
+
+
+def workers(model):
+    """How many phrases of one narration go to HeyGen at once: one for Turbo Free and Starfish (both take the phrase
+    slot), PAID_SLOTS for a paid Turbo or Voice 1."""
+    return SLOTS if queued(model) or model=='starfish' else PAID_SLOTS
 
 
 class synthesis_slot:
@@ -306,14 +316,20 @@ def voices(model='heygen-voice-1'):
 
 READY={}          # voice path -> (time, voice) of a voice HeyGen called ready
 READY_FOR=600     # seconds a ready voice is trusted without asking again
+READY_LOCK=threading.Lock()   # phrases voiced side by side ask HeyGen about their voice once, not once each
 
 
 def ready_voice(path, *, status_optional=False):
     # a ready voice stays ready: asking HeyGen before every phrase doubled the requests its limit counts (17 November
     # 2026: narrations waited 17–51 minutes on 429 answers, while the voicing itself takes about 2 s a phrase)
-    known=READY.get(path)
-    if known and time.monotonic()-known[0]<READY_FOR:
-        return known[1]
+    with READY_LOCK:
+        known=READY.get(path)
+        if known and time.monotonic()-known[0]<READY_FOR:
+            return known[1]
+        return _ready_voice(path,status_optional)
+
+
+def _ready_voice(path,status_optional):
     deadline=time.monotonic()+VOICE_READY_TIMEOUT
     delay=2
     while True:
