@@ -38,12 +38,10 @@ async function loadFonts() {
   // Bundled, glyph-verified families work offline in all Studio languages.
   try {
     const families = await (await fetch('/engine/fonts/manifest.json')).json();
-    for (const family of families.filter(f => Object.values(FONTS).includes(f.name) && !channelFonts.includes(f.name))) {
-      for (const face of family.faces) {
-        const font = new FontFace(family.name, `url(/engine/fonts/${face.file})`, {weight:'100 900',unicodeRange:face.range});
-        await font.load();document.fonts.add(font);
-      }
-    }
+    // every face is fetched at once and added in the list's order
+    const faces = families.filter(f => Object.values(FONTS).includes(f.name) && !channelFonts.includes(f.name))
+      .flatMap(family => family.faces.map(face => new FontFace(family.name, `url(/engine/fonts/${face.file})`, {weight:'100 900',unicodeRange:face.range})));
+    for (const font of await Promise.all(faces.map(font => font.load().catch(error => console.warn('Studio font load failed', error))))) if (font) document.fonts.add(font);
   } catch(error) { console.warn('Studio font load failed',error); }
 
   const F = [['Fredoka', '600', 'fredoka/files/fredoka-latin-600-normal.woff2'], ['Fredoka', '700', 'fredoka/files/fredoka-latin-700-normal.woff2'],
@@ -58,7 +56,9 @@ async function loadFonts() {
     // Cyrillic for Ukrainian and Russian text: Nunito's letters, and the fallback of every font that has none (core.js text)
     ['Nunito', '800', 'nunito/files/nunito-cyrillic-800-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116'],
     ['Nunito', '900', 'nunito/files/nunito-cyrillic-900-normal.woff2', 'normal', 'U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116']];
-  for (const [fam, w, file, style, range] of F) { if (channelFonts.includes(fam)) continue; try { const ff = new FontFace(fam, `url(/node_modules/@fontsource/${file})`, { weight: w, style: style || 'normal', ...(range ? { unicodeRange: range } : {}) }); await ff.load(); document.fonts.add(ff); } catch (e) { console.log('font missing', fam, w); } }
+  const loads = F.filter(([fam]) => !channelFonts.includes(fam)).map(([fam, w, file, style, range]) =>
+    new FontFace(fam, `url(/node_modules/@fontsource/${file})`, { weight: w, style: style || 'normal', ...(range ? { unicodeRange: range } : {}) }).load().catch(() => console.log('font missing', fam, w)));
+  for (const ff of await Promise.all(loads)) if (ff) document.fonts.add(ff);
 }
 async function boot() {
   const cfg = await (await fetch(`${PROJ}/config.json`)).json();
@@ -162,13 +162,7 @@ function drawShot(buf, shot, lt) {
     catch (e) { lt = 0; info.p = 0; info.globalT = shot.start; if (typeof g.reset === 'function') g.reset(); else buf.width = buf.width;
       g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, buf.width, buf.height); g.setTransform(E.PX, 0, 0, E.PX, 0, 0); }
   }
-  try {
-    if (def.kind === '3d') {
-      const st = state3D(shot, def, info); def.draw(st, lt, info, three); (st.stage || st).render();
-      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(glCanvas, 0, 0, buf.width, buf.height); g.restore();
-      if (def.overlay) { g.save(); def.overlay(g, lt, info, st); g.restore(); }
-    } else { g.save(); def.draw(g, lt, info); g.restore(); }
-  } catch (e) { const msg = `${shot.id}@${lt.toFixed(2)}: ${e.message}`; if (!errors.includes(msg) && errors.length < 200) errors.push(msg); console.log('SHOT ERROR', msg, e.stack?.split('\n')[1]);
+  try { drawShotAt(g, buf, shot, def, lt, info); } catch (e) { const msg = `${shot.id}@${lt.toFixed(2)}: ${e.message}`; if (!errors.includes(msg) && errors.length < 200) errors.push(msg); console.log('SHOT ERROR', msg, e.stack?.split('\n')[1]);
     g.setTransform(E.PX, 0, 0, E.PX, 0, 0); text(g, 'ERROR ' + msg.slice(0, 90), E.W / 2, E.H / 2, { size: 34, color: '#ff4040', font: FONTS.ui, weight: 900 }); }
 }
 // motion blur: shot "mb": 3..6 (or {n, shutter}) averages sub-frames across the shutter (0.5 = 180°).
@@ -240,7 +234,7 @@ window.renderFrame = function (f, within) {
     else if (tr.type === 'flash') { mg.drawImage(bufA, 0, 0); mg.filter = 'none'; mg.globalAlpha = (1 - lt / tdur) ** 2; mg.fillStyle = '#fff'; mg.fillRect(0, 0, W, H); }
     else if (tr.type === 'whip' || tr.type === 'push') {   // the camera pans from A to B; blur = real sub-frame motion
       const u = lt / tdur, du = 1 / (tdur * E.fps), sh = tr.shutter ?? (tr.type === 'whip' ? 1 : 0.5);
-      slide(u - du * sh / 2, u + du * sh / 2, W, H, tr.dir || 1, !!tr.vertical, tr.type === 'whip' ? 10 : 10);
+      slide(u - du * sh / 2, u + du * sh / 2, W, H, tr.dir || 1, !!tr.vertical, 10);
     }
     else if (tr.type === 'iris') {                         // B opens inside a growing circle from a point of A (eye, lens, window, carton…)
       const [fx, fy] = tr.at || [0.5, 0.5], px = fx * W, py = fy * H, R = Math.hypot(Math.max(px, W - px), Math.max(py, H - py)) * ease.in(clamp(lt / tdur)) * 1.02 + (tr.r0 || 0) * E.PX;
