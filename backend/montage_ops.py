@@ -45,7 +45,6 @@ import typography
 import word_timing
 
 YELLOW, NAVY, INK, WHITE = "#ffd23a", "#0b2f78", "#101418", "#ffffff"
-ENTRANCES = ["up", "pop", "blur_up", "fade"]
 STYLES = {   # text colour, card colour (None: no card), shadow of the text
     "plain": (WHITE, None, None),
     "card": (WHITE, NAVY, None),
@@ -217,23 +216,6 @@ def merge(*rows: list[dict]) -> list[dict]:
     return sorted(by_time.values(), key=lambda p: p["time"])
 
 
-def _scale_at(points: list[dict], time: float, base: float) -> float:
-    have = [(float(p["time"]), float(p["scale"])) for p in points if "scale" in p]
-    if not have:
-        return base
-    if time <= have[0][0]:
-        return have[0][1]
-    for (t0, s0), (t1, s1) in zip(have, have[1:]):
-        if t0 <= time <= t1:
-            return s0 + (s1 - s0) * (time - t0) / max(t1 - t0, 1e-6)
-    return have[-1][1]
-
-
-def appear(at: float, duration: float, top: float = 1.0) -> list[dict]:
-    at = max(0.05, min(at, duration - 0.4))
-    return [{"time": 0.0, "opacity": 0.0}, {"time": round(at - 0.04, 3), "opacity": 0.0}, {"time": round(at + 0.25, 3), "opacity": top}]
-
-
 # ---------------------------------------------------------------- how an accent comes in
 # The user, 6 November 2026: «активной анимации… красивое появление, типа стрелочки… которая указывает на то место,
 # куда нужно. Кружочек, который появляется». The engine moves a clip by x, y, scale and opacity under one easing, so a
@@ -269,6 +251,11 @@ def _entrance_state(kind: str, tau: float, top: float) -> tuple[float, float, fl
 
 def accent_kind(clip: dict) -> str:
     return str(clip.get("title", "")).split()[-1]
+
+
+def accent_index(clip: dict) -> str:
+    """The number an accent has in its frame («K012 акцент 2 текст» → "2"): a caption and its card or underline share it."""
+    return (str(clip.get("title", "")).split(" акцент ", 1)[-1].split() or [""])[0]
 
 
 def is_entrance(clip: dict) -> bool:
@@ -431,16 +418,60 @@ def draw_circle(path: Path, radii, colors, line="solid", style: dict | None = No
 
 # ---------------------------------------------------------------- the operation context
 
+def project_plan(project: dict) -> dict | None:
+    """The plan of a project already in hand. store.load_project_plan reads the project again first (0.3–0.6 s on a long
+    episode, the half of every operation's time on Andromeda); a project without a plan file of its own still asks it."""
+    try:
+        if project.get("plan_source"):
+            path = store.project_plan_file(project)
+            return store.cached_plan(path)[0] if path else None
+        return store.load_project_plan(project["id"])
+    except (store.StudioError, OSError, ValueError):
+        return None
+
+
+def channel_settings(project: dict) -> dict:
+    """The saved settings of the project's channel; empty without a channel."""
+    if not project.get("channel_id"):
+        return {}
+    try:
+        return store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
+    except (store.StudioError, OSError, ValueError):
+        return {}
+
+
+_WORDS: dict[str, tuple[tuple, list]] = {}
+
+
+def aligned_words(pid: str) -> list[dict]:
+    """The voice's words with their time from the latest recognition (analysis_jobs.latest without its third read of the
+    project), kept per version of the report file: every text frame and caption asks them."""
+    try:
+        pointer = store.read_json(store.project_dir(pid) / "analysis-state.json", {}) or {}
+        if not pointer.get("job_id"):
+            return []
+        job = store.read_json(store.DATA_ROOT / "jobs" / (pointer["job_id"] + ".json")) or {}
+        if job.get("project_id") != pid or job.get("type") != "speech":
+            return []
+        path = store.project_dir(pid) / "analysis" / job["id"] / "result.json"
+        stat = path.stat()
+        key = (stat.st_size, stat.st_mtime_ns)
+        cached = _WORDS.get(str(path))
+        if not cached or cached[0] != key:
+            cached = (key, (store.read_json(path) or {}).get("aligned_words") or [])
+            _WORDS[str(path)] = cached
+        return cached[1]
+    except (store.StudioError, OSError, ValueError, KeyError, TypeError):
+        return []
+
+
 class Context:
     text_look = "varied"   # the channel's look of text frames; a context made without __init__ (tests) keeps the default
 
     def __init__(self, project: dict):
         self.project = project
         self.W, self.H = float(project.get("width", 1920)), float(project.get("height", 1080))
-        try:
-            self.plan = store.load_project_plan(project["id"])
-        except (store.StudioError, OSError, ValueError):
-            self.plan = None
+        self.plan = project_plan(project)
         self.frames = frame_groups(project, self.plan)
         self._words = None
         self.files: list[Path] = []          # pictures drawn for this request, registered as assets before the batch
@@ -450,12 +481,7 @@ class Context:
         self.easing = project.get("settings", {}).get("motion_easing", "ease_in_out")
         # per-channel looks (saved channel settings): the project snapshot first, the channel's current file else, so a
         # project made before the setting still follows it
-        channel = {}
-        if project.get("channel_id"):
-            try:
-                channel = store.read_channel_settings(store.get_channel_folder(project["channel_id"], include_disabled=True), {}) or {}
-            except (store.StudioError, OSError, ValueError):
-                channel = {}
+        self.channel = channel = channel_settings(project)
         self.text_look = project.get("settings", {}).get("text_look") or channel.get("text_look", "varied")
         self.animation_style = channel.get("animation") or project.get("settings", {}).get("animation") or {}
         # the channel's montage fonts (settings «Шрифти монтажу»): text frames take the main one, captions and accents the
@@ -467,18 +493,18 @@ class Context:
         self.accent_font = project.get("font_family") or fonts.get("accent_font_family") or fonts.get("font_family") or "Montserrat"
 
     @cached_property
+    def accent_look(self) -> dict:
+        """The channel's arrows and rings (channel_design.accent_style reads the channel's settings and kit each time)."""
+        return channel_design.accent_style(self.project)
+
+    @cached_property
     def accent_color(self):
         # the channel's own colour from its style, else its design kit's (never one colour shared by every channel)
         return style_lab.accent_color(self.project.get("channel_id"), self.animation_style) or channel_design.for_project(self.project)["palette"]["accent"]
 
     def words(self) -> list[dict]:
         if self._words is None:
-            import analysis_jobs
-            try:
-                report = (analysis_jobs.latest(self.project["id"], lambda jid: store.read_json(store.DATA_ROOT / "jobs" / (jid + ".json"))) or {}).get("report") or {}
-            except (store.StudioError, OSError, ValueError, KeyError):
-                report = {}
-            self._words = report.get("aligned_words") or []
+            self._words = aligned_words(self.project["id"])
         return self._words
 
     def tokens(self, frame: dict) -> list[tuple[str, float]]:
@@ -632,12 +658,12 @@ def accent(ctx: Context, spec: dict) -> None:
              sum(1 for a in ctx.actions if a["type"] == "add_clip" and a["payload"].get("group_id") == frame["group"]["id"] and not is_entrance(a["payload"])))
     motion = spec.get("motion", "animated")
     if kind in {"arrow", "circle"}:
-        colors = (spec.get("color") or ctx.accent_color, spec.get("edge") or channel_design.accent_style(ctx.project).get("edge", INK))
+        colors = (spec.get("color") or ctx.accent_color, spec.get("edge") or ctx.accent_look.get("edge", INK))
     if kind == "text":
         _accent_text(ctx, frame, picture, spec, start, duration, mid, index)
     elif kind == "arrow":
         tail, head = _point(ctx, picture, spec, "from", mid), _point(ctx, picture, spec, "to", mid)
-        look = channel_design.accent_style(ctx.project)
+        look = ctx.accent_look
         bend = float(spec.get("bend", look.get("bend", .15)))
         path = ctx.drawn_file("arrow", {"tail": tail, "head": head, "bend": bend, "colors": colors, "style": look})
         centre, size = draw_arrow(path, tail, head, bend, colors, look)
@@ -648,7 +674,7 @@ def accent(ctx: Context, spec: dict) -> None:
         if not isinstance(radii, (list, tuple)) or len(radii) != 2:
             raise OpError("Потрібні два радіуси контуру")
         radii = [store.finite_float(r, 1, limit, "Радіус поза межами кадру") for r, limit in zip(radii, (ctx.W, ctx.H))]
-        look = channel_design.accent_style(ctx.project)
+        look = ctx.accent_look
         line = spec.get("line", look.get("ring", "solid"))
         if line not in ("solid", "dashed"):
             raise OpError("Тип контуру має бути solid або dashed")
@@ -744,9 +770,8 @@ def clear_accents(ctx: Context, spec: dict) -> None:
     frame = find_frame(ctx.frames, spec.get("frame"))
     accents = [c for c in frame["clips"] if is_accent(c)]
     if spec.get("kind") == "text":    # only the captions, with the card or underline drawn for each
-        index = lambda c: str(c.get("title", "")).split(" акцент ", 1)[-1].split()[0]
-        wanted = {index(c) for c in accents if c.get("kind") == "text"}
-        accents = [c for c in accents if index(c) in wanted]
+        wanted = {accent_index(c) for c in accents if c.get("kind") == "text"}
+        accents = [c for c in accents if accent_index(c) in wanted]
     ids = [c["id"] for c in accents]
     ctx.actions += [{"type": "delete_clip", "payload": {"clip_id": cid}} for cid in ids]
     ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: прибрано акцентів {len(ids)}")
@@ -770,6 +795,7 @@ def replace(ctx: Context, spec: dict) -> None:
 
 
 FRAME_CLIP = "K{:03d} кадр"
+FULL = {"x": .5, "y": .5, "width": 1, "height": 1}   # a layer over the whole frame
 MOTIONS = {"zoom_in": (1.0, 1.12), "zoom_out": (1.12, 1.0), "pan_left": (1.22, 1.24), "pan_right": (1.22, 1.24), "none": None}
 PAN = .07     # the centre travels 14% of the frame's width; a 1.22 scale keeps the picture over the edges
 # The studio moves nothing by itself (user, 8 November 2026: «це має робити не студія, а… режисер… прибери в студії
@@ -780,11 +806,9 @@ PAN = .07     # the centre travels 14% of the frame's width; a 1.22 scale keeps 
 
 
 def _aspect(path) -> float | None:
-    try:
-        with Image.open(path) as image:
-            return image.width / image.height
-    except (OSError, ZeroDivisionError, TypeError):
-        return None
+    """A picture's width over its height, measured once per file version (media_size)."""
+    size = media_size(str(path)) if path else None
+    return size[0] / size[1] if size and size[1] else None
 
 
 def place(ctx: Context, spec: dict) -> None:
@@ -880,34 +904,6 @@ def place(ctx: Context, spec: dict) -> None:
         ctx.groups[FRAME_CLIP.format(number)] = f"Кадр {number}"
     ctx.actions.append({"type": "add_clip", "payload": payload})
     ctx.report.append(f"кадр {number}: {'текст' if spec.get('text') else payload['kind']} {start:.2f}–{end:.2f} с")
-
-
-# A full-frame text frame is designed, not plain words on black (user, 5 November 2026: «фон, блюр… анімацію появлення
-# букв… текстові вставки старатися різні робити. З різним блюром, різними картинками на фоні… темнішу або світлішу, текст
-# темніший, контрастніший»): a blurred picture of the episode under a dark, navy or light veil, the words appearing with
-# the voice, and the look turning from one text frame to the next.
-TEXT_LOOKS = [
-    {"veil": "#05070c", "veil_opacity": .58, "blur": 22, "color": "#ffffff", "entrance": "blur_up", "zoom": (1.10, 1.0)},
-    {"veil": "#f3eee4", "veil_opacity": .66, "blur": 28, "color": "#0e1a33", "entrance": "up", "zoom": (1.0, 1.10)},
-    {"veil": "#0b2f78", "veil_opacity": .55, "blur": 18, "color": "#ffffff", "entrance": "pop", "zoom": (1.12, 1.02)},
-    {"veil": "#000000", "veil_opacity": .48, "blur": 32, "color": "#ffe9a8", "entrance": "fade", "zoom": (1.02, 1.12)},
-    {"veil": "#1d1206", "veil_opacity": .52, "blur": 26, "color": "#fff4e2", "entrance": "blur_up", "zoom": (1.08, 1.0)},
-]
-
-
-# «dim» text frames (Григорий Антропов, user 8 November 2026: «на темнішому фоні, такому прям тусклому… з якимсь
-# ефектом… переливання… щоб воно… грало»): the episode's picture blurred deep and greyed under an almost black veil,
-# a slow flowing gradient of dark muted colours over it, and words with a soft coloured glow.
-DIM_TEXT_LOOKS = [
-    {"veil": "#040507", "veil_opacity": .78, "blur": 36, "color": "#ffffff", "entrance": "blur_up", "zoom": (1.12, 1.0),
-     "flow": ["#0b1a2e", "#1f1238", "#062a2a", "#141414"], "glow": "#6aa8ff"},
-    {"veil": "#070605", "veil_opacity": .80, "blur": 40, "color": "#f6ead2", "entrance": "up", "zoom": (1.0, 1.12),
-     "flow": ["#2a1a08", "#101820", "#2b0f12", "#0c0c0c"], "glow": "#ffbf6a"},
-    {"veil": "#030406", "veil_opacity": .76, "blur": 34, "color": "#e6f1ff", "entrance": "pop", "zoom": (1.12, 1.02),
-     "flow": ["#071f33", "#0d2b22", "#1a1030", "#0a0a0f"], "glow": "#57d6c4"},
-    {"veil": "#050505", "veil_opacity": .82, "blur": 42, "color": "#ffffff", "entrance": "fade", "zoom": (1.02, 1.12),
-     "flow": ["#22102a", "#0b1c30", "#2a1c0a", "#0d0d0d"], "glow": "#c58cff"},
-]
 
 
 def _text_background(ctx: Context, number: int) -> dict | None:
@@ -1021,12 +1017,13 @@ def _grid_picture(ctx: Context) -> Path:
 
 def _text_choice(ctx: Context, number: int, start: float, end: float, spec: dict) -> tuple[str, str, dict | None]:
     """The backdrop and the entrance of this text frame, and the host video when the backdrop is the host."""
-    import host_from_voice
-    host = host_from_voice.voice_video(ctx.project, getattr(ctx, "plan", None))
-    if host:
-        length = store.media_duration(Path(host["path"])) or 0
-        if length and length < end - 1 / int(ctx.project.get("fps") or 25):
-            host = None
+    if "_host_video" not in vars(ctx):   # the host video and its length, read once a request (it looks into the analysis)
+        import host_from_voice
+        found = host_from_voice.voice_video(ctx.project, getattr(ctx, "plan", None))
+        ctx._host_video = (found, store.media_duration(Path(found["path"])) or 0) if found else (None, 0)
+    host, length = ctx._host_video
+    if host and length and length < end - 1 / int(ctx.project.get("fps") or 25):
+        host = None
     can = [b for b in TEXT_BACKDROPS if b != "host" or host]
     if _text_background(ctx, number) is None:
         can = [b for b in can if b != "blur"]
@@ -1082,65 +1079,44 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
                        color=color, shadow={"color": look["glow"], "opacity": .55, "blur": 22, "x": 0, "y": 0} if dim else
                        None)
     group = {"group_id": have["group"]["id"]} if have else {}
-    layer = ctx.project["tracks"][0]["id"]
-    frame_title = f"Кадр {number}"
+
+    def layer(title: str, **fields) -> None:
+        """A layer of the whole text frame; a frame not on the timeline yet opens its group «Кадр N» with it."""
+        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration,
+                                                             "title": title, **fields, **group}})
+        if not have:
+            ctx.groups[title] = f"Кадр {number}"
+
+    zoom = lambda a, b: [{"time": 0.0, "scale": a}, {"time": end_time(duration), "scale": b}]
     if backdrop == "host":
         # the host speaking these very words, from the frame's own second, under black at 59% (the author's example)
-        titles = (f"K{number:03d} відео ведучого", f"K{number:03d} тінь")
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[0], "kind": "video",
-                            "asset_id": host["id"], "trim_start": start, "volume": 0, "scale": 1.0, "easing": ctx.easing,
-                            "keyframes": [{"time": 0.0, "scale": 1.0}, {"time": math.floor(duration * 1000) / 1000, "scale": 1.08}], **group}})
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[1], "kind": "animation",
-                            "content_type": "shape", "color": "#000000", "opacity": .59, "x": .5, "y": .5, "width": 1, "height": 1, **group}})
-        if not have:
-            ctx.groups.update({title: frame_title for title in titles})
+        layer(f"K{number:03d} відео ведучого", kind="video", asset_id=host["id"], trim_start=start, volume=0, scale=1.0, easing=ctx.easing,
+              keyframes=zoom(1.0, 1.08))
+        layer(f"K{number:03d} тінь", kind="animation", content_type="shape", color="#000000", opacity=.59, **FULL)
         return
     if backdrop == "grid":
         # a black field with a grey grid drifting closer; no CapCut noise over it (user, 25 November 2026: «шуми… дуже
         # агресивні… воно не потрібно»)
-        titles = (f"K{number:03d} сітка",)
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[0], "kind": "image",
-                            "asset_id": ctx.asset_for(_grid_picture(ctx)), "scale": 1.0, "easing": ctx.easing,
-                            "keyframes": [{"time": 0.0, "scale": 1.0}, {"time": math.floor(duration * 1000) / 1000, "scale": 1.07}], **group}})
-        if not have:
-            ctx.groups.update({title: frame_title for title in titles})
+        layer(f"K{number:03d} сітка", kind="image", asset_id=ctx.asset_for(_grid_picture(ctx)), scale=1.0, easing=ctx.easing,
+              keyframes=zoom(1.0, 1.07))
         return
     if background is None:
-        if not have:
-            return
         # Text frames are placed before the pictures are made, so the episode may have none yet. The words wait for the
         # voice, so without a background the frame was empty from its boundary to the first word, a hole on the ruler
         # and in the export (user, 15 November 2026: «чому інколи виникають пусті місця»). A plain dark field holds it.
-        title_bg = f"K{number:03d} фон"
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration,
-                                                             "title": title_bg, "kind": "animation", "content_type": "shape",
-                                                             "color": "#000000", "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+        if have:
+            layer(f"K{number:03d} фон", kind="animation", content_type="shape", color="#000000", **FULL)
         return
-    title_bg, title_veil = f"K{number:03d} фон", f"K{number:03d} тінь"
-    zoom = look["zoom"]
-    try:   # the picture is contained in the frame: a vertical one needs a bigger scale to cover it
-        with Image.open(background["path"]) as image:
-            aspect, frame_aspect = image.width / image.height, ctx.W / ctx.H
-        cover = max(frame_aspect / aspect, aspect / frame_aspect) * 1.04
-    except (OSError, KeyError, ZeroDivisionError):
-        cover = 1.18
-    ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_bg,
-                                                         "kind": "image", "asset_id": background["id"], "scale": zoom[0] * cover, "blur": look["blur"], "easing": ctx.easing,
-                                                         **({"visual_effect": "monochrome"} if dim else {}),
-                                                         "keyframes": [{"time": 0.0, "scale": zoom[0] * cover}, {"time": math.floor(duration * 1000) / 1000, "scale": zoom[1] * cover}], **group}})
-    ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_veil,
-                                                         "kind": "animation", "content_type": "shape", "color": look["veil"], "opacity": look["veil_opacity"],
-                                                         "x": .5, "y": .5, "width": 1, "height": 1, **group}})
+    # the picture is contained in the frame: a vertical one needs a bigger scale to cover it
+    aspect, frame_aspect = _aspect(background.get("path")), ctx.W / ctx.H
+    cover = max(frame_aspect / aspect, aspect / frame_aspect) * 1.04 if aspect else 1.18
+    near, far = look["zoom"]
+    layer(f"K{number:03d} фон", kind="image", asset_id=background["id"], scale=near * cover, blur=look["blur"], easing=ctx.easing,
+          **({"visual_effect": "monochrome"} if dim else {}), keyframes=zoom(near * cover, far * cover))
+    layer(f"K{number:03d} тінь", kind="animation", content_type="shape", color=look["veil"], opacity=look["veil_opacity"], **FULL)
     if dim:
-        title_flow = f"K{number:03d} переливання"
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": duration, "title": title_flow,
-                                                             "kind": "animation", "content_type": "gradient", "opacity": .42,
-                                                             "gradient": {"colors": look["flow"], "speed": .09, "amplitude": .3, "softness": .14},
-                                                             "x": .5, "y": .5, "width": 1, "height": 1, **group}})
-        if not have:
-            ctx.groups[title_flow] = f"Кадр {number}"
-    if not have:
-        ctx.groups[title_bg] = ctx.groups[title_veil] = f"Кадр {number}"
+        layer(f"K{number:03d} переливання", kind="animation", content_type="gradient", opacity=.42,
+              gradient={"colors": look["flow"], "speed": .09, "amplitude": .3, "softness": .14}, **FULL)
 
 
 # effects the author never wants (user, 25 November 2026: «Рожевий всесвіт»… «більш ніколи не додавай взагалі ні в які проекти»)
@@ -1304,7 +1280,7 @@ OUT_ONLY = {"capcut_t30"}   # «Розрізання й панорама»: the 
 def _host_or_text(frame: dict) -> bool:
     """A host frame or a full-frame text: it always comes in and goes out with a transition (user, 21 November 2026:
     «якщо це був диктор або ж текстова вставка, то у нас обох боків обов'язково має бути з переходами»)."""
-    return _full_frame_text(frame) or bool(frame.get("plan") and frame["plan"].get("format") == "host")
+    return _full_frame_text(frame) or _format(frame) == "host"
 
 
 def _format(frame: dict) -> str:
@@ -1313,13 +1289,7 @@ def _format(frame: dict) -> str:
 
 def channel_transitions(project: dict) -> dict:
     """The channel's «Переходи» setting: {allowed, share}; empty when the channel chose nothing."""
-    if not project.get("channel_id"):
-        return {}
-    try:
-        folder = store.get_channel_folder(project["channel_id"], include_disabled=True)
-        return dict(store.read_channel_settings(folder, {}).get("transitions") or {})
-    except (store.StudioError, OSError):
-        return {}
+    return dict(channel_settings(project).get("transitions") or {})
 
 
 HOST_OUT = .6      # seconds of the quick transition out of the host
@@ -1331,7 +1301,7 @@ def transitions(ctx: Context, spec: dict) -> None:
     seam of one format; an explicit `share` sets a share instead); the rest are cuts. Both seams of a
     host frame and of a full-frame text frame always get one, beyond the share if need be; the same transition other than a crossfade never twice in a row; a video going out needs
     source frames for the transition's length. Existing transitions stay unless "replace" is true."""
-    chosen = channel_transitions(ctx.project)
+    chosen = dict(ctx.channel.get("transitions") or {}) if hasattr(ctx, "channel") else channel_transitions(ctx.project)
     # the studio decides itself where a seam takes a transition, with no share to keep (user, 25 November 2026: «як часто
     # ставити перехід, 70%… прибери… студія… сама рішати, коли їй треба ставити, коли ні… обмежень не буде»); an
     # explicit "share" of the op still sets one
@@ -1386,7 +1356,8 @@ def transitions(ctx: Context, spec: dict) -> None:
     # для кожного ролика свій… один, два, три переходи, які чергуються»)
     import sound_settings
     # soft by what a transition shows (sound_settings.TRANSITION_CHARACTER): a dissolve, a wash, a gentle film
-    soft = {"crossfade"} | {t for t in pool if t.startswith("cin_") or sound_settings.transition_character(t) == "soft"}
+    kinds = list(dict.fromkeys(pool))   # the pool without its repeats (crossfade stands there ten times by default)
+    soft = {"crossfade"} | {t for t in kinds if t.startswith("cin_") or sound_settings.transition_character(t) == "soft"}
     # a transition keeps its own shape: squeezed far below its own length it was a blink of its middle (user, 25 November
     # 2026, «Кадри з монтажу» of 1.4 s in 0.45 s out of the host: «він якийсь недопилений»); out of the host only the
     # transitions that keep their shape at HOST_OUT seconds
@@ -1394,16 +1365,15 @@ def transitions(ctx: Context, spec: dict) -> None:
         return joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35
     def keeps_shape(kind, room):
         return natural(kind) <= room * MAX_SQUEEZE
-    lively = [t for t in dict.fromkeys(pool) if t not in soft and keeps_shape(t, HOST_OUT)] or \
-             [t for t in dict.fromkeys(pool) if t not in soft] or list(dict.fromkeys(pool))
+    lively = [t for t in kinds if t not in soft and keeps_shape(t, HOST_OUT)] or [t for t in kinds if t not in soft] or list(kinds)
     film = random.Random(str(ctx.project.get("id")) + "host-out")
     drive = film.sample(lively, min(len(lively), film.choice([2, 3]) if len(lively) > 2 else len(lively)))
     host_outs = 0
     # elsewhere more variety: a soft dissolve at most about one seam in five, never the same transition twice running
-    softs = [t for t in dict.fromkeys(pool) if t in soft]
+    softs = [t for t in kinds if t in soft]
     previous, added, cuts = None, 0, 0
     every = bool(spec.get("every"))
-    unused = [t for t in dict.fromkeys(pool)]
+    unused = list(kinds)
     if every:
         rnd.shuffle(unused)
         if keep:
@@ -1420,10 +1390,11 @@ def transitions(ctx: Context, spec: dict) -> None:
                 cuts += 1
             previous = None
             continue
-        host_out = bool(a.get("plan") and a["plan"].get("format") == "host")
+        host_out = _format(a) == "host"
         # into the host gently, out of him with drive (user, 25 November 2026: «in для ведучого… не має бути такий
         # драйвовий… частіше… м'якші переходи, а out… драйвовіші»)
-        host_in = not host_out and bool(b.get("plan") and b["plan"].get("format") == "host")
+        into_host = _format(b) == "host"
+        host_in = not host_out and into_host
         # "every": each transition the channel ticked goes in at least once, to check them all on one film (user,
         # 25 November 2026: «використав кожен перехід, який я виділив галочкою… перевірити… наскільки якісно»)
         room = HOST_OUT if host_out else min(a["end"] - a["start"], b["end"] - b["start"])
@@ -1434,7 +1405,6 @@ def transitions(ctx: Context, spec: dict) -> None:
         # transitions that only belong where the host goes out or between other frames: never into the host, never on
         # either side of a text frame (user, 25 November 2026, «Розрізання й панорама» out of a text frame: «ніколи не
         # використовуй такий перехід… для показа диктора і… текстових вставок. Це більше як out»)
-        into_host = bool(b.get("plan") and b["plan"].get("format") == "host") or _format(b) == "host"
         bright = lambda t: (dark and sound_settings.transition_character(t) == "flash") or ((dark or into_host) and t in OUT_ONLY)
         fresh = [t for t in unused if t != previous and (not host_out or t not in soft) and (not host_in or t in soft)
                  and keeps_shape(t, room) and not bright(t)] if every else []
@@ -1451,14 +1421,13 @@ def transitions(ctx: Context, spec: dict) -> None:
             if bright(kind):
                 kind = next((t for t in drive + lively if not bright(t) and t != previous), kind)
         else:
-            options = [t for t in dict.fromkeys(pool) if t != previous and keeps_shape(t, room) and not bright(t)] or \
-                      [t for t in dict.fromkeys(pool) if t != previous and not bright(t)] or \
-                      [t for t in dict.fromkeys(pool) if not bright(t)] or \
-                      [t for t in dict.fromkeys(pool) if t != previous] or list(dict.fromkeys(pool))
+            options = [t for t in kinds if t != previous and keeps_shape(t, room) and not bright(t)] or \
+                      [t for t in kinds if t != previous and not bright(t)] or [t for t in kinds if not bright(t)] or \
+                      [t for t in kinds if t != previous] or list(kinds)
             hard = [t for t in options if t not in soft]
             calm = [t for t in softs if (t != previous or t == "crossfade") and keeps_shape(t, room)]
             kind = rnd.choice(calm) if calm and (host_in or not hard or rnd.random() < .2) else rnd.choice(hard or options)
-        duration = float(spec.get("duration", joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35))
+        duration = float(spec.get("duration", natural(kind)))
         if host_out:
             duration = min(duration, HOST_OUT)   # quick, with drive
         duration = min(duration, a["end"] - a["start"], b["end"] - b["start"])
@@ -1473,33 +1442,6 @@ def transitions(ctx: Context, spec: dict) -> None:
     soundtrack.drawing(ctx, spec)
     ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({'автоматично' if share is None else str(round(100 * share)) + '%'}), було {designed}, додано {added}, прибрано {cuts}, "
                       f"стане {designed + added}; кадри ведучого й текстові з переходами з обох боків")
-
-
-def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:
-    """A video going out of a frame keeps playing through the transition: its file must have those frames."""
-    for clip in frame["clips"]:
-        if clip.get("kind") == "video" and abs(float(clip["start"]) + float(clip["duration"]) - frame["end"]) < .05:
-            try:
-                available = store.media_duration(Path(store.resolve_asset(ctx.project, clip["asset_id"])["path"]))
-            except (store.StudioError, OSError):
-                return False
-            if available and float(clip.get("trim_start", 0)) + float(clip["duration"]) + duration > available + .04:
-                return False
-    return True
-
-
-def _tail_seconds(ctx: Context, frame: dict) -> float:
-    """Seconds of source left after the frame's end in the video going out of it (inf when none goes out)."""
-    left = float("inf")
-    for clip in frame["clips"]:
-        if clip.get("kind") == "video" and abs(float(clip["start"]) + float(clip["duration"]) - frame["end"]) < .05:
-            try:
-                available = store.media_duration(Path(store.resolve_asset(ctx.project, clip["asset_id"])["path"]))
-            except (store.StudioError, OSError):
-                return 0.0
-            if available:
-                left = min(left, available - float(clip.get("trim_start", 0)) - float(clip["duration"]) - .04)
-    return max(0.0, left)
 
 
 def reglue(ctx: Context, spec: dict) -> None:
@@ -1524,9 +1466,7 @@ def reglue(ctx: Context, spec: dict) -> None:
             text = accent_clip.get("kind") == "text"
             # A caption in the side field and its underline/card share one coordinate system.
             # Pinning only the underline to the moving photo makes its entrance drift away from the words.
-            caption = next((c for c in frame["clips"] if c.get("kind") == "text" and
-                            c.get("title", "").split(" акцент ")[-1].split()[0] ==
-                            accent_clip.get("title", "").split(" акцент ")[-1].split()[0]), None)
+            caption = next((c for c in frame["clips"] if c.get("kind") == "text" and accent_index(c) == accent_index(accent_clip)), None)
             label = caption if accent_kind(accent_clip) in {"риска", "картка"} else accent_clip if text else None
             if label:
                 label_local = mid - (float(label["start"]) - float(clip["start"]))
