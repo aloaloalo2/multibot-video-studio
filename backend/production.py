@@ -346,7 +346,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Перевір початок, середину, кінець, стики та моменти максимального зближення елементів. Цей формат не потребує проєкту Razgon.
 5. Текстові кадри (text) будуй за задумом режисера в ідеї кадру: фон, його обробка, колір і місце тексту, поява слів.
    Кожна текстова вставка своя, під цей момент, і не повторює попередню; візуальним стилем (кольори, шрифт, настрій) вона пасує до каналу й решти ролика,
-   побажання автора в правилах каналу йдуть першими. Основа: python3 "{tools}/studio.py" place {project['id']} N --text
+   побажання автора в правилах каналу йдуть першими. Текст вставки стоїть одним продуманим блоком по центру кадру: виділене слово
+   чи фраза іншим кольором лишається в тому ж блоці під рештою з рівним відступом, без зсуву вбік без причини (студія сама
+   збирає такі кадри по центру, compose_text). Основа: python3 "{tools}/studio.py" place {project['id']} N --text
    [--backdrop host|blur|grid] [--entrance letters_fade|blur_up|up|pop|letters_up|grow|left|blur|letters_blur|down|fade|shrink|right]
    [--display "ТЕКСТ"]. Сценарій написаний для озвучки (числа словами, «Наса», «эс восемь», «Хаббл»), а вставку читають очима:
    через --display дай текст для екрана, числа цифрами, назви й позначення так, як їх пишуть (NASA, S8, 14 млрд), без змісту, якого немає в репліці.
@@ -502,7 +504,8 @@ def film_sounds(pid: str) -> None:
         if store.project_animated(project):
             return
         import montage_ops
-        montage_ops.run(pid, [{"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])
+        # the text frames first stand as one centred block each (25 November 2026), so the sounds follow the final words
+        montage_ops.run(pid, [{"op": "compose_text"}, {"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])
         import event_sounds
         event_sounds.start(pid)
     except Exception as error:   # the film is done either way; the sounds can be laid again

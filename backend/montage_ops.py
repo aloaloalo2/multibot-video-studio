@@ -1197,6 +1197,107 @@ def _full_frame_text(frame: dict) -> bool:
         c.get("kind") == "text" and c.get("text_role") == "full_frame" for c in frame["clips"])
 
 
+def _text_extent(clip: dict) -> tuple[float, float, float]:
+    """(top, bottom, row) of a text clip's letters in frame fractions: its words' rows, else its box."""
+    cy, h = float(clip.get("y", .5)), float(clip.get("height", .1)) * float(clip.get("scale", 1) or 1)
+    words = clip.get("text_words") or []
+    if words:
+        top = min(float(w["y"]) - float(w.get("height", .1)) / 2 for w in words)
+        bottom = max(float(w["y"]) + float(w.get("height", .1)) / 2 for w in words)
+        row = max(float(w.get("height", .1)) for w in words) * h
+        return cy + (top - .5) * h, cy + (bottom - .5) * h, row
+    return cy - h / 2, cy + h / 2, h
+
+
+def _letters_span(clip: dict) -> tuple[float, float]:
+    """(left, right) of a text clip's letters across, in frame fractions: a box widened after its words were laid keeps
+    them off its own middle (Andromeda 40: the box at 38% of the frame, its words at 43% of the box)."""
+    cx, w = float(clip.get("x", .5)), float(clip.get("width", .5)) * float(clip.get("scale", 1) or 1)
+    words = clip.get("text_words") or []
+    if not words:
+        return cx - w / 2, cx + w / 2
+    left = min(float(v["x"]) - float(v.get("width", 0)) / 2 for v in words)
+    right = max(float(v["x"]) + float(v.get("width", 0)) / 2 for v in words)
+    return cx + (left - .5) * w, cx + (right - .5) * w
+
+
+def _letters_centre(clip: dict) -> float:
+    left, right = _letters_span(clip)
+    return (left + right) / 2
+
+
+TEXT_GAP = .3   # the space between the parts of one text frame, in rows of its largest letters
+
+
+def _composable(frame: dict) -> list[dict] | None:
+    """The text clips of a full-frame text frame whose layout the studio may set: nothing but full-frame backgrounds,
+    veils and effects stand beside them (a photo, a picture or a motion-code layer next to the words is the director's
+    own composition and stays)."""
+    if not _full_frame_text(frame):
+        return None
+    texts = []
+    for clip in frame["clips"]:
+        if clip.get("kind") == "text":
+            texts.append(clip)
+        elif clip.get("content_type") == "code":
+            return None
+        elif clip.get("kind") in ("image", "video", "animation") and clip.get("content_type") != "capcut_effect":
+            size = float(clip.get("scale", 1) or 1)
+            if float(clip.get("width", 1)) * size < .98 or float(clip.get("height", 1)) * size < .98:
+                return None
+    return texts or None
+
+
+def text_layout_changes(frame: dict) -> list[tuple[dict, dict]]:
+    """The moves that make a full-frame text frame's parts one block in the middle of the frame: every part centred
+    across, the parts stacked with one even gap, the block centred down; a coloured phrase laid over its own words moves
+    with them. Empty when the frame stands so already or is not the studio's to lay out (see _composable)."""
+    texts = _composable(frame)
+    if not texts:
+        return []
+    units: list[list[dict]] = []
+    for clip in sorted(texts, key=lambda c: _text_extent(c)[0]):
+        top, bottom, _ = _text_extent(clip)
+        if units:
+            utop, ubottom = min(_text_extent(c)[0] for c in units[-1]), max(_text_extent(c)[1] for c in units[-1])
+            if top < ubottom - .01 and bottom > utop + .01:
+                units[-1].append(clip)
+                continue
+        units.append([clip])
+    spans = [(min(_text_extent(c)[0] for c in u), max(_text_extent(c)[1] for c in u)) for u in units]
+    gap = TEXT_GAP * max(_text_extent(c)[2] for c in texts)
+    cursor = .5 - (sum(b - t for t, b in spans) + gap * (len(units) - 1)) / 2
+    moves = []
+    for unit, (top, bottom) in zip(units, spans):
+        dy = cursor - top
+        cursor += bottom - top + gap
+        # a unit moves as one: a highlight laid over some of its words keeps standing on them
+        dx = .5 - (min(_letters_span(c)[0] for c in unit) + max(_letters_span(c)[1] for c in unit)) / 2
+        for clip in unit:
+            if abs(dx) < .004 and abs(dy) < .004:
+                continue
+            changes = {"x": round(float(clip.get("x", .5)) + dx, 5), "y": round(float(clip.get("y", .5)) + dy, 5)}
+            if any("x" in k or "y" in k for k in clip.get("keyframes") or []):
+                changes["keyframes"] = [{**k, **({"x": round(float(k["x"]) + dx, 5)} if "x" in k else {}),
+                                         **({"y": round(float(k["y"]) + dy, 5)} if "y" in k else {})} for k in clip["keyframes"]]
+            moves.append((clip, changes))
+    return moves
+
+
+def compose_text(ctx: Context, spec: dict) -> None:
+    """{"op": "compose_text", "frames": [..] | absent for all}: every full-frame text frame laid out as one centred block
+    (user, 25 November 2026, frame 40 of Andromeda: «текстові вставки мають бути побудовані з розумом… виглядає дуже
+    дивно розкидано»: the words stood left of the middle and the coloured end line apart from them)."""
+    wanted = spec.get("frames")
+    frames = [find_frame(ctx.frames, ref) for ref in wanted] if wanted else ctx.frames
+    for frame in frames:
+        moves = text_layout_changes(frame)
+        for clip, changes in moves:
+            ctx.actions.append({"type": "update_clip", "payload": {"clip_id": clip["id"], "changes": changes}})
+        if moves:
+            ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: текст зібрано по центру")
+
+
 OUT_ONLY = {"capcut_t30"}   # «Розрізання й панорама»: the host's way out or a seam between other frames only
 
 
@@ -1498,7 +1599,7 @@ def motion_code_op(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"кадр {frame['number']}: моушн-код «{label}» {start:.2f}–{start + duration:.2f} с")
 
 
-OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op}
+OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

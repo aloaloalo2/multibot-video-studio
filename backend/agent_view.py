@@ -172,6 +172,9 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                         and float(c["start"]) <= spoken + .5 for c in frame["clips"])
             if shown and not drawn and min(shown) - spoken > 1.6:
                 problems.append(f"текстовий кадр без тексту {min(shown) - spoken:.1f} с, хоча голос уже говорить")
+            if montage_ops.text_layout_changes(frame):
+                # its words stand off the middle or apart from one another (Andromeda 40, 25 November 2026)
+                problems.append("текст розкиданий, не одним блоком по центру (compose_text збирає)")
         join = joins_by_from.get("group:" + frame["group"]["id"])
         content = (f"{main.get('kind')} {_name(main, assets)} {_motion(main)}".strip() if main else
                    ", ".join(_name(c, assets) for c in frame["clips"][:2]))
