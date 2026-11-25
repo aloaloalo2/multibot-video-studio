@@ -85,10 +85,11 @@ function channelHeyGenAvatars(channel){
     if(notify)selectionField.dispatchEvent(new Event('change',{bubbles:true}));
   }
 
-  let requestedPreview=false;
+  let requestedPreview=false,cachedProbe=Promise.resolve(false);
   section.loadSelectedPortrait=async()=>{
     if(!selected||preview||requestedPreview)return;
     requestedPreview=true;
+    if(await cachedProbe&&preview||!selected){requestedPreview=false;return;}
     const id=selected.id;
     try{
       const {avatar}=await api(`${endpoint}/selected`);
@@ -198,7 +199,15 @@ function channelHeyGenAvatars(channel){
     showBrowseMode();
     revealGallery();
   });
-  {const url=cachedPhoto(selected);if(url)fetch(url).then(response=>{if(response.ok&&!preview&&selected&&cachedPhoto(selected)===url){preview=url;showSelection();}}).catch(()=>{});}
+  // the studio's copy is tried as a picture (not fetch): the page's own <img> then reuses it instead of downloading
+  // the 1.6 MB photo a second time, and HeyGen is asked for the portrait only when there is no copy
+  cachedProbe=new Promise(resolve=>{
+    const url=cachedPhoto(selected);if(!url)return resolve(false);
+    const probe=new Image();
+    probe.onload=()=>{if(!preview&&selected&&cachedPhoto(selected)===url){preview=url;showSelection();}resolve(true);};
+    probe.onerror=()=>resolve(false);
+    probe.src=url;
+  });
   showSelection();showBrowseMode();updateField();
   return section;
 }

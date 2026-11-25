@@ -20,6 +20,13 @@ function channelSoundMarkup(){
     </details>
   </section>`;
 }
+// The sound catalogue is the same for every channel and only changes with a studio update: one read per page,
+// shared by every opening of the settings (107 KB and about 0.5 s each time before, 25 November 2026)
+let channelSoundCatalogRead=null;
+function channelSoundCatalog(){
+  channelSoundCatalogRead ||= api('/api/sound-effects').catch(error=>{channelSoundCatalogRead=null;throw error;});
+  return channelSoundCatalogRead;
+}
 function bindChannelSound(saved){
   const root=document.querySelector('.settings-sound');
   const music=root.querySelector('#sound-music'),generate=root.querySelector('#sound-generate');
@@ -66,7 +73,7 @@ function bindChannelSound(saved){
   sfxToggle.addEventListener('change',()=>{effectsToggle.checked=sfxToggle.checked;if(!libraryToggle.disabled)libraryToggle.checked=sfxToggle.checked;update();});
   for(const control of [music,generate,...groups.map(g=>g.toggle)])control.addEventListener('change',update);
   update();
-  api('/api/sound-effects').then(data=>{
+  channelSoundCatalog().then(data=>{
     if(!root.isConnected)return;
     root.transitionSoundsReady=Array.isArray(data.transitions);
     root.musicStylesReady=Array.isArray(data.music_styles);

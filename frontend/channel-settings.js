@@ -92,6 +92,7 @@ function organizeChannelSettings(channel){
       if(!active)panel.querySelectorAll('audio,video').forEach(media=>media.pause());
     }
     try{sessionStorage.setItem(preferenceKey,key);}catch{}
+    panels[key].dispatchEvent(new Event('settings-panel-shown'));   // sections that load their data only when first seen
     if(key==='avatar'||key==='projects')heygenAvatars.loadSelectedPortrait();
     if(key==='spending')loadChannelSpending();
     if(sectionKey){const group=body.querySelector('[data-main-section="'+sectionKey+'"]');if(group){group.open=true;group.scrollIntoView({block:'nearest'});}}
@@ -163,13 +164,9 @@ function organizeChannelSettings(channel){
   const defaults=body.querySelector('.channel-project-defaults'),kind=defaults.querySelector('.channel-kind-section');
   const kindSection=document.createElement('section');kindSection.className='settings-section settings-project-kind';kindSection.innerHTML='<h3>Тип роликів</h3>';kindSection.append(kind);kind.querySelector('h4').hidden=true;panels.projects.append(kindSection);
   const directorGroup=move('.channel-project-defaults','projects',{fold:true,title:'Робота режисера',icon:'projects'});
-  const quick=document.createElement('div');quick.className='settings-quick-grid';
-  for(const [key,title,icon] of [['voice','Озвучка','voice'],['look','Оформлення','look']]){
-    const button=document.createElement('button');button.type='button';button.className='settings-quick-card';button.dataset.quick=key;
-    button.innerHTML=`<span class="settings-quick-visual">${channelSettingsIcon(icon)}</span><span class="settings-quick-copy"><strong>${title}</strong><span class="settings-quick-value">Завантажуємо…</span></span><span class="settings-quick-arrow" aria-hidden="true">›</span>`;
-    button.addEventListener('click',()=>select(key,true));quick.append(button);
-  }
-  quick.hidden=true;panels.projects.append(quick);   // «Озвучка» and «Оформлення» showed twice (user, 15 November 2026): their blocks below carry the summary now
+  // the place «Робота режисера» moves to below; the former hidden «Озвучка»/«Оформлення» cards are gone (they showed
+  // twice, user 15 November 2026, and were still repainted on every change)
+  const directorSlot=document.createComment('director');panels.projects.append(directorSlot);
   const formatsGroup=move('.settings-visual-formats','projects',{fold:true,icon:'formats',title:'План кадрів'});
   directorGroup.before(formatsGroup);
   const strip=document.createElement('div');strip.className='settings-format-preview';strip.setAttribute('aria-hidden','true');
@@ -207,7 +204,7 @@ function organizeChannelSettings(channel){
    if(look&&plate)look.before(plate);}   // the plate first, above the style (user, 20 November 2026)
   const automation=document.createElement('div');automation.className='settings-voice-automation';
   automation.innerHTML=`<label><input type="checkbox" id="settings-auto-narration" ${channel.settings?.auto_narration?'checked':''} disabled><span><strong>Автоозвучка</strong><small>Після готового сценарію</small></span></label><label><input type="checkbox" id="settings-auto-montage" ${channel.settings?.auto_montage?'checked':''} disabled><span><strong>Автомонтаж</strong><small>Після готової озвучки</small></span></label><label><input type="checkbox" id="settings-auto-opening" ${channel.settings?.auto_opening?'checked':''}><span><strong>Автовибір зачину</strong><small>DeepSeek обирає найкращий</small></span></label><label><input type="checkbox" id="settings-auto-export" ${channel.settings?.auto_export?'checked':''}><span><strong>Автоекспорт</strong><small>Після готових кадрів, з якістю каналу</small></span></label><label><input type="checkbox" id="settings-auto-publish" ${channel.settings?.auto_publish?'checked':''}><span><strong>Автопублікація</strong><small>Після експорту, на YouTube за розкладом</small></span></label>`;
-  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);quick.after(directorGroup);panels.automation.append(automation);
+  const voiceSlot=document.createElement('div');voiceSlot.id='channel-voice-settings';panels.voice.append(voiceSlot);directorSlot.replaceWith(directorGroup);panels.automation.append(automation);
   move('.settings-sound','sound',{icon:'sound'});
   move('#channel-voices','languages',{icon:'languages'});
   // the voiced script goes on to the translations and their voices by itself (user, 16 November 2026)
@@ -336,13 +333,8 @@ function organizeChannelSettings(channel){
     const hasVoice=!!(idField&&voice?.querySelector(`[name=${idField}]`)?.value)||!!source?.querySelector('audio');
     for(const field of body.querySelectorAll('#settings-auto-narration, #settings-auto-montage')){field.disabled=!hasVoice&&!field.checked;field.closest('label').title=hasVoice?'':'Спочатку додайте голос';}
     text('[data-main-summary=voice]',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
-    text('[data-quick=voice] .settings-quick-value',provider?(hasVoice?`${provider.selectedOptions[0].textContent} · ${voice.querySelector('[name=speed]').value}%`:'Готове аудіо · голос не додано'):'Завантажуємо…');
     const style=body.querySelector('.style-thumb[aria-checked=true] span')?.textContent;
     text('[data-main-summary=look]',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');
-    text('[data-quick=look] .settings-quick-value',style?`${style} · ${value('style-title-font')}`:'Оберіть стиль');
-    const visual=body.querySelector('[data-quick=look] .settings-quick-visual');
-    if(visual.style.backgroundImage!==$('logo-preview').style.backgroundImage)visual.style.backgroundImage=$('logo-preview').style.backgroundImage;
-    visual.classList.toggle('has-preview',!!visual.style.backgroundImage);
     // New async controls get their own baseline; unchanged loading is never an author edit.
     for(const field of body.querySelectorAll(fields))if(!field.disabled&&channelSettingsEditable(field)&&!baseline.has(field))baseline.set(field,channelSettingsFieldValue(field));
     for(const field of baseline.keys())if(!field.isConnected){baseline.delete(field);resets.delete(field);}
