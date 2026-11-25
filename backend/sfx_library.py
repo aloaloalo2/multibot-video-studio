@@ -27,18 +27,48 @@ PENCIL = 'capcut-pencil-20261125'
 GROUPS = {CAPCUT: 'capcut', PENCIL: 'capcut-pencil'}
 
 
+_CATALOG: tuple = (None, [], {})
+
+
+def _stamp(root: Path):
+    """What the catalogue of a folder is read from: its catalog.json and the folder itself (a file added or removed)."""
+    try:
+        a, b = (root / 'catalog.json').stat(), root.stat()
+        return (str(root), a.st_mtime_ns, a.st_size, b.st_mtime_ns)
+    except OSError:
+        return (str(root), None)
+
+
+def _rows():
+    """(rows, {name: row}), read again only when a catalogue folder changed. Every sound pass asked for the catalogue
+    once per cue, and each read parsed three JSON files and looked at every WAV: 31 ms a call, 7 of the 8 seconds of
+    the appearance pass on «Андромеда» (25 November 2026)."""
+    global _CATALOG
+    roots = (ROOT, ROOT.parent / CAPCUT, ROOT.parent / PENCIL)
+    key = tuple(_stamp(root) for root in roots)
+    if _CATALOG[0] != key:
+        found = []
+        for root in roots:
+            path = root / 'catalog.json'
+            if not path.is_file():
+                continue
+            rows = json.loads(path.read_text(encoding='utf-8'))
+            present = {p.name for p in root.glob('*.wav')}
+            found += [{**r, 'name': str(root / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
+                       'source_group': GROUPS.get(root.name, 'capcut') if 'capcut_id' in r else 'mixkit',
+                       'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
+                      for r in rows if r['mixkit_id'] + '.wav' in present and r['mixkit_id'] not in EXCLUDED]
+        _CATALOG = (key, found, {r['name']: r for r in found})
+    return _CATALOG[1], _CATALOG[2]
+
+
 def catalog():
-    found = []
-    for root in (ROOT, ROOT.parent / CAPCUT, ROOT.parent / PENCIL):
-        path = root / 'catalog.json'
-        if not path.is_file():
-            continue
-        rows = json.loads(path.read_text(encoding='utf-8'))
-        found += [{**r, 'name': str(root / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
-                   'source_group': GROUPS.get(root.name, 'capcut') if 'capcut_id' in r else 'mixkit',
-                   'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
-                  for r in rows if (root / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
-    return found
+    return [dict(r) for r in _rows()[0]]
+
+
+def leveled_path(row) -> Path:
+    import store
+    return store.DATA_ROOT / 'cache' / LEVELED / (row['mixkit_id'] + '.wav')
 
 
 def leveled(row) -> Path:
@@ -47,7 +77,7 @@ def leveled(row) -> Path:
     import numpy as np
     import sound_settings
     import store
-    out = store.DATA_ROOT / 'cache' / LEVELED / (row['mixkit_id'] + '.wav')
+    out = leveled_path(row)
     if not out.is_file():
         out.parent.mkdir(parents=True, exist_ok=True)
         raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', row['name'], '-f', 'f32le', '-ac', '2', '-ar', '48000', '-'],
@@ -76,7 +106,8 @@ def allowed(sound):
 
 
 def find(name):
-    return next((row for row in catalog() if row['name'] == name), None)
+    row = _rows()[1].get(name)
+    return dict(row) if row else None
 
 
 def instructions(sound):

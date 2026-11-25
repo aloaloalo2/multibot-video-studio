@@ -117,8 +117,77 @@ def status(project: dict, code: str, saved: dict | None) -> dict:
     return {'state':'saved' if current else 'outdated','filename':target.name,'path':str(target),'saved_at':saved.get('saved_at')}
 
 
-def ffmpeg_command(snap: dict, output: Path) -> list[str]:
+RATE = 48000
+SHORT = 30.0        # a clip this short (a sound effect) is summed into one bed instead of being its own FFmpeg input
+BED_HEADROOM = 16.0  # the bed is stored as 24-bit FLAC this much quieter, so effects that overlap can never clip it
+BED_BLOCK = 10 * RATE
+
+
+def _short(track: dict) -> bool:
+    if track['voice'] or track['duration'] > SHORT:
+        return False
+    length = store.media_duration(Path(track['source']))
+    return bool(length) and length <= 60
+
+
+def _decode(source: str):
+    import numpy as np
+    raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', source, '-vn', '-f', 'f32le', '-ac', '2', '-ar', str(RATE), '-'],
+                         capture_output=True, timeout=120)
+    if raw.returncode:
+        raise RuntimeError('Не вдалося прочитати звук: ' + Path(source).name)
+    return np.frombuffer(raw.stdout, dtype='<f4').reshape(-1, 2)
+
+
+def write_bed(tracks: list, total: float, output: Path) -> None:
+    """Every short clip summed into one stereo file, block by block, each source decoded once. Episode 03 of Космос PRO
+    had 322 sound clips, and FFmpeg opened each as an input, delayed it with silence to its place and mixed 323 inputs
+    over the whole 24 minutes (user, 25 November 2026: «прискорь»). The samples are the same as FFmpeg's: the clip's
+    trim, length, volume and start at 48 kHz, cut at the film's end."""
+    import numpy as np
+    decoded = {source: _decode(source) for source in dict.fromkeys(t['source'] for t in tracks)}
+    end = round(total * RATE)
+    parts = []
+    for track in tracks:
+        trim, length = round(track['trim_start'] * RATE), round(track['duration'] * RATE)
+        segment = decoded[track['source']][trim:trim + length]
+        if len(segment):
+            start = round(track['start'] * RATE)
+            parts.append((start, start + len(segment), segment, float(track['volume'])))
+    parts.sort(key=lambda p: p[0])
+    encoder = subprocess.Popen(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-f', 'f32le', '-ar', str(RATE), '-ac', '2', '-i', '-',
+                                '-c:a', 'flac', '-sample_fmt', 's32', '-compression_level', '0', str(output)],
+                               stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        first = 0
+        for begin in range(0, end, BED_BLOCK):
+            stop = min(end, begin + BED_BLOCK)
+            block = np.zeros((stop - begin, 2), np.float32)
+            while first < len(parts) and parts[first][1] <= begin:
+                first += 1
+            for a, b, segment, volume in parts[first:]:
+                if a >= stop:
+                    break
+                lo, hi = max(a, begin), min(b, stop)
+                if lo < hi:
+                    block[lo - begin:hi - begin] += segment[lo - a:hi - a] * volume
+            encoder.stdin.write((block / BED_HEADROOM).tobytes())
+        _, error = encoder.communicate(timeout=600)
+        if encoder.returncode:
+            raise RuntimeError('Не вдалося зібрати звукові ефекти: ' + error.decode(errors='replace')[-300:])
+    finally:
+        if encoder.poll() is None:
+            encoder.kill()
+            encoder.communicate()
+
+
+def ffmpeg_command(snap: dict, output: Path, bed: Path | None = None) -> list[str]:
+    """The mix of the snapshot's tracks; with `bed`, its short clips are already summed there (write_bed)."""
     total=snap['duration'];cmd=['ffmpeg','-v','error','-nostdin','-y','-threads','2']
+    tracks=[t for t in snap['tracks'] if not (bed and _short(t))]
+    snap={**snap,'tracks':tracks}
+    if bed:
+        tracks.append({'source':str(bed),'start':0,'trim_start':0,'duration':total,'volume':BED_HEADROOM})
     for track in snap['tracks']:
         cmd+=['-ss',str(track['trim_start']),'-t',str(track['duration']),'-i',track['source']]
     cmd+=['-f','lavfi','-t',str(total),'-i','anullsrc=r=48000:cl=stereo']
@@ -142,7 +211,11 @@ def save(pid: str, code: str, job: dict) -> None:
     languages.progress(pid,job,max(job.get('progress',0),96) if automatic else 10,'Збираємо озвучку, музику й ефекти')
     with tempfile.TemporaryDirectory(prefix='.videokey-audio-',dir=target.parent) as directory:
         staged=Path(directory)/'mix.mp3'
-        languages.run(ffmpeg_command(snap,staged),'зберегти аудіо випуску')
+        short=[t for t in snap['tracks'] if _short(t)]
+        bed=Path(directory)/'sfx.flac' if len(short)>1 else None
+        if bed:
+            write_bed(short,snap['duration'],bed)
+        languages.run(ffmpeg_command(snap,staged,bed),'зберегти аудіо випуску')
         duration=store.media_duration(staged)
         if duration is None or abs(duration-snap['duration'])>.1:
             raise RuntimeError('Тривалість аудіо не збігається з монтажем. Попередній файл збережено.')

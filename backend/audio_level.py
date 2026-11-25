@@ -41,6 +41,23 @@ _MEASURING: dict[str, threading.Lock] = {}   # a lock per file being measured no
 _FAILED: set[str] = set()                    # file versions ffmpeg could not measure, until the next start
 
 
+_READ: tuple = (None, None, {})   # (cache file, its stat, its measures): read again only when the file changed
+
+
+def _levels() -> dict:
+    """The measures on disk (call under _LOCK). The file holds every voice and sound the studio measured (1 235 of them,
+    244 KB); every measure() parsed it whole, about 5 ms a call and several calls a request (25 November 2026)."""
+    global _READ
+    try:
+        stat = CACHE.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = None
+    if _READ[0] != CACHE or _READ[1] != stamp or stamp is None:
+        _READ = (CACHE, stamp, store.read_json(CACHE, {}) or {})
+    return _READ[2]
+
+
 def _key(path: Path) -> str:
     stat = path.stat()
     return f"{path.resolve()}\0{stat.st_size}\0{stat.st_mtime_ns}"
@@ -54,7 +71,7 @@ def measure(path: Path) -> dict | None:
     except OSError:
         return None
     with _LOCK:
-        cache = store.read_json(CACHE, {}) or {}
+        cache = _levels()
         if key in cache:
             return cache[key]
         if key in _FAILED:
@@ -63,7 +80,7 @@ def measure(path: Path) -> dict | None:
     # one measure a file at a time: a second request waits for the first one's answer instead of decoding it again
     with gate:
         with _LOCK:
-            cache = store.read_json(CACHE, {}) or {}
+            cache = _levels()
             if key in cache or key in _FAILED:
                 return cache.get(key)
         try:
@@ -84,7 +101,7 @@ def measure(path: Path) -> dict | None:
 def _store(key, lufs, peak) -> dict:
     result = {"lufs": float(lufs.group(1)), "peak": float(peak.group(1)) if "inf" not in peak.group(1) else -99.0}
     with _LOCK:
-        cache = store.read_json(CACHE, {}) or {}
+        cache = dict(_levels())
         cache[key] = result
         store.atomic_json(CACHE, cache)
         _MEASURING.pop(key, None)

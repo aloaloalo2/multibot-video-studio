@@ -61,7 +61,6 @@ TRANSITION_IDS = {row[0] for row in TRANSITIONS} | {'cc' + key for key in CAPCUT
 
 def capcut_transitions():
     """{sound name: SFX library row} of the CapCut transition sounds present on this Mac, in CAPCUT_TRANSITIONS order."""
-    import sfx_library
     rows = {row['mixkit_id']: row for row in sfx_library.catalog() if row.get('source_group') == 'capcut'}
     return {'tr_cc' + key: rows[key] for key in CAPCUT_TRANSITIONS if key in rows}
 RETIRED_TRANSITION_IDS = {'whip', 'camera', 'sweep', 'down', 'rise', 'reverse', 'bass', 'glitch', 'pixel', 'neon', 'warp', 'shimmer'}
