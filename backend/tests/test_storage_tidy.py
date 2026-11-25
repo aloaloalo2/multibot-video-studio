@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -126,6 +127,144 @@ class TidyTest(unittest.TestCase):
         unused = write(self.data / "leveled" / ("0" * 20 + ".flac"), 10)
         self.run_tidy()
         self.assertTrue(unused.is_file())
+
+
+class CacheRulesTest(unittest.TestCase):
+    """The rules of 25 November 2026: copies of sounds the studio already holds, idle caches, CapCut, old versions."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.data = Path(self.tmp.name)
+        self.project = self.data / "projects" / ("c" * 24)
+        self.media_voice = write(self.project / "media" / "Озвучка.flac", 500)
+        self.ending_voice = write(self.project / "narration-ending" / "x-v1" / "Озвучка.flac", 500)
+        self.episode_voice = write(self.data / "YOUTUBE" / "Канал" / "Випуск" / "voice.wav", 500)
+        self.other = write(self.project / "languages" / "uk" / "voice.mp3", 500)
+        self.cached = write(self.project / "held-tails" / "tail.mov", 500)
+        assets = [{"id": "m" * 20, "path": str(self.media_voice)}, {"id": "n" * 20, "path": str(self.ending_voice)},
+                  {"id": "e" * 20, "path": str(self.episode_voice)}, {"id": "o" * 20, "path": str(self.other)},
+                  {"id": "h" * 20, "path": str(self.cached)}, {"id": "g" * 20, "path": str(self.project / "media" / "gone.wav")}]
+        (self.project / "project.json").write_text(json.dumps({"assets": assets, "tracks": []}))
+        self.kept = {asset["id"]: write(self.project / "kept" / f"{asset['id']}.m4a", 40) for asset in assets}
+
+    def run_tidy(self, **kwargs):
+        return storage_tidy.tidy(self.data, **kwargs)
+
+    def test_a_kept_copy_goes_only_when_its_original_lies_in_the_projects_own_media(self):
+        self.run_tidy()
+        self.assertFalse(self.kept["m" * 20].exists())
+        self.assertFalse(self.kept["n" * 20].exists())
+        # the copy is all that plays once the episode folder is deleted: it stays
+        self.assertTrue(self.kept["e" * 20].is_file())
+        # a voicing or a cache may go some day: their copies stay too
+        self.assertTrue(self.kept["o" * 20].is_file())
+        self.assertTrue(self.kept["h" * 20].is_file())
+        # an original that is gone already: its copy is what plays now
+        self.assertTrue(self.kept["g" * 20].is_file())
+
+    def test_a_kept_copy_of_an_empty_original_stays(self):
+        self.media_voice.write_bytes(b"")
+        self.run_tidy()
+        self.assertTrue(self.kept["m" * 20].is_file())
+
+    def test_a_half_made_kept_copy_goes_after_the_quiet_hour(self):
+        old = write(self.project / "kept" / ("z" * 20 + ".tmp.m4a"), 10)
+        fresh = write(self.project / "kept" / ("y" * 20 + ".tmp.m4a"), 10, old=False)
+        self.run_tidy()
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.is_file())
+
+    def test_keep_makes_no_copy_of_a_sound_in_the_studios_own_media(self):
+        import keep
+        import store
+        from unittest import mock
+        self.assertTrue(storage_tidy.lasting(self.media_voice, self.project))
+        self.assertFalse(storage_tidy.lasting(self.episode_voice, self.project))
+        self.assertFalse(storage_tidy.lasting(self.other, self.project))
+        project = {"assets": [{"id": "m" * 20, "path": str(self.media_voice)}],
+                   "tracks": [{"clips": [{"kind": "audio", "asset_id": "m" * 20}]}]}
+        self.kept["m" * 20].unlink()
+        with mock.patch.object(store, "PROJECTS_ROOT", self.data / "projects"), \
+                mock.patch.object(store, "load_project", return_value=project), \
+                mock.patch.object(store, "load_project_narration", return_value={}), \
+                mock.patch.object(keep.subprocess, "run") as ffmpeg:
+            self.assertEqual(keep.keep_project("c" * 24), 0)
+        ffmpeg.assert_not_called()
+
+    def test_an_idle_cache_goes_whole_and_a_cache_in_use_stays(self):
+        idle = write(self.project / "render-cache" / "chunk" / "a" / "file.mp4", 300)
+        age(self.project / "render-cache")
+        busy = write(self.project / "stills" / "old.png", 300)
+        write(self.project / "stills" / "new.png", 10, old=False)
+        result = self.run_tidy()
+        self.assertFalse(idle.exists())
+        self.assertFalse((self.project / "render-cache").exists())
+        self.assertTrue(busy.is_file())
+        self.assertGreaterEqual(result["by_kind"]["кеш випуску, не потрібний тиждень"], 300)
+
+    def test_held_tails_and_motion_code_keep_their_own_prune(self):
+        age(self.project / "held-tails")
+        self.run_tidy()
+        self.assertTrue(self.cached.is_file())
+
+    def test_old_seam_previews_of_a_project_go(self):
+        old = write(self.project / "capcut" / "razgon-old.mp4", 100)
+        fresh = write(self.project / "capcut" / "razgon-new.mp4", 100, old=False)
+        self.run_tidy()
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.is_file())
+
+    def test_the_shared_capcut_cache_keeps_under_its_limit_newest_first(self):
+        cache = self.data / "capcut-cache"
+        files = []
+        for number in range(4):
+            path = write(cache / f"{number}.mov", 100, old=False)
+            moment = time.time() - 7200 - number * 60          # 0 is the newest; all are past the quiet hour
+            os.utime(path, (moment, moment))
+            files.append(path)
+        fresh = write(cache / "running.raw", 1000, old=False)  # written now: an export may be reading it
+        with unittest.mock.patch.object(storage_tidy, "CAPCUT_LIMIT", 250):
+            self.run_tidy()
+        self.assertTrue(fresh.is_file())
+        self.assertEqual([path.exists() for path in files], [False, False, False, False])
+        with unittest.mock.patch.object(storage_tidy, "CAPCUT_LIMIT", 10_000):
+            kept = write(cache / "x.mov", 100, old=False)
+            self.run_tidy()
+        self.assertTrue(kept.is_file())
+
+    def test_the_limit_keeps_the_most_recently_used(self):
+        cache = self.data / "capcut-cache"
+        paths = []
+        for number in range(3):
+            path = write(cache / f"{number}.mov", 100, old=False)
+            moment = time.time() - 7200 - number * 60
+            os.utime(path, (moment, moment))
+            paths.append(path)
+        with unittest.mock.patch.object(storage_tidy, "CAPCUT_LIMIT", 250):
+            self.run_tidy()
+        self.assertEqual([path.exists() for path in paths], [True, True, False])
+
+    def test_only_superseded_cache_versions_go(self):
+        old = write(self.data / "cache" / "sound-previews-v1" / "a.wav", 100)
+        recent_old = write(self.data / "cache" / "sfx-library-v1" / "a.wav", 100, old=False)
+        newest = write(self.data / "cache" / "sound-previews-v5" / "a.wav", 100)
+        single = write(self.data / "cache" / "music-style-previews-v2" / "a.wav", 100)
+        write(self.data / "cache" / "sfx-library-v3" / "a.wav", 100)
+        self.run_tidy()
+        self.assertFalse(old.exists())
+        self.assertTrue(recent_old.is_file())       # written within the hour: an older studio may still use it
+        self.assertTrue(newest.is_file())
+        self.assertTrue(single.is_file())
+
+    def test_dry_run_changes_nothing_and_counts_the_same(self):
+        write(self.project / "stills" / "old.png", 300)
+        write(self.data / "cache" / "a-v1" / "x", 50)
+        write(self.data / "cache" / "a-v2" / "x", 50)
+        before = sorted(str(p) for p in self.data.rglob("*"))
+        dry = self.run_tidy(apply=False)
+        self.assertEqual(sorted(str(p) for p in self.data.rglob("*")), before)
+        self.assertEqual(dry["freed"], self.run_tidy()["freed"])
 
 
 if __name__ == "__main__":

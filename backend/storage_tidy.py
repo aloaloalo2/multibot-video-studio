@@ -9,6 +9,11 @@ What goes, and why it is safe:
 - mix-history and recovery except their newest entry: earlier soundtracks and refit backups, never read back.
 - production-*.log over LOG_LIMIT: only their tail is kept.
 - leveled/*.flac no file of any project plays any more (the key is the voice's path, size and time).
+- kept/*.m4a of a sound whose original lies in the studio's own media (projects/<id>/media, narration-ending): the copy is
+  there for an episode folder the author deletes, and these originals do not go with it (882 MB on 25 November 2026).
+- the rebuilt caches of an episode (CACHE_FOLDERS) nothing wrote for CACHE_AGE, CapCut previews of a project and the
+  shared capcut-cache past CAPCUT_AGE, the shared capcut-cache beyond CAPCUT_LIMIT (oldest first), and cache/<name>-vN
+  once a newer cache/<name>-vM exists (the code reads only the newest version).
 
 What stays: the paid takes (parts/*.mp3, voice-history/*/parts/*.mp3), voice-cache, every JSON and text, the current
 voice.mp3 and mix, montage media, Razgon renders and code. A project with work running is not touched.
@@ -30,6 +35,14 @@ QUIET = 3600                    # a file written during the last hour may belong
 LEVELED_AGE = QUIET             # an unused leveled copy (up to 700 MB a film) goes after the quiet hour; it is rebuilt
                                 # from its voice in a minute if needed (was a week: 3.5 GB lay unused; 17 November 2026)
 CAPCUT_AGE = 3 * 86400          # a CapCut transition render not used for three days is rebuilt when needed
+CAPCUT_LIMIT = 2 * 1024 ** 3    # the shared CapCut cache keeps at most this much, the least recently used going first
+CACHE_AGE = 7 * 86400           # an episode's rebuilt cache nothing wrote for a week goes whole
+# What the studio makes again by itself when it needs it (space.CACHE, «Звільнити місце»): export chunks, the engine's
+# render cache, stills, stock sheets, motion-code renders, held copies for transitions, CapCut previews of seams.
+CACHE_FOLDERS = ("renders", "render-cache", "stills", "stock", "motion-code", "held-tails", "capcut")
+IDLE_FOLDERS = ("renders", "render-cache", "stills", "stock", "capcut")   # the other two have their own prune
+# Where a project's own sound lies for good: only a copy kept of a file elsewhere is worth its place.
+LASTING = ("media", "narration-ending")
 
 
 def _size(path: Path) -> int:
@@ -38,6 +51,30 @@ def _size(path: Path) -> int:
                                                                 if item.is_file() and not item.is_symlink())
     except OSError:
         return 0
+
+
+def _used(path: Path) -> float:
+    """When a cache file was last written or read."""
+    stat = path.stat()
+    return max(stat.st_mtime, stat.st_atime)
+
+
+def _written_since(folder: Path, moment: float) -> bool:
+    """Whether anything in the folder was written after the moment; stops at the first such file."""
+    stack = [folder]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as entries:
+                for entry in entries:
+                    if entry.is_symlink():
+                        continue
+                    if entry.stat().st_mtime > moment:
+                        return True
+                    if entry.is_dir():
+                        stack.append(Path(entry.path))
+        except OSError:
+            return True   # what cannot be read may be in use
+    return False
 
 
 def _recent(path: Path, now: float) -> bool:
@@ -111,8 +148,44 @@ class Tidy:
             self.files += 1
             self.by_kind["рендери моушн-коду й переходів"] = self.by_kind.get("рендери моушн-коду й переходів", 0) + freed
 
-    def project(self, folder: Path) -> None:
+    def caches(self, folder: Path) -> None:
+        """An episode's rebuilt caches nobody wrote to for CACHE_AGE, and its seam previews unused for CAPCUT_AGE (a
+        preview is named by the code it shows, so the ones of an older code are never read again: 351 MB on 25 November)."""
+        for name in IDLE_FOLDERS:
+            cache = folder / name
+            if cache.is_dir() and not cache.is_symlink() and not _written_since(cache, self.now - CACHE_AGE):
+                self.drop(cache, "кеш випуску, не потрібний тиждень")
+        for item in (folder / "capcut").glob("*"):
+            try:
+                old = item.is_file() and self.now - _used(item) > CAPCUT_AGE
+            except OSError:
+                continue
+            if old:
+                self.drop(item, "кеш переходів CapCut")
+
+    def kept(self, folder: Path) -> None:
+        """Kept copies (keep.py) whose original lies in the studio's own lasting folders: nothing deletes those with the
+        episode folder, so resolve_asset never falls back to the copy. A copy left half made by a killed FFmpeg goes too."""
+        try:
+            project = json.loads((folder / "project.json").read_text(encoding="utf-8"))
+            assets = {asset["id"]: asset for asset in project.get("assets", []) if isinstance(asset, dict) and asset.get("id")}
+        except (OSError, ValueError, AttributeError, TypeError, KeyError):
+            return
+        for copy in (folder / "kept").glob("*.m4a"):
+            if copy.name.endswith(".tmp.m4a"):
+                if not _recent(copy, self.now):
+                    self.drop(copy, "зайві копії звуку")
+                continue
+            source = Path((assets.get(copy.stem) or {}).get("path") or "")
+            if lasting(source, folder):
+                self.drop(copy, "зайві копії звуку")
+
+    def project(self, folder: Path, caches: bool = True) -> None:
+        """`caches=False` leaves the rebuilt caches to the caller (space.free removes them whole)."""
         self.renders(folder)
+        if caches:
+            self.caches(folder)
+        self.kept(folder)
         for work in (folder / "languages").glob("*"):
             if work.is_dir():
                 self.language(work)
@@ -163,13 +236,34 @@ class Tidy:
 
     # ---- CapCut transition renders ---------------------------------------------------------------------------
     def capcut(self) -> None:
+        """Renders unused for CAPCUT_AGE, then the least recently used beyond CAPCUT_LIMIT (never one of the last hour:
+        an export may be reading it)."""
+        files = []
         for item in (self.data_root / "capcut-cache").glob("*"):
             try:
-                old = item.is_file() and self.now - max(item.stat().st_mtime, item.stat().st_atime) > CAPCUT_AGE
+                if item.is_file():
+                    files.append((_used(item), item.stat().st_size, item))
             except OSError:
                 continue
-            if old:
+        total = 0
+        for used, size, item in sorted(files, reverse=True):
+            if self.now - used > CAPCUT_AGE or (total + size > CAPCUT_LIMIT and self.now - used > QUIET):
                 self.drop(item, "кеш переходів CapCut")
+            else:
+                total += size
+
+    # ---- earlier versions of shared caches -----------------------------------------------------------------------
+    def versions(self) -> None:
+        newest: dict[str, int] = {}
+        found = []
+        for folder in (self.data_root / "cache").glob("*-v*"):
+            name, _, number = folder.name.rpartition("-v")
+            if folder.is_dir() and name and number.isdigit():
+                found.append((name, int(number), folder))
+                newest[name] = max(newest.get(name, 0), int(number))
+        for name, number, folder in found:
+            if number < newest[name] and not _written_since(folder, self.now - QUIET):
+                self.drop(folder, "старі версії кешу")
     # ---- leveled voice copies --------------------------------------------------------------------------------
     def leveled(self, projects: list[Path]) -> None:
         # only the projects of this very data folder can say which copies are unused: any other list (a test's own
@@ -220,10 +314,21 @@ class Tidy:
                 self.project(folder)
         self.leveled(projects)
         self.capcut()
+        self.versions()
         return self.report()
 
     def report(self) -> dict:
         return {"freed": self.freed, "files": self.files, "by_kind": dict(self.by_kind), "applied": self.apply}
+
+
+def lasting(source: Path, folder: Path) -> bool:
+    """Whether a sound lies, as a real file, in a lasting folder of its own project."""
+    try:
+        source, folder = source.resolve(), folder.resolve()
+        inside = source.relative_to(folder).parts
+        return len(inside) > 1 and inside[0] in LASTING and source.is_file() and source.stat().st_size > 0
+    except (OSError, ValueError):
+        return False
 
 
 def tidy(data_root: Path, skip: set[str] = frozenset(), apply: bool = True) -> dict:
