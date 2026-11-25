@@ -609,21 +609,97 @@ def subpixel_motion(*expressions: str) -> bool:
     return os.environ.get("MULTIBOT_SUBPIXEL", "1") != "0" and any(_TIME_TOKEN.search(str(e)) for e in expressions)
 
 
-def subpixel_chain(x_expr: str, y_expr: str, scale_expr: str, width: int, height: int, fps: int) -> list[str]:
+_EXPR_SAFE = re.compile(r"[0-9a-zA-Z_.+\-*/(), ]*")
+_EXPR_NAMES = {"if_": lambda c, a, b: a if c else b, "lt": lambda a, b: float(a < b), "gte": lambda a, b: float(a >= b),
+               "between": lambda v, a, b: float(a <= v <= b), "min": min, "max": max, "pow": lambda a, b: a ** b,
+               "sqrt": math.sqrt, "abs": abs}
+
+
+@lru_cache(maxsize=512)
+def _compiled_expr(expr: str):
+    """An FFmpeg expression of this renderer (if, lt, gte, min, max, pow, sqrt over t and T) as Python code, or None
+    for anything else."""
+    text = re.sub(r"\bif\(", "if_(", str(expr).replace("\\,", ","))
+    if not _EXPR_SAFE.fullmatch(text) or set(re.findall(r"[A-Za-z_]+", text)) - set(_EXPR_NAMES) - {"t", "T"}:
+        return None
+    try:
+        return compile(text, "<ffmpeg-expr>", "eval")
+    except SyntaxError:
+        return None
+
+
+def expr_value(expr: str, t: float) -> float | None:
+    code = _compiled_expr(str(expr))
+    if code is None:
+        return None
+    try:
+        return float(eval(code, {"__builtins__": {}}, {**_EXPR_NAMES, "t": t, "T": t}))
+    except (ArithmeticError, ValueError, TypeError):
+        return None
+
+
+def subpixel_canvas(x_expr: str, y_expr: str, scale_expr: str, layer_width: int, layer_height: int,
+                    start: float, end: float, width: int, height: int, fps: int) -> tuple[int, int, int, int]:
+    """The part of the frame a moving layer ever covers while it is shown, as (left, top, width, height) in whole
+    pixels. perspective works on every pixel of its picture each frame, so a letter of a word drawn on a picture as big
+    as the frame cost as much as a full-screen photo (a text insert of 60 letters: 60 full frames of perspective). The
+    expressions are evaluated at the same frame times FFmpeg uses; one that cannot be read gives the whole frame."""
+    whole = (0, 0, width, height)
+    left = top = math.inf
+    right = bottom = -math.inf
+    for frame in range(max(0, math.floor(start * fps) - 1), math.ceil(end * fps) + 1):
+        t = frame / fps
+        x, y, s = expr_value(x_expr, t), expr_value(y_expr, t), expr_value(scale_expr, t)
+        if x is None or y is None or s is None or not all(map(math.isfinite, (x, y, s))):
+            return whole
+        left, top = min(left, x), min(top, y)
+        right, bottom = max(right, x + layer_width * max(s, 0)), max(bottom, y + layer_height * max(s, 0))
+    if left == math.inf:
+        return whole
+    pad = 2   # bilinear sampling reaches one pixel past the corner; a second one keeps the edge's fade whole
+    # even corners and sizes: overlay onto the yuv420p frame rounds an odd place down to an even one (a pixel off), and
+    # an odd width shifts the halved colour planes
+    x0, y0 = max(0, (math.floor(left) - pad) // 2 * 2), max(0, (math.floor(top) - pad) // 2 * 2)
+    x1, y1 = min(width, math.ceil(right) + pad), min(height, math.ceil(bottom) + pad)
+    if x1 <= x0 or y1 <= y0:
+        return (0, 0, 2, 2)   # never on screen: a tiny clear picture
+    return (x0, y0, x1 - x0 + (x1 - x0) % 2, y1 - y0 + (y1 - y0) % 2)
+
+
+def subpixel_chain(x_expr: str, y_expr: str, scale_expr: str, width: int, height: int, fps: int,
+                   canvas: tuple[int, int, int, int] | None = None) -> list[str]:
     """Filters that draw a layer whose top left corner is (x, y) and size its own times scale, in fractions of a pixel,
-    on a clear picture of the frame's size plus SUBPIXEL_MARGIN on each side; it is overlaid at -SUBPIXEL_MARGIN. The
-    layer's clock is its frame number (perspective knows no time and counts frames from 1): t = (in - 1) / fps, as the
-    stream starts at 0."""
+    on a clear picture of the canvas (left, top, width, height; the whole frame by default) plus SUBPIXEL_MARGIN on
+    each side; it is overlaid at (left, top) - SUBPIXEL_MARGIN. The layer's clock is its frame number (perspective
+    knows no time and counts frames from 1): t = (in - 1) / fps, as the stream starts at 0."""
+    ox, oy, cw, ch = canvas or (0, 0, width, height)
     clock = f"((in-1)/{fps})"
     x, y, s = (f"({_TIME_TOKEN.sub(clock, str(e))})" for e in (x_expr, y_expr, scale_expr))
     m = SUBPIXEL_MARGIN
-    left, top = f"{m}+{x}-{m}*{s}", f"{m}+{y}-{m}*{s}"
-    right, bottom = f"{m}+{x}+(W-{m})*{s}", f"{m}+{y}+(H-{m})*{s}"
+    left, top = f"{m - ox}+{x}-{m}*{s}", f"{m - oy}+{y}-{m}*{s}"
+    right, bottom = f"{m - ox}+{x}+(W-{m})*{s}", f"{m - oy}+{y}+(H-{m})*{s}"
     corners = {"x0": left, "y0": top, "x1": right, "y1": top, "x2": left, "y2": bottom, "x3": right, "y3": bottom}
-    return [f"pad=w=max(iw\\,{width})+{2 * m}:h=max(ih\\,{height})+{2 * m}:x={m}:y={m}:color=black@0",
+    # an even picture (see subpixel_canvas), even when the layer is larger and odd
+    return [f"pad=w=2*trunc((max(iw\\,{cw})+1)/2)+{2 * m}:h=2*trunc((max(ih\\,{ch})+1)/2)+{2 * m}:x={m}:y={m}:color=black@0",
             "premultiply=inplace=1",
             "perspective=" + ":".join(f"{key}='{value}'" for key, value in corners.items()) + ":sense=destination:eval=frame",
             "unpremultiply=inplace=1"]
+
+
+def alpha_mixer(target: str, values: list[float], fps: int, command_path: Path) -> list[str]:
+    """A colorchannelmixer named target whose alpha takes values[frame] on each frame: changed once a frame by sendcmd
+    instead of evaluating the same keyframe math for every pixel."""
+    commands, last = [], values[0]
+    for frame, value in enumerate(values[1:], 1):
+        if abs(value - last) > 1e-7:
+            commands.append(f'{max(0, frame / fps - 0.000001):.6f} {target} aa {value:.8f};')
+            last = value
+    chain = []
+    if commands:
+        command_path.write_text('\n'.join(commands), encoding='utf-8')
+        safe_path = str(command_path).replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'")
+        chain.append(f"sendcmd=f='{safe_path}'")
+    return chain + [f'{target}=aa={values[0]:.8f}']
 
 
 def render_parallelism(width: int, height: int, fps: int) -> tuple[int, int]:
@@ -742,8 +818,11 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
         prepared.append((len(prepared) + 1, layer, layer_width, layer_height, input_kind, still_cached))
     filters = []
     current = "v0"
-    base_still_pad = f'tpad=stop_mode=clone:stop_duration={duration+1:.6f},' if base_cached else ''
-    base = f"[0:v]{base_still_pad}fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,tpad=stop_mode=clone:stop_duration={duration:.6f},trim=duration={duration:.6f},setpts=PTS-STARTPTS,format=yuv420p[{current}]"
+    fitted = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"
+    if base_cached:   # scaled once, then cloned (see the layers below)
+        base = f"[0:v]{fitted},format=yuv420p,tpad=stop_mode=clone:stop_duration={duration+1:.6f},fps={fps},trim=duration={duration:.6f},setpts=PTS-STARTPTS[{current}]"
+    else:
+        base = f"[0:v]fps={fps},{fitted},tpad=stop_mode=clone:stop_duration={duration:.6f},trim=duration={duration:.6f},setpts=PTS-STARTPTS,format=yuv420p[{current}]"
     filters.append(base)
     # A frame group fading in or out is drawn on a clear canvas of its own and faded as one picture, at its top
     # layer's place (user, 22 November 2026: «перехід використовує групи, а не кожен слой»).
@@ -758,15 +837,7 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             canvas, member = canvases[key]
             target = f'colorchannelmixer@group_{layer_index}'
             values = [group_alpha(member, frame / fps) for frame in range(max(1, math.ceil(duration * fps)))]
-            commands = [f'{max(0, frame / fps - 0.000001):.6f} {target} aa {value:.8f};'
-                        for frame, value in enumerate(values) if frame and abs(value - values[frame - 1]) > 1e-7]
-            chain = []
-            if commands:
-                command_path = work / f'scene-{index:04d}-group-{layer_index:03d}.txt'
-                command_path.write_text('\n'.join(commands), encoding='utf-8')
-                safe_path = str(command_path).replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'")
-                chain.append(f"sendcmd=f='{safe_path}'")
-            chain.append(f'{target}=aa={values[0]:.8f}')
+            chain = alpha_mixer(target, values, fps, work / f'scene-{index:04d}-group-{layer_index:03d}.txt')
             filters.append(f"[{canvas}]{','.join(chain)}[gf{layer_index}]")
             filters.append(f"[{current}][gf{layer_index}]overlay=x=0:y=0:eval=init[vg{layer_index}]")
             current = f'vg{layer_index}'
@@ -851,11 +922,11 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             x_expr = f"({x_expr})-{width}*(1-({easing_expr(f'({clip_length:.6f}-t-{elapsed:.6f})/{slide_out:.6f}', easing)}))"
         overlay_label = f"ov{layer_index}"
         first_scale = f"scale={layer_width}:{layer_height}" if layer.get("stretch") else f"scale={layer_width}:{layer_height}:force_original_aspect_ratio=decrease"
-        still_pad=f'tpad=stop_mode=clone:stop_duration={end+1:.6f},' if still_cached else ''
-        overlay_filters = [f"[{input_index}:v]{still_pad}fps={fps}", first_scale, "format=rgba"]
-        overlay_filters.extend(visual_effects.filters(layer.get('visual_effect')))
+        static_filters = [first_scale, "format=rgba", *visual_effects.filters(layer.get('visual_effect'))]
+        overlay_filters = [f"[{input_index}:v]fps={fps}", *static_filters]
         if input_kind=='video' and layer.get('blur'):
             overlay_filters.append(f"gblur=sigma={float(layer['blur']):.3f}")
+        alpha_filters = []
         animated_opacity = any('opacity' in point for point in keyframes)
         speeds=sampled_motion_speeds(layer,end,fps,width,height) if lag else []
         safe_motion_gate=not lag or all(abs(speed-180)>1 for speed in speeds)
@@ -884,35 +955,37 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
                 if fade_in:value*=easing_value((t+elapsed)/fade_in,easing)
                 if fade_out:value*=easing_value((clip_length-t-elapsed)/fade_out,easing)
                 return value
-            initial=frame_alpha(0)
-            last=initial;commands=[]
-            for frame in range(1,math.ceil(end*fps)):
-                value=frame_alpha(frame)
-                if abs(value-last)>1e-7:
-                    commands.append(f'{max(0,frame/fps-0.000001):.6f} {target} aa {value:.8f};')
-                    last=value
-            if commands:
-                command_path=work/f'scene-{index:04d}-alpha-{layer_index:03d}.txt'
-                command_path.write_text('\n'.join(commands),encoding='utf-8')
-                safe_path=str(command_path).replace('\\','\\\\').replace(':','\\:').replace("'","\\'")
-                overlay_filters.append(f"sendcmd=f='{safe_path}'")
-            overlay_filters.append(f'{target}=aa={initial:.8f}')
+            alpha_filters += alpha_mixer(target, [frame_alpha(frame) for frame in range(max(1, math.ceil(end * fps)))], fps,
+                                         work / f'scene-{index:04d}-alpha-{layer_index:03d}.txt')
         elif animated_opacity or fade_in or fade_out or layer.get('join_in') or layer.get('join_out') or lag:
-            overlay_filters.append(f"geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*({alpha_expr})'")
-        else:
-            overlay_filters.append(f"colorchannelmixer=aa={opacity:.4f}")
-        # Apply alpha at a fixed size: geq in FFmpeg 9 can crash when its input
-        # dimensions change on each frame. Scaling afterward preserves alpha.
-        if subpixel_motion(x_expr, y_expr, scale_expr):
+            alpha_filters.append(f"geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*({alpha_expr})'")
+        elif opacity < 1:
+            alpha_filters.append(f"colorchannelmixer=aa={opacity:.4f}")
+        moving = subpixel_motion(x_expr, y_expr, scale_expr)
+        if moving:
             # A moving layer is placed in fractions of a pixel, as the GPU renderer and the preview place it: a scale
             # and an overlay evaluated per frame both round to whole pixels, so a slow zoom stood still and then jumped
             # a pixel (user, 25 November 2026: «рвана анімація… мені треба в всіх роликах плавну анімацію»). The layer
             # is padded with a clear margin, premultiplied so its edges blend with nothing dark, and drawn by
-            # perspective onto a picture as big as the frame plus the margin, laid at -margin.
-            overlay_filters.extend(subpixel_chain(x_expr, y_expr, scale_expr, width, height, fps))
-            x_expr = y_expr = str(-SUBPIXEL_MARGIN)
-        elif any("scale" in point for point in keyframes) or scale != 1 or any(layer.get('join_'+key,{}).get('type','').startswith('zoom_') for key in ('in','out')):
-            overlay_filters.append(f"scale=w='max(2\\,iw*({scale_expr}))':h='max(2\\,ih*({scale_expr}))':eval=frame")
+            # perspective onto a picture of the part of the frame it covers plus the margin.
+            canvas = subpixel_canvas(x_expr, y_expr, scale_expr, layer_width, layer_height, start, end, width, height, fps)
+            chain = subpixel_chain(x_expr, y_expr, scale_expr, width, height, fps, canvas)
+            x_expr, y_expr = str(canvas[0] - SUBPIXEL_MARGIN), str(canvas[1] - SUBPIXEL_MARGIN)
+        resize = []
+        if not moving and (any("scale" in point for point in keyframes) or scale != 1 or any(layer.get('join_'+key,{}).get('type','').startswith('zoom_') for key in ('in','out'))):
+            resize = [f"scale=w='max(2\\,iw*({scale_expr}))':h='max(2\\,ih*({scale_expr}))':eval=frame"]
+        # A layer's alpha is one scale for all its pixels in a frame, so a moving layer takes it after the warp
+        # (perspective is linear), at the canvas's fixed size; a resized one before the resize (geq in FFmpeg 9 can
+        # crash when its input dimensions change on each frame).
+        static = chain[:2] if moving else []
+        frame_filters = chain[2:] + alpha_filters if moving else alpha_filters + resize
+        if still_cached and not overlay_filters[len(static_filters) + 1:]:
+            # A still is one decoded frame: scale it (often from a 4000 px photo), convert, colour, pad and premultiply
+            # it once, then clone the result, instead of doing that work again on every frame of the scene.
+            overlay_filters = [f"[{input_index}:v]" + ",".join(static_filters + static),
+                               f"tpad=stop_mode=clone:stop_duration={end+1:.6f}", f"fps={fps}", *frame_filters]
+        else:
+            overlay_filters += static + frame_filters
         overlay_filters.extend([f"tpad=stop_mode=clone:stop_duration={end:.6f}", f"trim=duration={end:.6f}", f"setpts=PTS-STARTPTS[{overlay_label}]"])
         filters.append(",".join(overlay_filters))
         next_label = f"v{layer_index + 1}"
@@ -1676,6 +1749,44 @@ def verify_output_streams(info: dict, expected_duration: float, fps: int) -> Non
         raise RuntimeError(f'Rendered video frame count differs: expected {expected_frames}, got {frames}')
 
 
+class SceneCache:
+    """Finished scene videos of the processor export kept by everything that makes their pixels (the scene, its media
+    by content, fonts, the engine's code and tools, the encoder and bitrate), as the GPU export keeps its own: an export
+    again after an edit draws only the scenes the edit changed. MULTIBOT_CPU_SCENE_CACHE=0 turns it off."""
+
+    def __init__(self, enabled: bool):
+        self.cache = None
+        if enabled and os.environ.get("MULTIBOT_CPU_SCENE_CACHE", "1") != "0":
+            try:
+                from render_cache import RenderCache, renderer_version
+                cache = RenderCache()
+                if cache.enabled:
+                    self.cache, self.version = cache, renderer_version(Path(__file__).resolve().parent)
+            except (OSError, ValueError):
+                self.cache = None
+
+    def key(self, scene: dict, width: int, height: int, fps: int) -> str | None:
+        if self.cache is None:
+            return None
+        from render_cache import key_for, scene_key
+        try:
+            switches = sorted((k, v) for k, v in os.environ.items() if k in {"MULTIBOT_SUBPIXEL", "MULTIBOT_STILL_CACHE", "MULTIBOT_EXPORT_ENCODER"})
+            return key_for(["cpu-scene", scene_key(scene, width, height, fps, sys.modules[__name__], self.cache, self.version),
+                            EXPORT_BITRATE, hardware_export(width, height, fps), switches])
+        except (OSError, ValueError, RuntimeError):
+            return None
+
+
+def cached_scene(cache: SceneCache, scene: dict, project_file: Path, output: Path, work: Path, width: int, height: int,
+                 fps: int, index: int) -> None:
+    key = cache.key(scene, width, height, fps)
+    if key and cache.cache.restore("media", key, output) is not None:
+        return
+    render_scene(scene, project_file, output, work, width, height, fps, index)
+    if key:
+        cache.cache.publish("media", key, output)
+
+
 def render(project_file: Path, output: Path, validate_only: bool = False) -> dict:
     project_file = project_file.expanduser().resolve()
     if not project_file.is_file():
@@ -1746,6 +1857,7 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
         next_index = 0
         completed_duration = 0.0
         workers, _ = render_parallelism(width, height, fps)
+        scene_cache = SceneCache(universal)
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='studio-render') as pool:
             pending = {}
             def submit_next():
@@ -1761,7 +1873,7 @@ def render(project_file: Path, output: Path, validate_only: bool = False) -> dic
                 scene_work = work / f"scene-work-{index:04d}"
                 scene_work.mkdir()
                 emit("scene_start", scene=index, total=len(scenes_to_render))
-                future = pool.submit(render_scene, scene, project_file, segment, scene_work, width, height, fps, index)
+                future = pool.submit(cached_scene, scene_cache, scene, project_file, segment, scene_work, width, height, fps, index)
                 pending[future] = (index, item, segment)
                 return True
             while len(pending) < workers and submit_next():
