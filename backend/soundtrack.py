@@ -353,13 +353,16 @@ def typing(ctx, spec=None):
             continue
         for clip in frame['clips']:
             entrance = (clip.get('word_entrance') or {}).get('type', '')
+            # a text insert sounds like a keyboard, whatever its entrance; a pencil only where a hand, a pen or chalk
+            # writes on screen (user, 25 November 2026: «коли текстові вставки то там краще підходить звук клавіатури а
+            # коли рука на екрані шось пише то звук олівця»)
             if clip.get('kind') == 'text' and clip.get('text_words'):
-                words, pool = clip['text_words'], keys if entrance in TYPED_ENTRANCES else pencils
+                words, pool = clip['text_words'], keys
             elif clip.get('content_type') == 'code' and clip.get('code_words'):
                 # code_words are the voice's words the code times itself by; only those it really writes on screen (its
                 # own quoted text) sound like writing (Andromeda 118, 25 November 2026: the code writes «Milky Way» and
                 # «Andromeda», not the ten seconds of speech)
-                words, pool = written_words(clip), pencils
+                words, pool = written_words(clip), pencils if HAND.search(str(clip.get('code') or '')) else keys
             else:
                 continue
             if not pool:
@@ -413,6 +416,10 @@ def written_words(clip) -> list:
 
 def _kind(row) -> str:
     return sound_settings.OLD_CATEGORIES.get(row['category'], row['category'])
+
+
+# code that draws a hand, a pen, a pencil, chalk or a marker writing: only there a written text sounds like a pencil
+HAND = re.compile(r'\bhands?\b|pencil|\bpens?\b|chalk|marker|stylus|quill|рук[аиуоі]\b|ручк|олів|крейд|маркер', re.I)
 
 
 WRITES = re.compile(r'пише|write|writing|запис|штрих|шкряб|scratch', re.I)
@@ -530,7 +537,9 @@ def appear_pools(ctx) -> dict:
     pick = lambda kinds, longest, extra=None: sorted((r['name'], float(r['duration_seconds'])) for r in rows
                                                      if (_kind(r) in kinds or extra and extra.search(r['label'])) and float(r['duration_seconds']) <= longest
                                                      and not (kinds is TEXT_KINDS and DEVICE.search(f"{r['label']} {r.get('original_title') or ''}")))
-    return {'text': pick(TEXT_KINDS, 1.6, re.compile(r'^Поява', re.I)), 'picture': pick(PICTURE_KINDS, 1.8), 'write': writing_pool(ctx)}
+    # a text written letter by letter is a keyboard; a pencil only when a hand or a pen writes it on screen
+    return {'text': pick(TEXT_KINDS, 1.6, re.compile(r'^Поява', re.I)), 'picture': pick(PICTURE_KINDS, 1.8), 'write': typing_pool(ctx),
+            'hand': writing_pool(ctx)}
 
 
 def razgon_blocks(ctx) -> list:
@@ -567,14 +576,17 @@ def appear(ctx, spec=None):
         if not math.isfinite(t) or kind not in ('text', 'picture', 'write'):
             continue
         frame = next((b for b in blocks if b[1] + .15 <= t <= b[2] - .15), None)
-        if frame is None or not pools[kind]:
+        if frame is None or kind != 'write' and not pools[kind]:
             continue
         if kind == 'write':
+            pool = 'hand' if event.get('hand') and pools['hand'] else 'write'
+            if not pools[pool]:
+                continue
             a = max(t, busy)
             length = min(float(event.get('dur', 0) or 0), frame[2] - a)
             if length < .3:
                 continue
-            sounds, last['write'] = chain(pools['write'], a, length, used, last.get('write'))
+            sounds, last[pool] = chain(pools[pool], a, length, used, last.get(pool))
             for name, at, seconds in sounds:
                 label = f"K{frame[0]:03d} {at:.2f}"
                 cues.append({'name': name, 't': at, 'dur': max(.1, min(seconds, 6.0)), 'join': label, 'gain': TYPING_GAIN, 'from_start': True})

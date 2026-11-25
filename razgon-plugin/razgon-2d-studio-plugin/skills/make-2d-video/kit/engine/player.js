@@ -216,7 +216,12 @@ window.renderFrame = function (f, within) {
   // inside the frame too, a slot with no scene (a neighbouring host or text frame's, when the shot list and the Studio's
   // frames meet a little apart) gives way to the frame's own nearest shot
   let i = outside ? edgeShot(within, t >= within[1]) : shotIndexAt(t);
-  if (within && !outside && !getShot(E.shots[i].id)) i = edgeShot(within, t >= (within[0] + within[1]) / 2);
+  // a neighbour's shot that reaches into the frame by less than half a video frame (the shot list and the Studio's
+  // frames meet a hundredth apart: Andromeda's f080s01 at 835.29 s, its Studio frame at 835.28 s) is not this frame's:
+  // drawn there, the transition's last frame showed frame 79's scales again (user, 25 November 2026: «тут проблема з
+  // переходом»)
+  const foreign = s => s.end <= within[0] + 0.5 / E.fps || s.start >= within[1] - 0.5 / E.fps;
+  if (within && !outside && (!getShot(E.shots[i].id) || foreign(E.shots[i]))) i = edgeShot(within, t >= (within[0] + within[1]) / 2);
   const shot = E.shots[i], lt = t - shot.start, ct = within ? Math.min(Math.max(t, within[0]), within[1] - 0.5 / E.fps) : t;
   mannerFrame(f, E.fps);
   drawShotMB(bufA, shot, lt);

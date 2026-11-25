@@ -48,3 +48,30 @@ class EventSoundsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HandWritingTest(unittest.TestCase):
+    """A written text is a keyboard; a pencil only where a hand or a pen writes it (user, 25 November 2026)."""
+
+    def test_write_events_in_a_shot_with_a_hand_are_marked(self):
+        import json, tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import event_sounds, store
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "story").mkdir()
+            (root / "scenes" / "shots").mkdir(parents=True)
+            (root / "story" / "shots.json").write_text(json.dumps({"shots": [{"id": "f001s01", "start": 0, "end": 5}, {"id": "f002s01", "start": 5, "end": 9}]}))
+            (root / "scenes" / "shots" / "f001s01.js").write_text("kText(g, 'Title', 1, 1)")
+            (root / "scenes" / "shots" / "f002s01.js").write_text("drawHand(g, pencil.x, pencil.y); kText(g, 'Note', 1, 1)")
+            events = [{"t": 1, "kind": "write", "dur": 1}, {"t": 6, "kind": "write", "dur": 1}, {"t": 7, "kind": "text"}]
+            with patch.object(store, "razgon_link", return_value={"project": str(root)}):
+                marked = event_sounds.mark_hands({}, events)
+        self.assertEqual([e.get("hand") for e in marked], [None, True, None])
+
+    def test_typing_pass_takes_keys_for_texts_and_a_pencil_only_for_a_hand(self):
+        import soundtrack
+        self.assertTrue(soundtrack.HAND.search("const hand = drawHand()"))
+        self.assertTrue(soundtrack.HAND.search("chalk.write"))
+        self.assertFalse(soundtrack.HAND.search("handler(); kText('Андромеда')"))

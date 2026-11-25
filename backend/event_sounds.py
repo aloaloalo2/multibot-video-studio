@@ -60,6 +60,35 @@ def scan(project: dict, frames=None) -> dict | None:
     return json.loads(out.read_text(encoding="utf-8"))
 
 
+def mark_hands(project: dict, events: list) -> list:
+    """A text written in a shot whose code draws a hand, a pen or chalk is marked `hand`: it sounds like a pencil, any
+    other written text like a keyboard (user, 25 November 2026: «коли текстові вставки… звук клавіатури а коли рука на
+    екрані шось пише то звук олівця»)."""
+    import soundtrack
+    link = store.razgon_link(project)
+    if not link or not any(e.get("kind") == "write" for e in events if isinstance(e, dict)):
+        return events
+    razgon = Path(link["project"])
+    try:
+        data = json.loads((razgon / "story" / "shots.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return events
+    shots, hands = data if isinstance(data, list) else data.get("shots", []), {}
+    for shot in shots:
+        try:
+            code = (razgon / "scenes" / "shots" / f"{shot['id']}.js").read_text(encoding="utf-8")
+        except (OSError, KeyError):
+            continue
+        hands[shot["id"]] = bool(soundtrack.HAND.search(code))
+    for event in events:
+        if isinstance(event, dict) and event.get("kind") == "write":
+            t = float(event.get("t", 0))
+            shot = next((s for s in shots if float(s.get("start", 0)) <= t < float(s.get("end", 0))), None)
+            if shot and hands.get(shot.get("id")):
+                event["hand"] = True
+    return events
+
+
 def run(pid: str, frames=None) -> str:
     """Scan the Razgon frames (all, or `frames`) and lay their sounds; a short report."""
     import montage_ops
@@ -69,7 +98,7 @@ def run(pid: str, frames=None) -> str:
     found = scan(project, frames)
     if found is None:
         return "у ролику немає кадрів Razgon"
-    op = {"op": "appear_sounds", "events": found.get("events", []), "prune_guessed": True}
+    op = {"op": "appear_sounds", "events": mark_hands(project, found.get("events", [])), "prune_guessed": True}
     if frames is not None:
         op["frames"] = sorted(frames)
     result = montage_ops.run(pid, [op])
