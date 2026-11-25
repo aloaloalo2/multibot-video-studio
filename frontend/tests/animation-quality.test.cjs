@@ -23,7 +23,7 @@ for(const modern of [true,false])test(`scene drawing state cannot leak through c
   const ctx=vm.createContext({E:{PX:1,W:1920,H:1080,shots:[]},clamp:n=>Math.max(0,Math.min(1,n)),errors:[],console:{log(){}},FONTS:{ui:'Arial'},text(){},
     getShot:id=>({kind:'2d',draw(){if(id==='broken'){g.clipActive=true;g.shadowBlur=80;g.save();throw Error('scene bug')}
       seen={clip:g.clipActive,shadow:g.shadowBlur,stack:g.stack.length};}})});
-  vm.runInContext(player.slice(player.indexOf('function drawShot('),player.indexOf('// motion blur: shot')),ctx);
+  vm.runInContext(player.slice(player.indexOf(player.includes('function drawShotAt(')?'function drawShotAt(':'function drawShot('),player.indexOf('// motion blur: shot')),ctx);
   ctx.drawShot(buf,{id:'broken',start:0,end:5},4.9);
   ctx.drawShot(buf,{id:'next',start:5,end:10},0);
   assert.deepEqual(seen,{clip:false,shadow:0,stack:1});
