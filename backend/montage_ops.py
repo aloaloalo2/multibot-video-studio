@@ -659,7 +659,7 @@ def accent(ctx: Context, spec: dict) -> None:
         source = Path(spec["path"]).expanduser() if spec.get("path") else Path(store.resolve_asset(ctx.project, spec["asset_id"])["path"])
         centre = _point(ctx, picture, spec, "at", mid)
         size = spec.get("size") or [300, 300]
-        _accent_picture(ctx, frame, picture, f"{index} картинка", source, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
+        _accent_picture(ctx, frame, picture, f"{index} картинка", source, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion, spec)
     elif kind == "card":
         centre = _point(ctx, picture, spec, "at", mid)
         w, h = spec.get("size") or [400, 120]
@@ -673,7 +673,10 @@ def accent(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: {kind}")
 
 
-def _accent_picture(ctx, frame, picture, title, path, centre, size, at, duration, mid, motion):
+def _accent_picture(ctx, frame, picture, title, path, centre, size, at, duration, mid, motion, spec=None):
+    if title.endswith(" картинка") and motion == "animated":   # a PNG prop: the channel's living motion (asset_motion)
+        import asset_motion
+        return asset_motion.accent(ctx, frame, picture, title, {"kind": "image", "asset_id": ctx.asset_for(path)}, centre, size, at, duration, spec)
     keys, base = _glued(picture, centre, mid, duration, ctx)
     animated(ctx, frame, picture, title, {"kind": "image", "asset_id": ctx.asset_for(path), "width": size[0] / ctx.W, "height": size[1] / ctx.H},
              keys, base, at, duration, path=path, motion=motion)
@@ -1519,6 +1522,11 @@ def reglue(ctx: Context, spec: dict) -> None:
         picture = Picture(ctx.project, clip)
         duration, mid = picture.duration, picture.duration / 2
         for accent_clip in [c for c in frame["clips"] if is_accent(c) and not is_entrance(c)]:
+            import asset_motion
+            if asset_motion.is_living(accent_clip) and accent_clip["title"] not in by_title:   # a PNG prop with its own motion
+                ctx.actions.append({"type": "update_clip", "payload": {"clip_id": accent_clip["id"], "patch": asset_motion.reglued(ctx, frame, picture, accent_clip)}})
+                done += 1
+                continue
             local = mid - (float(accent_clip["start"]) - float(clip["start"]))
             centre = (keyframe_value(accent_clip, "x", local) * ctx.W, keyframe_value(accent_clip, "y", local) * ctx.H)
             text = accent_clip.get("kind") == "text"

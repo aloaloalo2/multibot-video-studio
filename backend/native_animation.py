@@ -79,6 +79,11 @@ def place(ctx, spec: dict) -> None:
                 part['font_family'] = default_font
             validate_label(part, ctx.project, number, fps)
         prepared.append(part)
+    # PNG props live to the frame's end in the channel's own motion, nothing comes in during its last second (asset_motion)
+    import asset_motion
+    ctx.report.extend(f'кадр {number}: {note}' for note in asset_motion.enliven_layers(ctx, frame, prepared, duration, start))
+    for part in prepared:
+        store.validated_keyframes(part.get('keyframes', []), float(part['duration']))
     # The generated backing colour alone never counts as a completed animation frame.
     # Validate each output frame before changing any timeline clips.
     for index in range(max(1, round(duration * fps))):
