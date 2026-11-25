@@ -1,5 +1,9 @@
+import sys
 import unittest
-from preview_js import run
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # preview_js sits beside this test
+from preview_js import run  # noqa: E402
 
 
 class TrackPositionTest(unittest.TestCase):
