@@ -33,11 +33,10 @@ class GPUExportTest(unittest.TestCase):
             # macOS may reject signalling an already-exited process group.
             # Successful encoding must survive that best-effort cleanup.
             original_stream=gpu_export._stream;attempts=[];events=[]
-            def transient_failure(command,stage,*args,**kwargs):
-                if stage=='render':
-                    attempts.append(stage)
-                    if len(attempts)==1:raise gpu_export.GPUExportError('temporary encoder failure')
-                return original_stream(command,stage,*args,**kwargs)
+            def transient_failure(command,*args,**kwargs):
+                attempts.append(command)
+                if len(attempts)==1:raise gpu_export.GPUExportError('temporary encoder failure')
+                return original_stream(command,*args,**kwargs)
             with patch.dict(os.environ,{'MULTIBOT_RENDER_CACHE':str(root/'cache')}), \
                  patch.object(gpu_export.os,'killpg',side_effect=PermissionError(1,'Operation not permitted')), \
                  patch.object(gpu_export,'_stream',side_effect=transient_failure), \
@@ -62,7 +61,7 @@ class GPUExportTest(unittest.TestCase):
             audio={'type':'audio','source':str(voice),'start':0,'duration':3,'volume':.2}
             project={'width':320,'height':180,'fps':25,'duration':3,'layer_mode':'item',
                      'timeline_layers':[{'clips':clips},{'clips':[audio]}]}
-            manifest=root/'p.json';env={**os.environ,'MULTIBOT_GPU_EXPORT':'1','MULTIBOT_GPU_PIPELINE':'1',
+            manifest=root/'p.json';env={**os.environ,'MULTIBOT_GPU_EXPORT':'1',
                 'MULTIBOT_RENDER_CACHE':str(root/'cache'),'STUDIO_GPU_CHUNK_SECONDS':'.5'}
             outputs=[]
             for mode in ('cold','audio','edit'):

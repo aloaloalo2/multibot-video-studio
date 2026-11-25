@@ -30,7 +30,7 @@ def _gpu(project_file: Path, work: Path, start: float, end: float, video: Path) 
     from render_cache import RenderCache, renderer_version
     binary = work / "gpu-render"
     gpu_export._build(ROOT, binary, RenderCache(max_bytes=None), renderer_version(ROOT))
-    env = {**os.environ, "STUDIO_GPU_CPU_FALLBACK": "1", "STUDIO_GPU_PROCEDURAL_GRADIENT": "1", "STUDIO_GPU_VIDEO_BLUR": "0",
+    env = {**os.environ, "STUDIO_GPU_CPU_FALLBACK": "1", "STUDIO_GPU_PROCEDURAL_GRADIENT": "1",
            "STUDIO_GPU_PERSISTENT_CACHE": "1", "STUDIO_GPU_WINDOW_START": f"{start:.6f}", "GPU_CODEC": "hevc", "GPU_BITRATE": "40000000"}
     for command in ([sys.executable, str(ROOT / "gpu_prepare.py"), str(project_file), str(work), f"{end:.6f}"],
                     [str(binary), str(work / "gpu-project.json"), str(video)]):

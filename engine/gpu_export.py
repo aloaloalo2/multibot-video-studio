@@ -84,7 +84,7 @@ def _pipelined(renderer,root,binary,project_file,work,env,width,height,fps,total
                         progress()
                 for attempt in range(2):
                     try:
-                        _stream([str(binary),str(manifest),str(target)],'render',chunk_progress,env,frames,preparation_weight=0)
+                        _stream([str(binary),str(manifest),str(target)],chunk_progress,env,frames)
                         _validate_video(renderer,target,width,height,fps,frames)
                         break
                     except GPUExportError as error:
@@ -132,7 +132,8 @@ def available(project: dict, width: int, height: int, fps: int) -> bool:
     return (root / 'gpu_prepare.py').is_file() and (root / 'gpu_render.swift').is_file()
 
 
-def _stream(command, stage, emit, env, total_frames=1, preparation_weight=.45):
+def _stream(command, emit, env, total_frames):
+    """Run the GPU renderer on one chunk, reporting the share of its frames drawn."""
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                text=True, env=env, bufsize=1)
     lines = []
@@ -141,19 +142,9 @@ def _stream(command, stage, emit, env, total_frames=1, preparation_weight=.45):
             lines.append(line.strip())
             if len(lines) > 12:
                 lines.pop(0)
-            if stage == 'prepare':
-                match = re.match(r'prepared scene\s+(\d+)\s*/\s*(\d+)', line)
-                if match:
-                    timeline = re.search(r'timeline_end=([0-9.]+)\s+timeline_total=([0-9.]+)', line)
-                    completed = (float(timeline.group(1))/max(.001,float(timeline.group(2))) if timeline
-                                 else int(match.group(1))/max(1,int(match.group(2))))
-                    fraction = preparation_weight * min(1,completed)
-                    emit('scene_done', rendered_duration=fraction, total_duration=1)
-            else:
-                match = re.search(r'frames=(\d+)', line)
-                if match:
-                    fraction = preparation_weight + (1-preparation_weight) * min(1, int(match.group(1)) / total_frames)
-                    emit('scene_done', rendered_duration=fraction, total_duration=1)
+            match = re.search(r'frames=(\d+)', line)
+            if match:
+                emit('scene_done', rendered_duration=min(1, int(match.group(1)) / total_frames), total_duration=1)
         result = process.wait()
     finally:
         if process.stdout:
@@ -178,21 +169,20 @@ def render_gpu(renderer, project_file: Path, output: Path, project: dict,
     with tempfile.TemporaryDirectory(prefix='.mbvs-gpu-', dir=output.parent) as temp:
         work = Path(temp)
         binary = work / 'gpu-render'
-        pipeline=os.environ.get('MULTIBOT_GPU_PIPELINE','1')!='0'
-        cache=RenderCache(max_bytes=None if pipeline else 0)
+        cache=RenderCache()
         # the author picks the quality in the export window (2, 8 or 12 Mbit/s, 2 by default); the cache keeps video of
         # each quality apart, so a change never reuses pictures encoded at another one
         bitrate=renderer.video_bitrate(project)
         version=renderer_version(root)
         build_version=version;version=key_for([version,'bitrate',bitrate])
         env = {**os.environ, 'STUDIO_GPU_CPU_FALLBACK': '1',
-               'STUDIO_GPU_PROCEDURAL_GRADIENT': '1', 'STUDIO_GPU_VIDEO_BLUR': '0',
-               'STUDIO_GPU_PERSISTENT_CACHE':'1' if pipeline else '0',
+               'STUDIO_GPU_PROCEDURAL_GRADIENT': '1',
+               'STUDIO_GPU_PERSISTENT_CACHE':'1',
                'GPU_CODEC': 'hevc', 'GPU_BITRATE': str(bitrate)}
         video = work / 'video.mp4'
         visual,audio,_=renderer.timeline_plan(project,project_file,width,height,fps)
         scene_count=len(renderer.timeline_segments(visual,total,fps))
-        full_key=visual_key(project,project_file,width,height,fps,total,renderer,cache,version) if pipeline else None
+        full_key=visual_key(project,project_file,width,height,fps,total,renderer,cache,version) if cache.enabled else None
         reused=cache.restore('visual',full_key,video) if full_key else None
         if reused is not None:
             try:_validate_video(renderer,video,width,height,fps,renderer.frame_index(total,fps))
@@ -204,17 +194,7 @@ def render_gpu(renderer, project_file: Path, output: Path, project: dict,
             renderer.emit('scene_done',rendered_duration=1,total_duration=1)
         else:
             _build(root,binary,cache,build_version)
-            if pipeline:
-                segments,metadata=_pipelined(renderer,root,binary,project_file,work,env,width,height,fps,total,cache,version)
-            else:
-                preparation_weight = .6 if total > 600 else .45
-                _stream([sys.executable, str(root/'gpu_prepare.py'), str(project_file), str(work), str(total)],
-                        'prepare', renderer.emit, env, preparation_weight=preparation_weight)
-                prepared = json.loads((work/'gpu-project.json').read_text(encoding='utf-8'))
-                metadata=prepared
-                _stream([str(binary), str(work/'gpu-project.json'), str(video)], 'render', renderer.emit,
-                        env, renderer.frame_index(total, fps), preparation_weight)
-                segments=[video]
+            segments,metadata=_pipelined(renderer,root,binary,project_file,work,env,width,height,fps,total,cache,version)
         if abs(float(metadata['duration']) - total) > .001:
             raise GPUExportError('GPU timeline duration differs from validated project')
         temporary = work / 'complete.mp4'

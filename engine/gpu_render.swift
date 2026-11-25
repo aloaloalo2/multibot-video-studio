@@ -7,7 +7,7 @@ import Metal
 struct Project: Decodable { let width: Int; let height: Int; let fps: Int32; let duration: Double; let scenes: [Scene] }
 struct Scene: Decodable { let start: Double; let end: Double; let color: String; let layers: [Layer] }
 struct Gradient: Decodable { let colors: [String]; let points: [[Double]]; let speed: Double?; let amplitude: Double?; let softness: Double? }
-struct Layer: Decodable { let kind: String; let source: String; let width: Double; let height: Double; let trim_start: Double; let first: Int; let frames: [[Double]]; let blur: Double?; let gradient: Gradient?; let alphaFrames: [Double]?; let group: String?; let groupAlpha: [Double]? }
+struct Layer: Decodable { let kind: String; let source: String; let width: Double; let height: Double; let trim_start: Double; let first: Int; let frames: [[Double]]; let gradient: Gradient?; let alphaFrames: [Double]?; let group: String?; let groupAlpha: [Double]? }
 
 func fail(_ message: String) -> Never { FileHandle.standardError.write(Data((message + "\n").utf8)); exit(1) }
 func color(_ hex: String) -> CIColor {
@@ -110,7 +110,10 @@ let videoSettings: [String: Any] = [AVVideoCodecKey: codec, AVVideoWidthKey: pro
  AVVideoColorPropertiesKey: [AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
                            AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                            AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2],
- AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bitrate, AVVideoExpectedSourceFrameRateKey: Int(project.fps), AVVideoMaxKeyFrameIntervalKey: Int(project.fps)*2]]
+ AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bitrate, AVVideoExpectedSourceFrameRateKey: Int(project.fps), AVVideoMaxKeyFrameIntervalKey: Int(project.fps)*2,
+  // the Mac's one hardware encoder held a frame twice as long as its drawing: speed first made a 2-minute chunk 31%
+  // faster for a structural similarity 0.2 dB lower at the same bitrate (25 November 2026)
+  "PrioritizeEncodingSpeedOverQuality": true]]
 let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings); input.expectsMediaDataInRealTime = false
 let attrs: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: project.width,
  kCVPixelBufferHeightKey as String: project.height, kCVPixelBufferMetalCompatibilityKey as String: true, kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
@@ -121,11 +124,56 @@ let bounds = CGRect(x: 0,y: 0,width: project.width,height: project.height)
 let deviceColorSpace = CGColorSpaceCreateDeviceRGB()
 var imageCache: [String: CIImage] = [:]
 var frameNumber: Int64 = 0
-for (sceneIndex, scene) in project.scenes.enumerated() {
+// A scene's videos are opened (seek, decode up to the first frame: about 0.15 s each) on another thread while the scene
+// before it is drawn; opening them in turn left the GPU idle some 15 s in a 24-minute film (25 November 2026).
+final class OpenedVideos {
+    let ready = DispatchSemaphore(value: 0)
     var readers: [Int: SequentialVideo] = [:]
-    for (index,layer) in scene.layers.enumerated() where layer.kind == "video" {
-        readers[index] = try SequentialVideo(layer.source,layer.trim_start,scene.end-scene.start,Double(project.fps))
+    var error: Error?
+}
+let opening = DispatchQueue(label: "gpu-render.open-videos")
+func openVideos(_ scene: Scene) -> OpenedVideos {
+    let opened = OpenedVideos()
+    opening.async {
+        do {
+            for (index,layer) in scene.layers.enumerated() where layer.kind == "video" {
+                opened.readers[index] = try SequentialVideo(layer.source,layer.trim_start,scene.end-scene.start,Double(project.fps))
+            }
+        } catch { opened.error = error }
+        opened.ready.signal()
     }
+    return opened
+}
+// The GPU draws a frame while the main thread reads the videos and builds the next one, and a second thread hands each
+// finished frame to the encoder in order: one frame after another left the GPU waiting for the processor and the
+// processor for the GPU. Without dithering the destination gets exactly the pixels context.render drew.
+let encoding = DispatchQueue(label: "gpu-render.encode")
+let inFlight = DispatchSemaphore(value: 3)
+func draw(_ composite: CIImage, _ buffer: CVPixelBuffer, _ time: Int64) {
+    inFlight.wait()
+    let destination = CIRenderDestination(pixelBuffer: buffer)
+    destination.colorSpace = deviceColorSpace
+    destination.isDithered = false
+    let task: CIRenderTask
+    do { task = try context.startTask(toRender: composite, from: bounds, to: destination, at: .zero) }
+    catch { fail("Cannot draw a frame: \(error)") }
+    encoding.async {
+        do { _ = try task.waitUntilCompleted() } catch { fail("GPU frame failed: \(error)") }
+        while !input.isReadyForMoreMediaData {
+            if writer.status == .failed || writer.status == .cancelled { fail("Video writer stopped: \(String(describing:writer.error))") }
+            Thread.sleep(forTimeInterval:0.001)
+        }
+        guard adaptor.append(buffer,withPresentationTime:CMTime(value:time,timescale:project.fps)) else { fail("Frame write failed: \(String(describing:writer.error))") }
+        inFlight.signal()
+    }
+}
+var nextVideos = project.scenes.first.map(openVideos)
+for (sceneIndex, scene) in project.scenes.enumerated() {
+    guard let opened = nextVideos else { break }
+    opened.ready.wait()
+    if let error = opened.error { throw error }
+    let readers = opened.readers
+    nextVideos = sceneIndex + 1 < project.scenes.count ? openVideos(project.scenes[sceneIndex + 1]) : nil
     let frameCount = Int(((scene.end-scene.start)*Double(project.fps)).rounded())
     // A frame group fading in or out is composited first and faded as one picture, at its top layer's place
     // (user, 22 November 2026: «перехід використовує групи, а не кожен слой»).
@@ -133,10 +181,6 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
     for (index,layer) in scene.layers.enumerated() { if let g=layer.group { groupTop[g]=index } }
     for local in 0..<frameCount {
         autoreleasepool {
-            while !input.isReadyForMoreMediaData {
-                if writer.status == .failed || writer.status == .cancelled { fail("Video writer stopped: \(String(describing:writer.error))") }
-                Thread.sleep(forTimeInterval:0.001)
-            }
             guard let pool=adaptor.pixelBufferPool else { fail("Missing output buffers") }
             var buffer: CVPixelBuffer?
             guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess, let buffer else { fail("Cannot allocate output frame") }
@@ -177,14 +221,7 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
                 let drawWidth=layer.width*f[2],drawHeight=layer.height*f[2]
                 if drawWidth<=0 || drawHeight<=0 { continue }
                 image=image.transformed(by:CGAffineTransform(translationX:-extent.origin.x,y:-extent.origin.y))
-                if let blur=layer.blur, blur>0 {
-                    image=image.transformed(by:CGAffineTransform(scaleX:layer.width/extent.width,y:layer.height/extent.height))
-                    let baseBounds=image.extent
-                    image=image.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:blur]).cropped(to:baseBounds)
-                    image=image.transformed(by:CGAffineTransform(scaleX:f[2],y:f[2]))
-                } else {
-                    image=image.transformed(by:CGAffineTransform(scaleX:drawWidth/extent.width,y:drawHeight/extent.height))
-                }
+                image=image.transformed(by:CGAffineTransform(scaleX:drawWidth/extent.width,y:drawHeight/extent.height))
                 image=image.transformed(by:CGAffineTransform(translationX:f[0],y:Double(project.height)-f[1]-drawHeight))
                 if layer.kind == "gradient" { image=image.cropped(to:CGRect(x:f[0],y:Double(project.height)-f[1]-drawHeight,width:drawWidth,height:drawHeight)) }
                 if alpha<0.999999 { image=image.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:alpha)]) }
@@ -195,17 +232,18 @@ for (sceneIndex, scene) in project.scenes.enumerated() {
                 }
                 composite=image.composited(over:composite)
             }
-            context.render(composite,to:buffer,bounds:bounds,colorSpace:deviceColorSpace)
-            guard adaptor.append(buffer,withPresentationTime:CMTime(value:frameNumber,timescale:project.fps)) else { fail("Frame write failed: \(String(describing:writer.error))") }
+            draw(composite,buffer,frameNumber)
             frameNumber += 1
         }
     }
+    encoding.sync {}   // the scene's video frames stay readable until its last frame is drawn
     for reader in readers.values { reader.reader.cancelReading() }
     // Keep long projects from retaining every picture ever used.
     if imageCache.count > 128 { imageCache.removeAll(keepingCapacity:true) }
     print("scene \(sceneIndex+1)/\(project.scenes.count) frames=\(frameNumber)")
     fflush(stdout)
 }
+encoding.sync {}
 input.markAsFinished();let done=DispatchSemaphore(value:0);writer.finishWriting { done.signal() };done.wait()
 guard writer.status == .completed else { fail("Video writer failed: \(String(describing:writer.error))") }
 print("GPU device=\(device.name) frames=\(frameNumber) seconds=\(String(format:"%.2f",Date().timeIntervalSince(start)))")

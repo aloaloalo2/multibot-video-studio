@@ -11,12 +11,15 @@ from render_cache import RenderCache,key_for,renderer_version,scene_key
 cache=RenderCache(max_bytes=None if os.environ.get('STUDIO_GPU_PERSISTENT_CACHE')=='1' else 0)
 cache_version=renderer_version(APP/'engine') if cache.enabled else 'disabled'
 
+# what render.raster_graphics.decorate reads of a layer: the rest (keyframe_offset, global_offset…) differs from slice to
+# slice and made the same blurred photo decorate again in each of its three slices (2.4 s each)
+RASTER_FIELDS=('mask','corner_radius','shadow','stretch','blur')
+TEXT_FIELDS=('text','font_family','font_weight','font_size','size','width','height','line_height','text_align','color','raster_blur')
 if cache.enabled:
     original_text_bitmap=render.text_bitmap
     def cached_text_bitmap(layer,path,frame_width,frame_height):
-        fields=('text','font_family','font_weight','font_size','size','width','height','line_height','text_align','color','raster_blur')
         font=render.first_font(layer.get('font_family','Arial'),layer.get('font_weight',400))
-        key=key_for([cache_version,'text',{k:layer[k] for k in fields if k in layer},frame_width,frame_height,cache.source(font)])
+        key=key_for([cache_version,'text',{k:layer[k] for k in TEXT_FIELDS if k in layer},frame_width,frame_height,cache.source(font)])
         hit=cache.restore('media',key,path)
         if hit is not None:return hit['width'],hit['height']
         width,height=original_text_bitmap(layer,path,frame_width,frame_height)
@@ -25,8 +28,7 @@ if cache.enabled:
     render.text_bitmap=cached_text_bitmap
     original_decorate=render.raster_graphics.decorate
     def cached_decorate(path,width,height,style,work):
-        fields=('mask','corner_radius','shadow','stretch','blur')
-        raster_style={k:style[k] for k in fields if k in style}
+        raster_style={k:style[k] for k in RASTER_FIELDS if k in style}
         key=key_for([cache_version,'raster',cache.source(path),width,height,raster_style])
         target=Path(work)/('cached-raster-'+key+'.png')
         if target.exists():
@@ -75,9 +77,8 @@ def direct_gradient(config,duration,fps,work):
     return direct_movie(Path(work)/('gradient-direct-'+key+'.mov'),320,180,fps,
         (Image.fromarray(module.frame(config,n/fps)).convert('RGBA') for n in range(math.ceil(duration*fps))))
 
-if os.environ.get('STUDIO_GPU_DIRECT_GRAPHICS','1')!='0':
-    render.transition_graphics.video=direct_transition
-    render.gradient_background.video=direct_gradient
+render.transition_graphics.video=direct_transition
+render.gradient_background.video=direct_gradient
 
 gradient_specs={}
 if os.environ.get('STUDIO_GPU_PROCEDURAL_GRADIENT','0')=='1':
@@ -168,6 +169,13 @@ def requires_timing_fallback(path):
         if not path.name.startswith('transition-direct-') and any(tag in pixel_format for tag in ('10','12','16','p010')):return True
         nominal=Fraction(stream['r_frame_rate']);average=Fraction(stream['avg_frame_rate'])
         if nominal<=0 or average<=0 or abs(float(nominal-average))>.01:return True
+        return uneven_packets(path)
+    except (KeyError,ValueError,ZeroDivisionError):return True
+
+@lru_cache(maxsize=512)
+def uneven_packets(path):
+    """True when the video's packets do not all last the same time (one ffprobe over the whole file)."""
+    try:
         result=subprocess.run([render.FFPROBE,'-v','error','-select_streams','v:0',
                                '-show_entries','packet=duration_time','-of','csv=p=0',str(path)],
                               capture_output=True,text=True,timeout=30)
@@ -175,7 +183,24 @@ def requires_timing_fallback(path):
         durations=[float(line.strip()) for line in result.stdout.splitlines() if line.strip()]
         if not durations or min(durations)<=0:return True
         return max(durations)-min(durations)>max(.00002,min(durations)*.001)
-    except (KeyError,ValueError,ZeroDivisionError,subprocess.TimeoutExpired):return True
+    except (ValueError,subprocess.TimeoutExpired):return True
+
+def check_videos_ahead(clips):
+    """Scan the packets of every video of the film at once, several ffprobes side by side: one after another, as each
+    slice met its videos, they took 13 of the 33 s Andromeda's film prepared in (25 November 2026). render.probe keeps
+    one shared cache file, so it is asked here first, one file at a time."""
+    from concurrent.futures import ThreadPoolExecutor
+    paths=[]
+    for clip in clips:
+        value=clip.get('prepared_source') or (clip.get('type')=='video' and clip.get('source'))
+        if not value or str(Path(value).resolve()) in gradient_specs:continue
+        try:paths.append(render.resolve_source(value,source,'video'))
+        except ValueError:continue
+    paths=list(dict.fromkeys(paths))
+    for path in paths:
+        try:render.probe(path)
+        except (RuntimeError,ValueError,OSError):pass
+    with ThreadPoolExecutor(max(1,min(8,(os.cpu_count() or 2)//2))) as pool:list(pool.map(uneven_packets,paths))
 
 def video_source(path):
     path=Path(path)
@@ -236,10 +261,43 @@ def bake_effect(path,effect):
         baked_effects[key]=target
     return baked_effects[key]
 
+texts={}
+def text_picture(layer,path):
+    """The text layer's PNG, drawn once per run: a text clip that spans several slices (its words, a fade, a
+    neighbour's seam) has the same picture in each, and 328 PNGs of Andromeda's film held 153 different texts."""
+    key=json.dumps({k:layer[k] for k in TEXT_FIELDS if k in layer},sort_keys=True,default=str)
+    if key not in texts:texts[key]=(path,*render.text_bitmap(layer,path,width,height))
+    return texts[key]
+
+colours={}
+def one_shape(path):
+    """One file for each colour of solid shape: render.make_shape writes one for every clip, so a rounded or shadowed
+    shape was decorated again for each (three identical full-frame PNGs, 2.4 s each, in Andromeda's film)."""
+    if path not in colours:
+        digest=hashlib.sha1(path.read_bytes()).hexdigest()[:16];target=assets/f'shape-{digest}.png'
+        if not target.exists():target.write_bytes(path.read_bytes())
+        colours[path]=target
+    return colours[path]
+
+shapes={}
+def sized_shape(path,lw,lh):
+    """A solid shape at its target size, made once for each colour and size: a full-frame PNG for every clip took
+    23.8 s of the 57 s Andromeda's film prepared in, for two different pictures (25 November 2026)."""
+    from PIL import Image
+    key=(one_shape(path).stem,lw,lh)
+    if key not in shapes:
+        target=assets/f'{key[0]}-{lw}x{lh}.png'
+        if not target.exists():
+            with Image.open(path) as source_image:
+                source_image.resize((lw,lh),Image.Resampling.NEAREST).save(target,compress_level=1)
+        shapes[key]=target
+    return shapes[key]
+
 prepared=[]
 # A still (engine/still.py) prepares only a short window: the slices before it are skipped and the first one starts at
 # the window, which timeline_scene draws as the export does at that moment (each clip's keyframes, words and joins).
 window_start=float(os.environ.get('STUDIO_GPU_WINDOW_START','0'))
+check_videos_ahead(clip for begin,end,active in slices if end>window_start+1e-9 for clip in active)
 for idx,(begin,end,active) in enumerate(slices,1):
     if end<=window_start+1e-9:continue
     begin=max(begin,window_start)
@@ -258,7 +316,7 @@ for idx,(begin,end,active) in enumerate(slices,1):
     # the established renderer. Regular transitions were separately checked.
     def needs_fallback(layer):
         kind=render.normalized_kind(layer)
-        if layer.get('visual_effect') or (kind=='video' and layer.get('blur') and os.environ.get('STUDIO_GPU_VIDEO_BLUR','0')!='1'):return True
+        if layer.get('visual_effect') or (kind=='video' and layer.get('blur')):return True
         if kind=='video' and str(Path(layer.get('source') or '.').resolve()) not in gradient_specs:
             video_path=render.resolve_source(render.source_value(layer),source,'video')
             if requires_timing_fallback(video_path):return True
@@ -296,9 +354,8 @@ for idx,(begin,end,active) in enumerate(slices,1):
         expanded.append(original)
     for li,original in enumerate(expanded):
         layer=dict(original);kind=render.normalized_kind(layer)
-        if layer.get('visual_effect'):raise RuntimeError('Visual effect is not supported in the prototype')
         if kind=='text':
-            path=assets/f'scene-{idx:03d}-text-{li:03d}.png';lw,lh=render.text_bitmap(layer,path,width,height)
+            path,lw,lh=text_picture(layer,assets/f'scene-{idx:03d}-text-{li:03d}.png')
             if layer.get('center'):layer={**layer,'x':(width-lw)/2,'y':(height-lh)/2}
             elif layer.get('position_units')=='normalized' or (isinstance(layer.get('x'),float) and isinstance(layer.get('y'),float) and 0<=layer['x']<=1 and 0<=layer['y']<=1):
                 points=[]
@@ -311,9 +368,10 @@ for idx,(begin,end,active) in enumerate(slices,1):
             input_kind='image'
         elif kind in ('image','video'):
             path=render.resolve_source(render.source_value(layer),source,f'scene {idx} layer {li}');lw=render.dimension(layer.get('width'),width,width//3);lh=render.dimension(layer.get('height'),height,height//3);input_kind=kind
+            if kind=='image' and path.name.startswith('shape-'):path=one_shape(path)
         else:raise RuntimeError('Unsupported layer type '+kind)
         if input_kind=='image' and (layer.get('mask','none')!='none' or layer.get('shadow') or layer.get('blur')):
-            path,lw,lh,pad=render.raster_graphics.decorate(path,lw,lh,layer,assets)
+            path,lw,lh,pad=render.raster_graphics.decorate(path,lw,lh,{k:layer[k] for k in RASTER_FIELDS if k in layer},assets)
             if layer.get('position_units')=='pixels':x,y=float(layer.get('x',0)),float(layer.get('y',0));points=[dict(p) for p in layer.get('keyframes',[])]
             else:
                 x,y=render.pixel(layer.get('x'),width,0),render.pixel(layer.get('y'),height,0)
@@ -345,12 +403,7 @@ for idx,(begin,end,active) in enumerate(slices,1):
             # Core Image interpolates a 4x4 solid shape's edges while scaling,
             # spreading the edge over hundreds of pixels. Prepare it at its
             # target size so transition boundaries stay sharp.
-            from PIL import Image
-            shape_path=assets/f'{path.stem}-{lw}x{lh}.png'
-            if not shape_path.exists():
-                with Image.open(path) as source_image:
-                    source_image.resize((lw,lh),Image.Resampling.NEAREST).save(shape_path)
-            path=shape_path
+            path=sized_shape(path,lw,lh)
         gradient=gradient_specs.get(str(path.resolve())) if input_kind=='video' else None
         path=Path(video_source(path)) if input_kind=='video' and not gradient else path
         if gradient:sw,sh=320,180
@@ -369,7 +422,6 @@ for idx,(begin,end,active) in enumerate(slices,1):
             alphas.extend(alpha_for(layer,points,elapsed,clip_len,easing,frame/fps,0,[],frame)
                           for frame in range(last,last+fps+1))
             record['alphaFrames']=alphas
-        if input_kind=='video' and layer.get('blur'):record['blur']=float(layer['blur'])
         records.append(record)
     prepared_scene({'start':begin,'end':end,'color':scene['color'],'layers':records});print('prepared scene',idx,'/',len(slices),f'timeline_end={end:.6f}',f'timeline_total={total:.6f}',flush=True)
 publish_chunk()
