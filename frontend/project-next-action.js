@@ -64,8 +64,20 @@ function heygenVideoEstimate(project, plan, analysis){
     seconds=duration*share/100;
   }
   if(!seconds)return '';
-  const low=seconds*.60/60,high=seconds*.99/60;
-  return `HeyGen ≈ $${low.toFixed(2)}–$${high.toFixed(2)}`;
+  // one price, by the kind of the channel's avatar: $0.60 a minute for a digital twin, $0.99 for a photo or studio
+  // avatar (user, 25 November 2026: «одну ціну»); the kind is read once a channel
+  const rate=heygenAvatarRate(project.channel_id);
+  if(rate===undefined)return '';
+  return `HeyGen ≈ $${(seconds*(rate??.99)/60).toFixed(2)}`;
+}
+var heygenAvatarRates=new Map();   // var: the node tests read it from the context
+function heygenAvatarRate(channelId){
+  if(heygenAvatarRates.has(channelId))return heygenAvatarRates.get(channelId);
+  heygenAvatarRates.set(channelId,undefined);
+  api(`/api/channels/${encodeURIComponent(channelId)}/heygen-avatar-rate`)
+    .then(data=>{heygenAvatarRates.set(channelId,Number(data.usd_per_minute)||null);updateProjectNextAction();})
+    .catch(()=>{heygenAvatarRates.set(channelId,null);updateProjectNextAction();});
+  return undefined;
 }
 function projectNextContext(){
   const project=state.project,root=$('editor-production');
@@ -110,7 +122,16 @@ function updateProjectNextAction(){
   if(decision.hidden){box.hidden=true;delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   const key=['hook','openings'].includes(decision.kind)?'hook':['narrate','file'].includes(decision.kind)?'narrate':['create','frames','upload'].includes(decision.kind)?'create':decision.kind==='export'?'export':'script';
   const estimate=['create','frames','upload'].includes(decision.kind)&&typeof heygenVideoEstimate==='function'?heygenVideoEstimate(state.project,state.plan,state.analysis):'';
-  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>${estimate?`<small title="Орієнтовно за Avatar III, залежно від типу аватара">${esc(estimate)}</small>`:''}`;
+  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>`;
+  // the HeyGen estimate sits on the grey «Створити відео» in the page, not on the gold one in the header (user,
+  // 25 November 2026: «в кнопці зеленій… Хейген… це видали і в сіру кнопку засунь»)
+  for(const grey of [context.targets.create,context.targets.frames,context.targets.upload]){
+    if(!grey?.querySelector)continue;
+    let note=grey.querySelector('.heygen-estimate');
+    if(!estimate){note?.remove();continue;}
+    if(!note){note=document.createElement('small');note.className='heygen-estimate';note.title='Орієнтовно: хвилини кадрів ведучого × тариф Avatar III для типу вашого аватара';grey.append(note);}
+    if(note.textContent!==estimate)note.textContent=estimate;
+  }
   if(button.innerHTML!==markup)button.innerHTML=markup;
   button.disabled=decision.disabled||projectNextBusy;reason.textContent=decision.reason;reason.title=decision.reason;reason.hidden=!decision.reason;settings.hidden=true;   // the sliders live on the channel's settings button now (user, 16 November 2026)
   settings.dataset.section=decision.settings||'';

@@ -18,6 +18,11 @@ import style_lab
 
 
 def get(self, path, query, *, ensure_idle):
+    rate = re.fullmatch(r'/api/channels/([0-9a-f]{16})/heygen-avatar-rate', path)
+    if rate:
+        avatar = store.read_channel_settings(store.get_channel_folder(rate.group(1), include_disabled=True), {}).get('heygen_avatar') or {}
+        look = (avatar.get('look') or {}).get('id') if isinstance(avatar, dict) else None
+        return self.json_response(heygen_avatars.look_rate(look) if look else {'avatar_type': None, 'usd_per_minute': None})
     avatar_gallery = re.fullmatch(r'/api/channels/([0-9a-f]{16})/heygen-avatars(/selected)?', path)
     if avatar_gallery:
         cid, selected = avatar_gallery.groups()

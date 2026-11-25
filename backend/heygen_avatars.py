@@ -70,3 +70,31 @@ def _preview_url(value):
     except ValueError:
         pass
     return None
+
+
+# What a minute of Avatar III video costs through the API, by the look's kind (user, 25 November 2026: «одну ціну»):
+# a digital twin, made from a recording of a real person, $0.60; a photo or studio avatar $0.99. The kind is asked of
+# HeyGen once a look and kept, so the estimate costs no request after that.
+RATES = {'digital_twin': 0.60, 'photo_avatar': 0.99, 'studio_avatar': 0.99}
+
+
+def _kinds_path():
+    import store
+    return store.DATA_ROOT / 'heygen-avatar-kinds.json'
+
+
+def look_rate(look_id):
+    """{'avatar_type', 'usd_per_minute'} of a look; an unknown kind is priced as a photo avatar, the dearer one."""
+    import store
+    kinds = store.read_json(_kinds_path(), {}) or {}
+    kind = kinds.get(look_id)
+    if not kind:
+        result = _read(f'/v3/avatars/looks/{quote(look_id, safe="")}')
+        row = result.get('data') if isinstance(result, dict) else None
+        kind = row.get('avatar_type') if isinstance(row, dict) and isinstance(row.get('avatar_type'), str) else ''
+        if kind:
+            kinds[look_id] = kind
+            store.atomic_json(_kinds_path(), kinds)
+    twin = 'twin' in kind or kind in {'video_avatar', 'instant_avatar'}
+    rate = RATES['digital_twin'] if twin else RATES.get(kind, RATES['photo_avatar'])
+    return {'avatar_type': kind or None, 'usd_per_minute': rate}

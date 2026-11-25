@@ -91,7 +91,10 @@ test('HeyGen estimate uses presenter duration and skips video narration',()=>{
   c.document={querySelector:()=>null};
   const project={channel_id:'c',assets:[{id:'a',kind:'audio',duration:600}]};
   const plan={timing:{status:'audio_synced',audio:{asset_id:'a',duration:600}},frames:[{format:'host',start:0,end:60},{format:'text',start:60,end:600}]};
-  assert.equal(c.heygenVideoEstimate(project,plan,{}),'HeyGen ≈ $0.60–$0.99');
+  c.heygenAvatarRates.set('c',.99);   // a photo avatar: one price (user, 25 November 2026)
+  assert.equal(c.heygenVideoEstimate(project,plan,{}),'HeyGen ≈ $0.99');
+  c.heygenAvatarRates.set('c',.6);
+  assert.equal(c.heygenVideoEstimate(project,plan,{}),'HeyGen ≈ $0.60');
   assert.equal(c.heygenVideoEstimate(project,plan,{report:{source:{kind:'video'}}}),'');
   c.madeSet=()=>new Set([0]);
   assert.equal(c.heygenVideoEstimate(project,plan,{}),'');
