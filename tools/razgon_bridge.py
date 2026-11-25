@@ -156,9 +156,15 @@ def read_json(path: Path):
 
 
 def write_json(path: Path, value) -> None:
+    """Atomic; a file that already holds these bytes is left alone, so its time stays and the live preview (which
+    watches config.json and shots.json) does not reload for nothing."""
+    text = json.dumps(value, ensure_ascii=False, indent=1)
+    with contextlib.suppress(OSError):
+        if path.read_text(encoding="utf-8") == text:
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 
 
@@ -166,12 +172,55 @@ def frame_index(seconds: float, fps: int) -> int:
     return math.floor(seconds * fps + .5 + 1e-8)
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+_HASHES: dict[tuple, str] = {}
+HASH_CACHE = "file-hashes.json"   # build/studio of a Razgon project: what content_hash learned, for the next process
+
+
+def content_hash(path: Path) -> str:
+    """The file's SHA-256, hashed once per path, size and change time (a 348 MB voice takes 0.7–4 s to read)."""
+    stat = Path(path).stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in _HASHES:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        _HASHES[key] = digest.hexdigest()
+    return _HASHES[key]
+
+
+sha256 = content_hash
+
+
+@contextlib.contextmanager
+def remembered_hashes(razgon: Path):
+    """content_hash shares its results with later bridge processes of this project (export, sound, frames), keyed by
+    path, size and change time; a file that changed is hashed again. A cache that cannot be read or written only costs
+    time."""
+    path = razgon / "build" / "studio" / HASH_CACHE
+    with contextlib.suppress(OSError, ValueError, TypeError):
+        for name, (size, mtime, digest) in json.loads(path.read_text(encoding="utf-8")).items():
+            _HASHES.setdefault((name, int(size), int(mtime)), str(digest))
+    before = dict(_HASHES)
+    try:
+        yield
+    finally:
+        if _HASHES != before:
+            keep = {name: [size, mtime, digest] for (name, size, mtime), digest in _HASHES.items() if _unchanged(name, size, mtime)}
+            with contextlib.suppress(OSError):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+                tmp.write_text(json.dumps(keep, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(path)
+
+
+def _unchanged(name: str, size: int, mtime: int) -> bool:
+    """The file is still the one hashed: entries of files changed or gone leave the cache instead of piling up."""
+    try:
+        stat = os.stat(name)
+    except OSError:
+        return False
+    return stat.st_size == size and stat.st_mtime_ns == mtime
 
 
 def voice_asset(project: dict, audio: dict, analysis: dict | None = None) -> dict:
@@ -318,7 +367,10 @@ def prepare(args) -> None:
     default = isinstance(existing, dict) and existing.get("shots") and all(
         str(s.get("notes", "")).startswith("studio frame ") and not s.get("scene") for s in existing["shots"])
     if not shots_path.is_file() or default:
-        shots = [{"id": f"f{f['number']:03d}s01", "start": f["start"], "end": f["end"], "line": " ".join(f["sentences"]),
+        # inside the film each default shot starts and ends on the whole video frame the Studio's block does, so the
+        # block's first video frame is its own shot; the film's first and last edges stay where the voice puts them
+        edge = lambda t: t if t <= 0 or t >= duration else round(video_edge(t, fps), 6)
+        shots = [{"id": f"f{f['number']:03d}s01", "start": edge(f["start"]), "end": edge(f["end"]), "line": " ".join(f["sentences"]),
                   "scene": "", "set": "", "bars": None, "in": {"type": "cut"}, "sfx": [], "amb": None, "notes": "studio frame %d" % f["number"]}
                  for f in frames]
         write_json(shots_path, {"title": project["name"], "duration": duration, "shots": shots, "music": [], "sfx": []})
@@ -375,15 +427,61 @@ def frames_of_shots(link: dict, story: dict, ids: list[str]) -> set[int]:
     return result
 
 
+def video_edge(seconds: float, fps: int) -> float:
+    """The time of the video frame the Studio starts or ends a frame on (its blocks sit on frame_index)."""
+    return frame_index(seconds, fps) / fps
+
+
+def seam_drift(link: dict, story: dict) -> list[tuple[str, float, float]]:
+    """(shot id, its start, the Studio's video edge) for each cut between shots that falls on a Studio frame's edge but
+    not on the whole video frame the Studio's block starts on: Andromeda's f080s01 starts at 835.29, the block of frame
+    80 at 835.28, so the block's first video frame belongs to the shot before. render.mjs treats such a sliver as
+    foreign inside --within, so the export is right; this only reports it. The film's own start and end stay."""
+    fps = int(link["fps"])
+    edges = sorted({float(t) for f in link["frames"] for t in (f["start"], f["end"])})
+    found = []
+    for shot in story.get("shots", [])[1:]:
+        at = float(shot["start"])
+        edge = min(edges, key=lambda e: abs(e - at), default=None)
+        if edge is not None and abs(edge - at) < .5 / fps and abs(video_edge(edge, fps) - at) > 1e-6:
+            found.append((shot.get("id", ""), at, video_edge(edge, fps)))
+    return found
+
+
 def check(args) -> None:
-    problems = check_project(Path(args.razgon).resolve())
+    razgon = Path(args.razgon).resolve()
+    problems = check_project(razgon)
     if problems:
         raise BridgeError("Проєкт Razgon не готовий:\n- " + "\n- ".join(problems))
     print("Шоти суцільні й покривають усю озвучку.")
+    link, story, _ = load_link(razgon)
+    drift = seam_drift(link, story)
+    if drift:
+        print(f"Межі шотів поза цілим кадром відео на межах кадрів студії: {len(drift)} (рендер їх враховує), "
+              "наприклад " + ", ".join(f"{shot} {at:.3f} → {want:.3f}" for shot, at, want in drift[:3]))
 
 
 # ---------------------------------------------------------------- push
+_COUNTS: dict[tuple, int] = {}
+
+
 def video_frame_count(path: Path) -> int:
+    """Frames in a clip, counted once per path, size and change time: ffprobe reads the whole file (about 80 ms a clip),
+    and an export asked it twice for every frame of the film."""
+    try:
+        stat = Path(path).stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+    except OSError:
+        key = None
+    if key in _COUNTS:
+        return _COUNTS[key]
+    count = _probe_frames(path)
+    if key and count:
+        _COUNTS[key] = count
+    return count
+
+
+def _probe_frames(path: Path) -> int:
     result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=nb_read_packets",
                              "-of", "csv=p=0", str(path)], capture_output=True, text=True)
     return int(result.stdout.strip().strip(",") or 0)
@@ -437,20 +535,6 @@ def frame_clip(razgon: Path, number: int) -> Path:
 
 TAKE = re.compile(r"take\(\s*['\"]([\w-]+)['\"]")
 TAKE_LOOP = re.compile(r"for\s*\(\s*const\s+(\w+)\s+of\s+\[([^\]]*)\]\s*\)\s*take\(\s*\1\b")
-_HASHES: dict[tuple, str] = {}
-
-
-def content_hash(path: Path) -> str:
-    """The file's bytes, hashed once per size and change time in this process."""
-    stat = path.stat()
-    key = (str(path), stat.st_size, stat.st_mtime_ns)
-    if key not in _HASHES:
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for block in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(block)
-        _HASHES[key] = digest.hexdigest()
-    return _HASHES[key]
 
 
 def taken_ids(text: str) -> set[str]:
@@ -489,6 +573,7 @@ def picture_fingerprints(razgon: Path, frames: list[dict]) -> dict[int, str]:
             scenes_by_shot.setdefault(item, []).append(path)
     words_file = razgon / "timeline" / "words.json"
     words = (read_json(words_file) or {}).get("words", []) if words_file.is_file() else []
+    spoken_in = words_between(words)
     base = shared.hexdigest()
     result = {}
     for frame in frames:
@@ -497,13 +582,25 @@ def picture_fingerprints(razgon: Path, frames: list[dict]) -> dict[int, str]:
         near = sorted({j for i in inside for j in (i - 1, i, i + 1) if 0 <= j < len(shots)})
         own = [shots[j] for j in near]
         files = sorted({path for shot in own for path in scenes_by_shot.get(shot.get("id"), [])})
-        spoken = [w for w in words if float(w.get("end", 0)) > start and float(w.get("start", 0)) < end]
+        spoken = spoken_in(start, end)
         digest = hashlib.sha256(base.encode())
         digest.update(json.dumps([own, spoken], sort_keys=True, ensure_ascii=False).encode())
         for path in files:
             digest.update(f"{path.relative_to(razgon)}\0{content_hash(path)}\n".encode())
         result[int(frame["number"])] = digest.hexdigest()
     return result
+
+
+def words_between(words: list[dict]):
+    """words_between(words)(start, end): the words spoken in (start, end), in their order: those that end after start
+    and begin before end. Words in time order are found by bisection (134 frames × 2600 words of Andromeda took 0.23 s
+    by scanning); any other order is scanned, with the same answer."""
+    starts = [float(w.get("start", 0)) for w in words]
+    ends = [float(w.get("end", 0)) for w in words]
+    if all(a <= b for a, b in zip(starts, starts[1:])) and all(a <= b for a, b in zip(ends, ends[1:])):
+        import bisect
+        return lambda start, end: words[bisect.bisect_right(ends, start):bisect.bisect_left(starts, end)]
+    return lambda start, end: [w for w, a, b in zip(words, starts, ends) if b > start and a < end]
 
 
 def frame_stamp(fps: int, frame: dict, picture: str) -> dict:
@@ -516,11 +613,24 @@ def fresh_clip(razgon: Path, frame: dict, fps: int, picture: str) -> Path | None
     stamp = path.with_suffix(".json")
     if not (path.is_file() and stamp.is_file()):
         return None
-    with contextlib.suppress(ValueError, OSError):
+    with contextlib.suppress(ValueError, OSError, TypeError):
         want = frame_stamp(fps, frame, picture)
-        if read_json(stamp) == want and video_frame_count(path) == want["last"] - want["first"]:
+        saved = read_json(stamp)
+        if {k: v for k, v in saved.items() if k != "clip"} != want:
+            return None
+        stat, frames = path.stat(), want["last"] - want["first"]
+        if saved.get("clip") == [stat.st_size, stat.st_mtime_ns, frames]:
+            _COUNTS[(str(path), stat.st_size, stat.st_mtime_ns)] = frames   # glue counts it again: no second ffprobe
+            return path
+        if video_frame_count(path) == frames:
+            write_json(stamp, {**want, "clip": [stat.st_size, stat.st_mtime_ns, frames]})   # an older stamp learns its clip
             return path
     return None
+
+
+def stamp_clip(path: Path, fps: int, frame: dict, picture: str, frames: int) -> None:
+    stat = path.stat()
+    write_json(path.with_suffix(".json"), {**frame_stamp(fps, frame, picture), "clip": [stat.st_size, stat.st_mtime_ns, frames]})
 
 
 def render_frame(razgon: Path, frame: dict, fps: int, workers: str | None, picture: str | None = None) -> Path:
@@ -554,7 +664,7 @@ def render_frame(razgon: Path, frame: dict, fps: int, workers: str | None, pictu
     else:
         raise BridgeError(f"Кліп кадру {frame['number']} двічі вийшов неповним")
     # the stamp lets the Studio export reuse this clip while nothing it is drawn from has changed
-    write_json(stamp, frame_stamp(fps, frame, picture))
+    stamp_clip(path, fps, frame, picture, want)
     return path
 
 
@@ -589,13 +699,14 @@ def room(chromiums: int) -> bool:
     return use is None or use[0] + chromiums * CHROMIUM_BYTES <= RAM_LIMIT * use[1]
 
 
-def render_many(razgon: Path, frames: list[dict], fps: int, workers: str | None, jobs: int, done=None) -> None:
+def render_many(razgon: Path, frames: list[dict], fps: int, workers: str | None, jobs: int, done=None, *, pictures=None) -> None:
     """Render Studio frames side by side, the longest first, at most `jobs` at a time and only as many as the memory
     holds. Each Chromium of render.mjs takes about 2 GB at 1080p; the export ran 6 of them on a 16 GB Mac, the system went
     to disk and no other program would open (31 October 2026). So a frame starts only while the RAM in use stays under
     RAM_LIMIT with it; a render younger than RAMP has not grown yet and is counted in full on top of the reading. The
     first frame always starts. One worker per frame keeps every Chromium busy: several workers on one frame wait idle
-    for its slowest chunk."""
+    for its slowest chunk. `pictures` are the frames' fingerprints when the caller has them: each frame computing its
+    own read every asset, helper and engine file again (77 ms a frame on Andromeda)."""
     per, jobs = int(workers or 1), max(1, jobs or JOBS)
     queue, running = sorted(frames, key=lambda f: f["start"] - f["end"]), {}
     with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
@@ -603,7 +714,8 @@ def render_many(razgon: Path, frames: list[dict], fps: int, workers: str | None,
             young = sum(1 for _, at in running.values() if time.monotonic() - at < RAMP)
             if queue and len(running) < jobs and (not running or room(per * (1 + young))):
                 frame = queue.pop(0)
-                running[pool.submit(render_frame, razgon, frame, fps, str(per))] = (frame, time.monotonic())
+                extra = {"picture": pictures[frame["number"]]} if pictures and frame["number"] in pictures else {}
+                running[pool.submit(render_frame, razgon, frame, fps, str(per), **extra)] = (frame, time.monotonic())
                 continue
             finished, _ = concurrent.futures.wait(running, timeout=5, return_when=concurrent.futures.FIRST_COMPLETED)
             for future in finished:
@@ -620,7 +732,7 @@ def render_many(razgon: Path, frames: list[dict], fps: int, workers: str | None,
 def render_frames(razgon: Path, link: dict, numbers: set[int], workers: str | None, jobs: int = JOBS) -> dict[int, Path]:
     fps = int(link["fps"])
     todo = [frame for frame in link["frames"] if frame["number"] in numbers or not frame_clip(razgon, frame["number"]).is_file()]
-    render_many(razgon, todo, fps, workers, jobs)
+    render_many(razgon, todo, fps, workers, jobs, pictures=picture_fingerprints(razgon, todo) if todo else None)
     return {frame["number"]: frame_clip(razgon, frame["number"]) for frame in link["frames"]}
 
 
@@ -666,7 +778,7 @@ def sound_workspace(razgon: Path, config: dict, story: dict):
         yield target
 
 
-def render_bed(razgon: Path) -> Path | None:
+def render_bed(razgon: Path, inputs: tuple[dict, dict] | None = None) -> Path | None:
     """Music, SFX and ambience exactly as Razgon mixes them under the voice, but without the voice
     (build/studio/music_sfx.wav). The kit's audio/mix.py gives its parts one at a time (beds), they are summed and get
     the master's high-pass, block by block: the voice is read only for its level and the ducking. A working copy whose
@@ -678,7 +790,7 @@ def render_bed(razgon: Path) -> Path | None:
     import mix as MIX
     if not hasattr(MIX, "fit"):   # beds() yielding (part, gain, at) came with fit()
         return _bed_from_whole_mix(razgon, MIX)
-    config, story = sound_inputs(razgon)
+    config, story = inputs or sound_inputs(razgon)
     # the Studio's one sound standard (backend/audio_level.py): music and effects at its levels in every episode, made
     # against the voice as the Studio plays it (brought to −16 LUFS), not against the file the voice service delivered
     sys.path.insert(0, str(STUDIO_BACKEND))
@@ -843,7 +955,6 @@ def push(args) -> None:
             groups.append({"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": f"Кадр {int(match.group(1))}"}})
     if groups:
         project = studio.batch(project, groups)
-    project = ensure_overlay(studio, razgon, project, float(link["duration"]))
     print(f"У студію передано кліпів: {imported}" + (", музика й ефекти окремою доріжкою" if bed else ""))
     print(f"Проєкт: {studio.url}/channels/{project['channel_id']}/projects/{pid}")
     # Replaced clips and render leftovers are removed by the Studio in the background; an older Studio without it is fine.
@@ -859,12 +970,14 @@ def drawn_frames(link: dict) -> list[dict]:
     return [f for f in link["frames"] if f.get("format", "razgon_2d") == "razgon_2d"]
 
 
-def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict, reset: frozenset = frozenset()) -> dict:
+def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict, reset: frozenset = frozenset(),
+                       before: list | None = None) -> dict:
     """Put every Studio frame on the timeline as a numbered "Кадр N" block before any render. The block is a Studio code
     clip (a black full-frame shape, no media file): live mode draws the Razgon film
     over it; the Studio export renders the blocks. The frames in `reset` go back from a rendered clip to a block, so a
     changed scene is drawn live and rendered again by the export (a clip it rendered before stays in build/studio and
-    is reused while the scene is unchanged)."""
+    is reused while the scene is unchanged). Stale blocks go and new ones come in one batch (`before`, e.g. the voice,
+    rides along), then one more groups them: two Studio revisions instead of up to four."""
     fps = int(link["fps"])
     # the blocks follow the plan: a block whose frame is gone (the director joined takes) or whose frame moved is removed
     # and put back at the frame's place below
@@ -880,26 +993,28 @@ def ensure_frame_slots(studio: "Studio", razgon: Path, link: dict, project: dict
              and (not reset or int(clip['title'][-3:]) in reset)
              and (clip["title"] not in want or (frame_index(clip["start"], fps), frame_index(clip["start"] + clip["duration"], fps)) != want[clip["title"]]
                   or (int(clip["title"][-3:]) in reset and clip.get("kind") != "animation"))]
-    if stale:
-        project = studio.batch(project, [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in stale])
-    have = {clip.get("title") for _, clip in all_clips(project)}
+    gone = {clip["id"] for clip in stale}
+    have = {clip.get("title") for _, clip in all_clips(project) if clip["id"] not in gone}
     frames = [f for f in drawn if FRAME_TITLE.format(f["number"]) not in have]
-    if not frames:
-        return project
+    actions = list(before or [])
     base_layer = project["tracks"][0]["id"]
-    actions = []
     for f in frames:
         first, last = frame_index(f["start"], fps), frame_index(f["end"], fps)
         actions.append({"type": "add_clip", "payload": {"layer_id": base_layer, "kind": "animation", "content_type": "shape", "start": first / fps,
                                                         "duration": (last - first) / fps, "title": FRAME_TITLE.format(f["number"]), "opacity": 1, "color": "#000000"}})
-    project = studio.batch(project, actions)
+    # removals last: deleting a clip deletes its own layer, and the additions name an existing layer (as in push)
+    actions += [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in stale]
+    if actions:
+        project = studio.batch(project, actions)
+    if not frames:
+        return project
     grouped = {cid for group in project.get("scene_groups", []) for cid in group["clip_ids"]}
     groups = [{"type": "group_clips", "payload": {"clip_ids": [clip["id"]], "title": f"Кадр {int(m.group(1))}"}}
               for _, clip in all_clips(project) for m in [re.fullmatch(r"Razgon · кадр (\d{3})", clip.get("title", ""))]
               if m and (not reset or int(m.group(1)) in reset) and clip["id"] not in grouped]
     if groups:
         project = studio.batch(project, groups)
-    return ensure_overlay(studio, razgon, project, float(link["duration"]))
+    return project
 
 
 def slots(args) -> None:
@@ -908,11 +1023,12 @@ def slots(args) -> None:
     studio = Studio(args.studio_url or link["studio_url"])
     project = studio.project(link["project_id"])
     voice_id = link.get("voice_asset_id")
+    voice = []
     if voice_id and not any(c.get("kind") == "audio" and c.get("asset_id") == voice_id for _, c in all_clips(project)):
-        project = studio.batch(project, [{"type": "add_clip", "payload": {"layer_id": project["tracks"][0]["id"], "kind": "audio", "asset_id": voice_id,
-                                                                          "start": 0, "duration": float(link["duration"]), "title": "Озвучка", "volume": 1}}])
+        voice = [{"type": "add_clip", "payload": {"layer_id": project["tracks"][0]["id"], "kind": "audio", "asset_id": voice_id,
+                                                  "start": 0, "duration": float(link["duration"]), "title": "Озвучка", "volume": 1}}]
     reset = frozenset(int(item) for item in args.frames.split(",") if item.strip()) if args.frames else frozenset()
-    project = ensure_frame_slots(studio, razgon, link, project, reset)
+    project = ensure_frame_slots(studio, razgon, link, project, reset, before=voice)
     n = sum(1 for _, c in all_clips(project) if re.fullmatch(r"Razgon · кадр \d{3}", c.get("title", "")))
     print(f"Кадри на таймлайні: {n} (блоки-код без медіа, наживо малює Razgon)")
 
@@ -946,12 +1062,12 @@ def encode_bed(wav: Path, duration: float) -> Path:
 BED_INPUTS = "music_sfx.inputs.json"   # beside the bed: what it was made from and the clip it went into
 
 
-def bed_inputs(razgon: Path, duration: float) -> str:
+def bed_inputs(razgon: Path, duration: float, inputs: tuple[dict, dict] | None = None) -> str:
     """A digest of everything the bed is made from: the sound config and story as the mix reads them, the film's length,
     the Studio's music and effect levels, the voice (the ducking follows it), a chosen music file and the kit's mixer
     code. The same digest makes the same bed, so it is not made again (user, 17 November 2026: the music was rebuilt
     for ten minutes after the frames, with nothing in it changed, and the film waited for it)."""
-    config, story = sound_inputs(razgon)
+    config, story = inputs or sound_inputs(razgon)
     sys.path.insert(0, str(STUDIO_BACKEND))
     import audio_level
     digest = hashlib.sha256(json.dumps({"config": config, "story": story, "duration": round(float(duration), 3),
@@ -1007,23 +1123,24 @@ def sound(args) -> None:
     problems = check_project(razgon)
     if problems:
         raise BridgeError("Проєкт Razgon не готовий:\n- " + "\n- ".join(problems))
-    link, _, _ = load_link(razgon)
+    link, story, _ = load_link(razgon)
     if len(drawn_frames(link)) != len(link["frames"]):
         raise BridgeError("Razgon малює лише частину кадрів цього ролика: музику й ефекти змішаного ролика веде студія")
     studio = Studio(args.studio_url or link["studio_url"])
     pid, fps, duration = link["project_id"], int(link["fps"]), float(link["duration"])
-    plan = studio.plan(pid)
     sys.path.insert(0, str(STUDIO_BACKEND))
     import sfx_library
-    sfx_library.place(studio, pid, read_json(razgon / "story" / "shots.json"))
-    inputs = bed_inputs(razgon, duration)
+    sfx_library.place(studio, pid, story)
+    # the channel's sound choices once (two Studio requests): the digest and the bed read the same inputs
+    sound = sound_inputs(razgon)
+    inputs = bed_inputs(razgon, duration, sound)
     receipt = razgon / "build" / "studio" / BED_INPUTS
     made = read_json(receipt) if receipt.is_file() else {}
     current = bed_in_place(studio.project(pid), duration, fps)
     if made.get("digest") == inputs and current and current.get("asset_id") == made.get("asset_id"):
         print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
         return
-    wav = render_bed(razgon)
+    wav = render_bed(razgon, sound)
     if wav is None:
         project = studio.project(pid)
         old = [clip for _, clip in all_clips(project) if clip.get("title") == BED_TITLE]
@@ -1244,7 +1361,7 @@ def studio_export(args) -> None:
             finished.append(frame)
             report(stage="razgon", phase="razgon_frames", progress=round(render_share * (ready_frames + sum(map(length, finished))) / film_frames, 4),
                    completed=ready + len(finished), total=total)
-        render_many(razgon, todo, fps, args.workers, args.jobs, rendered)
+        render_many(razgon, todo, fps, args.workers, args.jobs, rendered, pictures=pictures)
         clips = [sources.get(f["number"]) or frame_clip(razgon, f["number"]) for f in link["frames"]]
         glue(razgon, link, config, clips, Path(spec["overlay"]) if spec.get("overlay") else None, Path(args.out).resolve(), glue_progress, sound_policy=spec.get('sound_policy'))
         glue_progress("razgon_sound", 1.0)
@@ -1344,7 +1461,7 @@ def studio_frames(args) -> None:
                 if f["number"] not in drawing:
                     held[f["number"]] = tails.submit(hold, f)
             progress()
-            render_many(razgon, todo, fps, args.workers, args.jobs, progress)
+            render_many(razgon, todo, fps, args.workers, args.jobs, progress, pictures=pictures)
             clips = {str(f["number"]): str(held[f["number"]].result()) for f in frames}
         finally:
             tails.shutdown(wait=True, cancel_futures=True)
@@ -1430,8 +1547,10 @@ def main() -> None:
         sys.exit("Кадри рендерить тільки «Експорт MP4» студії, коли автор його натисне. "
                  "Поклади кадри на таймлайн блоками-кодом: python3 'VideoKey Studio/tools/razgon_bridge.py' slots --razgon <проєкт> --frames <номери>")
     try:
-        with project_lock(Path(args.razgon).resolve()) if args.command in {"push", "final", "export", "frames", "sound"} else contextlib.nullcontext(), \
-                studio_timeline(args):
+        razgon = Path(args.razgon).resolve() if getattr(args, "razgon", None) else None
+        with project_lock(razgon) if args.command in {"push", "final", "export", "frames", "sound"} else contextlib.nullcontext(), \
+                studio_timeline(args), \
+                remembered_hashes(razgon) if razgon and args.command in {"push", "export", "frames", "sound"} else contextlib.nullcontext():
             args.run(args)
     except BridgeError as error:
         if args.command in {"export", "frames"}:

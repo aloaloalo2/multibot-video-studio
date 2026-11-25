@@ -20,6 +20,7 @@ Safe by design, with a manifest of what it wrote (`.videokey-kit.json` in the co
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -188,10 +189,31 @@ def collect_props(target: Path) -> None:
     1 November 2026: «папки Library я взагалі не бачив»). Adding only: clones on a Mac, nothing is removed."""
     tool = target / "tools" / "library.py"
     if tool.is_file() and (target / "projects").is_dir():
+        # it hashes every prop of every project (1 897 PNGs, 569 MB, 3.5 s on 25 November 2026): when no prop and no
+        # library tool changed since the last collect that finished, it would add nothing, so it does not run
+        marker, seen = target / PROPS_SEEN, props_signature(target, tool)
+        with contextlib.suppress(OSError):
+            if marker.read_text(encoding="utf-8") == seen:
+                return
         try:
-            subprocess.run([sys.executable, str(tool), "collect"], cwd=target, capture_output=True, timeout=600)
+            done = subprocess.run([sys.executable, str(tool), "collect"], cwd=target, capture_output=True, timeout=600)
         except (OSError, subprocess.SubprocessError):
-            pass
+            return
+        if done.returncode == 0:
+            with contextlib.suppress(OSError):
+                marker.write_text(seen, encoding="utf-8")
+
+
+PROPS_SEEN = ".videokey-props.txt"
+
+
+def props_signature(target: Path, tool: Path) -> str:
+    """The projects' props and the library tool by name, size and change time (nothing is read)."""
+    digest = hashlib.sha256(f"{tool.stat().st_size}:{tool.stat().st_mtime_ns}\n".encode())
+    for png in sorted((target / "projects").glob("*/assets/*.png")):
+        stat = png.stat()
+        digest.update(f"{png.relative_to(target).as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
 
 
 def main(argv=None) -> int:
