@@ -47,6 +47,16 @@ class ComposeTest(unittest.TestCase):
         moves = dict((c["id"], ch) for c, ch in montage_ops.text_layout_changes(frame(main, over)))
         self.assertAlmostEqual(moves["a"]["x"] - .45, moves["b"]["x"] - .45, places=6)
 
+    def test_the_coloured_end_line_takes_the_main_size_and_line_spacing(self):
+        main = text("a", .385, .40, .5, 5)
+        main["font_size"] = 62
+        tail = text("b", .385, .75, .13, 1, "K040 галактики")
+        tail.update(font_size=66, text=" ".join(w["text"] for w in tail["text_words"]))
+        moves = dict((c["id"], ch) for c, ch in montage_ops.text_layout_changes(frame(main, tail)))
+        self.assertEqual(moves["b"]["font_size"], 62)
+        a, b = montage_ops._text_extent({**main, **moves["a"]}), montage_ops._text_extent({**tail, **moves["b"]})
+        self.assertAlmostEqual(b[0] - a[1], 62 * .05 / 1080, places=4)
+
     def test_centred_frame_and_highlight_over_its_words_stay(self):
         main = text("a", .5, .5, .4, 3)
         over = text("b", .5, .5, .4, 3, "K040 акцент фрази")
@@ -89,3 +99,30 @@ class LineBreakTest(unittest.TestCase):
         lines = self.lines("Получается, глаз ловит свет, который был в пути дольше, чем существует всё человечество")
         widths = [len(line) for line in lines]
         self.assertLess(max(widths) - min(widths), 16)
+
+
+class HeadlineDesignTest(unittest.TestCase):
+    """A lead-in and a key phrase become a designed headline (user, 25 November 2026: «в 100 раз крутіші»)."""
+
+    def test_key_phrase_is_large_accent_with_a_growing_line_under_it(self):
+        lead = text("a", .385, .40, .5, 5)
+        lead.update(font_size=62, start=10.0, text=" ".join(w["text"] for w in lead["text_words"]))
+        key = text("b", .385, .75, .13, 1, "K040 галактики")
+        key.update(font_size=66, start=10.0, color="#5ff2e8", text="w0")
+        key["text_words"][0]["start"] = 6.0
+        f = frame(lead, key)
+        f.update(start=10.0, end=19.0)
+        actions = montage_ops.text_design_changes(f, "#ff00aa")
+        updates = {a["payload"]["clip_id"]: a["payload"]["changes"] for a in actions if a["type"] == "update_clip"}
+        self.assertLess(updates["a"]["font_size"], updates["b"]["font_size"])
+        self.assertEqual(updates["b"]["color"], "#5ff2e8")
+        line = next(a["payload"] for a in actions if a["type"] == "add_clip")
+        self.assertTrue(line["title"].endswith("лінія"))
+        self.assertGreater(line["y"], updates["b"]["y"])
+        appear = line["keyframes"][0]["time"]
+        self.assertAlmostEqual(appear, 6.15, places=2)   # on the key word, from its clip start
+        self.assertLessEqual(appear + 10.0, 19.0 - montage_ops.LAST_QUIET)
+        self.assertGreaterEqual(min(k["scale"] for k in line["keyframes"]), .05)
+        # designed once: a second pass leaves the frame alone
+        f["clips"].append({"id": "l", "kind": "animation", "content_type": "shape", "title": "K040 лінія", "width": .3, "height": .01})
+        self.assertEqual(montage_ops.text_design_changes(f, "#ff00aa"), [])
