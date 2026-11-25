@@ -301,8 +301,16 @@ def _send(pid, request, wav, receipt, identity, look, last_submit):
         raise store.StudioError('HeyGen не повернув ID відео. Перевірте HeyGen перед повтором, щоб уникнути повторної оплати.')
     if not isinstance(video_id, str) or not video_id.replace('-', '').replace('_', '').isalnum():
         raise store.StudioError('HeyGen повернув некоректний ID відео. Перевірте HeyGen перед повтором.')
-    record.update(state='submitted', video_id=video_id)
+    record.update(state='submitted', video_id=video_id, submitted_at=round(time.time(), 1))
     store.atomic_json(receipt, record)
+    # the video is paid from here on: its price goes to the project and the studio's journal at once (user, 25 November
+    # 2026: «сюди не записується нічого на рахунок Хейгена»); the project index later finds the same key and adds nothing
+    try:
+        import project_costs
+        project_costs.record_at(store.project_dir(pid), 'heygen', project_costs.heygen_video_usd(record),
+                                identity='video:' + video_id, category='video', estimated=True)
+    except Exception:   # accounting never stops a paid video that HeyGen already accepted
+        pass
     return record
 
 
@@ -386,14 +394,18 @@ def _join_voice(pieces, gap, target):
                 frames = source.readframes(source.getnframes())
                 out.writeframes(frames)
                 at += len(frames) // 2
+        out.writeframes(silence)   # the last piece gets its pause too: its tail for the transition out
     os.replace(temporary, target)
     return offsets
 
 
-def _cut_video(video, offset, seconds, output):
-    """One frame's piece of the long video, re-encoded so it starts and ends exactly where its voice does."""
+def _cut_video(video, offset, seconds, output, tail=0.0):
+    """One frame's piece of the long video, re-encoded so it starts where its voice does. `tail` keeps the silent pause
+    after the voice: the host still moves there, and a transition out of the frame plays on it instead of a held last
+    picture (user, 25 November 2026: «стоп-кадр відео дивиться дуже дивно і як будто це баг»). The frame stays its own
+    length on the timeline; the tail is only there for the transition."""
     temporary = output.with_suffix('.part.mp4')
-    result = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-ss', f'{offset:.3f}', '-i', str(video), '-t', f'{seconds:.3f}',
+    result = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-ss', f'{offset:.3f}', '-i', str(video), '-t', f'{seconds + tail:.3f}',
                              '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k',
                              '-movflags', '+faststart', str(temporary)], capture_output=True, timeout=600)
     if result.returncode or not store.media_duration(temporary):
@@ -465,9 +477,13 @@ def _make_one_video(pid, request, frames, root, source, digest, look, fps):
                 waiting.remove(job)
                 for row in job['rows']:
                     if not row['output'].is_file():
-                        _cut_video(job['output'], row['offset'], row['identity']['end'] - row['identity']['start'], row['output'])
+                        # the pause before the voice too: a transition into the frame starts on the living host, with
+                        # its hit on the seam (joins.lead_seconds); the frame starts `head` seconds into its file
+                        head = round(min(ONE_VIDEO_GAP, float(row['offset'])), 3)
+                        _cut_video(job['output'], row['offset'] - head, row['identity']['end'] - row['identity']['start'] + head,
+                                   row['output'], tail=ONE_VIDEO_GAP)
                         store.atomic_json(row['receipt'], {'state': 'completed', 'identity': row['identity'],
-                                                           'one_video': job['receipt'].name, 'offset': row['offset']})
+                                                           'one_video': job['receipt'].name, 'offset': row['offset'], 'head': head})
                     _place(pid, request, {'frame': row['frame'], 'receipt': row['receipt'], 'output': row['output'],
                                           'record': store.read_json(row['receipt'], {}) or {}})
             except heygen_voice.RateLimited:
@@ -534,7 +550,7 @@ def _place(pid, request, job):
         record['asset_id'] = asset['id']
         store.atomic_json(receipt, record)
     move, percent = host_zoom(store.load_project_plan(pid), frame)
-    montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': 0,
+    montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(record.get('head') or 0),
                            'motion': move, 'zoom_percent': percent}])
 
 

@@ -114,11 +114,14 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
                "shots": str(razgon / "story/shots.json") if razgon else None}
     if selected:
         root = store.project_dir(pid)
-        artwork = Path(project["episode_path"]) / "кадри"
+        # the agent's pictures live in the studio's media; older episodes kept them in the episode folder, still read
+        artwork = store.media_dir(project) / "кадри"
+        older = Path(project["episode_path"]) / "кадри" if project.get("episode_path") else None
+        folders = [artwork] + ([older] if older and older.is_dir() else [])
         sources["work"] = str(root / 'work')
         sources["artwork"] = str(artwork)
-        sources["existing_art"] = [str(p) for n in sorted(selected) for p in [artwork / f'кадр_{n:03d}.png'] if p.is_file()]
-        sources["props"] = sorted(p.name for p in (artwork/'асети').glob('*.png'))[:60]
+        sources["existing_art"] = [str(p) for n in sorted(selected) for f in folders for p in [f / f'кадр_{n:03d}.png'] if p.is_file()]
+        sources["props"] = sorted({p.name for f in folders for p in (f/'асети').glob('*.png')})[:60]
         sources["helpers"] = [str(p) for work in sorted(root.glob('work*')) if work.is_dir()
                               for p in sorted(work.glob('*.py')) if p.stem in ('anim','assets','place','groups','split','common')][:16]
     return {"schema": 1, "project_id": pid, "request_id": request["id"],

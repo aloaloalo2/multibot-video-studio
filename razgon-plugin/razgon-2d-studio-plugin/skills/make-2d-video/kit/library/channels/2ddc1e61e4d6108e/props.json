@@ -1,11 +1,129 @@
 {
  "props": [
   {
+   "name": "andro_big",
+   "sha256": "09e4bf4a5f60214702ab71f562fa4c0c92f4b8a104d45af2161dbe789e72e31e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "andromeda",
    "sha256": "493b8335e7c2496d66d84a7627ccaf50bd58f5504a167f690c77db42c0cfcebb",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "arm_fist",
+   "sha256": "eb4d62be91b7e2b4a71da1640097ce6b36c4ed4772a7e3fb9478e92065550d2f",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "baade",
+   "sha256": "528b455c8e29159e8b6cc64b0a8379c1bf720f4cbca5f7a1f60f9fbcb785bdd3",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "bh_jets",
+   "sha256": "dda3e45013544193de27225bb7b8dc150d2dae7384d8f9022e54369c8af64993",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "binoculars",
+   "sha256": "4343a160e0b5200d75da9b17bb34b99063e6566ac11e4417f9f21bd3fbcbb8de",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "binoculars2",
+   "sha256": "b2fa62a402836979cca2af521df8161c293c98ee577086bcb820e48473ac7367",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "black_hole",
+   "sha256": "833bf56903a29dec2bc925a58f07b991963b3a57896eeea1a6db22e252bd049a",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "brachio",
+   "sha256": "8c3d55817deb85f52994f1b76a4135f5971f4e9a7e3316aeba08f70b6d2b553f",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "brass_telescope",
+   "sha256": "1f8f0289f2adbb54e7627a4622e68d6ab7722e08dc07d51ed2723113438a947b",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "camera_tripod",
+   "sha256": "70b43917598b6cd3031abca3d9a4c61a0fd2fd55727e43ebe359d10a9c651502",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "campfire",
+   "sha256": "83bdd66f786ae2a47592836359485e24cb4b2c90e40a882ee1f9a6d911f16620",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "cave_painter",
+   "sha256": "5227b6e1c210329c6ca7ca41e8eac1edeacf726c8564819d540784287b423c1c",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "cave_wall",
+   "sha256": "964fc76507737681c67f97d140016e7986fd1b0aeda79a6358163ef928d38fb2",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -19,11 +137,75 @@
    "added": "2026-11-25"
   },
   {
+   "name": "cluster_round",
+   "sha256": "71680bd636bc1443982143531137abd03671a750194a6517438470604287de27",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "coin",
+   "sha256": "99342912e3d260ed2c8ad24cd863d975437652024dc361b523b3cc768636b006",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "dwarf_irregular",
+   "sha256": "d11095cc7c663492f577f5ead41fae8d7d0bfdda8d3b1ea661647ca7fdff2fbc",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "dwarf_irregular-2",
+   "sha256": "d6ab695ee5513b2b288fdc97695a0e47e00722c4d9bd2e224830e499da3053eb",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "earth",
    "sha256": "d09f488e406b7b6fa682dce0f29baa4683315bffc4918349d0fdfba376e79d23",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "earth-2",
+   "sha256": "faeaf6ce201f0879085c8714c4701fed462ad3b14d33bf8310d427f7bf3c02c3",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "earth_dry",
+   "sha256": "17a932139b98a9237c23e92937670d9e30ddac6dcc528058c51e31f86acda70e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "earth_molten",
+   "sha256": "5204b155a0988ee88ab1f863e94105741df02f0f85f32723d703a71ca11ffd39",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -50,7 +232,26 @@
    "sha256": "7688d9de1d9b61aa63cd5b12b68af45c10dd47f3c88c805749a41ac98a483667",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "edge_on2",
+   "sha256": "0c2631ccf807b42528b32b3710c83105448d209346ce266e841d9ac80dc157dd",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "ell_big",
+   "sha256": "877340f733cbbc25bcc850de247757ac29c5249857f6f1ad219fb8e4dbe816d6",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -59,7 +260,53 @@
    "sha256": "b7939fc98d79df889575b7df7389dd1f728663833faa91a75d34d39979337538",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "elliptical_giant",
+   "sha256": "367d3e5bb7ba7cef82713f55cc6f85134b463cfd5d0df40759f20ed3fba6224a",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "eye",
+   "sha256": "147af4664f2fbb6e1402ed4130295b17a1d9ab8d0caacbef709443c648497ebf",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "eye_blue",
+   "sha256": "312d488245e641917d7307a36a7457355412099da71c193cd11d34ae6704c42b",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "flat_screen",
+   "sha256": "72af859d38d83c9d06c3c18445b37b372879143a0279a1cf4084b85e8ece32b6",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "gaia",
+   "sha256": "e62ca5742122f6ea9bddd42fb961d8c5f4c0c80fcf2388f7a483823890bc39de",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -68,7 +315,8 @@
    "sha256": "da800fa553a28658095fdbf16ce6210618d9efd6c6a4ce2e66a62d8078d7d2f9",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -77,7 +325,8 @@
    "sha256": "b7752fbdd23930f2b6c4d87a4e7774b81ed009810a6dd36650847cae248fe978",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -86,7 +335,89 @@
    "sha256": "364f6eff01461c3c74354a111097780c88d2ae1bcc857b338582a2112d35b24c",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "glass_plate",
+   "sha256": "adb51a3adb0cc8b019787f1f0649ee616274c1ed267de54b108d32ee84a2915d",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hand_axe",
+   "sha256": "d1fadcdee84ead76ccd2268f01d02481eb71e347e03255e2dc5c3cd96f1f2d2e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hand_pen",
+   "sha256": "1982343c8a9e98aa3310247bcfdc37392d0496e1cd26d8ac80c2fbb294af0cb6",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hand_reach",
+   "sha256": "78c977ec017dd5dbbd0267830eb050549f2f19543e93150476dcca42935b0198",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hand_reach-2",
+   "sha256": "80b7ba286a9a96ed08737271080d1171e5b1e5da983800e7bcaccfe63a9ae27b",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hills_big",
+   "sha256": "eba0e2e29aace67ed5485b969b7eca76e5ed7f2f617e87bbde41f5186e875769",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hominid",
+   "sha256": "0a088dc9f2bccfcc79a071b3ed0b639fcd72ba5c3c9654a5455cfadcf3080e5f",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hooker_scope",
+   "sha256": "8e94648c1298680970f44438774e4fe71aaacfb3ef762e91bcb0c4fbae4bed08",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hst",
+   "sha256": "492119c9f9a02ddb67c6c8aa1b4e393f4c003e73ff1ca16cc596fe69a4172fd2",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -95,7 +426,125 @@
    "sha256": "3c026dd847850dec301d9ad110e622ea5a5c78f4a3bb563b0bf89d23dfde4f9c",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hunters",
+   "sha256": "ac0d239fc7b3b6a3d259e37f6367ec0eccaeb5a6b97d377fc616e74bf7145085",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "inkwell",
+   "sha256": "a7f77576fc0cf223ef9ae81a7d6077c3045ed78d2edc5015d4e39bd4bae44090",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "land_hills",
+   "sha256": "80361b2d4ded11304ac4f54548f6ebe2d932d6b3539fac3a5d6e7c627f3473b3",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "land_house",
+   "sha256": "0d98d5ff02eee44c48b1c9a3d53216e9d48d53ab8041cb9977239a013439ce36",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "lantern",
+   "sha256": "7180d65d2b97a56c0d5038a851d23367c9aa6cb25c1e4e8dc8e51a521bd665fe",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "lectern",
+   "sha256": "a41154803f9e7fb60ace5df3d36e0f534a874363ec96fdc1374dd40c6bc2b284",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "loupe",
+   "sha256": "d843d74c2a1ab129985e311b2b6b01cc392047416b09a1a70bd8bf922eb6b973",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "m32",
+   "sha256": "893311de58479d2436c1c8d6b8a9e3be7e253635699600929af92c9741be4893",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "m32-2",
+   "sha256": "9735a501f25794de76af77875d271317955a515c3f299927f246b731e799914e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "mammoth",
+   "sha256": "87dea9e39c2a577f001c639cb2f6e2b99ca259b82f5246ed1899a21d58d8a129",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "man_back",
+   "sha256": "b5d70ded173a9b3559bae3a4790cd60224056d06826f87a2c0427d472454cafe",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "man_lookup",
+   "sha256": "4f951b22db2aad34e7695e934935c7a1aee21e5fd044332e620d8a20fb282abf",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "monitor",
+   "sha256": "1808391c8ef40c24af1d3fa8dad3d7b8222851490ac7f928d4ee7475e00125a8",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -104,7 +553,26 @@
    "sha256": "ac5401dad43d47bc896b5dcd9700dbb0af70edd2f0fc8ec7d492447e4d95dd3d",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "mw_big",
+   "sha256": "87f3c76f94e60524669f273fb0550f8fc5596747e9eeed394408c9f01584287e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "neptune",
+   "sha256": "9a226f9bd2feb9a109076828ec1177e81f4646a330cdb599a8c86085d0b8fbc0",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -127,6 +595,15 @@
    "added": "2026-11-25"
   },
   {
+   "name": "obs_dome-2",
+   "sha256": "643a53bdf6f94290c70d69bbda12d5c7ea3ce97b697783d6bc24b92322dbf20f",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "obs_tall",
    "sha256": "99d756084eb4216b7127d421731995323f4a0406ab576d9756798542d1883994",
    "description": "",
@@ -145,6 +622,78 @@
    "added": "2026-11-25"
   },
   {
+   "name": "p_alsufi",
+   "sha256": "d5aed76c9af5a55b4ef1579a1e87e575bb3ae5fbab89885a57ed5fa441dccdf2",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "p_curtis",
+   "sha256": "b91571dd1b5ee18e5a3e75310cdda71baa29d21d67f6b372a5a86dfbd03a379e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "p_hubble",
+   "sha256": "88bdd6e866db47e53fcbbab5e615ee626d502ca33c2d5145b03a6f99316e9220",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "p_leavitt",
+   "sha256": "7826ea9cd6b5d1ff219c3ca73d2adfcf09be0ab138845e239d0bc1e066a39b89",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "p_messier",
+   "sha256": "fba80bbb738aaf2ea60852c49ea5cb42768b1df70a35efd926dee0d7e81d0dbb",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "p_shapley",
+   "sha256": "2c05209b8b10eb22b17a1e18dc014ecd4e1bd26b5a18904c8a553977fee9def7",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "persian_book",
+   "sha256": "155f821b8b2b2fd7028fb8fff5781a0e486b2876e7c8af03aa9c0b46fd2c1f2a",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "prism",
+   "sha256": "f55860abda154cef8b3d55141eb2ef050c47139a453185e1c7115761a9d8c750",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "radio_dish",
    "sha256": "1233f6ef79fde609315bb317bc953dcc909001d9e12a4d1f7eaf8eed69566778",
    "description": "",
@@ -154,11 +703,39 @@
    "added": "2026-11-25"
   },
   {
+   "name": "radio_mast",
+   "sha256": "fe04e2b55e22080d846e31af866edb6f973dca3e86d886b4996a39c2db2401d4",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "scale_man",
+   "sha256": "67d1c65a8de315d4285da2461b59e04bb3e5abd4f13c161043f920e941ce88e3",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "scales",
    "sha256": "30d3abea8ab2acc64612faea2db6fe9c3d184e376abedede8fa6cb8d0c3695e1",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "scales-2",
+   "sha256": "eb0dbe6445ea1683c8f3d9a90e826689151ecd6d328a10032538bf707984da08",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -172,11 +749,66 @@
    "added": "2026-11-25"
   },
   {
+   "name": "spiral_small",
+   "sha256": "2c968a122f37bd5bef0f8982c3a66e41d11b3eae03e1409bd8703bf6afd55d9e",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "spiral_tilt",
+   "sha256": "9e7e4551bbf6599578f549550b358f47838f25cc63def128df5262db295a33c0",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
    "name": "sun",
    "sha256": "d7e21f087ce3597e3246880ce4f76563d59225ae5eb98817b18d4a7841b69626",
    "description": "",
    "projects": [
-    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya",
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "tally_bone",
+   "sha256": "456661c7bb9076644a2520b9d006b8fd4f16d2c3bce9f778d779c9a1b41a1e1a",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "telescope",
+   "sha256": "0065c347ddb2933b555891aa3cc7cf7f5b86f732d3646ec5dc9fa32ff31aa436",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "telescope2",
+   "sha256": "13f3fc8671205869c7127c0018a077e484ec52327e4e27018865e7bf34064677",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "telescope_amateur",
+   "sha256": "599966699d57d9fb54ffff04c4579107f1cc56d325c8b06018b1a1feb50917e0",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },
@@ -186,6 +818,60 @@
    "description": "",
    "projects": [
     "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "tidal_galaxy",
+   "sha256": "611354da1b0b25133b531505022aaf12781cb207a666413fb6eb879d1a0f435c",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "tidal_galaxy-2",
+   "sha256": "7dc1d1ee1d6eba7ad34e25095d91695e56ea33caebedd265bac28ec9f36e7702",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "trex",
+   "sha256": "ce2ec48a4ae0f4f8bc58ff72a7b827f48b7a300db51426946fab21297b577802",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "triangulum",
+   "sha256": "791c547fd57b010b1f0aa16ca04895d608eb862e3fa8217ea7af1ae785db2c05",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "triangulum-2",
+   "sha256": "a1aa75c1621d07180a384b5da7d968bd8da61ce26444c55463d35d564513d724",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "voyager_side",
+   "sha256": "c77aafd4729abc7944c7cb6df59e679037c475b5fa733f00eb5e7945fc2b1009",
+   "description": "",
+   "projects": [
+    "kosmos-pro-uzhasayushchie-masshtaby-andromedy"
    ],
    "added": "2026-11-25"
   },

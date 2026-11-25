@@ -54,7 +54,9 @@ def old_renders(pid: str, project: dict) -> list[dict]:
 
 # The studio's cache of an episode (store.cache_dir): export chunks, the engine's render cache, stills and stock sheets.
 # All of it is made again when needed (user, 1 November 2026: «Звільнити місце… хай видаляє такий кеш з проєкту»).
-CACHE = ("renders", "render-cache", "stills", "stock")
+# Motion-code renders and the held copies for transitions are made again at the next export too (25 November 2026: 1.5 GB
+# and 0.7 GB on «Космос PRO»).
+CACHE = ("renders", "render-cache", "stills", "stock", "motion-code", "held-tails")
 
 
 def language_busy(pid: str) -> bool:

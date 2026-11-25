@@ -304,8 +304,14 @@ function renderUniversalPreview(){
       wrapper.append(element);composition.append(wrapper);state.previewNodes.set(clip.id,wrapper);
       }
       const node=state.previewNodes.get(clip.id),incoming=transitionInfo(clip).incoming;
-      const foreground=clip.kind==='text' && clip.text_role==='full_frame' && incoming && now>=incoming.seam && now<incoming.seam+incoming.duration;
+      const inSpan=incoming&&joinFrames(incoming),foreground=clip.kind==='text' && clip.text_role==='full_frame' && incoming && now>=inSpan.seam && now<inSpan.seam+inSpan.duration;
       node.style.zIndex=String(foreground?foregroundZ:order.get(clip.id)*4);node.hidden=!shown.has(clip.id);
+      // an effect is there from its frame's first moment: its loop is laid out and running, unseen, before the frame
+      // comes, instead of starting to load when the frame is already on screen (user, 25 November 2026: «ефект… появляється
+      // десь через мікросекунди… має від початку до кінця бути»)
+      if(clip.content_type==='capcut_effect'&&node.hidden){const loop=node.querySelector('video.capcut-loop');node.hidden=false;node.style.visibility='hidden';
+        if(loop){if(state.playing){if(loop.paused)loop.play().catch(()=>{});}else if(loop.readyState>=1&&loop.currentTime>.05)loop.currentTime=0;}}
+      else if(clip.content_type==='capcut_effect')node.style.visibility='';
       const image=node.querySelector('img');if(image)image.fetchPriority=node.hidden?'low':'high';
       if(foreground)node.dataset.transitionForeground='true';else delete node.dataset.transitionForeground;
       if(node.hidden){node._trails?.forEach(trail=>trail.node.hidden=true);const video=node.querySelector('video');if(video&&!video.paused)video.pause();}
@@ -326,14 +332,19 @@ function renderUniversalPreview(){
   for(const [key,box] of groupBoxes){const used=usedGroups.get(key);if(!used){if(box.parentNode===composition)for(const child of [...box.children])composition.append(child);box.remove();groupBoxes.delete(key);continue;}box.style.zIndex=String(used.z);box.style.opacity=String(Math.max(0,Math.min(1,used.alpha)));}
   composition.hidden=!visible.length;placeholder.hidden=!!visible.length;
   if(!visible.length)placeholder.textContent=duration()?'На цій позиції немає візуального кліпу':'Додайте матеріал на шар';
-  const frameWidth=composition.clientWidth;   // read once: a read after the style writes below forces a layout per clip
+  const frameWidth=composition.clientWidth,frameHeight=composition.clientHeight;   // read once: a read after the style writes below forces a layout per clip
   for(const clip of visible){
     const wrapper=state.previewNodes.get(clip.id);if(!wrapper)continue;
     const local=now-seconds(clip.start),values=animatedValues(clip,local,true);
-    wrapper.style.left=(values.x*100)+'%';wrapper.style.top=(values.y*100)+'%';
+    // the box stands at the clip's own place and its motion goes into the transform on the compositor, in fractions of
+    // a pixel: left/top moved by whole pixels, so a slow drift stood still and then jumped a pixel, a jerky zoom (user,
+    // 25 November 2026: «рвана анімація приближення… немає такої якості, плавності»; Antropov's frame 38)
+    const baseX=Number(clip.x ?? .5),baseY=Number(clip.y ?? .5),moving=(clip.keyframes||[]).length>0||values.x!==baseX||values.y!==baseY;
+    wrapper.style.left=(baseX*100)+'%';wrapper.style.top=(baseY*100)+'%';
     wrapper.style.width=(Number(clip.width ?? 1)*100)+'%';wrapper.style.height=(Number(clip.height ?? 1)*100)+'%';
     wrapper.style.opacity=String(Math.max(0,Math.min(1,values.opacity)));
-    wrapper.style.transform=`translate(-50%, -50%) scale(${Math.max(.05,values.scale)})`;
+    wrapper.style.transform=moving?`translate(-50%, -50%) translate3d(${((values.x-baseX)*frameWidth).toFixed(3)}px, ${((values.y-baseY)*frameHeight).toFixed(3)}px, 0) scale(${Math.max(.05,values.scale)})`
+      :`translate(-50%, -50%) scale(${Math.max(.05,values.scale)})`;
     const text=wrapper.querySelector('.composition-text');
     if(text && clip.font_size){text.style.fontSize=(Number(clip.font_size)*frameWidth/Number(state.project.width))+'px';text.style.fontFamily=JSON.stringify(clip.font_family || 'Arial')+', sans-serif';text.style.fontWeight=String(clip.font_weight || 400);text.style.textShadow='none';if(!clip.text_words?.length)text.style.whiteSpace='pre-wrap';}
     if(text && clip.text_words?.length)for(const word of text.children)applyWordEntrance(word,Number(word.dataset.wordStart),clip,local,frameWidth);
@@ -341,12 +352,19 @@ function renderUniversalPreview(){
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
     const codeCanvas=wrapper.querySelector('.composition-code');
-    if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.max(0,local),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip)});
+    if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.min(Math.max(0,local),Math.max(0,(Number(clip.duration)||0)-1/(Number(state.project?.fps)||25))),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip)});
       if(error!==codeCanvas._error){codeCanvas._error=error;wrapper.dataset.codeError=error||'';if(error)console.warn('Моушн-код «'+(clip.title||'')+'»: '+error);}}
     if(clip.content_type==='capcut_effect')syncCapcutEffect(wrapper,clip,local);
-    const video=wrapper.querySelector('video:not(.capcut-loop)');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
+    const video=wrapper.querySelector('video:not(.capcut-loop)');
+    // past the end of its file (a transition going out of the host's HeyGen clip) the video holds its last frame paused:
+    // play() on an ended video starts it from the top, and the seek back made the host blink (user, 25 November 2026)
+    if(video&&Number.isFinite(video.duration)&&seconds(clip.trim_start)+local>=video.duration-.05){
+      if(!video.paused)video.pause();
+      if(!video.seeking&&Math.abs(video.currentTime-(video.duration-.04))>.06)video.currentTime=Math.max(0,video.duration-.04);
+      video.muted=true;
+    }else if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
-  $('time-current').textContent=clock(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
+  $('time-current').textContent=clockMs(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();
   renderGraphicTransitionOverlay(composition,now);
   if(typeof renderCapcutTransitionOverlay==='function')renderCapcutTransitionOverlay(composition,now);

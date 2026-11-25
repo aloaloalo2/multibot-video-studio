@@ -176,6 +176,7 @@ PLAN_CONFIG = "video-plan.json"
 MEDIA_EXTENSIONS = {".mp4": "video", ".mov": "video", ".webm": "video", ".mkv": "video", ".m4v": "video", ".jpg": "image", ".jpeg": "image", ".png": "image", ".webp": "image", ".bmp": "image", ".tif": "image", ".tiff": "image", ".wav": "audio", ".aiff": "audio", ".aif": "audio", ".mp3": "audio", ".m4a": "audio", ".aac": "audio", ".flac": "audio", ".ogg": "audio", ".opus": "audio"}
 LOCK = threading.RLock()
 _DURATION_CACHE = {}
+_DURATIONS_LOADED = False
 _AUDIO_HASH_CACHE = {}
 
 
@@ -377,10 +378,8 @@ def validate_settings(value: dict) -> dict:
         unknown = [t for t in chosen.get("allowed", []) if t not in joins.CHOICES]
         if unknown:
             raise StudioError("Невідомі переходи: " + ", ".join(map(str, unknown[:5])))
-        share = chosen.get("share", .7)
-        if type(share) not in (int, float) or not 0 <= share <= 1:
-            raise StudioError("Частка переходів має бути від 0 до 100%")
-        value["transitions"] = {"allowed": list(dict.fromkeys(chosen.get("allowed", []))), "share": round(float(share), 3)}
+        # the share left the settings (user, 25 November 2026: «студія… сама рішати… обмежень не буде»)
+        value["transitions"] = {"allowed": list(dict.fromkeys(chosen.get("allowed", [])))}
     if value.get("motion_easing", "ease_in_out") not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
         raise StudioError("Невідомий тип руху")
     if value.get("text_look", "varied") not in {"varied", "dim"}:
@@ -654,8 +653,8 @@ def load_project(pid: str) -> dict:
     if data.get("deleted_at"):
         raise StudioError("Проєкт видалено зі списку", 404)
     data["created_at"] = project_created_at(data, project_dir(pid))
-    import logo_layer
-    return logo_layer.bind(upgrade_legacy_project(data))
+    import logo_layer, joins
+    return joins.anchor(logo_layer.bind(upgrade_legacy_project(data)))
 
 
 def item_layers(project: dict) -> dict:
@@ -1675,10 +1674,29 @@ def media_duration(path: Path) -> float | None:
         key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
         if key in _DURATION_CACHE:
             return _DURATION_CACHE[key]
+        # kept on disk too: after a restart the first read of a project asked ffprobe again for each of its videos,
+        # 2 s before the episode opened (25 November 2026)
+        global _DURATIONS_LOADED
+        if not _DURATIONS_LOADED:
+            _DURATIONS_LOADED = True
+            try:
+                for row in json.loads((DATA_ROOT / "duration-cache.json").read_text()):
+                    _DURATION_CACHE.setdefault(tuple(row[:3]), row[3])
+            except (OSError, ValueError, TypeError, IndexError):
+                pass
+            if key in _DURATION_CACHE:
+                return _DURATION_CACHE[key]
         result = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], capture_output=True, text=True, timeout=8)
         duration = float(result.stdout.strip()) if result.returncode == 0 else 0
         value = round(duration, 3) if math.isfinite(duration) and duration > 0 else None
         _DURATION_CACHE[key] = value
+        try:
+            target = DATA_ROOT / "duration-cache.json"
+            part = target.with_name(f"duration-cache.{os.getpid()}.{threading.get_ident()}.part")
+            part.write_text(json.dumps([[*k, v] for k, v in list(_DURATION_CACHE.items())[-5000:]]))
+            os.replace(part, target)
+        except OSError:
+            pass
         return value
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
@@ -1750,43 +1768,86 @@ def media_roots(project: dict) -> list[Path]:
     return list(dict.fromkeys(roots))
 
 
+AGENT_EPISODE_FOLDERS = ("кадри",)   # folders the frame agent used to make in the episode folder (moved to the studio)
+
+
+def _rewrite_paths(value, moves: dict):
+    """The same JSON with every string equal to a moved path replaced by its new path."""
+    if isinstance(value, str):
+        return moves.get(value, value)
+    if isinstance(value, list):
+        return [_rewrite_paths(item, moves) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_paths(item, moves) for key, item in value.items()}
+    return value
+
+
 def relocate_media(pid: str, expected_revision: int | None = None) -> dict:
-    """Move tracked legacy imports into Studio while retaining asset ids and a rollback journal."""
+    """Move tracked legacy imports into Studio while retaining asset ids and a rollback journal. The agent's folders in
+    the episode («кадри») move whole, tracked or not: the episode folder is the author's (user, 25 November 2026:
+    «папка кадри… це типу сміття технічне, мені взагалі тут в таких папках не потрібно»). Undo snapshots follow."""
     with LOCK:
         project=load_project(pid)
         if expected_revision is not None and project["revision"]!=expected_revision:
             raise StudioError("Проєкт змінився. Оновіть його перед перенесенням матеріалів.",409)
-        legacy=Path(project.get("episode_path") or "")/EPISODE_STORE/"Матеріали"
-        if not project.get("episode_path") or not legacy.is_dir():return {"project":project,"moved":0}
+        episode=Path(project.get("episode_path") or "")
+        legacy=episode/EPISODE_STORE/"Матеріали"
+        agent_dirs=[episode/name for name in AGENT_EPISODE_FOLDERS if project.get("episode_path") and (episode/name).is_dir()]
+        if not project.get("episode_path") or (not legacy.is_dir() and not agent_dirs):return {"project":project,"moved":0}
         target=media_dir(project);target.mkdir(parents=True,exist_ok=True)
         journal_dir=project_dir(pid)/"migrations"/str(time.time_ns());journal_dir.mkdir(parents=True)
         atomic_json(journal_dir/"project-before.json",project)
         moves={}
+
+        def move(source: Path) -> str:
+            folder=next((d for d in agent_dirs if under(source,d)),None)
+            if folder is None:
+                dest=claim_media_name(target,source.name)
+            else:
+                place=target/folder.name/source.relative_to(folder.resolve()).parent;place.mkdir(parents=True,exist_ok=True)
+                dest=claim_media_name(place,source.name)
+            shutil.move(str(source),str(dest));moves[str(source)]=str(dest.resolve())
+            return moves[str(source)]
+
         try:
             for asset in project.get("assets",[]):
                 source=Path(asset.get("path") or "").resolve()
                 if str(source) in moves:
                     asset["path"]=moves[str(source)];continue
-                if not source.is_file() or not under(source,legacy):continue
-                if str(source) not in moves:
-                    dest=claim_media_name(target,source.name)
-                    shutil.move(str(source),str(dest));moves[str(source)]=str(dest.resolve())
-                asset["path"]=moves[str(source)]
+                if not source.is_file() or not (under(source,legacy) or any(under(source,d) for d in agent_dirs)):continue
+                asset["path"]=move(source)
+            for folder in agent_dirs:   # the agent's files nobody placed go along, so its folder leaves the episode
+                for leftover in sorted(p for p in folder.rglob("*") if p.is_file()):
+                    if str(leftover.resolve()) not in moves:move(leftover.resolve())
             atomic_json(journal_dir/"paths.json",moves)
             if moves:
                 if read_json(project_path(pid),{}).get("revision")!=project["revision"]:
                     raise StudioError("Проєкт змінився під час перенесення. Матеріали повернуто на попереднє місце.",409)
                 project["revision"]+=1;save_project(project)
                 _DISCOVERED.pop(pid,None)
+                for snapshot in history_folder(pid).rglob("*.json") if history_folder(pid).is_dir() else []:
+                    try:
+                        old=read_json(snapshot,None)
+                        if old is not None:
+                            new=_rewrite_paths(old,moves)
+                            if new!=old:atomic_json(snapshot,new)
+                    except (OSError,ValueError):
+                        pass
         except Exception:
             for source,dest in reversed(list(moves.items())):
                 Path(source).parent.mkdir(parents=True,exist_ok=True)
                 shutil.move(dest,source)
             raise
         # Remove only empty managed folders. Untracked files and the episode itself are preserved.
-        for folder in [*sorted((x for x in legacy.rglob('*') if x.is_dir()),key=lambda x:len(x.parts),reverse=True),legacy,legacy.parent]:
-            try:folder.rmdir()
-            except OSError:pass
+        for root in [legacy,*agent_dirs]:
+            if not root.is_dir():continue
+            for folder in [*sorted((x for x in root.rglob('*') if x.is_dir()),key=lambda x:len(x.parts),reverse=True),root]:
+                for junk in (".DS_Store",):
+                    (folder/junk).unlink(missing_ok=True)
+                try:folder.rmdir()
+                except OSError:pass
+        try:legacy.parent.rmdir()
+        except OSError:pass
         return {"project":project,"moved":len(moves),"journal":str(journal_dir)}
 
 
@@ -2119,6 +2180,13 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             start = min(float(c["start"]) for c in clips)
             end = max(float(c["start"]) + float(c["duration"]) for c in clips)
             index = min(plate_index, max(i for i, l in enumerate(layers) if any(c["id"] in members for c in l.get("clips", []))) + 1)
+            if payload.get("above_clip"):
+                # on the frame's background only, under its words and graphics (user, 25 November 2026: «не на цілий
+                # кадр, а… на фон… в кадрі»)
+                below = next((i for i, l in enumerate(layers) if any(c["id"] == payload["above_clip"] and c["id"] in members for c in l.get("clips", []))), None)
+                if below is None:
+                    raise StudioError("Фон кадру для ефекту не знайдено", 404)
+                index = below + 1
         else:
             film = [c for l in layers for c in l.get("clips", []) if c.get("kind") != "audio" and c["id"] not in overlay]
             start = finite_float(payload.get("start", 0), 0, 36000, "Невірний початок ефекту")
@@ -2133,6 +2201,10 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
                 "trim_start": 0.0, "volume": 0.0, "title": title, "text": "", "content_type": "capcut_effect", "capcut_effect": name,
                 "color": "#101114", "transition": {"type": "cut", "duration": 0.0}, "x": .5, "y": .5, "width": 1.0, "height": 1.0,
                 "scale": 1.0, "opacity": 1.0, "keyframes": [], "easing": "linear"}
+        if payload.get("opacity") is not None:
+            # the effect's strength: a light touch keeps a frame alive without covering it (user, 25 November 2026:
+            # «їх силу, якщо потрібно їх не сильно насичено робити»)
+            clip["opacity"] = round(finite_float(payload["opacity"], .05, 1, "Сила ефекту від 5 до 100%"), 3)
         layer["clips"].append(clip)
         if payload.get("group_id"):
             group["clip_ids"].append(clip["id"])
@@ -2229,12 +2301,29 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             group=next((g for g in project.get('scene_groups',[]) if g['id']==payload['group_id']),None)
             if not group:raise StudioError('Frame group not found',404)
             group['clip_ids'].append(clip['id'])
+            if payload.get('under_text') is True:
+                # a background (motion code that fills the frame) lies under the frame's words, never over them (user,
+                # 25 November 2026: «124 текстовая вставка просто исчезла»: a deep-field background covered its text)
+                members=set(group['clip_ids'])
+                texts=[i for i,l in enumerate(layers) if l is not layer and any(c['id'] in members and (c.get('kind')=='text' or c.get('content_type')=='text') for c in l.get('clips',[]))]
+                if texts:
+                    layers.remove(layer)
+                    layers.insert(min(i for i in texts if i < len(layers) + 1), layer)
         else:
             # a clip the agent named for its frame («K020 градієнт») but forgot to group goes into that frame's group, not
             # onto a loose row of its own (user, 22 November 2026: «це мало бути в кадрі все»)
             named=re.match(r'K(\d{3}) ',str(clip.get('title') or ''))
             group=named and next((g for g in project.get('scene_groups',[]) if g.get('title')==f"Кадр {int(named.group(1))}" and g.get('role','scene')=='scene'),None)
             if group:group['clip_ids'].append(clip['id'])
+            # a Razgon frame block is its frame from the moment it is added, its group made in the same action: added
+            # and grouped in two batches, the editor showed the blocks a moment as loose rows each with a gap mark
+            # (user, 25 November 2026: «так не має бути взагалі… Кожен кадр має працювати окремо… легко, зручно і просто»)
+            block=re.fullmatch(r'Razgon · кадр (\d{3})',str(clip.get('title') or ''))
+            if block and not group:
+                frame=f"Кадр {int(block.group(1))}"
+                own=next((g for g in project.get('scene_groups',[]) if g.get('title')==frame and g.get('role','scene')=='scene'),None)
+                if own:own['clip_ids'].append(clip['id'])
+                else:project.setdefault('scene_groups',[]).append(dict(id=uuid.uuid4().hex[:12],title=frame,clip_ids=[clip['id']],role='scene'))
     elif action == "move_clip":
         old_layer, clip = clip_by_id(project, str(payload["clip_id"]))
         target = layer_by_id(project, str(payload.get("to_layer_id", old_layer["id"])))

@@ -166,7 +166,11 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                      for c in frame["clips"] if c.get("kind") == "text" and str(c.get("text") or "").strip()]
             timings = (plan_frame or {}).get("sentence_timings") or []
             spoken = max(frame["start"], float(timings[0]["start"])) if timings else frame["start"]
-            if shown and min(shown) - spoken > 1.6:
+            # a motion-code layer that draws from the frame's start carries the picture until the words come (Andromeda
+            # 118, 25 November 2026: two galaxies drift together before «Милкомеда» is written): the frame is not empty
+            drawn = any(c.get("kind") == "animation" and c.get("content_type") == "code"
+                        and float(c["start"]) <= spoken + .5 for c in frame["clips"])
+            if shown and not drawn and min(shown) - spoken > 1.6:
                 problems.append(f"текстовий кадр без тексту {min(shown) - spoken:.1f} с, хоча голос уже говорить")
         join = joins_by_from.get("group:" + frame["group"]["id"])
         content = (f"{main.get('kind')} {_name(main, assets)} {_motion(main)}".strip() if main else

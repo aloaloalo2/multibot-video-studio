@@ -43,20 +43,29 @@
   document.head.append(style);
 
   const info = () => state.project && live[state.project.id];
-  const active = () => !!(info()?.url && read(KEY, '1') === '1');
+  // always live: the switch left the preview with its settings (user, 25 November 2026: «настройки оці прибрав»)
+  const active = () => !!info()?.url;
   const source = () => `${info().url}?embed=1&scale=${quality.value}`;
   // the live frame comes into view only with its own moment on the canvas (user, 25 November 2026: «з другого на третій
   // кадр… пригає на якийсь… кадр посередині… а потім… початок»): after a jump of time it waits for the page's «drawn»
   let drawnAt = null, waitingFor = null, waitTimer = null, wasOn = false, lastT = null;
   const reveal = () => { if (waitingFor === null && frame.dataset.wantVisible === '1') frame.style.visibility = ''; };
   let seekTime = null;   // the Razgon time the picture shows: the playhead, or a frame's last moment while a transition fades out of it
-  const post = () => { if (!frame.hidden && frame.contentWindow) frame.contentWindow.postMessage({ razgon: 'seek', t: seekTime ?? state.playhead }, '*'); };
+  // one drawing a frame of the film, on the export's own moment f/fps: the playback asked for one every screen refresh
+  // (about 60 a second) while a film has 25, and Razgon drew most of them twice for nothing (25 November 2026)
+  let postedFrame = null, seekWithin = null;
+  const post = (force) => {
+    if (frame.hidden || !frame.contentWindow) return;
+    const fps = state.project?.fps || 25, index = Math.round((seekTime ?? state.playhead) * fps), key = index + (seekWithin ? '|' + seekWithin.join(',') : '');
+    if (!force && key === postedFrame) return;
+    postedFrame = key; frame.contentWindow.postMessage({ razgon: 'seek', t: index / fps, within: seekWithin }, '*');
+  };
   // A live server that went down (the studio restarted, after an update) leaves a black frame: the player says «ready»
   // when it draws, so one that keeps silent is started again (user, 2 November 2026: «код не відтворюється»).
   let ready = false, watch = 0; const retried = new Set();   // one fresh start a project a page
   addEventListener('message', (event) => {
     if (event.source !== frame.contentWindow) return;
-    if (event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); showNote(''); post(); }
+    if (event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); showNote(''); post(true); }
     if (event.data?.razgon === 'drawn') { drawnAt = event.data.t; if (waitingFor !== null && Math.abs(drawnAt - waitingFor) < .2) { waitingFor = null; clearTimeout(waitTimer); reveal(); } }
     if (event.data?.razgon === 'error') showNote(`Живий перегляд не може намалювати сцени: ${event.data.message || 'невідома помилка'}. Виправте сцену або натисніть «Перезапустити перегляд».`);
   });
@@ -132,11 +141,13 @@
   // a seek posted while the second player still loads is lost (the seam stayed black, 21 November 2026): the wanted
   // moment is kept and posted again when that player says «ready»
   let outAt = null, outWant = null, outReady = false;
-  const outPost = (time) => { outWant = time; if (!outReady || time === outAt || !frameOut.contentWindow) return; outAt = time; frameOut.contentWindow.postMessage({ razgon: 'seek', t: time }, '*'); };
+  // `within`: the outgoing frame's own edges, so the player draws its last shot on, alive, past the seam (no held picture)
+  const outPost = (time, within) => { const fps = state.project?.fps || 25; time = Math.round(time * fps) / fps; const key = time + (within ? '|' + within.join(',') : ''); outWant = [time, within];
+    if (!outReady || key === outAt || !frameOut.contentWindow) return; outAt = key; frameOut.contentWindow.postMessage({ razgon: 'seek', t: time, within: within || null }, '*'); };
   frameOut.addEventListener('load', () => { outAt = null; outReady = false; });
   addEventListener('message', (event) => {
     if (event.source !== frameOut.contentWindow || event.data?.razgon !== 'ready') return;
-    outReady = true; outAt = null; if (outWant !== null) outPost(outWant);
+    outReady = true; outAt = null; if (outWant !== null) outPost(...outWant);
   });
   // t inside the transition of a seam between two Razgon frames: the incoming frame in the first player, the outgoing
   // one held at its last moment in the second, each moved by the transition; anything else: the first player as it is
@@ -147,7 +158,7 @@
     // warm up: the frame playing now ends in a seam with a transition into another Razgon frame
     const ahead = incoming && frames.find((f) => Math.abs(f.start - incoming.end) < 1 / fps / 2);
     const aheadClip = ahead && blockOf(incoming);
-    if (aheadClip && transitionInfo(aheadClip).outgoing) outPost(incoming.sourceEnd - 1 / fps);
+    if (aheadClip && transitionInfo(aheadClip).outgoing) outPost(incoming.sourceEnd, [incoming.sourceStart, incoming.sourceEnd]);
     const inClip = outgoing && blockOf(incoming), outClip = outgoing && blockOf(outgoing);
     const join = outClip && transitionInfo(outClip).outgoing;
     const span = join && joinFrames(join);
@@ -162,7 +173,7 @@
     const type = join.type, fades = type === 'crossfade' || type.startsWith('zoom_') || type.startsWith('capcut_t') || graphicTransitionPresets[type]?.kind === 'cinematic';
     if (fades) frameOut.style.opacity = String(Math.max(0, 1 - easedProgress((t - span.seam) / span.duration, 'ease_in_out')));
     frameOut.style.visibility = 'visible';   // '' would fall back to the stylesheet's hidden
-    outPost(outgoing.sourceEnd - 1 / fps);
+    outPost(outgoing.sourceEnd + (t - outgoing.end), [outgoing.sourceStart, outgoing.sourceEnd]);
   }
 
   // In live mode the rendered Razgon clips are not decoded at all: the iframe draws the picture under the studio's own
@@ -182,9 +193,14 @@
     // seam + duration ended one frame early, and for that frame the block's black base showed over the next picture
     // (user, 25 November 2026: «після переходу просто чорний на один фрейм показується»)
     const tailEnd = (f) => { const join = tail(f); if (!join) return f.end; const span = joinFrames(join); return span.seam + span.duration; };
-    const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < tailEnd(f));
+    // a transition into the frame that ends on its seam (out of the host's video, joins.ends_at_seam) shows the frame's
+    // first moment from the transition's start
+    const head = (f) => { const join = (state.project?.join_transitions || []).find((j) => j.to_ref === `group:${groupId(f)}` && joinAhead(j) > 0 && Math.abs(j.seam - f.start) < .05); return join ? joinFrames(join).seam : f.start; };
+    const inside = own && own.find((f) => t >= head(f) && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < tailEnd(f));
     const sourceFrame=inside||fading;
-    seekTime = sourceFrame ? Math.max(sourceFrame.sourceStart,Math.min(t,sourceFrame.sourceEnd-1/(state.project?.fps||25))) : null;
+    // past the frame's edges (a transition's tail, or an early start) the player draws the frame's edge shot on, alive
+    seekTime = sourceFrame ? sourceFrame.sourceStart + (t - sourceFrame.start) : null;
+    seekWithin = sourceFrame ? [sourceFrame.sourceStart, sourceFrame.sourceEnd] : null;   // always the frame's own shots and words
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
     const jumped = on && (!wasOn || lastT === null || Math.abs(t - lastT) > .25);
     wasOn = on; lastT = t;
@@ -192,8 +208,9 @@
     frame.dataset.wantVisible = on ? '1' : '';
     if (!on) { frame.style.visibility = 'hidden'; waitingFor = null; clearTimeout(waitTimer);
       // the next Razgon frame within 0.6 s is drawn ahead while hidden, so it comes in on its first moment
-      const next = own && own.find((f) => f.start > t && f.start - t < .6);
-      if (next && frame.contentWindow && !frame.hidden) frame.contentWindow.postMessage({ razgon: 'seek', t: next.sourceStart ?? next.start }, '*');
+      // its first moment is where it comes in: a transition that leads it starts it before its seam (head)
+      const next = own && own.find((f) => head(f) > t && head(f) - t < .6);
+      if (next && frame.contentWindow && !frame.hidden) { postedFrame = null; frame.contentWindow.postMessage({ razgon: 'seek', t: next.sourceStart + (head(next) - next.start), within: [next.sourceStart, next.sourceEnd] }, '*'); }
     } else if (jumped && !(drawnAt !== null && Math.abs(drawnAt - (seekTime ?? t)) < .2)) {
       frame.style.visibility = 'hidden'; waitingFor = seekTime ?? t; clearTimeout(waitTimer);
       waitTimer = setTimeout(() => { waitingFor = null; reveal(); }, 300);   // a page that never answers still shows

@@ -68,7 +68,9 @@ class NativeReviewTest(unittest.TestCase):
         joined=review.prepare(self.project,self.frames)
         self.assertEqual(original[1][0],joined[1][0])
         self.assertEqual(original[2][0],joined[2][0])
-        self.assertEqual(joined[1][1]['timeline_layers'][0]['clips'][0]['duration'],1.5)
+        # the transition's hit is on the seam: the outgoing frame lasts past it by the rest of the transition
+        import joins
+        self.assertAlmostEqual(joined[1][1]['timeline_layers'][0]['clips'][0]['duration'],1.5-joins.lead_seconds(self.project,self.project['join_transitions'][0]))
         self.project['join_transitions'][0]['type']='ribbon_tricolor'
         changed=review.prepare(self.project,self.frames)
         self.assertEqual(joined[1][0],changed[1][0])

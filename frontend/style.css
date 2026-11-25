@@ -402,6 +402,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .transport button{border:0;border-radius:9px;width:30px;height:30px;background:#303036;color:#f2f2f2}
 .transport input{flex:1;min-width:30px;accent-color:var(--ui-accent)}
 .transport #monitor-audio{display:grid;place-items:center;flex:none}
+#time-current{font-variant-numeric:tabular-nums;min-width:8ch}
 .transport #monitor-audio.sound-on{color:#ffcf59;background:#3a321e}
 .monitor-volume-control{display:flex;align-items:center;gap:6px;flex:none}
 .transport #monitor-volume{width:70px;flex:none;margin:0}
@@ -1022,9 +1023,20 @@ button.subtle,.sidebar-add,.project-item,
 .transport #play-pause,.transport #monitor-audio,.transport #monitor-audio.sound-on,.preview-panel .transport #play-pause,.preview-panel .transport #monitor-audio{background:transparent;box-shadow:none}
 .transport #play-pause:hover,.transport #monitor-audio:hover{background:transparent;color:#fff}
 .preview-panel .transport input{accent-color:#c4c8d1}.preview-panel .transport #monitor-volume{width:55px}
-.preview-panel:hover .transport,.preview-panel:focus-within .transport,.preview-panel:hover .preview-settings,.preview-panel:focus-within .preview-settings,.preview-settings[open]{opacity:1;pointer-events:auto}
-@media(hover:none){.preview-panel .transport,.preview-panel .preview-settings{opacity:1;pointer-events:auto}}
-@media(prefers-reduced-motion:reduce){.preview-panel .transport,.preview-settings{transition:none}}
+.preview-panel:hover .transport,.preview-panel:focus-within .transport,.preview-panel:hover .preview-fullscreen,.preview-panel:focus-within .preview-fullscreen{opacity:1;pointer-events:auto}
+@media(hover:none){.preview-panel .transport,.preview-panel .preview-fullscreen{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.preview-panel .transport,.preview-fullscreen{transition:none}}
+/* the corner button: the preview on the whole screen (25 November 2026: it replaced the settings) */
+.preview-settings[hidden]{display:none!important}
+.preview-fullscreen{position:absolute;right:10px;top:10px;z-index:45;display:grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid #ffffff18;border-radius:9px;background:#17181dcc;color:#c9ccd3;cursor:pointer;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .18s ease}
+.preview-fullscreen svg{width:17px;height:17px}
+.preview-fullscreen:hover{background:#35363ce6;color:#fff}.preview-fullscreen:focus-visible{outline:2px solid #aeb4c2;outline-offset:2px}
+/* a click zooms the picture in (a magnifier), a zoomed picture is moved by hand */
+.preview-surface{cursor:zoom-in}
+.preview-surface.is-zoomed{cursor:grab}.preview-surface.is-panning{cursor:grabbing}
+.preview-panel:fullscreen,.preview-panel.preview-expanded{display:flex;align-items:center;justify-content:center;background:#000;width:100vw;height:100vh}
+.preview-panel.preview-expanded{position:fixed!important;inset:0!important;z-index:1000;margin:0!important;border-radius:0;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;transform:none!important}
+.preview-panel:fullscreen .preview-surface,.preview-panel.preview-expanded .preview-surface{width:min(100vw,calc(100vh * var(--preview-ratio-number,1.7778)))!important;max-height:100vh;margin:0}
 .episode-make.locked .frame-strip{cursor:default}
 .episode-make.locked .frame-strip-max{opacity:.55}
 .episode-make.waiting .frame-strip{opacity:.5}
@@ -2855,10 +2867,6 @@ select option{background:#232327;color:#f1f1f2}
 .capcut-film{font-size:11px;padding:5px 8px;border-radius:999px;background:#ffffff10;color:#c9d2dc;border:1px solid #ffffff1c;cursor:pointer;white-space:nowrap}
 .capcut-film:hover{background:#ffffff20}
 .settings-transitions-body{display:grid;gap:14px}
-.settings-transitions-share{display:grid;gap:6px;margin:0}
-.settings-transitions-range{display:flex;gap:12px;align-items:center}
-.settings-transitions-range input{flex:1;margin:0}
-.settings-transitions-range output{min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:#d8dae1}
 .settings-transitions-note{margin:0;font-size:12px;line-height:1.45;color:#9599a4}
 .settings-transition-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .settings-transition-head>span:first-child{flex:1;min-width:0}
@@ -3075,6 +3083,7 @@ select option{background:#232327;color:#f1f1f2}
 
 /* «Малює: Codex / OpenRouter» next to «PNG асети» (17 November 2026) */
 .ai-spend-title{margin-top:14px}
+.channel-spend{padding:4px 2px;max-width:520px}.channel-spend-table{font-size:13.5px}.channel-spend-table th,.channel-spend-table td{padding:8px 10px;border-bottom:1px solid #ffffff0d}.channel-spend .ai-spend-total th,.channel-spend .ai-spend-total td{color:#f2f3f5;font-weight:600;border-bottom:0}.channel-spend-note{color:#8b9098;font-size:12px;line-height:1.5;margin:10px 2px;display:flex;gap:8px;align-items:center}
 .ai-spend{width:100%;border-collapse:collapse;font-size:12px;margin:4px 0 6px}
 .ai-spend th,.ai-spend td{padding:4px 6px;text-align:right;font-weight:400;color:#c7cbd1;white-space:nowrap}
 .ai-spend th:first-child{text-align:left;color:#9aa0a8}
@@ -3408,10 +3417,6 @@ select option{background:#232327;color:#f1f1f2}
 .channel-sound-source{grid-column:1/-1;margin:10px 0 2px;font-size:12px;color:var(--muted,#999da8);text-transform:none}
 /* the HeyGen estimate beside the grey «Створити відео» (25 November 2026) */
 .heygen-estimate{margin-left:8px;font-size:11px;font-weight:500;color:#8d909a;white-space:nowrap}
-/* «Перший кадр ведучого» under the HeyGen avatar: Avatar IV with its expressiveness and motion */
-.heygen-first-frame{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #2a2a2f}
-.heygen-first-frame label:not(.check){display:grid;gap:6px}
-.heygen-first-frame small{color:#8a8c94;line-height:1.4}
 /* the host's picture in the «Аватар і голос» tab, in the icon's place */
 .settings-tab-avatar{width:22px;height:22px;flex:none;border-radius:50%;object-fit:cover;border:0;box-shadow:none}
 /* a motion-code layer: its canvas is the film's size, scaled to the preview */
@@ -3422,3 +3427,10 @@ select option{background:#232327;color:#f1f1f2}
 /* the «Плашка» row: the channel's plate along the block, 65% more transparent, its label over it */
 .frame-group-clip.group-plate-strip{text-shadow:0 1px 2px #000,0 0 6px #000c}
 .frame-group-clip.group-plate-strip::before{content:"";position:absolute;inset:0;background:var(--plate) center/auto 80% space no-repeat;opacity:.35;pointer-events:none;z-index:0}
+
+/* No focus ring anywhere in the studio (user, 25 November 2026: «все, що виділяється табом, я забороняю… обводка
+   бордером… мулять око»): an element reached with Tab or clicked shows no outline or ring of its own. Hover and selection
+   styles stay; text fields keep their quiet editing border. */
+:focus,:focus-visible,:focus-within{outline:none!important}
+:focus-visible+*,:focus-visible~*,:focus-visible *,:has(>:focus-visible),label:has(:focus-visible){outline:none!important}
+.channel-settings-workspace .look-row:has(>summary:focus-visible){border-color:inherit}

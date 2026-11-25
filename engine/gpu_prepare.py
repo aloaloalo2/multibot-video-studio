@@ -218,6 +218,24 @@ def alpha_for(layer,points,elapsed,clip_len,easing,t,lag,speeds,frame):
     if layer.get('fade_out'):alpha*=ease((clip_len-t-elapsed)/float(layer['fade_out']),easing)
     return alpha
 
+baked_effects={}
+def bake_effect(path,effect):
+    """The still picture with its colour effect applied once (engine/visual_effects.py), alpha kept; None when it moves."""
+    import visual_effects
+    path=Path(path)
+    if not render.is_static_image(path):return None
+    chain=visual_effects.filters(effect)
+    if not chain:return path
+    key=(str(path),effect)
+    if key not in baked_effects:
+        target=assets/('effect-%s.png'%hashlib.sha1(('%s|%s|%s'%(path.resolve(),path.stat().st_mtime_ns,effect)).encode()).hexdigest()[:16])
+        if not target.exists():
+            result=subprocess.run([render.FFMPEG,'-v','error','-y','-i',str(path),'-vf','format=rgba,'+','.join(chain)+',format=rgba','-frames:v','1',str(target)],
+                                  capture_output=True,text=True,timeout=120)
+            if result.returncode or not target.exists():raise RuntimeError(result.stderr[-400:])
+        baked_effects[key]=target
+    return baked_effects[key]
+
 prepared=[]
 # A still (engine/still.py) prepares only a short window: the slices before it are skipped and the first one starts at
 # the window, which timeline_scene draws as the export does at that moment (each clip's keyframes, words and joins).
@@ -226,6 +244,16 @@ for idx,(begin,end,active) in enumerate(slices,1):
     if end<=window_start+1e-9:continue
     begin=max(begin,window_start)
     scene=render.timeline_scene(begin,end,active,assets,width,height,m.get('background','#101114'));duration=end-begin
+    # A colour effect on a still picture (monochrome, sepia, warm…) is a per-pixel change that never moves: it is baked
+    # into the picture once and the scene stays on the GPU. Six such pictures sent 32 slices of Antropov's film through
+    # the processor at about 23 s each (25 November 2026).
+    for layer in scene.get('layers',[]):
+        if layer.get('visual_effect') and render.normalized_kind(layer)=='image':
+            try:
+                baked=bake_effect(render.resolve_source(render.source_value(layer),source,'image'),layer['visual_effect'])
+            except Exception:
+                baked=None
+            if baked:layer['source']=str(baked);layer.pop('visual_effect',None)
     # Bake unsupported visual effects, blurred videos and animated images with
     # the established renderer. Regular transitions were separately checked.
     def needs_fallback(layer):

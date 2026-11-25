@@ -110,6 +110,15 @@ class TidyTest(unittest.TestCase):
         self.assertFalse(unused.exists())
         self.assertTrue(fresh.is_file())
 
+    def test_a_copy_of_a_voice_whose_file_time_changed_stays(self):
+        # a copy whose voice only got another file time (a clone, a restored date) is still that voice's: 37 copies went
+        # once for a rounded time and the playing voice vanished (user, 25 November 2026: «звука нема»)
+        import json as json_module
+        copy = write(self.data / "leveled" / ("2" * 20 + ".flac"), 10)
+        copy.with_suffix(".json").write_text(json_module.dumps({"source": str(self.voice.resolve()), "size": self.voice.stat().st_size}))
+        self.run_tidy()
+        self.assertTrue(copy.is_file())
+
     def test_an_unreadable_project_keeps_every_leveled_copy(self):
         broken = self.data / "projects" / ("b" * 24)
         broken.mkdir()

@@ -80,7 +80,8 @@ class SoundApiTest(unittest.TestCase):
             audio = [c for layer in saved['tracks'] for c in layer['clips'] if c['kind'] == 'audio']
             self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(audio, [5, 10])))   # peak on the transition's middle
             self.assertEqual(len(saved['scene_groups']), 3)
-            self.assertIn('tr_air', audio[0]['title']); self.assertIn('tr_snap', audio[1]['title'])
+            # a dissolve sounds soft (the studio's silk when the channel chose none), and one kind of transition one sound
+            self.assertTrue(all(c['title'].endswith('tr_silk') for c in audio[:2]))
             # Replacing the entrance to frame 3 must preserve frame 2 and its sound.
             op={'op':'transitions','frames':[3],'replace':True,'share':0}
             code,result=self.request(f'/api/projects/{pid}/ops','POST',{'ops':[op]})

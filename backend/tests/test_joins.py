@@ -52,7 +52,11 @@ class JoinTest(unittest.TestCase):
     def test_transport_keeps_editable_times_and_extends_only_visual_handles(self):
         p=self.project();joins.set_transition(p,dict(from_ref='group:a',to_ref='group:b',type='crossfade',duration=.3));before=copy.deepcopy(p['tracks'])
         layers=[dict(clips=[{**c,'type':c['kind']} for c in t['clips']]) for t in p['tracks']];joins.transport(p,layers)
-        self.assertEqual(p['tracks'],before);self.assertEqual(layers[0]['clips'][0]['duration'],1.3);self.assertIn('join_in',layers[1]['clips'][0])
+        # the transition is laid so its hit lands on the seam (a dissolve's middle): the outgoing side goes on past its
+        # edge by the rest, the incoming one starts that much earlier (user, 25 November 2026: «то спішать, то запізнюються»)
+        ahead=joins.lead_seconds(p,p['join_transitions'][0]);self.assertAlmostEqual(ahead,.16)
+        self.assertEqual(p['tracks'],before);self.assertAlmostEqual(layers[0]['clips'][0]['duration'],1.3-ahead);self.assertIn('join_in',layers[1]['clips'][0])
+        self.assertAlmostEqual(layers[1]['clips'][0]['start'],1-ahead);self.assertAlmostEqual(layers[1]['clips'][0]['join_in']['seam'],1-ahead)
         joins.set_transition(p,dict(from_ref='group:a',to_ref='group:b',type='cut',duration=.3));self.assertFalse(p['join_transitions'])
     def test_black_backing_and_visual_share_the_same_group_transition(self):
         p = self.project()

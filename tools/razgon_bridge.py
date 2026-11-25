@@ -106,6 +106,25 @@ CYRILLIC = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъы�
                      "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "i", "yi", "ye", "g"]))
 
 
+
+def clone_file(source, target) -> None:
+    """The file in a second place without a second copy of its bytes: an APFS clone shares the blocks until either file
+    changes (the voiceovers copied whole into the Razgon projects took 16.8 GB, 25 November 2026); a plain copy elsewhere."""
+    source, target = Path(source), Path(target)
+    if sys.platform == "darwin":
+        try:
+            import ctypes
+            import os as _os
+            libc = ctypes.CDLL("/usr/lib/libSystem.dylib", use_errno=True)
+            temporary = target.with_name(target.name + ".clone")
+            temporary.unlink(missing_ok=True)
+            if libc.clonefile(_os.fsencode(source), _os.fsencode(temporary), 0) == 0:
+                _os.replace(temporary, target)
+                return
+        except (OSError, AttributeError):
+            pass
+    shutil.copy2(source, target)
+
 def slugify(name: str) -> str:
     # Cyrillic is spelled in Latin letters: dropped, «25 Сухость глаз» and «25 Головокружение» both became «25» and
     # the second episode took the first one's Razgon folder (6 November 2026)
@@ -236,7 +255,7 @@ def prepare(args) -> None:
         (target / name).mkdir(parents=True, exist_ok=True)
     voice_dst = target / "input" / ("voiceover" + voice.suffix.lower()) if voice else None
     if voice:
-        shutil.copy2(voice, voice_dst)
+        clone_file(voice, voice_dst)
     (target / "input" / "script.txt").write_text(plan.get("spoken_script") or plan["script"], encoding="utf-8")
 
     fps = int(project.get("fps") or 30)
@@ -516,6 +535,8 @@ def render_frame(razgon: Path, frame: dict, fps: int, workers: str | None, pictu
     want = last - first
     command = ["node", "render.mjs", "--project", str(razgon), "--from", repr(first / fps), "--to", repr(last / fps),
                "--format", "jpeg", "--out", str(path)]
+    # the frame keeps to its own shots and words: a neighbouring host or text frame's empty slot never shows
+    command += ["--within", f"{first / fps!r},{last / fps!r}"]
     # on a Mac the frames are drawn on the GPU: 4–7 times faster than Chromium's software drawing, the same picture
     # (PSNR 43–45 dB on 05 Frozen Body, 30 October 2026). render.mjs itself stays as it is: it is part of the picture
     # fingerprint, and a change to it would make every rendered clip stale
@@ -1233,7 +1254,7 @@ def studio_export(args) -> None:
 
 
 TAIL_JOBS = 2      # held copies encoded at once, beside the renders
-MIXED_TAIL = 0.5   # seconds of held last picture after a mixed episode's frame: the Studio's transition out fades over it
+MIXED_TAIL = 0.5   # at least this much of a mixed episode's frame drawn on after its end, alive, for the Studio's transition out
 
 
 def studio_frames(args) -> None:
@@ -1261,12 +1282,52 @@ def studio_frames(args) -> None:
         length = lambda f: frame_index(f["end"], fps) - frame_index(f["start"], fps)
         whole, finished = sum(map(length, frames)), []
         encoder = video_encoder()
+        leads = {int(n): float(v) for n, v in (item.split(":") for item in (getattr(args, "leads", None) or "").split(",") if ":" in item)}
+        extra = {int(n): float(v) for n, v in (item.split(":") for item in (getattr(args, "tails", None) or "").split(",") if ":" in item)}
         def hold(frame):
+            # the frame's own edge shot drawn on past its edges, alive: a transition's tail after it (MIXED_TAIL) and,
+            # for a frame that comes in early under a transition out of a video with no tail, a head before it (user,
+            # 25 November 2026: «стоп-кадри в переходах не допускаю… це брак»); a held picture only where the film ends
             clip = frame_clip(razgon, frame["number"])
-            held = clip.with_name(f"{clip.stem}_tail.mp4")
-            if not held.is_file() or held.stat().st_mtime < clip.stat().st_mtime:
-                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(clip), "-vf", f"tpad=stop_mode=clone:stop_duration={MIXED_TAIL}",
+            lead = leads.get(frame["number"], 0.0)
+            after = max(MIXED_TAIL, extra.get(frame["number"], 0.0))
+            frames_after = round(after * fps)
+            held = clip.with_name(f"{clip.stem}_tail.mp4" if not lead and frames_after == round(MIXED_TAIL * fps)
+                                  else f"{clip.stem}_lead{round(lead * fps)}_tail{frames_after}.mp4")
+            if held.is_file() and held.stat().st_mtime >= clip.stat().st_mtime:
+                return held
+            first, last = frame_index(frame["start"], fps), frame_index(frame["end"], fps)
+            within = f"{first / fps!r},{last / fps!r}"
+            parts = []
+            def living(name, a, b):
+                if b <= a:
+                    return None
+                part = clip.with_name(f"{clip.stem}_{name}.mp4")
+                command = ["node", "render.mjs", "--project", str(razgon), "--from", repr(a / fps), "--to", repr(b / fps),
+                           "--within", within, "--format", "jpeg", "--out", str(part)] + (["--gl", "gpu"] if sys.platform == "darwin" else [])
+                subprocess.run(command, cwd=razgon.parents[1], check=True, stdout=subprocess.DEVNULL)
+                return part
+            try:
+                head = living("head", max(0, first - round(lead * fps)), first) if lead else None
+                tail = living("tailpart", last, last + frames_after)
+                parts = [p for p in (head, clip, tail) if p]
+                listing = clip.with_name(f"{clip.stem}_parts.txt")
+                listing.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts))
+                drawn = (video_frame_count(head) if head else 0) + video_frame_count(clip) + (video_frame_count(tail) if tail else 0)
+                pad = max(0.0, (round(lead * fps) + (last - first) + frames_after - drawn) / fps)   # past the film's end only
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                                *(["-vf", f"tpad=stop_mode=clone:stop_duration={pad:.3f}"] if pad > 1e-6 else []),
                                 *encoder, "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
+            except Exception as error:   # noqa: BLE001
+                # a renderer that cannot draw past the edge: the old held picture rather than no export at all
+                sys.stderr.write(f"Кадр {frame['number']}: живий хвіст не вийшов ({describe(error)}), тримаю останній кадр\n")
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(clip), "-vf",
+                                (f"tpad=start_mode=clone:start_duration={lead:.3f}:" if lead else "tpad=") + f"stop_mode=clone:stop_duration={after:.3f}",
+                                *encoder, "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
+            finally:
+                for part in parts:
+                    if part != clip:
+                        part.unlink(missing_ok=True)
             return held
         # each held copy is made as soon as its frame is drawn, beside the renders of the others: made one by one after
         # all of them they took 84 s of a 17-minute export (Николай Ветров, 17 November 2026)
@@ -1287,7 +1348,7 @@ def studio_frames(args) -> None:
             clips = {str(f["number"]): str(held[f["number"]].result()) for f in frames}
         finally:
             tails.shutdown(wait=True, cancel_futures=True)
-        report(stage="razgon_frames_done", clips=clips)
+        report(stage="razgon_frames_done", clips=clips, heads={str(n): v for n, v in leads.items()})
     except (BridgeError, subprocess.CalledProcessError, OSError, ValueError, KeyError) as error:
         report(stage="error", message=describe(error))
         raise SystemExit(1)
@@ -1358,6 +1419,8 @@ def main() -> None:
     m = sub.add_parser("frames", help="«Експорт MP4» змішаного ролика: дорендерити лише кадри-блоки Razgon, решту збирає студія")
     m.add_argument("--razgon", required=True)
     m.add_argument("--numbers", required=True, help="номери кадрів студії через кому")
+    m.add_argument("--leads", help="кадри, що заходять раніше під перехід: N:секунди через кому")
+    m.add_argument("--tails", help="скільки кадр триває після свого кінця під переходом: N:секунди через кому")
     m.add_argument("--workers", help="воркерів Chromium на один кадр (типово 1)")
     m.add_argument("--jobs", type=int, default=JOBS, help=f"найбільше кадрів одночасно, поки вистачає пам'яті (типово {JOBS})")
     m.set_defaults(run=studio_frames)

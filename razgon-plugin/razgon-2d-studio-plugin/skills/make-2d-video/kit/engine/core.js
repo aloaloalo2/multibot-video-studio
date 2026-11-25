@@ -260,7 +260,7 @@ export function text(g, str, x, y, o = {}) {
     const m = g.measureText(str), w = m.width, x0 = align === 'center' ? x - w / 2 : align === 'right' || align === 'end' ? x - w : x, T = g.getTransform();
     const px = [x0, x0 + w, x0, x0 + w], py = [y - m.actualBoundingBoxAscent, y - m.actualBoundingBoxAscent, y + m.actualBoundingBoxDescent, y + m.actualBoundingBoxDescent];
     const sx = px.map((v, i) => T.a * v + T.c * py[i] + T.e), sy = px.map((v, i) => T.b * v + T.d * py[i] + T.f);
-    const box = { str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height };
+    const box = { str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height, px: size * Math.hypot(T.a, T.b) };
     if (globalThis.TEXT_LOG) globalThis.TEXT_LOG.push(box);
     if (globalThis.DRAW_LOG && String(str).trim()) globalThis.DRAW_LOG.push({ k: 'text', ...box, a: g.globalAlpha, layer: globalThis.__LAYER ?? null });
   }

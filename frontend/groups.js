@@ -182,7 +182,7 @@ function compactSoundRows(entries){
     const clip=entry.clip,title=clip?.title||'';
     const family=clip?.kind==='audio'&&entry.layer.clips.every(c=>c.kind==='audio')
       ? /^(?:Звук ролика · )?(?:музика|музыка|music)(?:\s|$)/iu.test(title)?'music'
-        : /^Звук (?:ролика|переходу) · /u.test(title)?'sfx':null : null;   // every effect, transition sounds too, is SFX (user, 21 November 2026)
+        : /^Звук (?:ролика|переходу|друку|олівця|появи) · /u.test(title)?'sfx':null : null;   // every effect, transition, typing and pencil sounds too, is SFX (user, 21 and 25 November 2026: «звук друку… то ж є спеціальна SFX дорожка»)
     if(!family){rows.push(entry);continue;}
     let row=families.get(family);
     if(!row){row={title:family==='music'?'Музика':'SFX',soundFamily:family,soundItems:[],z:entry.z};families.set(family,row);rows.push(row);}
@@ -193,7 +193,7 @@ function compactSoundRows(entries){
 }
 
 function appendGroupedMediaClip(lane,{clip,layer}){
-  const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clip.kind==='audio'&&(clip.title==='Озвучка'||clip.audio_role==='voice')?'':clipLabel(clip);button.title=clipLabel(clip);button.setAttribute('aria-label',clipLabel(clip));Object.assign(button.style,{left:((Number(clip.start)-timelineOrigin())/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);if(layer.muted)button.style.opacity='.45';lane.append(button);
+  const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clip.kind==='audio'?'':clipLabel(clip);   /* a sound shows only its waveform; its name stays in the tooltip (user, 25 November 2026: «на SFX… прибери взагалі назви… залиш там лише волни») */button.title=clipLabel(clip);button.setAttribute('aria-label',clipLabel(clip));Object.assign(button.style,{left:((Number(clip.start)-timelineOrigin())/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);if(layer.muted)button.style.opacity='.45';lane.append(button);
 }
 
 function soundLane(entry){

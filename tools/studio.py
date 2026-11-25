@@ -19,7 +19,7 @@ Read GET /api/projects/<id>/narration for available choices before choosing scri
     python3 tools/studio.py stock P N "query" [--video]    # a numbered sheet of Pixabay candidates for frame N
     python3 tools/studio.py stock-pick P N ID [--video]    # download candidate ID and place it as frame N
     python3 tools/studio.py undo|redo P
-    python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]
+    python3 tools/studio.py transitions P [--share 0.7] [--seed 23] [--replace]   (без --share студія вирішує сама)
     python3 tools/studio.py ops P FILE.json|-               # several operations from JSON, one undo step
     python3 tools/studio.py sentences P                     # the director: numbered sentences of the voice, the channel's formats
     python3 tools/studio.py frames P FILE.json [--dry-run]  # the director: check and save the frame plan
@@ -49,7 +49,7 @@ from timeline_lock import timeline_lock  # noqa: E402
 
 STUDIO = "http://127.0.0.1:8770"
 # Commands that change the timeline: one at a time per project, so two frame sessions of one episode never collide.
-TIMELINE_COMMANDS = {"accent", "motion-code", "clear-accents", "replace", "undo", "redo", "remove", "place", "stock-pick", "transitions",
+TIMELINE_COMMANDS = {"accent", "effect", "motion-code", "clear-accents", "replace", "undo", "redo", "remove", "place", "stock-pick", "transitions",
                      "frames", "numbers", "ops"}
 LOCK_HELD = contextlib.ExitStack()
 
@@ -206,6 +206,11 @@ def _main(argv=None) -> int:
                        help="половинний розмір для перегляду очима: у 4 рази менше токенів; для координат акцентів беріть повний")
     exports = commands.add_parser("export", help="стан експорту")
     exports.add_argument("project")
+    fx = commands.add_parser("effect", help="ефект CapCut на кадр з силою: capcut_e01…e13 (шуми, зернистість, VHS, зоряний круїз, тремтіння, CRT; без e11) або none")
+    fx.add_argument("project"); fx.add_argument("frame"); fx.add_argument("effect")
+    fx.add_argument("--strength", type=float, default=.3, help="сила 0.05–1; легка текстура 0.2–0.4")
+    fx.add_argument("--on", choices=["frame", "background"], default="frame", help="на весь кадр або лише на його фон під текстом і графікою")
+    fx.add_argument("--dry-run", action="store_true")
     motion = commands.add_parser("motion-code", help="моушн-дизайн кодом над кадром: файл з function draw(ctx, t, info), Canvas 2D")
     motion.add_argument("project")
     motion.add_argument("frame")
@@ -296,10 +301,14 @@ def _main(argv=None) -> int:
     pick.add_argument("--video", action="store_true")
     pick.add_argument("--motion", choices=["zoom_in", "zoom_out", "pan_left", "pan_right", "none"], help="рух кадру вибирає агент; без нього кадр стоїть")
     pick.add_argument("--trim", type=float, help="з якої секунди відео почати")
+    events = commands.add_parser("event-sounds", help="звуки на появу тексту, картинок і на письмо в кадрах Razgon, за їхнім кодом")
+    events.add_argument("project")
+    events.add_argument("--frames", help="лише вибрані кадри, напр. 12-20")
     transitions = commands.add_parser("transitions", help="переходи на стиках за правилами каналу")
     transitions.add_argument("project")
     transitions.add_argument("--frames", help="лише стики на вході у вибрані кадри")
-    transitions.add_argument("--share", type=float, default=None, help="частка стиків; без неї з налаштувань каналу (70%%)")
+    transitions.add_argument("--share", type=float, default=None, help="частка стиків; без неї студія вирішує сама")
+    transitions.add_argument("--every", action="store_true", help="кожен вибраний у каналі перехід хоча б раз")
     transitions.add_argument("--seed", type=int, default=23)
     transitions.add_argument("--replace", action="store_true", help="розставити заново, не зберігаючи наявні")
     transitions.add_argument("--dry-run", action="store_true")
@@ -454,11 +463,18 @@ def _main(argv=None) -> int:
                 spec["assets"] = assets
             run_ops(project, [spec], args.dry_run)
             if not args.dry_run:
-                # the code is run at once on three moments, so an error shows now and not at the export
+                # the code is run at once on four moments, so an error or graphics fading before the frame end shows now
                 check = call("POST", f"/api/projects/{pid}/motion-check", {"frame": spec["frame"], "title": args.title})
                 if check.get("error"):
                     raise Failure("Код моушн-дизайну падає: " + check["error"] + ". Виправте файл і повторіть з --replace")
                 print("Перевірка коду: " + ", ".join(check.get("stills", [])))
+                if check.get("warning"):
+                    print("Увага: " + check["warning"] + ". Виправте файл і повторіть з --replace")
+            return 0
+        if args.command == "effect":
+            spec = {"op": "effect", "frame": int(args.frame) if args.frame.isdigit() else args.frame,
+                    "effect": None if args.effect in ("none", "-") else args.effect, "strength": args.strength, "on": args.on}
+            run_ops(project, [spec], args.dry_run)
             return 0
         if args.command == "clear-accents":
             run_ops(project, [{"op": "clear_accents", "frame": int(args.frame) if args.frame.isdigit() else args.frame}], args.dry_run)
@@ -552,8 +568,16 @@ def _main(argv=None) -> int:
                 spec["trim_start"] = args.trim
             run_ops(project, [spec], False)
             return 0
+        if args.command == "event-sounds":
+            body = {}
+            if args.frames:
+                body["frames"] = sorted({n for a, b in frame_ranges(args.frames) for n in range(a, b + 1)})
+            answer = call("POST", f"/api/projects/{project['id']}/event-sounds", body)
+            print("запущено: студія прочитає події з коду кадрів Razgon і покладе звуки (кілька хвилин)" if answer.get("started")
+                  else "уже йде для цього проєкту")
+            return 0
         if args.command == "transitions":
-            spec = {"op": "transitions", "share": args.share, "seed": args.seed, "replace": args.replace}
+            spec = {"op": "transitions", "share": args.share, "seed": args.seed, "replace": args.replace, "every": args.every}
             if args.frames:
                 ranges = frame_ranges(args.frames)
                 if any(b-a > 1000 for a,b in ranges):

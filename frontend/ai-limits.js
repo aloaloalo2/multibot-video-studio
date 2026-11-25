@@ -52,7 +52,7 @@
   function spent(s){
     if(!s||!s.services)return '';
     // today and the month only (user, 18 November 2026: «тиждень не нада»)
-    const rows=[['claude_code','Claude ≈'],['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs']].filter(([k])=>s.services[k]&&(s.services[k].month||s.services[k].day));
+    const rows=[['claude_code','Claude ≈'],['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs'],['fishaudio','Fish Audio']].filter(([k])=>s.services[k]&&(s.services[k].month||s.services[k].day));
     const cell=v=>`<td>${money(v)}</td>`;
     const body=rows.map(([k,name])=>`<tr><th>${name}</th>${cell(s.services[k].day)}${cell(s.services[k].month)}</tr>`).join('');
     return `<h4 class="ai-spend-title">Витрати</h4><table class="ai-spend"><thead><tr><th></th><th>Сьогодні</th><th>Місяць</th></tr></thead><tbody>${body}<tr class="ai-spend-total"><th>Усього</th>${cell(s.total.day)}${cell(s.total.month)}</tr></tbody></table>`;

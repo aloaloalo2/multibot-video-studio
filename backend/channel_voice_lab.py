@@ -544,6 +544,9 @@ def run(cid, settings, ref, job):
             if cached:
                 job['estimate']={**job['estimate'],'amount':0}
                 if settings['provider']=='elevenlabs':job['estimated_credits']=0
+            else:   # a paid sample is a charge of the channel (user, 25 November 2026: «все має бути записано»)
+                import spending
+                spending.charge(settings['provider'],(job.get('estimate') or {}).get('amount'),'voice-sample-'+str(job.get('fingerprint')),'voice_sample','channel:'+cid)
         target = root / 'samples' / (job['fingerprint'] + '.mp3')
         target.parent.mkdir(exist_ok=True)
         temporary = target.with_suffix('.pending.mp3');temporary.write_bytes(audio)

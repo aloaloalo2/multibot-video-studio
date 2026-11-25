@@ -48,7 +48,12 @@ def record_at(root: Path, provider: str, amount, *, identity=None, category="thu
         ledger(provider, amount, identity, category, root)
 
 
-def ledger(provider, amount, identity, category, root):
+JOURNAL_PROVIDERS = {"heygen", "elevenlabs", "fishaudio"}
+import contextvars
+JOURNAL_ON = contextvars.ContextVar("project_costs_journal_on")
+
+
+def ledger(provider, amount, identity, category, root, at=None):
     """Every paid charge in one studio-wide journal with its time, apart from the projects: the limits panel's
     spending survives a deleted project (user, 18 November 2026: «має працювати… навіть якщо я видалю проект»)."""
     if not number(amount) or amount <= 0:
@@ -60,12 +65,23 @@ def ledger(provider, amount, identity, category, root):
         return
     try:
         import json, time
-        line = {"at": round(time.time(), 1), "provider": provider, "amount": amount, "identity": identity,
+        line = {"at": round(at if number(at) else time.time(), 1), "provider": provider, "amount": amount, "identity": identity,
                 "category": category, "project": Path(root).name}
+        # the channel goes with the charge, so a channel's spending survives its deleted projects (user, 25 November 2026)
+        channel = (store.read_json(Path(root) / "project.json", {}) or {}).get("channel_id")
+        if channel:
+            line["channel"] = channel
         with open(store.DATA_ROOT / "spending-ledger.jsonl", "a", encoding="utf-8") as out:
             out.write(json.dumps(line, ensure_ascii=False) + "\n")
     except OSError:
         pass
+
+
+def mtime(path: Path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
 
 def collect(root: Path, data: dict) -> dict:
@@ -88,12 +104,21 @@ def collect(root: Path, data: dict) -> dict:
         except (OSError, ValueError):
             return None
 
-    def put(key, provider, amount, *, category="other", estimated=False):
+    def put(key, provider, amount, *, category="other", estimated=False, at=None):
         previous = events.get(f"{provider}:{key}", {})
         if provider == 'elevenlabs' and estimated and previous and not previous.get('estimated') and number(previous.get('amount')):
             return
         events[f"{provider}:{key}"] = {**previous, "provider": provider, "amount": amount if number(amount) else None,
                                        "category": category, "estimated": estimated}
+        if number(at):
+            events[f"{provider}:{key}"]["at"] = round(at, 1)
+        if not JOURNAL_ON.get(True):
+            return
+        # every paid charge the project index learns of reaches the studio-wide journal of the limits panel too: the
+        # host's HeyGen videos and the voices of translations were only on the cards (user, 25 November 2026: «сюди не
+        # записується нічого на рахунок Хейгена… все перевір, всі підрахунки, всі API»); the panel counts a charge once
+        if provider in JOURNAL_PROVIDERS and number(amount) and amount > 0 and previous.get("amount") != amount:
+            ledger(provider, amount, key, category, root, at=at)
 
     # Recover durable per-paragraph receipts if a later status/accounting write was interrupted.
     for path in (root / 'script-editing').glob('*/requests/*/receipt.json'):
@@ -154,7 +179,7 @@ def collect(root: Path, data: dict) -> dict:
     for path in (root/'narration/receipts').glob('*.json'):
         row=read(path)
         if isinstance(row,dict) and row.get('provider') in {'elevenlabs','fishaudio','heygen'}:
-            put(row['identity'],row['provider'],row.get('amount'),category='narration',estimated=True)
+            put(row['identity'],row['provider'],row.get('amount'),category='narration',estimated=True,at=row.get('created_at') or mtime(path))
     # Recover completed runs predating per-request receipts without charging cache hits twice.
     narration=store.read_json(root/'narration/job.json',{}) or {}
     if narration.get('status')=='done' and not narration.get('cost_receipts_version'):
@@ -170,7 +195,7 @@ def collect(root: Path, data: dict) -> dict:
         row = read(path)
         if (isinstance(row, dict) and not row.get("one_video") and row.get("video_id")
                 and row.get("state") in {"submitted", "completed"}):
-            put("video:" + str(row["video_id"]), "heygen", heygen_video_usd(row), category="video", estimated=True)
+            put("video:" + str(row["video_id"]), "heygen", heygen_video_usd(row), category="video", estimated=True, at=row.get("submitted_at") or mtime(path))
 
     roots = list((root / "languages").glob("*/parts/requests.json"))
     roots += list((root / "languages").glob("*/voice-history/*/parts/requests.json"))
@@ -192,7 +217,7 @@ def collect(root: Path, data: dict) -> dict:
             actual = row.get("actual_cost")
             known = number(actual) and row.get("status") == "complete"
             put(identity, provider, actual if known else row.get("estimated_cost"),
-                category="voice", estimated=not known)
+                category="voice", estimated=not known, at=row.get("started_at") or mtime(path))
 
     return data
 
@@ -260,3 +285,21 @@ def summary(pid: str, *, credit_rate=None, refresh=False) -> dict:
         store.atomic_json(path, {**data, "summary": result})
         CACHE[pid] = (time.monotonic(), credit_rate, result)
         return result
+
+
+def refresh_all() -> None:
+    """Every project's index brought up to date from its receipts, so the limits panel's journal has each charge even
+    for a project nobody opened since (unchanged receipt files are skipped by their stamps; no paid request)."""
+    for root in sorted(Path(store.PROJECTS_ROOT).glob("*")):
+        if not (root / "project.json").is_file():
+            continue
+        with LOCK:
+            path = root / "project-costs.json"
+            try:
+                before = store.read_json(path, {}) or {}
+                data = collect(root, json.loads(json.dumps(before)))
+                if data != before:
+                    store.atomic_json(path, data)
+                    CACHE.pop(root.name, None)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue

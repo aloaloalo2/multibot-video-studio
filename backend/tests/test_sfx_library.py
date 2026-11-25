@@ -154,13 +154,16 @@ class CapcutTrendingTest(unittest.TestCase):
         import json, tempfile
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            own, capcut = base / 'mixkit', base / sfx_library.CAPCUT
-            own.mkdir(); capcut.mkdir()
+            own, capcut, pencil = base / 'mixkit', base / sfx_library.CAPCUT, base / sfx_library.PENCIL
+            own.mkdir(); capcut.mkdir(); pencil.mkdir()
+            (pencil / 'catalog.json').write_text(json.dumps([{'mixkit_id': '6817200277167278082', 'capcut_id': '6817200277167278082',
+                                                             'label': 'Олівець пише на папері', 'category': 'drawing', 'duration_seconds': 2.01}]))
+            (pencil / '6817200277167278082.wav').write_bytes(b'x')
             (own / 'catalog.json').write_text(json.dumps([{'mixkit_id': '1', 'label': 'a', 'category': 'whoosh', 'duration_seconds': 1}]))
             (capcut / 'catalog.json').write_text(json.dumps([{'mixkit_id': '7380059209545746473', 'capcut_id': '7380059209545746473',
                                                               'label': 'Клік мишки', 'category': 'click', 'duration_seconds': 0.74}]))
             (own / '1.wav').write_bytes(b'x'); (capcut / '7380059209545746473.wav').write_bytes(b'x')
             with patch.object(sfx_library, 'ROOT', own):
                 rows = sfx_library.catalog()
-        self.assertEqual([r['source_group'] for r in rows], ['mixkit', 'capcut'])
+        self.assertEqual([r['source_group'] for r in rows], ['mixkit', 'capcut', 'capcut-pencil'])
         self.assertTrue(rows[1]['preview_url'].startswith('/api/sfx-library/7380059209545746473.wav'))

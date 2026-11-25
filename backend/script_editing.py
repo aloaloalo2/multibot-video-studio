@@ -52,6 +52,15 @@ CRITERIA = [
     'The narrator\'s view as a separate announced block («my own view, you might disagree», «here\'s the part I keep coming back to») or asides about his feelings instead of content',
     'A like request before the story starts, or a comment request in the middle of the script',
     'Abstract sentences said only for how they sound: bridges back to a question already raised, paragraph summaries, vague verdicts instead of what happened, vague actors, pretty comparisons that explain nothing, evidence without its stated conclusion',
+    # the author, 25 November 2026, on the «Космос PRO» dark matter map script: unclear for a viewer without preparation
+    'One word for several different things (the same «расчёт» for different calculations), or one thing under changing names; the viewer must always know which thing is meant',
+    'Symbols, letters, abbreviations and names of projects, surveys or programs the viewer does not need for the main idea («эс восемь», «обзор Кидс»): replace with a plain description',
+    'Everyday images instead of the direct property or process («комки», «глаже», «мягче», «не цепляется», «вычищают»), and unexplained professional jargon («новая физика», «снимать глубже», «погрешность»)',
+    'The title question stated late: what exactly is wrong or does not add up must be said plainly in the first sixth; background and method details beyond what the main idea needs, more than one new concept per paragraph',
+    'A thing mentioned before it is said what it is; the same property later named by other words that change the claim («менее плотно» then «вещества меньше»); a verb without its object; a grammatically incomplete sentence',
+    'The central concept of the topic never explained once so that it cannot be confused with a similar one («менее плотно» heard as «меньше вещества»); inverted word order («часть газа чёрная дыра выбрасывает»); a simplification that turns a fact false; an ending that contradicts or weakens the host\'s conclusion',
+    'A conclusion or «if…, then…» that does not follow from the facts just given, or that claims more than a future test can show',
+    'Sentences a viewer without preparation could not retell in his own words after hearing them once: unnatural word order, three or more chained clauses, a conclusion without what it means for him',
 ]
 EDITOR_MODE = 'author_self_review_v1'
 EDITOR_POLICY = 'slop_check_v3'

@@ -90,7 +90,29 @@ class Tidy:
                 self.drop(entry, kind)
 
     # ---- one project ---------------------------------------------------------------------------------------
+    def renders(self, folder: Path) -> None:
+        """Motion-code renders no clip uses any more (an older code or format: ProRes ones took 1.3 GB for 11 s) and the
+        held copies of transitions past their age or the folder's limit (they reached 24 GB on 25 November 2026)."""
+        if not self.apply:
+            return
+        try:
+            import joins
+            import motion_code
+            project = json.loads((folder / "project.json").read_text(encoding="utf-8"))
+            before = _size(folder / "motion-code") + _size(folder / "held-tails")
+            motion_code.prune(project)
+            if (folder / "held-tails").is_dir():
+                joins._prune_held(folder / "held-tails")
+            freed = before - _size(folder / "motion-code") - _size(folder / "held-tails")
+        except Exception:   # a render folder never stops the tidy of the rest
+            return
+        if freed > 0:
+            self.freed += freed
+            self.files += 1
+            self.by_kind["рендери моушн-коду й переходів"] = self.by_kind.get("рендери моушн-коду й переходів", 0) + freed
+
     def project(self, folder: Path) -> None:
+        self.renders(folder)
         for work in (folder / "languages").glob("*"):
             if work.is_dir():
                 self.language(work)
@@ -155,7 +177,7 @@ class Tidy:
         own = (self.data_root / "projects").resolve()
         if any(Path(folder).resolve().parent != own for folder in projects):
             return
-        live = set()
+        live, sources = set(), set()
         def remember(path: Path) -> None:
             try:
                 stat = path.stat()
@@ -163,6 +185,7 @@ class Tidy:
                 return
             key = f"{path.resolve()}\0{stat.st_size}\0{stat.st_mtime_ns}"   # audio_level._key
             live.add(hashlib.sha1(key.encode()).hexdigest()[:20])
+            sources.add((str(path.resolve()), stat.st_size))   # the same voice by path and size, whatever its file time
         for folder in projects:
             if not (folder / "project.json").is_file():
                 continue
@@ -180,8 +203,14 @@ class Tidy:
                 old = self.now - copy.stat().st_mtime > LEVELED_AGE
             except OSError:
                 continue
-            if copy.stem not in live and old:
+            try:
+                side = json.loads(copy.with_suffix(".json").read_text(encoding="utf-8"))
+                kept = (side.get("source"), side.get("size")) in sources
+            except (OSError, ValueError, AttributeError):
+                kept = False
+            if copy.stem not in live and not kept and old:
                 self.drop(copy, "невикористаний вирівняний голос")
+                copy.with_suffix(".json").unlink(missing_ok=True)
 
     def run(self, skip: set[str]) -> dict:
         root = self.data_root / "projects"

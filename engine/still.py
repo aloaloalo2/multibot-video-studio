@@ -61,6 +61,8 @@ def still(project_file: Path, moment: float, output: Path, frames: int = 1, cpu:
     began = time.monotonic()
     project = json.loads(project_file.read_text(encoding="utf-8"))
     width, height, fps = int(project.get("width", 1920)), int(project.get("height", 1080)), int(project.get("fps", 30))
+    # only the CapCut seams around the moment are drawn (capcut_fx._in_window): the rest of the film is never seen here
+    os.environ["STUDIO_CAPCUT_WINDOW"] = f"{moment - 2:.3f},{moment + max(2.0, frames / fps + 2):.3f}"
     _, _, total = render.timeline_plan(project, project_file, width, height, fps)
     count = round(total * fps)
     first = max(0, min(count - 1, render.frame_index(moment, fps)))

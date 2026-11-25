@@ -148,8 +148,9 @@ class SoundSettingsTest(unittest.TestCase):
             soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             clips = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
             self.assertTrue(all(abs(c['start'] - seam) < .5 for c, seam in zip(clips, [5, 10])))   # peak on the transition's middle
-            self.assertIn('tr_air', clips[0]['title'])
-            self.assertIn('tr_snap', clips[1]['title'])
+            # a dissolve sounds soft (a soft sound of the studio when the channel chose none), a slide whooshes
+            self.assertEqual(sound.sound_character(clips[0]['title'].split(' · ')[-1]), 'soft')
+            self.assertIn('tr_air', clips[1]['title'])
             ctx.project['tracks'][0]['clips'] += [dict(c, id=f'fx-{i}') for i, c in enumerate(clips)]
             ctx.actions.clear(); soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual(ctx.actions, [])
@@ -157,20 +158,82 @@ class SoundSettingsTest(unittest.TestCase):
             soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual([a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'], ['fx-1'])
 
-    def test_the_seam_where_the_host_goes_out_always_has_a_transition_sound(self):
+    def test_a_transition_sounds_like_what_it_does(self):
+        self.assertEqual(sound.transition_character('capcut_t24'), 'glitch')
+        self.assertEqual(sound.transition_character('crossfade'), 'soft')
+        chosen = ['tr_air', 'tr_cc7021300953584257026', 'tr_cc7685955880517355521']
+        self.assertEqual(sound.sounds_for('glitch', chosen), ['tr_cc7021300953584257026'])
+        self.assertNotIn('tr_cc7021300953584257026', sound.sounds_for('soft', chosen))   # a dissolve never glitches
+        self.assertTrue(all(sound.sound_character(n) == 'flash' for n in sound.sounds_for('flash', chosen)))   # from the studio
+
+    def test_a_batch_before_a_host_frame_sets_the_transition_into_the_host(self):
+        # the host's frames are made by the studio, never in an agent's batch: the seam into the host belongs to the batch
+        # of the frame before it (user, 25 November 2026: «якщо хайген аватар, то in переход має бути обов'язковий»)
+        frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)}, 'clips': [],
+                   'plan': {'format': 'host' if n == 3 else 'razgon_2d'}} for n in range(1, 5)]
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'fps': 25, 'tracks': [], 'join_transitions': []}, frames=frames,
+                              plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        with patch.object(montage_ops, 'channel_transitions', return_value={'allowed': ['crossfade']}), \
+             patch.object(soundtrack, 'transitions'), patch.object(soundtrack, 'typing'):
+            montage_ops.transitions(ctx, {'frames': [2]})
+        seams = {(a['payload']['from_ref'], a['payload']['to_ref']) for a in ctx.actions if a['type'] == 'set_join_transition'}
+        self.assertIn(('group:2', 'group:3'), seams)
+
+    def test_the_host_sounds_only_where_he_goes_out_and_a_cut_never(self):
         frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)},
                    'plan': {'format': 'host' if n == 2 else 'razgon_2d'}} for n in range(1, 5)]
-        joins = [{'from_ref': 'group:1', 'to_ref': 'group:2', 'type': 'crossfade', 'duration': .35}]   # 2 → 3 is a cut
+        joins = [{'from_ref': 'group:1', 'to_ref': 'group:2', 'type': 'crossfade', 'duration': .35},
+                 {'from_ref': 'group:2', 'to_ref': 'group:3', 'type': 'crossfade', 'duration': .35}]   # 3 → 4 is a cut
         ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 20}]}],
                                        'join_transitions': joins}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
              patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': False}}):
             soundtrack.transitions(ctx)
         cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
-        self.assertEqual([c['title'].split(' · ')[1] for c in cues], ['2 → 3'])   # only where the host goes out
+        # where the host goes out his transition sounds; where he comes in, none; a cut never (user, 25 November 2026:
+        # «для хейгена лише для аута. Для іна не став звуковий ефект»; «там, де дійсно переход»)
+        self.assertEqual([c['title'].split(' · ')[1] for c in cues], ['2 → 3'])
         self.assertLess(abs(cues[0]['start'] - 10), .5)
 
-    def test_animated_films_and_gentle_crossfades_do_not_get_automatic_transition_sound(self):
+    def test_a_transition_sound_peaks_on_the_transition_hit(self):
+        # user, 25 November 2026: «звук підставляється неточно, не в той момент переходу… то лівіше, то правіше»: a 1.4 s
+        # transition put its sound's peak 0.35 s after the seam, not on the transition
+        frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)}, 'plan': {'format': 'razgon_2d'}} for n in (1, 2)]
+        joins = [{'from_ref': 'group:1', 'to_ref': 'group:2', 'type': 'crossfade', 'duration': 1.4}]
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 10}]}],
+                                       'join_transitions': joins}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
+             patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': False}}):
+            soundtrack.transitions(ctx)
+            cue = next(a['payload'] for a in ctx.actions if a['type'] == 'add_clip')
+            path = next(Path(tmp).rglob('*.wav'))
+            # the transition is laid with its hit on the seam, and the sound peaks there
+            self.assertLess(abs(cue['start'] + soundtrack._peak(path) - 5.0), .03)   # within the 50 ms window the peak is measured in
+
+    def test_a_transition_sounds_by_what_it_shows(self):
+        # watched, not named: the white burst «Спотворення прискорення» is a flash, «Райдужний фільтр» a soft wash
+        self.assertEqual(sound.transition_character('capcut_t13'), 'flash')
+        self.assertEqual(sound.transition_character('capcut_t34'), 'soft')
+        self.assertEqual(sound.transition_character('capcut_t24'), 'glitch')
+        self.assertEqual(sound.transition_character('capcut_t15'), 'motion')
+
+    def test_a_text_frame_going_out_sounds_only_with_a_real_transition(self):
+        # user, 25 November 2026: «озвучку переходів ставити там, де дійсно переход» (a cut out of a text frame has none)
+        frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)},
+                   'plan': {'format': 'text' if n == 3 else 'stock_photo'}} for n in range(1, 5)]
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 20}]}],
+                                       'join_transitions': []}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
+             patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': False}}):
+            soundtrack.transitions(ctx)
+            self.assertEqual([a for a in ctx.actions if a['type'] == 'add_clip'], [])   # a cut: no sound
+            ctx.project['join_transitions'] = [{'from_ref': 'group:3', 'to_ref': 'group:4', 'type': 'crossfade', 'duration': .35}]
+            ctx.actions = []
+            soundtrack.transitions(ctx)
+        cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
+        self.assertEqual([c['title'].split(' · ')[1] for c in cues], ['3 → 4'])
+
+    def test_animated_films_get_no_transition_sound_and_every_transition_of_a_film_has_its_own(self):
         ctx = SimpleNamespace(project={'project_kind': 'animated'}, actions=[], report=[])
         with patch.object(sound, 'saved_for_project', side_effect=AssertionError('Animated must not use this setting')):
             soundtrack.transitions(ctx)
@@ -183,12 +246,43 @@ class SoundSettingsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
              patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': True}}):
             soundtrack.transitions(ctx)
-            self.assertEqual(ctx.actions, [])
-            for join in ctx.project['join_transitions']: join['type'] = 'slide_left'
+            cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
+            self.assertEqual(len(cues), 5)   # every transition has its sound, gentle ones too
+            self.assertEqual(len({c['title'].split(' · ')[-1] for c in cues}), 1)   # one kind of transition, one sound
+            ctx.actions.clear()
+            ctx.project['join_transitions'][2]['type'] = 'slide_left'
             soundtrack.transitions(ctx)
             cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
-            self.assertEqual(len(cues), 2)  # restrained maximum of 40 percent
-            self.assertNotEqual(cues[0]['title'].split(' · ')[-1], cues[1]['title'].split(' · ')[-1])
+            names = {c['title'].split(' · ')[1]: c['title'].split(' · ')[-1] for c in cues}
+            self.assertNotEqual(names['3 → 4'], names['1 → 2'])   # another kind, another sound
+
+
+    def test_typed_text_gets_the_typing_sound_only_when_the_channel_allows_it(self):
+        typed = {'id': 't1', 'kind': 'text', 'start': 5.0, 'duration': 6.0, 'word_entrance': {'type': 'letters_fade'},
+                 'text_words': [{'text': w, 'start': s} for w, s in [('Ми', .2), ('склали', .6), ('карту', 1.1), ('невидимого', 3.9)]]}
+        popped = {'id': 't2', 'kind': 'text', 'start': 11.0, 'duration': 4.0, 'word_entrance': {'type': 'pop'},
+                  'text_words': [{'text': 'Слово', 'start': .1}]}
+        frames = [{'number': 2, 'start': 5, 'end': 11, 'group': {'id': '2'}, 'clips': [typed]},
+                  {'number': 3, 'start': 11, 'end': 15, 'group': {'id': '3'}, 'clips': [popped]}]
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 15}, typed, popped]}],
+                                       'join_transitions': []}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        on = {'effects': {'enabled': True, 'categories': ['typing'], 'version': sound.EFFECTS_VERSION}}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
+             patch.object(sound, 'saved_for_project', return_value=on), patch.object(soundtrack.sfx_library, 'catalog', return_value=[]):
+            soundtrack.typing(ctx)
+            cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
+            # from the first letter, the sounds one after another for as long as the words keep coming (each whole), then
+            # again with the next run of words; a popped word stays silent
+            self.assertEqual([c['start'] for c in cues], [5.2, 6.0, 8.9])
+            self.assertTrue(all(c['title'].startswith(soundtrack.TYPING_PREFIX + 'K002') for c in cues))
+            self.assertTrue(all(c['duration'] >= .5 for c in cues))   # played whole, never cut to a word
+            ctx.project['tracks'][0]['clips'] += [dict(c, id=f'ty-{i}') for i, c in enumerate(cues)]
+            ctx.actions.clear(); soundtrack.typing(ctx)
+            self.assertEqual(ctx.actions, [])
+        off = {'effects': {'enabled': True, 'categories': ['click'], 'version': sound.EFFECTS_VERSION}}
+        with patch.object(sound, 'saved_for_project', return_value=off), patch.object(soundtrack.sfx_library, 'catalog', return_value=[]):
+            soundtrack.typing(ctx)
+        self.assertEqual(sorted(a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'), ['ty-0', 'ty-1', 'ty-2'])
 
 
 class AccentSideFieldTest(unittest.TestCase):
@@ -214,3 +308,77 @@ class AccentSideFieldTest(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class TransitionSoundSyncTest(unittest.TestCase):
+    """A transition added, changed or removed brings its sounds along by itself (user, 25 November 2026: «щоб
+    автоматично ставилось там, де дійсно переход»)."""
+
+    def test_join_edits_start_a_sound_pass_and_other_edits_do_not(self):
+        import app
+        self.assertTrue(app.changes_joins({"type": "set_join_transition", "payload": {}}))
+        self.assertTrue(app.changes_joins({"type": "batch", "payload": {"actions": [{"type": "update_clip"}, {"type": "set_join_transition"}]}}))
+        self.assertTrue(app.changes_joins({"type": "undo"}))
+        self.assertFalse(app.changes_joins({"type": "update_clip", "payload": {}}))
+        self.assertFalse(app.changes_joins({"type": "batch", "payload": {"actions": [{"type": "add_clip"}]}}))
+
+    def test_several_edits_in_a_row_make_one_pass(self):
+        import app
+        calls = []
+        with patch.object(app, "active_export", return_value=None), \
+             patch.object(app.montage_ops, "run", side_effect=lambda pid, ops: calls.append((pid, ops))):
+            for _ in range(3):
+                app.sync_transition_sounds("p" * 24, delay=.05)
+            import time
+            time.sleep(1.0)
+        self.assertEqual(calls, [("p" * 24, [{"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])])
+
+
+class WritingAndAppearanceSoundsTest(unittest.TestCase):
+    POOL = [('a', 3.88), ('b', 2.4), ('c', 2.21), ('d', 0.75)]
+
+    def test_long_writing_gets_different_sounds_one_after_another_for_its_whole_length(self):
+        used = {}
+        sounds, last = soundtrack.chain(self.POOL, 10.0, 7.0, used)
+        names = [n for n, _, _ in sounds]
+        self.assertTrue(all(a != b for a, b in zip(names, names[1:])))          # never the same twice in a row
+        self.assertEqual([round(t, 2) for _, t, _ in sounds][0], 10.0)
+        for (_, t, d), (_, t2, _) in zip(sounds, sounds[1:]):
+            self.assertAlmostEqual(t + d, t2, places=3)                          # back to back, no overlap
+        end = sounds[-1][1] + sounds[-1][2]
+        self.assertLess(abs(end - 17.0), 0.8)                                    # as long as the writing
+        short, _ = soundtrack.chain(self.POOL, 0.0, 0.8, {})
+        self.assertEqual([n for n, _, _ in short], ['d'])                        # a short writing, a short sound
+
+    def test_writing_runs_split_where_the_words_pause(self):
+        words = [{'start': 0.2}, {'start': 0.6}, {'start': 1.1, 'end': 1.5}, {'start': 3.9}]
+        self.assertEqual(soundtrack.writing_runs(words, 5.0), [(5.2, 6.5), (8.9, 8.9 + soundtrack.LAST_WORD)])
+
+    def test_motion_code_writes_only_the_words_of_its_own_text(self):
+        clip = {'code': "ctx.fillText('Милкомеда', 0, 0); label('Milky Way')",
+                'code_words': [{'text': 'Астрономы', 'start': .3}, {'text': 'Милкомеда,', 'start': 4.8}, {'text': 'и', 'start': 8.8}]}
+        self.assertEqual([w['text'] for w in soundtrack.written_words(clip)], ['Милкомеда,'])
+        self.assertEqual(soundtrack.written_words({'code': 'draw()', 'code_words': clip['code_words']}), [])
+
+    def test_appearances_in_razgon_frames_sound_on_their_moment_spaced_and_varied(self):
+        block = {'id': 'r', 'kind': 'animation', 'title': 'Razgon · кадр 004', 'start': 10.0, 'duration': 10.0}
+        frames = [{'number': 4, 'start': 10.0, 'end': 20.0, 'clips': [block]},
+                  {'number': 5, 'start': 20.0, 'end': 25.0, 'clips': [{'id': 'p', 'kind': 'image', 'title': 'K005 кадр', 'start': 20, 'duration': 5}]}]
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [block]}]}, frames=frames, actions=[], report=[])
+        events = [{'t': 11.0, 'kind': 'text'}, {'t': 11.5, 'kind': 'text'}, {'t': 13.0, 'kind': 'picture'},
+                  {'t': 14.5, 'kind': 'text'}, {'t': 16.0, 'kind': 'write', 'dur': 3.0}, {'t': 22.0, 'kind': 'text'}]
+        pools = {'text': [('pop', .5), ('glint', 1.1)], 'picture': [('whoosh', .8)], 'write': self.POOL}
+        laid = {}
+        with patch.object(sound, 'saved_for_project', return_value={}), patch.object(soundtrack, 'appear_pools', return_value=pools), \
+                patch.object(soundtrack, 'place', side_effect=lambda c, spec, **k: laid.update(spec=spec, flags=k)), \
+                patch.object(soundtrack.sfx_library, 'find', return_value=None), patch.object(store, 'project_animated', return_value=False):
+            soundtrack.appear(ctx, {'events': events})
+        cues = laid['spec']['cues']
+        self.assertEqual(laid['flags'], {'appear': True})
+        plain = [(c['t'], c['name']) for c in cues if not c.get('from_start')]
+        # 11.5 is too close to 11.0; 22.0 is outside the Razgon frames
+        self.assertEqual(plain, [(11.0, 'glint'), (13.0, 'whoosh'), (14.5, 'pop')])
+        writing = [c for c in cues if c.get('from_start')]
+        self.assertEqual(writing[0]['t'], 16.0)
+        self.assertLessEqual(writing[-1]['t'] + writing[-1]['dur'], 19.9)
+

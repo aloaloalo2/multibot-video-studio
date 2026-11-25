@@ -14,8 +14,13 @@ function channelHeyGenAvatars(channel){
   const groups=document.createElement('div');
   const selectionField=document.createElement('input');
   selectionField.type='hidden';
-  body.append(selectionField,primary,groups,firstFrameSettings(channel.settings?.heygen_first_frame||{}));
+  body.append(selectionField,primary,groups);
   let selected=channel.settings?.heygen_avatar||null, preview=null, badgeUrl=null;
+  // the chosen avatar's picture comes from the studio's own copy, made once (backend heygen_avatars.cached_photo)
+  const cachedPhoto=avatar=>avatar?.id?`/api/channels/${encodeURIComponent(channel.id)}/heygen-avatar-photo?id=${encodeURIComponent(avatar.id)}`:null;
+  // opening the card shows HeyGen's avatars at once, the chosen one open with its looks and the chosen look marked
+  // (user, 25 November 2026: «нажав на Хейген… має відкритися одразу… які вигляди він має. І вибраний має показуватись»);
+  // the list still loads only when the card is opened
   let browsing=true, initialAvatarId=selected?.id;
   section.avatarSelection=()=>selected;
   section.avatarPreview=()=>preview;
@@ -193,24 +198,7 @@ function channelHeyGenAvatars(channel){
     showBrowseMode();
     revealGallery();
   });
+  {const url=cachedPhoto(selected);if(url)fetch(url).then(response=>{if(response.ok&&!preview&&selected&&cachedPhoto(selected)===url){preview=url;showSelection();}}).catch(()=>{});}
   showSelection();showBrowseMode();updateField();
   return section;
-}
-
-// The film's first host frame goes alone to Avatar IV, which moves by a description; the rest are one Avatar III video
-// (user, 25 November 2026: «Перший кадр буде через HeyGen 4… всі остальні одним запросом в HeyGen 3»)
-function firstFrameSettings(saved){
-  const box=document.createElement('div');box.className='heygen-first-frame';
-  const level=saved.expressiveness||'medium';
-  box.innerHTML=`<label class="check"><input id="heygen-first-enabled" type="checkbox" ${saved.enabled===false?'':'checked'}>Перший кадр ведучого через Avatar IV</label>
-    <label>Виразність<select id="heygen-first-expressiveness">${[['low','Низька, мало жестів'],['medium','Середня'],['high','Висока, жваво']].map(([value,label])=>`<option value="${value}" ${value===level?'selected':''}>${label}</option>`).join('')}</select></label>
-    <small>Avatar IV коштує $2,31 за хвилину замість $0,99. Решта кадрів ведучого йде одним відео Avatar III.</small>`;
-  const toggle=()=>box.querySelectorAll('select').forEach(el=>{el.closest('label').hidden=!box.querySelector('#heygen-first-enabled').checked;});
-  box.querySelector('#heygen-first-enabled').addEventListener('change',toggle);toggle();
-  return box;
-}
-function heygenFirstFrameValue(){
-  const enabled=$('heygen-first-enabled');
-  if(!enabled)return undefined;
-  return {enabled:enabled.checked,expressiveness:$('heygen-first-expressiveness').value};
 }

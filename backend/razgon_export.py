@@ -190,18 +190,54 @@ def _mixed(project: dict, info: dict, blocks: list[dict]) -> dict:
     return {"mixed": True, "razgon": str(info["project"]), "blocks": numbers}
 
 
-def frames_command(spec: dict) -> list[str]:
+def leads(manifest: dict, spec: dict) -> dict:
+    """{frame number: seconds} of the blocks that come in early under a transition (joins.lead)."""
+    found = {}
+    for layer in manifest.get("timeline_layers", []):
+        for clip in layer.get("clips", []):
+            number = spec["blocks"].get(clip["id"])
+            if number is not None and clip.get("lead"):
+                found[number] = max(found.get(number, 0.0), float(clip["lead"]))
+    return found
+
+
+def tails(manifest: dict, spec: dict) -> dict:
+    """{frame number: seconds} a block lasts past its own end under a transition out of it (joins.transport)."""
+    found = {}
+    for layer in manifest.get("timeline_layers", []):
+        for clip in layer.get("clips", []):
+            number = spec["blocks"].get(clip["id"])
+            if number is not None and clip.get("native_duration") is not None:
+                extra = float(clip["duration"]) - float(clip["native_duration"])
+                if extra > 1e-6:
+                    found[number] = max(found.get(number, 0.0), extra)
+    return found
+
+
+def frames_command(spec: dict, early: dict | None = None, after: dict | None = None) -> list[str]:
     numbers = ",".join(str(n) for n in sorted(set(spec["blocks"].values())))
-    return [sys.executable, str(BRIDGE), "frames", "--razgon", spec["razgon"], "--numbers", numbers]
+    command = [sys.executable, str(BRIDGE), "frames", "--razgon", spec["razgon"], "--numbers", numbers]
+    if early:
+        command += ["--leads", ",".join(f"{n}:{v:.3f}" for n, v in sorted(early.items()))]
+    if after:
+        command += ["--tails", ",".join(f"{n}:{v:.3f}" for n, v in sorted(after.items()))]
+    return command
 
 
-def point_blocks_at_clips(manifest: dict, spec: dict, clips: dict) -> None:
-    """In the engine manifest each code block becomes its frame's rendered clip, full frame and opaque."""
+def point_blocks_at_clips(manifest: dict, spec: dict, clips: dict, heads: dict | None = None) -> None:
+    """In the engine manifest each code block becomes its frame's rendered clip, full frame and opaque. A block that comes
+    in early gets the clip the bridge drew with a living head (`heads`); only a clip without one holds its first picture."""
+    heads = heads or {}
     for layer in manifest.get("timeline_layers", []):
         for clip in layer.get("clips", []):
             number = spec["blocks"].get(clip["id"])
             if number is not None:
                 clip.update(type="video", source=clips[str(number)], content_type=None, opacity=1, volume=0.0, trim_start=0.0)
+                if clip.get("lead") and float(heads.get(str(number), 0)) + 1e-6 < float(clip["lead"]):
+                    # the frame comes in early under a transition that ends on its seam (joins.lead): its first picture
+                    # holds for that time, the rest stays on its own clock
+                    import joins
+                    clip["source"] = joins.held_head(Path(clips[str(number)]).parent / "held-heads", clips[str(number)], float(clip["lead"]))
 
 
 def command(spec_path: Path, staging: Path) -> list[str]:

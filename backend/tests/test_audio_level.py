@@ -63,5 +63,29 @@ class AudioLevelTest(unittest.TestCase):
             self.assertEqual(audio_level.leveled(path, wait=False), out)   # made once
 
 
+    def test_voice_token_names_the_file_its_gain_belongs_to(self):
+        # the player's address carries the file it plays: while the copy is not made, the recording with its gain;
+        # once made, the copy at gain 1; an address of the recording keeps the recording after the copy appears
+        with tempfile.TemporaryDirectory() as tmp:
+            voice = Path(tmp) / "voice.wav"; voice.write_bytes(b"x" * 10)
+            copy = Path(tmp) / "copy.flac"
+            quiet = {"lufs": -22.0, "peak": -9.0}
+            with patch.object(audio_level, "_voice_paths", return_value={"v": voice}), \
+                    patch.object(audio_level, "measure", return_value=quiet), \
+                    patch.object(audio_level, "leveled", return_value=voice):
+                gains, tokens = audio_level.voice_state({})
+            self.assertGreater(gains["v"], 1.5)
+            self.assertTrue(tokens["v"].startswith("o"))
+            with patch.object(audio_level, "_voice_paths", return_value={"v": voice}), \
+                    patch.object(audio_level, "measure", return_value=quiet), \
+                    patch.object(audio_level, "leveled", return_value=copy):
+                gains2, tokens2 = audio_level.voice_state({})
+                self.assertEqual(gains2["v"], 1.0)
+                self.assertEqual(tokens2["v"][1:], tokens["v"][1:])
+                self.assertTrue(tokens2["v"].startswith("l"))
+                self.assertEqual(audio_level.token_file(voice, tokens["v"]), voice)
+                self.assertEqual(audio_level.token_file(voice, tokens2["v"]), copy)
+
+
 if __name__ == "__main__":
     unittest.main()

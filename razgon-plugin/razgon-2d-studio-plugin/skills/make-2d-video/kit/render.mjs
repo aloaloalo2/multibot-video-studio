@@ -7,6 +7,7 @@
 //   node render.mjs --project P --text-check [0.25] [--from A --to B]                 every text cut by the frame edge (sampled every 0.25 s) -> build/text_check.json, exit 1 if any
 //   node render.mjs --project P --logic-check [0.5] [--from A --to B]                a closer thing drawn under a farther one, text covered by a later picture,
 //                                                                                      a picture blown up past its pixels -> build/logic_check.json, exit 1 if any
+//   node render.mjs --project P --events [0.08] [--from A --to B]                    when text is written, text comes in and pictures come in -> build/events.json (sounds)
 //   node render.mjs --project P --speed-check [2.5]                                    every take timed in one browser; takes slower than 2.5 x the median -> build/speed_check.json, exit 1 if any
 // Options: --workers N  --scale K  --style ID  --debug  --format png|jpeg  --crf 18  --gl auto|gpu|swiftshader  --encoder x264|videotoolbox  --q 75  --out FILE
 import http from 'node:http';
@@ -21,7 +22,15 @@ import { serveStudioFont } from './studio-fonts.mjs';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const args = {}; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i].startsWith('--')) { const k = a[i].slice(2); const v = a[i + 1] && !a[i + 1].startsWith('--') ? a[++i] : true; args[k] = v; } } }
 if (!args.project) { console.error('usage: node render.mjs --project projects/<name> [options]'); process.exit(1); }
-const PROJECT = path.resolve(args.project);
+// a relative --project is looked up from here too, and a folder that is no project is refused: agents run from the YOUTUBE
+// folder, and `--project projects/<name>` used to leave an empty `<name>/build` there (user, 25 November 2026: «лишні папки… сміття»)
+function findProject(given) {
+  const tries = path.isAbsolute(given) ? [given] : [path.resolve(given), path.resolve(ROOT, given), path.resolve(ROOT, 'projects', path.basename(given))];
+  const found = tries.find(dir => fs.existsSync(path.join(dir, 'config.json')));
+  if (!found) { console.error(`render.mjs: no Razgon project (config.json) at ${tries.join(' or ')}`); process.exit(1); }
+  return found;
+}
+const PROJECT = findProject(String(args.project));
 const BUILD = path.join(PROJECT, 'build'); fs.mkdirSync(BUILD, { recursive: true });
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
 
@@ -61,7 +70,9 @@ async function openPlayer(browser, style) {
   return page;
 }
 const capture = page => page.screenshot({ type: FORMAT, ...(FORMAT === 'jpeg' ? { quality: 94 } : {}) });
-const shot = (page, f) => page.evaluate(i => window.renderFrame(i), f).then(() => capture(page));
+// --within a,b: the picture stays one Studio frame's, its edge shot drawn on past the edge (a transition's tail or head)
+const WITHIN = args.within ? String(args.within).split(',').map(Number) : null;
+const shot = (page, f) => page.evaluate(([i, w]) => window.renderFrame(i, w), [f, WITHIN]).then(() => capture(page));
 const fmtT = s => `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
 
 async function renderVideo() {
@@ -142,10 +153,11 @@ async function shotErrors(page) {
   if (errs.length) { console.log(`Shot errors (${errs.length}): the check cannot see these shots, fix them first:`); [...new Set(errs)].slice(0, 20).forEach((e) => console.log('  ' + e)); process.exitCode = 1; }
   return errs.length;
 }
+const MIN_TEXT = 30;   // the smallest readable text, in pixels of a 1080-line frame
 async function textCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
-  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((+args['text-check'] > 0 ? +args['text-check'] : 0.25) * fps));
-  const hits = [];
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args['text-check'] === 'string' && +args['text-check'] > 0 ? +args['text-check'] : 0.25) * fps));
+  const hits = [], small = [];
   const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
   for (let f = fa; f < fb; f += step) {
     const log = await page.evaluate((i) => { window.TEXT_LOG = []; window.renderFrame(i); const l = window.TEXT_LOG; window.TEXT_LOG = null; return l; }, f);
@@ -153,35 +165,35 @@ async function textCheck() {
     for (const b of log) {
       const pad = 1, visible = b.x1 > 0 && b.x0 < b.W && b.y1 > 0 && b.y0 < b.H, cut = b.x0 < -pad || b.y0 < -pad || b.x1 > b.W + pad || b.y1 > b.H + pad;
       if (visible && cut && b.str.trim()) hits.push({ t: +(f / fps).toFixed(2), str: b.str, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round), canvas: [b.W, b.H] });
+      // too small to read for an older viewer on a phone (user, 25 November 2026: tick labels «0», «0,5», «1» and
+      // «млн световых лет» at about 22 px of a 1080p frame): the font's size on the output frame, scaled to 1080 lines
+      const at1080 = b.px ? b.px * 1080 / b.H : null;
+      if (visible && !cut && at1080 && at1080 < MIN_TEXT && b.str.trim()) small.push({ t: +(f / fps).toFixed(2), str: b.str, px: Math.round(at1080) });
     }
   }
+  const smallRuns = []; for (const h of small) { const r = smallRuns.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.px = Math.min(r.px, h.px); } else smallRuns.push({ str: h.str, from: h.t, to: h.t, px: h.px }); }
+  const tiny = smallRuns.filter((r) => r.to - r.from + step / fps >= 1.0);
   const broken = await shotErrors(page);
   await browser.close();
   const runs = []; for (const h of hits) { const r = runs.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.last = h.box; } else runs.push({ str: h.str, from: h.t, to: h.t, box: h.box, last: h.box, canvas: h.canvas }); }
   // text that crosses the edge while the camera travels past it is a normal pan; text that stays cut is the bug:
   // FAIL when it stays cut for a second or longer
   runs.forEach((r) => { r.fail = r.to - r.from + step / fps >= 1.0; });
-  fs.writeFileSync(path.join(BUILD, 'text_check.json'), JSON.stringify(runs, null, 1));
+  fs.writeFileSync(path.join(BUILD, 'text_check.json'), JSON.stringify({ cut: runs, small: tiny }, null, 1));
+  if (tiny.length) {
+    console.log(`Text check: FAIL, ${tiny.length} text(s) smaller than ${MIN_TEXT} px of a 1080p frame for a second or longer (make them at least ${MIN_TEXT}):`);
+    tiny.slice(0, 40).forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  ${r.px} px`));
+    process.exitCode = 1;
+  }
   const fails = runs.filter((r) => r.fail);
   console.log(`Text check: ${runs.length - fails.length} text(s) only pass the edge during camera moves (${Math.ceil((fb - fa) / step)} frames sampled)`);
-  if (!fails.length) { console.log(broken ? 'Text check: FAIL, shots with errors were not checked' : 'Text check: OK, no text is held cut by the frame'); return; }
+  if (!fails.length) { console.log(broken ? 'Text check: FAIL, shots with errors were not checked' : tiny.length ? 'Text check: no text is held cut by the frame' : 'Text check: OK, no text is held cut by the frame or too small'); return; }
   console.log(`Text check: FAIL, ${fails.length} text(s) held cut by the frame edge:`);
   fails.forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  box ${r.box.join(',')} on ${r.canvas.join('x')}`));
   process.exitCode = 1;
 }
-// The scene logic check (user, 5 November 2026: «людина сквозь машину не може проходити», «текст… не там, де потрібно»,
-// «асети… якість портять, якщо їх розтягнути»): every picture, figure and line of text of a sampled frame is logged in
-// drawing order with its box on the canvas, and three things are flagged, without a single image for anyone to look at:
-//  - depth: a thing standing closer to the camera (its foot line lower on the screen) drawn UNDER a farther thing that
-//    overlaps it, as a person behind a car's body with his legs in front of it; a thing resting on another (a teletype on
-//    a desk, a sleeper on a bed) is not flagged, nor are small held props;
-//  - text covered: a line of text under a later opaque picture or figure (a date under a lamp);
-//  - blown up: a picture drawn more than 1.6 times its own pixels at the output size (a 400 px viaduct over the whole
-//    frame goes soft): such props are drawn one or two to a sheet at full size.
-// Depth or covered text held 1 s or more is a FAIL (a thing passing another for an instant is not), a blown-up picture 0.5 s.
-async function logicCheck() {
-  const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
-  await page.evaluate(() => {
+// what every drawn picture, filled shape and line of text logs while DRAW_LOG is set: used by --logic-check and --events
+const DRAW_LOG_PATCH = () => {
     const proto = CanvasRenderingContext2D.prototype, orig = proto.drawImage, main = document.getElementById('main') || document.querySelector('canvas');
     window.__LOGIC_MAIN = main;
     // a filled rectangle on the frame (a paper slip, a screen, a sign board drawn in code) can carry text: logged as a host
@@ -215,8 +227,21 @@ async function logicCheck() {
       } catch (e) { /* the check never breaks a draw */ }
       return orig.call(this, img, ...a);
     };
-  });
-  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((+args['logic-check'] > 0 ? +args['logic-check'] : 0.5) * fps));
+};
+// The scene logic check (user, 5 November 2026: «людина сквозь машину не може проходити», «текст… не там, де потрібно»,
+// «асети… якість портять, якщо їх розтягнути»): every picture, figure and line of text of a sampled frame is logged in
+// drawing order with its box on the canvas, and three things are flagged, without a single image for anyone to look at:
+//  - depth: a thing standing closer to the camera (its foot line lower on the screen) drawn UNDER a farther thing that
+//    overlaps it, as a person behind a car's body with his legs in front of it; a thing resting on another (a teletype on
+//    a desk, a sleeper on a bed) is not flagged, nor are small held props;
+//  - text covered: a line of text under a later opaque picture or figure (a date under a lamp);
+//  - blown up: a picture drawn more than 1.6 times its own pixels at the output size (a 400 px viaduct over the whole
+//    frame goes soft): such props are drawn one or two to a sheet at full size.
+// Depth or covered text held 1 s or more is a FAIL (a thing passing another for an instant is not), a blown-up picture 0.5 s.
+async function logicCheck() {
+  const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
+  await page.evaluate(DRAW_LOG_PATCH);
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args['logic-check'] === 'string' && +args['logic-check'] > 0 ? +args['logic-check'] : 0.5) * fps));
   const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
   const hits = [];
   // a transition draws two shots in one frame (their things are not one room): leave 0.6 s on either side of a cut out
@@ -272,22 +297,108 @@ async function logicCheck() {
       if (worst) hits.push({ kind: 'text half on', key: `text half on: "${tx.str}" across ${worst.name}`, t, text: `"${tx.str}" lies ${Math.round(wf * 100)}% on ${worst.name}, the rest off it` });
     }
   }
+  // nothing comes on screen in a Studio frame's last second: it came in and the transition took it at once (user,
+  // 25 November 2026: «за секунду до кінця кадра нічого не може появлятися, це заборонено»). Two frames a Studio frame:
+  // 1.05 s and 0.1 s before its end; a line of text or a picture in the second that the first has not is a FAIL.
+  let studio = [];
+  try { studio = (JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'studio_frames.json'), 'utf8')).frames || []).filter((f) => !f.format || f.format === 'razgon_2d'); } catch (e) { /* not a Studio film */ }
+  const seen = async (t) => {
+    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, Math.max(0, Math.round(t * fps)));
+    const sized = log.find((b) => b.W && b.H); const W = sized ? sized.W : 1, H = sized ? sized.H : 1;
+    const on = (b) => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H;
+    return new Set(log.filter((b) => on(b) && ((b.k === 'text' && (b.a ?? 1) >= 0.35 && String(b.str).trim()) || (b.k === 'img' && b.name && b.name !== 'canvas' && (b.a ?? 1) >= 0.5)))
+      .map((b) => (b.k === 'text' ? '«' + String(b.str).trim() + '»' : b.name)));
+  };
+  for (const fr of studio) {
+    if (+fr.end <= fa / fps || +fr.start >= fb / fps || +fr.end - +fr.start < 2.2) continue;
+    const before = await seen(+fr.end - 1.05), after = await seen(+fr.end - 0.1);
+    const fresh = [...after].filter((x) => !before.has(x));
+    if (fresh.length) hits.push({ kind: 'late', key: `late: ${fr.number}`, t: +(+fr.end - 0.1).toFixed(2),
+      text: `frame ${fr.number}: ${fresh.slice(0, 4).join(', ')} comes in during its last second (the frame ends at ${(+fr.end).toFixed(2)} s): bring it in earlier` });
+  }
   const broken = await shotErrors(page);
   await browser.close();
   const runs = []; for (const h of hits) { const r = runs.find((x) => x.key === h.key && h.t - x.to <= step / fps + 1e-6); if (r) r.to = h.t; else runs.push({ ...h, from: h.t, to: h.t }); }
   // depth and covered text held for a second or more (an instant at a cut inside a shot is not a scene); a blown-up picture
   // is soft for as long as it shows
-  runs.forEach((r) => { r.fail = r.to - r.from + step / fps >= (r.kind === 'blown up' ? 0.5 : 1.0); });
+  runs.forEach((r) => { r.fail = r.kind === 'late' || r.to - r.from + step / fps >= (r.kind === 'blown up' ? 0.5 : 1.0); });
   fs.writeFileSync(path.join(BUILD, 'logic_check.json'), JSON.stringify(runs, null, 1));
   const fails = runs.filter((r) => r.fail);
   console.log(`Logic check: ${Math.ceil((fb - fa) / step)} frames sampled, ${fails.length} finding(s)`);
   if (!fails.length) { console.log(broken ? 'Logic check: FAIL, shots with errors were not checked' : 'Logic check: OK, no closer thing under a farther one, no covered text, no blown-up picture'); return; }
-  for (const kind of ['depth', 'text covered', 'text half on', 'blown up']) {
+  for (const kind of ['depth', 'text covered', 'text half on', 'blown up', 'late']) {
     const list = fails.filter((r) => r.kind === kind); if (!list.length) continue;
     console.log(`Logic check: FAIL, ${kind} (${list.length}):`);
     list.slice(0, 40).forEach((r) => console.log(`  ${r.from.toFixed(1)}–${r.to.toFixed(1)} s  ${r.text}`));
   }
   process.exitCode = 1;
+}
+// --events [0.08] [--from A --to B] (user, 25 November 2026: «появляється щось, звук появляється відповідний… щось
+// пише… якщо довго пише, то довго звук»): when things come on screen, read from the scenes' own drawing, so the Studio
+// lays each sound on a real event instead of a guessed time:
+//  - write: a line of text that grows letter by letter (or letters drawn one by one), from its first letter to its last;
+//  - text: a line of text that comes in whole (a fade, a pop, a slide);
+//  - picture: a prop or picture that comes in after its shot began.
+// Things already there when a shot starts are not events (the cut carries the transition's sound).
+async function eventsScan() {
+  const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
+  await page.evaluate(DRAW_LOG_PATCH);
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args.events === 'string' && +args.events > 0 ? +args.events : 0.08) * fps));
+  const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
+  let cuts = [0]; try { const sj = JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'shots.json'), 'utf8')); cuts = [0, ...(sj.shots || sj).map((x) => +x.start)]; } catch (e) { /* one shot */ }
+  const shotOf = (t) => cuts.filter((c) => c <= t + 1e-6).length;
+  const dt = step / fps, raw = [];
+  let prevShot = -1, prevTexts = new Map(), prevPics = new Map(), prevLines = [];
+  for (let f = fa; f < fb; f += step) {
+    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, f);
+    const t = +(f / fps).toFixed(3), shot = shotOf(t);
+    const sized = log.find((b) => b.W && b.H); const W = sized ? sized.W : 1, H = sized ? sized.H : 1;
+    const on = (b) => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H;
+    const texts = new Map(), pics = new Map(), lines = [];
+    for (const b of log) {
+      if (b.k === 'text' && (b.a ?? 1) >= 0.35 && on(b)) { const k = String(b.str).trim(); if (k) { texts.set(k, (texts.get(k) || 0) + 1); lines.push({ k, x0: b.x0, y0: b.y0 }); } }
+      if (b.k === 'img' && b.name && b.name !== 'canvas' && (b.a ?? 1) >= 0.5 && on(b) && (b.x1 - b.x0) * (b.y1 - b.y0) >= W * H * 0.015) pics.set(b.name, (pics.get(b.name) || 0) + 1);
+    }
+    const row = (a, b) => Math.abs(a.y0 - b.y0) < H * 0.02;
+    if (shot === prevShot) {
+      for (const [k, n] of texts) {
+        if ((prevTexts.get(k) || 0) >= n) continue;
+        const here = lines.find((l) => l.k === k);
+        // growing: a longer form of the same line, where it stood just before («Милко» → «Милкомеда»), or one of the
+        // letters of a word drawn letter by letter (kText); a lone «0» or «2» on a scale only comes in
+        const longer = prevLines.some((q) => q.k.length < k.length && k.startsWith(q.k) && row(q, here) && Math.abs(q.x0 - here.x0) < W * 0.02);
+        // the letters of one word stand side by side: a neighbour letter within about a letter's width
+        const letters = k.length <= 2 && lines.some((l) => l !== here && l.k.length <= 2 && row(l, here) && Math.abs(l.x0 - here.x0) < H * 0.06);
+        raw.push({ t, kind: longer || letters ? 'grow' : 'text', str: k });
+      }
+      for (const [k, n] of pics) if ((prevPics.get(k) || 0) < n) raw.push({ t, kind: 'picture', name: k });
+    }
+    prevShot = shot; prevTexts = texts; prevPics = pics; prevLines = lines;
+  }
+  const broken = await shotErrors(page);
+  await browser.close();
+  // writing runs: growth samples no more than 0.35 s apart; each run lasts from its first letter to its last
+  const events = [], grows = raw.filter((e) => e.kind === 'grow');
+  for (const g of grows) {
+    const run = events.length && events[events.length - 1].kind === 'write' && g.t - events[events.length - 1].last <= 0.35 + 1e-6 ? events[events.length - 1] : null;
+    if (run) { run.last = g.t; run.str = g.str.length > run.str.length ? g.str : run.str; }
+    else events.push({ kind: 'write', t: g.t, last: g.t, str: g.str });
+  }
+  for (const e of events) { e.dur = +(e.last - e.t + dt).toFixed(3); delete e.last; }
+  // a «run» of one sample is a line that came in, not writing
+  for (const e of events) if (e.kind === 'write' && e.dur < 0.2) { e.kind = 'text'; delete e.dur; }
+  // lines and pictures that come in together are one event
+  for (const kind of ['text', 'picture']) {
+    let last = -9;
+    for (const e of raw.filter((x) => x.kind === kind)) {
+      if (e.t - last < 0.25 || events.some((w) => w.kind === 'write' && e.t >= w.t - 0.1 && e.t <= w.t + w.dur)) { last = e.t; continue; }
+      events.push(e); last = e.t;
+    }
+  }
+  events.sort((a, b) => a.t - b.t);
+  fs.writeFileSync(args.out ? path.resolve(String(args.out)) : path.join(BUILD, 'events.json'), JSON.stringify({ step: dt, from: fa / fps, to: fb / fps, events }, null, 1));
+  const count = (k) => events.filter((e) => e.kind === k).length;
+  console.log(`Events: ${count('write')} written, ${count('text')} text, ${count('picture')} pictures in ${Math.ceil((fb - fa) / step)} frames -> build/events.json${broken ? ' (shots with errors were not read)' : ''}`);
 }
 // every take timed on its own: two frames at 20, 50 and 80 % of it, drawn and captured in one browser. A take far slower than
 // the others puts a filter on each of many draws (g.filter = 'blur(...)' over a whole layer of shapes, a shade filter on 365
@@ -316,6 +427,6 @@ async function speedCheck() {
   for (const r of slow) console.log(`  ${r.id}  ${r.start}-${r.end} s  ${r.ms} ms a frame`);
   process.exitCode = 1;
 }
-try { if (args['logic-check']) await logicCheck(); else if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
+try { if (args['logic-check']) await logicCheck(); else if (args.events) await eventsScan(); else if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
 catch (e) { console.error('RENDER FAILED:', e.message); process.exitCode = 1; }
 finally { server.close(); }

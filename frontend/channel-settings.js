@@ -7,6 +7,7 @@ const channelSettingsPaths={
   montage:'<path d="M4 5h16M4 12h16M4 19h16M8 2v6m8 1v6m-6 1v6"/>',
   voice:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
   sound:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',
+  spending:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2M7 6V4h10v2"/>',
   competitors:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 21v-2a6 6 0 0 1 12 0v2m2-7a5 5 0 0 1 6 5v2"/>',
   languages:'<path d="M3 5h11M8 3v2M5 5c0 5 4 9 8 10M12 5c0 4-3 8-8 11m10 5 4-11 4 11m-6.5-4h5"/>',
   thumbnails:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
@@ -75,6 +76,9 @@ function organizeChannelSettings(channel){
     ['sound','SFX','Музика й ефекти','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
     ['advanced','Розширене','Формат відео й правила','Розширене'],
+    // what the channel's paid services cost, today and this month, deleted projects included (user, 25 November 2026:
+    // «додай… ці витрати також в налаштування каналу, там, де розширене, під ним… навіть якщо я видаляю проект»)
+    ['spending','Витрати','Сьогодні й цей місяць'],
     ['competitors','Конкуренти','Канали для майбутніх ідей']
   ];
   const panels={},tabs={},summaries=new Map();
@@ -89,6 +93,7 @@ function organizeChannelSettings(channel){
     }
     try{sessionStorage.setItem(preferenceKey,key);}catch{}
     if(key==='avatar'||key==='projects')heygenAvatars.loadSelectedPortrait();
+    if(key==='spending')loadChannelSpending();
     if(sectionKey){const group=body.querySelector('[data-main-section="'+sectionKey+'"]');if(group){group.open=true;group.scrollIntoView({block:'nearest'});}}
     if(focus)tabs[key].focus();
   }
@@ -98,6 +103,22 @@ function organizeChannelSettings(channel){
     tab.innerHTML=`${channelSettingsIcon(key==='advanced'?'output':key==='avatar'?'hero':key)}<span>${label}</span>`;tab.addEventListener('click',()=>select(key));tabs[key]=tab;nav.append(tab);
     const panel=document.createElement('section');panel.className='channel-settings-panel';panel.id=`channel-settings-panel-${key}`;panel.dataset.settingsPanel=key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);
     const heading=document.createElement('header');heading.className='channel-settings-panel-head';heading.innerHTML=`<h3>${label}</h3>`;panel.append(heading);panels[key]=panel;content.append(panel);
+  }
+  async function loadChannelSpending(){
+    const panel=panels.spending;if(!panel)return;
+    let box=panel.querySelector('.channel-spend');
+    if(!box){box=document.createElement('div');box.className='channel-spend';panel.append(box);}
+    if(!box.childElementCount)box.innerHTML='<p class="channel-spend-note"><span class="export-spinner" aria-hidden="true"></span> Рахуємо витрати…</p>';
+    try{
+      const data=await api(`/api/channels/${encodeURIComponent(channel.id)}/spending`);
+      const money=v=>Number.isFinite(v)?'$'+(v<10?v.toFixed(2):v.toFixed(0)):'—';
+      const rows=[['claude_code','Claude ≈'],['openrouter','OpenRouter'],['heygen','HeyGen'],['elevenlabs','ElevenLabs'],['fishaudio','Fish Audio']]
+        .filter(([k])=>data.services[k]&&(data.services[k].month||data.services[k].day));
+      const cell=v=>`<td>${money(v)}</td>`;
+      box.innerHTML=`<table class="ai-spend channel-spend-table"><thead><tr><th></th><th>Сьогодні</th><th>Місяць</th></tr></thead><tbody>`
+        +(rows.length?rows.map(([k,name])=>`<tr><th>${name}</th>${cell(data.services[k].day)}${cell(data.services[k].month)}</tr>`).join(''):'<tr><th>Цього місяця витрат ще немає</th><td></td><td></td></tr>')
+        +`<tr class="ai-spend-total"><th>Усього</th>${cell(data.total.day)}${cell(data.total.month)}</tr></tbody></table>`;   // no explanation under it (user, 25 November 2026: «удали це»)
+    }catch(error){box.innerHTML=`<p class="channel-spend-note">${error.message}</p>`;}
   }
   const avatarIcon=tabs.avatar.firstElementChild;
   let avatarUrl, avatarPhoto;

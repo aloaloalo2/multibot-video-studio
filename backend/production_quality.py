@@ -63,7 +63,8 @@ def check(project, request):
         return _check(project, request)
     except (OSError, ValueError, TypeError, KeyError, store.StudioError) as error:
         # Recovery and project-list reads must survive malformed saved layer data.
-        return {'passed': False, 'frames': [], 'errors': ['Не вдалося перевірити кадри: ' + str(error)[:400]]}
+        return {'passed': False, 'frames': [], 'errors': ['Не вдалося перевірити кадри: ' + str(error)[:400]], 'check_failed': True,
+                'disk_full': 'No space left on device' in str(error) or getattr(error, 'errno', None) == 28}
 
 
 def _check(project, request):

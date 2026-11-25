@@ -226,7 +226,8 @@ class AgentToolsTest(unittest.TestCase):
         clips = self.clips(project["id"])
         self.assertFalse([t for t in clips if "акцент" in t])
         photo = clips["K002 фото"]
-        self.assertTrue(store.resolve_asset(store.load_project(project["id"]), photo["asset_id"])["path"].endswith("other.png"))
+        # the new picture, as the studio's own copy in its media (an agent's file is never used from the episode folder)
+        self.assertTrue(Path(store.resolve_asset(store.load_project(project["id"]), photo["asset_id"])["path"]).name.startswith("other-"))
         self.assertEqual(photo["keyframes"], PHOTO_KEYS)
 
     def test_place_puts_plan_frames_in_their_groups_and_counts_them_made(self):
@@ -334,6 +335,70 @@ class AgentToolsTest(unittest.TestCase):
         self.assertIn("стиків 11: план 8", result["report"][0])
         status, again = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "transitions", "share": .7, "seed": 5}]})
         self.assertEqual(again["applied"], 0)   # the seams are already as the rule wants
+
+    def test_no_flash_transition_touches_a_text_frame(self):
+        # user, 25 November 2026, Antropov 13 → 14: a white flash into a dark text frame «приливається, а потім блимає»
+        project = self.project(frames=6)
+        current = store.load_project(project["id"])
+        text = {"type": "add_clip", "payload": {"layer_id": "layer-1", "title": "K004 текст", "kind": "text", "text": "Главное", "start": 12, "duration": 4,
+                                                "text_role": "full_frame", "source_text": "Главное", "group_id": next(g["id"] for g in current["scene_groups"] if g["title"] == "Кадр 4")}}
+        store.apply_action(project["id"], "batch", {"actions": [text]})
+        pool = ["capcut_t38", "capcut_t04", "capcut_t34"]
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "transitions", "pool": pool, "share": 1.0, "seed": 2}]})
+        self.assertEqual(status, 200, result)
+        current = store.load_project(project["id"])
+        groups = {g["id"]: g["title"] for g in current["scene_groups"]}
+        around = [j["type"] for j in current["join_transitions"] if groups[j["from_ref"][6:]] == "Кадр 3" or groups[j["to_ref"][6:]] == "Кадр 5"]
+        self.assertEqual(around, ["capcut_t34", "capcut_t34"])
+
+    def test_without_a_share_the_studio_picks_the_seams_itself(self):
+        # user, 25 November 2026: «як часто ставити перехід, 70%… прибери… студія… сама рішати… обмежень не буде»
+        project = self.project(frames=7)
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "transitions", "seed": 5}]})
+        self.assertEqual(status, 200, result)
+        current = store.load_project(project["id"])
+        # frames of one format in a row: a transition every other seam, chosen by the studio, not by a share
+        self.assertEqual(len(current["join_transitions"]), 3)
+        self.assertIn("автоматично", result["report"][0])
+
+    def test_every_chosen_transition_goes_in_at_least_once(self):
+        # user, 25 November 2026: «використав кожен перехід, який я виділив галочкою… перевірити»
+        project = self.project(frames=12)
+        pool = ["crossfade", "slide_left", "slide_right", "zoom_in", "zoom_out", "slide_up"]
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "transitions", "pool": pool, "every": True, "seed": 3}]})
+        self.assertEqual(status, 200, result)
+        used = {j["type"] for j in store.load_project(project["id"])["join_transitions"]}
+        self.assertEqual(used, set(pool))
+
+    def test_a_band_effect_is_refused_as_a_frames_background(self):
+        # «Зоряний круїз» lights a diagonal stream, not the frame (user, 25 November 2026)
+        project = self.project(frames=3)
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": "capcut_e09"}]})
+        self.assertEqual(status, 400, result)
+
+    def test_an_effect_goes_on_one_frame_at_its_strength(self):
+        # user, 25 November 2026: «ефекти… їх силу… не сильно насичено… під дизайн, стиль цього текстового кадра»
+        project = self.project(frames=3)
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": "capcut_e04", "strength": .3}]})
+        self.assertEqual(status, 200, result)
+        clips = [c for t in store.load_project(project["id"])["tracks"] for c in t["clips"] if c.get("content_type") == "capcut_effect"]
+        self.assertEqual([(c["capcut_effect"], c["opacity"], c["start"], c["duration"]) for c in clips], [("capcut_e04", .3, 4.0, 4.0)])
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": "capcut_e13", "strength": .25}]})
+        clips = [c for t in store.load_project(project["id"])["tracks"] for c in t["clips"] if c.get("content_type") == "capcut_effect"]
+        self.assertEqual([c["capcut_effect"] for c in clips], ["capcut_e13"])   # the frame's effect is replaced, not stacked
+        self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": None}]})
+        self.assertFalse([c for t in store.load_project(project["id"])["tracks"] for c in t["clips"] if c.get("content_type") == "capcut_effect"])
+        # inside the frame's group, and on the background only it lies right above the frame's picture
+        self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": "capcut_e04", "on": "background"}]})
+        saved = store.load_project(project["id"])
+        fx = next(c for t in saved["tracks"] for c in t["clips"] if c.get("content_type") == "capcut_effect")
+        group = next(g for g in saved["scene_groups"] if g["title"] == "Кадр 2")
+        self.assertIn(fx["id"], group["clip_ids"])
+        rows = [next((c["title"] for c in t["clips"]), "") for t in saved["tracks"]]
+        self.assertEqual(rows[rows.index(fx["title"]) - 1], "K002 фото")
+        # the author's banned effect is refused in every project
+        status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [{"op": "effect", "frame": 2, "effect": "capcut_e11"}]})
+        self.assertEqual(status, 400, result)
 
     def test_summary_names_each_frame_and_its_problems(self):
         project = self.project(frames=3)

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import copy
 import hashlib
 import json
@@ -476,11 +477,13 @@ def _check_render(path: Path) -> None:
 def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: Path) -> None:
     """A mixed episode's export, first part: razgon_bridge.py frames renders the Razgon code blocks (or reuses the clips
     rendered from the same code), then the manifest draws each block from its clip for the engine that follows."""
-    started_at, clips, error = time.monotonic(), None, None
+    started_at, clips, error, heads = time.monotonic(), None, None, {}
     with JOBS_LOCK:
         if entry['cancel']:
             return
-        process = subprocess.Popen(razgon_export.frames_command(mixed), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        planned = store.read_json(render_manifest) or {}
+        early, after = razgon_export.leads(planned, mixed), razgon_export.tails(planned, mixed)
+        process = subprocess.Popen(razgon_export.frames_command(mixed, early, after), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         entry['process'] = process
     try:
         for line in process.stdout:
@@ -492,6 +495,7 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
                 error = str(event.get('message') or '')[:2000]
             elif event.get('stage') == 'razgon_frames_done':
                 clips = event.get('clips') or {}
+                heads = event.get('heads') or {}
             elif event.get('stage') == 'razgon':
                 with JOBS_LOCK:
                     if entry['cancel']:
@@ -509,7 +513,7 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
     if returncode or clips is None:
         raise RuntimeError('Кадри Razgon: ' + (error or f'код {returncode}'))
     manifest = store.read_json(render_manifest)
-    razgon_export.point_blocks_at_clips(manifest, mixed, clips)
+    razgon_export.point_blocks_at_clips(manifest, mixed, clips, heads)
     store.atomic_json(render_manifest, manifest)
     with JOBS_LOCK:
         # Code frames are the first 40% of this export; the engine continues from here.
@@ -606,12 +610,19 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
         verification_started_at = None
         current_scene = None
         render_floor = 40 if mixed else 0
+        # the last lines the render printed that are not progress: a crash's traceback ends there (an export failed with
+        # only «код 1» on 23 November 2026, its cause thrown away with the other lines)
+        plain_tail = collections.deque(maxlen=12)
         try:
             progress_from = render_floor if mixed else None
             for line in process.stdout:
                 try:
                     event = json.loads(line)
                 except ValueError:
+                    if line.strip():
+                        plain_tail.append(line.strip()[:400])
+                    continue
+                if not isinstance(event, dict):
                     continue
                 if event.get('stage') == 'scene_start':
                     current_scene = event.get('scene')
@@ -689,7 +700,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             return
         if returncode:
             prefix = f'Сцена {current_scene}: ' if current_scene and not (render_error or '').startswith('Сцена ') else ''
-            fallback = f'процес зупинено сигналом {-returncode}' if returncode < 0 else f'код {returncode}'
+            cause = next((l for l in reversed(plain_tail) if re.search(r'Error|error|Exception|failed|Помилка', l)), plain_tail[-1] if plain_tail else '')
+            fallback = (f'процес зупинено сигналом {-returncode}' if returncode < 0 else f'код {returncode}') + (f': {cause}' if cause else '')
             raise RuntimeError(prefix + (render_error or fallback))
         _check_render(staging)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -734,6 +746,13 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
 def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     if confirmation is not True:
         raise store.StudioError("Підтвердіть фінальний експорт після перегляду проєкту")
+    # an export writes its scenes and the film before it publishes: on a nearly full disk it failed after an hour with
+    # «No space left on device» and filled the disk for everything else (25 November 2026); the button and the
+    # channel's automatic export both stop here
+    free = shutil.disk_usage(store.DATA_ROOT).free
+    if free < EXPORT_MIN_FREE:
+        raise store.StudioError(f"Мало місця на диску: вільно {free / 1024 ** 3:.1f} ГБ, для експорту потрібно хоча б "
+                                f"{EXPORT_MIN_FREE // 1024 ** 3} ГБ. Звільніть місце й запустіть експорт ще раз.", 507)
     # the export window's three choices for this episode's size and frame rate (store.video_bitrates)
     choices = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080), int(project.get("fps") or 25))
     if bitrate is not None and bitrate not in choices:
@@ -829,7 +848,7 @@ STILL_LOCK = threading.Lock()
 def busy_candidates() -> set[str]:
     """Projects whose work runs in this server now: only these can be busy, the rest need not be read."""
     # .copy() is one step under the interpreter lock: a set changing while it is iterated would throw
-    return (project_narration.ACTIVE.copy() | director.ACTIVE.copy() | director.RETIMING.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
+    return (project_narration.ACTIVE.copy() | director.ACTIVE.copy() | director.RETIMING.copy() | production.ACTIVE.copy() | razgon_sound.ACTIVE.copy() | event_sounds_running() | thumbnail_gen.ACTIVE.copy() | languages.active_projects() | set(agent_runtime.JOBS.copy())
             | set(analysis_jobs.ACTIVE_PROJECTS.copy().values()))
 
 
@@ -867,11 +886,18 @@ def project_jobs(pid: str) -> dict:
     # restart waits for it (it took up to 10 minutes unseen; 16 November 2026 stability pass)
     for kind, owned in {'озвучення сценарію': project_narration.ACTIVE,
                         'режисура': director.ACTIVE | director.RETIMING, 'створення кадрів': production.ACTIVE,
-                        'музика й ефекти': razgon_sound.ACTIVE, "прев'ю": thumbnail_gen.ACTIVE,
+                        'музика й ефекти': razgon_sound.ACTIVE | event_sounds_running(), "прев'ю": thumbnail_gen.ACTIVE,
                         'розпізнавання озвучки': set(analysis_jobs.ACTIVE_PROJECTS.copy().values())}.items():
         if pid in owned and jobs[kind] not in agent_view.BUSY:
             jobs[kind] = 'running'
     return jobs
+
+
+def event_sounds_running() -> set:
+    """Projects whose sounds are being laid from their frames' code (event_sounds.py): a restart waits for them."""
+    import event_sounds
+    with event_sounds.LOCK:
+        return set(event_sounds.RUNNING)
 
 
 def channel_task_outcome(task):
@@ -1099,6 +1125,10 @@ def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = Fals
 
 CAPCUT_SCRIPT = APP_ROOT / "engine" / "capcut_fx.py"
 CAPCUT_LOCK = threading.Lock()
+# two seams drawn at once: one at a time took ten minutes to prepare a film's fifty transitions (25 November 2026)
+CAPCUT_SLOTS = threading.BoundedSemaphore(2)
+CAPCUT_JOIN_LOCKS: dict = {}
+EFFECT_PREVIEWS: dict = {}   # effect name → its drawn looping preview
 
 
 def capcut_run(arguments: list[str], timeout: int = 900) -> Path:
@@ -1133,29 +1163,232 @@ def capcut_touches_code(project: dict, join: dict) -> bool:
 PREVIEW_WIDTH = 1280
 
 
+def razgon_windows(project: dict, join: dict, manifest: dict, width: int) -> None:
+    """The Razgon code blocks on the seam's sides as small videos of the transition's window, put into the manifest in
+    their place (only this preview's manifest)."""
+    import hashlib
+    link = store.razgon_link(project)
+    if not link:
+        raise store.StudioError("Немає проєкту Razgon", 404)
+    razgon = Path(link["project"])
+    fps = int(manifest.get("fps") or project.get("fps") or 25)
+    begin, end = joins.window(join)
+    sides = set()
+    groups = {g.get("id"): set(g.get("clip_ids") or []) for g in project.get("scene_groups", [])}
+    for ref in (join.get("from_ref"), join.get("to_ref")):
+        kind, _, ident = str(ref or "").partition(":")
+        sides |= groups.get(ident, set()) if kind == "group" else {ident}
+    blocks = {c["id"]: c for t in project.get("tracks", []) for c in t.get("clips", [])
+              if c.get("id") in sides and c.get("kind") == "animation" and RAZGON_BLOCK.fullmatch(c.get("title") or "")}
+    if not blocks:
+        return
+    home = razgon.parents[1]   # the renderer and the engine draw the picture too: a change of them makes new windows
+    watched = [razgon / "config.json", razgon / "story" / "shots.json", *sorted((razgon / "scenes").rglob("*.js")),
+               home / "render.mjs", *sorted((home / "engine").glob("*.js"))]
+    stamp = hashlib.sha256("|".join(f"{p}:{p.stat().st_mtime_ns}" for p in watched if p.is_file()).encode()).hexdigest()[:12]
+    folder = store.cache_dir(project) / "capcut"
+    folder.mkdir(parents=True, exist_ok=True)
+    # whole frames counted as CapCut's own window counts them (floor of x + 0.5), with one frame to spare each side:
+    # round() made 160.5 into 160 while the transition drew frame 160 too, and that last frame had no Razgon picture,
+    # the black frame after the transition (user, 25 November 2026: «чорні якісь появляються фрейми… після переходів»)
+    a, b = max(0, math.floor(begin * fps + .5 + 1e-8) - 1), math.floor(end * fps + .5 + 1e-8) + 1
+    for layer in manifest.get("timeline_layers", []):
+        for clip in layer.get("clips", []):
+            block = blocks.get(clip.get("id"))
+            if not block:
+                continue
+            first, last = round(float(block["start"]) * fps), round((float(block["start"]) + float(block["duration"])) * fps)
+            out = folder / f"razgon-{stamp}-{first}-{last}-{a}-{b}-{width}.mp4"
+            if not out.is_file():
+                part = out.with_name(out.stem + ".part.mp4")
+                command = ["nice", "-n", "10", "node", "render.mjs", "--project", str(razgon), "--from", repr(a / fps), "--to", repr(b / fps),
+                           "--within", f"{first / fps!r},{last / fps!r}", "--scale", f"{width / int(manifest.get('width', 1920)):.4f}",
+                           "--format", "jpeg", "--out", str(part)] + (["--gl", "gpu"] if sys.platform == "darwin" else [])
+                subprocess.run(command, cwd=str(razgon.parents[1]), check=True, capture_output=True, timeout=300)
+                part.replace(out)
+            clip.update(type="video", source=str(out), content_type=None, start=a / fps, duration=(b - a) / fps, trim_start=0.0,
+                        opacity=1, volume=0.0, keyframes=[])
+
+
+JOIN_ACTIONS = {"set_join_transition", "undo", "redo", "delete_group", "move_group"}
+SOUND_OPS = {"transition_sounds", "typing_sounds", "drawing_sounds", "appear_sounds", "soundtrack"}
+SOUND_SYNC: dict = {}   # project → a timer of the pending sync
+SOUND_SYNC_LOCK = threading.Lock()
+
+
+def changes_joins(body: dict) -> bool:
+    """Whether an action (or a batch) adds, changes or removes a transition, or moves the frames it stands between."""
+    if body.get("type") in JOIN_ACTIONS:
+        return True
+    if body.get("type") == "batch":
+        return any(isinstance(a, dict) and a.get("type") in JOIN_ACTIONS for a in (body.get("payload") or {}).get("actions") or [])
+    return False
+
+
+def sync_transition_sounds(pid: str, delay: float = 2.0) -> None:
+    """The transitions' sounds follow the transitions by themselves: a moment after a transition is added, changed or
+    removed, every transition of the film has its sound and a cut none (user, 25 November 2026: «озвучку переходів
+    ставити там, де дійсно переход… щоб автоматично ставилось»). Several edits in a row make one pass."""
+    def run():
+        with SOUND_SYNC_LOCK:
+            SOUND_SYNC.pop(pid, None)
+        try:
+            if active_export(pid):
+                return
+            montage_ops.run(pid, [{"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])
+        except Exception as error:   # a sound pass never breaks the edit it follows
+            try:
+                print(f"Transition sounds {pid}: {error}", file=sys.stderr, flush=True)
+            except OSError:
+                pass
+    with SOUND_SYNC_LOCK:
+        previous = SOUND_SYNC.pop(pid, None)
+        if previous:
+            previous.cancel()
+        timer = threading.Timer(delay, run)
+        timer.daemon = True
+        SOUND_SYNC[pid] = timer
+        timer.start()
+
+
+CAPCUT_WARMING: set[str] = set()
+CAPCUT_DEMAND = 0   # previews the editor is waiting for right now
+
+
+CAPCUT_WARMED: dict = {}   # project → the revision whose seams are all drawn
+# the warm-up filled the Mac's disk (25 November 2026): it waits while less than this is free
+WARM_MIN_FREE = 6 * 1024 ** 3
+EXPORT_MIN_FREE = 4 * 1024 ** 3   # the least free space an export starts with
+
+
+def warm_capcut(pid: str, project: dict | None = None) -> None:
+    """Every CapCut transition of an episode drawn ahead in the background, one at a time and at the lowest priority,
+    once the editor has asked for one: a seam the author jumps to played a plain dissolve while its picture was drawn,
+    and its sound already glitched (user, 25 November 2026: «звук… гліч. Хоча переход просто прозорість»). Drawn ones come
+    from the cache; an export or a change of the project stops the pass and the next request starts it again."""
+    if project is not None and CAPCUT_WARMED.get(pid) == project.get("revision"):
+        return
+    try:   # drawing ahead takes space; with a little left the editor draws a seam only when it is played
+        if shutil.disk_usage(store.DATA_ROOT).free < WARM_MIN_FREE:
+            return
+    except OSError:
+        return
+    if project is not None and not any(j.get("type") in joins.CAPCUT for j in project.get("join_transitions", [])):
+        return
+    with CAPCUT_LOCK:
+        if pid in CAPCUT_WARMING:
+            return
+        CAPCUT_WARMING.add(pid)
+
+    def run():
+        try:
+            project = store.load_project(pid)
+            revision = project.get("revision")
+            todo = [j for j in sorted(project.get("join_transitions", []), key=lambda j: j["seam"]) if j.get("type") in joins.CAPCUT]
+            stopped = threading.Event()
+
+            def worker():
+                while todo and not stopped.is_set():
+                    if UPDATE_RESTARTING or active_export(pid) or store.load_project(pid).get("revision") != revision \
+                            or shutil.disk_usage(store.DATA_ROOT).free < WARM_MIN_FREE:
+                        stopped.set()
+                        return
+                    while CAPCUT_DEMAND:   # the editor's own request draws first
+                        time.sleep(.2)
+                    try:
+                        join = todo.pop(0)
+                    except IndexError:
+                        return
+                    try:
+                        capcut_transition_preview(project, join["id"])
+                    except Exception as error:   # noqa: BLE001 - one seam failing never stops the others
+                        print(f"CapCut warm-up {pid} {join['id']}: {error}", file=sys.stderr, flush=True)
+
+            workers = [threading.Thread(target=worker, daemon=True) for _ in range(2)]
+            for thread in workers:
+                thread.start()
+            for thread in workers:
+                thread.join()
+            if not stopped.is_set():
+                CAPCUT_WARMED[pid] = revision
+        finally:
+            with CAPCUT_LOCK:
+                CAPCUT_WARMING.discard(pid)
+
+    threading.Thread(target=run, name=f"capcut-warm-{pid}", daemon=True).start()
+
+
 def capcut_transition_preview(project: dict, join_id: str) -> dict:
-    """The CapCut transition of one seam drawn small by the export's own code, for the editor's preview."""
+    """The CapCut transition of one seam drawn small by the export's own code, for the editor's preview. One seam is
+    drawn by one caller at a time; a second asking for it waits and takes the drawn file."""
+    with CAPCUT_JOIN_LOCKS.setdefault(join_id, threading.Lock()):
+        return _capcut_transition_preview(project, join_id)
+
+
+_PREVIEW_MANIFESTS: dict = {}
+_PREVIEW_MANIFEST_LOCK = threading.Lock()
+
+
+def preview_manifest(project: dict) -> dict:
+    """The engine's manifest of a project, built once per version of it for the transition previews: it took 0.3–1 s
+    of the server's own time for every one of 106 seams, and the timeline, pictures and sounds of the open episode waited
+    behind it (user, 25 November 2026: «таймлайн… дуже сильно висне»). A fresh copy each time: a Razgon side changes it."""
+    key = (project.get("revision"), project.get("branding_version"), project.get("updated_at"))
+    with _PREVIEW_MANIFEST_LOCK:
+        hit = _PREVIEW_MANIFESTS.get(project["id"])
+    if hit and hit[0] == key:
+        return json.loads(hit[1])
+    text = json.dumps(normalize_for_engine(project), ensure_ascii=False)
+    with _PREVIEW_MANIFEST_LOCK:
+        _PREVIEW_MANIFESTS[project["id"]] = (key, text)
+    return json.loads(text)
+
+
+def _capcut_transition_preview(project: dict, join_id: str) -> dict:
     join = next((j for j in project.get("join_transitions", []) if j.get("id") == join_id), None)
     if not join or join.get("type") not in joins.CAPCUT:
         raise store.StudioError("Перехід CapCut на цьому стику не знайдено", 404)
-    if capcut_touches_code(project, join):
-        # A Razgon frame is code until «Експорт MP4» renders it, and this small render would draw only its empty backing
-        # (user, 25 November 2026: a dark gradient over Antropov's seam 1→2). The editor keeps the live picture with a
-        # plain blend there; the export renders the block first and gets the real CapCut transition.
-        return {"live": True, "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
-    manifest = normalize_for_engine(project)
+    manifest = preview_manifest(project)
     width = PREVIEW_WIDTH
     height = max(2, round(width * int(manifest.get("height", 1080)) / int(manifest.get("width", 1920)) / 2) * 2)
+    if capcut_touches_code(project, join):
+        # A Razgon frame is code until «Експорт MP4» renders it: the seam's Razgon sides are drawn here for the
+        # transition's own time only, small, each kept to its frame and alive past its edge (renderFrame within), so the
+        # preview shows the real CapCut transition (user, 25 November 2026: «бачу лише… прозорість… не бачу самого
+        # переходу»); with the empty backing alone it showed a dark gradient (Antropov's seam 1→2)
+        try:
+            razgon_windows(project, join, manifest, width)
+        except (store.StudioError, OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
+            print(f"CapCut preview: Razgon side not drawn: {error}", file=sys.stderr, flush=True)
+            capcut_mark_ready(project["id"], join)
+            return {"live": True, "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
     folder = store.cache_dir(project) / "capcut"
     folder.mkdir(parents=True, exist_ok=True)
     manifest_path = folder / f"preview-{join_id}.json"
-    with CAPCUT_LOCK:
+    with CAPCUT_SLOTS:
         store.atomic_json(manifest_path, manifest)
         try:
             output = capcut_run(["--manifest", str(manifest_path), "--clip", "capcut-" + join_id, "--width", str(width), "--height", str(height)])
         finally:
             manifest_path.unlink(missing_ok=True)
+    capcut_mark_ready(project["id"], join)
     return {"url": f"/api/capcut/media/{output.name}", "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
+
+
+CAPCUT_READY: dict = {}   # {project id: {join id: (type, duration, seam)}}: the CapCut transitions drawn for the preview
+
+
+def capcut_mark_ready(pid: str, join: dict) -> None:
+    CAPCUT_READY.setdefault(pid, {})[join["id"]] = (join.get("type"), round(float(join.get("duration", 0)), 3), round(float(join.get("seam", 0)), 3))
+
+
+def capcut_ready(project: dict) -> list:
+    """The ids of the project's CapCut transitions whose preview is drawn as they are now (type, length and seam): the
+    timeline marks the others white until they are (user, 25 November 2026: «переходи, які сині… зроби їх білі, якщо вони
+    не показуються ще такими, як вони мають бути»)."""
+    drawn = CAPCUT_READY.get(project["id"], {})
+    return [j["id"] for j in project.get("join_transitions", []) if j.get("type") in joins.CAPCUT
+            and drawn.get(j["id"]) == (j.get("type"), round(float(j.get("duration", 0)), 3), round(float(j.get("seam", 0)), 3))]
 
 
 _DERIVED = {}
@@ -1203,18 +1436,21 @@ def razgon_kit_at_start() -> None:
         sys.stderr.write(f"[video-studio] Razgon kit sync skipped: {error}\n")
 
 
-def derived_state(project: dict) -> tuple[dict, dict]:
+def derived_state(project: dict, tokens: bool = False):
     """(production readiness, voice gains) of a project, computed once per version of what they read: every project
-    response carries both, and measuring them again took most of a request on a long episode."""
+    response carries both, and measuring them again took most of a request on a long episode. With tokens=True also the
+    voice files' tokens (audio_level.voice_state), decided with the gains."""
     key = _derived_key(project)
     with _DERIVED_LOCK:
         hit = _DERIVED.get(project["id"])
-        if hit and hit[0] == key:
-            return copy.deepcopy(hit[1]), dict(hit[2])
-    readiness, gains = store.plan_readiness(project), audio_level.voice_gains(project)
-    with _DERIVED_LOCK:
-        _DERIVED[project["id"]] = (key, readiness, gains)
-    return copy.deepcopy(readiness), dict(gains)
+    if not (hit and hit[0] == key):
+        readiness = store.plan_readiness(project)
+        gains, files = audio_level.voice_state(project)
+        hit = (key, readiness, gains, files)
+        with _DERIVED_LOCK:
+            _DERIVED[project["id"]] = hit
+    result = (copy.deepcopy(hit[1]), dict(hit[2]))
+    return result + (dict(hit[3]),) if tokens else result
 
 
 _STATIC_VERSIONS = {}
@@ -1236,6 +1472,9 @@ def versioned_index(body: bytes) -> bytes:
     return re.sub(r'(src|href)="/([A-Za-z0-9_./-]+\.(?:js|css|svg))\?v=[^"]*"', stamp, body.decode("utf-8")).encode("utf-8")
 
 
+SLOW_REQUEST = 2.0
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MultiBotVideoStudio/0.1"
 
@@ -1244,7 +1483,10 @@ class Handler(BaseHTTPRequestHandler):
         # and every change stay (17 November 2026 audit)
         if self.command == "GET" and len(args) >= 2 and str(args[1]).startswith(("2", "3")):
             return
-        sys.stderr.write("[video-studio] " + fmt % args + "\n")
+        try:
+            sys.stderr.write("[video-studio] " + fmt % args + "\n")
+        except OSError:   # a full disk must not break the request whose line it is (deleting a project failed so)
+            pass
 
     def json_response(self, value, status=200):
         if isinstance(value, dict) and isinstance(value.get("project"), dict):
@@ -1256,7 +1498,7 @@ class Handler(BaseHTTPRequestHandler):
                     project = dict(store.load_project(project["id"]))
             project.update(store.history_state(project["id"]))
             # the preview plays the voice at the export's level (audio_gain)
-            project["production"], project["audio_gain"] = derived_state(project)
+            project["production"], project["audio_gain"], project["voice_files"] = derived_state(project, tokens=True)
             project["plan_mode"] = project["production"].get("plan_mode", store.project_plan_mode(project))
             project["plan_mode_editable"] = True
             project["video_bitrates"] = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
@@ -1323,6 +1565,10 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET":
                 return self.route_get(path, query)
             global IN_FLIGHT
+            # drawing a preview (a CapCut seam, a still, a motion check) changes nothing in a project: it neither counts
+            # as a change in flight nor holds back a restart (the editor asked for seams for minutes, 25 November 2026)
+            if method == "POST" and re.fullmatch(r"/api/projects/[0-9a-f]{24}/(capcut-preview|still|motion-check)", path):
+                return self.route_mutation(method, path, self.read_json_body() or {})
             with UPDATE_MUTEX:
                 if UPDATE_RESTARTING:
                     raise store.StudioError('Студія перезапускається після оновлення.', 503)
@@ -1396,17 +1642,31 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             return self.json_response({"error": "Внутрішня помилка студії"}, 500)
 
+    def timed_request(self, method):
+        # a request slower than SLOW_REQUEST seconds is written to the log with its time, so a page that hangs can be
+        # traced to the call that held it (user, 25 November 2026: «Андромеда відкривалась… біля хвилини»)
+        started = time.monotonic()
+        try:
+            self.handle_request(method)
+        finally:
+            spent = time.monotonic() - started
+            if spent > SLOW_REQUEST:
+                try:
+                    sys.stderr.write(f"[video-studio] slow {method} {self.path.split('?', 1)[0]} {spent:.1f} s\n")
+                except OSError:
+                    pass
+
     def do_GET(self):
-        self.handle_request("GET")
+        self.timed_request("GET")
 
     def do_POST(self):
-        self.handle_request("POST")
+        self.timed_request("POST")
 
     def do_PATCH(self):
-        self.handle_request("PATCH")
+        self.timed_request("PATCH")
 
     def do_DELETE(self):
-        self.handle_request("DELETE")
+        self.timed_request("DELETE")
 
     def route_upload(self, pid):
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
@@ -1618,8 +1878,13 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             if match.group(1) not in store.capcut_effects():
                 raise store.StudioError("Ефект не знайдено", 404)
-            with CAPCUT_LOCK:
-                target = capcut_run(["--effect", match.group(1)], timeout=300)
+            # a drawn effect is served at once: behind the lock it waited for transitions being drawn (11 s each) and
+            # the effects showed late on the frames (user, 25 November 2026: «довго грузяться… ефекти не видно»)
+            target = EFFECT_PREVIEWS.get(match.group(1))
+            if target is None or not target.is_file():
+                with CAPCUT_LOCK:
+                    target = capcut_run(["--effect", match.group(1)], timeout=300)
+                EFFECT_PREVIEWS[match.group(1)] = target
             return self.serve_media(target)
         match = re.fullmatch(r"/api/capcut/media/(transition-direct-capcut-[0-9a-f]{24}\.mp4)", path)
         if match:
@@ -1651,7 +1916,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({"results": search_pixabay(q, kind, limit)})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})", path)
         if match:
-            return self.json_response({"project": paused_view(match.group(1))})
+            answer = paused_view(match.group(1))
+            warm_capcut(match.group(1), answer)   # the episode is opened: its CapCut seams are drawn ahead
+            return self.json_response({"project": answer})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/plan", path)
         if match:
             pid = match.group(1)
@@ -1804,7 +2071,9 @@ class Handler(BaseHTTPRequestHandler):
             import media_delivery
             project, asset = media_delivery.resolve(*match.groups())
             # the voice plays its copy at the standard level once it is made (audio_level.leveled)
-            file = audio_level.voice_file(project, match.group(2), Path(asset["path"]))
+            token = str((query.get("lv") or [""])[0])
+            file = (audio_level.token_file(Path(asset["path"]), token) if token
+                    else audio_level.voice_file(project, match.group(2), Path(asset["path"])))
             # ?download=1 saves it under the episode's name (user, 21 November 2026: «озвучка… хочу її скачати»)
             download = None
             if query.get("download"):
@@ -1814,6 +2083,11 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)
         if match:
             return self.json_response({"job": load_job(match.group(1))})
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/capcut-ready", path)
+        if match:
+            project = store.load_project(match.group(1))
+            warm_capcut(project["id"], project)   # the rest is drawn ahead in the background
+            return self.json_response({"ready": capcut_ready(project), "revision": project.get("revision")})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/create-video", path)
         if match:
             return self.json_response(analysis_jobs.creation_status(store.load_project(match.group(1)), load_job))
@@ -2139,17 +2413,41 @@ class Handler(BaseHTTPRequestHandler):
             result = montage_ops.run(match.group(1), body.get("ops"), body.get("expected_revision"), body.get("dry_run") is True)
             if result.get("applied") and store.prune_razgon_renders(match.group(1))["removed"]:
                 result["revision"] = store.load_project(match.group(1)).get("revision", 0)
+            if result.get("applied"):
+                warm_capcut(match.group(1))   # new seams are drawn ahead at once
+                # accents and transitions an op laid get their pencil and transition sounds a moment later (the sound
+                # ops themselves start no further pass)
+                if any(isinstance(op, dict) and op.get("op") not in SOUND_OPS for op in body.get("ops") or []):
+                    sync_transition_sounds(match.group(1))
             return self.json_response(result)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/event-sounds", path)
+        if match and method == "POST":
+            # sounds on what comes on screen in the Razgon frames, read from their code (event_sounds.py)
+            import event_sounds
+            frames = body.get("frames")
+            if frames is not None and (not isinstance(frames, list) or not all(type(n) is int for n in frames)):
+                raise store.StudioError("frames: список номерів кадрів", 400)
+            store.load_project(match.group(1))
+            return self.json_response({"started": event_sounds.start(match.group(1), set(frames) if frames else None)}, 202)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/frame-review", path)
         if match and method == "POST":
             import native_review
             return self.json_response(native_review.batch(store.load_project(match.group(1)), body.get("frames"), body.get("ticket")))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/capcut-preview", path)
         if match and method == "POST":
-            return self.json_response(capcut_transition_preview(store.load_project(match.group(1)), str(body.get("join_id", ""))))
+            global CAPCUT_DEMAND
+            with CAPCUT_LOCK:
+                CAPCUT_DEMAND += 1   # the seam the author looks at goes before the background pass
+            try:
+                answer = capcut_transition_preview(store.load_project(match.group(1)), str(body.get("join_id", "")))
+            finally:
+                with CAPCUT_LOCK:
+                    CAPCUT_DEMAND -= 1
+            warm_capcut(match.group(1))
+            return self.json_response(answer)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/motion-check", path)
         if match and method == "POST":
-            # the newest motion-code clip of a frame (or the one titled) run on three moments: PNG stills with alpha
+            # the newest motion-code clip of a frame (or the one titled) run on four moments: PNG stills with alpha, and a warning when it fades before its end
             import motion_code
             project = store.load_project(match.group(1))
             clips = [c for t in project.get("tracks", []) for c in t.get("clips", []) if c.get("content_type") == "code"]
@@ -2161,7 +2459,7 @@ class Handler(BaseHTTPRequestHandler):
             clip = chosen[-1]
             length = float(clip["duration"])
             folder = store.cache_dir(project) / "motion-code" / ("check-" + clip["id"])
-            return self.json_response(motion_code.stills(project, clip, [min(.3, length / 4), length / 2, max(0, length - .1)], folder))
+            return self.json_response(motion_code.stills(project, clip, [min(.3, length / 4), length / 2, length * .8, max(0, length - .1)], folder))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/still", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))
@@ -2175,6 +2473,8 @@ class Handler(BaseHTTPRequestHandler):
             # a frame render that a newer one replaced is not kept (store.prune_razgon_renders)
             if store.prune_razgon_renders(match.group(1))["removed"]:
                 project = store.load_project(match.group(1))
+            if changes_joins(body):
+                sync_transition_sounds(match.group(1))
             return self.json_response({"project": project})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/assets/relocate", path)
         if match and method == "POST":

@@ -80,7 +80,8 @@ class DesignedTextTest(unittest.TestCase):
                 self.backdrop_of(ctx, 9, {"backdrop": "grid"}, start=30.0)
                 grid = [a["payload"] for a in ctx.actions]
                 self.assertEqual([(c["kind"], c.get("content_type")) for c in grid], [("image", None)])   # the grid alone, no noise
-                self.assertTrue((Path(root) / "text-backdrops" / "grid-1920x1080.png").is_file())
+                # the channel's own pattern (channel_design), not one grid shared by every channel
+                self.assertEqual(len(list((Path(root) / "text-backdrops").glob("pattern-*-1920x1080.png"))), 1)
         with self.assertRaises(montage_ops.OpError):
             self.backdrop_of(self.ctx([], []), 3, {"backdrop": "rainbow"})
 
@@ -184,3 +185,83 @@ class HeldTailTest(unittest.TestCase):
                 self.assertNotEqual(held, str(clip))
                 self.assertGreaterEqual(store.media_duration(Path(held)), 1.6)
                 self.assertEqual(joins.held_source({}, str(clip), 1.6), held)                # made once
+
+    def test_a_transition_out_of_a_video_without_tail_ends_on_the_seam(self):
+        # user, 25 November 2026: «стоп-кадр відео дивиться дуже дивно і як будто це баг»; «любий кадр можна
+        # підтягнути… накласти на ведучого»: the host plays its own last moments, the next frame comes in early
+        import subprocess, tempfile
+        import joins, store
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            host = root / "host.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=2",
+                            "-pix_fmt", "yuv420p", str(host)], check=True)
+            project = {"id": "p" * 24, "fps": 25, "assets": [{"id": "h", "path": str(host)}],
+                       "tracks": [{"id": "l1", "clips": [{"id": "a", "kind": "video", "asset_id": "h", "start": 0.0, "duration": 2.0, "trim_start": 0.0}]},
+                                  {"id": "l2", "clips": [{"id": "b", "kind": "image", "start": 2.0, "duration": 3.0,
+                                                          "keyframes": [{"time": 0, "scale": 1.0}, {"time": 3.0, "scale": 1.3}]},
+                                                         {"id": "c", "kind": "text", "start": 3.0, "duration": 1.0}]}],
+                       "scene_groups": [{"id": "g1", "title": "Кадр 1", "clip_ids": ["a"]}, {"id": "g2", "title": "Кадр 2", "clip_ids": ["b", "c"]}],
+                       "join_transitions": [{"id": "j", "from_ref": "group:g1", "to_ref": "group:g2", "type": "crossfade", "duration": .4, "seam": 2.0}]}
+            self.assertTrue(joins.ends_at_seam(project, project["join_transitions"][0]))
+            self.assertEqual(joins.anchor(project)["join_transitions"][0]["anchor"], "end")
+            self.assertEqual(joins.window(project["join_transitions"][0]), (1.6, 2.0))
+            layers = [{"id": "l1", "clips": [{"id": "a", "type": "video", "source": str(host), "start": 0.0, "duration": 2.0, "trim_start": 0.0, "keyframes": []}]},
+                      {"id": "l2", "clips": [{"id": "b", "type": "image", "start": 2.0, "duration": 3.0, "keyframes": [{"time": 0, "scale": 1.0}, {"time": 3.0, "scale": 1.3}]},
+                                             {"id": "c", "type": "text", "start": 3.0, "duration": 1.0, "keyframes": []}]}]
+            with mock.patch.object(store, "cache_dir", return_value=root / "cache"):
+                joins.transport(project, layers)
+            out, incoming, later = layers[0]["clips"][0], layers[1]["clips"][0], layers[1]["clips"][1]
+            self.assertEqual((out["duration"], out["source"]), (2.0, str(host)))          # the host is not held past its edge
+            self.assertEqual(out["join_out"]["seam"], 1.6)
+            self.assertAlmostEqual(incoming["start"], 1.6)
+            self.assertAlmostEqual(incoming["duration"], 3.4)
+            self.assertEqual(incoming["join_in"]["seam"], 1.6)
+            # its zoom runs on backwards over the lead and is where it was at the seam
+            self.assertAlmostEqual(incoming["keyframes"][0]["scale"], 1.0 - .3 / 3.0 * .4)
+            self.assertEqual(incoming["keyframes"][1], {"time": .4, "scale": 1.0})
+            self.assertEqual(later["start"], 3.0)                                          # an accent later keeps its time
+
+    def test_a_video_with_a_tail_keeps_the_transition_after_the_seam(self):
+        import subprocess, tempfile
+        import joins
+        with tempfile.TemporaryDirectory() as folder:
+            host = Path(folder) / "host.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=2.6",
+                            "-pix_fmt", "yuv420p", str(host)], check=True)
+            project = {"fps": 25, "assets": [{"id": "h", "path": str(host)}],
+                       "tracks": [{"id": "l1", "clips": [{"id": "a", "kind": "video", "asset_id": "h", "start": 0.0, "duration": 2.0}]},
+                                  {"id": "l2", "clips": [{"id": "b", "kind": "image", "start": 2.0, "duration": 3.0}]}],
+                       "scene_groups": [{"id": "g1", "clip_ids": ["a"]}, {"id": "g2", "clip_ids": ["b"]}]}
+            join = {"from_ref": "group:g1", "to_ref": "group:g2", "type": "crossfade", "duration": .4, "seam": 2.0}
+            self.assertFalse(joins.ends_at_seam(project, join))   # 0.6 s of the host after its edge: it plays through
+
+    def test_an_early_frame_of_video_holds_its_first_picture(self):
+        import subprocess, tempfile
+        import joins, store
+        with tempfile.TemporaryDirectory() as folder:
+            clip = Path(folder) / "next.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=1",
+                            "-pix_fmt", "yuv420p", str(clip)], check=True)
+            item = joins.lead({"type": "video", "source": str(clip), "start": 2.0, "duration": 1.0, "trim_start": 0.0}, .4, Path(folder) / "heads")
+            self.assertNotEqual(item["source"], str(clip))
+            self.assertGreaterEqual(store.media_duration(Path(item["source"])), 1.38)
+            self.assertEqual(item["trim_start"], 0.0)
+            item = joins.lead({"type": "video", "source": str(clip), "start": 2.0, "duration": .5, "trim_start": .5}, .4, Path(folder) / "heads")
+            self.assertEqual((item["source"], round(item["trim_start"], 3)), (str(clip), .1))   # it had the frames
+
+    def test_a_transparent_layer_keeps_its_alpha_through_the_held_tail(self):
+        import subprocess, tempfile
+        import joins
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clip = root / "motion.mov"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black@0.0:size=320x180:rate=25:duration=1,format=rgba",
+                            "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", str(clip)], check=True)
+            import store
+            with mock.patch.object(store, "cache_dir", return_value=root / "cache"):
+                held = joins.held_source({}, str(clip), 1.6)
+            self.assertTrue(held.endswith(".mov"))
+            fmt = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt",
+                                  "-of", "csv=p=0", held], capture_output=True, text=True).stdout
+            self.assertIn("yuva", fmt)

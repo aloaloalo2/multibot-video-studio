@@ -21,17 +21,21 @@ LEVELED = 'sfx-library-v3'   # v3: clicks reach the common loudness too (25 Nove
 # в SFX, постав в нашу студію»): the 86 that CapCut marks for commercial use and that last at most 4.0 s (the studio levels SFX to 4 s at most), so none is cut.
 # A row keeps its CapCut id in `mixkit_id`, the key every SFX choice and route already uses.
 CAPCUT = 'capcut-trending-20261125'   # beside ROOT
+# CapCut's pencil and chalk drawing sounds (user, 25 November 2026: «звук карандаша, який малює»): 14 commercial ones of the
+# search «pencil drawing» / «pencil» / «writing on paper», each at most 4.0 s; category «drawing», a heading of their own.
+PENCIL = 'capcut-pencil-20261125'
+GROUPS = {CAPCUT: 'capcut', PENCIL: 'capcut-pencil'}
 
 
 def catalog():
     found = []
-    for root in (ROOT, ROOT.parent / CAPCUT):
+    for root in (ROOT, ROOT.parent / CAPCUT, ROOT.parent / PENCIL):
         path = root / 'catalog.json'
         if not path.is_file():
             continue
         rows = json.loads(path.read_text(encoding='utf-8'))
         found += [{**r, 'name': str(root / (r['mixkit_id'] + '.wav')), 'duration_seconds': min(MAX_SECONDS, float(r['duration_seconds'])),
-                   'source_group': 'capcut' if 'capcut_id' in r else 'mixkit',
+                   'source_group': GROUPS.get(root.name, 'capcut') if 'capcut_id' in r else 'mixkit',
                    'preview_url': '/api/sfx-library/' + r['mixkit_id'] + '.wav?v=3'}
                   for r in rows if (root / (r['mixkit_id'] + '.wav')).is_file() and r['mixkit_id'] not in EXCLUDED]
     return found

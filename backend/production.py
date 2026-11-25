@@ -100,7 +100,9 @@ QUALITY = """5. Здача після перевірки композиції й
      підписи на предметах враховують їхню перспективу; лінія чи стрілка закінчується точно на своїй цілі;
    - початок, основний стан, фінал і крайні положення руху складають цілісну сцену. Спокійна читабельна фаза
      дозволена; випадкові частинки, сяйво, хитання й рух заради активності не додавай;
-   - для сцени обмежуй час локальним інтервалом, обрамляй малювання g.save()/g.restore(); ефекти не течуть у сусідній кадр.
+   - для сцени обмежуй час локальним інтервалом, обрамляй малювання g.save()/g.restore(); ефекти не течуть у сусідній кадр;
+   - за останню секунду кадру студії нічого нового не з'являється (текст, предмет, підпис): усе потрібне приходить раніше,
+     кінець кадру спокійний (logic-check показує це як «late»).
    Картинок кадрів не переглядай і mark не став: увесь фільм одним проходом подивиться окрема сесія огляду в кінці.
    Перед завершенням запусти безкоштовні перевірки лише свого інтервалу (вони без токенів, близько 20 с):
    node render.mjs --project <проєкт> --logic-check --from <початок> --to <кінець> і так само --text-check.
@@ -125,6 +127,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
     return f"""Ти аніматор анімаційного випуску в VideoKey Studio. Режисуру вже зроблено. Поточне завдання: кадри {scope}.
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
+Папка випуску належить автору (сценарії, його матеріали, прев'ю, готове відео): нічого свого туди не пиши й не створюй у ній папок. Аркуші, нарізані картинки й PNG клади в «{artwork_folder(project)}», робочі скрипти в «{store.project_dir(project['id'])}/work».
 Запит: лише кадри студії {scope} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
@@ -187,6 +190,15 @@ SHEET_RULE = ("Створені картинки (фото, інфографік
               "сказано, кожна четвертинка 16:9. Ріж аркуш: python3 \"{tools}/sheet_2x2.py\" АРКУШ.png --out-dir \"{folder}\" "
               "--names кадр_NNN,кадр_NNN,кадр_NNN,кадр_NNN (\"-\" пропускає клітинку). Одиночну картинку малюй тільки тоді, "
               "коли до четвірки не вистачає кадрів. Перевір кожну картинку: зміст, текст, краї без смуг сусідньої клітинки.")
+def artwork_folder(project: dict) -> str:
+    """Where the frame agent keeps the pictures it cuts from its sheets: the studio's own media of the project, never the
+    episode folder, which holds only the author's scripts, sources, previews and finished videos (user, 25 November 2026:
+    «папка кадри… це типу сміття технічне, мені взагалі тут в таких папках не потрібно»)."""
+    folder = store.media_dir(project) / "кадри"
+    folder.mkdir(parents=True, exist_ok=True)
+    return str(folder)
+
+
 PEOPLE_STYLES = {"stickman", "real", "real_older"}  # real_older: an older name of real
 
 
@@ -282,6 +294,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
     return f"""Ти монтажер випуску в VideoKey Studio. План кадрів іде за озвучкою, автор натиснув «Почати створення ролика».
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка «{rel}», канал «{episode.parent.name}».
+Папка випуску належить автору (сценарії, його матеріали, прев'ю, готове відео): нічого свого туди не пиши й не створюй у ній папок. Аркуші, нарізані картинки й PNG клади в «{artwork_folder(project)}», робочі скрипти в «{store.project_dir(project['id'])}/work».
 Запит: лише кадри студії {scope} з {request['total_frames']}, від {request['start']:.2f} до {request['end']:.2f} с озвучки.
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
 Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
@@ -308,7 +321,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Це може бути фото, інфографіка, схема, рентген, ілюстрація чи будь-який інший доречний стиль. Вибирай стиль за змістом кадру. Через термінал:
    промпт у файлі, потім python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/codex_image.py" --prompt <файл промпту> --out <аркуш у службовій папці студії> --background.
    Codex малює аркуш близько хвилини: запускай його з --background, пиши тим часом інші кадри, а готові аркуші забирай командою codex_image.py --wait <аркуші> перед тим, як їх різати.
-   {SHEET_RULE.format(tools=tools, folder=f'{rel}/кадри')}
+   {SHEET_RULE.format(tools=tools, folder=artwork_folder(project))}
    Коли в Codex закінчився ліміт, codex_image.py сам малює через OpenRouter, продовжуй як звичайно. Лише якщо він усе ж пише CODEX_LIMIT, заверши роботу: студія вже на паузі. Не замінюй створені картинки стоком чи кодом.
    {people['rule']}{channel_hero.production_rule(project)}
 4. Кодова анімація (animation): створи композицію кодом зі схем, діаграм, фігур, підписів і за потреби асетів.
@@ -356,8 +369,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Відкрий аркуш один раз: зображення відповідає озвучці, {people['check']}, краї чисті, текст і акценти читаються.
    Схвали надрукованою командою. Якщо є дефект, виправ кадр і відкрий актуальний аркуш для зміненого кадру.
 {accents_step(project, tools)}
-7. Переходи: щойно кадри партії стоять, до її візуального огляду, python3 "{tools}/studio.py" transitions {project['id']}{transition_scope} --share 0.7 ставить оформлені
-   переходи приблизно на 70% стиків за правилами каналу (кадр ведучого й текстовий з переходами з обох боків, без двох однакових переходів, крім розчинення, поспіль).
+7. Переходи: щойно кадри партії стоять, до її візуального огляду, python3 "{tools}/studio.py" transitions {project['id']}{transition_scope} ставить оформлені
+   переходи там, де студія вирішить сама, за правилами каналу (кадр ведучого й текстовий з переходами з обох боків, без двох однакових переходів, крім розчинення, поспіль).
+8. {motion_direction.LIVING_FRAMES.format(tools=tools, pid=project['id'])}
 
 Помилилась команда монтажу: python3 "{tools}/studio.py" undo {project['id']}; кадр не той: remove {project['id']} N і place знову.
 Збережи план і налаштування каналу. Кадри поза переліком {scope} не змінюй. Не запускай експорт: його запускає автор.
@@ -477,6 +491,22 @@ def ensure_music(pid: str) -> None:
         montage_ops.run(pid, [{"op": "soundtrack", "music": True, "cues": []}])
     except Exception as error:   # the film is done either way; the author can add the music by hand
         print(f"[production] music of {pid}: {error}", flush=True)
+
+
+def film_sounds(pid: str) -> None:
+    """Once a regular film's frames are made, its sounds follow the picture by themselves: a sound on every designed
+    transition, typing and pencils under written text, pencils under drawn accents, then a sound on every text and
+    picture that comes in and every text written in its Razgon frames, read from their code (event_sounds.py)."""
+    try:
+        project = store.load_project(pid)
+        if store.project_animated(project):
+            return
+        import montage_ops
+        montage_ops.run(pid, [{"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])
+        import event_sounds
+        event_sounds.start(pid)
+    except Exception as error:   # the film is done either way; the sounds can be laid again
+        print(f"[production] sounds of {pid}: {error}", flush=True)
 
 
 HOST_GRAPHICS_MIN = 5.0   # seconds: a shorter host frame has no time for a graphic (user, 25 November 2026)
@@ -781,7 +811,14 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
             # «щоб зупинено ніколи не було»): the run is done and the frames are named for the author to look at.
             look_only = not review['passed'] and not review_failed and not fields.get('limit') and not director.limit_stop(answer) \
                 and bool(review.get('pending_review')) and drawn(pid, request["frames"], request.get('repair_frames'))
-            if look_only:
+            # the frames are drawn and only the check could not run (the disk was full, a saved layer unreadable): the
+            # film is made, its frames wait for a look; never «Кадри 1–134 не вдалися» for a check that did not happen
+            # (user, 25 November 2026)
+            unchecked = review.get('check_failed') and not review_failed and not fields.get('limit') and not director.limit_stop(answer) \
+                and drawn(pid, request["frames"], request.get('repair_frames'))
+            if unchecked:
+                review = {**review, 'passed': True, 'look_later': final_request['review_frames'], 'review_unavailable': review['errors'][:1]}
+            elif look_only:
                 review = {**review, 'passed': True, 'look_later': review['pending_review']}
             elif not review['passed'] and not fields.get('limit') and not director.limit_stop(answer) \
                     and drawn(pid, request["frames"], request.get('repair_frames')):
@@ -832,6 +869,7 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 # render (razgon_sound.py; only an animated film is due)
                 razgon_sound.start(pid, "production")
                 ensure_music(pid)
+                film_sounds(pid)
 
 
 def validate_repair_frames(pid,request,frame_numbers):
@@ -978,6 +1016,9 @@ def start_from_plan(pid: str) -> dict:
     return project
 
 
+PRODUCTION_MIN_FREE = 3 * 1024 ** 3
+
+
 def start(pid: str, notes: str = "") -> None:
     """Start making the requested frames on any channel; a request already in work is left to its run."""
     project = store.load_project(pid)
@@ -990,6 +1031,14 @@ def start(pid: str, notes: str = "") -> None:
             cli = director.executable()
         except RuntimeError as error:
             set_request(pid, status="failed", error=str(error))
+            return
+        # frames write pictures, motion-code renders and stills: on a full disk every frame failed at once (25 November
+        # 2026, «Кадри 1–134 не вдалися… No space left on device»); the request waits for the author instead
+        import shutil
+        free = shutil.disk_usage(store.DATA_ROOT).free
+        if free < PRODUCTION_MIN_FREE:
+            set_request(pid, status="failed", error=f"Мало місця на диску: вільно {free / 1024 ** 3:.1f} ГБ, для створення кадрів "
+                                                    f"потрібно хоча б {PRODUCTION_MIN_FREE // 1024 ** 3} ГБ. Звільніть місце й натисніть «Продовжити».")
             return
         ACTIVE.add(pid)
     try:
@@ -1057,6 +1106,7 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
     saved = set_request(pid, finished_at=time.time(), **fields)
     if fields.get('status') == 'done':
         razgon_sound.start(pid, "production")
+        film_sounds(pid)
     return saved
 
 
@@ -1090,6 +1140,7 @@ def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
     saved = set_request(pid, status='done', error=None, quality=review)
     if not request.get('repair_frames'):
         razgon_sound.start(pid, "production")
+        film_sounds(pid)
     return saved
 
 

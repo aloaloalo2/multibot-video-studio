@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 ENGINE = Path(__file__).resolve().parent
@@ -103,6 +104,24 @@ def _worker(job: dict, width: int, height: int) -> None:
         Path(job_path).unlink(missing_ok=True)
 
 
+_QUIET = {"count": 0, "emit": None}
+_QUIET_LOCK = threading.Lock()
+
+
+def _quiet(render, on: bool) -> None:
+    """The renderer's progress silenced while a window is drawn: counted, so two windows drawn at once give it back."""
+    with _QUIET_LOCK:
+        if on:
+            if _QUIET["count"] == 0:
+                _QUIET["emit"] = render.emit
+                render.emit = lambda *a, **k: None
+            _QUIET["count"] += 1
+        else:
+            _QUIET["count"] -= 1
+            if _QUIET["count"] == 0:
+                render.emit = _QUIET["emit"]
+
+
 def _window(render, project: dict, project_file: Path, layers: list[dict], start: float, end: float,
             width: int, height: int, fps: int, out_raw: Path) -> int:
     """Draws [start, end) of `layers` with the FFmpeg renderer and saves the frames as raw RGB at the working size.
@@ -115,8 +134,7 @@ def _window(render, project: dict, project_file: Path, layers: list[dict], start
     sub = {**project, "timeline_layers": layers}
     count = max(1, render.frame_index(end, fps) - render.frame_index(start, fps))
     start, end = render.frame_index(start, fps) / fps, render.frame_index(end, fps) / fps   # whole frames, as the plan
-    silent = render.emit
-    render.emit = lambda *a, **k: None
+    _quiet(render, True)
     try:
         with tempfile.TemporaryDirectory(prefix=".capcut-window-", dir=cache_dir()) as temp:
             work = Path(temp)
@@ -156,7 +174,7 @@ def _window(render, project: dict, project_file: Path, layers: list[dict], start
             else:
                 out_raw.write_bytes(bytes(pw * ph * 3) * count)
     finally:
-        render.emit = silent
+        _quiet(render, False)
     return count
 
 
@@ -182,14 +200,39 @@ def _used(path: Path) -> None:
         pass
 
 
+# The cache's own limit: every change of a seam, a rule or the engine draws its transitions again in ProRes, and in one
+# day of edits they took 27 GB and filled the Mac (25 November 2026). The least recently used go first.
+# 1.5 GB: the studio's Mac had a few GB free and a 6 GB cache filled its disk (25 November 2026)
+CACHE_LIMIT = int(1.5 * 1024 ** 3)
+
+
+def _limit_cache(keep: Path) -> None:
+    try:
+        entries = [p for p in cache_dir().iterdir() if p.is_file() and p.suffix in (".mov", ".mp4", ".raw") and p != keep]   # effect previews (webm) stay
+        entries.sort(key=lambda p: p.stat().st_mtime)
+        total = sum(p.stat().st_size for p in entries) + (keep.stat().st_size if keep.exists() else 0)
+        for item in entries:
+            if total <= CACHE_LIMIT:
+                break
+            size = item.stat().st_size
+            item.unlink(missing_ok=True)
+            total -= size
+    except OSError:
+        pass
+
+
 def _movie(path: Path, job: dict, width: int, height: int) -> Path:
     if path.exists() and path.stat().st_size > 0:
         _used(path)
         return path
-    tmp = path.with_name(path.stem + ".part" + path.suffix)
+    tmp = path.with_name(f"{path.stem}.{os.getpid()}.part{path.suffix}")   # one part per process: two renders of one seam at once
     job = {**job, "out": str(tmp), "out_width": width, "out_height": height}
-    _worker(job, width, height)
-    tmp.replace(path)
+    try:
+        _worker(job, width, height)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)   # a failed render leaves no part behind
+    _limit_cache(path)
     return path
 
 
@@ -209,8 +252,14 @@ def _transition(render, project, project_file, clip, width, height, fps) -> str:
         return str(path)
     a_raw, b_raw = cache_dir() / f"{key}-a.raw", cache_dir() / f"{key}-b.raw"
     try:
-        n = _window(render, project, project_file, a_layers, start, end, width, height, fps, a_raw)
-        _window(render, project, project_file, b_layers, start, end, width, height, fps, b_raw)
+        # both sides at once: each is a separate FFmpeg run of the same length (a transition's preview took about 6 s,
+        # half of it these two one after the other; user, 25 November 2026: «таймлайн… дуже сильно висне»)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(2) as pool:
+            sides = [pool.submit(_window, render, project, project_file, layers, start, end, width, height, fps, raw)
+                     for layers, raw in ((a_layers, a_raw), (b_layers, b_raw))]
+            n = sides[0].result()
+            sides[1].result()
         index = int(clip["capcut_type"][-2:]) - 1
         comp = float(entry.get("default_duration", 1.0))
         _movie(path, {"codec": "mp4" if PREVIEW else "prores", "mode": "transition", "index": index, "package": str(package("capcut_transition", entry)),
@@ -262,6 +311,17 @@ def _as_graphic(clip: dict, source: str, start: float, duration: float, suffix: 
             "easing": "linear"}
 
 
+def _in_window(start: float, end: float) -> bool:
+    window = os.environ.get("STUDIO_CAPCUT_WINDOW")
+    if not window:
+        return True
+    try:
+        first, last = (float(x) for x in window.split(","))
+    except ValueError:
+        return True
+    return end > first - 1e-6 and start < last + 1e-6
+
+
 def expand(project: dict, project_file: Path, width: int, height: int, fps: int, render) -> None:
     """Replaces the CapCut clips of `project["timeline_layers"]` with prepared graphic clips (in place, once)."""
     layers = project.get("timeline_layers")
@@ -283,7 +343,9 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
                 clips.append(clip)
                 continue
             start, duration = float(clip["start"]), float(clip["duration"])
-            if dry:
+            if dry or not _in_window(start, start + duration):
+                # outside a still's window (STUDIO_CAPCUT_WINDOW) the clip is never seen: it stays an empty placeholder
+                # instead of a ProRes drawing (a still drew every transition of the film, up to five minutes)
                 clips.append({**_as_graphic(clip, "", start, duration), "content_type": "shape", "color": "#000000",
                               "opacity": 0})
                 continue
@@ -302,8 +364,9 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
             t, part = start, 0
             end = start + duration
             while t < end - 1e-6:
-                intro = part == 0
-                source, loop = _overlay_loop(name, fps, width, height, intro=intro if name == PLAYER else True)
+                # the effect at its full from the frame's first moment, never building up from nothing at its start
+                # or at each loop (user, 25 November 2026: «ефект… має від початку до кінця бути»)
+                source, loop = _overlay_loop(name, fps, width, height, intro=False)
                 length = min(loop, end - t)
                 frames = render.frame_index(t + length, fps) - render.frame_index(t, fps)
                 if frames < 1:

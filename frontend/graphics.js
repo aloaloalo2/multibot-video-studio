@@ -26,12 +26,14 @@ function containedBox(naturalWidth,naturalHeight,boxWidth,boxHeight){
   return aspect>box?{width:1,height:box/aspect}:{width:aspect/box,height:1};
 }
 
+// the trail stands at the clip's place and moves by the transform in fractions of a pixel, as the clip itself
+// (user, 25 November 2026: «рвану анімацію… прибери… мені треба в всіх проектах… плавну анімацію»)
 function renderMotionTrails(wrapper,clip,local,composition){
   const enabled=Number(clip.motion_blur || 0)>0 && wrapper.querySelector('img');
   if(!enabled)return;
   if(!wrapper._trails){wrapper._trails=[.18,.10].map(opacity=>{const node=wrapper.cloneNode(true);node.removeAttribute('data-clip-id');node.classList.add('motion-trail');node.style.pointerEvents='none';wrapper.before(node);return {node,opacity};});}
   const now=animatedValues(clip,local),dt=.5/Number(state.project.fps || 25),past=animatedValues(clip,Math.max(0,local-dt)),speed=Math.hypot((now.x-past.x)*state.project.width,(now.y-past.y)*state.project.height)/dt;
-  wrapper._trails.forEach(({node,opacity},index)=>{const values=animatedValues(clip,Math.max(0,local-dt*(index+1)/2));node.hidden=wrapper.hidden;node.style.cssText=wrapper.style.cssText;node.style.left=values.x*100+'%';node.style.top=values.y*100+'%';node.style.transform=`translate(-50%,-50%) scale(${values.scale})`;node.style.opacity=String(speed>180?values.opacity*opacity*clip.motion_blur:0);node.style.filter='blur('+(.6*composition.clientWidth/state.project.width)+'px)';});
+  wrapper._trails.forEach(({node,opacity},index)=>{const values=animatedValues(clip,Math.max(0,local-dt*(index+1)/2));node.hidden=wrapper.hidden;node.style.cssText=wrapper.style.cssText;const bx=Number(clip.x ?? .5),by=Number(clip.y ?? .5);node.style.left=bx*100+'%';node.style.top=by*100+'%';node.style.transform=`translate(-50%,-50%) translate3d(${((values.x-bx)*composition.clientWidth).toFixed(3)}px,${((values.y-by)*composition.clientHeight).toFixed(3)}px,0) scale(${values.scale})`;node.style.opacity=String(speed>180?values.opacity*opacity*clip.motion_blur:0);node.style.filter='blur('+(.6*composition.clientWidth/state.project.width)+'px)';});
 }
 
 function studioFontOptionsHtml(){

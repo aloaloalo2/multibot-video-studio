@@ -181,6 +181,9 @@ def _run(cid,code,settings,example,job):
             if not duration or duration<=0:raise RuntimeError('Сервіс повернув неповний зразок голосу')
             staged.replace(target)
         job.update(status='done',duration=duration,credits=credits,finished_at=time.time())
+        import spending   # a paid sample is a charge of the channel; ElevenLabs reports its credits, others the estimate
+        spending.charge(settings['provider'],credits if isinstance(credits,(int,float)) else (job.get('estimate') or {}).get('amount'),
+                        'translation-sample-'+str(job.get('key')),'voice_sample','channel:'+cid)
         store.atomic_json(target.with_suffix('.json'),job)
         if settings['provider']=='elevenlabs':eleven_api.invalidate_balance()
     except Exception as error:job.update(status='failed',error=str(error)[:500],finished_at=time.time())

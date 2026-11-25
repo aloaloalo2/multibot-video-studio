@@ -51,9 +51,20 @@ FONT_CANDIDATES = (
 
 @lru_cache(maxsize=16)
 def hardware_hevc_available(width: int, height: int, fps: int) -> bool:
-    """Probe the actual output size before choosing the Mac hardware encoder."""
+    """Probe the actual output size before choosing the Mac hardware encoder (the answer kept beside the probe cache)."""
     if sys.platform != "darwin" or not FFMPEG or width * height > 1920 * 1080 or fps > 60:
         return False
+    cache = _probe_cache()
+    remembered = cache.get(f"hevc|{width}x{height}@{fps}")
+    if isinstance(remembered, bool):
+        return remembered
+    answer = _hevc_probe(width, height, fps)
+    cache[f"hevc|{width}x{height}@{fps}"] = answer
+    _save_probe_cache(cache)
+    return answer
+
+
+def _hevc_probe(width: int, height: int, fps: int) -> bool:
     command = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error",
                "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps}",
                "-frames:v", "1", "-an", "-c:v", "hevc_videotoolbox", "-q:v", "65",
@@ -186,11 +197,57 @@ def probe(path: Path) -> dict:
             pass
     if not FFPROBE:
         raise RuntimeError("ffprobe is not installed")
+    # one answer a file version, kept on disk: every still, CapCut preview and export asked ffprobe again for every video
+    # of the film, 1.1 s of a 5 s transition preview (25 November 2026)
+    try:
+        stat = path.stat()
+        key = f"{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}"
+    except OSError:
+        key = None
+    cache = _probe_cache()
+    if key and key in cache:
+        return cache[key]
     cmd = [FFPROBE, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode:
         raise RuntimeError(f"Cannot inspect media: {path.name}: {result.stderr.strip()[:300]}")
-    return json.loads(result.stdout)
+    answer = json.loads(result.stdout)
+    if key:
+        cache[key] = answer
+        _save_probe_cache(cache)
+    return answer
+
+
+_PROBES = None
+
+
+def _probe_file() -> Path:
+    root = Path(os.environ.get("MULTIBOT_STUDIO_DATA", Path(__file__).resolve().parents[1] / "backend" / "data")).expanduser()
+    return root / "probe-cache.json"
+
+
+def _probe_cache() -> dict:
+    global _PROBES
+    if _PROBES is None:
+        try:
+            _PROBES = json.loads(_probe_file().read_text())
+        except (OSError, ValueError):
+            _PROBES = {}
+    return _PROBES
+
+
+def _save_probe_cache(cache: dict) -> None:
+    try:
+        if len(cache) > 4000:   # the oldest go: a dict keeps insertion order
+            for old in list(cache)[:len(cache) - 3000]:
+                cache.pop(old, None)
+        target = _probe_file()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        part = target.with_name(target.name + f".{os.getpid()}.part")
+        part.write_text(json.dumps(cache))
+        os.replace(part, target)
+    except OSError:
+        pass
 
 
 def media_duration(path: Path) -> float:
@@ -466,7 +523,11 @@ def text_bitmap(layer: dict, path: Path, frame_width: int, frame_height: int) ->
     max_width = min(max_width, frame_width)
     max_height = dimension(layer.get("height"), frame_height, frame_height)
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    for size in range(requested_size, 11, -2):
+    # the smallest size scales with the frame: a CapCut transition's preview draws the film at 640x360, where the fixed
+    # 12 px floor is a big font and a long word did not fit, so the seam was never drawn (user, 25 November 2026:
+    # «деякі взагалі не показуються»); a 1080p frame keeps 12 px exactly
+    floor = max(4, int(12 * frame_height / 1080)) if frame_height < 1080 else 12
+    for size in range(requested_size, floor - 1, -2):
         font = ImageFont.truetype(str(first_font(layer.get('font_family','Arial'),layer.get('font_weight',400))), size)
         if layer.get('font_weight'):
             try:font.set_variation_by_axes([min(a['maximum'],max(a['minimum'],float(layer['font_weight']))) if b'Weight' in a['name'] else a['default'] for a in font.get_variation_axes()])
@@ -537,6 +598,32 @@ def video_input(cmd: list[str], path: Path, kind: str, trim_start: float = 0, ca
         if trim_start:
             cmd += ["-ss", f"{trim_start:.6f}"]
         cmd += ["-i", str(path)]
+
+
+SUBPIXEL_MARGIN = 4
+_TIME_TOKEN = re.compile(r"(?<![A-Za-z_0-9.])[tT](?![A-Za-z_0-9(])")
+
+
+def subpixel_motion(*expressions: str) -> bool:
+    """Whether a layer's place or size changes with time (its expressions read the clock)."""
+    return os.environ.get("MULTIBOT_SUBPIXEL", "1") != "0" and any(_TIME_TOKEN.search(str(e)) for e in expressions)
+
+
+def subpixel_chain(x_expr: str, y_expr: str, scale_expr: str, width: int, height: int, fps: int) -> list[str]:
+    """Filters that draw a layer whose top left corner is (x, y) and size its own times scale, in fractions of a pixel,
+    on a clear picture of the frame's size plus SUBPIXEL_MARGIN on each side; it is overlaid at -SUBPIXEL_MARGIN. The
+    layer's clock is its frame number (perspective knows no time and counts frames from 1): t = (in - 1) / fps, as the
+    stream starts at 0."""
+    clock = f"((in-1)/{fps})"
+    x, y, s = (f"({_TIME_TOKEN.sub(clock, str(e))})" for e in (x_expr, y_expr, scale_expr))
+    m = SUBPIXEL_MARGIN
+    left, top = f"{m}+{x}-{m}*{s}", f"{m}+{y}-{m}*{s}"
+    right, bottom = f"{m}+{x}+(W-{m})*{s}", f"{m}+{y}+(H-{m})*{s}"
+    corners = {"x0": left, "y0": top, "x1": right, "y1": top, "x2": left, "y2": bottom, "x3": right, "y3": bottom}
+    return [f"pad=w=max(iw\\,{width})+{2 * m}:h=max(ih\\,{height})+{2 * m}:x={m}:y={m}:color=black@0",
+            "premultiply=inplace=1",
+            "perspective=" + ":".join(f"{key}='{value}'" for key, value in corners.items()) + ":sense=destination:eval=frame",
+            "unpremultiply=inplace=1"]
 
 
 def render_parallelism(width: int, height: int, fps: int) -> tuple[int, int]:
@@ -816,7 +903,15 @@ def render_scene(scene: dict, project_file: Path, output: Path, work: Path, widt
             overlay_filters.append(f"colorchannelmixer=aa={opacity:.4f}")
         # Apply alpha at a fixed size: geq in FFmpeg 9 can crash when its input
         # dimensions change on each frame. Scaling afterward preserves alpha.
-        if any("scale" in point for point in keyframes) or scale != 1 or any(layer.get('join_'+key,{}).get('type','').startswith('zoom_') for key in ('in','out')):
+        if subpixel_motion(x_expr, y_expr, scale_expr):
+            # A moving layer is placed in fractions of a pixel, as the GPU renderer and the preview place it: a scale
+            # and an overlay evaluated per frame both round to whole pixels, so a slow zoom stood still and then jumped
+            # a pixel (user, 25 November 2026: «рвана анімація… мені треба в всіх роликах плавну анімацію»). The layer
+            # is padded with a clear margin, premultiplied so its edges blend with nothing dark, and drawn by
+            # perspective onto a picture as big as the frame plus the margin, laid at -margin.
+            overlay_filters.extend(subpixel_chain(x_expr, y_expr, scale_expr, width, height, fps))
+            x_expr = y_expr = str(-SUBPIXEL_MARGIN)
+        elif any("scale" in point for point in keyframes) or scale != 1 or any(layer.get('join_'+key,{}).get('type','').startswith('zoom_') for key in ('in','out')):
             overlay_filters.append(f"scale=w='max(2\\,iw*({scale_expr}))':h='max(2\\,ih*({scale_expr}))':eval=frame")
         overlay_filters.extend([f"tpad=stop_mode=clone:stop_duration={end:.6f}", f"trim=duration={end:.6f}", f"setpts=PTS-STARTPTS[{overlay_label}]"])
         filters.append(",".join(overlay_filters))
@@ -909,9 +1004,38 @@ def normalize_audio(project: dict, project_file: Path) -> list[dict]:
     return result
 
 
+# A filter graph longer than this goes to FFmpeg in a file: a scene with many keyframes and words (Antropov, scene 152,
+# 25 November 2026) made a graph past macOS's 1 MB limit for a command line, and the export failed with «Argument list
+# too long».
+LONG_GRAPH = 64 * 1024
+
+
+def graph_in_file(cmd: list[str], folder: Path) -> list[str]:
+    """cmd with each long -filter_complex replaced by FFmpeg's «-/filter_complex FILE» (the option's value read from a
+    file, FFmpeg 7 and later)."""
+    result, i = [], 0
+    while i < len(cmd):
+        if cmd[i] == "-filter_complex" and i + 1 < len(cmd) and len(cmd[i + 1]) > LONG_GRAPH:
+            path = folder / f"graph-{len(result)}.txt"
+            path.write_text(cmd[i + 1], encoding="utf-8")
+            result += ["-/filter_complex", str(path)]
+            i += 2
+            continue
+        result.append(cmd[i])
+        i += 1
+    return result
+
+
 def run_ffmpeg(cmd: list[str], stage: str, index: int | None = None, duration: float | None = None) -> None:
     if not FFMPEG:
         raise RuntimeError("ffmpeg is not installed")
+    if any(len(arg) > LONG_GRAPH for arg in cmd):
+        with tempfile.TemporaryDirectory(prefix="studio-graph-") as folder:
+            return _run_ffmpeg(graph_in_file(cmd, Path(folder)), stage, index, duration)
+    return _run_ffmpeg(cmd, stage, index, duration)
+
+
+def _run_ffmpeg(cmd: list[str], stage: str, index: int | None = None, duration: float | None = None) -> None:
     # FFmpeg diagnostic output can include paths; keep it out of normal progress.
     with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as error_file:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=error_file, text=True)

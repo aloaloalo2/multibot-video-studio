@@ -44,6 +44,8 @@ setTrashButton($('delete-selected'),'Прибрати фрагмент');
 const channelIcon = '<svg class="channel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M10 8l5 3-5 3z"/></svg>';
 const seconds = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 const clock = value => { const n = Math.floor(seconds(value)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
+// the playhead's own time with hundredths of a second (user, 25 November 2026: «тут мілісек додай», «лише 2 цифри»)
+const clockMs = value => { const cs = Math.max(0, Math.floor(seconds(value) * 100 + 1e-6)), n = Math.floor(cs / 100); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}.${String(cs % 100).padStart(2,'0')}`; };
 const projectIcon='<svg class="project-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 3v18M17 3v18M3 8h4m-4 8h4m10-8h4m-4 8h4m-11-5 4 3-4 3z"/></svg>';
 
 function locationRoute(){if(/^\/trending\/?$/.test(location.pathname))return {view:'trending'};const match=location.pathname.match(/^\/channels\/([0-9a-f]{16})(?:\/projects\/([0-9a-f]{24})(\/(?:plan|agent|preview|languages))?)?\/?$/);return match?{channelId:match[1],projectId:match[2],view:match[3]==='/plan'?'plan':match[3]==='/agent'?'agent':match[3]==='/preview'?'thumb':match[3]==='/languages'?'langs':'editor'}:null;}
@@ -519,12 +521,19 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
   state.restoringProject=false;
   state.selected=null;state.selectedTransition=null;state.selectedStack=null;state.selectedTrack=null;state.activeLayer=isUniversal()?state.project.tracks?.[0]?.id:null;state.replaceMode=false;state.playhead=0;state.zoom=1;
   // a link with ?t=83.4 opens the montage at that moment (tools/studio.py still prints one beside the export's still)
+  // the timeline opens where the author left it: the zoom, the stretch in view and the playhead (user, 25 November 2026:
+  // «щоб проект запоминав, як я зблизив таймлайн, на якому місці… обновляю сторінку і таймлайн збивається»)
+  const remembered=readTimelineView(id);
+  if(remembered){state.zoom=remembered.zoom;state.playhead=remembered.playhead;}
   const requested=Number(new URLSearchParams(location.search).get('t'));if(!updateUrl&&requested>0&&Number.isFinite(requested))state.playhead=requested;state.pixabay=[];state.previewNodes.clear();state.previewSignature='';
   state.assets=state.project.assets || [];state.assetsLoading=true;state.analysis=null;state.job=exportState.job;
   state.plan=sourceForProject(plan);state.planError=plan.error || '';state.planSettingsMatch=plan.settings_match ?? null;state.view=view==='plan'?'editor':view;
   if(updateUrl)syncRoute();
   buildAudioNodes();
+  timelineViewRestoring=id;
   renderProject(); status('');if(state.job)pollJob();
+  if(remembered)showTimelineFrom(remembered.left);
+  timelineViewRestoring=null;
   const current=()=>navigation===state.navigation && state.project?.id===id;
   (async()=>{
     for(let attempt=0;attempt<3 && current();attempt++){
@@ -723,7 +732,7 @@ function exportStopControl(jobId,onDone){
   button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>';
   button.addEventListener('click',async event=>{
     event.stopPropagation();event.preventDefault();
-    if(!confirm('Скасувати експорт? Зроблене до цього моменту не збережеться.'))return;
+    // no browser confirmation: the button stops the export at once (user, 25 November 2026: «убери всі сповіщення такі»)
     button.disabled=true;
     try{const result=await api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`,'POST',{});onDone?.(result.job);}
     catch(error){status(error.message,true);button.disabled=false;}
@@ -811,9 +820,9 @@ function buildAudioNodes() {
   const container=$('preview-audio-container'),previous=new Map(state.audioNodes.map(item=>[item.clip.id,item]));state.audioNodes=[];
   if(isUniversal()){
     for(const layer of layers())for(const clip of layer.clips || [])if(clip.kind==='audio'){
-      const asset=assetById(clip.asset_id),dub=typeof dubbedVoiceUrl==='function'?dubbedVoiceUrl(clip):null,url=dub || asset?.preview_url || asset?.media_url || asset?.url;
+      const asset=assetById(clip.asset_id),dub=typeof dubbedVoiceUrl==='function'?dubbedVoiceUrl(clip):null,url=dub || voiceFileUrl(clip,asset?.preview_url || asset?.media_url || asset?.url);
       if(!url)continue;
-      const old=previous.get(clip.id),element=old?.element.getAttribute('src')===url?old.element:document.createElement('audio');if(element!==old?.element){element.src=url;element.preload='auto';}element.muted=state.monitorMuted || layer.muted===true;if(element.parentElement!==container)container.append(element);state.audioNodes.push({clip,element});
+      const old=previous.get(clip.id),element=old?.element.getAttribute('src')===url?old.element:document.createElement('audio');if(element!==old?.element){element.src=url;element.preload=seconds(clip.duration)>30?'auto':'none';keepAudioAlive(element);}element.muted=state.monitorMuted || layer.muted===true;if(element.parentElement!==container)container.append(element);state.audioNodes.push({clip,element});
     }
     for(const old of previous.values())if(!state.audioNodes.some(item=>item.element===old.element)){old.element.pause();old.element.remove();}
     return;
@@ -831,6 +840,21 @@ function buildAudioNodes() {
   }
 }
 
+// The voice's address names the very file it plays (project.voice_files, backend audio_level.voice_state): the same
+// address used to serve the recording and later its leveled copy, and a seek then read bytes of the other file and the
+// voice went silent (user, 25 November 2026: «коли перемотую… нажимаю плей, звука нема»).
+function voiceFileUrl(clip,url){
+  const token=state.project?.voice_files?.[clip.asset_id];
+  return url&&token?url+(url.includes('?')?'&':'?')+'lv='+encodeURIComponent(token):url;
+}
+// A sound that fails to load (a file rebuilt or briefly missing) loads again where it was, at most every 3 s.
+function keepAudioAlive(element){
+  element.addEventListener('error',()=>{
+    const now=Date.now();if(now-(element._studioRetryAt||0)<3000||!element.isConnected)return;
+    element._studioRetryAt=now;element._studioSeekTarget=element.currentTime||element._studioSeekTarget||0;
+    setTimeout(()=>{if(element.isConnected){element.load();if(state.playing)syncStudioAudio();}},400);
+  });
+}
 function requestMediaPlayback(element){
   if(!element.paused || element._studioPlayPending)return;
   const promise=element.play();element._studioPlayPending=true;
@@ -850,7 +874,19 @@ function setClipLevel(element,clip){
     element._studioGain.gain.value=level;
   }catch{element.volume=Math.min(1,level);}
 }
+// The voice and the music load at once; a short sound loads only when the playhead comes within 10 s of it: an episode
+// with fifty effects queued them all beside the voice and opened with no sound for seconds (user, 25 November 2026:
+// «нажимаю play, і… звука нема… воно аж потім появляється»).
+function warmAudioAhead(){
+  for(const {clip,element} of state.audioNodes){
+    if(element.preload==='auto')continue;
+    const start=seconds(clip.start),end=start+seconds(clip.duration);
+    if(state.playhead<end&&start-state.playhead<10){element.preload='auto';if(element.readyState===0)element.load();}
+  }
+}
+let warmedAt=0;
 function syncStudioAudio(){
+  warmAudioAhead();
   for(const {clip,element} of state.audioNodes){
     const start=seconds(clip.start),end=start+seconds(clip.duration),active=state.playhead>=start&&state.playhead<end;
     setClipLevel(element,clip);element.muted=state.monitorMuted || (isUniversal()&&clipIsMuted(clip));
@@ -867,7 +903,7 @@ function memoForProject(key,compute){if(!state.project)return compute();let memo
 function duration() {return memoForProject('duration',measureDuration);}
 function measureDuration() {return isUniversal()?Math.max(seconds(state.project?.duration),...universalClips().map(c=>seconds(c.start)+seconds(c.duration)),0):Math.max(seconds(state.project?.duration), ...scenes().map(s=>seconds(s.start)+seconds(s.duration)), 0);}
 function selectedScene() {return scenes().find(s=>s.id===state.selected);}
-function stopPlayback(){state.playing=false;$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());$('play-pause').textContent='▶';$('play-pause').setAttribute('aria-label','Відтворити');}
+function stopPlayback(){if(state.playing)saveTimelineView();state.playing=false;$('preview-video').pause();state.previewNodes.forEach(node=>node.querySelectorAll('video').forEach(video=>video.pause()));state.audioNodes.forEach(item=>item.element.pause());$('play-pause').textContent='▶';$('play-pause').setAttribute('aria-label','Відтворити');}
 
 function updateMonitorControls(){
   const muted=state.monitorMuted || state.monitorVolume===0,button=$('monitor-audio');
@@ -885,6 +921,7 @@ function renderProject() {
   updateMonitorControls();
   if(typeof updatePerformanceButton==='function')updatePerformanceButton();
   $('preview-surface').style.setProperty('--preview-ratio',`${state.project?.width || 1920}/${state.project?.height || 1080}`);
+  previewPanel?.style.setProperty('--preview-ratio-number',String((state.project?.width || 1920)/(state.project?.height || 1080)));
   if(isUniversal() && !layers().some(layer=>layer.id===state.activeLayer))state.activeLayer=layers()[0]?.id || null;
   document.querySelector('.app-shell').classList.toggle('editor-open',!!state.project);
   // The Studio agent tab is put away for now on every channel (user, 31 October 2026: «поки прибери вкладку «Агент»,
@@ -925,7 +962,9 @@ function renderProject() {
   // they are drawn, and a voice alone is not a video either.
   const clips=(state.project?.tracks || []).flatMap(track=>track.clips || []),animated=projectAnimated();
   // «Експорт MP4» belongs to «Монтаж» only (user, 31 October 2026)
-  $('export-open').hidden=!state.project || state.restoringProject || state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
+  // the header's next step is the export button itself when it says «Експорт MP4»: one button, not two (25 November 2026)
+  const nextIsExport=!$('project-next-step')?.hidden&&/Експорт/.test($('project-next-action')?.textContent||'');
+  $('export-open').hidden=nextIsExport || !state.project || state.restoringProject || state.view!=='editor' || !clips.some(clip=>['video','image'].includes(clip.kind) || (!animated && clip.kind!=='audio'));
   {const stop=document.getElementById('export-stop');if(stop)stop.hidden=$('export-open').hidden;}
   renderPlan();
   if(typeof renderThumbView==='function')renderThumbView();
@@ -948,9 +987,28 @@ function renderProject() {
   updatePreviewViewport();
 }
 
-const previewSettings=document.querySelector('.preview-settings');
-document.addEventListener('click',event=>{if(!previewSettings.contains(event.target))previewSettings.open=false;});
-document.addEventListener('keydown',event=>{if(event.key==='Escape' && previewSettings.open){previewSettings.open=false;previewSettings.querySelector('summary').focus();}});
+// The preview's corner button opens it on the whole screen; its former settings (zoom buttons, «Наживо», quality) are
+// gone (user, 25 November 2026: «замінив на… значок на весь екран… настройки оці прибрав»): a click on the picture
+// zooms it in where it was clicked, a drag moves it, a second click zooms it back out.
+const previewPanel=document.querySelector('.preview-panel');
+function previewFullscreenOn(){return document.fullscreenElement===previewPanel||previewPanel?.classList.contains('preview-expanded');}
+function setPreviewExpanded(on){previewPanel.classList.toggle('preview-expanded',on);updateFullscreenButton();requestAnimationFrame(()=>{layoutPreview();updatePreviewViewport();});}
+function updateFullscreenButton(){
+  const on=previewFullscreenOn(),button=$('preview-fullscreen');if(!button)return;
+  button.setAttribute('aria-label',on?'Вийти з повного екрана':'На весь екран');button.title=button.getAttribute('aria-label');
+  button.querySelector('path').setAttribute('d',on?'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5':'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
+}
+// the browser's own full screen; where a browser refuses it (the app's built-in browser says nothing and stays), the
+// preview fills the window instead
+$('preview-fullscreen')?.addEventListener('click',async event=>{
+  event.stopPropagation();
+  if(previewPanel.classList.contains('preview-expanded')){setPreviewExpanded(false);return;}
+  if(document.fullscreenElement){try{await document.exitFullscreen();}catch{}return;}
+  const fallback=setTimeout(()=>{if(!document.fullscreenElement)setPreviewExpanded(true);},350);
+  try{await previewPanel.requestFullscreen();}catch{clearTimeout(fallback);setPreviewExpanded(true);}
+});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&previewPanel?.classList.contains('preview-expanded'))setPreviewExpanded(false);});
+document.addEventListener('fullscreenchange',()=>{updateFullscreenButton();requestAnimationFrame(()=>{layoutPreview();updatePreviewViewport();});});
 
 const previewZoomLevels=[1,1.25,1.5,1.75,2,2.5,3,4];
 let previewPanGesture=null;
@@ -961,7 +1019,7 @@ function updatePreviewViewport(){
   state.previewPanY=Math.max(-limitY,Math.min(limitY,state.previewPanY));
   $('preview-content').style.transform=`translate(${state.previewPanX}px,${state.previewPanY}px) scale(${zoom})`;
   surface.classList.toggle('is-zoomed',zoom>1);
-  surface.title=zoom>1?'Перетягніть кадр, щоб роздивитися деталі. Подвійне натискання повертає масштаб 100%.':'';
+  surface.title=zoom>1?'Перетягніть кадр рукою. Натисніть ще раз, щоб віддалити.':(state.project?'Натисніть, щоб наблизити':'');
   $('preview-zoom-out').disabled=!state.project || zoom<=previewZoomLevels[0];
   $('preview-zoom-in').disabled=!state.project || zoom>=previewZoomLevels.at(-1);
   $('preview-zoom-reset').disabled=!state.project || zoom===1;
@@ -975,13 +1033,26 @@ function setPreviewZoom(value){
 $('preview-zoom-in').addEventListener('click',()=>setPreviewZoom(previewZoomLevels.find(value=>value>state.previewZoom) || previewZoomLevels.at(-1)));
 $('preview-zoom-out').addEventListener('click',()=>setPreviewZoom([...previewZoomLevels].reverse().find(value=>value<state.previewZoom) || 1));
 $('preview-zoom-reset').addEventListener('click',()=>setPreviewZoom(1));
-$('preview-surface').addEventListener('dblclick',()=>setPreviewZoom(1));
+const PREVIEW_CLICK_ZOOM=2;
+let previewClickFrom=null;
 $('preview-surface').addEventListener('dragstart',event=>{if(state.previewZoom>1)event.preventDefault();});
 $('preview-surface').addEventListener('pointerdown',event=>{
-  if(state.previewZoom<=1 || event.button!==0)return;
+  if(event.button!==0||!state.project)return;
+  previewClickFrom={x:event.clientX,y:event.clientY};
+  if(state.previewZoom<=1)return;
   event.preventDefault();
   previewPanGesture={id:event.pointerId,x:event.clientX,y:event.clientY,panX:state.previewPanX,panY:state.previewPanY};
   event.currentTarget.setPointerCapture(event.pointerId);event.currentTarget.classList.add('is-panning');
+});
+// a click (not a drag): in at the clicked point, or back out
+$('preview-surface').addEventListener('click',event=>{
+  if(!state.project||event.button!==0||!previewClickFrom)return;
+  const moved=Math.hypot(event.clientX-previewClickFrom.x,event.clientY-previewClickFrom.y);previewClickFrom=null;
+  if(moved>4)return;
+  if(state.previewZoom>1){setPreviewZoom(1);return;}
+  const surface=$('preview-surface').getBoundingClientRect(),dx=event.clientX-(surface.left+surface.width/2),dy=event.clientY-(surface.top+surface.height/2);
+  state.previewZoom=PREVIEW_CLICK_ZOOM;state.previewPanX=-dx*(PREVIEW_CLICK_ZOOM-1);state.previewPanY=-dy*(PREVIEW_CLICK_ZOOM-1);
+  updatePreviewViewport();
 });
 $('preview-surface').addEventListener('pointermove',event=>{
   if(previewPanGesture?.id!==event.pointerId)return;
@@ -1141,7 +1212,7 @@ function renderPreview() {
   const activeText=textTrack?.clips?.filter(clip=>state.playhead>=seconds(clip.start)&&state.playhead<seconds(clip.start)+seconds(clip.duration)).map(clip=>clip.text).filter(Boolean).join(' · ');
   $('preview-overlay').textContent=activeText || '';
   $('preview-overlay').style.display=activeText?'block':'none';
-  $('time-current').textContent=clock(state.playhead);
+  $('time-current').textContent=clockMs(state.playhead);
   $('seek').value=duration()?Math.round(state.playhead/duration()*1000):0;
   updateTimelinePlayhead();
   for(const item of state.audioNodes){
@@ -1184,8 +1255,12 @@ function renderTimelineRulerMarks(marks,total,width){
   const step=intervals.find(value=>value/total*width>=16) || intervals.at(-1);
   $('timeline-content').style.setProperty('--timeline-tick-step-px',(step/total*width)+'px');
   $('timeline-content').style.setProperty('--timeline-minute-step-px',(Math.max(60,step)/total*width)+'px');
-  for(let time=0;time<total;time+=step){
-    const tick=document.createElement('i');tick.className='ruler-tick'+(time>0 && time%60===0?' minute':'')+(labels.includes(time)?' labelled':'');
+  // the small and the minute ticks are the ruler's own background (timeline.css, by --timeline-tick-step-px and
+  // --timeline-minute-step-px), so a pinch stretches them with the ruler; only the labelled ones are elements: at a
+  // high zoom the ticks alone were 3000 elements made again for every redraw (25 November 2026)
+  for(const time of labels){
+    if(time>=total)continue;
+    const tick=document.createElement('i');tick.className='ruler-tick labelled'+(time>0 && time%60===0?' minute':'');
     tick.style.left=time/total*100+'%';tick.setAttribute('aria-hidden','true');marks.append(tick);
   }
   for(const time of labels){
@@ -1237,6 +1312,7 @@ function renderTimeline() {
   if(state.project)renderUniversalTimeline();
   const marks=document.querySelector('.time-ruler-marks');if(handle&&marks)marks.append(handle);
   timelineMarksWidth=marks?Number.parseFloat(marks.style.width)||null:null;
+  if(state.project&&typeof refreshCapcutReady==='function'&&(capcutReadyFor!==state.project.id||!capcutReadyTimer))refreshCapcutReady();
   if(state.project)renderTimelineGaps();
   scroller.scrollLeft=state.zoom<=1?0:oldWidth?oldScroll/oldWidth*width:0;
   $('zoom-value').textContent=Math.round(state.zoom*100)+'%';
@@ -1247,27 +1323,112 @@ function renderTimeline() {
   }finally{timelineRenderCache=previousCache;}
 }
 
-function setTimelineZoom(zoom,pointerX){
+const TIMELINE_VIEW_KEY='timelineView:';
+let timelineViewRestoring=null,timelineViewSave=0;
+function readTimelineView(id){
+  try{
+    const saved=JSON.parse(localStorage.getItem(TIMELINE_VIEW_KEY+id)||'null');
+    if(!saved||!Number.isFinite(saved.zoom))return null;
+    return {zoom:Math.max(timelineZoomLevels[0],Math.min(timelineZoomLevels.at(-1),saved.zoom)),
+            left:Number.isFinite(saved.left)?Math.max(0,saved.left):0,playhead:Number.isFinite(saved.playhead)?Math.max(0,saved.playhead):0};
+  }catch{return null;}
+}
+// the time at the left edge of the lanes in view
+function timelineLeftTime(){
+  const scroller=document.querySelector('.timeline-scroll'),marks=document.querySelector('.time-ruler-marks');if(!scroller||!marks)return 0;
+  const rect=marks.getBoundingClientRect(),layout=timelineLayout(),panel=scroller.getBoundingClientRect();
+  const left=panel.left+Number.parseFloat(getComputedStyle(scroller).paddingLeft)+layout.label+layout.gap;
+  return Math.max(0,Math.min(timelineSpan(),(left-rect.left)/rect.width*timelineSpan()))+timelineOrigin();
+}
+function showTimelineFrom(time){
+  const scroller=document.querySelector('.timeline-scroll'),marks=document.querySelector('.time-ruler-marks');if(!scroller||!marks||state.zoom<=1)return;
+  const rect=marks.getBoundingClientRect(),layout=timelineLayout(),panel=scroller.getBoundingClientRect();
+  const left=panel.left+Number.parseFloat(getComputedStyle(scroller).paddingLeft)+layout.label+layout.gap;
+  scroller.scrollLeft+=rect.left+(time-timelineOrigin())/timelineSpan()*rect.width-left;
+  invalidatePlayheadGeometry();updateTimelinePlayhead();
+}
+// saved a moment after the zoom, the scroll or the playhead change, per episode in this browser
+function writeTimelineView(){
+  if(!state.project||timelineViewRestoring||state.expandedGroup||!document.querySelector('.time-ruler-marks'))return;
+  try{localStorage.setItem(TIMELINE_VIEW_KEY+state.project.id,JSON.stringify({zoom:+state.zoom.toFixed(4),left:+timelineLeftTime().toFixed(3),playhead:+state.playhead.toFixed(3),at:Date.now()}));}catch{}
+}
+function saveTimelineView(){
+  if(!state.project||timelineViewRestoring||state.expandedGroup)return;
+  clearTimeout(timelineViewSave);
+  const id=state.project.id;
+  timelineViewSave=setTimeout(()=>{if(state.project?.id===id)writeTimelineView();},400);
+}
+// a reload right after a pinch still keeps it
+window.addEventListener('pagehide',()=>{clearTimeout(timelineViewSave);writeTimelineView();});
+
+// During a pinch only the widths change: clips, frame blocks and ticks stand in percents of their lane, so the lanes and
+// the ruler take the new width and the browser moves everything at once; the timeline is drawn again (ticks, labels,
+// waveforms) once the fingers rest. Drawing all of it for every step of a pinch (1350 elements, up to 3000 at 64×) made
+// the zoom stutter and hang (user, 25 November 2026: «я зближую, зменшую, і воно… глючить, підвисає»).
+function stretchTimeline(){
+  const layout=timelineLayout(),canvasWidth=layout.fit*state.zoom,width=canvasWidth*.98,content=$('timeline-content');
+  const marks=document.querySelector('.time-ruler-marks'),old=marks?Number.parseFloat(marks.style.width):NaN;
+  if(!marks||!Number.isFinite(old)||old<=0)return false;
+  const ratio=width/old;
+  content.style.setProperty('--timeline-media-width',canvasWidth+'px');
+  content.style.width=(layout.label+layout.gap+canvasWidth+layout.gutter)+'px';
+  for(const name of ['--timeline-tick-step-px','--timeline-minute-step-px']){const value=Number.parseFloat(content.style.getPropertyValue(name));if(Number.isFinite(value))content.style.setProperty(name,value*ratio+'px');}
+  for(const lane of content.querySelectorAll('.track-lane,.time-ruler-marks'))if(lane.style.width)lane.style.width=width+'px';
+  timelineMarksWidth=width;
+  $('zoom-value').textContent=Math.round(state.zoom*100)+'%';
+  $('zoom-in').disabled=state.zoom>=timelineZoomLevels.at(-1);$('zoom-out').disabled=state.zoom<=timelineZoomLevels[0];
+  invalidatePlayheadGeometry();updateTimelinePlayhead();
+  return true;
+}
+let zoomSettle=0;
+function setTimelineZoom(zoom,pointerX,live=false){
   const scroller=document.querySelector('.timeline-scroll'),marks=document.querySelector('.time-ruler-marks');
   const rect=marks?.getBoundingClientRect(),layout=timelineLayout(),panel=scroller.getBoundingClientRect();
   const left=panel.left+Number.parseFloat(getComputedStyle(scroller).paddingLeft)+layout.label+layout.gap;
   const local=Math.max(0,Math.min(timelineSpan(),state.playhead-timelineOrigin())),playhead=rect?rect.left+local/timelineSpan()*rect.width:left;
   const pointer=Number.isFinite(pointerX),anchor=pointer?Math.max(left,Math.min(panel.right-10,pointerX)):(playhead>=left&&playhead<=panel.right-10?playhead:left+layout.fit/2),oldTop=scroller.scrollTop;
   const time=pointer&&rect?Math.max(0,Math.min(timelineSpan(),(anchor-rect.left)/rect.width*timelineSpan())):local;
-  state.zoom=Math.max(timelineZoomLevels[0],Math.min(timelineZoomLevels.at(-1),zoom));renderTimeline();
+  state.zoom=Math.max(timelineZoomLevels[0],Math.min(timelineZoomLevels.at(-1),zoom));
+  clearTimeout(zoomSettle);
+  if(live&&stretchTimeline()){
+    if(state.zoom<=1)scroller.scrollLeft=0;
+    zoomSettle=setTimeout(()=>{if(state.project){const keep=scroller.scrollLeft;renderTimeline();scroller.scrollLeft=state.zoom<=1?0:keep;scroller.scrollTop=oldTop;}},180);
+  }else renderTimeline();
   if(state.zoom>1){const updated=document.querySelector('.time-ruler-marks')?.getBoundingClientRect();if(updated)scroller.scrollLeft+=updated.left+time/timelineSpan()*updated.width-anchor;}
   scroller.scrollTop=oldTop;
+  saveTimelineView();
 }
-document.querySelector('.timeline-scroll').addEventListener('wheel',event=>{
+function timelinePinch(event){
   if(!(event.ctrlKey||event.metaKey||event.altKey)||!state.project)return;
   // a pinch sends a wheel event per screen refresh and more: they add up and the timeline is drawn once a frame
-  event.preventDefault();wheelZoom.delta+=event.deltaY;wheelZoom.x=event.clientX;
+  // the zoom is kept unrounded through the gesture: rounded to a hundredth each frame, a slow pinch (a small change a
+  // frame) came back to the same value and the timeline would not zoom (user, 25 November 2026: «не можу нормально
+  // зближити і зменшити»)
+  event.preventDefault();
+  const delta=event.deltaMode===1?event.deltaY*16:event.deltaY;   // lines on a mouse wheel, pixels on a trackpad
+  if(!wheelZoom.frame)wheelZoom.target=state.zoom;
+  // a pinch zooms about two and a half times faster than before (user, 25 November 2026: «щоб чутливість була сильніша,
+  // щоб швидше зближувалось»)
+  wheelZoom.target=Math.max(timelineZoomLevels[0],Math.min(timelineZoomLevels.at(-1),wheelZoom.target*Math.exp(-delta*PINCH_SPEED)));
+  wheelZoom.x=event.clientX;
   if(!wheelZoom.frame)wheelZoom.frame=requestAnimationFrame(()=>{
-    const delta=wheelZoom.delta;wheelZoom.delta=0;wheelZoom.frame=0;
-    if(state.project)setTimelineZoom(Math.round(state.zoom*Math.exp(-delta*.004)*100)/100,wheelZoom.x);
+    wheelZoom.frame=0;
+    if(state.project&&Math.abs(wheelZoom.target-state.zoom)>1e-4)setTimelineZoom(wheelZoom.target,wheelZoom.x,true);
   });
+}
+// A pinch never zooms the studio page itself, only the timeline (user, 25 November 2026: «зближається вся студія,
+// коли я зближаю… має тільки таймлайн»): over the timeline panel it zooms the timeline, anywhere else on the page it does
+// nothing, unless that place zooms by itself (the frame strip of the plan, which stops the event first).
+document.addEventListener('wheel',event=>{
+  if(!(event.ctrlKey||event.metaKey))return;
+  if(event.defaultPrevented)return;
+  if(event.target.closest?.('#editor-timeline')&&!$('editor-timeline').hidden){timelinePinch(event);return;}
+  event.preventDefault();
 },{passive:false});
-const wheelZoom={delta:0,x:0,frame:0};
+// Safari's own pinch events zoom the page too
+for(const name of ['gesturestart','gesturechange','gestureend'])document.addEventListener(name,event=>{if(!event.defaultPrevented)event.preventDefault();},{passive:false});
+const wheelZoom={target:1,x:0,frame:0};
+const PINCH_SPEED=.01;   // per pixel of the pinch's wheel delta; it was .004
 
 new ResizeObserver(()=>{
   if(!state.project || $('editor-timeline').hidden)return;
@@ -1290,10 +1451,12 @@ function updateTimelinePlayhead(){
   const geometry=playheadGeometry,span=timelineSpan(),local=Math.max(0,Math.min(span,state.playhead-timelineOrigin()));
   const x=geometry.left+local/span*geometry.width,visible=x>=geometry.visibleFrom&&x<=geometry.visibleTo,handle=$('playhead-handle');
   line.hidden=!visible;line.style.left=x+'px';
+  if(!state.playing)saveTimelineView();
+  if(!handle)return;   // a ruler drawn again without it: the next full timeline render puts it back
   handle.hidden=!visible;handle.style.left=(local/span*100)+'%';
   handle.setAttribute('aria-valuemax',span);handle.setAttribute('aria-valuenow',local.toFixed(2));handle.setAttribute('aria-valuetext',clock(local));
 }
-document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{invalidatePlayheadGeometry();updateTimelinePlayhead();},{passive:true});
+document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{invalidatePlayheadGeometry();updateTimelinePlayhead();saveTimelineView();},{passive:true});
 new ResizeObserver(invalidatePlayheadGeometry).observe(document.querySelector('.timeline-scroll'));
 
 function scrubTimeline(event){
@@ -1371,7 +1534,6 @@ function openChannelSettings(channel) {
   modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
     try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('style-title-font').value,accent_font_family:$('style-title-font').value,unified:true},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,auto_export:!!$('settings-auto-export')?.checked,auto_publish:!!$('settings-auto-publish')?.checked,publish_interval_days:Math.min(10,Math.max(1,Math.round(Number($('settings-publish-interval')?.value)||1))),director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:0,first_clip_format:'auto',opening_sequence:[1,2,3].map(n=>$(`settings-open-${n}`).value),first_clip_count:1,short_sentence_words:Number($('settings-short').value),accents:$('settings-accents').checked,host_graphics:$('settings-host-graphics').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       settings.heygen_avatar=settingsLayout.heygenAvatar();
-      {const first=heygenFirstFrameValue();if(first)settings.heygen_first_frame=first;}
       settings.weights_auto=keys.filter(key=>autoFormats.has(key));
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
       const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
@@ -1805,14 +1967,20 @@ function tick(now){
   // follows the voice only while the voice really plays near it, and the voice is brought back to the picture otherwise.
   if(master){const audio=master.element;if(audio._studioSeekTarget!=null&&!audio.seeking&&audio.readyState>=2&&Math.abs(audio.currentTime-audio._studioSeekTarget)<.15)audio._studioSeekTarget=null;
     const next=state.playhead+delta,heard=seconds(master.clip.start)+audio.currentTime-seconds(master.clip.trim_start);
-    if(audio._studioSeekTarget==null&&audio.readyState>=2&&!audio.seeking&&!audio.paused&&Math.abs(heard-next)<.25)state.playhead=heard;
+    // the picture moves by the screen's own even step and leans towards the voice by at most 2 ms a frame: the voice's
+    // clock advances in uneven chunks, and taking it as it was moved the picture by 7, 18 and 37 ms on even 16.7 ms
+    // frames, a zoom that jerked (user, 25 November 2026: «рвана анімація приближення… рвані моменти»)
+    if(audio._studioSeekTarget==null&&audio.readyState>=2&&!audio.seeking&&!audio.paused&&Math.abs(heard-next)<.25)state.playhead=next+Math.max(-.002,Math.min(.002,(heard-next)*.1));
     else state.playhead=next;}
   else state.playhead+=delta;
   const end=timelineOrigin()+timelineSpan();if(state.playhead>=end){state.playhead=Math.max(timelineOrigin(),end-.001);stopPlayback();lastFrame=0;}
+  if(now-warmedAt>1000){warmedAt=now;warmAudioAhead();}
   renderPreview();if(state.playing)tickFrame=requestAnimationFrame(tick);
 }
-$('zoom-in').addEventListener('click',()=>setTimelineZoom(timelineZoomLevels.find(value=>value>state.zoom) || timelineZoomLevels.at(-1)));
-$('zoom-out').addEventListener('click',()=>setTimelineZoom([...timelineZoomLevels].reverse().find(value=>value<state.zoom) || timelineZoomLevels[0]));
+// the buttons answer at once, the way a pinch does: the lanes stretch now, the ruler's labels and the waveforms are
+// drawn again a moment after the last click (user, 25 November 2026: «затримка велика коли +- жму зроби 0 затримку»)
+$('zoom-in').addEventListener('click',()=>setTimelineZoom(timelineZoomLevels.find(value=>value>state.zoom+1e-6) || timelineZoomLevels.at(-1),undefined,true));
+$('zoom-out').addEventListener('click',()=>setTimelineZoom([...timelineZoomLevels].reverse().find(value=>value<state.zoom-1e-6) || timelineZoomLevels[0],undefined,true));
 $('zoom-value').addEventListener('click',()=>setTimelineZoom(1));
 
 $('loading-go-home').addEventListener('click',()=>{

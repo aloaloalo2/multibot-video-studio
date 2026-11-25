@@ -30,8 +30,19 @@ function nextCapcutPreview(){
   for(const [key,{join}] of capcutWaiting){const ahead=Number(join.seam)+Number(join.duration||0)-time,value=ahead>=0?ahead:1e6-ahead;if(value<score){score=value;best=key;}}
   return best;
 }
+// The episode opens first: drawing a transition takes the processor for seconds (a Razgon side is rendered too), and
+// started with the page it held back the voice, the music and the pictures of an episode being opened (user, 25 November
+// 2026: «заходжу в проект… нажимаю play, і… ні звука нема, ні відео»). Previews wait until the page has loaded its
+// media and the author has had a moment, then one at a time.
+let capcutQuietUntil=0,capcutQuietProject=null;
+function capcutQuiet(){
+  if(state.project?.id!==capcutQuietProject){capcutQuietProject=state.project?.id;capcutQuietUntil=performance.now()+6000;}
+  return performance.now()<capcutQuietUntil;
+}
 async function pumpCapcutPreviews(){
-  if(capcutPumping)return;capcutPumping=true;
+  if(capcutPumping)return;
+  if(capcutQuiet()){setTimeout(pumpCapcutPreviews,Math.max(200,capcutQuietUntil-performance.now()));return;}
+  capcutPumping=true;
   try{
     while(capcutWaiting.size){
       const current=new Set((state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type)).map(capcutJoinKey));
@@ -41,9 +52,9 @@ async function pumpCapcutPreviews(){
       try{
         const response=await fetch(`/api/projects/${projectId}/capcut-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({join_id:join.id})});
         const data=await response.json();if(!response.ok)throw new Error(data.error||'Прев’ю переходу не вийшло');
-        if(data.live){entry.state='live';continue;}   // a Razgon code frame: the live picture with a plain blend, the export draws CapCut
+        if(data.live){entry.state='live';capcutDrawn.add(join.id);markCapcutPending();continue;}   // a Razgon code frame: the live picture with a plain blend, the export draws CapCut
         const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.className='capcut-transition-video';video.src=data.url;
-        Object.assign(entry,{state:'ready',url:data.url,video});
+        Object.assign(entry,{state:'ready',url:data.url,video});capcutDrawn.add(join.id);markCapcutPending();
         if(state.project?.id===projectId&&!state.playing)renderPreview();
       }catch(error){entry.state='failed';entry.error=error.message;}
     }
@@ -51,8 +62,8 @@ async function pumpCapcutPreviews(){
 }
 function renderCapcutTransitionOverlay(composition,time){
   const joins=(state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type));
-  // previews of the seams near the playhead (a minute ahead) are drawn ahead, the nearest first
-  for(const join of joins)if((join.seam-time<60&&join.seam-time>-20)||(state.selectedTransition?.fromRef===join.from_ref&&state.selectedTransition?.toRef===join.to_ref))requestCapcutPreview(join);
+  // previews of the seams near the playhead (25 s ahead) are drawn ahead, the nearest first
+  for(const join of joins)if((join.seam-time<25&&join.seam-time>-5)||(state.selectedTransition?.fromRef===join.from_ref&&state.selectedTransition?.toRef===join.to_ref))requestCapcutPreview(join);
   const join=joins.find(j=>{const span=joinFrames(j);return time>=span.seam&&time<span.seam+span.duration;});
   let holder=composition.querySelector('.capcut-transition-overlay');
   const entry=join&&capcutPreviews.get(capcutJoinKey(join));
@@ -142,14 +153,13 @@ function transitionPreviewCard(type){
   return {frame,play,stop};
 }
 function channelTransitionSection(channel){
-  const saved=channel.settings?.transitions||{},allowed=new Set(Array.isArray(saved.allowed)?saved.allowed:CAPCUT_DEFAULT_POOL),share=Math.round(100*(saved.share??.7));
+  const saved=channel.settings?.transitions||{},allowed=new Set(Array.isArray(saved.allowed)?saved.allowed:CAPCUT_DEFAULT_POOL);
   const section=document.createElement('details');section.className='channel-settings-group settings-transitions regular-only';
   section.innerHTML=`<summary>${typeof channelSettingsIcon==='function'?channelSettingsIcon('look'):''}<span><strong>Переходи</strong><small class="settings-choice-summary"></small></span><svg class="channel-settings-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></summary>
   <div class="channel-settings-group-body"><div class="settings-section settings-transitions-body">
-    <label class="settings-transitions-share"><span>Як часто ставити перехід</span><span class="settings-transitions-range"><input id="settings-transition-share" type="range" min="0" max="100" step="5" value="${share}" aria-label="Частка стиків з переходом, відсотків"><output></output></span></label>
     <p class="settings-transitions-note"></p>
   </div></div>`;
-  const body=section.querySelector('.settings-transitions-body'),range=section.querySelector('#settings-transition-share'),out=section.querySelector('output'),note=section.querySelector('.settings-transitions-note');
+  const body=section.querySelector('.settings-transitions-body'),note=section.querySelector('.settings-transitions-note');
   const groups=[['Ефектні','Трендові переходи з рухом, спалахами й 3D',Object.keys(capcutCatalog.transitions)],['Спокійні','Розчинення, зсуви, м’які наближення й кольорові шторки',Object.keys(transitionNames).filter(t=>t!=='cut'&&!isCapcutTransition(t))]];
   const total=groups.reduce((sum,group)=>sum+group[2].length,0);
   for(const [label,hint,types] of groups){
@@ -172,17 +182,40 @@ function channelTransitionSection(channel){
     box.append(grid);body.append(box);
   }
   function update(){
-    const count=section.querySelectorAll('[data-transition-type]:checked').length,percent=Number(range.value);
-    out.textContent=percent+'%';
+    const count=section.querySelectorAll('[data-transition-type]:checked').length;
     for(const box of section.querySelectorAll('.settings-transition-group'))box.querySelector('.settings-transition-count').textContent=`${box.querySelectorAll('input:checked').length} з ${box.querySelectorAll('input').length}`;
-    const off=!count||!percent;
-    section.querySelector('.settings-choice-summary').textContent=off?'Вимкнено: між кадрами завжди склейка':`Вибрано ${count} з ${total} · на ${percent}% стиків`;
-    note.textContent=off?'Студія не ставитиме переходів: кадри змінюються склейкою.':`Приблизно на ${percent} зі 100 стиків між кадрами студія поставить один із вибраних переходів, щоразу навмання. На решті стиків і перед текстовим кадром буде звичайна склейка.`;
+    const off=!count;
+    section.querySelector('.settings-choice-summary').textContent=off?'Вимкнено: між кадрами завжди склейка':`Вибрано ${count} з ${total}`;
+    note.textContent=off?'Студія не ставитиме переходів: кадри змінюються склейкою.':'Де ставити перехід, студія вирішує сама: з вибраних переходів.';
   }
-  section.addEventListener('change',update);range.addEventListener('input',update);update();
+  section.addEventListener('change',update);update();
   return section;
 }
 function channelTransitionValues(){
-  const range=$('settings-transition-share');if(!range)return null;
-  return {allowed:[...document.querySelectorAll('[data-transition-type]:checked')].map(i=>i.dataset.transitionType),share:Number(range.value)/100};
+  if(!document.querySelector('[data-transition-type]'))return null;
+  return {allowed:[...document.querySelectorAll('[data-transition-type]:checked')].map(i=>i.dataset.transitionType)};
+}
+
+
+/* ------------------------------------------------------------------ which CapCut transitions are drawn yet */
+// A CapCut transition's marker on the timeline is white until its picture is drawn, then blue (user, 25 November 2026:
+// «переходи, які сині… зроби їх білі, якщо вони не показуються ще такими, як вони мають бути»). The server says which
+// are drawn (its background pass draws them all); a dissolve, a slide or a cinematic one is drawn live and is blue at once.
+let capcutDrawn=new Set(),capcutReadyTimer=0,capcutReadyFor=null;
+function capcutPending(join){return !!join&&isCapcutTransition(join.type)&&!capcutDrawn.has(join.id);}
+function markCapcutPending(){
+  const joins=state.project?.join_transitions||[];
+  for(const marker of document.querySelectorAll('.transition-join.has-transition')){
+    const join=joins.find(j=>j.from_ref===marker.dataset.fromRef&&j.to_ref===marker.dataset.toRef);
+    marker.classList.toggle('transition-pending',capcutPending(join));
+  }
+}
+async function refreshCapcutReady(){
+  const id=state.project?.id;clearTimeout(capcutReadyTimer);if(!id)return;
+  try{
+    const data=await api(`/api/projects/${encodeURIComponent(id)}/capcut-ready`);
+    if(state.project?.id!==id)return;
+    capcutDrawn=new Set(data.ready||[]);capcutReadyFor=id;markCapcutPending();
+  }catch{}
+  if(state.project?.id===id&&(state.project.join_transitions||[]).some(capcutPending))capcutReadyTimer=setTimeout(refreshCapcutReady,4000);
 }

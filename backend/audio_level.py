@@ -102,8 +102,42 @@ def standard_db(level: dict) -> float:
     return max(-20.0, min(20.0, TARGET_LUFS - level["lufs"]))
 
 
+_VOICE_PATHS: dict = {}
+
+
+def _narration_key(project: dict):
+    """What _voice_paths reads, by version: the project's revision and the plan and source-timing files."""
+    try:
+        plan = store.project_plan_file(project)
+        plan_key = store.plan_file_key(plan) if plan else None
+    except (store.StudioError, OSError):
+        return None
+    try:
+        source = store.project_dir(project["id"]) / "source-timing.json"
+        source_key = store.plan_file_key(source) if source.is_file() else None
+    except (store.StudioError, OSError, KeyError):
+        return None
+    return (project.get("id"), project.get("revision"), plan_key, source_key)
+
+
 def _voice_paths(project: dict, plan: dict | None = None) -> dict:
-    """{asset id: path} of the audio clips that carry the project's timed voice; {} when the voice is unknown."""
+    """{asset id: path} of the audio clips that carry the project's timed voice; {} when the voice is unknown. Kept per
+    version of the project and its plan: every sound file the player asks for passed here, 0.15–0.6 s each, and an
+    episode with 150 effects queued its music and sounds for seconds (user, 25 November 2026: «музика пропадає… дуже
+    довго підгружається»)."""
+    if plan is None:
+        key = _narration_key(project)
+        hit = _VOICE_PATHS.get(project.get("id")) if key else None
+        if hit and hit[0] == key:
+            return dict(hit[1])
+        result = _voice_paths_read(project)
+        if key:
+            _VOICE_PATHS[project.get("id")] = (key, result)
+        return dict(result)
+    return _voice_paths_read(project, plan)
+
+
+def _voice_paths_read(project: dict, plan: dict | None = None) -> dict:
     if plan is None:
         try:
             plan = store.load_project_narration(project["id"])
@@ -131,12 +165,33 @@ def _voice_paths(project: dict, plan: dict | None = None) -> dict:
 def voice_gains(project: dict, plan: dict | None = None) -> dict:
     """{asset id: gain} for the audio clips that carry the project's timed voice; {} when the voice is unknown. A voice
     whose leveled copy is made plays that copy (voice_file) at gain 1; until then the old gain, capped by its peaks."""
-    result = {}
+    return voice_state(project, plan)[0]
+
+
+def voice_state(project: dict, plan: dict | None = None) -> tuple[dict, dict]:
+    """({asset id: gain}, {asset id: file token}) decided together. The token names the very file the gain belongs to
+    («l<key>» the leveled copy, «o<key>» the recording itself) and goes into the player's address, so one address
+    always serves the same bytes: the copy used to appear (or be tidied away) behind an unchanged address while a
+    player was reading it, and a seek then read the other file and the voice went silent (user, 25 November 2026:
+    «коли перемотую… нажимаю плей, звука нема»)."""
+    gains, tokens = {}, {}
     for aid, path in _voice_paths(project, plan).items():
         level = measure(path)
-        if level:
-            result[aid] = 1.0 if _at_standard(level) or leveled(path, wait=False, level=level) != path else gain(level)
-    return result
+        if not level:
+            continue
+        key = hashlib.sha1(_key(path).encode()).hexdigest()[:20]
+        copy = not _at_standard(level) and leveled(path, wait=False, level=level) != path
+        gains[aid] = 1.0 if copy or _at_standard(level) else gain(level)
+        tokens[aid] = ("l" if copy else "o") + key
+    return gains, tokens
+
+
+def token_file(path: Path, token: str) -> Path:
+    """The file a token from voice_state names: the recording for «o…», the leveled copy for «l…» (made now when it
+    was tidied away meanwhile, so the address keeps its bytes); a token of an older version of the file plays the file."""
+    if token.startswith("l"):
+        return leveled(path, wait=True)
+    return path
 
 
 def voice_file(project: dict, aid: str, path: Path, wait: bool = False) -> Path:
@@ -200,13 +255,20 @@ def _build(path: Path, out: Path, level: dict, key: str) -> None:
             for _ in range(4):   # the limiter takes some loudness off the peaks: give it back (08 needed +0.6 dB once)
                 subprocess.run(["nice", "-n", "10", "ffmpeg", "-y", "-v", "error", "-nostdin", "-i", str(path), "-vn", "-af",
                                 f"volume={db:.2f}dB,alimiter=limit={limit:.4f}:attack=5:release=50:level=false",
-                                "-c:a", "flac", str(part)], check=True, timeout=1800)
+                                # 16 bits are plenty for a voice at −16 LUFS and half the size of 24 (700 MB a film before)
+                                "-c:a", "flac", "-sample_fmt", "s16", "-compression_level", "8", str(part)], check=True, timeout=1800)
                 got = measure(part)
                 short = TARGET_LUFS - got["lufs"] if got else 0.0
                 if short < 0.4 or db >= 20:
                     break
                 db = min(20.0, db + short)
             part.replace(out)
+            # which voice the copy is of, by path and size: the tidy keeps it while that voice is in a project, even after
+            # its file time changed (a time rounded by a copy once made every copy look unused, and 37 went; 25 November 2026)
+            try:
+                store.atomic_json(out.with_suffix(".json"), {"source": str(Path(path).resolve()), "size": Path(path).stat().st_size})
+            except OSError:
+                pass
         except (OSError, subprocess.SubprocessError):
             pass
         finally:

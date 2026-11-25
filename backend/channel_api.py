@@ -23,6 +23,10 @@ def get(self, path, query, *, ensure_idle):
         avatar = store.read_channel_settings(store.get_channel_folder(rate.group(1), include_disabled=True), {}).get('heygen_avatar') or {}
         look = (avatar.get('look') or {}).get('id') if isinstance(avatar, dict) else None
         return self.json_response(heygen_avatars.look_rate(look) if look else {'avatar_type': None, 'usd_per_minute': None})
+    photo = re.fullmatch(r'/api/channels/([0-9a-f]{16})/heygen-avatar-photo', path)
+    if photo:
+        store.get_channel_folder(photo.group(1), include_disabled=True)
+        return self.serve_media(heygen_avatars.cached_photo(photo.group(1), (query.get('id') or [None])[0]), cache=True)
     avatar_gallery = re.fullmatch(r'/api/channels/([0-9a-f]{16})/heygen-avatars(/selected)?', path)
     if avatar_gallery:
         cid, selected = avatar_gallery.groups()
@@ -89,6 +93,11 @@ def get(self, path, query, *, ensure_idle):
 
     if path == "/api/channels":
         return self.json_response({"channels": store.list_channels()})
+
+    match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/spending", path)
+    if match:   # the channel's spending today and this month, deleted projects included (channel settings «Витрати»)
+        import spending
+        return self.json_response(spending.channel_summary(match.group(1)))
 
     match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/agent-memory", path)
     if match:

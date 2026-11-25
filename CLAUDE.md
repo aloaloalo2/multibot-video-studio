@@ -65,6 +65,9 @@ one project (`"Горбунов 23"`).
 - `python3 tools/studio.py transitions P [--share 0.7]` — about 70% designed seams by the channel rule (both seams of a host or
   text frame always get one, no transition other than a crossfade twice in a row, enough video for the transition); prints the planned
   and actual counts. Existing transitions stay unless `--replace`.
+- `python3 tools/studio.py event-sounds P [--frames 12-20]` — sounds on what comes on screen in the Razgon frames, read
+  from their code (`render.mjs --events`): a soft sound when a line of text or a picture comes in, pencils for as long as
+  a text is written. It runs by itself when the frames are made (`backend/event_sounds.py`, `soundtrack.appear`).
 - `python3 tools/studio.py ops P ops.json` — several operations at once; `--dry-run` on any change shows the actions.
 - `python3 tools/studio.py export P` — the running export and the latest ones (starting one stays the user's button).
 - `python3 tools/studio.py spend P [--all]` — where the director's and frame agent's runs spent the Claude limits:

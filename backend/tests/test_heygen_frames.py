@@ -207,10 +207,12 @@ class HeyGenFramesTest(unittest.TestCase):
                 heygen_frames.make('p', {'id': 'r', 'frames': 4})   # again: the frames are cut already, nothing is bought
             self.assertEqual(calls.count('/v3/videos'), 1)                 # one paid video for three host frames
             self.assertEqual(placed, [1, 3, 4, 1, 3, 4])
-            # each frame is cut where its voice sits in the joined track: pieces of 2 s, 1 s and 3 s with 0.4 s between
-            self.assertEqual([(round(a, 3), round(b, 3)) for a, b in cuts], [(0.0, 2.0), (2.4, 1.0), (3.8, 3.0)])
+            # each frame is cut where its voice sits in the joined track: pieces of 2 s, 1 s and 3 s with 0.4 s between,
+            # each with the silent 0.4 s after it as its tail, for a transition on the living host instead of a held picture
+            # and the 0.4 s before it as its head (the first frame has none)
+            self.assertEqual([(round(a, 3), round(b, 3)) for a, b in cuts], [(0.0, 2.4), (2.0, 1.8), (3.4, 3.8)])
             with wave.open(str(next(root.glob('heygen-frames/one-*.wav'))), 'rb') as joined:
-                self.assertAlmostEqual(joined.getnframes() / 48000, 6.8, places=3)
+                self.assertAlmostEqual(joined.getnframes() / 48000, 7.2, places=3)   # the last piece has its pause too
 
 
     def test_the_first_host_frame_goes_to_avatar_iv_and_the_rest_as_one_avatar_iii_video(self):
@@ -276,8 +278,9 @@ class HeyGenFramesTest(unittest.TestCase):
             self.assertEqual(rest['engine'], {'type': 'avatar_iii'})
             self.assertNotIn('motion_prompt', rest)
             self.assertEqual(sorted(placed), [1, 1, 3, 3, 4, 4])
-            # frames 3 and 4 are cut from the one Avatar III video: pieces of 1 s and 3 s with 0.4 s between
-            self.assertEqual([(round(a, 3), round(b, 3)) for a, b in cuts], [(0.0, 1.0), (1.4, 3.0)])
+            # frames 3 and 4 are cut from the one Avatar III video: pieces of 1 s and 3 s with 0.4 s between, each with
+            # that pause as its tail
+            self.assertEqual([(round(a, 3), round(b, 3)) for a, b in cuts], [(0.0, 1.4), (1.0, 3.8)])
 
     def test_host_frames_zoom_in_and_out_in_turn_by_their_length(self):
         plan = {'frames': [{'number': 1, 'format': 'razgon_2d', 'start': 0, 'end': 4},

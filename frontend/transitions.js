@@ -51,9 +51,15 @@ function transitionInfo(clip){
 function visualFrameTime(time){const fps=Number(state.project?.fps||25);return Math.floor(Number(time)*fps+.5+1e-8)/fps;}
 // A transition on whole video frames, as the export draws it (engine/render.py timeline_plan): 0.35 s at 25 fps
 // lasts 9 frames there, and the preview used to run it 0.01 s faster.
-function joinFrames(join){const fps=Number(state.project?.fps||25),seam=visualFrameTime(join.seam);return {seam,duration:Math.max(1/fps,visualFrameTime(Number(join.seam)+Number(join.duration))-seam)};}
-function clipRenderStart(clip){return visualFrameTime(clip.start);}
-function clipRenderEnd(clip){return visualFrameTime(Number(clip.start)+Number(clip.duration)+(transitionInfo(clip).outgoing?.duration || 0));}
+// A transition out of a video with no frames after its edge ends on the seam (anchor «end», backend/joins.py
+// ends_at_seam): the video plays its own last moments under it and the next frame comes in early, no held last picture.
+// how long before its seam a transition starts (backend/joins.py lead_seconds): its hit lands on the seam
+function joinAhead(join){return Number.isFinite(Number(join.lead))?Number(join.lead):(join.anchor==='end'?Number(join.duration):0);}
+function joinStart(join){return Number(join.seam)-joinAhead(join);}
+function joinFrames(join){const fps=Number(state.project?.fps||25),start=joinStart(join),seam=visualFrameTime(start);return {seam,duration:Math.max(1/fps,visualFrameTime(start+Number(join.duration))-seam)};}
+function joinLead(clip){const join=transitionInfo(clip).incoming;return join&&Math.abs(Number(clip.start)-Number(join.seam))<.05?joinAhead(join):0;}
+function clipRenderStart(clip){return visualFrameTime(Number(clip.start)-joinLead(clip));}
+function clipRenderEnd(clip){const out=transitionInfo(clip).outgoing;return visualFrameTime(Number(clip.start)+Number(clip.duration)+(out?Math.max(0,(Number(out.duration)||0)-joinAhead(out)):0));}
 // A frame group fades in or out as one picture, as the export (engine/render.py group_sides; user, 22 November 2026:
 // «перехід використовує групи, а не кожен слой»): fading each layer alone shows the group's lower layers through it.
 function transitionFades(type){const config=graphicTransitionPresets[type];return type==='crossfade'||type.startsWith('zoom_')||!!(config&&config.kind==='cinematic');}
@@ -67,6 +73,9 @@ function transitionValues(clip,local,values,grouped=false){
   const info=transitionInfo(clip),time=Number(clip.start)+local,groupSides=grouped?new Set(groupedJoinSides(clip).map(([direction])=>direction)):new Set();
   // past its end an outgoing clip still moving keeps the speed of its last keyframe segment, one that stopped holds,
   // as the export (backend/joins.py transport)
+  // an incoming clip that comes in early runs its starting motion on backwards, as the export (joins.lead)
+  const lead=joinLead(clip);
+  if(lead&&local<0)for(const prop of ['x','y','scale','opacity']){const points=keyframePoints(clip,prop,Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1)));if(!points.length)continue;const head=points[0].time>1e-9?{time:0,value:Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1))}:points[0],after=points[0].time>1e-9?points[0]:(points[1]||head),span=after.time-head.time;let first=head.value-(span>1e-9?(after.value-head.value)/span*lead:0);if(prop==='opacity')first=Math.max(0,Math.min(1,first));values[prop]=first+(head.value-first)*easedProgress((local+lead)/lead,clip.easing);}
   if(info.outgoing && local>Number(clip.duration))for(const prop of ['x','y','scale','opacity']){const points=keyframePoints(clip,prop,Number(clip[prop] ?? (prop==='x'||prop==='y'?.5:1)));if(!points.length)continue;const last=points.at(-1),before=points.at(-2) || last,span=last.time-before.time,moving=span>1e-9&&last.time>=Number(clip.duration)-.05;values[prop]=last.value+(moving?(last.value-before.value)/span:0)*(local-last.time);}
   for(const [direction,join] of [['in',info.incoming],['out',info.outgoing]]){if(!join || (direction==='in' && clip.kind==='text' && clip.text_role==='full_frame'))continue;const span=joinFrames(join),p=easedProgress((time-span.seam)/span.duration,'ease_in_out'),incoming=direction==='in',progress=incoming?1-p:p,type=join.type;
     if(graphicTransitionPresets[type]){
@@ -127,7 +136,7 @@ function renderTransitionInspector(join){
   update();
 }
 function transitionJoinMarker(lane,left,right,seam,visualWidth=12){
-  const active=(state.project.join_transitions || []).find(j=>j.from_ref===left&&j.to_ref===right),marker=document.createElement('button');marker.type='button';marker.className='transition-join'+(active?' has-transition':'')+(state.selectedTransition?.fromRef===left&&state.selectedTransition?.toRef===right?' selected-transition':'');marker.style.left=((seam-timelineOrigin())/timelineSpan()*100)+'%';marker.textContent='';marker.title=active?(transitionNames[active.type] || active.type)+' · натисніть для налаштувань':'Перетягніть сюди перехід';marker.setAttribute('aria-label','Стик '+clock(seam));marker.dataset.fromRef=left;marker.dataset.toRef=right;
+  const active=(state.project.join_transitions || []).find(j=>j.from_ref===left&&j.to_ref===right),marker=document.createElement('button');marker.type='button';marker.className='transition-join'+(active?' has-transition':'')+(active&&typeof capcutPending==='function'&&capcutPending(active)?' transition-pending':'')+(state.selectedTransition?.fromRef===left&&state.selectedTransition?.toRef===right?' selected-transition':'');marker.style.left=((seam-timelineOrigin())/timelineSpan()*100)+'%';marker.textContent='';marker.title=active?(transitionNames[active.type] || active.type)+' · натисніть для налаштувань':'Перетягніть сюди перехід';marker.setAttribute('aria-label','Стик '+clock(seam));marker.dataset.fromRef=left;marker.dataset.toRef=right;
   marker.style.width=Math.max(10,visualWidth)+'px';if(visualWidth<6)marker.classList.add('transition-compact');
   if(active)marker.addEventListener('click',event=>{event.stopPropagation();selectTransition(active);});
   // a transition on the timeline stays on its seam: nothing there is moved by hand (user, 25 November 2026)

@@ -10,7 +10,7 @@ POST /api/projects/<id>/ops {"ops": [...], "expected_revision": n, "dry_run": fa
   says in the frame) or appears at "appear" seconds into the frame; arrows and rings appear on "word" or at "appear".
 - {"op": "clear_accents", "frame": 12} removes the accents a frame got from "accent" (titles «K012 акцент …»).
 - {"op": "replace", "clip": id, "path": file | "asset_id": id} swaps a clip's picture and keeps its title, box and motion.
-- {"op": "transitions", "share": 0.7, ...} designs about that share of the seams between frames by the channel rules.
+- {"op": "transitions", ...} designs the seams between frames by the channel rules; "share": 0.7 sets a share instead.
 - {"op": "remove", "frame": 12} takes the frame off the timeline with its whole group.
 - {"op": "place", "frame": 12, "path": file | "asset_id": id | "text": true, "motion": "zoom_in"} puts a frame of the
   plan on the timeline at the plan frame's time, in its group «Кадр 12»: a picture or a video, still unless the director
@@ -28,6 +28,7 @@ import math
 import random
 import re
 import subprocess
+import uuid
 from functools import cached_property
 from pathlib import Path
 
@@ -38,6 +39,7 @@ import native_animation
 import soundtrack
 import joins
 import store
+import channel_design
 import style_lab
 import typography
 import word_timing
@@ -363,8 +365,12 @@ def _entrance_action(ctx, frame, picture, title, steady, at, length, top, path) 
 
 # ---------------------------------------------------------------- drawn accents
 
-def draw_arrow(path: Path, tail, head, bend: float, colors):
-    """A hand-drawn arrow with a dark edge; returns its canvas centre and size in frame pixels."""
+def draw_arrow(path: Path, tail, head, bend: float, colors, style: dict | None = None):
+    """A hand-drawn arrow with a dark edge, in the channel's own style (channel_design: stroke, edge, head shape and
+    size); returns its canvas centre and size in frame pixels."""
+    style = style or {}
+    stroke, rim = int(style.get("stroke", 9)), int(style.get("edge_width", 4))
+    shape, factor = style.get("head", "filled"), float(style.get("head_size", 3.8))
     (x0, y0), (x1, y1) = tail, head
     length = math.hypot(x1 - x0, y1 - y0)
     if length < 8:
@@ -372,9 +378,10 @@ def draw_arrow(path: Path, tail, head, bend: float, colors):
     nx, ny = -(y1 - y0) / length, (x1 - x0) / length
     cx, cy = (x0 + x1) / 2 + nx * bend * length, (y0 + y1) / 2 + ny * bend * length
     pts = [((1 - u) ** 2 * x0 + 2 * (1 - u) * u * cx + u * u * x1, (1 - u) ** 2 * y0 + 2 * (1 - u) * u * cy + u * u * y1) for u in [i / 40 for i in range(41)]]
-    ang, size = math.atan2(y1 - pts[-4][1], x1 - pts[-4][0]), 34
-    tip = [(x1 + math.cos(ang) * 6, y1 + math.sin(ang) * 6), (x1 - math.cos(ang - .5) * size, y1 - math.sin(ang - .5) * size),
-           (x1 - math.cos(ang + .5) * size, y1 - math.sin(ang + .5) * size)]
+    ang, size = math.atan2(y1 - pts[-4][1], x1 - pts[-4][0]), max(18, stroke * factor)
+    spread = .5 if shape != "barb" else .38
+    tip = [(x1 + math.cos(ang) * 6, y1 + math.sin(ang) * 6), (x1 - math.cos(ang - spread) * size, y1 - math.sin(ang - spread) * size),
+           (x1 - math.cos(ang + spread) * size, y1 - math.sin(ang + spread) * size)]
     xs, ys = [p[0] for p in pts + tip], [p[1] for p in pts + tip]
     left, top, right, bottom = min(xs) - 30, min(ys) - 30, max(xs) + 30, max(ys) + 30
     scale = 2
@@ -383,15 +390,24 @@ def draw_arrow(path: Path, tail, head, bend: float, colors):
     at = lambda p: ((p[0] - left) * scale, (p[1] - top) * scale)
     body = pts[:-3]
     fill, edge = colors
-    draw.line([at(p) for p in body], fill=edge, width=17 * scale, joint="curve")
-    draw.polygon([at(p) for p in tip], fill=edge, outline=edge, width=8 * scale)
-    draw.line([at(p) for p in body], fill=fill, width=9 * scale, joint="curve")
-    draw.polygon([at(p) for p in tip], fill=fill)
+    draw.line([at(p) for p in body], fill=edge, width=(stroke + 2 * rim) * scale, joint="curve")
+    if shape == "open":   # two strokes, no filled head
+        for wing in tip[1:]:
+            draw.line([at(tip[0]), at(wing)], fill=edge, width=(stroke + 2 * rim) * scale)
+        for wing in tip[1:]:
+            draw.line([at(tip[0]), at(wing)], fill=fill, width=stroke * scale)
+    else:
+        draw.polygon([at(p) for p in tip], fill=edge, outline=edge, width=2 * rim * scale)
+    draw.line([at(p) for p in body], fill=fill, width=stroke * scale, joint="curve")
+    if shape != "open":
+        draw.polygon([at(p) for p in tip], fill=fill)
     image.resize((image.width // scale, image.height // scale), Image.LANCZOS).save(path)
     return ((left + right) / 2, (top + bottom) / 2), (right - left, bottom - top)
 
 
-def draw_circle(path: Path, radii, colors, line="solid"):
+def draw_circle(path: Path, radii, colors, line="solid", style: dict | None = None):
+    style = style or {}
+    ring, rim = int(style.get("ring_width", 8)), int(style.get("edge_width", 4))
     rx, ry = radii
     margin, scale = 24, 2
     image = Image.new("RGBA", (int((2 * rx + 2 * margin) * scale), int((2 * ry + 2 * margin) * scale)), (0, 0, 0, 0))
@@ -404,11 +420,11 @@ def draw_circle(path: Path, radii, colors, line="solid"):
         count = max(6, round(math.pi * (rx + ry) / 35))
         for i in range(count):
             start, end = 360 * i / count, 360 * (i + .62) / count
-            draw.arc(box, start, end, fill=edge, width=15 * scale)
-            draw.arc(inner, start, end, fill=fill, width=8 * scale)
+            draw.arc(box, start, end, fill=edge, width=(ring + 2 * rim) * scale)
+            draw.arc(inner, start, end, fill=fill, width=ring * scale)
     else:
-        draw.ellipse(box, outline=edge, width=15 * scale)
-        draw.ellipse(inner, outline=fill, width=8 * scale)
+        draw.ellipse(box, outline=edge, width=(ring + 2 * rim) * scale)
+        draw.ellipse(inner, outline=fill, width=ring * scale)
     image.resize((image.width // scale, image.height // scale), Image.LANCZOS).save(path)
     return (2 * rx + 2 * margin, 2 * ry + 2 * margin)
 
@@ -452,7 +468,8 @@ class Context:
 
     @cached_property
     def accent_color(self):
-        return style_lab.accent_color(self.project.get("channel_id"), self.animation_style) or WHITE
+        # the channel's own colour from its style, else its design kit's (never one colour shared by every channel)
+        return style_lab.accent_color(self.project.get("channel_id"), self.animation_style) or channel_design.for_project(self.project)["palette"]["accent"]
 
     def words(self) -> list[dict]:
         if self._words is None:
@@ -475,13 +492,45 @@ class Context:
             raise OpError(str(error)) from None
 
     def asset_for(self, path: Path) -> str:
-        """An asset id for a file: an existing asset with the same path, or one registered before the batch."""
-        resolved = str(Path(path).resolve())
-        for asset in self.project.get("assets", []):
-            if asset.get("path") == resolved:
-                return asset["id"]
-        self.files.append(Path(resolved))
-        return store.asset_record(Path(resolved), self.project["id"])["id"]
+        """An asset id for a file: an existing asset with the same path, or one registered before the batch. A file from
+        the episode folder or the studio's own project folder is copied into the studio's media first (adopted)."""
+        resolved = Path(path).resolve()
+        for candidate in dict.fromkeys([resolved, self.adopted(resolved)]):
+            for asset in self.project.get("assets", []):
+                if asset.get("path") == str(candidate):
+                    return asset["id"]
+        resolved = self.adopted(resolved)
+        if resolved not in self.files:
+            self.files.append(resolved)
+        return store.asset_record(resolved, self.project["id"])["id"]
+
+    def adopted(self, path: Path) -> Path:
+        """The studio's own copy of a picture an agent left in the episode folder or in the project's work folder: the
+        episode folder is the author's, for scripts, sources, previews and the finished video only (user, 25 November
+        2026: «папка кадри… це типу сміття технічне, мені взагалі тут в таких папках не потрібно»). The copy is named by
+        its content, so the same file placed again reuses it; the original is left where it is."""
+        media = store.media_dir(self.project)
+        if not path.is_file() or store.under(path, media):
+            return path
+        episode = self.project.get("episode_path")
+        if not ((episode and store.under(path, Path(episode))) or store.under(path, store.project_dir(self.project["id"]))):
+            return path   # the batch refuses it as a file outside the episode
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        folder = media / "adopted"
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = re.sub(r"[^\w. -]", "_", path.stem).strip(". ")[:60] or "asset"
+        target = folder / f"{stem}-{digest.hexdigest()[:12]}{path.suffix.lower()}"
+        if not target.is_file():
+            temporary = folder / (".adopt-" + uuid.uuid4().hex)
+            try:
+                store.clone_or_copy(path, temporary)
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return target.resolve()
 
     def drawn_file(self, kind: str, spec: dict) -> Path:
         folder = store.media_dir(self.project) / "accents"
@@ -529,16 +578,27 @@ def _glued(picture: Picture | None, centre: tuple[float, float], mid: float, dur
     return points, {"x": points[0]["x"], "y": points[0]["y"]}
 
 
+LAST_QUIET = 1.0   # seconds at a frame's end in which nothing new comes on screen
+
+
+def _quiet_end(frame: dict, start: float, at: float) -> float:
+    """`at` (seconds from the clip start) moved out of the frame's last second: something that came in there was gone at
+    once with the transition (user, 25 November 2026: «за секунду до кінця кадра нічого не може появлятися, це
+    заборонено»)."""
+    return max(0.0, min(at, float(frame["end"]) - start - LAST_QUIET))
+
+
 def _moment(ctx: Context, frame: dict, spec: dict, start: float) -> float:
-    """When an accent appears, in seconds from its clip start: "appear", or the moment the voice says "word"."""
+    """When an accent appears, in seconds from its clip start: "appear", or the moment the voice says "word"; never in
+    the frame's last second."""
     if "appear" in spec:
-        return float(spec["appear"])
+        return _quiet_end(frame, start, float(spec["appear"]))
     if spec.get("word"):
         try:
-            return word_timing.word_time(ctx.tokens(frame), spec["word"]) - start
+            return _quiet_end(frame, start, word_timing.word_time(ctx.tokens(frame), spec["word"]) - start)
         except ValueError as error:
             raise OpError(str(error)) from None
-    return 0.3
+    return _quiet_end(frame, start, 0.3)
 
 
 def _text_layout(ctx: Context, words: list[tuple[str, float]], width: float, height: float, size: int, family: str, weight: int, clip_start: float):
@@ -572,13 +632,15 @@ def accent(ctx: Context, spec: dict) -> None:
              sum(1 for a in ctx.actions if a["type"] == "add_clip" and a["payload"].get("group_id") == frame["group"]["id"] and not is_entrance(a["payload"])))
     motion = spec.get("motion", "animated")
     if kind in {"arrow", "circle"}:
-        colors = (spec.get("color") or ctx.accent_color, spec.get("edge", INK))
+        colors = (spec.get("color") or ctx.accent_color, spec.get("edge") or channel_design.accent_style(ctx.project).get("edge", INK))
     if kind == "text":
         _accent_text(ctx, frame, picture, spec, start, duration, mid, index)
     elif kind == "arrow":
         tail, head = _point(ctx, picture, spec, "from", mid), _point(ctx, picture, spec, "to", mid)
-        path = ctx.drawn_file("arrow", {"tail": tail, "head": head, "bend": spec.get("bend", .15), "colors": colors})
-        centre, size = draw_arrow(path, tail, head, float(spec.get("bend", .15)), colors)
+        look = channel_design.accent_style(ctx.project)
+        bend = float(spec.get("bend", look.get("bend", .15)))
+        path = ctx.drawn_file("arrow", {"tail": tail, "head": head, "bend": bend, "colors": colors, "style": look})
+        centre, size = draw_arrow(path, tail, head, bend, colors, look)
         _accent_picture(ctx, frame, picture, f"{index} стрілка", path, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
     elif kind == "circle":
         centre = _point(ctx, picture, spec, "at", mid)
@@ -586,11 +648,12 @@ def accent(ctx: Context, spec: dict) -> None:
         if not isinstance(radii, (list, tuple)) or len(radii) != 2:
             raise OpError("Потрібні два радіуси контуру")
         radii = [store.finite_float(r, 1, limit, "Радіус поза межами кадру") for r, limit in zip(radii, (ctx.W, ctx.H))]
-        line = spec.get("line", "solid")
+        look = channel_design.accent_style(ctx.project)
+        line = spec.get("line", look.get("ring", "solid"))
         if line not in ("solid", "dashed"):
             raise OpError("Тип контуру має бути solid або dashed")
-        path = ctx.drawn_file("circle", {"radii": radii, "colors": colors, "line": line})
-        size = draw_circle(path, radii, colors, line)
+        path = ctx.drawn_file("circle", {"radii": radii, "colors": colors, "line": line, "style": look})
+        size = draw_circle(path, radii, colors, line, look)
         _accent_picture(ctx, frame, picture, f"{index} коло", path, centre, size, _moment(ctx, frame, spec, start), duration, mid, motion)
     elif kind == "image":
         source = Path(spec["path"]).expanduser() if spec.get("path") else Path(store.resolve_asset(ctx.project, spec["asset_id"])["path"])
@@ -631,6 +694,9 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
         at = start + float(spec.get("appear", 0.3))
         words = [(token, at + .12 * k) for k, token in enumerate(str(phrase).split())]
     words[-1] = (words[-1][0].rstrip(".,!?:;"), words[-1][1])
+    # a caption's words come in no later than a second before the frame ends
+    latest = float(frame["end"]) - LAST_QUIET
+    words = [(token, min(at, latest)) for token, at in words]
     style = spec.get("style", "card" if ctx.text_look == "dim" or spec.get("card_color") else "plain")
     if style not in STYLES:
         raise OpError("Стиль підпису: plain, card, tag, yellow або white")
@@ -900,22 +966,56 @@ def _text_history(ctx: Context, number: int) -> tuple[str | None, str | None]:
 
 
 def _grid_picture(ctx: Context) -> Path:
-    """A black field with a grey grid, every fourth line a little brighter, darker at the edges; made once a size."""
+    """The channel's own background pattern for text frames (channel_design.pattern: grid, fine grid, dots, crosses,
+    diagonals or rings in its colours, a little changed in this film), darker at the edges; made once a film and size."""
     W, H = int(ctx.W), int(ctx.H)
+    spec = channel_design.pattern(ctx.project)
+    key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:10]
     folder = store.media_dir(ctx.project) / "text-backdrops"
-    path = folder / f"grid-{W}x{H}.png"
-    if not path.is_file():
-        folder.mkdir(parents=True, exist_ok=True)
-        image = Image.new("RGB", (W, H), (9, 9, 11))
-        draw = ImageDraw.Draw(image)
-        step = max(24, round(H / 18))
-        for index, x in enumerate(range(W // 2 % step, W, step)):
-            draw.line([(x, 0), (x, H)], fill=(72, 72, 80) if (x - W // 2) // step % 4 == 0 else (44, 44, 50), width=1)
-        for y in range(H // 2 % step, H, step):
-            draw.line([(0, y), (W, y)], fill=(72, 72, 80) if (y - H // 2) // step % 4 == 0 else (44, 44, 50), width=1)
-        shade = Image.radial_gradient("L").resize((W, H))
-        image = Image.composite(Image.new("RGB", image.size, (3, 3, 4)), image, shade.point(lambda v: min(255, int(v * .9))))
-        image.save(path)
+    path = folder / f"pattern-{spec['kind']}-{key}-{W}x{H}.png"
+    if path.is_file():
+        return path
+    folder.mkdir(parents=True, exist_ok=True)
+    rgb = lambda c: tuple(int(c.lstrip("#")[k:k + 2], 16) for k in (0, 2, 4))
+    field, line, major = rgb(spec["field"]), rgb(spec["line"]), rgb(spec["line2"])
+    image = Image.new("RGB", (W, H), field)
+    draw = ImageDraw.Draw(image)
+    step, every, width, kind = max(16, round(H * spec["step"])), int(spec["major"]), int(spec.get("width", 1)), spec["kind"]
+    xs = list(range(W // 2 % step, W, step))
+    ys = list(range(H // 2 % step, H, step))
+    tone = lambda n: major if n % every == 0 else line
+    if kind in ("grid", "fine-grid"):
+        for x in xs:
+            draw.line([(x, 0), (x, H)], fill=tone((x - W // 2) // step), width=width)
+        for y in ys:
+            draw.line([(0, y), (W, y)], fill=tone((y - H // 2) // step), width=width)
+        if kind == "fine-grid":
+            half = step // 2
+            for x in range(W // 2 % half, W, half):
+                draw.line([(x, 0), (x, H)], fill=tuple((a + b) // 2 for a, b in zip(field, line)), width=1)
+    elif kind == "dots":
+        for x in xs:
+            for y in ys:
+                r = 2 if ((x - W // 2) // step + (y - H // 2) // step) % every else 3
+                draw.ellipse([x - r, y - r, x + r, y + r], fill=tone((x - W // 2) // step * ((y - H // 2) // step)))
+    elif kind == "cross":
+        arm = max(3, step // 6)
+        for x in xs:
+            for y in ys:
+                c = tone((x - W // 2) // step + (y - H // 2) // step)
+                draw.line([(x - arm, y), (x + arm, y)], fill=c, width=width)
+                draw.line([(x, y - arm), (x, y + arm)], fill=c, width=width)
+    elif kind == "diagonal":
+        for n, x in enumerate(range(-H, W + H, step)):
+            draw.line([(x, 0), (x + H, H)], fill=tone(n), width=width)
+    elif kind == "rings":
+        cx, cy = W // 2, H // 2
+        for n, r in enumerate(range(step, int(math.hypot(W, H) / 2) + step, step)):
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=tone(n), width=width)
+    shade = Image.radial_gradient("L").resize((W, H))
+    dark = tuple(max(0, v // 3) for v in field)
+    image = Image.composite(Image.new("RGB", image.size, dark), image, shade.point(lambda v: min(255, int(v * spec["vignette"]))))
+    image.save(path)
     return path
 
 
@@ -954,7 +1054,8 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
     spec = spec or {}
     # a channel with the dim look (Antropov) keeps it unless the director asks for a backdrop
     dim = ctx.text_look == "dim" and spec.get("backdrop") in (None, "auto")
-    look = (DIM_TEXT_LOOKS if dim else TEXT_LOOKS)[number % len(DIM_TEXT_LOOKS if dim else TEXT_LOOKS)]
+    # the channel's own looks, a little changed in this film (channel_design), never the studio's shared ones
+    look = channel_design.text_look(ctx.project, number, dim)
     duration = end - start
     tokens = _timed_tokens(ctx, planned)
     shown = payload["text"].split()
@@ -1042,6 +1143,48 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
         ctx.groups[title_bg] = ctx.groups[title_veil] = f"Кадр {number}"
 
 
+# effects the author never wants (user, 25 November 2026: «Рожевий всесвіт»… «більш ніколи не додавай взагалі ні в які проекти»)
+BANNED_EFFECTS = {"capcut_e11"}
+# effects that light only a band or a corner of the frame at a time: «Зоряний круїз» is a diagonal stream of stars, 17% of
+# the frame a moment, 6% of its left side (user, 25 November 2026: «ефект чомусь не на всьому кадрі той що на фоні»)
+BAND_EFFECTS = {"capcut_e09"}
+
+
+def effect(ctx: Context, spec: dict) -> None:
+    """{"op": "effect", "frame": N, "effect": "capcut_e04", "strength": .3, "on": "frame" | "background"}: a CapCut effect
+    inside the frame's own group at the given strength (0.05–1; light textures 0.2–0.4), over the whole frame or only its
+    background under the words and graphics; it replaces the frame's own effect, "effect": null takes it off."""
+    frame = find_frame(ctx.frames, spec.get("frame"))
+    group = frame["group"]
+    start, end = float(frame["start"]), float(frame["end"])
+    for layer in ctx.project.get("tracks", []):
+        for clip in layer.get("clips", []):
+            if clip.get("content_type") == "capcut_effect" and (clip["id"] in group.get("clip_ids", []) or
+                    abs(float(clip["start"]) - start) < .06 and abs(float(clip["start"]) + float(clip["duration"]) - end) < .06):
+                ctx.actions.append({"type": "delete_clip", "payload": {"clip_id": clip["id"]}})
+    name = spec.get("effect")
+    if name in BANNED_EFFECTS:
+        raise OpError("Цей ефект автор не використовує в жодному проєкті")
+    if name in BAND_EFFECTS:
+        raise OpError("Цей ефект вкриває лише смугу кадру, а не весь кадр: для тла візьми рівномірний (шум, пил, зерно)")
+    where = spec.get("on") or "frame"
+    if where not in ("frame", "background"):
+        raise OpError("Ефект на frame або background")
+    if name:
+        strength = float(spec.get("strength", .3))
+        if not .05 <= strength <= 1:
+            raise OpError("Сила ефекту від 0.05 до 1")
+        payload = {"effect": name, "group_id": group["id"], "opacity": round(strength, 3)}
+        if where == "background":
+            pictures = [c for c in frame["clips"] if c.get("kind") in ("image", "video") and c.get("content_type") != "capcut_effect"]
+            if not pictures:
+                raise OpError("У кадрі немає фону для ефекту")
+            order = {c["id"]: i for i, t in enumerate(ctx.project["tracks"]) for c in t["clips"]}
+            payload["above_clip"] = min(pictures, key=lambda c: order.get(c["id"], 0))["id"]
+        ctx.actions.append({"type": "add_capcut_effect", "payload": payload})
+    ctx.report.append(f"кадр {frame['number']}: ефект {name or 'прибрано'}" + (f" на {'фоні' if where == 'background' else 'кадрі'}, сила {round(100 * float(spec.get('strength', .3)))}%" if name else ""))
+
+
 def remove(ctx: Context, spec: dict) -> None:
     """Take a frame off the timeline with everything in its group (picture, accents, text); undo brings it back."""
     frame = find_frame(ctx.frames, spec.get("frame"))
@@ -1054,10 +1197,17 @@ def _full_frame_text(frame: dict) -> bool:
         c.get("kind") == "text" and c.get("text_role") == "full_frame" for c in frame["clips"])
 
 
+OUT_ONLY = {"capcut_t30"}   # «Розрізання й панорама»: the host's way out or a seam between other frames only
+
+
 def _host_or_text(frame: dict) -> bool:
     """A host frame or a full-frame text: it always comes in and goes out with a transition (user, 21 November 2026:
     «якщо це був диктор або ж текстова вставка, то у нас обох боків обов'язково має бути з переходами»)."""
     return _full_frame_text(frame) or bool(frame.get("plan") and frame["plan"].get("format") == "host")
+
+
+def _format(frame: dict) -> str:
+    return str((frame.get("plan") or {}).get("format") or "")
 
 
 def channel_transitions(project: dict) -> dict:
@@ -1071,12 +1221,20 @@ def channel_transitions(project: dict) -> dict:
         return {}
 
 
+HOST_OUT = .6      # seconds of the quick transition out of the host
+MAX_SQUEEZE = 1.8  # a transition may run at most this much faster than its own animation
+
+
 def transitions(ctx: Context, spec: dict) -> None:
-    """About `share` of all seams between touching frames get a designed transition; the rest are cuts. Both seams of a
+    """The studio picks the seams between touching frames that get a designed transition (a change of format, every other
+    seam of one format; an explicit `share` sets a share instead); the rest are cuts. Both seams of a
     host frame and of a full-frame text frame always get one, beyond the share if need be; the same transition other than a crossfade never twice in a row; a video going out needs
     source frames for the transition's length. Existing transitions stay unless "replace" is true."""
     chosen = channel_transitions(ctx.project)
-    share = float(spec["share"] if spec.get("share") is not None else chosen.get("share", .7))
+    # the studio decides itself where a seam takes a transition, with no share to keep (user, 25 November 2026: «як часто
+    # ставити перехід, 70%… прибери… студія… сама рішати, коли їй треба ставити, коли ні… обмежень не буде»); an
+    # explicit "share" of the op still sets one
+    share = float(spec["share"]) if spec.get("share") is not None else None
     pool = list(spec.get("pool") or (chosen["allowed"] if "allowed" in chosen else DEFAULT_POOL))
     if not pool:
         share, pool = 0.0, ["crossfade"]   # the channel allowed no transition: every seam stays a cut
@@ -1096,16 +1254,60 @@ def transitions(ctx: Context, spec: dict) -> None:
             raise OpError("Вкажіть номери кадрів для переходів.")
         if set(scope) - {f["number"] for f in ctx.frames}:
             raise OpError("Спершу поставте вибрані кадри на таймлайн.")
-        seams = [seam for seam in seams if seam[1]["number"] in scope]
+        # a seam into a host or full-frame text frame belongs to the frame before it too: the host's frames are made by the
+        # studio, never in an agent's batch, so the transition into the host was never set (user, 25 November 2026:
+        # «якщо хайген аватар, то in переход має бути обов'язковий. Просто що без озвучки»)
+        seams = [seam for seam in seams if seam[1]["number"] in scope or (seam[0]["number"] in scope and _host_or_text(seam[1]))]
     keep = not spec.get("replace")
     designed = sum(1 for _, _, f, t in seams if keep and (f, t) in existing)
-    target = round(share * len(seams))
     open_seams = [s for s in seams if not (keep and (s[2], s[3]) in existing)]
     must = [s for s in open_seams if _host_or_text(s[0]) or _host_or_text(s[1])]
     eligible = [s for s in open_seams if s not in must]
-    wanted = max(0, min(len(eligible), target - designed - len(must)))
-    chosen = set(id(s) for s in must) | (set(id(s) for s in rnd.sample(eligible, wanted)) if wanted else set())
+    if share is None:
+        # automatic: a change of format is a change of scene and takes a transition; frames of one format in a row take
+        # one every other seam, so a run of photos breathes without a transition on each cut
+        picked, run = [], 0
+        for seam in eligible:
+            if _format(seam[0]) != _format(seam[1]):
+                picked.append(seam); run = 0
+            else:
+                run += 1
+                if run % 2:
+                    picked.append(seam)
+        chosen = set(id(s) for s in must) | set(id(s) for s in picked)
+        target = designed + len(chosen)
+    else:
+        target = round(share * len(seams))
+        wanted = max(0, min(len(eligible), target - designed - len(must)))
+        chosen = set(id(s) for s in must) | (set(id(s) for s in rnd.sample(eligible, wanted)) if wanted else set())
+    # where the host goes out: short, driving transitions, one to three of them taking turns through the film, chosen for
+    # this film (user, 25 November 2026: «коли аватар закінчується… не може бути длінний перехід… швидкий… драйвовий…
+    # для кожного ролика свій… один, два, три переходи, які чергуються»)
+    import sound_settings
+    # soft by what a transition shows (sound_settings.TRANSITION_CHARACTER): a dissolve, a wash, a gentle film
+    soft = {"crossfade"} | {t for t in pool if t.startswith("cin_") or sound_settings.transition_character(t) == "soft"}
+    # a transition keeps its own shape: squeezed far below its own length it was a blink of its middle (user, 25 November
+    # 2026, «Кадри з монтажу» of 1.4 s in 0.45 s out of the host: «він якийсь недопилений»); out of the host only the
+    # transitions that keep their shape at HOST_OUT seconds
+    def natural(kind):
+        return joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35
+    def keeps_shape(kind, room):
+        return natural(kind) <= room * MAX_SQUEEZE
+    lively = [t for t in dict.fromkeys(pool) if t not in soft and keeps_shape(t, HOST_OUT)] or \
+             [t for t in dict.fromkeys(pool) if t not in soft] or list(dict.fromkeys(pool))
+    film = random.Random(str(ctx.project.get("id")) + "host-out")
+    drive = film.sample(lively, min(len(lively), film.choice([2, 3]) if len(lively) > 2 else len(lively)))
+    host_outs = 0
+    # elsewhere more variety: a soft dissolve at most about one seam in five, never the same transition twice running
+    softs = [t for t in dict.fromkeys(pool) if t in soft]
     previous, added, cuts = None, 0, 0
+    every = bool(spec.get("every"))
+    unused = [t for t in dict.fromkeys(pool)]
+    if every:
+        rnd.shuffle(unused)
+        if keep:
+            used = {j["type"] for j in ctx.project.get("join_transitions", [])}
+            unused = [t for t in unused if t not in used]
     for seam in seams:
         a, b, left, right = seam
         if keep and (left, right) in existing:
@@ -1117,10 +1319,47 @@ def transitions(ctx: Context, spec: dict) -> None:
                 cuts += 1
             previous = None
             continue
-        kind = rnd.choice(pool)
-        if kind == previous and kind != "crossfade":
-            kind = "crossfade"
+        host_out = bool(a.get("plan") and a["plan"].get("format") == "host")
+        # into the host gently, out of him with drive (user, 25 November 2026: «in для ведучого… не має бути такий
+        # драйвовий… частіше… м'якші переходи, а out… драйвовіші»)
+        host_in = not host_out and bool(b.get("plan") and b["plan"].get("format") == "host")
+        # "every": each transition the channel ticked goes in at least once, to check them all on one film (user,
+        # 25 November 2026: «використав кожен перехід, який я виділив галочкою… перевірити… наскільки якісно»)
+        room = HOST_OUT if host_out else min(a["end"] - a["start"], b["end"] - b["start"])
+        # a flash washes the picture white and drops into the next one in a few frames: into or out of a dark text frame
+        # that drop is a blink (user, 25 November 2026, Antropov 13 → 14, «Яскраве стирання»: «спочатку приливається, а
+        # потім блимає»); such a seam takes any other transition
+        dark = any(_full_frame_text(side) or _format(side) == "text" for side in (a, b))
+        # transitions that only belong where the host goes out or between other frames: never into the host, never on
+        # either side of a text frame (user, 25 November 2026, «Розрізання й панорама» out of a text frame: «ніколи не
+        # використовуй такий перехід… для показа диктора і… текстових вставок. Це більше як out»)
+        into_host = bool(b.get("plan") and b["plan"].get("format") == "host") or _format(b) == "host"
+        bright = lambda t: (dark and sound_settings.transition_character(t) == "flash") or ((dark or into_host) and t in OUT_ONLY)
+        fresh = [t for t in unused if t != previous and (not host_out or t not in soft) and (not host_in or t in soft)
+                 and keeps_shape(t, room) and not bright(t)] if every else []
+        if fresh:
+            kind = fresh[0]
+            unused.remove(kind)
+            host_outs += host_out
+        elif host_out:
+            kind = drive[host_outs % len(drive)]
+            if kind == previous and len(drive) > 1 and previous != "crossfade":   # never the same twice in a row
+                host_outs += 1
+                kind = drive[host_outs % len(drive)]
+            host_outs += 1
+            if bright(kind):
+                kind = next((t for t in drive + lively if not bright(t) and t != previous), kind)
+        else:
+            options = [t for t in dict.fromkeys(pool) if t != previous and keeps_shape(t, room) and not bright(t)] or \
+                      [t for t in dict.fromkeys(pool) if t != previous and not bright(t)] or \
+                      [t for t in dict.fromkeys(pool) if not bright(t)] or \
+                      [t for t in dict.fromkeys(pool) if t != previous] or list(dict.fromkeys(pool))
+            hard = [t for t in options if t not in soft]
+            calm = [t for t in softs if (t != previous or t == "crossfade") and keeps_shape(t, room)]
+            kind = rnd.choice(calm) if calm and (host_in or not hard or rnd.random() < .2) else rnd.choice(hard or options)
         duration = float(spec.get("duration", joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35))
+        if host_out:
+            duration = min(duration, HOST_OUT)   # quick, with drive
         duration = min(duration, a["end"] - a["start"], b["end"] - b["start"])
         # a video going out with no frames left for the transition holds its last picture through it (joins.held_source)
         if kind is None or duration < .05:
@@ -1129,7 +1368,9 @@ def transitions(ctx: Context, spec: dict) -> None:
         ctx.actions.append({"type": "set_join_transition", "payload": {"from_ref": left, "to_ref": right, "type": kind, "duration": round(duration, 3)}})
         previous, added = kind, added + 1
     soundtrack.transitions(ctx, spec)
-    ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({round(100 * share)}%), було {designed}, додано {added}, прибрано {cuts}, "
+    soundtrack.typing(ctx, spec)
+    soundtrack.drawing(ctx, spec)
+    ctx.report.append(f"стиків {len(seams)}: план {target} переходів ({'автоматично' if share is None else str(round(100 * share)) + '%'}), було {designed}, додано {added}, прибрано {cuts}, "
                       f"стане {designed + added}; кадри ведучого й текстові з переходами з обох боків")
 
 
@@ -1246,14 +1487,18 @@ def motion_code_op(ctx: Context, spec: dict) -> None:
             raise OpError(f"У кадрі {frame['number']} немає моушн-коду «{spec['replace']}»")
         for clip in old:
             ctx.actions.append({"type": "delete_clip", "payload": {"clip_id": clip["id"]}})
+    # a code that paints the whole frame is the frame's background: it goes under the frame's words (or when asked)
+    fills = bool(re.search(r"fillRect\(\s*0\s*,\s*0\s*,\s*(?:W|info\.w|w)\s*,\s*(?:H|info\.h|h)\s*\)", code))
+    under = spec.get("under_text") if isinstance(spec.get("under_text"), bool) else fills
     ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "group_id": frame["group"]["id"],
+                                                        "under_text": under,
                                                         "kind": "animation", "content_type": "code", "code": code, "code_assets": assets,
                                                         "code_words": words, "start": round(start, 3), "duration": round(duration, 3),
                                                         "title": title, "x": .5, "y": .5, "width": 1, "height": 1}})
     ctx.report.append(f"кадр {frame['number']}: моушн-код «{label}» {start:.2f}–{start + duration:.2f} с")
 
 
-OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op}
+OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

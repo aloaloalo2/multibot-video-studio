@@ -36,12 +36,13 @@ class CapcutTest(unittest.TestCase):
         layers = layers_of(p)
         joins.transport(p, layers)
         cover = next(c for l in layers for c in l['clips'] if c.get('content_type') == 'capcut_transition')
-        self.assertEqual((cover['start'], cover['duration'], cover['capcut_type']), (4, 1.0, 'capcut_t06'))
+        # its hit on the seam: it starts that far before it
+        self.assertEqual((round(cover['start'], 3), cover['duration'], cover['capcut_type']), (round(4 - joins.lead_seconds(p, p['join_transitions'][0]), 3), joins.MAX_TRANSITION, 'capcut_t06'))
         self.assertEqual((cover['capcut_a_drop'], cover['capcut_b_drop'], cover['capcut_exclude']), (['B'], ['A'], ['P']))
         cover_z = next(l['z'] for l in layers if cover in l['clips'])
         self.assertTrue(1 < cover_z < 2)
         a = next(c for l in layers for c in l['clips'] if c['id'] == 'A')
-        self.assertEqual(a['duration'], 5.0)                      # the outgoing picture goes on under the transition
+        self.assertAlmostEqual(a['duration'], cover['start'] + cover['duration'])   # on under the rest of it
         self.assertNotIn('join_out', a)                           # and takes no dissolve of its own
         self.assertNotIn('join_in', next(c for l in layers for c in l['clips'] if c['id'] == 'B'))
 
@@ -69,10 +70,13 @@ class CapcutTest(unittest.TestCase):
 
     def test_channel_transitions_setting(self):
         base = store.validate_settings.__wrapped__ if hasattr(store.validate_settings, '__wrapped__') else None
-        for bad in ({'allowed': ['nope'], 'share': .5}, {'allowed': ['cut'], 'share': .5}, {'allowed': [], 'share': 2}, 'x'):
+        for bad in ({'allowed': ['nope']}, {'allowed': ['cut']}, 'x'):
             with self.assertRaises(store.StudioError):
                 store.validate_settings({'transitions': bad})
         self.assertIsNone(base)
+        # the share left the settings: the studio decides itself where a seam takes a transition (25 November 2026)
+        self.assertEqual(store.validate_settings({'weights': {'stock_photo': 100}, 'transitions': {'allowed': ['crossfade'], 'share': .4}})['transitions'],
+                         {'allowed': ['crossfade']})
 
 
 if __name__ == '__main__':
@@ -91,3 +95,43 @@ class CapcutCodeSideTest(unittest.TestCase):
         self.assertTrue(app.capcut_touches_code(project, {"from_ref": "group:a", "to_ref": "group:b"}))
         self.assertFalse(app.capcut_touches_code(project, {"from_ref": "group:a", "to_ref": "group:c"}))
 
+
+
+class RazgonWindowTest(unittest.TestCase):
+    """The Razgon side drawn for a CapCut preview covers every frame the transition draws (25 November 2026: the
+    window ended at round(160.5) = 160 while CapCut drew frame 160 too, a black last frame after the transition)."""
+
+    def test_window_covers_the_transitions_last_frame(self):
+        import tempfile
+        from unittest import mock
+        import app
+        import joins as joins_module
+        frame_index = lambda seconds, fps: int(seconds * fps + .5 + 1e-8)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            razgon = root / "home" / "projects" / "film"
+            razgon.mkdir(parents=True)
+            project = {"id": "x", "fps": 25,
+                       "scene_groups": [{"id": "a", "clip_ids": ["p"]}, {"id": "b", "clip_ids": ["r"]}],
+                       "tracks": [{"clips": [{"id": "p", "kind": "image", "title": "K001", "start": 0, "duration": 5.16},
+                                             {"id": "r", "kind": "animation", "title": "Razgon · кадр 002", "start": 5.16, "duration": 17.28}]}]}
+            join = {"from_ref": "group:a", "to_ref": "group:b", "seam": 5.16, "duration": 1.5, "lead": .24}
+            manifest = {"fps": 25, "width": 1920, "timeline_layers": [{"clips": [{"id": "r", "start": 5.16, "duration": 17.28}]}]}
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append(command)
+                Path(command[command.index("--out") + 1]).write_bytes(b"")
+
+            with mock.patch.object(app.store, "razgon_link", return_value={"project": str(razgon)}), \
+                    mock.patch.object(app.store, "cache_dir", return_value=root / "cache"), \
+                    mock.patch.object(app.subprocess, "run", side_effect=run):
+                app.razgon_windows(project, join, manifest, 1280)
+            begin, end = joins_module.window(join)
+            command = calls[0]
+            first, last = float(command[command.index("--from") + 1]), float(command[command.index("--to") + 1])
+            self.assertLessEqual(first * 25, frame_index(begin, 25) + 1e-6)
+            self.assertGreaterEqual(last * 25, frame_index(end, 25) + 1 - 1e-6)   # frames up to index(end) - 1 drawn, with a spare
+            clip = manifest["timeline_layers"][0]["clips"][0]
+            self.assertAlmostEqual(clip["start"], first)
+            self.assertAlmostEqual(clip["start"] + clip["duration"], last)

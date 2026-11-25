@@ -25,6 +25,9 @@ class LivePortTest(unittest.TestCase):
         if not source.is_file():
             source=app/'razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/live.mjs'
         shutil.copy2(source,self.root/'tools'/'live.mjs')
+        # live.mjs serves the studio's fonts from the kit's root (24 November 2026)
+        fonts=source.parents[1]/'studio-fonts.mjs'
+        if fonts.is_file():shutil.copy2(fonts,self.root/'studio-fonts.mjs')
         (self.root/'live.html').write_text('<html>Live preview</html>')
         self.projects={}
         for pid in ('first','second'):

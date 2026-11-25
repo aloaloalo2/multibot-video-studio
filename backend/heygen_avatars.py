@@ -126,3 +126,29 @@ def known_rate_iv(look_id):
         return None
     twin = 'twin' in kind or kind in {'video_avatar', 'instant_avatar'}
     return RATES_IV['digital_twin'] if twin else RATES_IV.get(kind, RATES_IV['photo_avatar'])
+
+
+def cached_photo(channel_id, group_id):
+    """The chosen avatar's picture kept in the channel's data (user, 25 November 2026: «постійно підгружається… в кеш
+    зберегти»): read from HeyGen once a look, then served from disk."""
+    import re
+    import urllib.request
+    import store
+    if not isinstance(group_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{4,80}', group_id):
+        raise StudioError('Невірний аватар', 400)
+    folder = store.DATA_ROOT / 'channels' / channel_id
+    target = folder / f'heygen-avatar-{group_id}.jpg'
+    if target.is_file() and target.stat().st_size:
+        return target
+    url = group(group_id).get('preview_image_url')
+    if not url:
+        raise StudioError('У аватара HeyGen немає фото', 404)
+    folder.mkdir(parents=True, exist_ok=True)
+    part = target.with_suffix('.part')
+    with urllib.request.urlopen(url, timeout=30) as response, part.open('wb') as out:
+        out.write(response.read(20_000_000))
+    part.replace(target)
+    for old in folder.glob('heygen-avatar-*.jpg'):   # a former avatar's picture goes
+        if old != target:
+            old.unlink(missing_ok=True)
+    return target

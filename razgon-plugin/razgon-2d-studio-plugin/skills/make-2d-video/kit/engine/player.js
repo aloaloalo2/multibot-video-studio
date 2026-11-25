@@ -141,6 +141,13 @@ function state3D(shot, def, info) {
   for (const [k, v] of cache3D) if (cache3D.size >= 2) { v.dispose?.(); v.stage?.dispose?.(); cache3D.delete(k); }
   const st = def.init(three, info); cache3D.set(shot.id, st); return st;
 }
+function drawShotAt(g, buf, shot, def, lt, info) {   // throws, for a time before the shot's start
+  if (def.kind === '3d') {
+    const st = state3D(shot, def, info); def.draw(st, lt, info, three); (st.stage || st).render();
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(glCanvas, 0, 0, buf.width, buf.height); g.restore();
+    if (def.overlay) { g.save(); def.overlay(g, lt, info, st); g.restore(); }
+  } else { g.save(); def.draw(g, lt, info); g.restore(); }
+}
 function drawShot(buf, shot, lt) {
   const g = buf.getContext('2d');
   // Clear clip paths, shadows and the save stack, including after a faulty previous scene.
@@ -150,6 +157,11 @@ function drawShot(buf, shot, lt) {
   const def = getShot(shot.id); const dur = shot.end - shot.start;
   const info = { ...(shot.params || {}), shot, dur, globalT: shot.start + lt, p: clamp(lt / dur), line: shot.line };
   if (!def) { g.fillStyle = '#20141c'; g.fillRect(0, 0, E.W, E.H); text(g, `MISSING SHOT ${shot.id}`, E.W / 2, E.H / 2 - 30, { size: 60, color: '#ff6f61' }); text(g, (shot.line || '').slice(0, 80), E.W / 2, E.H / 2 + 50, { size: 30, color: '#fff', font: FONTS.ui, weight: 800 }); return; }
+  if (lt < 0) {
+    try { drawShotAt(g, buf, shot, def, lt, info); return; }
+    catch (e) { lt = 0; info.p = 0; info.globalT = shot.start; if (typeof g.reset === 'function') g.reset(); else buf.width = buf.width;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, buf.width, buf.height); g.setTransform(E.PX, 0, 0, E.PX, 0, 0); }
+  }
   try {
     if (def.kind === '3d') {
       const st = state3D(shot, def, info); def.draw(st, lt, info, three); (st.stage || st).render();
@@ -188,14 +200,31 @@ function drawAround(img, ax, ay, px, py, sc, a = 1) { mg.save(); mg.globalAlpha 
 const BARS = () => ({ none: 0, wide: V(60, 0), scope: V(138, 170), thin: V(30, 60) });
 const barVal = (s) => (typeof (s?.bars ?? E.cfg.bars) === 'number' ? (s.bars ?? E.cfg.bars) : BARS()[s?.bars ?? E.cfg.bars ?? V('wide', 'none')] ?? 0);
 
-window.renderFrame = function (f) {
-  const t = f / E.fps, i = shotIndexAt(t), shot = E.shots[i], lt = t - shot.start;
+// `within` [start, end) keeps the picture to one Studio frame: a time past either edge draws that edge's shot on, alive,
+// instead of the neighbouring frame (a transition's tail or an early start; user, 25 November 2026: «стоп-кадри в
+// переходах не допускаю… це брак»), the way the kit's own shot transitions draw the shot before past its end
+function edgeShot(within, after) {
+  // the frame's first or last shot that has a scene: a neighbour's empty slot (a host or text frame the Studio draws)
+  // printed «MISSING SHOT» over a transition (user, 25 November 2026: «ніколи в житті не має бути»)
+  const pad = 0.5 / E.fps, own = [];
+  E.shots.forEach((s, k) => { if (s.end > within[0] + pad && s.start < within[1] - pad && getShot(s.id)) own.push(k); });
+  if (!own.length) return shotIndexAt(Math.min(Math.max(after ? within[1] - pad : within[0], within[0]), within[1] - pad));
+  return after ? own[own.length - 1] : own[0];
+}
+window.renderFrame = function (f, within) {
+  const t = f / E.fps, outside = !!within && (t < within[0] || t >= within[1]);
+  // inside the frame too, a slot with no scene (a neighbouring host or text frame's, when the shot list and the Studio's
+  // frames meet a little apart) gives way to the frame's own nearest shot
+  let i = outside ? edgeShot(within, t >= within[1]) : shotIndexAt(t);
+  if (within && !outside && !getShot(E.shots[i].id)) i = edgeShot(within, t >= (within[0] + within[1]) / 2);
+  const shot = E.shots[i], lt = t - shot.start, ct = within ? Math.min(Math.max(t, within[0]), within[1] - 0.5 / E.fps) : t;
   mannerFrame(f, E.fps);
   drawShotMB(bufA, shot, lt);
   const tr = shot.in || { type: 'cut' }, tdur = tr.dur ?? ({ whip: 0.35, push: 0.6, iris: 0.7, match: 0.6, smash: 0.45 }[tr.type] || 0.5);
   const W = main.width, H = main.height; mg.setTransform(1, 0, 0, 1, 0, 0); mg.globalAlpha = 1; mg.globalCompositeOperation = 'source-over';
   const grade = E.style.grade; mg.filter = grade.filter && grade.filter !== 'none' ? grade.filter : 'none';
-  if (tr.type === 'smash' && i > 0 && lt < tdur) {
+  if (outside) mg.drawImage(bufA, 0, 0);
+  else if (tr.type === 'smash' && i > 0 && lt < tdur) {
     const x = lt, amp = 16 * Math.exp(-x * 9) * E.PX, ox = Math.sin(x * 113) * amp * 0.6, oy = Math.cos(x * 92) * amp, sc = 1 + 0.035 * Math.exp(-x * 6);
     mg.fillStyle = '#000'; mg.fillRect(0, 0, W, H); drawAround(bufA, W / 2, H / 2, W / 2 + ox, H / 2 + oy, sc);
     if (lt < 1.5 / E.fps) { mg.filter = 'none'; mg.globalAlpha = 0.85; mg.fillStyle = '#fff'; mg.fillRect(0, 0, W, H); mg.globalAlpha = 1; }
@@ -231,8 +260,8 @@ window.renderFrame = function (f) {
   if (grade.grain > 0) { mg.save(); mg.globalAlpha = grade.grain; mg.globalCompositeOperation = 'overlay'; mg.drawImage(grainTiles[f % 4], 0, 0, W, H); mg.restore(); }
   paperPass(mg, W, H);
   mg.setTransform(E.PX, 0, 0, E.PX, 0, 0);
-  drawOverlays(mg, t);
-  if (E.cfg.captions && shot.captions !== false) captions(mg, t, E.cfg.captionStyle || {});
+  drawOverlays(mg, ct);
+  if (E.cfg.captions && shot.captions !== false) captions(mg, ct, E.cfg.captionStyle || {});   // the frame's own words, never a neighbour's
   const cur = barVal(shot), prevB = i > 0 ? barVal(E.shots[i - 1]) : cur, bar = prevB + (cur - prevB) * ease.inOut(prog(lt, 0, 0.6));
   if (bar > 0) { mg.fillStyle = '#000'; mg.fillRect(0, 0, E.W, bar); mg.fillRect(0, E.H - bar, E.W, bar); }
   const fi = E.cfg.fadeIn ?? 0.5, fo = E.cfg.fadeOut ?? 0.8, dur = window.DURATION, fade = Math.max(fi > 0 ? 1 - t / fi : 0, fo > 0 ? 1 - (dur - t) / fo : 0);

@@ -55,8 +55,13 @@ class MotionCodeTest(unittest.TestCase):
             probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=pix_fmt,nb_frames", "-of", "json", rendered["source"]],
                                    capture_output=True, text=True).stdout
             stream = json.loads(probe)["streams"][0]
-            self.assertTrue(stream["pix_fmt"].startswith("yuva"))                          # transparent where nothing is drawn
-            self.assertEqual(int(stream["nb_frames"]), 2 * int(current.get("fps") or 25))
+            # transparent where nothing is drawn (HEVC keeps its alpha in a layer ffprobe does not name): read the alpha itself
+            alpha = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(motion_code.PAD + .5), "-i", rendered["source"], "-frames:v", "1",
+                                    "-vf", "alphaextract", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+            self.assertTrue(alpha and min(alpha) == 0)
+            fps = int(current.get("fps") or 25)
+            self.assertEqual(int(stream["nb_frames"]), round((2 + 2 * motion_code.PAD) * fps))   # with the margin for transitions
+            self.assertAlmostEqual(rendered["trim_start"], motion_code.PAD)
             again = timeline_manifest.build(store.load_project(project["id"]), visual_only=True)   # the same code: the same file
             self.assertEqual(rendered["source"], next(c["source"] for layer in again["timeline_layers"] for c in layer["clips"] if c["id"] == clip["id"]))
             check = motion_code.stills(current, clip, [.2, 1.0], store.cache_dir(current) / "motion-code" / "check-test")
@@ -76,3 +81,69 @@ class MotionCodeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FadesOutTest(unittest.TestCase):
+    """Graphics drawn over a frame stays to its end (user, 25 November 2026: «воно не має пропадати… хай буде до кінця
+    кадра»): the check of motion code warns when the clip's last still keeps less than half of what it showed before."""
+
+    def stills(self, shares):
+        import tempfile
+        from PIL import Image
+        folder = Path(tempfile.mkdtemp())
+        files = []
+        for i, share in enumerate(shares):
+            image = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+            image.paste((255, 255, 255, 255), (0, 0, 100, int(share * 100)))
+            files.append(folder / f"{i}.png")
+            image.save(files[-1])
+        return files
+
+    def test_graphics_that_fade_at_the_end_are_flagged(self):
+        self.assertTrue(motion_code.fades_out(self.stills([0.1, 0.3, 0.3, 0.0])))
+
+    def test_graphics_that_stay_are_not(self):
+        self.assertFalse(motion_code.fades_out(self.stills([0.0, 0.2, 0.3, 0.3])))
+        self.assertFalse(motion_code.fades_out(self.stills([0.0, 0.0, 0.0, 0.0])))
+
+
+class PruneTest(unittest.TestCase):
+    """Old motion-code renders go, the ones the clips use stay (25 November 2026: 1.5 GB piled up on «Космос PRO»)."""
+
+    def test_renders_no_clip_uses_are_removed_and_used_ones_kept(self):
+        import os, tempfile, time
+        folder = Path(tempfile.mkdtemp())
+        clip = {"id": "c1", "content_type": "code", "code": "function draw(ctx,t,info){}", "duration": 2.0}
+        project = {"id": "p" * 24, "width": 1920, "height": 1080, "fps": 25, "tracks": [{"clips": [clip]}]}
+        with patch.object(store, "cache_dir", return_value=folder):
+            renders = folder / "motion-code"
+            renders.mkdir()
+            current = motion_code.fingerprint(motion_code.spec(project, clip))[:32]
+            for name in (current + ".mov", current + ".json", "old0" * 8 + ".mov", "new0" * 8 + ".mov"):
+                (renders / name).write_bytes(b"x" * 10)
+            (renders / "check-c1").mkdir(); (renders / "check-gone").mkdir()
+            old = time.time() - 2 * motion_code.KEEP_SECONDS
+            for name in (current + ".mov", "old0" * 8 + ".mov", "check-gone"):
+                os.utime(renders / name, (old, old))
+            freed = motion_code.prune(project)
+            left = sorted(p.name for p in renders.iterdir())
+        self.assertEqual(freed, 10)
+        # the used render, its spec, a fresh unused one (an export may read it) and the clip's own check stay
+        self.assertEqual(left, sorted([current + ".mov", current + ".json", "new0" * 8 + ".mov", "check-c1"]))
+
+    def test_a_killed_renders_part_goes_even_under_a_used_name(self):
+        # parts of renders killed on a full disk carried their clip's name and stayed for good (11 GB, 25 November 2026)
+        import os, tempfile, time
+        folder = Path(tempfile.mkdtemp())
+        clip = {"id": "c1", "content_type": "code", "code": "function draw(ctx,t,info){}", "duration": 2.0}
+        project = {"id": "p" * 24, "width": 1920, "height": 1080, "fps": 25, "tracks": [{"clips": [clip]}]}
+        with patch.object(store, "cache_dir", return_value=folder):
+            renders = folder / "motion-code"
+            renders.mkdir()
+            current = motion_code.fingerprint(motion_code.spec(project, clip))[:32]
+            for name in (current + ".mov", current + ".mov.123.part.mov"):
+                (renders / name).write_bytes(b"x" * 10)
+                old = time.time() - 2 * motion_code.KEEP_SECONDS
+                os.utime(renders / name, (old, old))
+            motion_code.prune(project)
+            self.assertEqual(sorted(p.name for p in renders.iterdir()), [current + ".mov"])

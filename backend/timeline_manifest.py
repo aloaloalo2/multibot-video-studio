@@ -55,7 +55,7 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
                 # motion design written as code: the same runtime as the preview renders it to a video with alpha
                 import motion_code
                 rendered_clips[-1].update(type="video", source=str(motion_code.render(project, clip).resolve()), content_type=None,
-                                          volume=0.0, trim_start=0.0)
+                                          volume=0.0, trim_start=motion_code.PAD)   # the file starts PAD before the clip
             if clip.get("content_type") == "capcut_effect":
                 rendered_clips[-1]["capcut_effect"] = clip.get("capcut_effect")
                 rendered_clips[-1]["capcut_exclude"] = sorted(overlay_ids)
@@ -66,6 +66,12 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
                 rendered_clips[-1].pop("preset")
                 rendered_clips[-1].pop("preset_duration")
         layers.append({"id": layer["id"], "z": z, "clips": rendered_clips})
+    if any(c.get("content_type") == "code" for layer in project.get("tracks", []) for c in layer.get("clips", [])):
+        import motion_code
+        try:
+            motion_code.prune(project)   # renders of older code go once the current ones are in
+        except OSError:
+            pass
     if include_transitions:
         joins.transport(project,layers)
     if not visual_count:

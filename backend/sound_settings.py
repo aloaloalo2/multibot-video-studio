@@ -288,6 +288,12 @@ def instructions(project, *, scoped=False, include_workflow=True):
     if not include_workflow or not project.get('id'):
         return text
     if not animated:
+        # the studio voices what comes on screen itself, from the code (event_sounds.py, 25 November 2026): an agent's
+        # guessed times doubled it and missed the picture
+        text += ('Звуки на появу тексту й картинок і на письмо (олівець, клавіатура) у кадрах Razgon, текстових вставках і '
+                 'моушн-коді студія кладе сама після створення кадрів: вона читає момент кожної події з коду кадру. '
+                 'Не пиши для них cues. Окремі cues став лише на фізичні події, яких немає серед цих: удар, вибух, клацання '
+                 'механізму, спалах, не частіше одного на кадр.\n')
         text += 'Операція transitions озвучує вибрані доречні стики. Для авторського вибору передай sound_frames з номерами вхідних кадрів; порожній список лишає всі переходи тихими. Операція transition_sounds оновлює тільки звук на існуючих стиках. Не дублюй ці події окремими cues.\n'
     create_music = music['enabled'] and music['generate']
     cues = names + (sfx_library.allowed(sound) if downloaded else [])
@@ -302,3 +308,44 @@ def instructions(project, *, scoped=False, include_workflow=True):
              'Передай music:true лише коли музика дозволена до генерації та її ще немає; cues містять лише потрібні події. '
              'Це локальний синтез звуку, без платного API й без рендеру відео. Наявний звук не дублюй.\n')
     return text
+
+
+# A transition sounds like what it does (user, 25 November 2026: «звук у цього переходу… гліч… має відповідати глічу
+# переходу. Не може бути плавний перехід і звук переходу гліч»): each transition and each transition sound has a character.
+# Each CapCut transition by what it does on the screen, watched on its own sample (25 November 2026; the names misled: a
+# white burst called «Спотворення прискорення» took a glitch sound, user: «перехід, який не мечиться з звуком гліч. Ніколи
+# їх не мечі»). A transition not listed moves (a slide, a turn, a cube, a door, a zoom).
+TRANSITION_CHARACTER = {
+    "crossfade": "soft", "capcut_t10": "soft", "capcut_t23": "soft", "capcut_t25": "soft", "capcut_t34": "soft",
+    "capcut_t08": "glitch",   # a film-burn flash with a grainy double exposure; the author hears it as a glitch (25 November 2026)
+    "capcut_t17": "glitch", "capcut_t24": "glitch", "capcut_t29": "glitch", "capcut_t31": "glitch",
+    "capcut_t03": "flash", "capcut_t04": "flash", "capcut_t06": "flash", "capcut_t07": "flash", "capcut_t12": "flash", "capcut_t13": "flash",
+    "capcut_t19": "flash", "capcut_t22": "flash", "capcut_t26": "flash", "capcut_t27": "flash", "capcut_t32": "flash", "capcut_t38": "flash",
+}
+SOUND_CHARACTER = {
+    "tr_silk": "soft", "tr_cc7685955880517355521": "soft", "tr_cc7385623662601701417": "soft", "tr_cc7385623829542504489": "soft",
+    "tr_cc6817674819585181698": "soft", "tr_cc6817673392263530497": "soft",
+    "tr_cc7021300953584257026": "glitch", "tr_cc7065360142346225665": "glitch",
+    "tr_snap": "flash", "tr_cc6839356087691380737": "flash", "tr_cc6906958260398475265": "flash", "tr_cc7380059953049389095": "flash",
+    "tr_cc7385629873921280019": "flash", "tr_cc6830455909576083458": "flash", "tr_cc7055113164392531970": "flash",
+}
+
+
+def transition_character(kind):
+    """soft, glitch, flash or motion (a slide, a zoom, a turn, a portal)."""
+    if kind.startswith("cin_"):
+        return "soft"
+    return TRANSITION_CHARACTER.get(kind, "motion")
+
+
+def sound_character(name):
+    return SOUND_CHARACTER.get(name, "motion")
+
+
+def sounds_for(character, chosen):
+    """The transition sounds of a character: the channel's own first, else every one the studio has."""
+    own = [name for name in chosen if sound_character(name) == character]
+    if own:
+        return own
+    every = ['tr_' + key for key, _ in TRANSITIONS] + list(capcut_transitions())
+    return [name for name in every if sound_character(name) == character]

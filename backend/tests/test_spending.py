@@ -46,5 +46,42 @@ class SpendingTest(unittest.TestCase):
         self.assertTrue((self.root / spending.BACKFILLED).exists())
 
 
+    def test_a_host_video_counts_in_the_panel_and_its_channel_after_the_project_is_deleted(self):
+        # the host's HeyGen videos reached only the project cards (user, 25 November 2026: «сюди не записується нічого
+        # на рахунок Хейгена»); now the panel and the channel's settings count them, deleted projects too
+        project = self.root / "projects" / "p1"
+        (project / "project.json").write_text(json.dumps({"id": "p1", "channel_id": "c1"}))
+        frames = project / "heygen-frames"
+        frames.mkdir()
+        (frames / "f1.json").write_text(json.dumps({"state": "completed", "video_id": "v1", "usd_per_minute": 1.2,
+                                                    "submitted_at": time.time(), "identity": {"start": 0, "end": 30}}))
+        (self.root / spending.VIDEO_BACKFILLED).write_text("done")
+        self.assertAlmostEqual(spending.summary()["services"]["heygen"]["day"], 0.6)
+        spending.project_channels()
+        shutil.rmtree(project)
+        spending._CACHE.clear()
+        channel = spending.channel_summary("c1")
+        self.assertAlmostEqual(channel["services"]["heygen"]["month"], 0.6)
+        self.assertEqual(spending.channel_summary("other")["total"]["month"], 0)
+
+    def test_a_channel_voice_sample_is_a_charge_of_the_channel(self):
+        spending.charge("heygen", 0.05, "voice-sample-x", "voice_sample", "channel:c1")
+        spending.charge("heygen", 0.05, "voice-sample-x", "voice_sample", "channel:c1")   # the same sample counts once
+        self.assertAlmostEqual(spending.channel_summary("c1")["services"]["heygen"]["day"], 0.05)
+        self.assertAlmostEqual(spending.summary()["services"]["heygen"]["day"], 0.05)
+
+    def test_older_videos_are_written_once_with_their_times(self):
+        project = self.root / "projects" / "p1"
+        (project / "project.json").write_text(json.dumps({"id": "p1", "channel_id": "c1"}))
+        frames = project / "heygen-frames"
+        frames.mkdir()
+        (frames / "f1.json").write_text(json.dumps({"state": "submitted", "video_id": "v2", "usd_per_minute": 0.6,
+                                                    "identity": {"start": 0, "end": 60}}))
+        spending.backfill_videos()
+        spending.backfill_videos()
+        lines = [json.loads(l) for l in (self.root / spending.LEDGER).read_text().splitlines() if l.strip()]
+        self.assertEqual([(l["provider"], l["identity"], l["amount"]) for l in lines], [("heygen", "video:v2", 0.6)])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 """End-to-end render checks with generated media only."""
 
 import json
+import os
 import io
 from array import array
 import shutil
@@ -240,6 +241,26 @@ class RenderIntegration(unittest.TestCase):
         self.assertAlmostEqual((min(red) + max(red)) / 2, 160, delta=3)
         self.assertAlmostEqual(max(red) - min(red) + 1, 135, delta=4)   # 180 * 3/4, not stretched
 
+    def test_a_slow_zoom_moves_every_frame_in_fractions_of_a_pixel(self):
+        # a slow zoom drawn by the FFmpeg renderer grew by whole pixels: one frame still, the next a pixel at once
+        # (user, 25 November 2026: «рвана анімація… плавну анімацію»); it now grows a little on every frame
+        Image.new("RGB", (90, 120), (255, 255, 255)).save(self.root / "white.png")
+        project = {"width": 320, "height": 180, "fps": 25, "background": "#000000", "timeline_layers": [{"id": "photo", "clips": [
+            {"id": "white", "type": "image", "source": "white.png", "start": 0, "duration": 2, "x": .5, "y": .5, "width": 1, "height": 1,
+             "scale": .85, "keyframes": [{"time": 0, "scale": .85, "y": .5}, {"time": 2, "scale": .94, "y": .53}]}]}]}
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"MULTIBOT_GPU_EXPORT": "0"}):   # the FFmpeg renderer, not the GPU one
+            result, output = self.invoke(project, "zoom.mp4")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        raw = subprocess.check_output([FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(output), "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+        frames = [raw[i:i + 320 * 180] for i in range(0, len(raw) - 320 * 180 + 1, 320 * 180)]
+        heights = [sum(max(0, frame[row * 320 + 160] - 16) for row in range(180)) / 219 for frame in frames]
+        steps = [b - a for a, b in zip(heights, heights[1:])][2:-2]
+        expected = 180 * .09 / 50   # about 0.32 pixel a frame
+        self.assertTrue(steps)
+        self.assertGreater(min(steps), 0, steps)                 # never stands still for a frame
+        self.assertLess(max(steps), expected * 3, steps)         # never jumps by a whole pixel at once
+
     def test_words_of_a_moving_text_move_with_it(self):
         # a label pinned to a panning photo: its card and its timed words carry the same keyframes and stay together
         motion = [{"time": 0, "x": .3, "y": .5, "scale": 1}, {"time": 1.5, "x": .7, "y": .5, "scale": 1}]
@@ -276,3 +297,24 @@ class RenderIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LongGraphTest(unittest.TestCase):
+    def test_a_graph_past_the_command_line_limit_goes_through_a_file(self):
+        # Antropov scene 152 (25 November 2026): «Argument list too long» on a graph past macOS's 1 MB command line
+        sys.path.insert(0, str(ENGINE.parent))
+        import render
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.mp4"
+            # the swap itself: a graph past the 1 MB limit leaves the command line
+            huge = ["ffmpeg", "-filter_complex", "x" * 1_100_000, "-map", "[v]"]
+            swapped = render.graph_in_file(huge, Path(tmp))
+            self.assertEqual(swapped[1], "-/filter_complex")
+            self.assertLess(sum(map(len, swapped)), 10_000)
+            self.assertEqual(Path(swapped[2]).stat().st_size, 1_100_000)
+            # and FFmpeg reads a long graph from its file
+            graph = ";".join(["color=c=black:s=16x16:d=0.1,nullsink"] * 2000) + ";[0:v]null[v]"
+            self.assertGreater(len(graph), render.LONG_GRAPH)
+            render.run_ffmpeg([render.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x64:d=0.2",
+                               "-filter_complex", graph, "-map", "[v]", str(out)], "scene", index=1)
+            self.assertTrue(out.is_file())

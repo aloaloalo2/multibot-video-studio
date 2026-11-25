@@ -66,7 +66,10 @@
 .timeline-scroll{--timeline-label-width:190px;--timeline-label-gap:0px;padding:0;overflow:auto;overflow-anchor:none;scrollbar-gutter:auto;scroll-padding-top:29px;}
 .timeline-content{padding:0;min-height:100%;}
 .time-ruler{height:29px;min-height:29px;position:sticky;top:0;background:#1b1b20;z-index:40;box-shadow:0 1px #44444b;}
-.time-ruler-marks{height:29px;background:#202126;border-bottom:1px solid #777d88;box-sizing:border-box;}
+.time-ruler-marks{height:29px;background:#202126;border-bottom:1px solid #777d88;box-sizing:border-box;
+  background-image:repeating-linear-gradient(to right,#91969f 0 1px,transparent 1px var(--timeline-minute-step-px,60px)),
+                   repeating-linear-gradient(to right,#737881 0 1px,transparent 1px var(--timeline-tick-step-px,16px));
+  background-size:100% 5px,100% 3px;background-position:left bottom,left bottom;background-repeat:no-repeat;}
 .time-ruler-marks span{top:2px;font-size:11px;font-weight:650;color:#f0f1f3;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .time-ruler-marks span:first-of-type{transform:translateX(5px);}
 .time-ruler-marks .ruler-tick{position:absolute;bottom:0;width:1px;height:3px;background:#737881;pointer-events:none;}
@@ -185,9 +188,36 @@
 @media(max-width:560px){.app-shell.editor-open{--editor-outer-gutter:8px}}
 /* A transition shows on its seam as a soft gradient across the row, no square badge (user, 25 November 2026: «квадратики
    прибери… стик має просто… градієнтиком»); an empty seam stays invisible until a transition is dragged onto it. */
-.transition-join.has-transition,.transition-join.has-transition.transition-compact{top:2px;bottom:3px;height:auto;border:0;border-radius:0;opacity:1;
-  background:linear-gradient(90deg,#ffd15b00,#ffd15b4d 50%,#ffd15b00);box-shadow:none}
-.transition-join.has-transition:hover{background:linear-gradient(90deg,#ffd15b00,#ffd15b99 50%,#ffd15b00)}
-.transition-join.has-transition.selected-transition{background:linear-gradient(90deg,#ffd15b00,#ffd15b 50%,#ffd15b00);box-shadow:none}
+/* then a plain blue stripe on the seam (user, 25 November 2026: «оця щель… де чорна, вона просто хай буде синя… просто
+   полоска і все») */
+.transition-join.has-transition,.transition-join.has-transition.transition-compact{top:2px;bottom:3px;height:auto;border:0;border-radius:0;opacity:1;box-shadow:none;
+  background:linear-gradient(90deg,transparent calc(50% - 1px),#3d8bff calc(50% - 1px),#3d8bff calc(50% + 1px),transparent calc(50% + 1px))}
+.transition-join.has-transition:hover{background:linear-gradient(90deg,transparent calc(50% - 1px),#6aa8ff calc(50% - 1px),#6aa8ff calc(50% + 1px),transparent calc(50% + 1px))}
+.transition-join.has-transition.selected-transition{background:linear-gradient(90deg,transparent calc(50% - 1px),#b9d6ff calc(50% - 1px),#b9d6ff calc(50% + 1px),transparent calc(50% + 1px));box-shadow:none}
 /* the timeline is selected, never dragged: an arrow over its blocks, not a hand (user, 25 November 2026) */
 #editor-timeline .frame-group-clip,#editor-timeline .track-clip,#editor-timeline .transition-join,#editor-timeline .layer-heading{cursor:default}
+
+/* Two fingers sideways scroll the timeline and nothing else: no rubber band of the whole studio, no browser «back» swipe
+   when the timeline reaches its edge (user, 25 November 2026: «підсовую двома пальцями… вся студія пересовується») */
+html,body{overscroll-behavior:none;}
+.timeline-scroll{overscroll-behavior:contain;}
+:focus,:focus-visible{outline:none!important}
+/* a sound clip shows only its waveform (25 November 2026: «на SFX… прибери взагалі назви… залиш там лише волни») */
+.track-clip.kind-audio .clip-title{display:none}
+
+/* a narrower, quieter ruler (user, 25 November 2026: «зроби цю частину вужчу і делікатнішу») */
+.timeline-scroll{scroll-padding-top:20px;}
+.time-ruler{height:20px;min-height:20px;box-shadow:0 1px #2e2f35;}
+.time-ruler>.track-label{height:20px;font-size:10px;}
+.time-ruler-marks{height:20px;background-color:#1d1e22;border-bottom:1px solid #393b42;
+  background-image:repeating-linear-gradient(to right,#6c7078 0 1px,transparent 1px var(--timeline-minute-step-px,60px)),
+                   repeating-linear-gradient(to right,#4d5058 0 1px,transparent 1px var(--timeline-tick-step-px,16px));
+  background-size:100% 4px,100% 2px;}
+.time-ruler-marks span{top:3px;font-size:9.5px;font-weight:500;color:#9a9da5;letter-spacing:.02em;}
+.time-ruler-marks .ruler-tick.labelled{height:5px;background:#7d8189;}
+#playhead-handle,.time-ruler #playhead-handle{height:11px;width:14px;}
+/* square lanes and blocks (user, 25 November 2026: «прибери загруглення ліній таймлайну») */
+.track-lane,.track-lane.universal-lane,.track-clip,.universal-clip,.frame-group-clip,.soundtrack-row .track-lane{border-radius:0!important;}
+
+/* a CapCut transition not drawn yet: white; blue once its picture is ready */
+.transition-join.has-transition.transition-pending{background:linear-gradient(90deg,transparent calc(50% - 1px),#f2f3f5 calc(50% - 1px),#f2f3f5 calc(50% + 1px),transparent calc(50% + 1px))}

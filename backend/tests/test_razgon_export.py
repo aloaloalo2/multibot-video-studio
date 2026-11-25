@@ -243,7 +243,9 @@ class RazgonExportTest(unittest.TestCase):
         self.assertEqual(values,sorted(values),snapshots)
         self.assertIn(40,values)
         self.assertTrue(all(progress<100 for progress,status in snapshots if status!='complete'),snapshots)
-        self.assertEqual([item[0] for item in self.renders(film)], ["0.0", "1.4"])   # only the code blocks were drawn
+        # only the code blocks were drawn, each with its living tail after it for a transition out (no held picture;
+        # user, 25 November 2026: «стоп-кадри в переходах не допускаю… це брак»)
+        self.assertEqual([item[0] for item in self.renders(film)], ["0.0", "0.4", "1.4", "2.0"])
         self.assertEqual((job["razgon_completed"], job["razgon_total"]), (2, 2))
         self.assertTrue((film / "build" / "studio" / "frame_001_tail.mp4").is_file())   # the held tail for the transition out of it
         out = Path(job["output_path"])

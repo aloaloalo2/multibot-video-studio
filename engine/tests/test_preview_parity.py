@@ -124,7 +124,7 @@ console.log(JSON.stringify(timedTextUnits(clip).map(u=>Math.round(u.x*1e6)/1e6))
             [{"time": 0, "scale": 1.2}],                                                  # a single keyframe
             [{"time": 1, "scale": 1.2}, {"time": 2.999, "scale": 1.3}],                  # first keyframe later than 0
         ]
-        moments = [3.05, 3.2, 3.35]
+        moments = [3.03, 3.1, 3.16]   # inside the outgoing tail: the transition's hit is on the seam, so it lasts .18 s past it
         for points in cases:
             clip = {"id": "a", "kind": "image", "start": 0, "duration": 3, "x": .5, "y": .5, "scale": 1, "opacity": 1, "keyframes": points}
             project = {"fps": 30, "tracks": [{"id": "t", "clips": [clip, {"id": "b", "kind": "image", "start": 3, "duration": 2}]}],
@@ -136,7 +136,7 @@ console.log(JSON.stringify(timedTextUnits(clip).map(u=>Math.round(u.x*1e6)/1e6))
             script = f"const clip={json.dumps(clip)},moments={json.dumps(moments)},graphicTransitionPresets={{}};" + \
                 "const transitionInfo=()=>({outgoing:{seam:3,duration:.35,type:'none'}});" + \
                 "console.log(JSON.stringify(moments.map(t=>transitionValues(clip,t,{x:keyframeValue(clip,'x',.5,t),y:.5,scale:keyframeValue(clip,'scale',1,t),opacity:1}))))"
-            preview = preview_js.run(["easedProgress", "keyframePoints", "keyframeValue", "visualFrameTime", "joinFrames", "transitionValues"],
+            preview = preview_js.run(["easedProgress", "keyframePoints", "keyframeValue", "visualFrameTime", "joinAhead", "joinStart", "joinFrames", "joinLead", "transitionValues"],
                                      "const state={project:{fps:30}};" + script)
             for moment, values in zip(moments, preview):
                 for key in ("x", "scale"):
@@ -147,6 +147,30 @@ console.log(JSON.stringify(timedTextUnits(clip).map(u=>Math.round(u.x*1e6)/1e6))
                             keys.append({"time": 0, prop: base})
                     self.assertAlmostEqual(render.scalar_value(keys, key, .5 if key == "x" else 1.0, moment, "linear"), values[key], places=5,
                                            msg=f"{points} {key} at {moment}")
+
+
+class EarlyIncomingParity(unittest.TestCase):
+    """A transition out of a video with no tail ends on its seam (joins.ends_at_seam, 25 November 2026): the incoming
+    frame starts early and runs its first motion on backwards, the same in the preview and the export."""
+
+    @unittest.skipUnless(preview_js.NODE, "node required")
+    def test_an_early_incoming_clip_moves_backwards_as_in_the_export(self):
+        import joins
+        clip = {"id": "b", "kind": "image", "start": 3.0, "duration": 3.0, "easing": "ease_in_out",
+                "keyframes": [{"time": 0, "scale": 1.0, "x": .45}, {"time": 3.0, "scale": 1.3, "x": .55}]}
+        lead = .4
+        exported = joins.lead({**clip, "type": "image", "keyframes": [dict(k) for k in clip["keyframes"]]}, lead)
+        moments = [-.4, -.3, -.15, -.05, 0.0, .5]
+        join = {"seam": 3.0, "duration": lead, "type": "none", "anchor": "end"}
+        script = f"const clip={json.dumps(clip)},moments={json.dumps(moments)},graphicTransitionPresets={{}};" + \
+            f"const transitionInfo=()=>({{incoming:{json.dumps(join)}}});" + \
+            "console.log(JSON.stringify(moments.map(t=>transitionValues(clip,t,{x:keyframeValue(clip,'x',.5,t),y:.5,scale:keyframeValue(clip,'scale',1,t),opacity:1}))))"
+        preview = preview_js.run(["easedProgress", "keyframePoints", "keyframeValue", "visualFrameTime", "joinAhead", "joinStart", "joinFrames", "joinLead", "transitionValues"],
+                                 "const state={project:{fps:30}};" + script)
+        for moment, values in zip(moments, preview):
+            for key in ("x", "scale"):
+                expected = render.scalar_value(exported["keyframes"], key, .5 if key == "x" else 1.0, moment + lead, "ease_in_out")
+                self.assertAlmostEqual(expected, values[key], places=5, msg=f"{key} at {moment}")
 
 
 @unittest.skipUnless(preview_js.NODE and FFMPEG, "node and ffmpeg required")
@@ -174,7 +198,7 @@ class RenderedParity(unittest.TestCase):
         script = f"const clip={json.dumps(clip)},moments={json.dumps(moments)},graphicTransitionPresets={{}},state={{project:{{fps:{fps}}}}};" + \
             f"const transitionInfo=()=>({json.dumps(join)});" + \
             "console.log(JSON.stringify(moments.map(t=>transitionValues(clip,t-clip.start,{x:clip.x,y:clip.y,scale:1,opacity:1}))))"
-        return preview_js.run(["easedProgress", "keyframePoints", "keyframeValue", "visualFrameTime", "joinFrames", "transitionValues"], script)
+        return preview_js.run(["easedProgress", "keyframePoints", "keyframeValue", "visualFrameTime", "joinAhead", "joinStart", "joinFrames", "joinLead", "transitionValues"], script)
 
     def test_a_transition_of_a_fractional_length_runs_on_whole_frames_in_both(self):
         # 0.35 s at 25 fps: the export draws 9 frames (0.36 s); the preview used to finish 0.01 s sooner and stood
