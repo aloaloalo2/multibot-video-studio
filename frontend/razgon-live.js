@@ -173,7 +173,11 @@
     const hiddenClip = new Set(layers().filter((layer) => layer.hidden).flatMap((layer) => (layer.clips || []).map((clip) => clip.id)));
     const blocksAt = (time) => layers().flatMap((layer) => layer.clips || []).filter((clip) => /^Razgon · кадр/.test(clip.title || '') && time >= Number(clip.start) && time < Number(clip.start) + Number(clip.duration));
     const seen = (time) => { const blocks = blocksAt(time); return !blocks.length || blocks.some((clip) => !hiddenClip.has(clip.id)); };
-    const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < f.end + (tail(f)?.duration || 0));
+    // the tail ends where the transition and the block end, on whole video frames (joinFrames, clipRenderEnd): the raw
+    // seam + duration ended one frame early, and for that frame the block's black base showed over the next picture
+    // (user, 25 November 2026: «після переходу просто чорний на один фрейм показується»)
+    const tailEnd = (f) => { const join = tail(f); if (!join) return f.end; const span = joinFrames(join); return span.seam + span.duration; };
+    const inside = own && own.find((f) => t >= f.start && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < tailEnd(f));
     const sourceFrame=inside||fading;
     seekTime = sourceFrame ? Math.max(sourceFrame.sourceStart,Math.min(t,sourceFrame.sourceEnd-1/(state.project?.fps||25))) : null;
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);

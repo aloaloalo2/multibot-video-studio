@@ -45,7 +45,25 @@ NEW_IN_V2 = ('swoosh_in', 'swoosh_out', 'spin', 'slide', 'ratchet', 'scramble', 
 TRANSITIONS = (
     ('air', 'Повітряний whoosh'), ('silk', 'М’який шовковий'), ('snap', 'Сухий snap'),
 )
-TRANSITION_IDS = {row[0] for row in TRANSITIONS}
+# CapCut's trending sounds that suit a seam, offered among the transition sounds too (user, 25 November 2026: «ці SFX
+# капкати… скопіюй і в звуки переходів… звук вух або звук затвору камери»): whooshes and swishes, camera shutters, glitches,
+# a page turn and a bass hit. The file is the SFX library's own (sfx_library, levelled and at most 4 s); the key is «cc» and
+# its CapCut id, its sound name «tr_cc…».
+CAPCUT_TRANSITIONS = (
+    '6940659030947792897', '6993230936988977154', '7385623662601701417', '7385623829542504489', '7527870971623393297',
+    '7685955880517355521', '7685955939240839185', '7618787513914591233', '6817673392263530497', '6817674819585181698',
+    '7380064362571548708', '7652550300482652177', '6830449581730301954', '6830449586222401538',
+    '6839356087691380737', '6906958260398475265', '7380059953049389095', '7385629873921280019', '6830455909576083458',
+    '7021300953584257026', '7065360142346225665', '6817155807902173185', '7380059090457413686', '7055113164392531970',
+)
+TRANSITION_IDS = {row[0] for row in TRANSITIONS} | {'cc' + key for key in CAPCUT_TRANSITIONS}
+
+
+def capcut_transitions():
+    """{sound name: SFX library row} of the CapCut transition sounds present on this Mac, in CAPCUT_TRANSITIONS order."""
+    import sfx_library
+    rows = {row['mixkit_id']: row for row in sfx_library.catalog() if row.get('source_group') == 'capcut'}
+    return {'tr_cc' + key: rows[key] for key in CAPCUT_TRANSITIONS if key in rows}
 RETIRED_TRANSITION_IDS = {'whip', 'camera', 'sweep', 'down', 'rise', 'reverse', 'bass', 'glitch', 'pixel', 'neon', 'warp', 'shimmer'}
 # The channel's music style (kit audio/music.py STYLES); «whatif» is the original score (user, 17 November 2026: «в
 # настройках хочу, щоб музику я міг вибрати… для What If ці звуки нравляться… для інших каналів… космічний стиль»).
@@ -147,7 +165,7 @@ def allowed_names(sound):
 
 def transition_names(sound):
     selected = sound['transitions']['styles'] if sound['transitions']['enabled'] else []
-    return ['tr_' + key for key, _ in TRANSITIONS if key in selected]
+    return ['tr_' + key for key, _ in TRANSITIONS if key in selected] + [name for name in capcut_transitions() if name[3:] in selected]
 
 
 def apply_config(config, value, *, animated=False):
@@ -181,7 +199,10 @@ def catalog():
 
 
 def transition_catalog():
-    return [{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=5'} for key, label in TRANSITIONS]
+    return ([{'id': key, 'label': label, 'name': 'tr_' + key, 'preview_url': f'/api/transition-sounds/{key}.wav?v=5', 'source_group': 'studio'}
+             for key, label in TRANSITIONS]
+            + [{'id': name[3:], 'label': row['label'], 'name': name, 'preview_url': row['preview_url'], 'source_group': 'capcut'}
+               for name, row in capcut_transitions().items()])
 
 
 def audio_module(name):

@@ -317,6 +317,12 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    а для кольорового оформлення можна передати background.
    clips містить шари kind="animation" (content_type="shape", "gradient", "image") чи kind="text" з keyframes.
    start у шарі відносний до початку кадру, duration у секундах, x/y/width/height у частках кадру; PNG-асет передай як path.
+   Прозорі PNG-предмети малюй одразу з прозорим фоном: у промпті «fully transparent background, real alpha channel, no backdrop,
+   no white or grey background, no floor, no cast shadow under the object», аркушем по 6 з широкими прозорими проміжками, і ріж
+   python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/split_sheet.py" --project <службова папка кадру> --sheet <аркуш> --names <імена> --clean 40
+   (PNG лягають у <службова папка кадру>/assets). Ніколи не малюй предмет на білому тлі й не вирізай біле власним скриптом:
+   сіра тінь і обідок лишаються непрозорими, край жорсткий, і предмет у кадрі виглядає обрізаним (автор, 25 листопада 2026:
+   «чому студія обрізає деякі PNG-шки… виглядають обрізаними»).
    Для правок використовуй ту саму композицію з replace=true: змінюються тільки шари вибраного кадру, сусідні кадри зберігаються.
    Студія відтворює ці шари наживо. Не створюй MP4, WebM, GIF чи відеопроксі кадру, не запускай FFmpeg/moviepy для кадрів.
    Рендер відео відбувається тільки після натискання автором «Експорт MP4». Перевіряй композицію стоп-кадрами.

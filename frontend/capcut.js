@@ -14,27 +14,44 @@ function capcutDefaultDuration(type){return Number(capcutCatalog.transitions[typ
 
 /* ------------------------------------------------------------------ the seam's transition in the preview */
 const capcutPreviews=new Map();   // key -> {state:'loading'|'ready'|'failed', url, video}
-let capcutQueue=Promise.resolve();
 function capcutJoinKey(join){return [state.project?.id,join.id,join.type,Number(join.seam).toFixed(3),Number(join.duration).toFixed(3),state.project?.revision].join(':');}
 function requestCapcutPreview(join){
   const key=capcutJoinKey(join);if(capcutPreviews.has(key))return capcutPreviews.get(key);
-  const entry={state:'loading'};capcutPreviews.set(key,entry);const projectId=state.project.id;
-  capcutQueue=capcutQueue.then(async()=>{
-    if(state.project?.id!==projectId){capcutPreviews.delete(key);return;}
-    try{
-      const response=await fetch(`/api/projects/${projectId}/capcut-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({join_id:join.id})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||'Прев’ю переходу не вийшло');
-      const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.className='capcut-transition-video';video.src=data.url;
-      Object.assign(entry,{state:'ready',url:data.url,video});
-      if(state.project?.id===projectId&&!state.playing)renderPreview();
-    }catch(error){entry.state='failed';entry.error=error.message;}
-  });
+  const entry={state:'loading'};capcutPreviews.set(key,entry);capcutWaiting.set(key,{join,entry,projectId:state.project.id});
+  setTimeout(pumpCapcutPreviews,0);   // after the whole render asked: the pick sees every seam
   return entry;
+}
+// The server draws one preview at a time (a new one takes seconds), so the seam the playhead reaches next goes first:
+// in join order a seam two seconds ahead waited behind others and played as a plain dissolve («46 47 нет перехода»).
+const capcutWaiting=new Map();let capcutPumping=false;
+function nextCapcutPreview(){
+  let best=null,score=Infinity;const time=state.playhead;
+  for(const [key,{join}] of capcutWaiting){const ahead=Number(join.seam)+Number(join.duration||0)-time,value=ahead>=0?ahead:1e6-ahead;if(value<score){score=value;best=key;}}
+  return best;
+}
+async function pumpCapcutPreviews(){
+  if(capcutPumping)return;capcutPumping=true;
+  try{
+    while(capcutWaiting.size){
+      const current=new Set((state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type)).map(capcutJoinKey));
+      for(const key of [...capcutWaiting.keys()])if(!current.has(key)){capcutWaiting.delete(key);capcutPreviews.delete(key);}   // an older revision or project
+      const key=nextCapcutPreview();if(key==null)break;
+      const {join,entry,projectId}=capcutWaiting.get(key);capcutWaiting.delete(key);
+      try{
+        const response=await fetch(`/api/projects/${projectId}/capcut-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({join_id:join.id})});
+        const data=await response.json();if(!response.ok)throw new Error(data.error||'Прев’ю переходу не вийшло');
+        if(data.live){entry.state='live';continue;}   // a Razgon code frame: the live picture with a plain blend, the export draws CapCut
+        const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.className='capcut-transition-video';video.src=data.url;
+        Object.assign(entry,{state:'ready',url:data.url,video});
+        if(state.project?.id===projectId&&!state.playing)renderPreview();
+      }catch(error){entry.state='failed';entry.error=error.message;}
+    }
+  }finally{capcutPumping=false;}
 }
 function renderCapcutTransitionOverlay(composition,time){
   const joins=(state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type));
-  // previews of the seams near the playhead are drawn ahead, one at a time
-  for(const join of joins)if(Math.abs(join.seam-time)<20||(state.selectedTransition?.fromRef===join.from_ref&&state.selectedTransition?.toRef===join.to_ref))requestCapcutPreview(join);
+  // previews of the seams near the playhead (a minute ahead) are drawn ahead, the nearest first
+  for(const join of joins)if((join.seam-time<60&&join.seam-time>-20)||(state.selectedTransition?.fromRef===join.from_ref&&state.selectedTransition?.toRef===join.to_ref))requestCapcutPreview(join);
   const join=joins.find(j=>{const span=joinFrames(j);return time>=span.seam&&time<span.seam+span.duration;});
   let holder=composition.querySelector('.capcut-transition-overlay');
   const entry=join&&capcutPreviews.get(capcutJoinKey(join));

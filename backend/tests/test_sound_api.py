@@ -29,7 +29,8 @@ class SoundApiTest(unittest.TestCase):
         self.assertEqual(result['channel']['settings']['sound'], sound_settings.normalize(sound))
         code, data = self.request('/api/sound-effects')
         self.assertEqual((code, len(data['categories'])), (200, 20))
-        self.assertEqual(len(data['transitions']), 3)
+        self.assertEqual(len([row for row in data['transitions'] if row['source_group'] == 'studio']), 3)
+        self.assertEqual(len(data['transitions']) - 3, len(sound_settings.capcut_transitions()))
         project = store.create_project(cid, 'Sound fixture')
         pid, layer = project['id'], project['tracks'][0]['id']
         code, result = self.request(f'/api/projects/{pid}/actions', 'POST', {'type': 'add_clip', 'payload': {

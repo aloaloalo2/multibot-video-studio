@@ -72,10 +72,10 @@ def place(ctx, spec, *, transition=False):
         raise ValueError('Спочатку додайте озвучку або кадри з тривалістю')
     allowed = set(sound_settings.transition_names(sound) if transition else sound_settings.allowed_names(sound))
     # the downloaded SFX belong to every project now, one SFX list with the synthesized ones (21 November 2026)
-    library = {row['name']: row for row in sfx_library.catalog()} if not transition else {}
-    allowed.update(sfx_library.allowed(sound) if library else [])
+    library = {row['name']: row for row in sfx_library.catalog()} if not transition else sound_settings.capcut_transitions()
+    allowed.update(sfx_library.allowed(sound) if library and not transition else [])
     # any effect of the kit stays known, so cues written with a sound that left the list still lay
-    known = set(library) | set(sound_settings.audio_module('sfx').LIB) | {'tr_' + key for key, _ in sound_settings.TRANSITIONS}
+    known = set(library) | set(sound_settings.audio_module('sfx').LIB) | {'tr_' + key for key, _ in sound_settings.TRANSITIONS} | set(sound_settings.capcut_transitions())
     events = []
     for cue in cues:
         if not isinstance(cue, dict) or cue.get('name') not in known:
@@ -154,7 +154,8 @@ def place(ctx, spec, *, transition=False):
                     module.write_wav(str(path), full_take(module, cue['name'])[0])
         # the whole file, never shorter: only the film's own end can stop it
         length = float(row['duration_seconds']) if row else (store.media_duration(path) or cue['dur'])
-        title = (SFX_PREFIX + row['label'] + ' ' + key) if row else (TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else SFX_PREFIX + cue['name'] + ' ' + key)
+        title = (TRANSITION_PREFIX + cue['join'] + ' · ' + cue['name'] if transition else
+                 SFX_PREFIX + row['label'] + ' ' + key if row else SFX_PREFIX + cue['name'] + ' ' + key)
         if not row and not transition:
             # the same cue laid before under its old name, cut to 0.7 s, goes: the whole one takes its place
             for layer in ctx.project['tracks']:
@@ -207,7 +208,8 @@ def transitions(ctx, spec=None):
                      ['tr_air', 'tr_silk', 'tr_snap'] if 'slide' in kind else
                      ['tr_silk', 'tr_air', 'tr_snap'] if kind == 'crossfade' else
                      ['tr_snap', 'tr_air', 'tr_silk'])
-        choices = [name for name in preferred if name in pool] or pool
+        # the synthesized three first by the kind of join, then the CapCut ones the channel chose: all take turns
+        choices = [name for name in preferred if name in pool] + [name for name in pool if name not in preferred]
         different = [name for name in choices if name != previous] or [name for name in pool if name != previous]
         choices = different or choices
         name = choices[len(events) % len(choices)]

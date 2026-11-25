@@ -77,3 +77,17 @@ class CapcutTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CapcutCodeSideTest(unittest.TestCase):
+    """A seam into a Razgon code block shows the live picture in the editor (25 November 2026)."""
+
+    def test_a_code_block_side_is_detected(self):
+        import app
+        project = {"scene_groups": [{"id": "a", "clip_ids": ["p"]}, {"id": "b", "clip_ids": ["r"]}, {"id": "c", "clip_ids": ["q"]}],
+                   "tracks": [{"clips": [{"id": "p", "kind": "image", "title": "Кадр 1"},
+                                         {"id": "r", "kind": "animation", "title": "Razgon · кадр 002"},
+                                         {"id": "q", "kind": "image", "title": "Кадр 3"}]}]}
+        self.assertTrue(app.capcut_touches_code(project, {"from_ref": "group:a", "to_ref": "group:b"}))
+        self.assertFalse(app.capcut_touches_code(project, {"from_ref": "group:a", "to_ref": "group:c"}))
+

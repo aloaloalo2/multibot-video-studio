@@ -65,7 +65,9 @@ def work_size(width: int, height: int) -> tuple[int, int]:
 
 
 def _key(*parts) -> str:
-    return hashlib.sha256(json.dumps([VERSION, *parts], sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:24]
+    # previews before 25 November 2026 drew their windows at 640 px (captions too big); the export's were right
+    version = VERSION + ("-native" if PREVIEW else "")
+    return hashlib.sha256(json.dumps([version, *parts], sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:24]
 
 
 def _sources_stamp(layers: list[dict], project_file: Path) -> list:
@@ -103,8 +105,13 @@ def _worker(job: dict, width: int, height: int) -> None:
 
 def _window(render, project: dict, project_file: Path, layers: list[dict], start: float, end: float,
             width: int, height: int, fps: int, out_raw: Path) -> int:
-    """Draws [start, end) of `layers` with the FFmpeg renderer and saves the frames as raw RGB at the working size."""
+    """Draws [start, end) of `layers` with the FFmpeg renderer and saves the frames as raw RGB at the working size.
+
+    The window is drawn at the film's own size and only then scaled down: text sizes, strokes and shadows are pixels of
+    the film, so the editor's small 640 px preview drawn at 640 made every caption about three times too big for the
+    length of the transition (user, 25 November 2026: «коли накладається перехід, різко міняються шрифти і розмір»)."""
     pw, ph = work_size(width, height)
+    width, height = int(project.get("width") or width), int(project.get("height") or height)
     sub = {**project, "timeline_layers": layers}
     count = max(1, render.frame_index(end, fps) - render.frame_index(start, fps))
     start, end = render.frame_index(start, fps) / fps, render.frame_index(end, fps) / fps   # whole frames, as the plan

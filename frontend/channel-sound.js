@@ -103,7 +103,7 @@ function bindChannelSound(saved){
       let lastSource=null;
       for(const row of rows){
         // CapCut's trending sounds get their own heading under the studio's own SFX (25 November 2026)
-        if(group.key==='library'&&row.source_group&&row.source_group!==lastSource){
+        if((group.key==='library'||group.key==='transitions')&&row.source_group&&row.source_group!==lastSource){
           if(lastSource!==null||row.source_group==='capcut'){const head=document.createElement('div');head.className='channel-sound-source';head.textContent=row.source_group==='capcut'?'CapCut · У тренді':'Добірка студії';group.list.append(head);}
           lastSource=row.source_group;
         }

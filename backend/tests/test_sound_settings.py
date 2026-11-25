@@ -43,6 +43,8 @@ class SoundSettingsTest(unittest.TestCase):
         self.assertFalse(sound.apply_config({}, choice, animated=True)['sfx']['enabled'])
         hashes = set()
         for row in sound.transition_catalog():
+            if row['source_group'] != 'studio':
+                continue   # CapCut's are files of the SFX library (test_transition_capcut), not synthesized
             data = module.make(row['name'])
             self.assertEqual(data.shape[1], 2)
             self.assertTrue(np.isfinite(data).all())

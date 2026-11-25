@@ -1114,13 +1114,37 @@ def capcut_run(arguments: list[str], timeout: int = 900) -> Path:
     return Path(info["output"])
 
 
+RAZGON_BLOCK = re.compile(r"Razgon · кадр \d{3}")
+
+
+def capcut_touches_code(project: dict, join: dict) -> bool:
+    """True when a side of the seam is a Razgon code block, which only the export draws."""
+    groups = {g.get("id"): set(g.get("clip_ids") or []) for g in project.get("scene_groups", [])}
+    sides = set()
+    for ref in (join.get("from_ref"), join.get("to_ref")):
+        kind, _, ident = str(ref or "").partition(":")
+        sides |= groups.get(ident, set()) if kind == "group" else {ident}
+    return any(c.get("id") in sides and c.get("kind") == "animation" and RAZGON_BLOCK.fullmatch(c.get("title") or "")
+               for t in project.get("tracks", []) for c in t.get("clips", []))
+
+
+# a CapCut seam's preview at 1280 px wide: 640 px stretched over the editor's picture looked blurred, «криво» (user,
+# 25 November 2026); it is drawn once a seam and kept
+PREVIEW_WIDTH = 1280
+
+
 def capcut_transition_preview(project: dict, join_id: str) -> dict:
     """The CapCut transition of one seam drawn small by the export's own code, for the editor's preview."""
     join = next((j for j in project.get("join_transitions", []) if j.get("id") == join_id), None)
     if not join or join.get("type") not in joins.CAPCUT:
         raise store.StudioError("Перехід CapCut на цьому стику не знайдено", 404)
+    if capcut_touches_code(project, join):
+        # A Razgon frame is code until «Експорт MP4» renders it, and this small render would draw only its empty backing
+        # (user, 25 November 2026: a dark gradient over Antropov's seam 1→2). The editor keeps the live picture with a
+        # plain blend there; the export renders the block first and gets the real CapCut transition.
+        return {"live": True, "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
     manifest = normalize_for_engine(project)
-    width = 640
+    width = PREVIEW_WIDTH
     height = max(2, round(width * int(manifest.get("height", 1080)) / int(manifest.get("width", 1920)) / 2) * 2)
     folder = store.cache_dir(project) / "capcut"
     folder.mkdir(parents=True, exist_ok=True)
