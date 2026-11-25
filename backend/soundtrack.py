@@ -462,8 +462,12 @@ def _kind(row) -> str:
     return sound_settings.OLD_CATEGORIES.get(row['category'], row['category'])
 
 
-# code that draws a hand, a pen, a pencil, chalk or a marker writing: only there a written text sounds like a pencil
-HAND = re.compile(r'\bhands?\b|pencil|\bpens?\b|chalk|marker|stylus|quill|рук[аиуоі]\b|ручк|олів|крейд|маркер', re.I)
+# code that shows a pen, a pencil, chalk or a quill writing or drawing: only there a written text sounds like a pencil.
+# The tool and the writing come together (Andromeda 23: «the hand with a dip pen writes the next rows»); a bare «hand»
+# is a camera's shake or an arm laid along a gap, a bare «marker» a point on a map
+TOOL = r'(?<![a-z])(?:pens?|pencils?|chalk|quill|stylus|nib)(?![a-z])|олів|крейд|ручк|перо(?![а-я])'
+VERB = r'writ|draw|scribbl|пиш|пише|напис|малю'
+HAND = re.compile(rf'(?:{TOOL})[^\n]{{0,60}}(?:{VERB})|(?:{VERB})[^\n]{{0,60}}(?:{TOOL})', re.I)
 
 
 WRITES = re.compile(r'пише|write|writing|запис|штрих|шкряб|scratch', re.I)
