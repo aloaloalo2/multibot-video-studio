@@ -3,11 +3,20 @@ function isCapcutTransition(type){return typeof type==='string'&&type.startsWith
 const transitionNames={cut:'Склейка',crossfade:'Розчинення',slide_left:'Зсув ліворуч',slide_right:'Зсув праворуч',slide_up:'Зсув угору',slide_down:'Зсув униз',zoom_in:'М’яке наближення',zoom_out:'М’яке віддалення'};
 let joinCacheToken='',joinCache=new Map();
 let transitionPointerDrag=null,transitionSuppressClick=false;
-function transitionDropTarget(x,y){
-  const scroller=document.querySelector('.timeline-scroll'),bounds=scroller.getBoundingClientRect(),label=Number.parseFloat(getComputedStyle(scroller).getPropertyValue('--timeline-label-width'))||190;
-  if(x<bounds.left+label||x>bounds.right||y<bounds.top||y>bounds.bottom)return null;
+// The seams' places are measured once for a drag (again only after a scroll): measuring all 106 markers on every
+// pointer move laid the page out again each time.
+function transitionDropTarget(x,y,drag=null){
+  const scroller=document.querySelector('.timeline-scroll'),key=scroller.scrollLeft+','+scroller.scrollTop;
+  let seen=drag?.seams;
+  if(!seen||seen.key!==key||!seen.markers.every(item=>item.marker.isConnected)){
+    seen={key,bounds:scroller.getBoundingClientRect(),label:Number.parseFloat(getComputedStyle(scroller).getPropertyValue('--timeline-label-width'))||190,
+      markers:[...document.querySelectorAll('.transition-join')].map(marker=>({marker,r:marker.getBoundingClientRect()}))};
+    if(drag)drag.seams=seen;
+  }
+  const bounds=seen.bounds;
+  if(x<bounds.left+seen.label||x>bounds.right||y<bounds.top||y>bounds.bottom)return null;
   let closest=null,distance=15;
-  for(const marker of document.querySelectorAll('.transition-join')){const r=marker.getBoundingClientRect(),dx=Math.abs(x-(r.left+r.width/2));if(y>=r.top-4&&y<=r.bottom+4&&dx<distance){closest=marker;distance=dx;}}
+  for(const {marker,r} of seen.markers){const dx=Math.abs(x-(r.left+r.width/2));if(y>=r.top-4&&y<=r.bottom+4&&dx<distance){closest=marker;distance=dx;}}
   return closest;
 }
 function beginTransitionDrag(event,type,origin){
@@ -26,10 +35,10 @@ document.addEventListener('pointermove',event=>{
   if(!drag.moved&&Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<5)return;
   if(!drag.moved){drag.moved=true;document.body.classList.add('dragging-transition');const ghost=document.createElement('div');ghost.className='transition-drag-ghost';ghost.textContent=transitionNames[drag.type];document.body.append(ghost);drag.ghost=ghost;}
   event.preventDefault();drag.ghost.style.left=event.clientX+14+'px';drag.ghost.style.top=event.clientY-30+'px';
-  const marker=transitionDropTarget(event.clientX,event.clientY);for(const node of document.querySelectorAll('.join-drop'))node.classList.remove('join-drop');if(marker)marker.classList.add('join-drop');
+  const marker=transitionDropTarget(event.clientX,event.clientY,drag);if(marker!==drag.hover){drag.hover?.classList.remove('join-drop');marker?.classList.add('join-drop');drag.hover=marker;}
 });
 document.addEventListener('pointerup',event=>{
-  const drag=transitionPointerDrag;if(!drag||event.pointerId!==drag.pointerId)return;const marker=drag.moved?transitionDropTarget(event.clientX,event.clientY):null;transitionPointerDrag=null;if(drag.source.hasPointerCapture(event.pointerId))drag.source.releasePointerCapture(event.pointerId);drag.ghost?.remove();document.body.classList.remove('dragging-transition');for(const node of document.querySelectorAll('.join-drop'))node.classList.remove('join-drop');
+  const drag=transitionPointerDrag;if(!drag||event.pointerId!==drag.pointerId)return;const marker=drag.moved?transitionDropTarget(event.clientX,event.clientY,drag):null;transitionPointerDrag=null;if(drag.source.hasPointerCapture(event.pointerId))drag.source.releasePointerCapture(event.pointerId);drag.ghost?.remove();document.body.classList.remove('dragging-transition');for(const node of document.querySelectorAll('.join-drop'))node.classList.remove('join-drop');
   if(!drag.moved)return;event.preventDefault();transitionSuppressClick=true;setTimeout(()=>{transitionSuppressClick=false;},0);
   if(marker)applyTransitionAtMarker(marker,drag.type,drag.origin).catch(()=>{});else status('Перехід не застосовано. Перетягніть його на підсвічений стик двох сусідніх кадрів.',true);
 });
@@ -135,16 +144,39 @@ function renderTransitionInspector(join){
   $('transition-property-remove').addEventListener('click',async()=>{removing=true;pending=null;clearTimeout(durationTimer);try{while(state.busy && state.project?.id===projectId)await new Promise(resolve=>setTimeout(resolve,60));if(state.project?.id===projectId)await action('set_join_transition',{from_ref:join.from_ref,to_ref:join.to_ref,type:'cut',duration:0},'Перехід прибрано.');}catch(error){removing=false;status(error.message,true);}});
   update();
 }
-function transitionJoinMarker(lane,left,right,seam,visualWidth=12){
-  const active=(state.project.join_transitions || []).find(j=>j.from_ref===left&&j.to_ref===right),marker=document.createElement('button');marker.type='button';marker.className='transition-join'+(active?' has-transition':'')+(active&&typeof capcutPending==='function'&&capcutPending(active)?' transition-pending':'')+(state.selectedTransition?.fromRef===left&&state.selectedTransition?.toRef===right?' selected-transition':'');marker.style.left=((seam-timelineOrigin())/timelineSpan()*100)+'%';marker.textContent='';marker.title=active?(transitionNames[active.type] || active.type)+' · натисніть для налаштувань':'Перетягніть сюди перехід';marker.setAttribute('aria-label','Стик '+clock(seam));marker.dataset.fromRef=left;marker.dataset.toRef=right;
-  marker.style.width=Math.max(10,visualWidth)+'px';if(visualWidth<6)marker.classList.add('transition-compact');
-  if(active)marker.addEventListener('click',event=>{event.stopPropagation();selectTransition(active);});
-  // a transition on the timeline stays on its seam: nothing there is moved by hand (user, 25 November 2026)
-  if(active)marker.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();closeStackMenu();const menu=document.createElement('div');menu.className='stack-context-menu';const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Прибрати перехід');remove.addEventListener('click',()=>{closeStackMenu();action('set_join_transition',{from_ref:left,to_ref:right,type:'cut',duration:0},'Перехід прибрано.').catch(()=>{});});menu.append(remove);document.body.append(menu);menu.style.left=Math.min(event.clientX,window.innerWidth-menu.offsetWidth-8)+'px';menu.style.top=Math.min(event.clientY,window.innerHeight-menu.offsetHeight-8)+'px';});
-  if(false){marker.draggable=true;marker.addEventListener('dragstart',event=>{event.dataTransfer.setData('application/x-videostudio-transition',active.type);event.dataTransfer.setData('application/x-videostudio-transition-origin',active.id);document.body.classList.add('dragging-transition');});marker.addEventListener('dragend',()=>document.body.classList.remove('dragging-transition'));}
-  marker.addEventListener('dragover',event=>{if(event.dataTransfer.types.includes('application/x-videostudio-transition')){event.preventDefault();marker.classList.add('join-drop');}});marker.addEventListener('dragleave',()=>marker.classList.remove('join-drop'));
-  marker.addEventListener('drop',event=>{const type=event.dataTransfer.getData('application/x-videostudio-transition');if(!type)return;event.preventDefault();event.stopPropagation();marker.classList.remove('join-drop');document.body.classList.remove('dragging-transition');applyTransitionAtMarker(marker,type,event.dataTransfer.getData('application/x-videostudio-transition-origin') || undefined).catch(()=>{});});lane.append(marker);
+// the transition saved on a seam, by its two sides (one map a project version: every marker asked the whole list)
+function joinAt(left,right){
+  const joins=memoForProject('joinsBySeam',()=>{const map=new Map();for(const join of state.project.join_transitions || []){const key=join.from_ref+'\n'+join.to_ref;if(!map.has(key))map.set(key,join);}return map;});
+  return joins.get(left+'\n'+right);
 }
+function transitionJoinMarker(lane,left,right,seam,visualWidth=12){
+  const active=joinAt(left,right),marker=document.createElement('button');marker.type='button';marker.className='transition-join'+(active?' has-transition':'')+(active&&typeof capcutPending==='function'&&capcutPending(active)?' transition-pending':'')+(state.selectedTransition?.fromRef===left&&state.selectedTransition?.toRef===right?' selected-transition':'');marker.style.left=((seam-timelineOrigin())/timelineSpan()*100)+'%';marker.textContent='';marker.title=active?(transitionNames[active.type] || active.type)+' · натисніть для налаштувань':'Перетягніть сюди перехід';marker.setAttribute('aria-label','Стик '+clock(seam));marker.dataset.fromRef=left;marker.dataset.toRef=right;
+  marker.style.width=Math.max(10,visualWidth)+'px';if(visualWidth<6)marker.classList.add('transition-compact');
+  lane.append(marker);
+}
+// A seam's clicks, its menu and drops from the library are handled once for the whole timeline: a film of 106 seams
+// carried five listeners on each marker, made again on every redraw.
+// A transition on the timeline stays on its seam: nothing there is moved by hand (user, 25 November 2026).
+function markerJoin(event){const marker=event.target.closest?.('.transition-join');return marker?{marker,join:joinAt(marker.dataset.fromRef,marker.dataset.toRef)}:{};}
+(()=>{
+  const tracks=document.getElementById('timeline-tracks');if(!tracks)return;
+  const dragged=event=>event.dataTransfer?.types.includes('application/x-videostudio-transition');
+  tracks.addEventListener('click',event=>{const {marker,join}=markerJoin(event);if(!marker)return;event.stopPropagation();if(join)selectTransition(join);});
+  tracks.addEventListener('contextmenu',event=>{
+    const {join}=markerJoin(event);if(!join)return;
+    event.preventDefault();event.stopPropagation();closeStackMenu();
+    const menu=document.createElement('div');menu.className='stack-context-menu';const remove=document.createElement('button');remove.type='button';setTrashButton(remove,'Прибрати перехід');
+    remove.addEventListener('click',()=>{closeStackMenu();action('set_join_transition',{from_ref:join.from_ref,to_ref:join.to_ref,type:'cut',duration:0},'Перехід прибрано.').catch(()=>{});});
+    menu.append(remove);document.body.append(menu);menu.style.left=Math.min(event.clientX,window.innerWidth-menu.offsetWidth-8)+'px';menu.style.top=Math.min(event.clientY,window.innerHeight-menu.offsetHeight-8)+'px';
+  });
+  tracks.addEventListener('dragover',event=>{const {marker}=markerJoin(event);if(marker&&dragged(event)){event.preventDefault();marker.classList.add('join-drop');}});
+  tracks.addEventListener('dragleave',event=>{const {marker}=markerJoin(event);if(marker&&!marker.contains(event.relatedTarget))marker.classList.remove('join-drop');});
+  tracks.addEventListener('drop',event=>{
+    const {marker}=markerJoin(event);if(!marker)return;const type=event.dataTransfer.getData('application/x-videostudio-transition');if(!type)return;
+    event.preventDefault();event.stopPropagation();marker.classList.remove('join-drop');document.body.classList.remove('dragging-transition');
+    applyTransitionAtMarker(marker,type,event.dataTransfer.getData('application/x-videostudio-transition-origin') || undefined).catch(()=>{});
+  });
+})();
 let transitionLibraryFilter='all';
 const transitionFavorites=new Set((()=>{try{const saved=JSON.parse(localStorage.getItem('studio.transitionFavorites')||'[]');return Array.isArray(saved)?saved:[];}catch{return [];}})());
 function initTransitionLibrary(){
