@@ -3,24 +3,24 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../episode-ide
 const topics={status:'done',stage:'ideas',day:'today',target_words:1200,ideas:[{title:'A fresh title',uk:''},{title:'Another title',uk:''}],used_idea_indexes:[]};
 const hooks={status:'done',stage:'openings',project_id:'project-a',target_words:1200,selected:{title:'A fresh title'},openings:[{text:'First hook',uk:''},{text:'Second hook',uk:''}]};
 function element(){
-  let html='';return {isConnected:true,hidden:false,value:'',readOnly:false,nodes:[],messages:[],classList:{add(){},remove(){}},focus(){},after(){},remove(){this.isConnected=false},setAttribute(key,value){this[key]=value},
-    set innerHTML(value){html=value;this.nodes=[...value.matchAll(/<button\b([^>]*)>/g)].map(m=>({disabled:m[1].includes('disabled'),hidden:false,classList:{add(){},remove(){}},setAttribute(key,value){this[key]=value},dataset:{entry:/data-entry="([^"]+)"/.exec(m[1])?.[1],opening:/data-opening="(\d+)"/.exec(m[1])?.[1],idea:/data-idea="(\d+)"/.exec(m[1])?.[1]},id:/id="([^"]+)"/.exec(m[1])?.[1]}));if(value.includes('id="idea-words"'))this.words={value:'1200'};},
+  let html='';return {isConnected:true,hidden:false,value:'',readOnly:false,nodes:[],messages:[],classList:{add(){},remove(){}},focus(){},after(){},before(){},append(){},remove(){this.isConnected=false},setAttribute(key,value){this[key]=value},
+    set innerHTML(value){html=value;this.nodes=[...value.matchAll(/<button\b([^>]*)>/g)].map(m=>({disabled:m[1].includes('disabled'),hidden:false,before(){},focus(){},classList:{add(){},remove(){}},setAttribute(key,value){this[key]=value},dataset:{entry:/data-entry="([^"]+)"/.exec(m[1])?.[1],opening:/data-opening="(\d+)"/.exec(m[1])?.[1],idea:/data-idea="(\d+)"/.exec(m[1])?.[1],ownTitle:/data-own-title="(\d+)"/.exec(m[1])?.[1]},id:/id="([^"]+)"/.exec(m[1])?.[1]}));if(value.includes('id="idea-words"'))this.words={value:'1200'};},
     get innerHTML(){return html},querySelector(s){return s==='#reference-use-hero'?{checked:false}:s==='#idea-words'?this.words:s==='button'?this.nodes[0]:this.nodes.find(b=>'#'+b.id===s)},
-    querySelectorAll(s){return s==='button'?this.nodes:this.nodes.filter(b=>s==='[data-opening]'?b.dataset.opening!==undefined:b.dataset.idea!==undefined)},
+    querySelectorAll(s){return s==='button'?this.nodes:this.nodes.filter(b=>s==='[data-opening]'?b.dataset.opening!==undefined:s==='[data-own-title]'?b.dataset.ownTitle!==undefined:b.dataset.idea!==undefined)},
     prepend(node){this.messages.unshift(node.innerHTML)}
   };
 }
 function harness(api){
   const root=element(),input=element(),actions=element(),backdrop=element(),calls=[],timers=[],selected=[];actions.innerHTML='<button>Create</button>';
-  const modes=element(),referenceInput=element(),referenceBox=element(),note=element(),heading=element(),copy=element(),headerRefresh=element();
+  const ownTitles=element(),modes=element(),referenceInput=element(),referenceBox=element(),note=element(),heading=element(),copy=element(),headerRefresh=element();
   modes.innerHTML='<button data-entry="title"></button><button data-entry="topics"></button><button data-entry="reference"></button>';
   let uuid=0;
-  const context=vm.createContext({state:{channel:{id:'channel-a'}},bindTitleTranslation:(field,options)=>{context.translation=options;return {refresh(){},dispose(){}};},$:id=>({'episode-ideas':root,'new-project-name':input,'modal-actions':actions,'modal-backdrop':backdrop,'modal-body':root,'modal-title':heading,'episode-entry-options':modes,'episode-reference-url':referenceInput,'episode-reference':referenceBox,'episode-reference-status':note,'episode-reference-copy':copy,'ideas-refresh':headerRefresh})[id],
+  const context=vm.createContext({state:{channel:{id:'channel-a'}},bindTitleTranslation:(field,options)=>{context.translation=options;return {refresh(){},dispose(){}};},$:id=>({'episode-ideas':root,'new-project-name':input,'modal-actions':actions,'modal-backdrop':backdrop,'modal-body':root,'modal-title':heading,'episode-entry-options':modes,'episode-reference-url':referenceInput,'episode-reference':referenceBox,'episode-reference-status':note,'episode-reference-copy':copy,'ideas-refresh':headerRefresh,'episode-own-titles':ownTitles})[id],
     modal:(title,body,actions)=>{context.title=title;context.modalActions=actions;backdrop.hidden=false},closeModal:()=>{backdrop.hidden=true;root.isConnected=false},
     api:async(...args)=>{calls.push(args);return api(...args)},esc:s=>s,projectCostIcons:{claude_code:'<svg></svg>'},status:()=>{},
     refreshProjects:async()=>{},showProjectList:()=>{},pollChannelActivity:()=>{},selectProject:async id=>selected.push(id),renderMontageMake:()=>{context.inlineRendered=true},projectActivities:new Map(),
-    crypto:{randomUUID:()=>`request-${++uuid}`},document:{createElement:element},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout:()=>{}});
-  vm.runInContext(source,context);return {context,root,input,actions,calls,timers,selected,modes,referenceInput,referenceBox,note,copy,headerRefresh};
+    exportSpinner:'',crypto:{randomUUID:()=>`request-${++uuid}`},document:{createElement:element},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout:()=>{}});
+  vm.runInContext(source,context);return {context,root,input,actions,ownTitles,calls,timers,selected,modes,referenceInput,referenceBox,note,copy,headerRefresh};
 }
 
 test('New episode opens the empty own-title field without generating topics',async()=>{
@@ -30,12 +30,17 @@ test('New episode opens the empty own-title field without generating topics',asy
   assert.equal(h.actions.nodes[0].hidden,false);assert.equal(h.actions.nodes[0].disabled,true);assert.equal(h.input.hidden,false);
 });
 test('own title submits through the modal busy lock and cannot open a project after closing',async()=>{
+  // since 22 November 2026 «Створити» first asks DeepSeek for titles on the idea; a picked title then creates the episode
   let finish;
-  const h=harness(async(url,method)=>method==='POST'?new Promise(resolve=>finish=resolve):topics);
+  const h=harness(async(url,method)=>method!=='POST'?topics:url.endsWith('/idea-titles')?{titles:[{title:'Other title',uk:''}]}:new Promise(resolve=>finish=resolve));
   await h.context.openNewEpisodeWizard();h.input.value='My episode';h.input.oninput();
   h.actions.nodes[0].disabled=true; // the shared modal locks the clicked action first
+  h.context.modalActions[0].run();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(h.calls.filter(c=>c[1]==='POST').map(c=>c[0]),['/api/channels/channel-a/idea-titles']);
+  const own=h.ownTitles.querySelectorAll('[data-own-title]');
+  assert.equal(own.length,2);own[0].onclick();assert.equal(h.input.value,'My episode');
   const pending=h.context.modalActions[0].run();
-  assert.equal(h.calls.filter(c=>c[1]==='POST').length,1);
+  assert.deepEqual(h.calls.filter(c=>c[1]==='POST').map(c=>c[0]),['/api/channels/channel-a/idea-titles','/api/projects']);
   h.context.closeModal();finish({project:{id:'new-project'}});await pending;
   assert.deepEqual(h.selected,[]);
 });

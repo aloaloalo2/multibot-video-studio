@@ -78,7 +78,7 @@ test('channel selection renders once and ignores an older response',async()=>{
 
 // what the poll touches beside the activity maps: the exporting channels (94cf3f3), the languages' own spinner
 // (6227200) and the channel notices (0f1db6f)
-const pollStubs=()=>({channelExporting:new Set(),languageWork:new Set(),paintLanguageTabBusy(){},
+const pollStubs=()=>({channelExporting:new Set(),channelPublishing:new Set(),renderChannelWork(){},languageWork:new Set(),paintLanguageTabBusy(){},
   channelNoticeData:{},saveChannelNotices(){},renderChannelNotices(){}});
 
 test('activity polling reads phrase progress only for active narration and prevents overlapping polls',async()=>{

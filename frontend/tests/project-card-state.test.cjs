@@ -29,7 +29,8 @@ test('recognition and director status is replaced once and cleared when work end
   assert.equal(controls.length,1);assert.notEqual(controls[0].disabled,true);
   activities.set('p',{kind:'озвучення сценарію',progress:43,cancelling:true});render();assert.equal(controls.length,1);assert.equal(controls[0].disabled,true);
   activities.set('p','створення сценарію');render();assert.equal(children.length,1);assert.match(children[0].innerHTML,/spinner/);assert.match(children[0].innerHTML,/Opus пише сценарій/);
-  assert.equal(actions.length,1);assert.equal(controls.length,0);render();assert.equal(actions.length,1);
+  // Opus writing pauses with the round play-pause button since 19 November 2026, no separate stop in the actions
+  assert.equal(actions.length,0);assert.equal(controls.length,1);render();assert.equal(controls.length,1);
   activities.set('p','створення зачинів');render();assert.match(children[0].innerHTML,/Opus готує зачини/);
   activities.clear();render();assert.equal(children.length,0);assert.equal(actions.length,0);assert.equal(controls.length,0);assert.equal(classes.has('stage-working'),false);assert.equal(attributes['aria-busy'],'false');
   classes.add('exporting');render();assert.equal(attributes['aria-busy'],'true');
@@ -102,7 +103,8 @@ test('cards show the last ready stage in place of the date and keep it after ack
   assert.match(c.completionMark({...completed,ready_stage:undefined}),/Кадри/);
   assert.match(c.completionMark({...completed,last_export_at:100}),/is-exported/);
   for(const status of ['failed','in_progress','requested'])assert.match(c.completionMark({...completed,production_request:{status,frames:95}}),/Озвучка/);
-  assert.match(c.completionMark({...completed,production_request:{status:'done',frames:95,quality:{passed:false}}}),/Озвучка/);
+  // done means every frame is drawn; a look still waiting stays only in the record (21 November 2026)
+  assert.match(c.completionMark({...completed,production_request:{status:'done',frames:95,quality:{passed:false}}}),/Кадри/);
 });
 
 

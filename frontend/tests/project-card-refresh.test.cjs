@@ -3,10 +3,13 @@ const cards=fs.readFileSync(path.join(__dirname,'../project-cards.js'),'utf8');
 const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 function coverFixture(){
   const classes=new Set(),images=[];let now=0;
-  const card={image:null,classList:{add:(...names)=>names.forEach(name=>classes.add(name)),remove:(...names)=>names.forEach(name=>classes.delete(name))},
-    querySelector:()=>card.image,append:node=>{card.image=node;}};
-  const document={createElement:()=>{
+  // the band above the picture is the same picture blurred (project-cover-blur, 18 November 2026)
+  const card={image:null,blur:null,classList:{add:(...names)=>names.forEach(name=>classes.add(name)),remove:(...names)=>names.forEach(name=>classes.delete(name))},
+    querySelector:selector=>selector==='.project-cover-blur'?card.blur:card.image,append:node=>{card.image=node;}};
+  const document={createElement:tag=>{
+    if(tag==='div'){const blur={style:{},setAttribute(){},remove(){if(card.blur===this)card.blur=null;}};return blur;}
     const image={events:{},naturalWidth:960,decode:async()=>{},addEventListener(name,fn){this.events[name]=fn;},
+      before(node){card.blur=node;},
       replaceWith(node){if(card.image===this)card.image=node;},remove(){if(card.image===this)card.image=null;}};
     images.push(image);return image;
   }};
