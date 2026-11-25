@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +33,8 @@ class MotionCodeTest(unittest.TestCase):
     tearDownClass = classmethod(test_agent_tools.AgentToolsTest.tearDownClass.__func__)
     project = test_agent_tools.AgentToolsTest.project
 
+    @unittest.skipUnless(shutil.which("node") and (motion_code._modules() / "playwright").is_dir(),
+                         "потрібні node і Playwright з робочої копії Razgon (у git-worktree її немає)")
     def test_motion_code_goes_over_the_frame_and_renders_with_alpha(self):
         project = self.project(frames=2)
         episode = Path(project["episode_path"])

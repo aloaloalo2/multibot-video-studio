@@ -20,8 +20,8 @@ class SoundPolicyTest(unittest.TestCase):
         for path in ('story', 'input', 'build'):
             (self.root / path).mkdir(parents=True)
         self.config = {'fps': 25, 'voiceover': 'input/voice.wav', 'music': {'enabled': True}, 'sfx': {'enabled': True}}
-        self.story = {'duration': 2, 'sfx': [{'name': 'ding', 't': .5}, {'name': 'pop', 't': 1}],
-                      'shots': [{'start': 0, 'end': 2, 'amb': {'name': 'wind'}, 'sfx': [{'name': 'ding', 'at': .7}]}]}
+        self.story = {'duration': 2, 'sfx': [{'name': 'appear', 't': .5}, {'name': 'pop', 't': 1}],
+                      'shots': [{'start': 0, 'end': 2, 'amb': {'name': 'wind'}, 'sfx': [{'name': 'appear', 'at': .7}]}]}
         bridge.write_json(self.root/'config.json', self.config)
         bridge.write_json(self.root/'story/shots.json', self.story)
         bridge.write_json(self.root/'story/studio_frames.json', {'project_id': 'p', 'studio_url': 'http://fixture'})
@@ -43,11 +43,11 @@ class SoundPolicyTest(unittest.TestCase):
         self.assertEqual(story['sfx'], [])
         self.assertEqual(story['shots'][0]['sfx'], [])
         self.assertNotIn('amb', story['shots'][0])
-        self.choice = {'music': {'enabled': True, 'generate': False}, 'effects': {'categories': ['notification']}}
+        self.choice = {'music': {'enabled': True, 'generate': False}, 'effects': {'version': 2, 'categories': ['appear']}}  # the bell «ding» left the list on 21 November 2026
         cfg, story = bridge.sound_inputs(self.root)
         self.assertFalse(cfg['music']['enabled'])  # an old mixer must not generate a missing music file
-        self.assertEqual(story['sfx'], [{'name': 'ding', 't': .5}])
-        self.assertEqual(story['shots'][0]['sfx'], [{'name': 'ding', 'at': .7}])
+        self.assertEqual(story['sfx'], [{'name': 'appear', 't': .5}])
+        self.assertEqual(story['shots'][0]['sfx'], [{'name': 'appear', 'at': .7}])
         self.assertEqual(bridge.read_json(self.root/'story/shots.json'), self.story)
 
     def test_snapshot_keeps_existing_file_paths_and_cleans_up_after_failure(self):
