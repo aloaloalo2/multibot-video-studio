@@ -100,10 +100,6 @@
 #playhead-handle,.time-ruler #playhead-handle{width:18px;height:15px;min-height:0;top:0;padding:0;background:transparent;border:0;border-radius:0;}
 #playhead-handle::before{content:'';position:absolute;left:5px;top:0;width:8px;height:12px;background:#f0b429;border-radius:1.5px 1.5px 4px 4px;}
 .time-ruler #playhead-handle{z-index:60;}
-.layer-heading[draggable=true]{cursor:grab;}
-.layer-heading.layer-dragging{opacity:.5;}
-.layer-heading.layer-drop-above{box-shadow:inset 0 2px #e8ba55;}
-.layer-heading.layer-drop-below{box-shadow:inset 0 -2px #e8ba55;}
 .preview-panel .transport{padding:4px 10px 5px;gap:7px;min-height:30px;flex-wrap:nowrap;font-size:11px;}
 .preview-panel .transport button{width:26px;height:26px;border-radius:6.5px;flex:none;}
 .preview-panel .transport input[type=range]{height:16px;margin-top:0;margin-bottom:0;}
