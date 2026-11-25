@@ -53,28 +53,50 @@ async function pumpCapcutPreviews(){
         const response=await fetch(`/api/projects/${projectId}/capcut-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({join_id:join.id})});
         const data=await response.json();if(!response.ok)throw new Error(data.error||'Прев’ю переходу не вийшло');
         if(data.live){entry.state='live';capcutDrawn.add(join.id);markCapcutPending();continue;}   // a Razgon code frame: the live picture with a plain blend, the export draws CapCut
-        const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.className='capcut-transition-video';video.src=data.url;
-        Object.assign(entry,{state:'ready',url:data.url,video});capcutDrawn.add(join.id);markCapcutPending();
+        Object.assign(entry,{state:'ready',url:data.url});capcutDrawn.add(join.id);markCapcutPending();
         if(state.project?.id===projectId&&!state.playing)renderPreview();
       }catch(error){entry.state='failed';entry.error=error.message;}
     }
   }finally{capcutPumping=false;}
 }
+// A drawn seam's small film is loaded only while the playhead is near it and let go once it is far: a film scrubbed
+// through kept every seam's video decoded (a hundred on Andromeda), and Chrome stops players past about 75.
+const CAPCUT_LOAD_AHEAD=25,CAPCUT_LOAD_BEHIND=5,CAPCUT_DROP_AHEAD=40,CAPCUT_DROP_BEHIND=15;
+function capcutVideo(entry){
+  if(!entry.video){const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.className='capcut-transition-video';video.src=entry.url;entry.video=video;}
+  return entry.video;
+}
+function dropCapcutVideo(entry){const video=entry.video;if(!video)return;entry.video=null;video.pause();video.remove();video.removeAttribute('src');video.load();}
+// the project's CapCut seams with their preview keys, once per version; previews of an older version are let go
+let capcutPrunedFor=null;
+function capcutSeams(){
+  const seams=memoForProject('capcutSeams',()=>(state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type)).map(join=>({join,key:capcutJoinKey(join),span:joinFrames(join)})));
+  if(capcutPrunedFor!==state.project){
+    capcutPrunedFor=state.project;const keep=new Set(seams.map(seam=>seam.key));
+    for(const [key,entry] of capcutPreviews)if(!keep.has(key)&&!capcutWaiting.has(key)){dropCapcutVideo(entry);capcutPreviews.delete(key);}
+  }
+  return seams;
+}
 function renderCapcutTransitionOverlay(composition,time){
-  const joins=(state.project?.join_transitions||[]).filter(j=>isCapcutTransition(j.type));
-  // previews of the seams near the playhead (25 s ahead) are drawn ahead, the nearest first
-  for(const join of joins)if((join.seam-time<25&&join.seam-time>-5)||(state.selectedTransition?.fromRef===join.from_ref&&state.selectedTransition?.toRef===join.to_ref))requestCapcutPreview(join);
-  const join=joins.find(j=>{const span=joinFrames(j);return time>=span.seam&&time<span.seam+span.duration;});
+  const seams=capcutSeams(),chosen=state.selectedTransition;let current=null;
+  for(const seam of seams){
+    const {join,key,span}=seam,ahead=join.seam-time,picked=chosen?.fromRef===join.from_ref&&chosen?.toRef===join.to_ref;
+    // previews of the seams near the playhead (25 s ahead) are drawn ahead, the nearest first
+    if((ahead<CAPCUT_LOAD_AHEAD&&ahead>-CAPCUT_LOAD_BEHIND)||picked){const entry=requestCapcutPreview(join);if(entry.state==='ready')capcutVideo(entry);}
+    else if(ahead>CAPCUT_DROP_AHEAD||ahead<-CAPCUT_DROP_BEHIND){const entry=capcutPreviews.get(key);if(entry)dropCapcutVideo(entry);}
+    if(!current&&time>=span.seam&&time<span.seam+span.duration)current=seam;
+  }
   let holder=composition.querySelector('.capcut-transition-overlay');
-  const entry=join&&capcutPreviews.get(capcutJoinKey(join));
-  if(!join||entry?.state!=='ready'){if(holder){holder.hidden=true;holder.querySelector('video')?.pause();}return;}
+  const entry=current&&capcutPreviews.get(current.key);
+  if(!current||entry?.state!=='ready'){if(holder){holder.hidden=true;holder.firstChild?.pause?.();}return;}
   if(!holder){holder=document.createElement('div');holder.className='capcut-transition-overlay';composition.append(holder);}
-  if(holder.firstChild!==entry.video){holder.replaceChildren(entry.video);}
-  const brandIds=new Set(sceneGroups().filter(g=>g.role==='overlay').flatMap(g=>g.clip_ids));
-  const base=Array.from(composition.querySelectorAll('.composition-clip')).filter(e=>!brandIds.has(e.dataset.clipId)).map(e=>Number(e.style.zIndex)||0);
-  const brand=Array.from(composition.querySelectorAll('.composition-clip')).filter(e=>brandIds.has(e.dataset.clipId)).map(e=>Number(e.style.zIndex)||0);
-  holder.style.zIndex=String(Math.min(Math.max(0,...base)+1,brand.length?Math.min(...brand)-1:Infinity));holder.hidden=false;
-  const span=joinFrames(join),video=entry.video,target=Math.max(0,Math.min(span.duration,time-span.seam));
+  const video=capcutVideo(entry);
+  if(holder.firstChild!==video){holder.replaceChildren(video);}
+  // over the montage's pictures, under the channel's plate
+  const brandIds=previewBrandIds();let base=0,brand=Infinity;
+  for(const node of composition.querySelectorAll('.composition-clip')){const z=Number(node.style.zIndex)||0;if(brandIds.has(node.dataset.clipId))brand=Math.min(brand,z-1);else base=Math.max(base,z);}
+  holder.style.zIndex=String(Math.min(base+1,brand));holder.hidden=false;
+  const span=current.span,target=Math.max(0,Math.min(span.duration,time-span.seam));
   if(state.playing){if(video.paused)video.play().catch(()=>{});if(Math.abs(video.currentTime-target)>.12)video.currentTime=target;}
   else{if(!video.paused)video.pause();if(Math.abs(video.currentTime-target)>.02)video.currentTime=target;}
 }
@@ -89,7 +111,7 @@ function capcutEffectElement(clip){
   video.src=`/api/capcut/effects/${name}/preview.webm`;element.append(video);return element;
 }
 function syncCapcutEffect(wrapper,clip,local){
-  const video=wrapper.querySelector('video.capcut-loop');if(!video)return;
+  const video=wrapper._loop!==undefined?wrapper._loop:wrapper.querySelector('video.capcut-loop');if(!video)return;
   if(state.playing){if(video.paused)video.play().catch(()=>{});}
   else{if(!video.paused)video.pause();if(Number.isFinite(video.duration)&&video.duration>0){const target=local%video.duration;if(Math.abs(video.currentTime-target)>.05)video.currentTime=target;}}
 }

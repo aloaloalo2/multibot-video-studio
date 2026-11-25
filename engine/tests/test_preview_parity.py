@@ -59,6 +59,40 @@ class PreviewMathParity(unittest.TestCase):
                     exported = render.scalar_value(record["keyframes"], key, base, local, record["easing"])
                     self.assertAlmostEqual(exported, expected, places=6, msg=f"{clip['id']} {key} at {local}")
 
+    def test_cached_keyframes_follow_a_changed_clip(self):
+        # the preview keeps a clip's sorted keyframes between screen refreshes; asking twice, or after the clip got new
+        # keyframes, still gives the export's value
+        clip = {"id": "c", "type": "animation", "content_type": "shape", "start": 0, "duration": 3, "width": .2, "height": .2,
+                "x": .3, "keyframes": [{"time": 1, "x": .8}]}
+        changed = [{"time": 0, "x": .1}, {"time": 2, "x": .9}]
+        script = f"const clip={json.dumps(clip)},locals={json.dumps(LOCALS)},changed={json.dumps(changed)};" + \
+            "const read=()=>locals.map(t=>keyframeValue(clip,'x',.3,t));const first=read(),again=read();clip.keyframes=changed;" + \
+            "console.log(JSON.stringify([first,again,read()]))"
+        first, again, after = preview_js.run(["easedProgress", "keyframePoints", "keyframeValue"], script)
+        self.assertEqual(first, again)
+        for keyframes, row in ((clip["keyframes"], first), (changed, after)):
+            visual, _, _ = render.timeline_plan({"width": 320, "height": 180, "fps": 30, "timeline_layers": [
+                {"id": "l", "clips": [{**clip, "keyframes": keyframes}]}]}, Path("unused.json"), 320, 180, 30)
+            for local, expected in zip(LOCALS, row):
+                self.assertAlmostEqual(render.scalar_value(visual[0]["keyframes"], "x", .3, local, visual[0]["easing"]), expected, places=6)
+
+    def test_a_word_drawn_on_every_refresh_ends_as_a_fresh_one(self):
+        # a word that has finished its entrance (or not begun it) is not written again; played on, scrubbed back and
+        # resized, the same word ends where a word drawn once at that moment stands
+        script = r"""
+const state={project:{width:1920}};
+const element=()=>{const children={'.word-sharp':{style:{}},'.word-blur':{style:{}}};return {style:{},querySelector:s=>children[s]};};
+const look=n=>JSON.stringify([n.style,n.querySelector('.word-sharp').style,n.querySelector('.word-blur').style]);
+const out=[];
+for(const type of ['up','blur_up',null]){
+  const clip={word_entrance:type&&{type,duration:.2,distance:30}},word=element();
+  for(const [time,width] of [[.5,1920],[1.05,1920],[1.5,1920],[2,1920],[2,960],[.9,960],[1.1,960],[3,1920]]){
+    applyWordEntrance(word,1,clip,time,width);const fresh=element();applyWordEntrance(fresh,1,clip,time,width);out.push(look(word)===look(fresh));
+  }
+}
+console.log(JSON.stringify(out))"""
+        self.assertTrue(all(preview_js.run(["easedProgress", "applyWordEntrance"], script)))
+
     def test_word_entrances_match_the_preview(self):
         types = ["fade", "up", "down", "left", "right", "pop", "grow", "shrink", "blur", "blur_up", "letters_up", "letters_blur"]
         raws = [0, .1, .3, .45, .66, .7, .9, 1]
