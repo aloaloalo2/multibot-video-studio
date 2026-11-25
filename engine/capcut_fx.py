@@ -11,15 +11,16 @@ planned, so the CPU and GPU renderers only see ordinary graphic clips with a `pr
   on one frame or on a row above the timeline it lies over everything below it;
 - a content effect (CRT, the sliding card, the glass bracelet) draws what lies below it in its time and changes that.
 
-Movies are cached by everything that makes them in backend/data/capcut-cache, so a still, a second export or the GPU
-preparation re-use them.
+Only the clips near a seam or an effect are drawn (`_near`), its sides go to the worker as small H.264 videos it decodes
+through a pipe, and one worker process a working size stays alive (`_Worker`). Movies and sides are cached by everything
+that makes them in backend/data/capcut-cache, so a still, a second export, the GPU preparation or another transition on
+the same seam re-use them; an edit elsewhere in the film keeps them.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
-import math
 import os
 import subprocess
 import sys
@@ -36,8 +37,9 @@ KINDS = {"capcut_transition", "capcut_effect"}
 VERSION = "capcut-1"
 OVERLAY_LOOP = {"capcut_e01": 17 / 15, "capcut_e02": 3.0, "capcut_e03": 28 / 15, "capcut_e04": 2.0, "capcut_e05": 3.0,
                 "capcut_e06": 3.0, "capcut_e09": 3.0, "capcut_e10": 1.0, "capcut_e11": 3.0, "capcut_e13": 2.8}
-PLAYER = "capcut_e10"
-PREVIEW = False  # set by the preview command: the browser plays H.264 and VP9  # «Плеєр 3»: one second of entrance, then a still loop
+PREVIEW = False  # set by the preview command: the browser plays H.264 and VP9
+# drawn around a seam on each side: the timeline's own fades (a clip's "transition") reach this far at most
+MARGIN = 2.0
 
 
 def data_root() -> Path:
@@ -89,19 +91,41 @@ def _sources_stamp(layers: list[dict], project_file: Path) -> list:
     return stamp
 
 
-def _worker(job: dict, width: int, height: int) -> None:
-    pw, ph = work_size(width, height)
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, dir=cache_dir()) as handle:
-        json.dump(job, handle)
-        job_path = handle.name
-    try:
+class _Worker:
+    """One `capcut_worker.py --serve` a working size, started before the sides are drawn so its imports (numpy, scipy,
+    the packages: about 2 s a transition) run meanwhile, and kept for the next transition of the same render."""
+    _all: dict = {}
+    _lock = threading.Lock()
+
+    def __init__(self, pw: int, ph: int):
         env = {**os.environ, "CAPCUT_W": str(pw), "CAPCUT_H": str(ph)}
-        result = subprocess.run(["nice", "-n", "5", sys.executable, str(ENGINE / "capcut_worker.py"), job_path],
-                                capture_output=True, text=True, env=env, timeout=3600)
-        if result.returncode:
-            raise RuntimeError("CapCut: " + (result.stderr or result.stdout)[-800:])
-    finally:
-        Path(job_path).unlink(missing_ok=True)
+        self.proc = subprocess.Popen(["nice", "-n", "5", sys.executable, str(ENGINE / "capcut_worker.py"), "--serve"],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
+        self.busy = threading.Lock()
+
+    @classmethod
+    def get(cls, width: int, height: int) -> "_Worker":
+        size = work_size(width, height)
+        with cls._lock:
+            worker = cls._all.get(size)
+            if worker is None or worker.proc.poll() is not None:
+                worker = cls._all[size] = cls(*size)
+            return worker
+
+    def run(self, job: dict) -> None:
+        with self.busy:
+            try:
+                self.proc.stdin.write(json.dumps(job) + "\n")
+                self.proc.stdin.flush()
+                line = self.proc.stdout.readline()
+            except (OSError, ValueError) as error:
+                line = json.dumps({"error": f"the worker stopped: {error}"})
+            if not line:
+                self.proc.kill()
+                line = json.dumps({"error": "the worker stopped"})
+        answer = json.loads(line)
+        if answer.get("error"):
+            raise RuntimeError("CapCut: " + answer["error"][-800:])
 
 
 _QUIET = {"count": 0, "emit": None}
@@ -122,60 +146,82 @@ def _quiet(render, on: bool) -> None:
                 render.emit = _QUIET["emit"]
 
 
-def _window(render, project: dict, project_file: Path, layers: list[dict], start: float, end: float,
-            width: int, height: int, fps: int, out_raw: Path) -> int:
-    """Draws [start, end) of `layers` with the FFmpeg renderer and saves the frames as raw RGB at the working size.
+def _near(layers: list[dict], start: float, end: float) -> list[dict]:
+    """The layers with only the clips that reach [start - MARGIN, end + MARGIN]: a seam's window planned with the whole
+    film's 500 layers probed and planned them all for each side. A film whose clips carry their own fades between
+    neighbours (the legacy "transition") stays whole: dropping a neighbour would pair a fade with another clip."""
+    def fades(clip):
+        kind = clip.get("transition") or "cut"
+        kind = kind.get("type") or "cut" if isinstance(kind, dict) else kind
+        return str(kind).lower() not in {"cut", "none", "hard", "instant"}
+    if any(fades(c) for layer in layers for c in layer.get("clips", [])):
+        return layers
+    first, last = start - MARGIN, end + MARGIN
+    out = []
+    for layer in layers:
+        clips = [c for c in layer.get("clips", [])
+                 if float(c.get("start", 0)) < last and float(c.get("start", 0)) + float(c.get("duration", 0)) > first]
+        if clips:
+            out.append({**layer, "clips": clips})
+    return out
 
-    The window is drawn at the film's own size and only then scaled down: text sizes, strokes and shadows are pixels of
-    the film, so the editor's small 640 px preview drawn at 640 made every caption about three times too big for the
-    length of the transition (user, 25 November 2026: «коли накладається перехід, різко міняються шрифти і розмір»)."""
-    pw, ph = work_size(width, height)
+
+def _side(render, project: dict, project_file: Path, layers: list[dict], start: float, end: float,
+          width: int, height: int, fps: int) -> tuple[str | None, int]:
+    """[start, end) of `layers` drawn by the FFmpeg renderer as an H.264 video of whole frames (None when nothing is
+    there) and its frame count; kept in the cache by everything it is drawn from.
+
+    The window is drawn at the film's own size and scaled down only by the worker: text sizes, strokes and shadows are
+    pixels of the film, so the editor's small 640 px preview drawn at 640 made every caption about three times too big
+    for the length of the transition (user, 25 November 2026: «коли накладається перехід, різко міняються шрифти і
+    розмір»)."""
     width, height = int(project.get("width") or width), int(project.get("height") or height)
-    sub = {**project, "timeline_layers": layers}
-    count = max(1, render.frame_index(end, fps) - render.frame_index(start, fps))
-    start, end = render.frame_index(start, fps) / fps, render.frame_index(end, fps) / fps   # whole frames, as the plan
+    a, b = render.frame_index(start, fps), render.frame_index(end, fps)
+    count = max(1, b - a)
+    start, end = a / fps, (a + count) / fps   # whole frames, as the plan
+    background = project.get("background", "#101114")
+    key = _key("s", a, count, width, height, fps, background, layers, _sources_stamp(layers, project_file))
+    path = cache_dir() / f"side-{key}.mp4"
+    empty = path.with_suffix(".none")
+    if empty.exists():
+        _used(empty)
+        return None, count
+    if path.exists() and path.stat().st_size > 0:
+        _used(path)
+        return str(path), count
     _quiet(render, True)
     try:
         with tempfile.TemporaryDirectory(prefix=".capcut-window-", dir=cache_dir()) as temp:
             work = Path(temp)
             try:
-                visual, _, total = render.timeline_plan(sub, project_file, width, height, fps)
+                visual, _, total = render.timeline_plan({**project, "timeline_layers": layers}, project_file, width, height, fps)
             except ValueError as error:
                 if "empty" not in str(error).lower():
                     raise
                 visual, total = [], 0.0
             parts = []
-            if visual:
-                for index, (first, last, active) in enumerate(render.timeline_segments(visual, total, fps), 1):
-                    if min(last, end) - max(first, start) < 1 / fps - 1e-6:
-                        continue
-                    scene = render.timeline_scene(max(first, start), min(last, end), active, work, width, height,
-                                                  project.get("background", "#101114"))
-                    folder = work / f"scene-{index:04d}"
-                    folder.mkdir()
-                    part = work / f"part-{index:04d}.mp4"
-                    render.render_scene(scene, project_file, part, folder, width, height, fps, index)
-                    parts.append(part)
-            if parts:
-                listing = work / "parts.txt"
-                listing.write_text("".join(f"file '{p}'\n" for p in parts), encoding="utf-8")
-                video = work / "window.mp4"
-                subprocess.run([render.FFMPEG, "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-                                "-c", "copy", str(video)], check=True)
-                cmd = [render.FFMPEG, "-v", "error", "-y", "-i", str(video), "-vf",
-                       f"scale={pw}:{ph}:flags=area,tpad=stop_mode=clone:stop_duration=2",
-                       "-frames:v", str(count), "-f", "rawvideo", "-pix_fmt", "rgb24", str(out_raw)]
-                subprocess.run(cmd, check=True)
-                have = out_raw.stat().st_size // (pw * ph * 3)
-                if have < count:
-                    with out_raw.open("ab") as handle:
-                        last = out_raw.read_bytes()[-(pw * ph * 3):] if have else bytes(pw * ph * 3)
-                        handle.write(last * (count - have))
-            else:
-                out_raw.write_bytes(bytes(pw * ph * 3) * count)
+            for index, (first, last, active) in enumerate(render.timeline_segments(visual, total, fps) if visual else [], 1):
+                if min(last, end) - max(first, start) < 1 / fps - 1e-6:
+                    continue
+                scene = render.timeline_scene(max(first, start), min(last, end), active, work, width, height, background)
+                folder = work / f"scene-{index:04d}"
+                folder.mkdir()
+                part = work / f"part-{index:04d}.mp4"
+                render.render_scene(scene, project_file, part, folder, width, height, fps, index)
+                parts.append(part)
+            if not parts:
+                empty.touch()
+                return None, count
+            listing = work / "parts.txt"
+            listing.write_text("".join(f"file '{p}'\n" for p in parts), encoding="utf-8")
+            tmp = work / "side.mp4"
+            subprocess.run([render.FFMPEG, "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                            "-c", "copy", str(tmp)], check=True)
+            tmp.replace(path)
     finally:
         _quiet(render, False)
-    return count
+    _limit_cache(path)
+    return str(path), count
 
 
 def _strip(layers: list[dict], drop: set[str], top_z: float | None = None) -> list[dict]:
@@ -188,7 +234,7 @@ def _strip(layers: list[dict], drop: set[str], top_z: float | None = None) -> li
         clips = [copy.deepcopy(c) for c in layer.get("clips", [])
                  if c.get("content_type") not in KINDS and c.get("id") not in drop and c.get("type", c.get("kind")) != "audio"]
         if clips:
-            out.append({**layer, "clips": clips})
+            out.append({**layer, "z": z, "clips": clips})
     return out
 
 
@@ -208,7 +254,7 @@ CACHE_LIMIT = int(1.5 * 1024 ** 3)
 
 def _limit_cache(keep: Path) -> None:
     try:
-        entries = [p for p in cache_dir().iterdir() if p.is_file() and p.suffix in (".mov", ".mp4", ".raw") and p != keep]   # effect previews (webm) stay
+        entries = [p for p in cache_dir().iterdir() if p.is_file() and p.suffix in (".mov", ".mp4", ".raw", ".none") and p != keep]   # effect previews (webm) stay
         entries.sort(key=lambda p: p.stat().st_mtime)
         total = sum(p.stat().st_size for p in entries) + (keep.stat().st_size if keep.exists() else 0)
         for item in entries:
@@ -228,7 +274,7 @@ def _movie(path: Path, job: dict, width: int, height: int) -> Path:
     tmp = path.with_name(f"{path.stem}.{os.getpid()}.part{path.suffix}")   # one part per process: two renders of one seam at once
     job = {**job, "out": str(tmp), "out_width": width, "out_height": height}
     try:
-        _worker(job, width, height)
+        _Worker.get(width, height).run(job)
         tmp.replace(path)
     finally:
         tmp.unlink(missing_ok=True)   # a failed render leaves no part behind
@@ -241,33 +287,26 @@ def _transition(render, project, project_file, clip, width, height, fps) -> str:
     start, duration = float(clip["start"]), float(clip["duration"])
     end = start + duration
     exclude = set(clip.get("capcut_exclude") or [])
-    a_layers = _strip(project["timeline_layers"], exclude | set(clip.get("capcut_a_drop") or []))
-    b_layers = _strip(project["timeline_layers"], exclude | set(clip.get("capcut_b_drop") or []))
-    key = _key("t", clip["capcut_type"], start, duration, width, height, fps, a_layers, b_layers,
-               _sources_stamp(project["timeline_layers"], project_file))
-    suffix = ".mp4" if PREVIEW else ".mov"
-    path = cache_dir() / f"transition-direct-capcut-{key}{suffix}"
+    a_layers = _near(_strip(project["timeline_layers"], exclude | set(clip.get("capcut_a_drop") or [])), start, end)
+    b_layers = _near(_strip(project["timeline_layers"], exclude | set(clip.get("capcut_b_drop") or [])), start, end)
+    key = _key("t", clip["capcut_type"], start, duration, width, height, fps, project.get("background"), a_layers, b_layers,
+               _sources_stamp(a_layers + b_layers, project_file))
+    path = cache_dir() / f"transition-direct-capcut-{key}{'.mp4' if PREVIEW else '.mov'}"
     if path.exists():
         _used(path)
         return str(path)
-    a_raw, b_raw = cache_dir() / f"{key}-a.raw", cache_dir() / f"{key}-b.raw"
-    try:
-        # both sides at once: each is a separate FFmpeg run of the same length (a transition's preview took about 6 s,
-        # half of it these two one after the other; user, 25 November 2026: «таймлайн… дуже сильно висне»)
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(2) as pool:
-            sides = [pool.submit(_window, render, project, project_file, layers, start, end, width, height, fps, raw)
-                     for layers, raw in ((a_layers, a_raw), (b_layers, b_raw))]
-            n = sides[0].result()
-            sides[1].result()
-        index = int(clip["capcut_type"][-2:]) - 1
-        comp = float(entry.get("default_duration", 1.0))
-        _movie(path, {"codec": "mp4" if PREVIEW else "prores", "mode": "transition", "index": index, "package": str(package("capcut_transition", entry)),
-                      "fps": fps, "frames": n, "a_raw": str(a_raw), "b_raw": str(b_raw), "comp": comp}, width, height)
-    finally:
-        a_raw.unlink(missing_ok=True)
-        b_raw.unlink(missing_ok=True)
-    return str(path)
+    _Worker.get(width, height)   # its imports run while the sides are drawn
+    # both sides at once: each is a separate FFmpeg run of the same length (a transition's preview took about 6 s,
+    # half of it these two one after the other; user, 25 November 2026: «таймлайн… дуже сильно висне»)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(2) as pool:
+        sides = [pool.submit(_side, render, project, project_file, layers, start, end, width, height, fps)
+                 for layers in (a_layers, b_layers)]
+        (a_video, n), (b_video, _) = sides[0].result(), sides[1].result()
+    return str(_movie(path, {"codec": "mp4" if PREVIEW else "prores", "mode": "transition",
+                             "index": int(clip["capcut_type"][-2:]) - 1, "package": str(package("capcut_transition", entry)),
+                             "fps": fps, "frames": n, "a_video": a_video, "b_video": b_video,
+                             "comp": float(entry.get("default_duration", 1.0))}, width, height))
 
 
 def _overlay_loop(name: str, fps: int, width: int, height: int, intro: bool = True) -> tuple[str, float]:
@@ -285,22 +324,19 @@ def _overlay_loop(name: str, fps: int, width: int, height: int, intro: bool = Tr
 def _content(render, project, project_file, clip, layer_z, width, height, fps) -> str:
     entry = EFFECTS[clip["capcut_effect"]]
     start, duration = float(clip["start"]), float(clip["duration"])
-    below = _strip(project["timeline_layers"], set(clip.get("capcut_exclude") or []), top_z=layer_z)
-    key = _key("c", clip["capcut_effect"], start, duration, width, height, fps, below,
+    below = _near(_strip(project["timeline_layers"], set(clip.get("capcut_exclude") or []), top_z=layer_z),
+                  start, start + duration)
+    key = _key("c", clip["capcut_effect"], start, duration, width, height, fps, project.get("background"), below,
                _sources_stamp(below, project_file))
     path = cache_dir() / f"transition-direct-capcut-{key}.mov"
     if path.exists():
         _used(path)
         return str(path)
-    raw = cache_dir() / f"{key}-base.raw"
-    try:
-        n = _window(render, project, project_file, below, start, start + duration, width, height, fps, raw)
-        _movie(path, {"mode": "content", "index": int(clip["capcut_effect"][-2:]) - 1,
-                      "package": str(package("capcut_effect", entry)), "fps": fps, "frames": n,
-                      "base_raw": str(raw), "offset": 0}, width, height)
-    finally:
-        raw.unlink(missing_ok=True)
-    return str(path)
+    _Worker.get(width, height)
+    base, n = _side(render, project, project_file, below, start, start + duration, width, height, fps)
+    return str(_movie(path, {"mode": "content", "index": int(clip["capcut_effect"][-2:]) - 1,
+                             "package": str(package("capcut_effect", entry)), "fps": fps, "frames": n,
+                             "base_video": base, "offset": 0}, width, height))
 
 
 def _as_graphic(clip: dict, source: str, start: float, duration: float, suffix: str = "") -> dict:
@@ -331,11 +367,11 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
                for c in layer.get("clips", []) if isinstance(c, dict)):
         return
     dry = bool(getattr(render, "CAPCUT_DRY", False))
-    original = {"timeline_layers": copy.deepcopy(layers), **{k: v for k, v in project.items() if k != "timeline_layers"}}
-    for index, layer in enumerate(layers):
+    # the film as it was, for the sides of the seams: the loop below only replaces each layer's list of clips
+    original = {**project, "timeline_layers": [dict(layer) if isinstance(layer, dict) else layer for layer in layers]}
+    for layer in layers:
         if not isinstance(layer, dict):
             continue
-        z = float(layer.get("z", layer.get("z_index", index)))
         clips = []
         for clip in layer.get("clips", []):
             kind = clip.get("content_type") if isinstance(clip, dict) else None
@@ -363,10 +399,10 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
                 continue
             t, part = start, 0
             end = start + duration
+            # the effect at its full from the frame's first moment, never building up from nothing at its start
+            # or at each loop (user, 25 November 2026: «ефект… має від початку до кінця бути»)
+            source, loop = _overlay_loop(name, fps, width, height, intro=False)
             while t < end - 1e-6:
-                # the effect at its full from the frame's first moment, never building up from nothing at its start
-                # or at each loop (user, 25 November 2026: «ефект… має від початку до кінця бути»)
-                source, loop = _overlay_loop(name, fps, width, height, intro=False)
                 length = min(loop, end - t)
                 frames = render.frame_index(t + length, fps) - render.frame_index(t, fps)
                 if frames < 1:
@@ -389,13 +425,16 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
 
 
 def effect_preview(name: str, width: int = 640, height: int = 360, fps: int = 25) -> Path:
-    """A loop of an overlay effect as VP9 with alpha for the editor's preview (the export's own drawing)."""
+    """A loop of an effect for the editor as VP9 (the export's own drawing): an overlay with alpha, an effect that changes
+    the frame over a sample picture (it had no loop length and answered 500)."""
     entry = EFFECTS[name]
-    loop = OVERLAY_LOOP[name]
+    content = entry.get("mode") == "content"
+    loop = 3.0 if content else OVERLAY_LOOP[name]
     path = cache_dir() / f"preview-{_key('p', name, width, height, fps)}.webm"
-    return _movie(path, {"codec": "webm", "mode": "overlay", "index": int(name[-2:]) - 1, "fps": fps,
-                         "package": str(package("capcut_effect", entry)), "frames": max(1, round(loop * fps)),
-                         "intro": False, "seconds_offset": 1.0}, width, height)
+    job = {"codec": "webm", "mode": entry.get("mode", "overlay"), "index": int(name[-2:]) - 1, "fps": fps,
+           "package": str(package("capcut_effect", entry)), "frames": max(1, round(loop * fps))}
+    return _movie(path, {**job, "base_video": None, "offset": 0} if content else {**job, "intro": False, "seconds_offset": 1.0},
+                  width, height)
 
 
 def main() -> None:
@@ -420,7 +459,7 @@ def main() -> None:
         clip = next(c for layer in project["timeline_layers"] for c in layer.get("clips", []) if c.get("id") == args.clip)
         path = _transition(render, project, args.manifest, clip, args.width, args.height, fps)
         print(json.dumps({"output": path}))
-    except (StopIteration, ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
+    except (StopIteration, KeyError, ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
         print(json.dumps({"error": str(error)[-1500:]}))
         sys.exit(1)
 
