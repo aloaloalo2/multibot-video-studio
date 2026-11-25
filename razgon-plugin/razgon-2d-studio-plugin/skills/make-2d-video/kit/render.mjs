@@ -50,10 +50,13 @@ const LAUNCH = { args: ['--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
 const FORMAT = args.format === 'jpeg' ? 'jpeg' : 'png';
 // a Mac encodes on its hardware H.264 encoder (VideoToolbox): x264 took about 60% of a render's CPU, the hardware one next
 // to none, at the same look (PSNR 47.3 dB against lossless, x264 medium 46.7 dB; 30 October 2026). x264 elsewhere.
-const ENCODER = args.encoder || (process.platform === 'darwin' && /\bh264_videotoolbox\b/.test(spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout || '') ? 'videotoolbox' : 'x264');
-const ENCODE = ENCODER === 'videotoolbox'
-  ? ['-c:v', 'h264_videotoolbox', ...(process.arch === 'arm64' ? ['-q:v', String(args.q || 75)] : ['-b:v', '30M']), '-profile:v', 'high']
-  : ['-c:v', 'libx264', '-preset', args.preset || 'medium', '-crf', String(args.crf || 18)];
+// asked only by a video render: the checks and stills encode nothing
+function encodeArgs() {
+  const encoder = args.encoder || (process.platform === 'darwin' && /\bh264_videotoolbox\b/.test(spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout || '') ? 'videotoolbox' : 'x264');
+  return encoder === 'videotoolbox'
+    ? ['-c:v', 'h264_videotoolbox', ...(process.arch === 'arm64' ? ['-q:v', String(args.q || 75)] : ['-b:v', '30M']), '-profile:v', 'high']
+    : ['-c:v', 'libx264', '-preset', args.preset || 'medium', '-crf', String(args.crf || 18)];
+}
 const CFG = JSON.parse(fs.readFileSync(path.join(PROJECT, 'config.json'), 'utf8'));
 const FPS = CFG.fps || 24;
 
@@ -67,20 +70,43 @@ async function openPlayer(browser, style) {
   await page.waitForFunction('window.READY === true || !!window.BOOT_ERROR', null, { timeout: 120000 });
   const boot = await page.evaluate('window.BOOT_ERROR'); if (boot) throw new Error('Player failed to boot: ' + boot);
   const [w, h] = await page.evaluate('window.OUT'); await page.setViewportSize({ width: w, height: h });
+  page.cdp = await page.context().newCDPSession(page);
   return page;
 }
-const capture = page => page.screenshot({ type: FORMAT, ...(FORMAT === 'jpeg' ? { quality: 94 } : {}) });
+// The frame is taken straight from Chromium's DevTools: Playwright's page.screenshot spent ~510 ms a 1080p PNG and ~60 ms
+// a JPEG, its zlib at full compression. A PNG with optimizeForSpeed decodes to the same pixels in ~115 ms, a JPEG at the
+// same quality is the same file in ~52 ms (Andromeda, 25 November 2026); drawing the frame itself takes 4–10 ms.
+const capture = (page, format = FORMAT) => page.cdp.send('Page.captureScreenshot', format === 'jpeg' ? { format, quality: 94 } : { format, optimizeForSpeed: true })
+  .then(r => Buffer.from(r.data, 'base64'));
 // --within a,b: the picture stays one Studio frame's, its edge shot drawn on past the edge (a transition's tail or head)
 const WITHIN = args.within ? String(args.within).split(',').map(Number) : null;
 const shot = (page, f) => page.evaluate(([i, w]) => window.renderFrame(i, w), [f, WITHIN]).then(() => capture(page));
 const fmtT = s => `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
+// [first, last) frames of --from/--to; the sampling step in frames of a check's own value (`--events 0.04`) or its default
+const frameRange = total => [Math.max(0, Math.round((+args.from || 0) * FPS)), Math.min(total, args.to ? Math.round(+args.to * FPS) : total)];
+const stepOf = (flag, seconds) => Math.max(1, Math.round((typeof args[flag] === 'string' && +args[flag] > 0 ? +args[flag] : seconds) * FPS));
+// the starts of the story's shots after 0 (cuts), or none without a story
+function shotStarts() { try { const sj = JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'shots.json'), 'utf8')); return (sj.shots || sj).map(x => +x.start).filter(x => x > 0); } catch (e) { return []; } }
+// what window[key] (TEXT_LOG or DRAW_LOG) collects while each frame is drawn, for many frames in one call: a call per
+// frame waited ~4 ms on DevTools for a 4–8 ms drawing. The page still turns its event loop between frames, as it did
+// between calls, so a picture a scene loads on its first draw arrives as before.
+async function drawLogs(page, key, frames) {
+  const out = [];
+  for (let i = 0; i < frames.length; i += 40) out.push(...await page.evaluate(async ([key, list]) => {
+    const logs = [], ch = new MessageChannel(), turn = () => new Promise(r => { ch.port1.onmessage = r; ch.port2.postMessage(0); });
+    for (const f of list) { window[key] = []; window.renderFrame(f); logs.push(window[key]); window[key] = null; await turn(); }
+    return logs;
+  }, [key, frames.slice(i, i + 40)]));
+  return out;
+}
+const sampled = (fa, fb, step) => { const list = []; for (let f = fa; f < fb; f += step) list.push(f); return list; };
 
 async function renderVideo() {
+  // the browser that reads the film's length draws the first part too: a second launch and boot cost 1.5–3 s a render
   const b0 = await chromium.launch(LAUNCH); const p0 = await openPlayer(b0);
   const total = await p0.evaluate('window.TOTAL_FRAMES'), fps = FPS;
   const missing = (await p0.evaluate('window.SHOT_LIST')).filter(s => !s.ok); if (missing.length) console.log(`WARNING: ${missing.length} shots have no scene file yet: ${missing.slice(0, 12).map(s => s.id).join(', ')}${missing.length > 12 ? ' …' : ''}`);
-  await b0.close();
-  const f0 = Math.max(0, Math.round((+args.from || 0) * fps)), f1 = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
+  const [f0, f1] = frameRange(total), ENCODE = encodeArgs();
   const W = Math.max(1, Math.min(+(args.workers || Math.max(1, Math.min(8, Math.floor(os.cpus().length / 2)))), Math.ceil((f1 - f0) / 24)));
   const partsDir = path.join(BUILD, `parts-${process.pid}`); fs.rmSync(partsDir, { recursive: true, force: true }); fs.mkdirSync(partsDir, { recursive: true });   // per run: two renders of one project never clobber each other's parts
   process.on('exit', () => fs.rmSync(partsDir, { recursive: true, force: true }));   // the parts only feed the concat below; on success or failure they are left behind otherwise
@@ -88,7 +114,7 @@ async function renderVideo() {
   console.log(`Rendering frames ${f0}-${f1} (${((f1 - f0) / fps).toFixed(1)} s) with ${W} worker(s)…`);
   const work = async (k) => {
     const a = f0 + k * chunk, b = Math.min(f1, a + chunk); if (a >= b) return null;
-    const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser);
+    const browser = k === 0 ? b0 : await chromium.launch(LAUNCH), page = k === 0 ? p0 : await openPlayer(browser);
     const out = path.join(partsDir, `part_${String(k).padStart(3, '0')}.mp4`);
     const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-', ...ENCODE, '-pix_fmt', 'yuv420p', '-r', String(fps), out], { stdio: ['pipe', 'inherit', 'inherit'] });
     for (let f = a; f < b; f++) {
@@ -99,6 +125,7 @@ async function renderVideo() {
     ff.stdin.end(); await new Promise(r => ff.on('close', r)); await browser.close(); return out;
   };
   const parts = (await Promise.all([...Array(W)].map((_, k) => work(k)))).filter(Boolean);
+  if (f0 >= f1) await b0.close();
   const list = path.join(partsDir, 'list.txt'); fs.writeFileSync(list, parts.map(p => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n'));
   const out = path.resolve(args.out || path.join(BUILD, args.from || args.to ? 'preview.mp4' : 'video_silent.mp4'));
   await new Promise((res, rej) => spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', out], { stdio: 'inherit' }).on('close', c => (c ? rej(new Error('concat failed')) : res())));
@@ -156,12 +183,11 @@ async function shotErrors(page) {
 const MIN_TEXT = 30;   // the smallest readable text, in pixels of a 1080-line frame
 async function textCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
-  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args['text-check'] === 'string' && +args['text-check'] > 0 ? +args['text-check'] : 0.25) * fps));
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = stepOf('text-check', 0.25);
   const hits = [], small = [];
-  const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
-  for (let f = fa; f < fb; f += step) {
-    const log = await page.evaluate((i) => { window.TEXT_LOG = []; window.renderFrame(i); const l = window.TEXT_LOG; window.TEXT_LOG = null; return l; }, f);
-    const dims = new Map(); log.forEach((b) => dims.set(`${b.W}x${b.H}`, (dims.get(`${b.W}x${b.H}`) || 0) + 1));
+  const [fa, fb] = frameRange(total), frames = sampled(fa, fb, step), logs = await drawLogs(page, 'TEXT_LOG', frames);
+  for (const [n, f] of frames.entries()) {
+    const log = logs[n];
     for (const b of log) {
       const pad = 1, visible = b.x1 > 0 && b.x0 < b.W && b.y1 > 0 && b.y0 < b.H, cut = b.x0 < -pad || b.y0 < -pad || b.x1 > b.W + pad || b.y1 > b.H + pad;
       if (visible && cut && b.str.trim()) hits.push({ t: +(f / fps).toFixed(2), str: b.str, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round), canvas: [b.W, b.H] });
@@ -241,17 +267,17 @@ const DRAW_LOG_PATCH = () => {
 async function logicCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
   await page.evaluate(DRAW_LOG_PATCH);
-  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args['logic-check'] === 'string' && +args['logic-check'] > 0 ? +args['logic-check'] : 0.5) * fps));
-  const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = stepOf('logic-check', 0.5);
+  const [fa, fb] = frameRange(total);
   const hits = [];
   // a transition draws two shots in one frame (their things are not one room): leave 0.6 s on either side of a cut out
-  let cuts = []; try { const sj = JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'shots.json'), 'utf8')); cuts = (sj.shots || sj).map((x) => +x.start).filter((x) => x > 0); } catch (e) { /* no story: every frame */ }
+  const cuts = shotStarts();
   const nearCut = (t) => cuts.some((c) => Math.abs(c - t) < 0.6);
   const area = (b) => Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
   const inter = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
-  for (let f = fa; f < fb; f += step) {
-    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, f);
-    const t = +(f / fps).toFixed(2);
+  const frames = sampled(fa, fb, step), logs = await drawLogs(page, 'DRAW_LOG', frames);
+  for (const [n, f] of frames.entries()) {
+    const log = logs[n], t = +(f / fps).toFixed(2);
     if (!log.length || nearCut(t)) continue;
     const sized = log.find((b) => b.W && b.H); if (!sized) continue;
     const H = sized.H, W = sized.W, frame = W * H;
@@ -302,16 +328,16 @@ async function logicCheck() {
   // 1.05 s and 0.1 s before its end; a line of text or a picture in the second that the first has not is a FAIL.
   let studio = [];
   try { studio = (JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'studio_frames.json'), 'utf8')).frames || []).filter((f) => !f.format || f.format === 'razgon_2d'); } catch (e) { /* not a Studio film */ }
-  const seen = async (t) => {
-    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, Math.max(0, Math.round(t * fps)));
+  const seen = (log) => {
     const sized = log.find((b) => b.W && b.H); const W = sized ? sized.W : 1, H = sized ? sized.H : 1;
     const on = (b) => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H;
     return new Set(log.filter((b) => on(b) && ((b.k === 'text' && (b.a ?? 1) >= 0.35 && String(b.str).trim()) || (b.k === 'img' && b.name && b.name !== 'canvas' && (b.a ?? 1) >= 0.5)))
       .map((b) => (b.k === 'text' ? '«' + String(b.str).trim() + '»' : b.name)));
   };
-  for (const fr of studio) {
-    if (+fr.end <= fa / fps || +fr.start >= fb / fps || +fr.end - +fr.start < 2.2) continue;
-    const before = await seen(+fr.end - 1.05), after = await seen(+fr.end - 0.1);
+  const ends = studio.filter((fr) => !(+fr.end <= fa / fps || +fr.start >= fb / fps || +fr.end - +fr.start < 2.2));
+  const lateLogs = await drawLogs(page, 'DRAW_LOG', ends.flatMap((fr) => [+fr.end - 1.05, +fr.end - 0.1].map((t) => Math.max(0, Math.round(t * fps)))));
+  for (const [n, fr] of ends.entries()) {
+    const before = seen(lateLogs[2 * n]), after = seen(lateLogs[2 * n + 1]);
     const fresh = [...after].filter((x) => !before.has(x));
     if (fresh.length) hits.push({ kind: 'late', key: `late: ${fr.number}`, t: +(+fr.end - 0.1).toFixed(2),
       text: `frame ${fr.number}: ${fresh.slice(0, 4).join(', ')} comes in during its last second (the frame ends at ${(+fr.end).toFixed(2)} s): bring it in earlier` });
@@ -343,15 +369,14 @@ async function logicCheck() {
 async function eventsScan() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
   await page.evaluate(DRAW_LOG_PATCH);
-  const total = await page.evaluate('window.TOTAL_FRAMES'), step = Math.max(1, Math.round((typeof args.events === 'string' && +args.events > 0 ? +args.events : 0.08) * fps));
-  const fa = Math.max(0, Math.round((+args.from || 0) * fps)), fb = Math.min(total, args.to ? Math.round(+args.to * fps) : total);
-  let cuts = [0]; try { const sj = JSON.parse(fs.readFileSync(path.join(PROJECT, 'story', 'shots.json'), 'utf8')); cuts = [0, ...(sj.shots || sj).map((x) => +x.start)]; } catch (e) { /* one shot */ }
+  const total = await page.evaluate('window.TOTAL_FRAMES'), step = stepOf('events', 0.08);
+  const [fa, fb] = frameRange(total), cuts = [0, ...shotStarts()];
   const shotOf = (t) => cuts.filter((c) => c <= t + 1e-6).length;
   const dt = step / fps, raw = [];
   let prevShot = -1, prevTexts = new Map(), prevPics = new Map(), prevLines = [];
-  for (let f = fa; f < fb; f += step) {
-    const log = await page.evaluate((i) => { window.DRAW_LOG = []; window.renderFrame(i); const l = window.DRAW_LOG; window.DRAW_LOG = null; return l; }, f);
-    const t = +(f / fps).toFixed(3), shot = shotOf(t);
+  const frames = sampled(fa, fb, step), logs = await drawLogs(page, 'DRAW_LOG', frames);
+  for (const [n, f] of frames.entries()) {
+    const log = logs[n], t = +(f / fps).toFixed(3), shot = shotOf(t);
     const sized = log.find((b) => b.W && b.H); const W = sized ? sized.W : 1, H = sized ? sized.H : 1;
     const on = (b) => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H;
     const texts = new Map(), pics = new Map(), lines = [];
@@ -407,8 +432,8 @@ async function eventsScan() {
 async function speedCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
   const factor = typeof args['speed-check'] === 'string' && +args['speed-check'] > 0 ? +args['speed-check'] : 2.5, rows = [];
-  // timed with the export's own capture (JPEG): a PNG screenshot alone takes ~380 ms at 1080p and hides the drawing
-  const timed = (f) => page.evaluate((i) => window.renderFrame(i), f).then(() => page.screenshot({ type: 'jpeg', quality: 94 }));
+  // timed with the capture of the Studio's export (JPEG, as razgon_bridge.py asks for): the slower PNG would hide the drawing
+  const timed = (f) => page.evaluate((i) => window.renderFrame(i), f).then(() => capture(page, 'jpeg'));
   for (const s of await page.evaluate('window.SHOT_LIST')) {
     let ms = 0, n = 0;
     for (const u of [0.2, 0.5, 0.8]) {
