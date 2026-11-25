@@ -186,3 +186,29 @@ class ContextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinkSyncTest(unittest.TestCase):
+    def test_a_plan_changed_after_prepare_is_synced_before_the_frames(self):
+        import json, subprocess, tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import production_context, store
+        frame = lambda n, kind: {"number": n, "start": n - 1, "end": n, "format": kind}
+        plan = {"script_sha256": "s", "frames": [frame(1, "razgon_2d"), frame(2, "host")]}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "story").mkdir()
+            link = root / "story/studio_frames.json"
+            link.write_text(json.dumps({"script_sha256": "s", "frames": [frame(1, "host"), frame(2, "razgon_2d")]}))
+            def prepare(*args, **kwargs):   # the bridge writes the plan's frames
+                link.write_text(json.dumps({"script_sha256": "s", "frames": plan["frames"]}))
+                return subprocess.CompletedProcess(args, 0, "", "")
+            with patch.object(store, "load_project", return_value={"id": "p"}), patch.object(store, "load_project_plan", return_value=plan), \
+                    patch.object(production_context.frame_progress, "razgon_project", return_value=root), \
+                    patch.object(subprocess, "run", side_effect=prepare) as run:
+                self.assertTrue(production_context.sync_link("p"))
+                self.assertEqual(run.call_count, 1)
+                self.assertIn("prepare", run.call_args.args[0])
+                self.assertTrue(production_context.sync_link("p"))   # matching now: nothing runs
+                self.assertEqual(run.call_count, 1)

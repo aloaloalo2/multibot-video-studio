@@ -267,11 +267,8 @@ function organizeChannelSettings(channel){
   // Keep deletion away from ordinary Save/Cancel actions.
   const danger=$('modal-actions').querySelector('.danger');
   if(danger){const area=document.createElement('div');area.className='settings-danger-zone';danger.classList.add('settings-remove-channel');area.append(danger);panels.advanced.append(area);}
-  for(const selector of ['.settings-opening>p','.settings-agent-memory>p:first-of-type',
-    '.settings-output>p','.settings-accents>p','.settings-thumbnail-wishes>p']){
-    const note=body.querySelector(selector);if(!note)continue;
-    const help=document.createElement('details');help.className='settings-inline-help';help.innerHTML='<summary>Як це працює</summary>';note.before(help);help.append(note);
-  }
+  // «Як це працює» is gone from the channel's settings (user, 25 November 2026: «взагалі прибери»)
+  for(const selector of ['.settings-agent-memory>p:first-of-type','.settings-output>p','.settings-thumbnail-wishes>p']){const note=body.querySelector(selector);if(note)note.hidden=true;}
   for(const id of ['settings-purpose','settings-weights-purpose'])$(id).hidden=true;
   const text=(selector,value)=>{const el=typeof selector==='string'?body.querySelector(selector):selector;if(el&&el.textContent!==value)el.textContent=value;};
   const selected=id=>{const el=$(id);return el?.selectedOptions?.[0]?.textContent||'';};
@@ -298,7 +295,7 @@ function organizeChannelSettings(channel){
     const wishes=body.querySelector('.generated-image-preferences')?.closest('.channel-settings-group');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0||body.querySelector('[data-weight-auto=generated_photo]')?.getAttribute('aria-pressed')==='true');
     text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
-    text(summaries.get('.settings-opening'),`${selected('settings-first-format')} · ${value('settings-first-count')} кадр.`);
+    text(summaries.get('.settings-opening'),[1,2,3].every(n=>value(`settings-open-${n}`)==='auto')?'Авто':[1,2,3].map(n=>selected(`settings-open-${n}`)).join(' · '));
     text(summaries.get('.settings-sentences'),`Коротке речення до ${value('settings-short')} слів`);
     // a filled wish shows a grey check by its title (user, 15 November 2026: «якщо є побажання то галочка нада сіра»)
     for(const [selector,id] of [['.settings-script-wishes','settings-script-wishes'],['.settings-thumbnail-wishes','settings-thumbnail-wishes'],
@@ -311,7 +308,7 @@ function organizeChannelSettings(channel){
       if(!filled&&mark)mark.remove();
     }
     text(summaries.get('.logo-section'),$('logo-tile-image').hidden?'Не додано':!$('logo-enabled').checked?'Вимкнено':`${body.querySelector('.logo-position[aria-pressed=true]')?.title||''} · ${value('logo-size')}%`);
-    text(summaries.get('.settings-accents'),$('settings-accents').checked?'Режисер додає за змістом':'Вимкнено');
+    text(summaries.get('.settings-accents'),[$('settings-accents').checked&&'На фото',$('settings-host-graphics')?.checked&&'Над ведучим'].filter(Boolean).join(' · ')||'Вимкнено');
     const voice=body.querySelector('.channel-voice-lab'),provider=voice?.querySelector('[name=provider]');
     const source=voice?.querySelector('.voice-lab-reference-player');
     const idField={heygen:'heygen_voice_id',fishaudio:'fish_voice_id',elevenlabs:'eleven_voice_id'}[provider?.value];
@@ -337,6 +334,19 @@ function organizeChannelSettings(channel){
     hint.disabled=valid;hint.hidden=!dirty&&valid;
     text(hint,!valid?'Перевірити пропорції ↗':dirty?'Є незбережені зміни':'');
     tabs.projects.classList.toggle('has-settings-error',!valid);
+    paintAvatarTab();
+  }
+  // «Аватар і голос» shows the channel's host in its circle (user, 25 November 2026): the «Аватар» photo first, else the
+  // HeyGen avatar's picture, else the plain icon
+  function paintAvatarTab(){
+    const hero=$('hero-reference-image'),heroUrl=hero&&!hero.hidden&&hero.getAttribute('src');
+    const url=heroUrl||heygenAvatars.avatarPreview?.()||'';
+    const tab=tabs.avatar;if(!tab||tab.dataset.avatarUrl===url)return;
+    tab.dataset.avatarUrl=url;
+    const icon=tab.querySelector('svg,.settings-tab-avatar');
+    if(url){const img=document.createElement('img');img.className='settings-tab-avatar';img.alt='';img.src=url;img.referrerPolicy='no-referrer';
+      img.addEventListener('error',()=>{img.replaceWith(document.createRange().createContextualFragment(channelSettingsIcon('hero')));},{once:true});icon?.replaceWith(img);}
+    else if(icon?.matches('.settings-tab-avatar'))icon.replaceWith(document.createRange().createContextualFragment(channelSettingsIcon('hero')));
   }
   let refreshFrame;
   const schedule=()=>{if(!scheduled){scheduled=true;refreshFrame=requestAnimationFrame(()=>{scheduled=false;refresh();});}};

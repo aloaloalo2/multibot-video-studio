@@ -164,6 +164,14 @@ def collect(root: Path, data: dict) -> dict:
             if narration.get('characters')==0:amount=0
             put('legacy-narration:'+str(narration.get('started_at')),provider,amount,category='narration',estimated=True)
 
+    # The host's HeyGen videos (user, 25 November 2026: «на карточці проекта не пише, скільки ми в дійсності потратили»):
+    # every video HeyGen accepted is paid by its seconds; a frame cut from a shared video is not a video of its own
+    for path in (root / "heygen-frames").glob("*.json"):
+        row = read(path)
+        if (isinstance(row, dict) and not row.get("one_video") and row.get("video_id")
+                and row.get("state") in {"submitted", "completed"}):
+            put("video:" + str(row["video_id"]), "heygen", heygen_video_usd(row), category="video", estimated=True)
+
     roots = list((root / "languages").glob("*/parts/requests.json"))
     roots += list((root / "languages").glob("*/voice-history/*/parts/requests.json"))
     roots += list((root / "languages").glob("*/sample-parts/*/requests.json"))
@@ -187,6 +195,27 @@ def collect(root: Path, data: dict) -> dict:
                 category="voice", estimated=not known)
 
     return data
+
+
+def heygen_video_usd(row: dict):
+    """A HeyGen video's price: its voice's seconds times the per-minute rate of the avatar's kind, kept on the receipt
+    (older receipts: the kind known to the studio, else the photo avatar's rate, the one the studio uses)."""
+    identity = row.get("identity") or {}
+    if identity.get("spans"):
+        spans = identity["spans"]
+        seconds = sum(float(end) - float(start) for start, end in spans) + float(identity.get("gap") or 0) * (len(spans) - 1)
+    elif number(identity.get("start")) and number(identity.get("end")):
+        seconds = float(identity["end"]) - float(identity["start"]) + float(identity.get("tail") or 0)
+    else:
+        return None
+    rate = row.get("usd_per_minute")
+    if not number(rate):
+        import heygen_avatars
+        if identity.get("engine") == "avatar_iv":
+            rate = heygen_avatars.known_rate_iv(identity.get("look")) or heygen_avatars.RATES_IV["photo_avatar"]
+        else:
+            rate = heygen_avatars.known_rate(identity.get("look")) or heygen_avatars.RATES["photo_avatar"]
+    return round(max(0.0, seconds) * float(rate) / 60, 6)
 
 
 def totals(data: dict, credit_rate=None) -> dict:

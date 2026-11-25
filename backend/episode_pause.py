@@ -288,7 +288,7 @@ def _settle_director(pid: str, data: dict) -> None:
             return   # already resumed, a new run started, or the director left the pause (started by hand)
         stopped["director"]["directed"] = directed
         store.atomic_json(path(pid), current)
-        state.update(status="done" if directed else "paused", stage=None, finished_at=time.time())
+        state.update(status="done" if directed else "paused", stage=None, finished_at=time.time(), error=None, interrupted=None)
         director.save(pid, state)
 
 

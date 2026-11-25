@@ -83,7 +83,7 @@ def place(ctx, spec, *, transition=False):
         at, duration = float(cue.get('t', 0)), float(cue.get('dur', .7))   # dur is kept for old cues; the sound plays whole
         if not math.isfinite(at) or not math.isfinite(duration) or not 0 <= at <= total - .1 or not .1 <= duration <= 6:
             raise ValueError('Невірний час звукового ефекту')
-        if cue['name'] in allowed:
+        if cue['name'] in allowed or transition and cue.get('required') and cue['name'] in known:
             gain = float(cue.get('gain', -8))
             if not math.isfinite(gain) or not -60 <= gain <= 6:
                 raise ValueError('Невірна гучність SFX')
@@ -144,11 +144,11 @@ def place(ctx, spec, *, transition=False):
         row = library.get(cue['name'])
         if row:
             source = Path(row['name'])
-            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v3.wav')
+            path = folder / ('mixkit-' + row['mixkit_id'] + '-' + hashlib.sha256(source.read_bytes()).hexdigest()[:12] + '-v4.wav')
             if not path.exists():
                 shutil.copy2(sfx_library.leveled(row), path)   # levelled and at most 4 s, like the synthesized ones
         else:
-            path = folder / f'sfx-v4-{cue["name"]}.wav'
+            path = folder / f'sfx-v5-{cue["name"]}.wav'
             with sound_settings.LOCK:
                 if not path.exists():
                     module.write_wav(str(path), full_take(module, cue['name'])[0])
@@ -197,10 +197,19 @@ def transitions(ctx, spec=None):
                 continue
             scoped_labels.add(f'{a["number"]} → {b["number"]}')
         join = joins.get(key)
+        # where the host goes out and the next frame comes in there is always a transition sound (user, 25 November 2026:
+        # «як аватар… пропадає, появляється наступний кадр, то там має бути обов'язково звук переходу»), even on a cut
+        host_out = (a.get('plan') or {}).get('format') == 'host' and abs(a['end'] - b['start']) < .1
+        if host_out:
+            join = join or {'type': 'cut', 'duration': .35}
+            if not pool:
+                pool = ['tr_air', 'tr_silk', 'tr_snap']
         if not join or not pool:
             continue
         kind = join['type']
-        if wanted_frames is not None:
+        if host_out:
+            pass
+        elif wanted_frames is not None:
             if b['number'] not in wanted_frames: continue
         elif kind == 'crossfade' or len(events) >= limit or (events and b['start'] - events[-1]['t'] < 8):
             continue
@@ -214,7 +223,8 @@ def transitions(ctx, spec=None):
         choices = different or choices
         name = choices[len(events) % len(choices)]
         label = f'{a["number"]} → {b["number"]}'
-        events.append({'name': name, 't': b['start'], 'dur': max(.1, min(.7, float(join.get('duration', .35)))), 'join': label})
+        events.append({'name': name, 't': b['start'], 'dur': max(.1, min(.7, float(join.get('duration', .35)))), 'join': label,
+                       **({'required': True} if host_out else {})})
         wanted.add(TRANSITION_PREFIX + label + ' · ' + name)
         previous = name
     for layer in ctx.project['tracks']:

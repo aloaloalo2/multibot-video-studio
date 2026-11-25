@@ -10,7 +10,8 @@ const capcutReady=fetch('/capcut-catalog.json').then(response=>{if(!response.ok)
   if(state.project){renderTimeline();if(state.selectedTransition)renderInspector();}
   return data;
 }).catch(error=>status(error.message,true));
-function capcutDefaultDuration(type){return Number(capcutCatalog.transitions[type]?.default_duration)||1;}
+// a long CapCut transition sits 30% shorter on the seam (joins.capcut_duration, user 25 November 2026)
+function capcutDefaultDuration(type){const own=Number(capcutCatalog.transitions[type]?.default_duration)||1;return own>1.2?Math.round(own*70)/100:own;}
 
 /* ------------------------------------------------------------------ the seam's transition in the preview */
 const capcutPreviews=new Map();   // key -> {state:'loading'|'ready'|'failed', url, video}

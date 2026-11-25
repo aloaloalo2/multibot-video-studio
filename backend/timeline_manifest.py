@@ -51,6 +51,11 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
             if kind != "audio":
                 visual_count += 1
             rendered_clips.append({"id": clip["id"], "type": kind, "source": str(source) if source else None, "text": clip.get("text", ""), "content_type": clip.get("content_type"), "color": clip.get("color", "#101114"), "start": float(clip["start"]), "duration": float(clip["duration"]), "trim_start": float(clip.get("trim_start", 0)), "volume": 0.0 if layer.get("muted") else float(clip.get("volume", 1)) * (voice.get(clip.get("asset_id"), 1.0) if kind == "audio" else 1.0), "transition": copy.deepcopy(clip.get("transition", {"type": "cut", "duration": 0})), "x": clip.get("x", .5), "y": clip.get("y", .5), "width": clip.get("width", 1), "height": clip.get("height", 1), "scale": clip.get("scale", 1), "opacity": clip.get("opacity", 1), "preset": clip.get("preset"), "preset_duration": clip.get("preset_duration", 0), "keyframes": copy.deepcopy(clip.get("keyframes", [])), "audio_role": clip.get("audio_role"), "easing": clip.get("easing", "linear")})
+            if clip.get("content_type") == "code":
+                # motion design written as code: the same runtime as the preview renders it to a video with alpha
+                import motion_code
+                rendered_clips[-1].update(type="video", source=str(motion_code.render(project, clip).resolve()), content_type=None,
+                                          volume=0.0, trim_start=0.0)
             if clip.get("content_type") == "capcut_effect":
                 rendered_clips[-1]["capcut_effect"] = clip.get("capcut_effect")
                 rendered_clips[-1]["capcut_exclude"] = sorted(overlay_ids)

@@ -104,7 +104,7 @@ function projectNextContext(){
     productionReason:root.querySelector('.episode-make-hint')?.textContent||project.production?.reason||'',
     fileMode:root.querySelector('.narration-from-file')?.getAttribute('aria-pressed')==='true',hasFile:!!root.querySelector('.voice-drop.has-file'),uploadEnabled:!!upload&&!upload.disabled,
     readyVoice:!!ready&&!ready.hidden&&!ready.closest('[hidden]'),createEnabled:!!ready?.querySelector('.narration-plan-action:not([disabled])'),createReason:root.querySelector('.narration-create-error')?.textContent||'',
-    directionRecovery:!!root.querySelector('.episode-director:not([hidden]) button:not([disabled])'),directionRecoveryLabel:root.querySelector('.episode-director button')?.textContent,directionRecoveryReason:direction?.creation_error||direction?.error,
+    directionRecovery:!!root.querySelector('.episode-director:not([hidden]) button:not([disabled])'),directionRecoveryLabel:directionButtonLabel(root.querySelector('.episode-director:not([hidden]) button:not([disabled])')),directionRecoveryReason:direction?.status==='paused'?'Режисер на паузі':direction?.creation_error||direction?.error,
     voiceLoading:voice?.querySelector('.narration-choice-profile')?.textContent==='Завантажуємо голос…',voiceError:voice?.querySelector('.narration-choice-profile')?.dataset.voiceState==='error',hasVoice:!!voice&&!voice.querySelector('.narration-voice-missing')&&voice.querySelector('.narration-choice-settings'),narrationEnabled:!!narrate&&!narrate.disabled,
   };
   return {model,root,field,targets:{narrate,create:ready?.querySelector('.narration-plan-action'),frames,upload,openings:root.querySelector('#episode-draft-refresh'),metadata:root.querySelector('#episode-draft-metadata'),direction:root.querySelector('.episode-director:not([hidden]) button:not([disabled])')}};
@@ -175,4 +175,8 @@ if(typeof document!=='undefined'){
     root.addEventListener('input',schedule);
     root.addEventListener('durationchange',schedule,true);
   }
+}
+// the round play of a paused director has no words, only its label: the header says what it does («Продовжити режисуру»)
+function directionButtonLabel(button){
+  return button?(button.textContent.trim()||button.getAttribute('aria-label')||''):'';
 }

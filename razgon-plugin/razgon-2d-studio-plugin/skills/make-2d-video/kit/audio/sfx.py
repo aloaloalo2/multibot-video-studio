@@ -448,14 +448,22 @@ def level(x):
     if len(x) > secs(MAX_SECONDS):
         x = x[: secs(MAX_SECONDS)]
         f = secs(0.25); x[-f:] *= (np.linspace(1, 0, f) ** 2)[:, None]
-    # a click is mostly peak: it may go up to 9 dB past its peak limit, the peaks rounded by a soft limiter, so it stands
-    # as loud as a whoosh instead of 7 dB under it
+    # a click is mostly peak: it may go up to 15 dB past its peak limit, the peaks rounded by a soft limiter, so it stands
+    # as loud as a whoosh (9 dB left clicks 3-4 dB under the rest; user, 25 November 2026: «всі звукові ефекти… одної
+    # гучності»)
     ceiling = db(-1.0)
     peak = float(np.abs(x).max()) or 1.0
-    gain = min(db(TARGET_DB - loudness(x)), ceiling / peak * db(9.0))
-    x *= gain
-    if float(np.abs(x).max()) > ceiling:
-        x = ceiling * np.tanh(x / ceiling)
+    allowance = ceiling / peak * db(15.0)   # the most a sound may be raised in all
+    source = x
+    gain = min(db(TARGET_DB - loudness(source)), allowance)
+    for _ in range(5):   # the soft limiter takes some loudness off a peaky sound: raise, limit, measure again
+        x = source * gain
+        if float(np.abs(x).max()) > ceiling:
+            x = ceiling * np.tanh(x / ceiling)
+        short = TARGET_DB - loudness(x)
+        if abs(short) < .3 or gain >= allowance:
+            break
+        gain = min(gain * db(short), allowance)
     return x.astype(np.float32)
 
 

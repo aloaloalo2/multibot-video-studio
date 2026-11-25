@@ -140,10 +140,10 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                     continue
                 if clip.get("kind") == "video":
                     available = store.media_duration(Path(asset["path"]))
-                    join = joins_by_from.get("group:" + frame["group"]["id"])
-                    tail = float(join["duration"]) if join and abs(float(clip["start"]) + float(clip["duration"]) - frame["end"]) < .05 else 0
-                    if available and float(clip.get("trim_start", 0)) + float(clip["duration"]) + tail > available + .04:
-                        problems.append(f"відео «{clip.get('title')}» коротше за кадр{' з переходом' if tail else ''}")
+                    # a transition going out past the video's end holds its last picture (joins.held_source): only a
+                    # video shorter than its own frame is a problem
+                    if available and float(clip.get("trim_start", 0)) + float(clip["duration"]) > available + .04:
+                        problems.append(f"відео «{clip.get('title')}» коротше за кадр")
             late = [p for p in clip.get("keyframes") or [] if float(p["time"]) > float(clip["duration"]) + 1e-6]
             if late:
                 problems.append(f"ключі після кінця «{clip.get('title')}»")

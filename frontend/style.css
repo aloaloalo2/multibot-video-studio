@@ -1018,6 +1018,9 @@ button.subtle,.sidebar-add,.project-item,
 .preview-panel .transport{position:absolute;bottom:0;left:0;right:0;z-index:40;gap:8px;padding:22px 12px 10px;flex-wrap:nowrap;color:#e0e2e8;background:linear-gradient(transparent,#090a0dd9);opacity:0;pointer-events:none;transition:opacity .18s ease}
 .preview-panel .transport button{width:30px;height:30px;border-radius:50%;flex:none;background:#33353de6;color:#e0e2e8}
 .preview-panel .transport #monitor-audio{background:#33353de6;color:#e0e2e8}
+/* play and sound under the preview stand on the panel itself, no square behind them (user, 25 November 2026) */
+.transport #play-pause,.transport #monitor-audio,.transport #monitor-audio.sound-on,.preview-panel .transport #play-pause,.preview-panel .transport #monitor-audio{background:transparent;box-shadow:none}
+.transport #play-pause:hover,.transport #monitor-audio:hover{background:transparent;color:#fff}
 .preview-panel .transport input{accent-color:#c4c8d1}.preview-panel .transport #monitor-volume{width:55px}
 .preview-panel:hover .transport,.preview-panel:focus-within .transport,.preview-panel:hover .preview-settings,.preview-panel:focus-within .preview-settings,.preview-settings[open]{opacity:1;pointer-events:auto}
 @media(hover:none){.preview-panel .transport,.preview-panel .preview-settings{opacity:1;pointer-events:auto}}
@@ -1867,12 +1870,12 @@ select option{background:#232327;color:#f1f1f2}
 .channel-identity-edit{display:flex;align-items:center;gap:16px}
 .channel-identity-name{flex:1;min-width:0}
 .channel-avatar-edit{position:relative;flex:none;width:62px;height:62px}
-.modal-body .channel-avatar-pick{display:grid;place-items:center;width:62px;height:62px;margin:0;padding:0;border:1px solid #4a4c55;border-radius:50%;background:#202126;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s}
+.modal-body .channel-avatar-pick{display:grid;place-items:center;width:62px;height:62px;margin:0;padding:0;border:0;border-radius:50%;background:#202126;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s}
 .channel-avatar-pick input[hidden]{display:none}
 #channel-icon-image{width:100%;height:100%;display:grid;place-items:center}
 #channel-icon-image .channel-icon{width:100%;height:100%;object-fit:cover}
 #channel-icon-image svg.channel-icon{width:28px;height:28px;color:#aaafbc}
-.channel-avatar-pick:hover,.channel-avatar-pick:focus-within{border-color:#9fa5b3;background:#292b32}
+.channel-avatar-pick:hover,.channel-avatar-pick:focus-within{background:#292b32}
 .channel-avatar-remove{position:absolute;bottom:-3px;right:-3px;width:25px;height:25px;padding:5px!important;display:grid;place-items:center;border:1px solid #565861;border-radius:50%;background:#303139;color:#d2d4dc;opacity:0;pointer-events:none;transition:opacity .15s,background .15s}
 .channel-avatar-remove svg{width:14px;height:14px}
 .channel-avatar-edit:hover .channel-avatar-remove,.channel-avatar-edit:focus-within .channel-avatar-remove{opacity:1;pointer-events:auto}
@@ -2661,6 +2664,8 @@ select option{background:#232327;color:#f1f1f2}
 #project-next-action{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
 #project-next-action svg{width:18px;height:18px;flex:none}
 .workflow-guided .workflow-action-target{display:none!important}
+/* the round play-pause stays in its card while the header repeats it (user, 25 November 2026: «нема кнопки») */
+.workflow-guided .production-control.workflow-action-target{display:inline-grid!important}
 .workflow-guided .narration-ready-actions:has(.workflow-action-target){display:none}
 @media(max-width:700px){.project-next-step{flex-wrap:wrap;justify-content:flex-end}.project-next-info small{max-width:180px}.script-draft-tools{gap:3px}.script-draft-status{font-size:10px}}
 
@@ -3403,3 +3408,17 @@ select option{background:#232327;color:#f1f1f2}
 .channel-sound-source{grid-column:1/-1;margin:10px 0 2px;font-size:12px;color:var(--muted,#999da8);text-transform:none}
 /* the HeyGen estimate beside the grey «Створити відео» (25 November 2026) */
 .heygen-estimate{margin-left:8px;font-size:11px;font-weight:500;color:#8d909a;white-space:nowrap}
+/* «Перший кадр ведучого» under the HeyGen avatar: Avatar IV with its expressiveness and motion */
+.heygen-first-frame{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #2a2a2f}
+.heygen-first-frame label:not(.check){display:grid;gap:6px}
+.heygen-first-frame small{color:#8a8c94;line-height:1.4}
+/* the host's picture in the «Аватар і голос» tab, in the icon's place */
+.settings-tab-avatar{width:22px;height:22px;flex:none;border-radius:50%;object-fit:cover;border:0;box-shadow:none}
+/* a motion-code layer: its canvas is the film's size, scaled to the preview */
+.composition-code{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+/* a frame of the host's HeyGen video: its still repeated along the block, 16:9 at the block's height */
+.frame-group-clip.group-host-video{background:#2b2b30;text-shadow:0 1px 2px #000,0 0 6px #000c}
+.frame-group-clip.group-host-video::before{content:"";position:absolute;inset:0;background:var(--strip) center/auto 100% repeat-x;opacity:.65;pointer-events:none;z-index:0}
+/* the «Плашка» row: the channel's plate along the block, 65% more transparent, its label over it */
+.frame-group-clip.group-plate-strip{text-shadow:0 1px 2px #000,0 0 6px #000c}
+.frame-group-clip.group-plate-strip::before{content:"";position:absolute;inset:0;background:var(--plate) center/auto 80% space no-repeat;opacity:.35;pointer-events:none;z-index:0}

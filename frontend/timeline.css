@@ -154,7 +154,7 @@
 .transport button:not(:disabled):hover{background:#44444c;}
 .transport #monitor-audio.sound-on:hover{background:#4a3f22;}
 .transport input[type=range]:hover{filter:brightness(1.18);}
-.frame-group-clip:not(.selected):hover,.track-clip:hover{filter:brightness(1.22);box-shadow:inset 0 0 0 1px rgba(255,209,91,.55);}
+/* hovering a block does not light it as if selected (user, 25 November 2026): only a click or a box selects */
 .transition-join.has-transition:hover,.dragging-transition .transition-join:hover{opacity:1;background:#e2c37a;}
 #playhead-handle:hover::before{background:#ffd15b;}
 .speech-issues summary:hover,.speech-existing summary:hover{color:#fff;}
@@ -183,3 +183,11 @@
 .app-shell.editor-open{--editor-outer-gutter:12px;padding-bottom:0}
 .editor-open .timeline-panel{margin:0 calc(0px - var(--editor-outer-gutter));width:calc(100% + var(--editor-outer-gutter) + var(--editor-outer-gutter));border-inline:0;border-bottom:0;border-radius:0}
 @media(max-width:560px){.app-shell.editor-open{--editor-outer-gutter:8px}}
+/* A transition shows on its seam as a soft gradient across the row, no square badge (user, 25 November 2026: «квадратики
+   прибери… стик має просто… градієнтиком»); an empty seam stays invisible until a transition is dragged onto it. */
+.transition-join.has-transition,.transition-join.has-transition.transition-compact{top:2px;bottom:3px;height:auto;border:0;border-radius:0;opacity:1;
+  background:linear-gradient(90deg,#ffd15b00,#ffd15b4d 50%,#ffd15b00);box-shadow:none}
+.transition-join.has-transition:hover{background:linear-gradient(90deg,#ffd15b00,#ffd15b99 50%,#ffd15b00)}
+.transition-join.has-transition.selected-transition{background:linear-gradient(90deg,#ffd15b00,#ffd15b 50%,#ffd15b00);box-shadow:none}
+/* the timeline is selected, never dragged: an arrow over its blocks, not a hand (user, 25 November 2026) */
+#editor-timeline .frame-group-clip,#editor-timeline .track-clip,#editor-timeline .transition-join,#editor-timeline .layer-heading{cursor:default}

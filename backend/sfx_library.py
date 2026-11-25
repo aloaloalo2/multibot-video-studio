@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent / 'data/sfx-library/mixkit-20261112'
 # an 11.7 s clock, a 65 s bass drone and an 11 s tension rise. Their files stay on disk, unused.
 EXCLUDED = {'938', '1999', '1992', '946', '472', '2894', '2357', '1059', '685', '786'}
 MAX_SECONDS = 4.0
-LEVELED = 'sfx-library-v2'
+LEVELED = 'sfx-library-v3'   # v3: clicks reach the common loudness too (25 November 2026)
 
 
 # CapCut's «Sound effects → Trending» list as of 25 November 2026 (user: «в CapCut є Sound Effects трендінг… всі їх скачай

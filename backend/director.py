@@ -59,7 +59,15 @@ def state(pid: str) -> dict | None:
             # cut during the early «Підготовка»: the plan is made; production makes the kit itself
             data.update(status="done", stage=None, kit="failed")
         else:
-            data.update(status="failed", error="Студію перезапустили під час режисури. Запустіть її ще раз.")
+            import episode_pause
+            stopped = ((episode_pause.paused(pid) or {}).get("stopped") or {}).get("director")
+            if isinstance(stopped, dict):
+                # the pause is stopping him: between his exit and the pause's own note he reads as paused, never as a
+                # restart (user, 25 November 2026: after a pause «нічого не відбулося… треба було оновити сторінку»)
+                data.update(status="paused", error=None)
+            else:
+                data.update(status="failed", interrupted=True,
+                            error="Режисуру перервав перезапуск студії. Натисніть «Продовжити режисуру», і режисер почне знову.")
     return data
 
 
@@ -107,6 +115,9 @@ def brief(project: dict) -> str:
         text += motion_direction.ACCENTS + "\nУ задумі відповідного кадру запиши ціль, вигляд і момент появи, щоб монтажер міг відтворити рішення.\n"
     else:
         text += "\nДодаткові акценти поверх кадрів вимкнені в налаштуваннях каналу.\n"
+    if settings.get("host_graphics") and float((settings.get("weights") or {}).get("host", 0) or 0) > 0:
+        text += ("\nМоушн-графіка над ведучим увімкнена. " + motion_direction.HOST_GRAPHICS +
+                 "\nУ задумі кожного кадру host коротко запиши, яку графіку показати й на якому слові, або що кадр лишається чистим.\n")
     import animation_preferences
     return text + montage_context.rules(project) + montage_context.COMMANDS + animation_preferences.instructions(project, planning=True) + sound_brief(project, include_workflow=not is_animated) + animation_style(project) + channel_memory(project)
 
@@ -206,7 +217,7 @@ def frames_brief(project: dict) -> str:
    побажання автора в правилах каналу йдуть першими.
    Кадр зазвичай має одне-три речення, це орієнтир. Одна безперервна сцена (те саме місце, та сама дія, камера йде далі)
    завжди лишається одним кадром, скільки б речень у ній не було: не розрізай її на два кадри з тією самою картинкою.
-   Якщо sentences повертає host_rules, перший і останній кадри обов’язково host, ведучий ніколи не йде два кадри підряд, його появи рівномірно розподілені по всій тривалості.
+   Якщо sentences називає початок ролика, кадри 1–3 мають саме ці формати, це вибір автора каналу. Якщо sentences повертає host_rules, останній кадр обов’язково host, перший теж host, коли початок ролика не задає першому кадру інший формат, ведучий ніколи не йде два кадри підряд, його появи рівномірно розподілені по всій тривалості.
    Для host переважно обирай короткі завершені фрази, доречні за змістом. У межах заданої частки краще частіше показувати ведучого на коротких репліках упродовж усього ролика, ніж зосереджувати його появу в кількох довгих кадрах. Не розривай речення чи цілісну думку штучно.
 {motion_direction.PLANNING}
 3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "..."}}]}}.

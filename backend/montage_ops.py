@@ -742,10 +742,15 @@ def place(ctx: Context, spec: dict) -> None:
     payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": end - start,
                "title": FRAME_CLIP.format(number)}
     if spec.get("text"):
-        words = display_text.clean(" ".join(planned.get("sentences") or []))
+        # the words to read on screen (user, 25 November 2026: «вставки текстові мають бути вже адаптовані… числа або
+        # англійські букви»): the frame agent's own text when it gives one, else the voice's words
+        words = display_text.clean(str(spec["display"]) if isinstance(spec.get("display"), str) and spec["display"].strip()
+                                   else " ".join(planned.get("sentences") or []))
         if not words.strip():
             raise OpError(f"У кадрі {number} немає слів для текстового кадру")
         payload.update(kind="text", text=words, text_role="full_frame", source_frame=number, source_text=" ".join(planned.get("sentences") or []))
+        if isinstance(spec.get("display"), str) and spec["display"].strip():
+            payload["adapted"] = True
         _designed_text(ctx, planned, number, payload, start, end, have, spec)
     else:
         if spec.get("asset_id"):
@@ -778,6 +783,9 @@ def place(ctx: Context, spec: dict) -> None:
         if name not in MOTIONS:
             raise OpError("Рух: zoom_in, zoom_out, pan_left, pan_right або none")
         motion = MOTIONS[name]
+        if motion and name in ("zoom_in", "zoom_out") and spec.get("zoom_percent") is not None:
+            amount = 1 + max(0.0, min(30.0, float(spec["zoom_percent"]))) / 100
+            motion = (1.0, amount) if name == "zoom_in" else (amount, 1.0)
         if motion:
             first, last = {"time": 0.0, "scale": motion[0] * cover}, {"time": length, "scale": motion[1] * cover}
             if name in ("pan_left", "pan_right"):
@@ -867,12 +875,11 @@ def _timed_tokens(ctx: Context, planned: dict) -> list[tuple[str, float]]:
 
 # The backdrops of a full-frame text (user, 21 November 2026: «для текстових вставок не має бути шаблонності… текстова
 # вставка має бути підібрана під конкретну ситуацію»): the host's own video under a black veil, a blurred picture of the
-# episode under a contrasting veil, or a black field with a grey grid and a CapCut noise over it. The director or the
+# episode under a contrasting veil, or a black field with a grey grid. The director or the
 # frame agent picks one for the moment (spec "backdrop"); without a pick the studio takes one the previous text frame
 # did not have, among those the episode can give.
 TEXT_BACKDROPS = ("host", "blur", "grid")
 TEXT_ENTRANCES = ("letters_fade", "blur_up", "up", "pop", "letters_up", "grow", "left", "blur", "letters_blur", "down", "fade", "shrink", "right")
-GRID_NOISES = ("capcut_e13", "capcut_e01", "capcut_e04")   # Шум 2, Шум 1, Зернистість
 
 
 def _text_history(ctx: Context, number: int) -> tuple[str | None, str | None]:
@@ -950,6 +957,12 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
     look = (DIM_TEXT_LOOKS if dim else TEXT_LOOKS)[number % len(DIM_TEXT_LOOKS if dim else TEXT_LOOKS)]
     duration = end - start
     tokens = _timed_tokens(ctx, planned)
+    shown = payload["text"].split()
+    if tokens and shown and len(tokens) != len(shown):
+        # a text adapted for reading has other words than the voice: each takes the time of the spoken word at the same
+        # place in the sentence, so the words still come with the voice
+        spoken = len(tokens)
+        tokens = [(word, tokens[min(spoken - 1, int(index * spoken / len(shown)))][1]) for index, word in enumerate(shown)]
     background = _text_background(ctx, number)
     backdrop, entrance, host = ("blur", look["entrance"], None) if dim else _text_choice(ctx, number, start, end, spec)
     color = look["color"] if backdrop == "blur" else "#ffffff"
@@ -982,14 +995,12 @@ def _designed_text(ctx: Context, planned: dict, number: int, payload: dict, star
             ctx.groups.update({title: frame_title for title in titles})
         return
     if backdrop == "grid":
-        # a black field with a grey grid drifting closer, and a noise of CapCut over it; the words stand above the noise
-        noise = GRID_NOISES[number % len(GRID_NOISES)]
-        titles = (f"K{number:03d} сітка", f"K{number:03d} шум")
+        # a black field with a grey grid drifting closer; no CapCut noise over it (user, 25 November 2026: «шуми… дуже
+        # агресивні… воно не потрібно»)
+        titles = (f"K{number:03d} сітка",)
         ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[0], "kind": "image",
                             "asset_id": ctx.asset_for(_grid_picture(ctx)), "scale": 1.0, "easing": ctx.easing,
                             "keyframes": [{"time": 0.0, "scale": 1.0}, {"time": math.floor(duration * 1000) / 1000, "scale": 1.07}], **group}})
-        ctx.actions.append({"type": "add_clip", "payload": {"layer_id": layer, "start": start, "duration": duration, "title": titles[1], "kind": "animation",
-                            "content_type": "capcut_effect", "capcut_effect": noise, "x": .5, "y": .5, "width": 1, "height": 1, **group}})
         if not have:
             ctx.groups.update({title: frame_title for title in titles})
         return
@@ -1109,10 +1120,9 @@ def transitions(ctx: Context, spec: dict) -> None:
         kind = rnd.choice(pool)
         if kind == previous and kind != "crossfade":
             kind = "crossfade"
-        duration = float(spec.get("duration", joins.CAPCUT[kind]["default_duration"] if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35))
+        duration = float(spec.get("duration", joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35))
         duration = min(duration, a["end"] - a["start"], b["end"] - b["start"])
-        if not _video_tail(ctx, a, duration):
-            kind = None
+        # a video going out with no frames left for the transition holds its last picture through it (joins.held_source)
         if kind is None or duration < .05:
             previous = None
             continue
@@ -1134,6 +1144,20 @@ def _video_tail(ctx: Context, frame: dict, duration: float) -> bool:
             if available and float(clip.get("trim_start", 0)) + float(clip["duration"]) + duration > available + .04:
                 return False
     return True
+
+
+def _tail_seconds(ctx: Context, frame: dict) -> float:
+    """Seconds of source left after the frame's end in the video going out of it (inf when none goes out)."""
+    left = float("inf")
+    for clip in frame["clips"]:
+        if clip.get("kind") == "video" and abs(float(clip["start"]) + float(clip["duration"]) - frame["end"]) < .05:
+            try:
+                available = store.media_duration(Path(store.resolve_asset(ctx.project, clip["asset_id"])["path"]))
+            except (store.StudioError, OSError):
+                return 0.0
+            if available:
+                left = min(left, available - float(clip.get("trim_start", 0)) - float(clip["duration"]) - .04)
+    return max(0.0, left)
 
 
 def reglue(ctx: Context, spec: dict) -> None:
@@ -1195,7 +1219,41 @@ def reglue(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"акцентів приклеєно до фото: {done}, з анімованою появою: {animated_count}")
 
 
-OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove}
+def motion_code_op(ctx: Context, spec: dict) -> None:
+    """Motion design written as code over a frame (motion_code.py): {"op": "motion_code", "frame": N, "code": source of
+    function draw(ctx, t, info), "start": seconds from the frame's start, "duration": seconds (to the frame's end by
+    default), "title", "assets": {name: file or asset id}, "replace": title of the frame's motion clip to swap}. The clip
+    lies over the frame's picture in its group; info.words holds the voice's words of its time."""
+    import motion_code
+    frame = find_frame(ctx.frames, spec.get("frame"))
+    code = motion_code.validate(spec.get("code"))
+    offset = store.finite_float(spec.get("start", 0), 0, 36000, "Невірний початок моушн-коду")
+    start = frame["start"] + offset
+    duration = store.finite_float(spec.get("duration") or (frame["end"] - start), .1, 36000, "Невірна тривалість моушн-коду")
+    if start + duration > frame["end"] + 1e-3:
+        raise OpError(f"Моушн-код виходить за кадр {frame['number']}: кадр до {frame['end']:.2f} с")
+    assets = {}
+    for name, source in (spec.get("assets") or {}).items():
+        path = Path(str(source)).expanduser()
+        assets[name] = ctx.asset_for(path) if path.is_file() else str(source)
+    words = [{"text": w["text"], "start": round(float(w["start"]) - start, 3), "end": round(float(w["end"]) - start, 3)}
+             for w in ctx.words() if float(w.get("end", 0)) > start and float(w.get("start", 0)) < start + duration]
+    label = str(spec.get("title") or "графіка").strip()[:60]
+    title = f"K{frame['number']:03d} моушн {label}" if frame["number"] is not None else f"моушн {label}"
+    if spec.get("replace"):
+        old = [c for c in frame["clips"] if c.get("content_type") == "code" and c.get("title") in {spec["replace"], title}]
+        if not old:
+            raise OpError(f"У кадрі {frame['number']} немає моушн-коду «{spec['replace']}»")
+        for clip in old:
+            ctx.actions.append({"type": "delete_clip", "payload": {"clip_id": clip["id"]}})
+    ctx.actions.append({"type": "add_clip", "payload": {"layer_id": ctx.project["tracks"][0]["id"], "group_id": frame["group"]["id"],
+                                                        "kind": "animation", "content_type": "code", "code": code, "code_assets": assets,
+                                                        "code_words": words, "start": round(start, 3), "duration": round(duration, 3),
+                                                        "title": title, "x": .5, "y": .5, "width": 1, "height": 1}})
+    ctx.report.append(f"кадр {frame['number']}: моушн-код «{label}» {start:.2f}–{start + duration:.2f} с")
+
+
+OPS = {"transition_sounds": soundtrack.transitions, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

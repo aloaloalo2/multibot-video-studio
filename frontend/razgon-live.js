@@ -45,6 +45,10 @@
   const info = () => state.project && live[state.project.id];
   const active = () => !!(info()?.url && read(KEY, '1') === '1');
   const source = () => `${info().url}?embed=1&scale=${quality.value}`;
+  // the live frame comes into view only with its own moment on the canvas (user, 25 November 2026: «з другого на третій
+  // кадр… пригає на якийсь… кадр посередині… а потім… початок»): after a jump of time it waits for the page's «drawn»
+  let drawnAt = null, waitingFor = null, waitTimer = null, wasOn = false, lastT = null;
+  const reveal = () => { if (waitingFor === null && frame.dataset.wantVisible === '1') frame.style.visibility = ''; };
   let seekTime = null;   // the Razgon time the picture shows: the playhead, or a frame's last moment while a transition fades out of it
   const post = () => { if (!frame.hidden && frame.contentWindow) frame.contentWindow.postMessage({ razgon: 'seek', t: seekTime ?? state.playhead }, '*'); };
   // A live server that went down (the studio restarted, after an update) leaves a black frame: the player says «ready»
@@ -53,6 +57,7 @@
   addEventListener('message', (event) => {
     if (event.source !== frame.contentWindow) return;
     if (event.data?.razgon === 'ready') { ready = true; clearTimeout(watch); showNote(''); post(); }
+    if (event.data?.razgon === 'drawn') { drawnAt = event.data.t; if (waitingFor !== null && Math.abs(drawnAt - waitingFor) < .2) { waitingFor = null; clearTimeout(waitTimer); reveal(); } }
     if (event.data?.razgon === 'error') showNote(`Живий перегляд не може намалювати сцени: ${event.data.message || 'невідома помилка'}. Виправте сцену або натисніть «Перезапустити перегляд».`);
   });
   function watchStart(id) {
@@ -181,7 +186,18 @@
     const sourceFrame=inside||fading;
     seekTime = sourceFrame ? Math.max(sourceFrame.sourceStart,Math.min(t,sourceFrame.sourceEnd-1/(state.project?.fps||25))) : null;
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
-    content.classList.toggle('razgon-live-on', on); frame.style.visibility = on ? '' : 'hidden'; note.style.visibility = on ? '' : 'hidden';
+    const jumped = on && (!wasOn || lastT === null || Math.abs(t - lastT) > .25);
+    wasOn = on; lastT = t;
+    content.classList.toggle('razgon-live-on', on); note.style.visibility = on ? '' : 'hidden';
+    frame.dataset.wantVisible = on ? '1' : '';
+    if (!on) { frame.style.visibility = 'hidden'; waitingFor = null; clearTimeout(waitTimer);
+      // the next Razgon frame within 0.6 s is drawn ahead while hidden, so it comes in on its first moment
+      const next = own && own.find((f) => f.start > t && f.start - t < .6);
+      if (next && frame.contentWindow && !frame.hidden) frame.contentWindow.postMessage({ razgon: 'seek', t: next.sourceStart ?? next.start }, '*');
+    } else if (jumped && !(drawnAt !== null && Math.abs(drawnAt - (seekTime ?? t)) < .2)) {
+      frame.style.visibility = 'hidden'; waitingFor = seekTime ?? t; clearTimeout(waitTimer);
+      waitTimer = setTimeout(() => { waitingFor = null; reveal(); }, 300);   // a page that never answers still shows
+    } else if (waitingFor === null) frame.style.visibility = '';
     seam(on && !fading ? t : null);
     if (!on) return baseUniversal.apply(this, args);
     const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
@@ -189,6 +205,18 @@
     const drawn = own && new Set(sceneGroups().filter((group) => titles.has(group.title)).flatMap((group) => group.clip_ids));
     layers = () => all().map((layer) => ({ ...layer, clips: (layer.clips || []).filter((clip) => clip.kind === 'audio' || keep.has(clip.id) || (drawn && !drawn.has(clip.id))) }));
     try { baseUniversal.apply(this, args); } finally { layers = all; }
+    // a seam from another kind of frame (the host's video, a photo, a text) into a Razgon frame: the live player lies
+    // under the picture, so the outgoing frame fades out over it, a dissolve (user, 25 November 2026: «29:30… нажимаю
+    // play… не показує… перехід»); before, its held last picture covered the player and then vanished, a cut
+    if (inside) {
+      const into = (state.project?.join_transitions || []).find((join) => join.to_ref === `group:${groupId(inside)}`);
+      const from = into && sceneGroups().find((group) => `group:${group.id}` === into.from_ref);
+      const span = from && !titles.has(from.title) && joinFrames(into);
+      if (span && t >= span.seam && t < span.seam + span.duration) {
+        const left = 1 - easedProgress((t - span.seam) / span.duration, 'ease_in_out');
+        for (const id of from.clip_ids) { const node = state.previewNodes.get(id); if (node) node.style.opacity = String(Math.max(0, Math.min(Number(node.style.opacity || 1), left))); }
+      }
+    }
     $('preview-placeholder').hidden = true;
     post();
   };

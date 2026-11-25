@@ -41,7 +41,7 @@ class DirectorPlanTest(unittest.TestCase):
     def test_karl_requires_first_host_and_no_adjacent_hosts(self):
         channel={**CHANNEL,"name":"Karl Brenners Werkstatt","settings":{**CHANNEL["settings"],"weights":{"host":50,"stock_photo":50}}}
         with patch.object(store,"list_channels",return_value=[channel]):
-            self.assertEqual(director_plan.sentences(PROJECT["id"])["opening"],{"format":"host","count":1})
+            self.assertEqual(director_plan.sentences(PROJECT["id"])["opening"],[{"number":1,"format":"host"}])
             result=director_plan.apply(PROJECT["id"],frames(([1,2],"host"),([3,4],"host"),([5,6],"stock_photo"),([7,8],"stock_photo")),dry_run=True)
             self.assertTrue(any("двох кадрах поспіль" in x for x in result["problems"]))
 
@@ -109,3 +109,27 @@ class DirectorPlanTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpeningSequenceTest(unittest.TestCase):
+    def test_the_first_three_frames_follow_the_channel_and_a_named_first_frame_beats_the_host(self):
+        import director_plan
+        host = {"weights": {"razgon_2d": 83, "host": 15, "text": 2}, "host_even_distribution": True}
+        self.assertEqual(director_plan.opening(host), ["host"])                                   # all «Авто»: the host opens
+        self.assertEqual(director_plan.opening({**host, "opening_sequence": ["auto", "auto", "auto"]}), ["host"])
+        self.assertEqual(director_plan.opening({**host, "opening_sequence": ["razgon_2d", "host", "auto"]}), ["razgon_2d", "host"])
+        self.assertEqual(director_plan.opening({**host, "opening_sequence": ["auto", "text", "auto"]}), ["host", "text"])
+        plain = {"weights": {"stock_photo": 100}}
+        self.assertEqual(director_plan.opening(plain), [])
+        self.assertEqual(director_plan.opening({**plain, "first_clip_format": "stock_photo", "first_clip_count": 2}), ["stock_photo"] * 2)
+        self.assertEqual(director_plan.opening({**plain, "first_clip_format": "stock_photo", "first_clip_count": 2,
+                                                "opening_sequence": ["auto", "stock_photo", "auto"]}), [None, "stock_photo"])
+
+
+class ContinuousSceneTest(unittest.TestCase):
+    def test_an_idea_that_goes_on_from_the_frame_before_is_seen(self):
+        import director_plan
+        for idea in ("Та сама геометрія після зіткнення", "той самий кадр ближче", "Продовження руху камери"):
+            self.assertTrue(director_plan.CONTINUES.match(idea), idea)
+        for idea in ("Камера відходить від двох скупчень", "Нова сцена: телескоп Евклід", "Самі галактики"):
+            self.assertFalse(director_plan.CONTINUES.match(idea), idea)

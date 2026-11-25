@@ -8,6 +8,12 @@ GRAPHIC_PRESETS=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'grap
 OFFERED=set(GRAPHIC_PRESETS)
 GRAPHIC_PRESETS={**json.loads((Path(__file__).resolve().parents[1]/'engine'/'retired-graphic-transitions.json').read_text()),**GRAPHIC_PRESETS}
 CAPCUT=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'capcut-catalog.json').read_text())['transitions']
+def capcut_duration(kind):
+    """How long a CapCut transition lasts on a seam: its own length, or 30% shorter when that is over 1.2 s (user,
+    25 November 2026: «ті, що длінно… дуже довго показуються… скороти… на 30%»). The engine plays the animation faster
+    over the shorter seam; the catalog keeps the animation's own length (engine/capcut_fx.py «comp»)."""
+    own=float(CAPCUT[kind].get('default_duration',1.0))
+    return round(own*.7,2) if own>1.2 else own
 TYPES={'cut','crossfade','slide_left','slide_right','slide_up','slide_down','zoom_in','zoom_out'}|set(GRAPHIC_PRESETS)|set(CAPCUT)
 # what the library, the channel's «Переходи» and the montage may pick
 CHOICES=(TYPES-set(GRAPHIC_PRESETS)-{'cut'})|OFFERED
@@ -47,6 +53,33 @@ def reconcile(project):
         if join['duration']<=maximum:valid.append({**join,'seam':seam})
     if 'join_transitions' in project:project['join_transitions']=valid
 
+def held_source(project, source, needed):
+    """The video itself when it lasts `needed` seconds, else a copy holding its last frame to that length (made once,
+    in the episode's cache; local FFmpeg, nothing paid)."""
+    import hashlib, subprocess
+    from pathlib import Path
+    import store
+    path = Path(source)
+    available = store.media_duration(path) or 0
+    if available + .02 >= needed:
+        return source
+    stat = path.stat()
+    key = hashlib.sha256(f"{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|{needed:.3f}".encode()).hexdigest()[:24]
+    folder = store.cache_dir(project) / "held-tails"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{key}.mp4"
+    if not target.is_file():
+        part = target.with_suffix(".part.mp4")
+        result = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(path), "-vf",
+                                 f"tpad=stop_mode=clone:stop_duration={needed - available + .2:.3f}", "-an", "-c:v", "libx264",
+                                 "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", str(part)], capture_output=True, timeout=600)
+        if result.returncode or not part.is_file():
+            part.unlink(missing_ok=True)
+            return source
+        part.replace(target)
+    return str(target)
+
+
 def transport(project,layers):
     rendered={c['id']:c for layer in layers for c in layer['clips']}
     protected_text_ids=set()
@@ -76,6 +109,10 @@ def transport(project,layers):
             # a CapCut transition draws both sides itself (engine/capcut_fx.py): the outgoing clip only goes on under it
             if not capcut:clip['join_out']={**effect,'under':out_under,'group':f"{join.get('id','')}:out"}
             old=clip['duration'];clip['native_duration']=old;clip['duration']=old+join['duration']
+            if clip.get('type')=='video' and clip.get('source'):
+                # a video with no frames left for the transition (the host's HeyGen clip is as long as its frame) holds
+                # its last picture through it (user, 25 November 2026: «просто кадр… на 0,8 секунд довший зробити»)
+                clip['source']=held_source(project,clip['source'],float(clip.get('trim_start',0))+clip['duration'])
             points=clip.get('keyframes',[])
             if points:
                 # a clip still moving at its end keeps the speed of its last keyframe segment through the transition

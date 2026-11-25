@@ -1,7 +1,7 @@
 /* Frame groups compact the timeline while preserving editable native clips. */
 function sceneGroups(){return state.project?.scene_groups || [];}
 function enableStackReorder(heading,ref){
-  heading.draggable=true;heading.dataset.stackRef=ref;heading.title='Перетягніть доріжку за назву, щоб змінити порядок';
+  heading.draggable=false;heading.dataset.stackRef=ref;
   heading.addEventListener('dragstart',event=>{if(event.target.closest('.stack-menu-button')){event.preventDefault();return;}event.dataTransfer.setData('application/x-videostudio-stack',ref);event.dataTransfer.effectAllowed='move';heading.classList.add('layer-dragging');});
   heading.addEventListener('dragend',()=>{heading.classList.remove('layer-dragging');for(const n of document.querySelectorAll('.layer-drop-above,.layer-drop-below'))n.classList.remove('layer-drop-above','layer-drop-below');});
   heading.addEventListener('dragover',event=>{if(!event.dataTransfer.types.includes('application/x-videostudio-stack'))return;event.preventDefault();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.toggle('layer-drop-above',above);heading.classList.toggle('layer-drop-below',!above);});
@@ -9,7 +9,7 @@ function enableStackReorder(heading,ref){
   heading.addEventListener('drop',async event=>{const source=event.dataTransfer.getData('application/x-videostudio-stack');if(!source)return;event.preventDefault();event.stopPropagation();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.remove('layer-drop-above','layer-drop-below');if(source===ref)return;try{await action('reorder_stack',{source,target:ref,above},'Доріжки переставлено.');}catch(error){status(error.message,true);}});
 }
 function enableLayerReorder(heading,layer){
-  heading.draggable=true;heading.dataset.layerId=layer.id;heading.title='Перетягніть, щоб змінити порядок шарів';
+  heading.draggable=false;heading.dataset.layerId=layer.id;
   heading.addEventListener('dragstart',event=>{event.dataTransfer.setData('application/x-videostudio-layer',layer.id);event.dataTransfer.effectAllowed='move';heading.classList.add('layer-dragging');});
   heading.addEventListener('dragend',()=>{heading.classList.remove('layer-dragging');for(const el of document.querySelectorAll('.layer-drop-above,.layer-drop-below'))el.classList.remove('layer-drop-above','layer-drop-below');});
   heading.addEventListener('dragover',event=>{if(!event.dataTransfer.types.includes('application/x-videostudio-layer'))return;event.preventDefault();const above=event.clientY<heading.getBoundingClientRect().top+heading.getBoundingClientRect().height/2;heading.classList.toggle('layer-drop-above',above);heading.classList.toggle('layer-drop-below',!above);});
@@ -133,7 +133,7 @@ function groupLane(title,groups,ref){
   for(const group of groups){
     const bounds=groupBounds(group),members=groupMembers(group);if(!members.length)continue;
     let slot=ref==='scenes'?0:occupied.findIndex(end=>end<=bounds.start+.001);if(slot<0)slot=occupied.length;occupied[slot]=bounds.end;
-    const button=document.createElement('button');button.type='button';button.draggable=true;button.className='frame-group-clip'+(state.selectedGroup===group.id?' selected':'');button.dataset.groupId=group.id;
+    const button=document.createElement('button');button.type='button';button.draggable=false;button.className='frame-group-clip'+(state.selectedGroup===group.id?' selected':'');button.dataset.groupId=group.id;
     button.classList.add(members.some(c=>c.kind==='animation'&&c.content_type==='image')?'group-animation':'group-text');
     // an animated film's frame that is still only the director's code block, not a drawn picture yet, reads as empty
     if(members.every(emptyFrameClip))button.classList.add('group-empty');
@@ -143,7 +143,20 @@ function groupLane(title,groups,ref){
     // frame as code, grey (user, 2 November 2026: «чому кадри зелені, якщо це просто код»)
     else if(members.some(c=>['video','image'].includes(c.kind)&&/^Razgon · кадр/.test(c.title || '')&&!state.assetsLoading&&(state.assets || []).some(asset=>asset.id===c.asset_id)))button.classList.add('group-made');
     Object.assign(button.style,{left:(bounds.start/timelineSpan()*100)+'%',width:((bounds.end-bounds.start)/timelineSpan()*100)+'%',top:(2+slot*29)+'px'});
-    const number=group.title.match(/\d+/)?.[0];button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22?'':number || group.title;button.title=`${group.title} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
+    // a frame of the host's HeyGen video shows its still again and again across the block, as a film strip (user,
+    // 25 November 2026: «замість сірого… стоп-кадр його… по пару раз один за одним… щоб я знав, що це відео фрагмент»),
+    // always the block's full height and centred, so a narrow block shows the middle of the still («на всю по висоті…
+    // відцентровано»)
+    // the channel logo's row shows the logo the same way (user, 25 November 2026: «Логотип так само»)
+    const hostVideo=members.find(c=>c.kind==='video'&&isHostVideo(c,group));
+    if(hostVideo){button.classList.add('group-host-video');   // the stills 35% more transparent (user, 25 November 2026)
+      button.style.setProperty('--strip',`url("/api/projects/${encodeURIComponent(state.project.id)}/assets/${encodeURIComponent(hostVideo.asset_id)}/thumbnail")`);}
+    // the logo layer is a frame-sized picture with the logo in a corner: the strip shows the channel's own logo file,
+    // spaced evenly along the row
+    // (the plate of the channel's settings, 65% more transparent: user, 25 November 2026)
+    else if(group.role==='overlay'&&members.some(isChannelLogo)&&state.project?.channel_id){button.classList.add('group-plate-strip');
+      button.style.setProperty('--plate',`url("/api/channels/${encodeURIComponent(state.project.channel_id)}/logo")`);}
+    const number=group.title.match(/\d+/)?.[0],shownTitle=groupDisplayTitle(group);button.textContent=(bounds.end-bounds.start)/timelineSpan()*timelineWidth()<22||group.role==='overlay'?'':number || shownTitle;button.title=`${shownTitle} · ${clock(bounds.start)} - ${clock(bounds.end)} · ${members.length} елементів. Подвійний клік відкриває кадр.`;
     button.setAttribute('aria-label',`${group.title}, ${members.length} елементів`);if(group.id===state.selectedGroup || group.clip_ids.every(id=>state.multiSelection?.includes(id)))button.classList.add('selected');
     button.addEventListener('click',event=>{event.stopPropagation();if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds(group.clip_ids,true);return;}selectFrameGroup(group);});button.addEventListener('dblclick',()=>expandFrameGroup(group));
     button.addEventListener('dragstart',event=>{event.dataTransfer.setData('application/x-videostudio-group',group.id);event.dataTransfer.effectAllowed='move';});lane.append(button);
@@ -180,7 +193,7 @@ function compactSoundRows(entries){
 }
 
 function appendGroupedMediaClip(lane,{clip,layer}){
-  const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clipLabel(clip);button.title=clipLabel(clip);button.setAttribute('aria-label',clipLabel(clip));Object.assign(button.style,{left:((Number(clip.start)-timelineOrigin())/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);if(layer.muted)button.style.opacity='.45';lane.append(button);
+  const button=document.createElement('button');button.type='button';button.className='track-clip universal-clip kind-'+clip.kind+(emptyFrameClip(clip)?' empty-frame':draftFrameClip(clip)?' draft-frame':'');button.dataset.clipId=clip.id;if(state.selected===clip.id)button.classList.add('selected');if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');button.textContent=clip.kind==='audio'&&(clip.title==='Озвучка'||clip.audio_role==='voice')?'':clipLabel(clip);button.title=clipLabel(clip);button.setAttribute('aria-label',clipLabel(clip));Object.assign(button.style,{left:((Number(clip.start)-timelineOrigin())/timelineSpan()*100)+'%',width:(Number(clip.duration)/timelineSpan()*100)+'%'});button.addEventListener('click',event=>{state.activeLayer=layer.id;if(event.metaKey||event.ctrlKey||event.shiftKey){selectTimelineIds([clip.id],true);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});if(clip.kind==='audio')drawAudioWaveform(button,clip);if(layer.muted)button.style.opacity='.45';lane.append(button);
 }
 
 function soundLane(entry){
@@ -202,7 +215,7 @@ function renderGroupedTimelineWithIndex(){
   const index=new Map();layers().forEach((layer,i)=>{for(const c of layer.clips || [])index.set(c.id,i);});
   let rows=[];
   if(scenes.length||plannedTimelineFrames().length)rows.push({title:'Кадри · '+Math.max(scenes.length,plannedTimelineFrames().length),groups:scenes,ref:'scenes',z:scenes.length?Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1))):-1});
-  for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:group.title,groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
+  for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:groupDisplayTitle(group),groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});
   // the higher the row, the higher its layer in the picture; sound rows go under all of them (universal.js timelineRowOrder)
@@ -364,11 +377,14 @@ document.addEventListener('click',event=>{
 },true);
 document.addEventListener('pointerdown',event=>{
   timelineIgnoreClickUntil=0;
-  if(event.button!==0 || state.view!=='editor' || state.busy || !event.target.closest('#timeline-content') || event.target.closest('button,.layer-heading,.time-ruler,.track-clip,.frame-group-clip,#timeline-playhead'))return;
+  // a selection box may start anywhere on the lanes, on a frame or the plate too (user, 25 November 2026: «нажимаю… на
+  // плашку і тягну… виділення»): a press without a drag stays that block's click
+  const onBlock=event.target.closest('.track-clip,.frame-group-clip');
+  if(event.button!==0 || state.view!=='editor' || state.busy || !event.target.closest('#timeline-content') || event.target.closest('.layer-heading,.time-ruler,#timeline-playhead,.transition-join') || (!onBlock&&event.target.closest('button')))return;
   const viewport=document.querySelector('.timeline-scroll').getBoundingClientRect();
   const labelWidth=parseFloat(getComputedStyle(document.querySelector('.timeline-scroll')).getPropertyValue('--timeline-label-width')) || 142;
   if(event.clientX<viewport.left+labelWidth)return;
-  event.preventDefault();
+  if(!onBlock)event.preventDefault();
   const box=document.createElement('div');box.className='timeline-selection-box';document.body.append(box);
   const base=event.metaKey||event.ctrlKey||event.shiftKey?[...(state.multiSelection || []),...(state.selected?[state.selected]:[]),...(sceneGroups().find(g=>g.id===state.selectedGroup)?.clip_ids || [])]:[];
   timelineMarquee={x:event.clientX,y:event.clientY,box,base,moved:false,ids:base,pointer:event.pointerId};
@@ -383,7 +399,11 @@ document.addEventListener('pointermove',event=>{
   const ids=new Set(drag.base);
   for(const node of document.querySelectorAll('#timeline-tracks [data-clip-id],#timeline-tracks [data-group-id]')){
     const rect=node.getBoundingClientRect();
-    const hit=rect.right>Math.max(left,viewport.left) && rect.left<Math.min(right,viewport.right) && rect.bottom>Math.max(top,viewport.top) && rect.top<Math.min(bottom,viewport.bottom);
+    // a block counts when the box covers most of it, half its width or more (user, 25 November 2026: «все, що попало
+    // повністю… або… сильно частково»): the long plate under a box over a few frames stays out
+    const shownLeft=Math.max(rect.left,viewport.left),shownRight=Math.min(rect.right,viewport.right);
+    const across=Math.max(0,Math.min(shownRight,right)-Math.max(shownLeft,left)),width=Math.max(1,shownRight-shownLeft);
+    const hit=across>=width*.5 && rect.bottom>Math.max(top,viewport.top) && rect.top<Math.min(bottom,viewport.bottom);
     const members=node.dataset.groupId?sceneGroups().find(g=>g.id===node.dataset.groupId)?.clip_ids || []:[node.dataset.clipId];
     if(hit)for(const id of members)ids.add(id);
     node.classList.toggle(node.dataset.groupId?'selected':'multi-selected',hit || members.every(id=>ids.has(id)));
@@ -397,3 +417,23 @@ function finishTimelineMarquee(event){
 }
 document.addEventListener('pointerup',finishTimelineMarquee);
 document.addEventListener('pointercancel',finishTimelineMarquee);
+// the host's video in a frame: an asset HeyGen made, or a video in a frame the plan gives the host
+function isHostVideo(clip,group){
+  const asset=(state.assets||state.project?.assets||[]).find(item=>item.id===clip.asset_id);
+  if(asset?.source==='heygen')return true;
+  const number=Number(group.title.match(/\d+/)?.[0]);
+  return !!number&&(state.plan?.frames||[]).some(frame=>frame.number===number&&frame.format==='host');
+}
+function isChannelLogo(clip){
+  const asset=(state.assets||state.project?.assets||[]).find(item=>item.id===clip.asset_id);
+  return clip.kind==='image'&&(asset?.source==='channel-logo'||/^Логотип/.test(clip.title||''));
+}
+// the channel's logo layer reads simply «Плашка» on the timeline (user, 25 November 2026)
+function groupDisplayTitle(group){
+  return group.role==='overlay'&&groupMembers(group).some(isChannelLogo)?'Плашка':group.title;
+}
+// Nothing on the timeline is moved by hand (user, 25 November 2026: «щоб я не міг переміщати ніякі слої… максимум… виділяти»):
+// clips, frames and rows are selected, never dragged. A transition dragged in from its library still lands on a seam.
+document.addEventListener('dragstart',event=>{
+  if(event.target.closest?.('#editor-timeline')&&!event.target.closest('.transition-chip')){event.preventDefault();event.stopImmediatePropagation();}
+},true);

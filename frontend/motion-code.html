@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>Моушн-код</title>
+<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="motion"></canvas>
+<script src="/motion-code.js"></script>
+<script>
+// The export's page for one motion-code clip (tools/motion_code_render.mjs): the same runtime as the preview.
+let clip=null;
+window.motionInit=async spec=>{
+  clip=spec;
+  const canvas=document.getElementById('motion');canvas.width=spec.width;canvas.height=spec.height;
+  await Promise.all([MotionCode.loadFonts(),MotionCode.loadImages(spec.assets)]);
+  const program=MotionCode.compile(spec.code);
+  return program.error||null;
+};
+window.motionAt=t=>MotionCode.paint(document.getElementById('motion'),clip.code,t,clip);
+</script>
+</body>
+</html>

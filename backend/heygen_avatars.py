@@ -35,15 +35,20 @@ def group(group_id):
     return _avatar(row)
 
 
-def supports_avatar_iii(look_id):
+def engines(look_id):
+    """The API engines HeyGen offers for a look (avatar_iii, avatar_iv, …)."""
     result = _read(f'/v3/avatars/looks/{quote(look_id, safe="")}')
     row = result.get('data') if isinstance(result, dict) else None
     if not isinstance(row, dict) or row.get('id') != look_id:
         raise StudioError('HeyGen не підтвердив вибраний образ аватара.', 502)
-    engines = row.get('supported_api_engines')
-    if not isinstance(engines, list):
+    found = row.get('supported_api_engines')
+    if not isinstance(found, list):
         raise StudioError('HeyGen не повідомив, чи підтримує цей образ Avatar III.', 502)
-    return 'avatar_iii' in engines
+    return found
+
+
+def supports_avatar_iii(look_id):
+    return 'avatar_iii' in engines(look_id)
 
 
 def _read(path):
@@ -98,3 +103,26 @@ def look_rate(look_id):
     twin = 'twin' in kind or kind in {'video_avatar', 'instant_avatar'}
     rate = RATES['digital_twin'] if twin else RATES.get(kind, RATES['photo_avatar'])
     return {'avatar_type': kind or None, 'usd_per_minute': rate}
+
+
+def known_rate(look_id):
+    """The per-minute rate of a look whose kind the studio already knows (from the estimate), else None; asks nothing."""
+    import store
+    kind = (store.read_json(_kinds_path(), {}) or {}).get(look_id)
+    if not kind:
+        return None
+    twin = 'twin' in kind or kind in {'video_avatar', 'instant_avatar'}
+    return RATES['digital_twin'] if twin else RATES.get(kind, RATES['photo_avatar'])
+
+
+# Avatar IV a minute through the API (platform.heygen.com/pricing, 25 November 2026): it takes a motion prompt
+RATES_IV = {'digital_twin': 4.83, 'photo_avatar': 2.31, 'studio_avatar': 4.83}
+
+
+def known_rate_iv(look_id):
+    import store
+    kind = (store.read_json(_kinds_path(), {}) or {}).get(look_id)
+    if not kind:
+        return None
+    twin = 'twin' in kind or kind in {'video_avatar', 'instant_avatar'}
+    return RATES_IV['digital_twin'] if twin else RATES_IV.get(kind, RATES_IV['photo_avatar'])

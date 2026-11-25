@@ -97,7 +97,7 @@ function renderUniversalTimeline(){
       let slot=occupiedUntil.findIndex(end=>end<=seconds(clip.start));
       if(slot<0)slot=occupiedUntil.length;
       occupiedUntil[slot]=seconds(clip.start)+seconds(clip.duration);
-      const button=document.createElement('button');button.type='button';button.draggable=true;button.className=`track-clip universal-clip kind-${clip.kind}${state.selected===clip.id?' selected':''}${typeof emptyFrameClip==='function'&&emptyFrameClip(clip)?' empty-frame':typeof draftFrameClip==='function'&&draftFrameClip(clip)?' draft-frame':''}`;button.dataset.clipId=clip.id;button.style.left=seconds(clip.start)/total*100+'%';button.style.width=seconds(clip.duration)/total*100+'%';button.setAttribute('aria-label',clipLabel(clip));const caption=document.createElement('span');caption.className='clip-title';caption.textContent=clipLabel(clip);button.append(caption);button.title=`${clipKindLabel(clip.kind)}: ${clipLabel(clip)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+seconds(clip.duration))}`;
+      const button=document.createElement('button');button.type='button';button.draggable=false;button.className=`track-clip universal-clip kind-${clip.kind}${state.selected===clip.id?' selected':''}${typeof emptyFrameClip==='function'&&emptyFrameClip(clip)?' empty-frame':typeof draftFrameClip==='function'&&draftFrameClip(clip)?' draft-frame':''}`;button.dataset.clipId=clip.id;button.style.left=seconds(clip.start)/total*100+'%';button.style.width=seconds(clip.duration)/total*100+'%';button.setAttribute('aria-label',clipLabel(clip));const caption=document.createElement('span');caption.className='clip-title';caption.textContent=clipLabel(clip);button.append(caption);button.title=`${clipKindLabel(clip.kind)}: ${clipLabel(clip)} · ${clock(clip.start)} - ${clock(seconds(clip.start)+seconds(clip.duration))}`;
       button.style.top=(2+slot*27)+'px';button.style.left=((seconds(clip.start)-timelineOrigin())/total*100)+'%';
       button.addEventListener('click',event=>{event.stopPropagation();if(event.metaKey||event.ctrlKey||event.shiftKey){toggleClipSelection(clip.id);return;}state.multiSelection=[];state.selectedGroup=null;selectUniversalClip(clip.id);});
       if(state.multiSelection?.includes(clip.id))button.classList.add('multi-selected');
@@ -105,6 +105,8 @@ function renderUniversalTimeline(){
       button.addEventListener('dragover',event=>{if(['application/x-videostudio-asset','application/x-videostudio-transition'].some(type=>event.dataTransfer.types.includes(type))){event.preventDefault();button.classList.add('drop-target');}});
       button.addEventListener('dragleave',()=>button.classList.remove('drop-target'));
       button.addEventListener('drop',event=>dropOnUniversalClip(event,clip.id));lane.append(button);
+      // the voice's block carries no label, its waveform says enough (user, 25 November 2026)
+      if(clip.kind==='audio'&&(clip.title==='Озвучка'||clip.audio_role==='voice')){button.textContent='';button.setAttribute('aria-label',clip.title||'Озвучка');}
       if(clip.kind==='audio')drawAudioWaveform(button,clip);
       if(clip.transition?.type && clip.transition.type!=='cut'){const marker=document.createElement('span');marker.className='transition-marker';marker.textContent='◊';marker.title=`Плавний перехід ${clip.transition.duration || .3} с`;marker.style.left=(seconds(clip.start)+seconds(clip.duration))/total*100+'%';marker.style.top=(1+slot*47)+'px';lane.append(marker);}
     }
@@ -268,15 +270,17 @@ function renderUniversalPreview(){
   }
   for(const clip of prepared){
       const asset=assetById(clip.asset_id),url=asset?.preview_url || asset?.media_url || asset?.url;
-      const sourceSignature=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,url,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type]);
+      const sourceSignature=JSON.stringify([clip.kind,clip.content_type,clip.asset_id,url,clip.text,clip.text_words,clip.font_family,clip.font_weight,clip.font_size,clip.word_entrance?.type,clip.code,clip.code_assets]);
       let existing=state.previewNodes.get(clip.id);
       if(existing&&existing._sourceSignature!==sourceSignature){existing.querySelectorAll('video').forEach(video=>video.pause());existing._trails?.forEach(trail=>trail.node.remove());existing.remove();state.previewNodes.delete(clip.id);existing=null;}
       if(!existing){
       const wrapper=document.createElement('div');wrapper.className='composition-clip';wrapper.dataset.clipId=clip.id;
       wrapper._sourceSignature=sourceSignature;
       let element;
-      const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':clip.content_type==='capcut_effect'?'capcut':'shape'):clip.kind;
+      const mediaKind=clip.kind==='animation'?(clip.content_type==='image'?'image':clip.content_type==='text'?'text':clip.content_type==='gradient'?'gradient':clip.content_type==='capcut_effect'?'capcut':clip.content_type==='code'?'code':'shape'):clip.kind;
       if(mediaKind==='capcut')element=capcutEffectElement(clip);
+      // motion design written as code draws on a canvas the size of the film (frontend/motion-code.js)
+      else if(mediaKind==='code'){element=document.createElement('canvas');element.className='composition-code';element.width=Number(state.project?.width)||1920;element.height=Number(state.project?.height)||1080;window.MotionCode?.loadFonts();}
       else if(mediaKind==='gradient'){element=document.createElement('canvas');element.className='composition-gradient';element.width=320;element.height=180;}
       else if(mediaKind==='image'){element=document.createElement('img');element.decoding='async';element.fetchPriority=shown.has(clip.id)?'high':'low';element.alt='';}
       else if(mediaKind==='video'){element=document.createElement('video');element.muted=true;element.playsInline=true;element.preload='auto';element.addEventListener('loadedmetadata',()=>{const target=Number(clip.trim_start||0)+Math.max(0,state.playhead-Number(clip.start));if(target>0)element.currentTime=Math.min(target,element.duration);},{once:true});}
@@ -336,6 +340,9 @@ function renderUniversalPreview(){
     applyGraphicStyle(wrapper,clip,frameWidth);
     renderMotionTrails(wrapper,clip,local,composition);
     const gradientCanvas=wrapper.querySelector('.composition-gradient');if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
+    const codeCanvas=wrapper.querySelector('.composition-code');
+    if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.max(0,local),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip)});
+      if(error!==codeCanvas._error){codeCanvas._error=error;wrapper.dataset.codeError=error||'';if(error)console.warn('Моушн-код «'+(clip.title||'')+'»: '+error);}}
     if(clip.content_type==='capcut_effect')syncCapcutEffect(wrapper,clip,local);
     const video=wrapper.querySelector('video:not(.capcut-loop)');if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
@@ -406,3 +413,9 @@ function openUniversalTransition(){selectLibraryTab('transitions');renderTimelin
 
 $('add-layer').addEventListener('click',()=>{if(!isUniversal())return;action('add_layer',{},'Шар додано.').then(()=>{state.activeLayer=layers().at(-1)?.id;renderTimeline();renderInspector();}).catch(()=>{});});
 $('add-animation').addEventListener('click',()=>{if(isUniversal())openUniversalAnimation();});
+// a motion-code clip's pictures: its names to the project's asset files
+function codeAssetUrls(clip){
+  const result={};
+  for(const [name,id] of Object.entries(clip.code_assets||{})){const asset=assetById(id);const url=asset?.media_url||asset?.url||asset?.preview_url;if(url)result[name]=url;}
+  return result;
+}

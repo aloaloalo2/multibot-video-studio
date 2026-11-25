@@ -1,0 +1,202 @@
+{
+ "props": [
+  {
+   "name": "andromeda",
+   "sha256": "493b8335e7c2496d66d84a7627ccaf50bd58f5504a167f690c77db42c0cfcebb",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "cluster_b",
+   "sha256": "9063f3c3c7287ec821f46c90db4bd0292aac09000af28c5f232bd32a76ed332a",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "earth",
+   "sha256": "d09f488e406b7b6fa682dce0f29baa4683315bffc4918349d0fdfba376e79d23",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "earth_night",
+   "sha256": "070923a76ae3418239a979e8faa79a1ec900aa363edbdcf5f070096b49cd334c",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "eclipse",
+   "sha256": "b6fc22ffa3a5fd62dc7c35b2159a321f6aa79b8fb63f5a74768de3521b736814",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "edge_on",
+   "sha256": "7688d9de1d9b61aa63cd5b12b68af45c10dd47f3c88c805749a41ac98a483667",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "elliptical",
+   "sha256": "b7939fc98d79df889575b7df7389dd1f728663833faa91a75d34d39979337538",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "galaxy_cluster",
+   "sha256": "da800fa553a28658095fdbf16ce6210618d9efd6c6a4ce2e66a62d8078d7d2f9",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "galaxy_mw",
+   "sha256": "b7752fbdd23930f2b6c4d87a4e7774b81ed009810a6dd36650847cae248fe978",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "galaxy_spiral",
+   "sha256": "364f6eff01461c3c74354a111097780c88d2ae1bcc857b338582a2112d35b24c",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "hubble",
+   "sha256": "3c026dd847850dec301d9ad110e622ea5a5c78f4a3bb563b0bf89d23dfde4f9c",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "moon",
+   "sha256": "ac5401dad43d47bc896b5dcd9700dbb0af70edd2f0fc8ec7d492447e4d95dd3d",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "obs_box",
+   "sha256": "280b5491a96eaaa2facfec48f7028328c59350cf0843ff524565c197255b50c3",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "obs_dome",
+   "sha256": "e22058fd1e3aac9200886db6069d9fa55b35d41dfa0802157f1b6a8fc37677f8",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "obs_tall",
+   "sha256": "99d756084eb4216b7127d421731995323f4a0406ab576d9756798542d1883994",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "observatory",
+   "sha256": "1df48289140525f301de92959a9d11640e86599868e385c3d8d10dc9d6e9a0d2",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "radio_dish",
+   "sha256": "1233f6ef79fde609315bb317bc953dcc909001d9e12a4d1f7eaf8eed69566778",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "scales",
+   "sha256": "30d3abea8ab2acc64612faea2db6fe9c3d184e376abedede8fa6cb8d0c3695e1",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "spiral_far",
+   "sha256": "b1bf45b6792802f69777816e0f56f99696ac3eb03d8baabcbd93e20f17421cdd",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "sun",
+   "sha256": "d7e21f087ce3597e3246880ce4f76563d59225ae5eb98817b18d4a7841b69626",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "telescope_truss",
+   "sha256": "3422b81c8e7d7539080663102ae737bbddb287ab8817ea9576e80aa0cae3ca39",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  },
+  {
+   "name": "webb",
+   "sha256": "eb38a0c8090b2aac3afa8fdcf690a6012a371bc80d2edcc7a47bf152bd18046d",
+   "description": "",
+   "projects": [
+    "kosmos-pro-my-sostavili-kartu-nevidimoy-vselennoy-chto-to-ne-skhoditsya"
+   ],
+   "added": "2026-11-25"
+  }
+ ]
+}

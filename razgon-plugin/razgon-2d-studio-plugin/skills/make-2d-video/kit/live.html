@@ -79,7 +79,8 @@ addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(
 new EventSource('/__events').onmessage = () => { sessionStorage.setItem('razgonLiveT', t.toFixed(2)); location.reload(); };
 window.RAZGON_LIVE = { seek, get t() { return t; } };
 // embedded in a host app (MultiBot Video Studio «Монтаж»): the host owns time and sound and sends the playhead
-if (EMBED) { addEventListener('message', (e) => { if (e.data && e.data.razgon === 'seek' && Number.isFinite(e.data.t)) draw(e.data.t); }); parent.postMessage({ razgon: 'ready' }, '*'); }
+// after each seek the host is told which moment is on the canvas, so it shows the frame only once its own moment is drawn
+if (EMBED) { addEventListener('message', (e) => { if (e.data && e.data.razgon === 'seek' && Number.isFinite(e.data.t)) { draw(e.data.t); parent.postMessage({ razgon: 'drawn', t: e.data.t }, '*'); } }); parent.postMessage({ razgon: 'ready' }, '*'); }
 draw(t);
 </script>
 </body></html>

@@ -214,3 +214,21 @@ class DirectorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DirectorPauseStateTest(unittest.TestCase):
+    def test_a_director_stopped_by_the_pause_reads_paused_and_a_restart_offers_to_go_on(self):
+        import episode_pause
+        from unittest.mock import patch
+        running = {"status": "running", "started_at": 1}
+        with patch.object(director.store, "read_json", side_effect=lambda *a, **k: dict(running)), \
+                patch.object(director, "state_path", return_value="director.json"):
+            with patch.object(episode_pause, "paused", return_value={"stopped": {"director": {"reason": "voice"}}}):
+                state = director.state("p")
+            self.assertEqual(state["status"], "paused")
+            self.assertIsNone(state["error"])
+            with patch.object(episode_pause, "paused", return_value=None):
+                state = director.state("p")
+            self.assertEqual(state["status"], "failed")
+            self.assertTrue(state["interrupted"])
+            self.assertIn("Продовжити режисуру", state["error"])

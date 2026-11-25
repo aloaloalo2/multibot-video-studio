@@ -79,8 +79,7 @@ class DesignedTextTest(unittest.TestCase):
                 ctx.actions = []
                 self.backdrop_of(ctx, 9, {"backdrop": "grid"}, start=30.0)
                 grid = [a["payload"] for a in ctx.actions]
-                self.assertEqual([(c["kind"], c.get("content_type")) for c in grid], [("image", None), ("animation", "capcut_effect")])
-                self.assertIn(grid[1]["capcut_effect"], montage_ops.GRID_NOISES)
+                self.assertEqual([(c["kind"], c.get("content_type")) for c in grid], [("image", None)])   # the grid alone, no noise
                 self.assertTrue((Path(root) / "text-backdrops" / "grid-1920x1080.png").is_file())
         with self.assertRaises(montage_ops.OpError):
             self.backdrop_of(self.ctx([], []), 3, {"backdrop": "rainbow"})
@@ -167,3 +166,21 @@ class AntropovLooksTest(unittest.TestCase):
         self.assertEqual(background["start"], 10)
         payload["text"] = montage_ops.display_text.clean(payload["text"])
         montage_ops.store.apply_text_binding(ctx.project,payload,{"text_role":"full_frame","source_text":payload["text"]})
+
+
+class HeldTailTest(unittest.TestCase):
+    def test_a_video_short_of_its_transition_holds_its_last_frame(self):
+        import subprocess, tempfile
+        import joins
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clip = root / "host.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=1",
+                            "-pix_fmt", "yuv420p", str(clip)], check=True)
+            import store
+            with mock.patch.object(store, "cache_dir", return_value=root / "cache"):
+                self.assertEqual(joins.held_source({}, str(clip), .9), str(clip))          # long enough: the file itself
+                held = joins.held_source({}, str(clip), 1.6)
+                self.assertNotEqual(held, str(clip))
+                self.assertGreaterEqual(store.media_duration(Path(held)), 1.6)
+                self.assertEqual(joins.held_source({}, str(clip), 1.6), held)                # made once

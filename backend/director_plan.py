@@ -11,6 +11,8 @@ every synced plan, and the frames keep their groups through later recognitions (
 """
 from __future__ import annotations
 
+import re
+
 import planner
 import store
 
@@ -62,15 +64,37 @@ def shares(settings: dict) -> dict[str, float]:
     return {key: round(100 * value / total, 1) for key, value in weights.items()}
 
 
-def opening(settings: dict) -> tuple[str | None, int]:
-    """The format the channel's first frames must have, if it names one, and how many frames."""
-    if settings.get("host_even_distribution"):
-        return "host", 1
-    chosen = settings.get("first_clip_format", "auto")
-    if chosen == "video":
-        weights = settings["weights"]
-        chosen = max(("stock_video", "generated_video"), key=lambda key: (float(weights.get(key, 0)), key == "stock_video"))
-    return (None if chosen == "auto" else chosen), int(settings.get("first_clip_count", 1))
+OPENING_FRAMES = 3
+CONTINUES = re.compile(r"(?i)^\s*(та сама|той самий|те саме|ті самі|та ж|той же|те ж|продовж|далі та сама|та же|тот же|то же|те же|продолж)")
+
+
+def _video(settings: dict, chosen: str) -> str:
+    if chosen != "video":
+        return chosen
+    weights = settings["weights"]
+    return max(("stock_video", "generated_video"), key=lambda key: (float(weights.get(key, 0)), key == "stock_video"))
+
+
+def opening(settings: dict) -> list:
+    """The format each of the film's first frames must have, in order; None leaves that frame to the director.
+    «Початок ролика» names up to three frames (user, 25 November 2026: «перший кадр, там анімація, другий кадр, там
+    такий-то»); a channel that names none keeps its older single format and count. A host channel opens with the host
+    unless the sequence names the first frame itself."""
+    sequence = settings.get("opening_sequence")
+    if isinstance(sequence, list) and any(item != "auto" for item in sequence):
+        result = [None if item == "auto" else _video(settings, item) for item in sequence[:OPENING_FRAMES]]
+    else:
+        chosen = _video(settings, settings.get("first_clip_format", "auto"))
+        result = [] if chosen == "auto" else [chosen] * int(settings.get("first_clip_count", 1))
+    if settings.get("host_even_distribution") and not (result and result[0]):
+        result = ["host"] + result[1:]
+    while result and result[-1] is None:
+        result.pop()
+    return result
+
+
+def opening_text(rules: list, labels: dict) -> str:
+    return ", ".join(f"кадр {number} «{labels.get(kind, kind)}»" for number, kind in enumerate(rules, 1) if kind)
 
 
 def voice(plan: dict) -> tuple[list[str], list[dict]]:
@@ -83,7 +107,7 @@ def sentences(pid: str) -> dict:
     project = store.load_project(pid)
     plan, settings = synced_plan(pid), channel_settings(project)
     texts, timings = voice(plan)
-    first, count = opening(settings)
+    rules = opening(settings)
     targets = shares(settings)
     return {"sentences": [{"number": number, "text": text, "start": timing["start"], "end": timing["end"]}
                           for number, (text, timing) in enumerate(zip(texts, timings), 1)],
@@ -94,9 +118,9 @@ def sentences(pid: str) -> dict:
             "generated_image_style": settings.get("generated_image_style", ""),
             "tolerance": SHARE_TOLERANCE,
             "auto_formats": settings.get('weights_auto', []),
-            "opening": {"format": first, "count": count} if first else None,
-            "host_rules": {"first_frame": True, "last_frame": True, "no_consecutive": True, "even_distribution": True}
-                if settings.get("host_even_distribution") else None}
+            "opening": [{"number": number, "format": kind} for number, kind in enumerate(rules, 1) if kind] or None,
+            "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": True, "no_consecutive": True,
+                           "even_distribution": True} if settings.get("host_even_distribution") else None}
 
 
 def apply(pid: str, frames, dry_run: bool = False) -> dict:
@@ -129,9 +153,15 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
         problems.append(f"Кадри покривають речення 1–{expected - 1}, а в озвучці їх {len(texts)}")
     if problems:
         return {"ok": False, "problems": problems}
-    first, count = opening(settings)
-    if first and any(kind != first for kind in kinds[:count]):
-        problems.append(f"Перші {count} кадр(и) за налаштуваннями каналу мають бути «{labels.get(first, first)}»")
+    # one continuous scene is one frame (user, 25 November 2026: «та сама сцена, але розбита на 4 кадри»): an idea that
+    # says it goes on from the frame before, in the same format, belongs to that frame
+    for index in range(1, len(kinds)):
+        if kinds[index] == kinds[index - 1] and CONTINUES.match(ideas[index] or ""):
+            problems.append(f"Кадр {index + 1} продовжує сцену кадру {index} («{ideas[index][:60]}…»): безперервна сцена має бути одним "
+                            f"кадром, об'єднай їхні речення в один кадр")
+    for number, (wanted, kind) in enumerate(zip(opening(settings), kinds), 1):
+        if wanted and kind != wanted:
+            problems.append(f"Кадр {number} за початком ролика в налаштуваннях каналу має бути «{labels.get(wanted, wanted)}»")
     run = 1
     for index in range(1, len(kinds)):
         run = run + 1 if kinds[index] == kinds[index - 1] else 1

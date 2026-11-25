@@ -23,6 +23,38 @@ def digest(value) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def link_matches(plan: dict, linked: dict) -> bool:
+    expected = [{k: f.get(k) for k in ("number", "start", "end", "format")} for f in plan.get("frames", [])]
+    actual = [{k: f.get(k) for k in ("number", "start", "end", "format")} for f in linked.get("frames", [])]
+    return linked.get("script_sha256") == plan.get("script_sha256") and expected == actual
+
+
+def sync_link(pid: str) -> bool:
+    """Bring the Razgon project's story/studio_frames.json up to the studio's plan before the frames are made, so a plan
+    changed after its workspace was prepared (formats swapped, frames regrouped) never stops the run (user, 25 November
+    2026: «таких ошибок бути не має»). `razgon_bridge.py prepare` is local and free and keeps a written shot table.
+    True when the link matches (or there is no Razgon project)."""
+    import subprocess
+    import sys
+    project = store.load_project(pid)
+    razgon = frame_progress.razgon_project(project)
+    if not razgon:
+        return True
+    plan = store.load_project_plan(pid) or {}
+    if link_matches(plan, store.read_json(razgon / "story/studio_frames.json", {}) or {}):
+        return True
+    try:
+        result = subprocess.run([sys.executable, str(store.APP_ROOT / "tools" / "razgon_bridge.py"), "prepare", "--project-id", pid],
+                                capture_output=True, text=True, timeout=600, cwd=str(store.APP_ROOT))
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"[production] studio_frames.json of {pid}: {error}", flush=True)
+        return False
+    if result.returncode:
+        print(f"[production] studio_frames.json of {pid}: {(result.stderr or result.stdout).strip()[-400:]}", flush=True)
+    razgon = frame_progress.razgon_project(store.load_project(pid)) or razgon
+    return link_matches(store.load_project_plan(pid) or {}, store.read_json(razgon / "story/studio_frames.json", {}) or {})
+
+
 def build(project: dict, request: dict, *, repair: bool = False) -> dict:
     pid = project["id"]
     plan = store.load_project_plan(pid) or {}
@@ -34,9 +66,7 @@ def build(project: dict, request: dict, *, repair: bool = False) -> dict:
         story = store.read_json(razgon / "story/shots.json", {}) or {}
         linked = store.read_json(razgon / "story/studio_frames.json", {}) or {}
         # A mismatched handoff needs a technical fix before another model call.
-        expected = [{k: f.get(k) for k in ("number", "start", "end", "format")} for f in plan.get("frames", [])]
-        actual = [{k: f.get(k) for k in ("number", "start", "end", "format")} for f in linked.get("frames", [])]
-        if linked.get("script_sha256") != plan.get("script_sha256") or expected != actual:
+        if not link_matches(plan, linked):
             issues.append("План студії та story/studio_frames.json розходяться. Потрібно узгодити прив'язку кадрів.")
         for path in sorted((razgon / "scenes").rglob("*.js")):
             source = path.read_text(encoding="utf-8", errors="replace")

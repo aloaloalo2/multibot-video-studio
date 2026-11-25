@@ -418,6 +418,16 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Невідомий формат початку")
     if type(value.get("first_clip_count", 1)) is not int or not 1 <= value.get("first_clip_count", 1) <= 30:
         raise StudioError("Кількість початкових кадрів має бути від 1 до 30")
+    first_host = value.get("heygen_first_frame", {})
+    if (not isinstance(first_host, dict) or set(first_host) - {"enabled", "expressiveness", "motion_prompt"}
+            or not isinstance(first_host.get("enabled", True), bool)
+            or first_host.get("expressiveness", "medium") not in {"low", "medium", "high"}
+            or not isinstance(first_host.get("motion_prompt", ""), str) or len(first_host.get("motion_prompt", "")) > 600):
+        raise StudioError("Невірні налаштування першого кадру ведучого")
+    sequence = value.get("opening_sequence", ["auto"])
+    if (not isinstance(sequence, list) or not 1 <= len(sequence) <= 3
+            or any(not isinstance(item, str) or item not in allowed | {"auto", "video"} for item in sequence)):
+        raise StudioError("Невірний початок ролика: до трьох кадрів, кожен «Авто» або формат каналу")
     for key, lo, hi in (("first_clip_seconds", 0, 60), ("words_per_minute", 1, 1000)):
         if key in value and (type(value[key]) not in (int, float) or not math.isfinite(value[key]) or not lo <= value[key] <= hi):
             raise StudioError("Невірне значення: " + key)
@@ -437,6 +447,8 @@ def validate_settings(value: dict) -> dict:
         raise StudioError("Невідома частота кадрів")
     if "video_quality" in value and value["video_quality"] not in VIDEO_QUALITIES:
         raise StudioError("Невідома якість відео")
+    if "host_graphics" in value and not isinstance(value["host_graphics"], bool):
+        raise StudioError("Невірне значення: host_graphics")
     if "accents" in value and not isinstance(value["accents"], bool):
         raise StudioError("Невірне значення: accents")
     if "people_style" in value and value["people_style"] not in {"stickman", "real", "real_older"}:
@@ -1693,6 +1705,38 @@ def media_dir(project: dict) -> Path:
     return project_dir(project["id"]) / "media"
 
 
+def _code_words(words) -> list:
+    """The spoken words a motion-code clip may sync to: [{text, start, end}] in seconds from the clip's start."""
+    if words is None:
+        return []
+    if not isinstance(words, list) or len(words) > 2000:
+        raise StudioError("Невірні слова моушн-коду")
+    result = []
+    for word in words:
+        if not isinstance(word, dict) or not isinstance(word.get("text"), str):
+            raise StudioError("Невірні слова моушн-коду")
+        result.append({"text": word["text"][:80], "start": round(finite_float(word.get("start"), -36000, 36000, "Невірний час слова"), 3),
+                       "end": round(finite_float(word.get("end"), -36000, 36000, "Невірний час слова"), 3)})
+    return result
+
+
+def _code_assets(project: dict, assets) -> dict:
+    """The pictures a motion-code clip draws, by the names its code uses: {name: asset id} of the project's images."""
+    if assets is None:
+        return {}
+    if not isinstance(assets, dict) or len(assets) > 100:
+        raise StudioError("Невірні асети моушн-коду")
+    result = {}
+    for name, asset_id in assets.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,40}", name):
+            raise StudioError("Назва асета моушн-коду: латиниця, цифри й _, як змінна в коді")
+        asset = resolve_asset(project, str(asset_id))
+        if asset.get("kind") != "image":
+            raise StudioError("Асет моушн-коду має бути картинкою")
+        result[name] = asset["id"]
+    return result
+
+
 def cache_dir(project: dict) -> Path:
     """The studio's cache of an episode: export chunks, stills, stock sheets, frame renders, the render cache."""
     return project_dir(project["id"])
@@ -1994,10 +2038,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
     if action=='set_join_transition':
         try:
             _,_,outgoing,_=joins.boundary(project,payload.get('from_ref'),payload.get('to_ref'))
-            for clip in outgoing:
-                if clip.get('kind')=='video' and payload.get('type')!='cut':
-                    asset=resolve_asset(project,clip['asset_id']);available=media_duration(Path(asset['path']))
-                    if available and clip.get('trim_start',0)+clip['duration']+float(payload.get('duration',.35))>available+.04:raise ValueError('The outgoing video needs extra frames for this transition')
+            # a video with no frames left for the transition holds its last picture through it (joins.held_source)
             joins.set_transition(project,payload)
         except (ValueError,TypeError,KeyError) as error:raise StudioError(str(error))
         return True
@@ -2120,8 +2161,11 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
         needed_kind = "image" if kind == "animation" and content_type == "image" else kind if kind in {"video", "image", "audio"} else None
         if needed_kind and (asset is None or asset["kind"] != needed_kind):
             raise StudioError("Тип матеріалу не відповідає кліпу")
-        if kind == "animation" and content_type not in {"text", "image", "shape", "gradient", "capcut_effect"}:
+        if kind == "animation" and content_type not in {"text", "image", "shape", "gradient", "capcut_effect", "code"}:
             raise StudioError("Невідомий тип анімації")
+        if content_type == "code":
+            import motion_code
+            motion_code.validate(payload.get("code"))
         if content_type == "capcut_effect" and payload.get("capcut_effect") not in capcut_effects():
             raise StudioError("Невідомий ефект CapCut")
         if kind in {"video", "audio"}:
@@ -2148,6 +2192,10 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
             clip["frame_background"] = True
         if content_type == "capcut_effect":
             clip["capcut_effect"] = payload["capcut_effect"]
+        if content_type == "code":
+            clip["code"] = payload["code"]
+            clip["code_words"] = _code_words(payload.get("code_words"))
+            clip["code_assets"] = _code_assets(project, payload.get("code_assets"))
         if payload.get("accent_motion") in ("still", "fade"):
             clip["accent_motion"] = payload["accent_motion"]
         style_defaults={}
@@ -2274,8 +2322,19 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
     elif action == "update_clip":
         _, clip = clip_by_id(project, str(payload["clip_id"]))
         changes = payload.get("patch", payload.get("changes", {}))
-        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text", "capcut_effect"} | graphics.FIELDS):
+        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text", "capcut_effect", "code", "code_words", "code_assets"} | graphics.FIELDS):
             raise StudioError("Невідоме поле кліпу")
+        if "code" in changes or "code_words" in changes or "code_assets" in changes:
+            if clip.get("content_type") != "code":
+                raise StudioError("Код можна змінити лише в шарі моушн-коду")
+            import motion_code
+            changes = dict(changes)
+            if "code" in changes:
+                clip["code"] = motion_code.validate(changes.pop("code"))
+            if "code_words" in changes:
+                clip["code_words"] = _code_words(changes.pop("code_words"))
+            if "code_assets" in changes:
+                clip["code_assets"] = _code_assets(project, changes.pop("code_assets"))
         try:clip.update(graphics.validate(changes))
         except (ValueError,TypeError) as error:raise StudioError(str(error))
         if (clip['kind']=='text' or clip.get('content_type')=='text') and project.get('font_family'):
@@ -2323,7 +2382,7 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
 
 
 def apply_text_binding(project,clip,source):
-    for key in ('text_role','source_frame','source_text'):
+    for key in ('text_role','source_frame','source_text','adapted'):
         if key in source:clip[key]=copy.deepcopy(source[key])
     if clip.get('text_role') not in (None,'full_frame','caption','label'):raise StudioError('Invalid text role')
     if clip.get('text_role')!='full_frame':return
@@ -2333,6 +2392,10 @@ def apply_text_binding(project,clip,source):
         frame=next((f for f in (plan or {}).get('frames',[]) if f['number']==clip.get('source_frame')),None)
         if not frame or frame['format']!='text':raise StudioError('Text frame is missing from the approved plan')
         expected=' '.join(frame['sentences']);clip['source_text']=expected
+    # a text adapted for reading (digits, Latin names; montage_ops place «display») shows its own words
+    if clip.get('adapted') is True:
+        if not clip.get('text','').strip():raise StudioError('A text frame must contain its complete spoken passage')
+        return
     if not expected or ' '.join(display_text.clean(expected).split())!=' '.join(clip.get('text','').split()):
         raise StudioError('A text frame must contain its complete spoken passage')
     if clip.get('text_words') and clip['text_words'][0]['start']>.15:

@@ -11,7 +11,7 @@ import number_text
 SETTING_DEFAULTS = {
     "short_sentence_words": 5, "max_sentences_per_scene": 4,
     "words_per_minute": 145, "first_clip_seconds": 0,
-    "first_clip_format": "auto", "first_clip_count": 1,
+    "first_clip_format": "auto", "first_clip_count": 1, "opening_sequence": ["auto", "auto", "auto"],
     "motion_easing": "ease_in_out", "generated_image_style": "",
 }
 

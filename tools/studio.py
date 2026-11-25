@@ -49,7 +49,7 @@ from timeline_lock import timeline_lock  # noqa: E402
 
 STUDIO = "http://127.0.0.1:8770"
 # Commands that change the timeline: one at a time per project, so two frame sessions of one episode never collide.
-TIMELINE_COMMANDS = {"accent", "clear-accents", "replace", "undo", "redo", "remove", "place", "stock-pick", "transitions",
+TIMELINE_COMMANDS = {"accent", "motion-code", "clear-accents", "replace", "undo", "redo", "remove", "place", "stock-pick", "transitions",
                      "frames", "numbers", "ops"}
 LOCK_HELD = contextlib.ExitStack()
 
@@ -138,7 +138,16 @@ def moment(project: dict, text: str) -> float:
 
 
 def run_ops(project: dict, ops: list, dry: bool) -> None:
-    result = call("POST", f"/api/projects/{project['id']}/ops", {"ops": ops, "expected_revision": project.get("revision"), "dry_run": dry})
+    # the studio itself may change the project meanwhile (HeyGen host frames land in the background): the operations are
+    # worked out on the server from the fresh project, so a stale revision is read again and the same request resent
+    for attempt in range(4):
+        try:
+            result = call("POST", f"/api/projects/{project['id']}/ops", {"ops": ops, "expected_revision": project.get("revision"), "dry_run": dry})
+            break
+        except Failure as error:
+            if not str(error).startswith("409: Проєкт змінився") or attempt == 3:
+                raise
+            project["revision"] = call("GET", f"/api/projects/{project['id']}").get("revision")
     for line in result.get("report", []):
         print(line)
     if dry:
@@ -197,6 +206,17 @@ def _main(argv=None) -> int:
                        help="половинний розмір для перегляду очима: у 4 рази менше токенів; для координат акцентів беріть повний")
     exports = commands.add_parser("export", help="стан експорту")
     exports.add_argument("project")
+    motion = commands.add_parser("motion-code", help="моушн-дизайн кодом над кадром: файл з function draw(ctx, t, info), Canvas 2D")
+    motion.add_argument("project")
+    motion.add_argument("frame")
+    motion.add_argument("file", help="JS-файл з function draw(ctx, t, info)")
+    motion.add_argument("--start", type=float, help="секунди від початку кадру (типово 0)")
+    motion.add_argument("--duration", type=float, help="секунди (типово до кінця кадру)")
+    motion.add_argument("--title", help="коротка назва шару")
+    motion.add_argument("--asset", action="append", default=[], metavar="NAME=FILE",
+                        help="картинка для коду: info.images.NAME (PNG-асет, фото проєкту); можна кілька")
+    motion.add_argument("--replace", help="назва моушн-коду цього кадру, який замінити")
+    motion.add_argument("--dry-run", action="store_true")
     accent = commands.add_parser("accent", help="підпис, стрілка, коло, картка чи картинка, прив'язані до руху фото кадру")
     accent.add_argument("project")
     accent.add_argument("frame")
@@ -242,6 +262,8 @@ def _main(argv=None) -> int:
     place.add_argument("--text", action="store_true", help="слова кадру текстом на весь екран")
     place.add_argument("--asset", help="id матеріалу, що вже є в проєкті")
     place.add_argument("--backdrop", choices=["auto", "host", "blur", "grid"], help="основа текстового кадру: відео ведучого під чорним 59%%, розмита картинка або сітка з шумом; без вибору інша, ніж у попереднього текстового кадру")
+    place.add_argument("--display", help="текст для екрана замість слів озвучки: цифри, латиниця назв (NASA, S8), звичне написання; "
+                                          "слова все одно з'являються в такт голосу")
     place.add_argument("--entrance", help="поява слів текстового кадру: letters_fade, blur_up, up, pop, letters_up, grow, left, blur, letters_blur, down, fade, shrink, right")
     place.add_argument("--motion", choices=["zoom_in", "zoom_out", "pan_left", "pan_right", "none"], help="рух кадру вибирає агент; без нього кадр стоїть")
     place.add_argument("--dry-run", action="store_true")
@@ -331,10 +353,14 @@ def _main(argv=None) -> int:
             for key, share in data["shares"].items():
                 amount = 'Авто' if key in data.get('auto_formats', []) else f'{share:.1f}%'
                 print(f"  {key:<16} {amount:>6}  {data['labels'][key]}: {data['hints'][key]}")
-            if data.get("opening"):
-                print(f"Перші {data['opening']['count']} кадр(и): {data['opening']['format']}")
+            opening = data.get("opening")
+            if isinstance(opening, dict):   # an older studio: one format for the first frames
+                opening = [{"number": n, "format": opening["format"]} for n in range(1, int(opening["count"]) + 1)]
+            if opening:
+                print("Початок ролика за налаштуваннями каналу: " + ", ".join(f"кадр {item['number']} — {item['format']}" for item in opening))
             if data.get('host_rules'):
-                print('HeyGen відео: перший і останній кадри, не два підряд, рівномірно протягом ролика; переважно короткі завершені фрази.')
+                first = 'перший і останній кадри' if data['host_rules'].get('first_frame', True) else 'останній кадр'
+                print(f'HeyGen відео: {first}, не два підряд, рівномірно протягом ролика; переважно короткі завершені фрази.')
             for item in data["sentences"]:
                 print(f"{item['number']:>4} [{clock(item['start'])}–{clock(item['end'])}] {item['text']}")
             return 0
@@ -411,6 +437,29 @@ def _main(argv=None) -> int:
                 spec["bend"] = args.bend
             run_ops(project, [spec], args.dry_run)
             return 0
+        if args.command == "motion-code":
+            spec = {"op": "motion_code", "frame": int(args.frame) if args.frame.isdigit() else args.frame,
+                    "code": Path(args.file).expanduser().read_text(encoding="utf-8")}
+            for key, value in (("start", args.start), ("duration", args.duration), ("title", args.title), ("replace", args.replace)):
+                if value is not None:
+                    spec[key] = value
+            assets = {}
+            for item in args.asset:
+                name, _, source = item.partition("=")
+                if not name or not source:
+                    raise Failure("--asset має вигляд NAME=FILE")
+                path = Path(source).expanduser()
+                assets[name] = str(path.resolve()) if path.is_file() else source
+            if assets:
+                spec["assets"] = assets
+            run_ops(project, [spec], args.dry_run)
+            if not args.dry_run:
+                # the code is run at once on three moments, so an error shows now and not at the export
+                check = call("POST", f"/api/projects/{pid}/motion-check", {"frame": spec["frame"], "title": args.title})
+                if check.get("error"):
+                    raise Failure("Код моушн-дизайну падає: " + check["error"] + ". Виправте файл і повторіть з --replace")
+                print("Перевірка коду: " + ", ".join(check.get("stills", [])))
+            return 0
         if args.command == "clear-accents":
             run_ops(project, [{"op": "clear_accents", "frame": int(args.frame) if args.frame.isdigit() else args.frame}], args.dry_run)
             return 0
@@ -469,6 +518,8 @@ def _main(argv=None) -> int:
                     spec["backdrop"] = args.backdrop
                 if args.entrance:
                     spec["entrance"] = args.entrance
+                if args.display:
+                    spec["display"] = args.display
             elif args.asset:
                 spec["asset_id"] = args.asset
             elif args.file:

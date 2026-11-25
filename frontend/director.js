@@ -363,8 +363,8 @@ function fillDirectorLine(box){
   }else if(run.status==='failed'){
     // the subscription limit only pauses the director: once it resets, the same button goes on
     const signedOut=run.limit&&claudeSignedOut(run.error);
-    line(signedOut?'Режисер на паузі: Claude Code вийшов з облікового запису':run.limit?'Режисер на паузі: закінчився ліміт підписки':'Режисура не вдалася',signedOut?'Увійдіть у налаштуваннях студії (шестерня внизу, розділ «Claude Code») і натисніть «Продовжити режисуру».':run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
-    box.append(stepButton(run.limit?'Продовжити режисуру':'Спробувати ще раз',()=>startDirector(id),true));
+    line(signedOut?'Режисер на паузі: Claude Code вийшов з облікового запису':run.limit?'Режисер на паузі: закінчився ліміт підписки':run.interrupted?'Режисуру перервано':'Режисура не вдалася',signedOut?'Увійдіть у налаштуваннях студії (шестерня внизу, розділ «Claude Code») і натисніть «Продовжити режисуру».':run.limit?`${run.error || ''} Коли ліміт оновиться, натисніть «Продовжити режисуру».`:(run.error || ''));
+    box.append(stepButton(run.limit||run.interrupted?'Продовжити режисуру':'Спробувати ще раз',()=>startDirector(id),true));
   }else if(run.status==='done'&&state.plan?.timing?.status==='script_estimate'){
     // the director has finished on the script and waits for the voice (user, 16 November 2026: «видно було, що
     // режисер галочка, він закінчив свою роботу, і що він очікує»)

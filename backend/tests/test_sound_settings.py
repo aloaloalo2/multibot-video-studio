@@ -157,6 +157,19 @@ class SoundSettingsTest(unittest.TestCase):
             soundtrack.transitions(ctx, {'sound_frames': [2, 3]})
             self.assertEqual([a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'], ['fx-1'])
 
+    def test_the_seam_where_the_host_goes_out_always_has_a_transition_sound(self):
+        frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)},
+                   'plan': {'format': 'host' if n == 2 else 'razgon_2d'}} for n in range(1, 5)]
+        joins = [{'from_ref': 'group:1', 'to_ref': 'group:2', 'type': 'crossfade', 'duration': .35}]   # 2 → 3 is a cut
+        ctx = SimpleNamespace(project={'id': 'a' * 24, 'tracks': [{'id': 'base', 'clips': [{'kind': 'image', 'start': 0, 'duration': 20}]}],
+                                       'join_transitions': joins}, frames=frames, plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'media_dir', return_value=Path(tmp)), \
+             patch.object(sound, 'saved_for_project', return_value={'transitions': {'enabled': False}}):
+            soundtrack.transitions(ctx)
+        cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
+        self.assertEqual([c['title'].split(' · ')[1] for c in cues], ['2 → 3'])   # only where the host goes out
+        self.assertLess(abs(cues[0]['start'] - 10), .5)
+
     def test_animated_films_and_gentle_crossfades_do_not_get_automatic_transition_sound(self):
         ctx = SimpleNamespace(project={'project_kind': 'animated'}, actions=[], report=[])
         with patch.object(sound, 'saved_for_project', side_effect=AssertionError('Animated must not use this setting')):

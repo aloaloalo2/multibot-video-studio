@@ -2147,6 +2147,21 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/capcut-preview", path)
         if match and method == "POST":
             return self.json_response(capcut_transition_preview(store.load_project(match.group(1)), str(body.get("join_id", ""))))
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/motion-check", path)
+        if match and method == "POST":
+            # the newest motion-code clip of a frame (or the one titled) run on three moments: PNG stills with alpha
+            import motion_code
+            project = store.load_project(match.group(1))
+            clips = [c for t in project.get("tracks", []) for c in t.get("clips", []) if c.get("content_type") == "code"]
+            frame, title = body.get("frame"), str(body.get("title") or "")
+            prefix = f"K{int(frame):03d} моушн" if str(frame).isdigit() else ""
+            chosen = [c for c in clips if str(c.get("title", "")).startswith(prefix) and (not title or c.get("title", "").endswith(title))]
+            if not chosen:
+                raise store.StudioError("Моушн-код кадру не знайдено", 404)
+            clip = chosen[-1]
+            length = float(clip["duration"])
+            folder = store.cache_dir(project) / "motion-code" / ("check-" + clip["id"])
+            return self.json_response(motion_code.stills(project, clip, [min(.3, length / 4), length / 2, max(0, length - .1)], folder))
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/still", path)
         if match and method == "POST":
             project = store.load_project(match.group(1))

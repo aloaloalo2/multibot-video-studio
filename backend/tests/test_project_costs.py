@@ -89,6 +89,16 @@ class ProjectCostsTest(unittest.TestCase):
         self.assertEqual(value['amount'],25)
         self.assertEqual(value['requests'],1)
 
+    def test_heygen_host_videos_are_counted_once_each_by_their_seconds(self):
+        self.save('heygen-frames/a.json',{'state':'completed','video_id':'v1','usd_per_minute':.99,'identity':{'look':'l','start':0,'end':60}})
+        self.save('heygen-frames/b.json',{'state':'submitted','video_id':'v2','usd_per_minute':.6,
+                                          'identity':{'look':'l','spans':[[0,20],[30,49.6]],'gap':.4}})
+        self.save('heygen-frames/cut.json',{'state':'completed','one_video':'b.json','identity':{'start':0,'end':20}})   # a piece of v2
+        self.save('heygen-frames/c.json',{'state':'not_sent','identity':{'look':'l','start':0,'end':60}})            # never paid
+        heygen=project_costs.totals(self.collect(self.collect()))['providers']['heygen']
+        self.assertEqual(heygen['requests'],2)
+        self.assertAlmostEqual(heygen['amount'],.99+.4,places=6)   # 60 s at $0.99, 40 s at $0.60
+
     def test_summary_persists_and_does_not_reread_unchanged_receipts(self):
         self.save('languages/es/translation-attempts/a/1.json',{'request_id':'r','usage':{'cost':.1}})
         with patch.object(store,'project_dir',return_value=self.root),patch.object(store,'load_project',return_value={}):
