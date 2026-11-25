@@ -26,10 +26,7 @@ import store
 KEEP_IN_BUILD = {"live.log"}
 
 
-def size(path: Path) -> int:
-    if path.is_file():
-        return path.stat().st_size
-    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file()) if path.is_dir() else 0
+size = storage_tidy._size
 
 
 def build_items(project: dict) -> list[Path]:
@@ -55,8 +52,8 @@ def old_renders(pid: str, project: dict) -> list[dict]:
 # The studio's cache of an episode (store.cache_dir): export chunks, the engine's render cache, stills and stock sheets.
 # All of it is made again when needed (user, 1 November 2026: «Звільнити місце… хай видаляє такий кеш з проєкту»).
 # Motion-code renders and the held copies for transitions are made again at the next export too (25 November 2026: 1.5 GB
-# and 0.7 GB on «Космос PRO»).
-CACHE = ("renders", "render-cache", "stills", "stock", "motion-code", "held-tails")
+# and 0.7 GB on «Космос PRO»), and so are the CapCut previews of seams (351 MB the same day).
+CACHE = storage_tidy.CACHE_FOLDERS
 
 
 def language_busy(pid: str) -> bool:
@@ -70,7 +67,7 @@ def history_bytes(pid: str) -> int:
     if language_busy(pid):
         return 0
     tidy = storage_tidy.Tidy(store.DATA_ROOT, apply=False)
-    tidy.project(store.project_dir(pid))
+    tidy.project(store.project_dir(pid), caches=False)   # the caches are counted whole in cache_items
     return tidy.freed
 
 
@@ -210,7 +207,7 @@ def free(pid: str) -> dict:
         shutil.rmtree(item, ignore_errors=True)
     if not language_busy(pid):
         tidy = storage_tidy.Tidy(store.DATA_ROOT)
-        tidy.project(store.project_dir(pid))
+        tidy.project(store.project_dir(pid), caches=False)
         freed += tidy.freed
     _FREEABLE.pop(pid, None)
     # replaced frame renders follow the studio's one rule for them, with the undo steps that still show them

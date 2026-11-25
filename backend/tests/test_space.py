@@ -71,9 +71,13 @@ class SpaceTest(unittest.TestCase):
     def test_the_studio_cache_of_the_episode_goes_too(self):
         stills = self.folder / "stills"; stills.mkdir()
         (stills / "still-a.png").write_bytes(b"x" * 300)
-        self.assertEqual(space.usage(PID)["cache"], 300)
+        seams = self.folder / "capcut"; seams.mkdir()
+        (seams / "razgon-a.mp4").write_bytes(b"x" * 200)    # previews of seams are made again on demand
+        self.assertEqual(space.usage(PID)["cache"], 500)
+        self.assertEqual(space.usage(PID)["history"], 0)     # counted once, not again by the tidy's dry run
         space.free(PID)
         self.assertFalse(stills.exists())
+        self.assertFalse(seams.exists())
         self.assertTrue((self.folder / "media" / "frame_001.mp4").exists())   # the frame on the timeline stays
 
     def test_the_languages_dead_weight_goes_too_and_paid_takes_stay(self):

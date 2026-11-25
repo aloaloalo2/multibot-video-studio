@@ -5,7 +5,9 @@ The voice, music and effects on the timeline lie in the episode folder (or are p
 gets a compressed copy in the studio's data, `projects/<id>/kept/<asset id>.m4a` (AAC 96 kbit/s: about 40 MB an hour of
 voice), made once while the original is there: at every start and after a voice is recognised. store.resolve_asset
 falls back to it when the original is gone, so the preview, the plan's voice player and the export keep the sound.
-Pictures and videos are not kept: they are what deleting the folder is for.
+Pictures and videos are not kept: they are what deleting the folder is for. A sound already in the studio's own lasting
+folders (projects/<id>/media, narration-ending) gets no copy: deleting the episode folder does not touch it, and those
+copies took 882 MB for nothing on 25 November 2026 (storage_tidy drops the ones made before).
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import storage_tidy
 import store
 
 
@@ -39,7 +42,7 @@ def keep_project(pid: str) -> int:
         if asset.get("id") not in used:
             continue
         source, target = Path(asset.get("path") or ""), kept_path(pid, asset["id"])
-        if target.is_file():
+        if target.is_file() or storage_tidy.lasting(source, store.PROJECTS_ROOT / pid):
             continue
         if not source.is_file():
             # gone from the episode folder: copied from where the studio still finds it (Razgon's voice, its bed)
@@ -48,7 +51,8 @@ def keep_project(pid: str) -> int:
             except (store.StudioError, OSError):
                 continue
             source = Path(found["path"])
-            if not source.is_file() or source.suffix == ".m4a" and source.parent.name == "kept":
+            if (not source.is_file() or source.suffix == ".m4a" and source.parent.name == "kept"
+                    or storage_tidy.lasting(source, store.PROJECTS_ROOT / pid)):
                 continue
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_name(target.stem + ".tmp.m4a")

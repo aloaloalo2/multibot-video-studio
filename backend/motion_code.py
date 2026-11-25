@@ -7,7 +7,9 @@ The preview runs it live (frontend/motion-code.js); the export renders the same 
 import hashlib
 import json
 import os
+import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import store
@@ -73,7 +75,6 @@ KEEP_SECONDS = 30 * 60   # a render no clip uses any more stays this long: an ex
 def prune(project: dict) -> int:
     """Drop the renders and checks of motion code no clip of the project uses any more (a new version of the code makes a
     new file; 1.5 GB piled up on «Космос PRO», 25 November 2026). Returns the bytes freed."""
-    import time
     folder = store.cache_dir(project) / "motion-code"
     if not folder.is_dir():
         return 0
@@ -87,18 +88,20 @@ def prune(project: dict) -> int:
     freed, now = 0, time.time()
     for item in folder.iterdir():
         stem = item.name.split(".")[0]
-        if now - item.stat().st_mtime < KEEP_SECONDS:
+        try:
+            if now - item.stat().st_mtime < KEEP_SECONDS:
+                continue
+            # a part left by a render that was killed shares its clip's name: it goes all the same (11 GB of them piled up)
+            if (stem in used or item.name in checks) and ".part." not in item.name:
+                continue
+            if item.is_dir():
+                freed += sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                freed += item.stat().st_size
+                item.unlink(missing_ok=True)
+        except OSError:   # gone meanwhile, or unreadable: the next prune looks again
             continue
-        # a part left by a render that was killed shares its clip's name: it goes all the same (11 GB of them piled up)
-        if (stem in used or item.name in checks) and ".part." not in item.name:
-            continue
-        if item.is_dir():
-            import shutil
-            freed += sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
-            shutil.rmtree(item, ignore_errors=True)
-        else:
-            freed += item.stat().st_size
-            item.unlink(missing_ok=True)
     return freed
 
 
